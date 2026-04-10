@@ -3,36 +3,36 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>租户管理</span>
-          <el-button type="primary" :icon="Plus" @click="openAddDialog">新增租户</el-button>
+          <span>{{ t('system.tenant.title') }}</span>
+          <el-button type="primary" :icon="Plus" @click="openAddDialog">{{ t('system.tenant.add') }}</el-button>
         </div>
       </template>
 
       <el-table :data="tenants" v-loading="loading" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="租户名称" />
-        <el-table-column prop="description" label="描述" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="id" :label="t('system.tenant.columns.id')" width="80" />
+        <el-table-column prop="name" :label="t('system.tenant.columns.name')" />
+        <el-table-column prop="description" :label="t('system.tenant.columns.description')" />
+        <el-table-column :label="t('system.tenant.columns.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'">
-              {{ row.is_active ? '激活' : '禁用' }}
+              {{ row.is_active ? t('system.tenant.status.active') : t('system.tenant.status.disabled') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+        <el-table-column :label="t('system.tenant.columns.createdAt')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column :label="t('system.tenant.columns.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
+            <el-button size="small" type="primary" :icon="Edit" @click="openEditDialog(row)">{{ t('system.tenant.actions.edit') }}</el-button>
             <el-button
               size="small"
               type="danger"
               :icon="Delete"
               @click="handleDelete(row)"
-            >删除</el-button>
+            >{{ t('system.tenant.actions.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -52,7 +52,7 @@
     <!-- 新增/编辑租户对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑租户' : '新增租户'"
+      :title="isEdit ? t('system.tenant.dialog.edit') : t('system.tenant.dialog.add')"
       width="600px"
       @close="resetForm"
     >
@@ -62,40 +62,40 @@
         :rules="formRules"
         label-width="120px"
       >
-        <el-form-item label="租户名称" prop="name">
-          <el-input v-model="tenantForm.name" placeholder="请输入租户名称" />
+        <el-form-item :label="t('system.tenant.form.name')" prop="name">
+          <el-input v-model="tenantForm.name" :placeholder="t('system.tenant.form.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('system.tenant.form.description')" prop="description">
           <el-input
             v-model="tenantForm.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入租户描述"
+            :placeholder="t('system.tenant.form.descPlaceholder')"
           />
         </el-form-item>
 
         <!-- 新增租户时需要设置管理员 -->
         <template v-if="!isEdit">
-          <el-divider content-position="left">租户管理员信息</el-divider>
-          <el-form-item label="管理员用户名" prop="admin_username">
-            <el-input v-model="tenantForm.admin_username" placeholder="请输入管理员用户名" />
+          <el-divider content-position="left">{{ t('system.tenant.form.adminSection') }}</el-divider>
+          <el-form-item :label="t('system.tenant.form.adminUsername')" prop="admin_username">
+            <el-input v-model="tenantForm.admin_username" :placeholder="t('system.tenant.form.adminUsernamePlaceholder')" />
           </el-form-item>
-          <el-form-item label="管理员密码" prop="admin_password">
-            <el-input v-model="tenantForm.admin_password" type="password" placeholder="请输入管理员密码" />
+          <el-form-item :label="t('system.tenant.form.adminPassword')" prop="admin_password">
+            <el-input v-model="tenantForm.admin_password" type="password" :placeholder="t('system.tenant.form.adminPasswordPlaceholder')" />
           </el-form-item>
-          <el-form-item label="管理员邮箱" prop="admin_email">
-            <el-input v-model="tenantForm.admin_email" placeholder="请输入管理员邮箱" />
+          <el-form-item :label="t('system.tenant.form.adminEmail')" prop="admin_email">
+            <el-input v-model="tenantForm.admin_email" :placeholder="t('system.tenant.form.adminEmailPlaceholder')" />
           </el-form-item>
-          <el-form-item label="管理员姓名" prop="admin_full_name">
-            <el-input v-model="tenantForm.admin_full_name" placeholder="请输入管理员姓名" />
+          <el-form-item :label="t('system.tenant.form.adminFullName')" prop="admin_full_name">
+            <el-input v-model="tenantForm.admin_full_name" :placeholder="t('system.tenant.form.adminFullNamePlaceholder')" />
           </el-form-item>
         </template>
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">{{ t('system.tenant.dialog.cancel') }}</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ isEdit ? '更新' : '创建' }}
+          {{ isEdit ? t('system.tenant.dialog.update') : t('system.tenant.dialog.create') }}
         </el-button>
       </template>
     </el-dialog>
@@ -103,10 +103,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { tenantAPI } from '../api/tenant'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const tenants = ref([])
 const loading = ref(false)
@@ -129,18 +132,18 @@ const tenantForm = ref({
   admin_full_name: ''
 })
 
-const formRules = {
+const formRules = computed(() => ({
   name: [
-    { required: true, message: '请输入租户名称', trigger: 'blur' }
+    { required: true, message: t('system.tenant.rules.nameRequired'), trigger: 'blur' }
   ],
   admin_username: [
-    { required: true, message: '请输入管理员用户名', trigger: 'blur' }
+    { required: true, message: t('system.tenant.rules.adminUsernameRequired'), trigger: 'blur' }
   ],
   admin_password: [
-    { required: true, message: '请输入管理员密码', trigger: 'blur' },
-    { min: 6, message: '密码长度至少6位', trigger: 'blur' }
+    { required: true, message: t('system.tenant.rules.adminPasswordRequired'), trigger: 'blur' },
+    { min: 6, message: t('system.tenant.rules.adminPasswordMin'), trigger: 'blur' }
   ]
-}
+}))
 
 const fetchTenants = async () => {
   loading.value = true
@@ -149,11 +152,10 @@ const fetchTenants = async () => {
       page: currentPage.value,
       page_size: pageSize.value
     })
-    // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
     tenants.value = response?.data || []
     total.value = response?.total || 0
   } catch (error) {
-    ElMessage.error('获取租户列表失败')
+    ElMessage.error(t('system.tenant.msg.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -205,10 +207,10 @@ const handleSubmit = async () => {
         name: tenantForm.value.name,
         description: tenantForm.value.description
       })
-      ElMessage.success('租户更新成功')
+      ElMessage.success(t('system.tenant.msg.updateSuccess'))
     } else {
       await tenantAPI.create(tenantForm.value)
-      ElMessage.success('租户创建成功')
+      ElMessage.success(t('system.tenant.msg.createSuccess'))
     }
 
     dialogVisible.value = false
@@ -217,7 +219,7 @@ const handleSubmit = async () => {
     if (error.response?.data?.error) {
       ElMessage.error(error.response.data.error)
     } else {
-      ElMessage.error(isEdit.value ? '租户更新失败' : '租户创建失败')
+      ElMessage.error(isEdit.value ? t('system.tenant.msg.updateFailed') : t('system.tenant.msg.createFailed'))
     }
   } finally {
     submitting.value = false
@@ -226,20 +228,20 @@ const handleSubmit = async () => {
 
 const handleDelete = (tenant) => {
   ElMessageBox.confirm(
-    `确定要删除租户"${tenant.name}"吗？删除租户将同时删除该租户下的所有用户！`,
-    '警告',
+    t('system.tenant.msg.deleteConfirm', { name: tenant.name }),
+    t('system.tenant.msg.deleteWarning'),
     {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+      confirmButtonText: 'OK',
+      cancelButtonText: 'Cancel',
       type: 'warning',
     }
   ).then(async () => {
     try {
       await tenantAPI.delete(tenant.id)
-      ElMessage.success('租户删除成功')
+      ElMessage.success(t('system.tenant.msg.deleteSuccess'))
       fetchTenants()
     } catch (error) {
-      ElMessage.error('租户删除失败')
+      ElMessage.error(t('system.tenant.msg.deleteFailed'))
     }
   }).catch(() => {
     // 用户取消删除
@@ -248,7 +250,7 @@ const handleDelete = (tenant) => {
 
 const formatDate = (dateString) => {
   if (!dateString) return '-'
-  return new Date(dateString).toLocaleString('zh-CN')
+  return new Date(dateString).toLocaleString()
 }
 
 onMounted(() => {

@@ -10,25 +10,25 @@
 
     <div class="summary">
       <div class="summary-item">
-        <span class="label">几何类型</span>
+        <span class="label">{{ t('map.geometryType') }}</span>
         <span class="value">{{ geometryType }}</span>
       </div>
       <div v-if="featureCount !== null" class="summary-item">
-        <span class="label">要素总数</span>
+        <span class="label">{{ t('map.featureCount') }}</span>
         <span class="value">{{ featureCount }}</span>
       </div>
       <div v-if="previewCount !== null" class="summary-item">
-        <span class="label">预览条目</span>
+        <span class="label">{{ t('map.previewCount') }}</span>
         <span class="value">{{ previewCount }}</span>
       </div>
       <div v-if="codePage" class="summary-item">
-        <span class="label">编码</span>
+        <span class="label">{{ t('map.encoding') }}</span>
         <span class="value">{{ codePage }}</span>
       </div>
     </div>
 
     <div v-if="bboxRows.length" class="bbox-panel">
-      <div class="section-title">边界范围</div>
+      <div class="section-title">{{ t('map.bboxTitle') }}</div>
       <div class="bbox-grid">
         <div v-for="item in bboxRows" :key="item.label" class="bbox-item">
           <span class="label">{{ item.label }}</span>
@@ -42,23 +42,23 @@
         {{ projection }}
       </el-tag>
       <el-tag v-if="truncated" size="small" type="warning" effect="plain">
-        仅展示部分要素
+        {{ t('map.shapefileTruncated') }}
       </el-tag>
     </div>
 
     <div v-if="fields.length" class="fields-table">
-      <div class="section-title">字段信息</div>
+      <div class="section-title">{{ t('map.fieldsTitle') }}</div>
       <el-table :data="fields" height="220" size="small" stripe class="table">
-        <el-table-column prop="name" label="字段名" min-width="140" />
-        <el-table-column prop="type" label="类型" width="120" />
-        <el-table-column prop="size" label="长度" width="80" />
-        <el-table-column prop="precision" label="精度" width="80" />
+        <el-table-column prop="name" :label="t('map.fieldName')" min-width="140" />
+        <el-table-column prop="type" :label="t('map.fieldType')" width="120" />
+        <el-table-column prop="size" :label="t('map.fieldLength')" width="80" />
+        <el-table-column prop="precision" :label="t('map.fieldPrecision')" width="80" />
       </el-table>
     </div>
 
     <div v-if="hasGeoJSON" class="controls">
       <div class="toggle-wrapper">
-        <span>地图预览</span>
+        <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
       <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
@@ -86,9 +86,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import MapContainer from './map/MapContainer.vue'
 import { safeStringify } from '../utils/formatters'
+
+const { t } = useI18n()
 
 const props = defineProps({
   data: {
@@ -100,7 +103,7 @@ const props = defineProps({
 const content = computed(() => props.data?.object?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
 
-const geometryType = computed(() => metadata.value?.geometry_type || '未知')
+const geometryType = computed(() => metadata.value?.geometry_type || t('map.unknown'))
 const featureCount = computed(() => {
   const value = metadata.value?.feature_count
   return Number.isFinite(value) ? value : null

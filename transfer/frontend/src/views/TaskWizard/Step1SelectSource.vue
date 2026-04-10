@@ -1,11 +1,11 @@
 <template>
   <div class="step1-select-source">
-    <h3>选择数据源</h3>
-    <p class="step-description">请选择数据源引擎和表</p>
+    <h3>{{ t('transfer.taskWizard.selectSourcePage') }}</h3>
+    <p class="step-description">{{ t('transfer.taskWizard.selectSourcePageDesc') }}</p>
 
     <el-form :model="formData" label-width="120px">
       <!-- 数据源类型 -->
-      <el-form-item label="数据源类型">
+      <el-form-item :label="t('transfer.taskWizard.sourceTypeLabel')">
         <el-radio-group v-model="sourceType" @change="handleSourceTypeChange">
           <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
           <el-radio-button value="mysql">MySQL</el-radio-button>
@@ -15,17 +15,17 @@
       </el-form-item>
 
       <!-- 数据源引擎 -->
-      <el-form-item label="数据源引擎">
+      <el-form-item :label="t('transfer.taskWizard.sourceEngineLabel')">
         <el-select
           v-model="formData.engineValue"
-          placeholder="请选择数据源引擎"
+          :placeholder="t('transfer.taskWizard.selectSourceEngine')"
           filterable
           :loading="loadingEngines"
           @change="handleEngineChange"
         >
           <el-option-group
             v-if="filteredSystemEngines.length > 0"
-            label="系统管理（全局可用）"
+            :label="t('transfer.taskWizard.systemEngineGlobal')"
           >
             <el-option
               v-for="engine in filteredSystemEngines"
@@ -36,7 +36,7 @@
           </el-option-group>
           <el-option-group
             v-if="filteredLocalEngines.length > 0"
-            label="本地引擎（仅数据传输可用）"
+            :label="t('transfer.taskWizard.localEngineTransfer')"
           >
             <el-option
               v-for="engine in filteredLocalEngines"
@@ -47,37 +47,37 @@
           </el-option-group>
         </el-select>
         <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-          <p>系统管理的引擎从元数据模块自动加载表，本地引擎实时扫描数据库</p>
+          <p>{{ t('transfer.taskWizard.selectSourceEngineHint') }}</p>
         </div>
       </el-form-item>
 
       <!-- 查询模式（仅 postgresql/mysql/spatialite） -->
-      <el-form-item v-if="supportsQueryMode && formData.engineValue" label="查询方式">
+      <el-form-item v-if="supportsQueryMode && formData.engineValue" :label="t('transfer.taskWizard.queryModeLabel')">
         <el-radio-group v-model="queryMode" @change="handleQueryModeChange">
-          <el-radio-button value="table">选择表</el-radio-button>
-          <el-radio-button value="sql">自定义 SQL</el-radio-button>
+          <el-radio-button value="table">{{ t('transfer.taskWizard.selectTable') }}</el-radio-button>
+          <el-radio-button value="sql">{{ t('transfer.taskWizard.customSQL') }}</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
       <!-- SQL 查询（仅 SQL 模式） -->
-      <el-form-item v-if="queryMode === 'sql'" label="SQL 查询">
+      <el-form-item v-if="queryMode === 'sql'" :label="t('transfer.taskWizard.sqlQueryLabel')">
         <el-input
           v-model="sqlQuery"
           type="textarea"
           :rows="8"
-          placeholder="请输入 SQL 查询语句，例如：SELECT * FROM table_name WHERE condition"
+          :placeholder="t('transfer.taskWizard.sqlQueryPlaceholder')"
           @change="handleSQLQueryChange"
         />
         <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-          <p>支持标准 SQL 语法，查询结果将作为数据源</p>
+          <p>{{ t('transfer.taskWizard.sqlQueryHint') }}</p>
         </div>
       </el-form-item>
 
       <!-- Schema（仅 PostgreSQL/MySQL 的系统引擎需要，且在 table 模式） -->
-      <el-form-item v-if="needsSchema && queryMode === 'table'" label="Schema">
+      <el-form-item v-if="needsSchema && queryMode === 'table'" :label="t('transfer.taskWizard.schemaLabel')">
         <el-select
           v-model="formData.schema"
-          placeholder="请选择 Schema"
+          :placeholder="t('transfer.taskWizard.schemaPlaceholder')"
           filterable
           :loading="loadingSchemas"
           :disabled="!formData.engineValue"
@@ -93,27 +93,27 @@
       </el-form-item>
 
       <!-- 对象存储路径选择（仅 S3/MinIO） -->
-      <el-form-item v-if="sourceType === 's3' && formData.engineValue" label="存储路径">
+      <el-form-item v-if="sourceType === 's3' && formData.engineValue" :label="t('transfer.taskWizard.storagePathLabel')">
         <el-input
           v-model="formData.objectPath"
-          placeholder="请选择对象存储路径"
+          :placeholder="t('transfer.taskWizard.storagePathPlaceholder')"
           readonly
           @click="showObjectPathPicker = true"
         >
           <template #append>
-            <el-button @click="showObjectPathPicker = true">浏览</el-button>
+            <el-button @click="showObjectPathPicker = true">{{ t('transfer.taskWizard.browse') }}</el-button>
           </template>
         </el-input>
         <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-          <p>选择对象存储的路径,然后从该路径下选择文件</p>
+          <p>{{ t('transfer.taskWizard.storagePathHint') }}</p>
         </div>
       </el-form-item>
 
       <!-- 对象存储文件选择（仅 S3/MinIO，选择路径后显示） -->
-      <el-form-item v-if="sourceType === 's3' && formData.objectPath" label="选择文件">
+      <el-form-item v-if="sourceType === 's3' && formData.objectPath" :label="t('transfer.taskWizard.selectFileLabel')">
         <el-select
           v-model="formData.objectFile"
-          placeholder="请选择文件"
+          :placeholder="t('transfer.taskWizard.selectFilePlaceholder')"
           filterable
           :loading="loadingFiles"
           @change="handleFileChange"
@@ -128,10 +128,10 @@
       </el-form-item>
 
       <!-- 表（仅 table 模式且非 S3/MinIO） -->
-      <el-form-item v-if="queryMode === 'table' && sourceType !== 's3'" label="数据表">
+      <el-form-item v-if="queryMode === 'table' && sourceType !== 's3'" :label="t('transfer.taskWizard.dataTableLabel')">
         <el-select
           v-model="formData.table"
-          placeholder="请选择数据表"
+          :placeholder="t('transfer.taskWizard.dataTablePlaceholder')"
           filterable
           :loading="loadingTables"
           :disabled="!formData.engineValue"
@@ -140,27 +140,27 @@
           <el-option
             v-for="table in tables"
             :key="table.name"
-            :label="table.row_count !== undefined ? `${table.name} (${table.row_count || 0} 行)` : table.name"
+            :label="table.row_count !== undefined ? `${table.name} (${table.row_count || 0} ${t('transfer.taskWizard.rowsUnit')})` : table.name"
             :value="table.name"
           />
         </el-select>
       </el-form-item>
 
       <!-- 表信息预览（仅系统引擎有元数据且非 S3/MinIO） -->
-      <el-form-item v-if="selectedTable && hasTableMetadata && sourceType !== 's3'" label="表信息">
+      <el-form-item v-if="selectedTable && hasTableMetadata && sourceType !== 's3'" :label="t('transfer.taskWizard.tableInfoLabel')">
         <div class="table-info">
-          <p v-if="selectedTable.row_count !== undefined"><strong>行数：</strong>{{ selectedTable.row_count || 0 }}</p>
-          <p v-if="selectedTable.size_bytes !== undefined"><strong>大小：</strong>{{ formatBytes(selectedTable.size_bytes) }}</p>
-          <p v-if="selectedTable.comment"><strong>备注：</strong>{{ selectedTable.comment }}</p>
+          <p v-if="selectedTable.row_count !== undefined"><strong>{{ t('transfer.taskWizard.rowCountLabel') }}：</strong>{{ selectedTable.row_count || 0 }}</p>
+          <p v-if="selectedTable.size_bytes !== undefined"><strong>{{ t('transfer.taskWizard.sizeLabel') }}：</strong>{{ formatBytes(selectedTable.size_bytes) }}</p>
+          <p v-if="selectedTable.comment"><strong>{{ t('transfer.taskWizard.commentLabel') }}：</strong>{{ selectedTable.comment }}</p>
         </div>
       </el-form-item>
 
       <!-- 文件信息预览（仅 S3/MinIO） -->
-      <el-form-item v-if="sourceType === 's3' && selectedFile" label="文件信息">
+      <el-form-item v-if="sourceType === 's3' && selectedFile" :label="t('transfer.taskWizard.fileInfoLabel')">
         <div class="table-info">
-          <p><strong>文件名：</strong>{{ selectedFile.name }}</p>
-          <p v-if="selectedFile.size !== undefined"><strong>大小：</strong>{{ formatBytes(selectedFile.size) }}</p>
-          <p v-if="selectedFile.last_modified"><strong>修改时间：</strong>{{ selectedFile.last_modified }}</p>
+          <p><strong>{{ t('transfer.taskWizard.fileNameLabel') }}：</strong>{{ selectedFile.name }}</p>
+          <p v-if="selectedFile.size !== undefined"><strong>{{ t('transfer.taskWizard.fileSizeLabel') }}：</strong>{{ formatBytes(selectedFile.size) }}</p>
+          <p v-if="selectedFile.last_modified"><strong>{{ t('transfer.taskWizard.lastModifiedLabel') }}：</strong>{{ selectedFile.last_modified }}</p>
         </div>
       </el-form-item>
     </el-form>
@@ -178,12 +178,15 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getTables, getTableFields, getSchemas } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { localEnginesAPI } from '@/api/localEngines'
 import { objectStorageAPI } from '@/api/objectStorage'
 import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps({
@@ -387,10 +390,10 @@ async function loadEngines() {
     )
 
     if (systemEngines.value.length === 0 && localEngines.value.length === 0) {
-      ElMessage.warning('未找到可用的存储引擎，请先在系统管理中配置')
+      ElMessage.warning(t('transfer.taskWizard.noEnginesFound'))
     }
   } catch (error) {
-    ElMessage.error('加载存储引擎失败')
+    ElMessage.error(t('transfer.taskWizard.loadEnginesFailedMsg'))
     console.error(error)
   } finally {
     loadingEngines.value = false
@@ -424,12 +427,12 @@ async function handleEngineChange() {
           schema && schema.schema_name !== undefined && schema.schema_name !== null
         )
         if (schemas.value.length > 0) {
-          ElMessage.success(`已加载 ${schemas.value.length} 个 Schema`)
+          ElMessage.success(t('transfer.taskWizard.schemaLoadedMsg', { count: schemas.value.length }))
         } else {
-          ElMessage.warning('未找到可用的 Schema，请确认元数据模块已扫描该数据源')
+          ElMessage.warning(t('transfer.taskWizard.noSchemaFoundMsg'))
         }
       } catch (error) {
-        ElMessage.error('加载 Schema 列表失败')
+        ElMessage.error(t('transfer.taskWizard.loadSchemaFailedMsg'))
         console.error(error)
       } finally {
         loadingSchemas.value = false
@@ -477,12 +480,12 @@ async function loadSystemEngineTables(engineID, schema) {
       }))
       .filter(table => table.name !== undefined && table.name !== null)
     if (tables.value.length > 0) {
-      ElMessage.success(`已加载 ${tables.value.length} 个表`)
+      ElMessage.success(t('transfer.taskWizard.tablesLoadedMsg', { count: tables.value.length }))
     } else {
-      ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
+      ElMessage.warning(t('transfer.taskWizard.noTablesFoundMsg'))
     }
   } catch (error) {
-    ElMessage.error('加载表列表失败')
+    ElMessage.error(t('transfer.taskWizard.loadTablesFailedMsg'))
     console.error(error)
   } finally {
     loadingTables.value = false
@@ -512,12 +515,12 @@ async function loadLocalEngineTables(engineID) {
       })
       .filter(table => table.name !== undefined && table.name !== null)
     if (tables.value.length > 0) {
-      ElMessage.success(`已从本地引擎扫描到 ${tables.value.length} 个表`)
+      ElMessage.success(t('transfer.taskWizard.localTablesLoadedMsg', { count: tables.value.length }))
     } else {
-      ElMessage.warning('未找到可用的表')
+      ElMessage.warning(t('transfer.taskWizard.noTablesFoundMsg'))
     }
   } catch (error) {
-    ElMessage.error('加载表列表失败')
+    ElMessage.error(t('transfer.taskWizard.loadTablesFailedMsg'))
     console.error(error)
   } finally {
     loadingTables.value = false
@@ -556,12 +559,12 @@ async function loadFiles() {
     }))
 
     if (files.value.length > 0) {
-      ElMessage.success(`已加载 ${files.value.length} 个文件`)
+      ElMessage.success(t('transfer.taskWizard.filesLoadedMsg', { count: files.value.length }))
     } else {
-      ElMessage.warning('该路径下没有文件')
+      ElMessage.warning(t('transfer.taskWizard.noFilesFoundMsg'))
     }
   } catch (error) {
-    ElMessage.error('加载文件列表失败')
+    ElMessage.error(t('transfer.taskWizard.loadFilesFailedMsg'))
     console.error(error)
   } finally {
     loadingFiles.value = false
@@ -595,7 +598,7 @@ async function handleTableChange() {
       props.wizardState.loadSourceFields(fieldList)
     }
   } catch (error) {
-    ElMessage.error('加载表字段失败')
+    ElMessage.error(t('transfer.taskWizard.loadTableFieldsFailed'))
     console.error(error)
   }
 }

@@ -1,0 +1,576 @@
+{
+  "system": {
+    "login": {
+      "title": "System Admin Login",
+      "subtitle": "All Domain Data Platform",
+      "usernamePlaceholder": "Enter username",
+      "passwordPlaceholder": "Enter password",
+      "submit": "Login",
+      "loggingIn": "Logging in...",
+      "success": "Login successful",
+      "failed": "Login failed",
+      "networkError": "Network connection failed, please check if the server is running",
+      "requestFailed": "Request failed ({status})",
+      "unknown": "Unknown error",
+      "usernameRequired": "Please enter username",
+      "passwordRequired": "Please enter password",
+      "passwordMinLength": "Password must be at least 6 characters"
+    },
+    "layout": {
+      "title": "System Management",
+      "overview": "Overview",
+      "systemMgmt": "System",
+      "userMgmt": "Users",
+      "engineMgmt": "Engines",
+      "appMgmt": "Applications",
+      "auditLogs": "Audit Logs",
+      "cleanup": "Cleanup",
+      "logout": "Logout",
+      "logoutSuccess": "Logged out successfully"
+    },
+    "user": {
+      "title": "User Management",
+      "myInfo": "My Info",
+      "add": "Add User",
+      "status": {
+        "active": "Active",
+        "disabled": "Disabled"
+      },
+      "types": {
+        "superAdmin": "Super Admin",
+        "tenantAdmin": "Tenant Admin",
+        "user": "User",
+        "unknown": "Unknown"
+      },
+      "columns": {
+        "id": "ID",
+        "username": "Username",
+        "email": "Email",
+        "fullName": "Full Name",
+        "userType": "User Type",
+        "status": "Status",
+        "createdAt": "Created At",
+        "actions": "Actions"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "changePassword": "Change Password"
+      },
+      "form": {
+        "username": "Username",
+        "usernamePlaceholder": "Enter username",
+        "password": "Password",
+        "passwordPlaceholder": "Enter password",
+        "email": "Email",
+        "emailPlaceholder": "Enter email",
+        "fullName": "Full Name",
+        "fullNamePlaceholder": "Enter full name",
+        "userType": "User Type",
+        "userTypePlaceholder": "Select user type",
+        "normalUser": "Normal User",
+        "activeStatus": "Status",
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "dialog": {
+        "add": "Add User",
+        "edit": "Edit User"
+      },
+      "rules": {
+        "usernameRequired": "Please enter username",
+        "usernameLength": "Username must be 3-20 characters",
+        "passwordRequired": "Please enter password",
+        "passwordMin": "Password must be at least 6 characters",
+        "emailFormat": "Please enter a valid email address"
+      },
+      "msg": {
+        "loadFailed": "Failed to load user list",
+        "createSuccess": "User created successfully",
+        "createFailed": "Failed to create user",
+        "updateSuccess": "User updated successfully",
+        "updateFailed": "Failed to update user",
+        "deleteConfirm": "Are you sure you want to delete user \"{username}\"?",
+        "deleteWarning": "Warning",
+        "deleteSuccess": "Deleted successfully",
+        "deleteFailed": "Failed to delete",
+        "adminCannotDelete": "The admin account cannot be deleted",
+        "changePasswordSuccess": "Password changed successfully",
+        "changePasswordFailed": "Failed to change password"
+      }
+    },
+    "password": {
+      "title": "Change Password",
+      "old": "Old Password",
+      "oldPlaceholder": "Enter old password",
+      "new": "New Password",
+      "newPlaceholder": "Enter new password (at least 6 characters)",
+      "confirm": "Confirm Password",
+      "confirmPlaceholder": "Re-enter new password",
+      "rules": {
+        "oldRequired": "Please enter old password",
+        "newRequired": "Please enter new password",
+        "newMin": "Password must be at least 6 characters",
+        "confirmRequired": "Please re-enter new password",
+        "confirmMismatch": "Passwords do not match"
+      }
+    },
+    "engine": {
+      "title": "Engine Management",
+      "addStorage": "Register Standard Engine",
+      "addCompute": "Register Extension Engine",
+      "filter": "Filter:",
+      "filterStorage": "Storage",
+      "filterCompute": "Compute",
+      "filterStandard": "Standard",
+      "filterExtension": "Extension",
+      "filterBuiltin": "Built-in",
+      "columns": {
+        "id": "ID",
+        "name": "Name",
+        "type": "Type",
+        "connection": "Connection",
+        "status": "Status",
+        "capabilities": "Capabilities",
+        "category": "Category",
+        "builtin": "Registered/Built-in",
+        "createdAt": "Created At",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "disabled": "Disabled"
+      },
+      "category": {
+        "standard": "Standard",
+        "extension": "Extension"
+      },
+      "builtin": {
+        "builtin": "Built-in",
+        "registered": "Registered"
+      },
+      "connection": {
+        "online": "Online",
+        "offline": "Offline",
+        "unknown": "Unknown",
+        "checking": "Checking",
+        "notChecked": "Not Checked",
+        "statusLine": "Status: {status}",
+        "lastCheck": "Last check: {time}",
+        "detail": "Detail: {msg}"
+      },
+      "capabilities": {
+        "relationalDb": "Relational DB",
+        "objectStorage": "Object Storage",
+        "graphDb": "Graph DB",
+        "sqlQuery": "SQL Query",
+        "spatial": "Spatial",
+        "tileCache": "Tile Cache",
+        "scan": "Metadata Scan",
+        "workflow": "Workflow",
+        "none": "None"
+      },
+      "typeSelection": {
+        "title": "Select Engine Type",
+        "storage": "Storage Engine",
+        "storageDesc": "Database, object storage and other data storage services",
+        "compute": "Compute Engine",
+        "computeDesc": "Services providing computing capabilities"
+      },
+      "actions": {
+        "test": "Test",
+        "detail": "Detail",
+        "edit": "Edit",
+        "delete": "Delete",
+        "testConnection": "Test Connection",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "dialog": {
+        "add": "New Engine",
+        "addStorage": "New Storage Engine",
+        "addCompute": "New Compute Engine",
+        "edit": "Edit Engine",
+        "details": "Engine Details - {name}",
+        "close": "Close",
+        "detailTabs": {
+          "basic": "Basic Info",
+          "connection": "Connection",
+          "capabilities": "Capabilities",
+          "scan": "Scan Config"
+        },
+        "basicInfo": {
+          "id": "ID",
+          "name": "Name",
+          "engineType": "Engine Type",
+          "category": "Category",
+          "registration": "Registration",
+          "status": "Status",
+          "createdAt": "Created At",
+          "updatedAt": "Updated At",
+          "description": "Description",
+          "none": "None",
+          "standardEngine": "Standard Engine",
+          "extensionEngine": "Extension Engine",
+          "builtinEngine": "Built-in Engine",
+          "userRegistered": "User Registered"
+        },
+        "capabilities": {
+          "storageCapabilities": "Storage Capabilities",
+          "computeCapabilities": "Compute Capabilities",
+          "type": "Type",
+          "engine": "Engine",
+          "devModes": "Dev Modes",
+          "description": "Description"
+        },
+        "scan": {
+          "immediateScan": "Immediate Scan",
+          "scheduledScan": "Scheduled Scan",
+          "scheduleType": "Schedule Type",
+          "cronExpression": "Cron Expression",
+          "scheduleTime": "Schedule Time",
+          "depth": "(Depth: {depth})",
+          "yes": "Yes",
+          "no": "No"
+        }
+      },
+      "msg": {
+        "loadFailed": "Failed to load engine list",
+        "testSuccess": "Connection test successful!",
+        "testFailed": "Connection test failed: {error}",
+        "createSuccess": "Created successfully",
+        "updateSuccess": "Updated successfully",
+        "jsonError": "Invalid JSON format, please check",
+        "opFailed": "Operation failed",
+        "deleteConfirm": "Are you sure you want to delete engine \"{name}\"? This action cannot be undone.",
+        "deleteTitle": "Confirm Delete",
+        "deleteSuccess": "Deleted successfully",
+        "builtinCannotDelete": "Built-in engines cannot be deleted",
+        "detailFailed": "Failed to get engine details",
+        "fillRequired": "Please fill in all required fields",
+        "computeTestHint": "Compute engines need to be tested via health check endpoint after saving"
+      }
+    },
+    "app": {
+      "title": "Application Management",
+      "create": "Create Application",
+      "allServices": "All Services",
+      "ratePerMin": "{rate} req/min",
+      "columns": {
+        "id": "ID",
+        "name": "App Name",
+        "description": "Description",
+        "allowedServices": "Allowed Services",
+        "rateLimit": "Rate Limit",
+        "status": "Status",
+        "createdAt": "Created At",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "suspended": "Suspended"
+      },
+      "actions": {
+        "apiKeys": "API Keys",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "dialog": {
+        "create": "Create Application",
+        "edit": "Edit Application",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      },
+      "form": {
+        "name": "App Name",
+        "namePlaceholder": "Enter application name",
+        "description": "Description",
+        "descPlaceholder": "Enter application description",
+        "allowedServices": "Allowed Services",
+        "allowedServicesPlaceholder": "Select allowed services (leave empty for all)",
+        "rateLimit": "Rate Limit",
+        "rateLimitTip": "Maximum requests per minute",
+        "status": "Status",
+        "active": "Active",
+        "suspended": "Suspended"
+      },
+      "services": {
+        "poi": "POI Service",
+        "address": "Address Service",
+        "map": "Map Service",
+        "data": "Data Service"
+      },
+      "rules": {
+        "nameRequired": "Please enter application name",
+        "rateLimitRequired": "Please set rate limit"
+      },
+      "keys": {
+        "title": "API Keys - {name}",
+        "generate": "Generate New Key",
+        "neverUsed": "Never used",
+        "columns": {
+          "id": "ID",
+          "prefix": "Key Prefix",
+          "name": "Name",
+          "lastUsed": "Last Used",
+          "status": "Status",
+          "createdAt": "Created At",
+          "actions": "Actions"
+        },
+        "status": {
+          "active": "Active",
+          "revoked": "Revoked"
+        },
+        "revoke": "Revoke",
+        "generateDialog": {
+          "title": "Generate API Key",
+          "name": "Key Name",
+          "namePlaceholder": "Enter key name (for identification)",
+          "expiresAt": "Expiry Date",
+          "expiresAtPlaceholder": "Select expiry date (optional)",
+          "expiresAtTip": "Leave empty for no expiry",
+          "generate": "Generate",
+          "cancel": "Cancel",
+          "rules": {
+            "nameRequired": "Please enter key name"
+          }
+        },
+        "showDialog": {
+          "title": "API Key Generated",
+          "warning": "Important",
+          "warningMsg": "Please copy and save the API Key now. It will not be shown again after closing this window!",
+          "copy": "Copy",
+          "close": "I've saved it, close"
+        }
+      },
+      "msg": {
+        "loadFailed": "Failed to load application list",
+        "createSuccess": "Created successfully",
+        "updateSuccess": "Updated successfully",
+        "opFailed": "Operation failed",
+        "deleteConfirm": "Are you sure you want to delete application \"{name}\"? This will also delete all its API Keys.",
+        "deleteTitle": "Confirm Delete",
+        "deleteSuccess": "Deleted successfully",
+        "deleteFailed": "Failed to delete",
+        "keysLoadFailed": "Failed to load API Keys",
+        "keyGenFailed": "Failed to generate key",
+        "keyCopied": "Copied to clipboard",
+        "keyCopyFailed": "Copy failed, please copy manually",
+        "keyRevoked": "Revoked successfully",
+        "keyRevokeFailed": "Failed to revoke",
+        "revokeConfirm": "Are you sure you want to revoke API Key \"{name}\"? It will be invalidated immediately.",
+        "revokeTitle": "Confirm Revoke"
+      }
+    },
+    "log": {
+      "title": "Audit Logs",
+      "exportCsv": "Export CSV",
+      "exportJson": "Export JSON",
+      "refresh": "Refresh",
+      "quickTime": "Quick Time",
+      "quickAll": "All",
+      "quickToday": "Today",
+      "quickYesterday": "Yesterday",
+      "quickWeek": "Last 7 Days",
+      "quickMonth": "Last 30 Days",
+      "timeRange": "Time Range",
+      "rangeSeparator": "to",
+      "startTime": "Start Time",
+      "endTime": "End Time",
+      "module": "Module",
+      "allModules": "All Modules",
+      "allOption": "All",
+      "statusCode": "Status Code",
+      "allStatus": "All Status",
+      "statusSuccess": "Success (2xx)",
+      "statusClientError": "Client Error (4xx)",
+      "statusServerError": "Server Error (5xx)",
+      "httpMethod": "HTTP Method",
+      "username": "Username",
+      "usernamePlaceholder": "Enter username",
+      "ipAddress": "IP Address",
+      "ipPlaceholder": "Enter IP",
+      "query": "Search",
+      "reset": "Reset",
+      "columns": {
+        "id": "ID",
+        "action": "Action",
+        "user": "User",
+        "status": "Status",
+        "duration": "Duration",
+        "ip": "IP",
+        "module": "Module",
+        "time": "Time"
+      },
+      "detail": {
+        "title": "Action Details",
+        "logId": "Log ID",
+        "requestId": "Request ID",
+        "user": "User",
+        "superAdmin": "SuperAdmin",
+        "tenant": "Tenant",
+        "systemOp": "System Operation",
+        "action": "Action",
+        "result": "Result",
+        "resource": "Resource",
+        "source": "Source",
+        "time": "Time",
+        "error": "Error",
+        "noError": "No details",
+        "requestDetail": "Request Details",
+        "noRequest": "No request details",
+        "unauthenticated": "Unauthenticated"
+      },
+      "msg": {
+        "loadFailed": "Failed to load log list",
+        "exportSuccess": "Exported {format} successfully",
+        "exportFailed": "Export failed"
+      }
+    },
+    "cleanup": {
+      "title": "Data Cleanup",
+      "scan": "Scan Garbage Data",
+      "refreshHistory": "Refresh History",
+      "taskInProgress": "{action} task in progress",
+      "taskId": "Task ID: {id}",
+      "taskStatus": "Status: {status}",
+      "scanResult": {
+        "title": "Scan Results",
+        "scanTime": "Scan Time",
+        "scanScope": "Scan Scope",
+        "riskLevel": "Risk Level",
+        "itemsToClean": "Items to Clean",
+        "items": "{count} items"
+      },
+      "meta": {
+        "title": "Meta Module Scan Details",
+        "softDeleted": "Soft Deleted Data",
+        "nodes": "Nodes: {count}",
+        "invalidEngines": "Invalid Engine Data",
+        "engines": "engines",
+        "duplicateFingerprints": "Duplicate Fingerprints",
+        "count": "",
+        "invalidEngineDetail": "Invalid Engine Details",
+        "engineId": "Engine ID",
+        "engineName": "Engine Name",
+        "reason": "Reason",
+        "affectedNodes": "Affected Nodes",
+        "affectedItems": "Affected Items"
+      },
+      "cleanupNote": {
+        "title": "Cleanup Notes",
+        "softDelete": "Soft Delete",
+        "softDeleteDesc": "Mark invalid data as soft-deleted, can be recovered",
+        "hardDelete": "Hard Delete",
+        "hardDeleteDesc": "Permanently delete soft-deleted data, cannot be recovered"
+      },
+      "actions": {
+        "softDelete": "Soft Delete Invalid Data",
+        "hardDelete": "Hard Delete Soft-Deleted Data",
+        "hardDeleteConfirm": "Data will be permanently deleted. Are you sure?",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      },
+      "history": {
+        "title": "Task History",
+        "columns": {
+          "taskId": "Task ID",
+          "actionType": "Action Type",
+          "deleteType": "Delete Type",
+          "status": "Status",
+          "scope": "Scope",
+          "startTime": "Start Time",
+          "actions": "Actions"
+        },
+        "actionScan": "Scan",
+        "actionCleanup": "Cleanup",
+        "softDelete": "Soft Delete",
+        "hardDelete": "Hard Delete",
+        "viewDetail": "View Details"
+      },
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "completed": "Completed",
+        "completedWithErrors": "Completed (with errors)",
+        "failed": "Failed"
+      },
+      "risk": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      },
+      "detail": {
+        "title": "Task Details"
+      },
+      "msg": {
+        "scanCreated": "Scan task created",
+        "scanFailed": "Failed to create scan task: {error}",
+        "cleanupCreated": "Cleanup task created",
+        "cleanupFailed": "Failed to create cleanup task: {error}",
+        "taskFailed": "Task execution failed",
+        "noScanFirst": "Please run a scan first",
+        "detailFailed": "Failed to load task details"
+      }
+    },
+    "tenant": {
+      "title": "Tenant Management",
+      "add": "Add Tenant",
+      "columns": {
+        "id": "ID",
+        "name": "Tenant Name",
+        "description": "Description",
+        "status": "Status",
+        "createdAt": "Created At",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "disabled": "Disabled"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "form": {
+        "name": "Tenant Name",
+        "namePlaceholder": "Enter tenant name",
+        "description": "Description",
+        "descPlaceholder": "Enter tenant description",
+        "adminSection": "Admin Info",
+        "adminUsername": "Admin Username",
+        "adminUsernamePlaceholder": "Enter admin username",
+        "adminPassword": "Admin Password",
+        "adminPasswordPlaceholder": "Enter admin password",
+        "adminEmail": "Admin Email",
+        "adminEmailPlaceholder": "Enter admin email",
+        "adminFullName": "Admin Full Name",
+        "adminFullNamePlaceholder": "Enter admin full name"
+      },
+      "dialog": {
+        "add": "Add Tenant",
+        "edit": "Edit Tenant",
+        "create": "Create",
+        "update": "Update",
+        "cancel": "Cancel"
+      },
+      "rules": {
+        "nameRequired": "Please enter tenant name",
+        "adminUsernameRequired": "Please enter admin username",
+        "adminPasswordRequired": "Please enter admin password",
+        "adminPasswordMin": "Password must be at least 6 characters"
+      },
+      "msg": {
+        "loadFailed": "Failed to load tenant list",
+        "createSuccess": "Tenant created successfully",
+        "createFailed": "Failed to create tenant",
+        "updateSuccess": "Tenant updated successfully",
+        "updateFailed": "Failed to update tenant",
+        "deleteConfirm": "Are you sure you want to delete tenant \"{name}\"? This will also delete all users in this tenant!",
+        "deleteWarning": "Warning",
+        "deleteSuccess": "Tenant deleted successfully",
+        "deleteFailed": "Failed to delete tenant"
+      }
+    }
+  }
+}

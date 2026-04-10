@@ -1,0 +1,20 @@
+[develop.execution.started]
+other = "执行已启动"
+
+[develop.execution.cancelled]
+other = "执行已取消"
+
+[develop.execution.retry_started]
+other = "重试已启动"
+
+[develop.execution.param_exec_started]
+other = "参数化执行已启动"
+
+[develop.execution.logs_not_ready]
+other = "日志功能开发中..."
+
+[develop.item.delete_success]
+other = "删除成功"
+
+[develop.item.use_execute_endpoint]
+other = "请使用 POST /api/develop/items/{id}/execute 执行开发项"

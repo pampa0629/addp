@@ -7,16 +7,16 @@
           size="small"
           @click="handleToggleEdgeMode"
         >
-          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? '退出连线' : '连线模式' }}
+          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? t('develop.workflowCanvas.exitEdgeMode') : t('develop.workflowCanvas.edgeMode') }}
         </el-button>
 
         <el-divider direction="vertical" />
 
         <el-button type="danger" size="small" @click="handleDelete" :disabled="!selectedItem">
-          <el-icon><Delete /></el-icon> 删除{{ selectedItem ? (selectedItem.getType && selectedItem.getType() === 'edge' ? '连线' : '节点') : '' }}
+          <el-icon><Delete /></el-icon> {{ selectedItem ? (selectedItem.getType && selectedItem.getType() === 'edge' ? t('develop.workflowCanvas.deleteEdge') : t('develop.workflowCanvas.deleteNode')) : t('develop.workflowCanvas.delete') }}
         </el-button>
         <el-button type="info" size="small" @click="handleClear">
-          <el-icon><DocumentDelete /></el-icon> 清空
+          <el-icon><DocumentDelete /></el-icon> {{ t('develop.workflowCanvas.clear') }}
         </el-button>
       </div>
 
@@ -25,8 +25,8 @@
           <template #title>
             <span class="tips-text">
               {{ isAddEdgeMode
-                ? '🔗 连线模式：点击源节点的输出端口（底部圆点），再点击目标节点'
-                : '💡 从左侧拖拽算子到画布 | 点击"连线模式"建立连线 | 双击节点配置参数'
+                ? t('develop.workflowCanvas.tipEdgeMode')
+                : t('develop.workflowCanvas.tipNormal')
               }}
             </span>
           </template>
@@ -40,9 +40,12 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
 import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, registerMultiPortNode } from '@addp/common-frontend/dag'
+
+const { t } = useI18n()
 
 const props = defineProps({
   initialWorkflow: {
@@ -134,9 +137,9 @@ function handleNodeClickForEdge(e) {
       edgeSourceNode.value = model.id
       edgeSourcePort.value = clickedPort
       graph.value.setItemState(clickedNode, 'selected', true)
-      ElMessage.info(`已选择输出端口: ${model.label}.${clickedPort}，请点击目标节点`)
+      ElMessage.info(t('develop.workflowCanvas.selectedOutputPort', { label: model.label, port: clickedPort }))
     } else {
-      ElMessage.warning('请先点击源节点的输出端口（底部圆点）')
+      ElMessage.warning(t('develop.workflowCanvas.clickOutputPortFirst'))
     }
   } else {
     const sourceId = edgeSourceNode.value
@@ -151,7 +154,7 @@ function handleNodeClickForEdge(e) {
     }
 
     if (sourceId === targetId) {
-      ElMessage.warning('不能连接到自己')
+      ElMessage.warning(t('develop.workflowCanvas.cannotSelfConnect'))
       clearSource()
       return
     }
@@ -163,13 +166,13 @@ function handleNodeClickForEdge(e) {
       })
 
       if (edgeExists) {
-        ElMessage.warning('该连接已存在')
+        ElMessage.warning(t('develop.workflowCanvas.edgeAlreadyExists'))
         clearSource()
         return
       }
 
       if (hasLoop(sourceId, targetId)) {
-        ElMessage.warning('不能创建环形依赖')
+        ElMessage.warning(t('develop.workflowCanvas.cannotCreateLoop'))
         clearSource()
         return
       }
@@ -192,12 +195,12 @@ function handleNodeClickForEdge(e) {
 
       const sourceNode = graph.value.findById(sourceId)
       if (sourceNode) {
-        ElMessage.success(`已连接: ${sourceNode.getModel().label}.${sourcePort} → ${model.label}`)
+        ElMessage.success(t('develop.workflowCanvas.connected', { source: `${sourceNode.getModel().label}.${sourcePort}`, target: model.label }))
       }
       clearSource()
       emitWorkflow()
     } else {
-      ElMessage.warning('请点击目标节点的输入端口（顶部圆点）或节点本身')
+      ElMessage.warning(t('develop.workflowCanvas.clickInputPort'))
     }
   }
 }
@@ -215,7 +218,7 @@ function handleNodeDoubleClick(e) {
 function handleToggleEdgeMode() {
   toggleAddEdgeMode()
   if (isAddEdgeMode.value) {
-    ElMessage.info('已进入连线模式，请点击源节点的输出端口')
+    ElMessage.info(t('develop.workflowCanvas.enteredEdgeMode'))
   } else {
     // 退出时清除源节点高亮
     if (edgeSourceNode.value) {
@@ -229,7 +232,7 @@ function handleToggleEdgeMode() {
 
 function handleDelete() {
   if (deleteSelected()) {
-    ElMessage.success('已删除')
+    ElMessage.success(t('develop.workflowCanvas.deleted'))
     emitWorkflow()
   }
 }
@@ -238,7 +241,7 @@ function handleClear() {
   clearGraph()
   nodeCounter.value = 0
   emitWorkflow()
-  ElMessage.success('已清空画布')
+  ElMessage.success(t('develop.workflowCanvas.canvasCleared'))
 }
 
 function handleDrop(event) {
@@ -265,7 +268,7 @@ function handleDrop(event) {
   const outputPorts = operatorData.output_ports || [{
     name: 'default',
     type: 'geodataframe',
-    description: '默认输出',
+    description: t('develop.workflowCanvas.defaultOutput'),
     is_default: true
   }]
 
@@ -281,7 +284,7 @@ function handleDrop(event) {
   })
 
   emitWorkflow()
-  ElMessage.success(`已添加算子: ${operatorData.name}`)
+  ElMessage.success(t('develop.workflowCanvas.operatorAdded', { name: operatorData.name }))
 }
 
 function loadWorkflow(workflow) {

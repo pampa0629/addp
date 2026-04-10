@@ -9,78 +9,78 @@
   >
     <!-- 快捷选择和操作按钮 -->
     <div v-if="showPresets" class="schedule-presets">
-      <span class="schedule-presets__label">定时调度</span>
-      <span class="schedule-presets__sublabel">快捷选择:</span>
+      <span class="schedule-presets__label">{{ t('schedule.title') }}</span>
+      <span class="schedule-presets__sublabel">{{ t('schedule.quickSelect') }}</span>
       <el-button
         v-for="preset in effectivePresets"
         :key="preset.key"
         size="small"
         :type="isPresetSelected(preset.key) ? 'primary' : 'default'"
         :disabled="disabled || readonly"
-        :title="preset.description"
+        :title="t(`schedule.presetDesc.${preset.i18nKey}`, preset.description)"
         @click="handlePresetClick(preset.key)"
       >
-        {{ preset.label }}
+        {{ t(`schedule.presetLabel.${preset.i18nKey}`, preset.label) }}
       </el-button>
       <el-button
         size="small"
         :type="isCustomSchedule ? 'primary' : 'default'"
         :disabled="disabled || readonly"
-        title="设置每天、每周或每月的自定义执行时间"
+        :title="t('schedule.customTitle')"
         @click="openDialog"
       >
-        自定义时间
+        {{ t('schedule.custom') }}
       </el-button>
       <el-button
         v-if="modelValue"
         size="small"
         text
         :disabled="disabled || readonly"
-        title="清除当前调度配置,改为手动触发"
+        :title="t('schedule.clearTitle')"
         @click="clearSchedule"
       >
-        清除调度
+        {{ t('schedule.clearSchedule') }}
       </el-button>
     </div>
 
     <!-- 当前配置显示 -->
     <div v-if="showPresets && modelValue" class="schedule-current">
       <el-icon class="schedule-current__icon"><Clock /></el-icon>
-      <span class="schedule-current__label">当前配置:</span>
+      <span class="schedule-current__label">{{ t('schedule.current') }}</span>
       <span class="schedule-current__value">{{ description }}</span>
     </div>
 
     <!-- 自定义配置对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      title="设置定时调度"
+      :title="t('schedule.dialogTitle')"
       width="520px"
     >
       <el-form :model="customForm" label-width="100px">
-        <el-form-item label="调度类型">
+        <el-form-item :label="t('schedule.scheduleType')">
           <el-radio-group v-model="customForm.mode" :disabled="disabled">
-            <el-radio value="daily">每天</el-radio>
-            <el-radio value="weekly">每周</el-radio>
-            <el-radio value="monthly">每月</el-radio>
-            <el-radio v-if="allowCustomCron" value="cron">自定义Cron</el-radio>
+            <el-radio value="daily">{{ t('schedule.mode.daily') }}</el-radio>
+            <el-radio value="weekly">{{ t('schedule.mode.weekly') }}</el-radio>
+            <el-radio value="monthly">{{ t('schedule.mode.monthly') }}</el-radio>
+            <el-radio v-if="allowCustomCron" value="cron">{{ t('schedule.mode.cron') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
         <!-- 每周选择 -->
-        <el-form-item v-if="customForm.mode === 'weekly'" label="执行日">
+        <el-form-item v-if="customForm.mode === 'weekly'" :label="t('schedule.execDay')">
           <el-checkbox-group v-model="customForm.weekDays" :disabled="disabled">
             <el-checkbox
               v-for="day in weeklyOptions"
               :key="day.value"
               :label="day.value"
             >
-              {{ day.label }}
+              {{ t(`schedule.weekday.${day.value}`, day.label) }}
             </el-checkbox>
           </el-checkbox-group>
         </el-form-item>
 
         <!-- 每月选择 -->
-        <el-form-item v-if="customForm.mode === 'monthly'" label="日期">
+        <el-form-item v-if="customForm.mode === 'monthly'" :label="t('schedule.date')">
           <el-input-number
             v-model="customForm.dayOfMonth"
             :min="1"
@@ -88,14 +88,14 @@
             controls-position="right"
             :disabled="disabled"
           />
-          <span class="schedule-dialog__tip">如遇当月无该日期,将在最后一天执行</span>
+          <span class="schedule-dialog__tip">{{ t('schedule.monthlySuffix') }}</span>
         </el-form-item>
 
         <!-- 执行时间 -->
-        <el-form-item v-if="customForm.mode !== 'cron'" label="执行时间">
+        <el-form-item v-if="customForm.mode !== 'cron'" :label="t('schedule.execTime')">
           <el-time-picker
             v-model="customForm.time"
-            placeholder="选择时间"
+            :placeholder="t('schedule.selectTime')"
             format="HH:mm"
             value-format="HH:mm"
             :disabled="disabled"
@@ -103,27 +103,27 @@
         </el-form-item>
 
         <!-- 自定义 Cron 表达式 -->
-        <el-form-item v-if="customForm.mode === 'cron'" label="Cron 表达式">
+        <el-form-item v-if="customForm.mode === 'cron'" :label="t('schedule.cronExpr')">
           <el-input
             v-model="customForm.cronExpr"
-            placeholder="如: */5 * * * * (每5分钟)"
+            :placeholder="t('schedule.cronPlaceholder')"
             :disabled="disabled"
           />
           <div class="schedule-dialog__tip">
-            支持标准 5 字段 Cron 表达式
+            {{ t('schedule.cronTip') }}
             <el-link
               href="https://crontab.guru/"
               target="_blank"
               type="primary"
               :underline="false"
             >
-              在线生成器
+              {{ t('schedule.cronGenerator') }}
             </el-link>
           </div>
         </el-form-item>
 
         <!-- 预览 -->
-        <el-form-item label="说明">
+        <el-form-item :label="t('schedule.preview')">
           <div class="schedule-dialog__preview">
             {{ customPreview }}
           </div>
@@ -131,8 +131,8 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="disabled" @click="handleConfirm">确定</el-button>
+        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="disabled" @click="handleConfirm">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -140,6 +140,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import {
@@ -152,6 +153,8 @@ import {
   describeCron,
   validateCron
 } from '../utils/schedule'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
@@ -198,18 +201,18 @@ const customForm = ref({
 // 当前配置描述
 const description = computed(() => {
   if (!props.modelValue) return ''
-  return describeCron(props.modelValue)
+  return describeCron(props.modelValue, t)
 })
 
 // 自定义配置预览
 const customPreview = computed(() => {
   if (customForm.value.mode === 'cron') {
     if (!customForm.value.cronExpr) {
-      return '请输入 Cron 表达式'
+      return t('schedule.error.enterCron')
     }
-    return describeCron(customForm.value.cronExpr)
+    return describeCron(customForm.value.cronExpr, t)
   }
-  return generateScheduleDescription(customForm.value)
+  return generateScheduleDescription(customForm.value, t)
 })
 
 // 有效的预设列表（支持自定义）
@@ -278,11 +281,11 @@ const handleConfirm = () => {
   if (customForm.value.mode === 'cron') {
     // 验证自定义 Cron 表达式
     if (!customForm.value.cronExpr) {
-      ElMessage.warning('请输入 Cron 表达式')
+      ElMessage.warning(t('schedule.error.enterCron'))
       return
     }
     if (!validateCron(customForm.value.cronExpr)) {
-      ElMessage.warning('Cron 表达式格式无效')
+      ElMessage.warning(t('schedule.error.invalidCron'))
       return
     }
     emit('update:modelValue', customForm.value.cronExpr.trim())
@@ -291,12 +294,12 @@ const handleConfirm = () => {
   }
 
   // 从表单构建调度配置
-  const result = buildScheduleFromForm(customForm.value)
+  const result = buildScheduleFromForm(customForm.value, t)
   if (!result) {
     if (customForm.value.mode === 'weekly') {
-      ElMessage.warning('请至少选择一个执行日')
+      ElMessage.warning(t('schedule.error.selectDay'))
     } else {
-      ElMessage.warning('请选择有效的执行时间')
+      ElMessage.warning(t('schedule.error.selectTime'))
     }
     return
   }

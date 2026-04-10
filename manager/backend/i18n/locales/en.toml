@@ -1,0 +1,11 @@
+[manager.cache.cleared_all]
+other = "All resource caches cleared"
+
+[manager.cache.cleared]
+other = "Resource cache cleared"
+
+[manager.cache.refreshed]
+other = "Resource cache refreshed"
+
+[manager.cache.failed]
+other = "Failed to refresh cache"

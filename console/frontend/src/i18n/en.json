@@ -1,0 +1,249 @@
+{
+  "console": {
+    "title": "All Domain Data Platform",
+    "logout": "Logout",
+    "sessionExpired": "Session expired, please login again",
+    "logoutSuccess": "Logged out successfully",
+    "welcome": {
+      "title": "Welcome to All Domain Data Platform",
+      "subtitle": "Select a module group from the top, or click a card to navigate",
+      "greeting": "Welcome back, {name}",
+      "defaultName": "User"
+    },
+    "home": {
+      "nextSteps": "Suggested Next Steps",
+      "recentVisits": "Recent Visits",
+      "allModules": "All Modules",
+      "start": "Start",
+      "stats": {
+        "engines": "Engines",
+        "datasets": "Datasets",
+        "services": "Services",
+        "runningTasks": "Running Tasks"
+      },
+      "scenarios": {
+        "ingest": {
+          "title": "Ingest Your First Data",
+          "desc": "Configure a data engine and import external data into the platform"
+        },
+        "service": {
+          "title": "Publish a Data Service",
+          "desc": "Expose your datasets as queryable API endpoints"
+        },
+        "develop": {
+          "title": "Start Data Development",
+          "desc": "Use SQL workbench, Notebook, or workflow for data analysis"
+        },
+        "govern": {
+          "title": "Establish Data Standards",
+          "desc": "Define business terms, data elements, and quality rules"
+        },
+        "graph": {
+          "title": "Build a Knowledge Graph",
+          "desc": "Create ontology models and publish knowledge services"
+        },
+        "monitor": {
+          "title": "View Running Status",
+          "desc": "Monitor task executions, view statistics and health status"
+        }
+      }
+    },
+    "sidebar": {
+      "expand": "Expand menu",
+      "collapse": "Collapse menu"
+    },
+    "search": {
+      "placeholder": "Search modules, features...",
+      "noResult": "No results found"
+    },
+    "agent": {
+      "title": "AI Assistant",
+      "fab": "Not sure where to start?"
+    },
+    "login": {
+      "username": "Username",
+      "usernamePlaceholder": "Enter username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "submit": "Login",
+      "loggingIn": "Logging in...",
+      "inputRequired": "Please enter username and password",
+      "success": "Login successful",
+      "failed": "Login failed",
+      "networkError": "Network error, please check if the server is running",
+      "requestFailed": "Request failed ({status})",
+      "unknown": "Unknown error"
+    },
+    "groups": {
+      "dataPrepare": "Data Preparation",
+      "dataGovern": "Data Governance",
+      "devMonitor": "Dev & Monitor",
+      "asset": "Asset Management",
+      "portal": "Asset Portal",
+      "agent": "AI Agent",
+      "graph": "Knowledge Graph",
+      "apiDocs": "API Docs",
+      "system": "System"
+    },
+    "modules": {
+      "portal": {
+        "label": "Data Portal",
+        "desc": "Consumer portal for searching and requesting data assets"
+      },
+      "transfer": {
+        "label": "Data Transfer",
+        "desc": "Data import, export, and scheduled tasks"
+      },
+      "meta": {
+        "label": "Metadata",
+        "desc": "Metadata parsing, data lineage, data catalog"
+      },
+      "manager": {
+        "label": "Data Management",
+        "desc": "Data exploration, catalog organization, data preview"
+      },
+      "standard": {
+        "label": "Data Standards",
+        "desc": "Business domains, glossaries, data elements, code sets"
+      },
+      "modeling": {
+        "label": "Data Modeling",
+        "desc": "DW layers, business entities, logical table design"
+      },
+      "quality": {
+        "label": "Data Quality",
+        "desc": "Rule application, quality checks, execution records"
+      },
+      "develop": {
+        "label": "Data Development",
+        "desc": "SQL workbench, workflow editor, Notebook"
+      },
+      "service": {
+        "label": "Data Services",
+        "desc": "External service registration, OGC services, query services"
+      },
+      "orchestrator": {
+        "label": "Task Orchestration",
+        "desc": "Workflow orchestration, task scheduling, execution management"
+      },
+      "monitor": {
+        "label": "Execution Monitor",
+        "desc": "Task monitoring, statistics, health checks"
+      },
+      "asset": {
+        "label": "Asset Management",
+        "desc": "Asset types, category management, applications & authorizations"
+      },
+      "system": {
+        "label": "System",
+        "desc": "User management, audit logs, engine configuration"
+      },
+      "agent": {
+        "label": "AI Agent",
+        "desc": "Natural language interaction, data management, intelligent analysis"
+      },
+      "graph": {
+        "label": "Knowledge Graph",
+        "desc": "Ontology modeling, graph construction, graph exploration"
+      }
+    },
+    "menus": {
+      "transfer": {
+        "label": "Data Transfer",
+        "tasks": "Transfer Tasks",
+        "executions": "Executions",
+        "localEngines": "Local Resources"
+      },
+      "meta": {
+        "label": "Metadata",
+        "scan": "Metadata Scan",
+        "tasks": "Task Monitor"
+      },
+      "manager": {
+        "label": "Data Management",
+        "dataExplorer": "Data Explorer",
+        "dataRetrieval": "Data Retrieval",
+        "vectorizationTasks": "Vectorization Tasks"
+      },
+      "standard": {
+        "label": "Data Standards",
+        "domains": "Business Domains",
+        "glossaries": "Glossaries",
+        "elements": "Data Elements",
+        "codeSets": "Code Sets",
+        "units": "Units of Measure",
+        "classifications": "Classifications",
+        "dimensionHierarchies": "Dimension Hierarchies",
+        "metrics": "Metrics",
+        "documents": "Standard Documents"
+      },
+      "modeling": {
+        "label": "Data Modeling",
+        "dwLayers": "DW Layers",
+        "entities": "Business Entities",
+        "erDiagram": "ER Diagram",
+        "logicalTables": "Logical Tables",
+        "starSchema": "Star Schema"
+      },
+      "quality": {
+        "label": "Data Quality",
+        "ruleApplications": "Rule Applications",
+        "checkTasks": "Check Tasks",
+        "executions": "Executions",
+        "issues": "Issues"
+      },
+      "develop": {
+        "label": "Data Development",
+        "sql": "SQL Workbench",
+        "notebook": "Notebook",
+        "workflow": "Workflow Editor",
+        "tasks": "Task Management",
+        "executions": "Execution Monitor"
+      },
+      "service": {
+        "label": "Data Services",
+        "queryServices": "Query Services",
+        "tile": "Tile Services",
+        "graphServices": "Graph Services",
+        "services": "Service Registry",
+        "catalog": "Service Catalog"
+      },
+      "orchestrator": {
+        "label": "Task Orchestration",
+        "orchestrations": "Orchestrations",
+        "executions": "Executions"
+      },
+      "monitor": {
+        "label": "Execution Monitor",
+        "dashboard": "Dashboard",
+        "executions": "Executions"
+      },
+      "asset": {
+        "label": "Asset Management",
+        "typeDefinitions": "Asset Types",
+        "categories": "Categories",
+        "assets": "Assets",
+        "applications": "Applications",
+        "dashboard": "Dashboard"
+      },
+      "agent": {
+        "label": "AI Agent"
+      },
+      "graph": {
+        "label": "Knowledge Graph",
+        "ontologies": "Ontologies",
+        "graphs": "Graphs",
+        "analysis": "Graph Analysis",
+        "knowledgeService": "Knowledge Service"
+      },
+      "system": {
+        "label": "System",
+        "users": "Users",
+        "engines": "Engines",
+        "applications": "Applications",
+        "logs": "Audit Logs",
+        "cleanup": "Cleanup"
+      }
+    }
+  }
+}

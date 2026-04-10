@@ -2,13 +2,13 @@
   <div class="field-mapping-editor">
     <el-alert type="info" :closable="false" style="margin-bottom: 20px">
       <template #title>
-        配置源字段到目标字段的映射关系
+        {{ t('transfer.fieldMapping.configTitle') }}
       </template>
       <div>
-        <p>系统已自动进行同名匹配。您可以手动调整映射关系或设置默认值。</p>
+        <p>{{ t('transfer.fieldMapping.autoMatchDesc') }}</p>
         <p v-if="autoCreateMode" style="color: var(--el-color-success); margin-top: 5px;">
           <el-icon><Check /></el-icon>
-          目标为对象存储，将自动创建目标字段（所有源字段都会导出到文件）
+          {{ t('transfer.fieldMapping.objectStorageHint') }}
         </p>
       </div>
     </el-alert>
@@ -16,36 +16,36 @@
     <div class="toolbar">
       <el-button type="primary" @click="handleAutoMatch">
         <el-icon><MagicStick /></el-icon>
-        自动匹配同名字段
+        {{ t('transfer.fieldMapping.autoMatch') }}
       </el-button>
       <el-button @click="handleAddMapping">
         <el-icon><Plus /></el-icon>
-        添加映射
+        {{ t('transfer.fieldMapping.addMapping') }}
       </el-button>
       <el-button @click="handleClearAll" :disabled="mappings.length === 0">
         <el-icon><Delete /></el-icon>
-        清空所有
+        {{ t('transfer.fieldMapping.clearAll') }}
       </el-button>
 
       <div style="flex: 1"></div>
 
       <el-button @click="fetchSourceFields" :loading="fetchingSource">
         <el-icon><Refresh /></el-icon>
-        刷新源字段
+        {{ t('transfer.fieldMapping.refreshSource') }}
       </el-button>
       <el-button @click="fetchTargetFields" :loading="fetchingTarget">
         <el-icon><Refresh /></el-icon>
-        刷新目标字段
+        {{ t('transfer.fieldMapping.refreshTarget') }}
       </el-button>
     </div>
 
     <div class="mapping-table">
       <el-table :data="mappings" border stripe>
-        <el-table-column type="index" label="序号" width="60" />
+        <el-table-column type="index" :label="t('transfer.fieldMapping.index')" width="60" />
 
-        <el-table-column label="源字段" min-width="180">
+        <el-table-column :label="t('transfer.fieldMapping.sourceField')" min-width="180">
           <template #default="{ row, $index }">
-            <el-select v-model="row.source_field" placeholder="选择源字段" filterable allow-create
+            <el-select v-model="row.source_field" :placeholder="t('transfer.fieldMapping.selectSourceField')" filterable allow-create
               @change="handleSourceFieldChange(row, $index)" style="width: 100%">
               <el-option v-for="field in sourceFields" :key="field" :label="field" :value="field" />
             </el-select>
@@ -58,44 +58,44 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="目标字段" min-width="180">
+        <el-table-column :label="t('transfer.fieldMapping.targetField')" min-width="180">
           <template #default="{ row }">
-            <el-select v-model="row.target_field" placeholder="选择目标字段" filterable allow-create
+            <el-select v-model="row.target_field" :placeholder="t('transfer.fieldMapping.selectTargetField')" filterable allow-create
               style="width: 100%">
               <el-option v-for="field in targetFields" :key="field" :label="field" :value="field" />
             </el-select>
           </template>
         </el-table-column>
 
-        <el-table-column label="字段类型" width="140">
+        <el-table-column :label="t('transfer.fieldMapping.fieldType')" width="140">
           <template #default="{ row }">
-            <el-select v-model="row.field_type" placeholder="类型" size="small">
-              <el-option label="字符串" value="string" />
-              <el-option label="整数" value="integer" />
-              <el-option label="单精度浮点" value="float" />
-              <el-option label="双精度浮点" value="double" />
-              <el-option label="布尔" value="boolean" />
-              <el-option label="日期" value="date" />
-              <el-option label="时间戳" value="timestamp" />
-              <el-option label="JSON" value="json" />
-              <el-option label="空间" value="geometry" />
+            <el-select v-model="row.field_type" :placeholder="t('transfer.fieldMapping.fieldType')" size="small">
+              <el-option :label="t('transfer.fieldMapping.typeString')" value="string" />
+              <el-option :label="t('transfer.fieldMapping.typeInteger')" value="integer" />
+              <el-option :label="t('transfer.fieldMapping.typeFloat')" value="float" />
+              <el-option :label="t('transfer.fieldMapping.typeDouble')" value="double" />
+              <el-option :label="t('transfer.fieldMapping.typeBoolean')" value="boolean" />
+              <el-option :label="t('transfer.fieldMapping.typeDate')" value="date" />
+              <el-option :label="t('transfer.fieldMapping.typeTimestamp')" value="timestamp" />
+              <el-option :label="t('transfer.fieldMapping.typeJSON')" value="json" />
+              <el-option :label="t('transfer.fieldMapping.typeGeometry')" value="geometry" />
             </el-select>
           </template>
         </el-table-column>
 
-        <el-table-column label="默认值" width="120">
+        <el-table-column :label="t('transfer.fieldMapping.defaultValue')" width="120">
           <template #default="{ row }">
-            <el-input v-model="row.default_value" placeholder="默认值" size="small" />
+            <el-input v-model="row.default_value" :placeholder="t('transfer.fieldMapping.defaultValuePlaceholder')" size="small" />
           </template>
         </el-table-column>
 
-        <el-table-column label="可空" width="80" align="center">
+        <el-table-column :label="t('transfer.fieldMapping.nullable')" width="80" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.nullable" />
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="80" fixed="right">
+        <el-table-column :label="t('transfer.fieldMapping.actions')" width="80" fixed="right">
           <template #default="{ $index }">
             <el-button type="danger" size="small" link @click="handleDeleteMapping($index)">
               <el-icon><Delete /></el-icon>
@@ -105,19 +105,19 @@
       </el-table>
 
       <div v-if="mappings.length === 0" class="empty-state">
-        <el-empty description="暂无字段映射">
+        <el-empty :description="t('transfer.fieldMapping.noMappings')">
           <el-button type="primary" @click="handleAutoMatch" v-if="sourceFields.length > 0 && targetFields.length > 0">
-            自动匹配字段
+            {{ t('transfer.fieldMapping.autoMatch') }}
           </el-button>
-          <el-button @click="handleAddMapping" v-else>添加映射</el-button>
+          <el-button @click="handleAddMapping" v-else>{{ t('transfer.fieldMapping.addMapping') }}</el-button>
         </el-empty>
       </div>
     </div>
 
     <div class="footer-info">
-      <el-tag>源字段数: {{ sourceFields.length }}</el-tag>
-      <el-tag type="success" style="margin-left: 10px">目标字段数: {{ targetFields.length }}</el-tag>
-      <el-tag type="warning" style="margin-left: 10px">已映射: {{ mappings.length }}</el-tag>
+      <el-tag>{{ t('transfer.fieldMapping.sourceFieldCount', { count: sourceFields.length }) }}</el-tag>
+      <el-tag type="success" style="margin-left: 10px">{{ t('transfer.fieldMapping.targetFieldCount', { count: targetFields.length }) }}</el-tag>
+      <el-tag type="warning" style="margin-left: 10px">{{ t('transfer.fieldMapping.mappedCount', { count: mappings.length }) }}</el-tag>
     </div>
   </div>
 </template>
@@ -125,7 +125,10 @@
 <script setup>
 import { ref, watch, defineProps, defineEmits } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { MagicStick, Plus, Delete, Refresh, Right, Check } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   sourceFields: {
@@ -173,11 +176,11 @@ watch(mappings, (newVal) => {
 // 自动匹配同名字段
 const handleAutoMatch = () => {
   if (props.sourceFields.length === 0) {
-    ElMessage.warning('请先获取源字段列表')
+    ElMessage.warning(t('transfer.fieldMapping.getSourceFirst'))
     return
   }
   if (props.targetFields.length === 0) {
-    ElMessage.warning('请先获取目标字段列表')
+    ElMessage.warning(t('transfer.fieldMapping.getTargetFirst'))
     return
   }
 
@@ -231,16 +234,16 @@ const handleAutoMatch = () => {
   })
 
   if (newMappings.length === 0) {
-    ElMessage.warning('未找到可匹配的字段')
+    ElMessage.warning(t('transfer.fieldMapping.noMatchFound'))
     return
   }
 
   mappings.value = newMappings
   const geometryCount = newMappings.filter(m => m.field_type === 'geometry').length
   if (geometryCount > 0) {
-    ElMessage.success(`成功匹配 ${newMappings.length} 个字段（包含 ${geometryCount} 个空间字段）`)
+    ElMessage.success(t('transfer.fieldMapping.autoMatchSuccess', { count: newMappings.length, spatial: geometryCount }))
   } else {
-    ElMessage.success(`成功匹配 ${newMappings.length} 个字段`)
+    ElMessage.success(t('transfer.fieldMapping.autoMatchSuccessSimple', { count: newMappings.length }))
   }
 }
 
@@ -265,14 +268,14 @@ const handleDeleteMapping = (index) => {
 const handleClearAll = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要清空所有字段映射吗？',
-      '确认删除',
+      t('transfer.fieldMapping.clearConfirm'),
+      t('transfer.fieldMapping.clearConfirmTitle'),
       {
         type: 'warning'
       }
     )
     mappings.value = []
-    ElMessage.success('已清空所有映射')
+    ElMessage.success(t('transfer.fieldMapping.clearSuccess'))
   } catch {
     // 取消操作
   }
@@ -295,7 +298,7 @@ const handleSourceFieldChange = (row, index) => {
 
     if (match) {
       row.target_field = match
-      ElMessage.success(`自动匹配到目标字段: ${match}`)
+      ElMessage.success(t('transfer.fieldMapping.autoMatchTarget', { field: match }))
     }
   }
 }
@@ -305,8 +308,6 @@ const fetchSourceFields = async () => {
   fetchingSource.value = true
   try {
     emit('fetch-fields', 'source')
-    // 实际应该调用后端 API
-    // 这里由父组件处理
   } finally {
     fetchingSource.value = false
   }

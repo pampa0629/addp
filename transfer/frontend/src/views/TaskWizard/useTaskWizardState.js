@@ -4,10 +4,12 @@
  */
 
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { taskAPI } from '@/api/tasks'
 
 export function useTaskWizardState() {
+  const { t } = useI18n()
   // ===== 状态定义 =====
   const currentStep = ref(0)
   const taskName = ref('')
@@ -228,10 +230,10 @@ export function useTaskWizardState() {
     try {
       // 创建任务
       await taskAPI.create(taskConfig.value)
-      ElMessage.success('任务创建成功')
+      ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
       return true
     } catch (error) {
-      const message = error.response?.data?.message || error.message || '任务创建失败'
+      const message = error.response?.data?.message || error.message || t('transfer.taskWizard.taskCreateFailed')
       ElMessage.error(message)
       return false
     }
@@ -308,10 +310,10 @@ export function useTaskWizardState() {
     try {
       // 更新任务
       await taskAPI.update(taskId, taskConfig.value)
-      ElMessage.success('任务更新成功')
+      ElMessage.success(t('transfer.taskWizard.taskUpdateSuccess'))
       return true
     } catch (error) {
-      const message = error.response?.data?.message || error.message || '任务更新失败'
+      const message = error.response?.data?.message || error.message || t('transfer.taskWizard.taskUpdateFailed')
       ElMessage.error(message)
       return false
     }

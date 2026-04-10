@@ -3,10 +3,10 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>数据传输任务</span>
+          <span>{{ t('transfer.taskList.title') }}</span>
           <el-button type="primary" @click="handleCreate">
             <el-icon><Plus /></el-icon>
-            创建任务
+            {{ t('transfer.taskList.createTask') }}
           </el-button>
         </div>
       </template>
@@ -15,27 +15,27 @@
       <div class="stats-row">
         <el-row :gutter="16">
           <el-col :span="4">
-            <el-statistic title="总任务数" :value="stats.total_tasks || 0" />
+            <el-statistic :title="t('transfer.taskList.totalTasks')" :value="stats.total_tasks || 0" />
           </el-col>
           <el-col :span="5">
-            <el-statistic title="未执行" :value="stats.not_executed_tasks || 0" />
+            <el-statistic :title="t('transfer.taskList.notExecuted')" :value="stats.not_executed_tasks || 0" />
           </el-col>
           <el-col :span="5">
-            <el-statistic title="执行中" :value="stats.last_running_tasks || 0">
+            <el-statistic :title="t('transfer.taskList.running')" :value="stats.last_running_tasks || 0">
               <template #prefix>
                 <el-icon color="var(--el-color-primary)"><Loading /></el-icon>
               </template>
             </el-statistic>
           </el-col>
           <el-col :span="5">
-            <el-statistic title="成功" :value="stats.last_success_tasks || 0">
+            <el-statistic :title="t('transfer.taskList.success')" :value="stats.last_success_tasks || 0">
               <template #prefix>
                 <el-icon color="var(--el-color-success)"><SuccessFilled /></el-icon>
               </template>
             </el-statistic>
           </el-col>
           <el-col :span="5">
-            <el-statistic title="失败" :value="stats.last_failed_tasks || 0">
+            <el-statistic :title="t('transfer.taskList.failed')" :value="stats.last_failed_tasks || 0">
               <template #prefix>
                 <el-icon color="var(--el-color-danger)"><CircleCloseFilled /></el-icon>
               </template>
@@ -47,18 +47,18 @@
       <!-- 搜索栏 -->
       <div class="search-bar">
         <el-form :inline="true" :model="searchForm">
-          <el-form-item label="任务名称">
-            <el-input v-model="searchForm.name" placeholder="请输入任务名称" clearable />
+          <el-form-item :label="t('transfer.taskList.taskName')">
+            <el-input v-model="searchForm.name" :placeholder="t('transfer.taskList.taskNamePlaceholder')" clearable />
           </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择" clearable class="search-select">
-              <el-option label="空闲" value="idle" />
-              <el-option label="执行中" value="running" />
+          <el-form-item :label="t('transfer.taskList.status')">
+            <el-select v-model="searchForm.status" :placeholder="t('transfer.taskList.statusPlaceholder')" clearable class="search-select">
+              <el-option :label="t('transfer.taskList.idle')" value="idle" />
+              <el-option :label="t('transfer.taskList.running')" value="running" />
             </el-select>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="handleSearch">查询</el-button>
-            <el-button @click="handleReset">重置</el-button>
+            <el-button type="primary" @click="handleSearch">{{ t('transfer.taskList.search') }}</el-button>
+            <el-button @click="handleReset">{{ t('transfer.taskList.reset') }}</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -66,50 +66,50 @@
       <!-- 任务表格 -->
       <el-table :data="tasks" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="任务名称" min-width="200" />
-        <el-table-column prop="status" label="状态" width="110">
+        <el-table-column prop="name" :label="t('transfer.taskList.name')" min-width="200" />
+        <el-table-column prop="status" :label="t('transfer.taskList.status')" width="110">
           <template #default="{ row }">
             <el-tag :type="getTaskStatusTagType(row)">
               {{ getTaskStatusLabel(row) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="schedule" label="调度" min-width="200">
+        <el-table-column prop="schedule" :label="t('transfer.taskList.schedule')" min-width="200">
           <template #default="{ row }">
             {{ formatSchedule(row.schedule) }}
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
+        <el-table-column prop="created_at" :label="t('transfer.taskList.createdAt')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="360" fixed="right">
+        <el-table-column :label="t('transfer.taskList.actions')" width="360" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="handleDetail(row.id)">详情</el-button>
+            <el-button size="small" @click="handleDetail(row.id)">{{ t('transfer.taskList.detail') }}</el-button>
             <template v-if="isManualTask(row)">
               <el-button size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
-                执行
+                {{ t('transfer.taskList.execute') }}
               </el-button>
               <el-button size="small" type="warning" @click="handleStop(row)" :disabled="!isRunning(row)">
-                停止
+                {{ t('transfer.taskList.stop') }}
               </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="!canDeleteManual(row)">
-                删除
+                {{ t('transfer.taskList.delete') }}
               </el-button>
             </template>
             <template v-else>
               <el-button size="small" type="primary" @click="handleResume(row)" :disabled="!canStartSchedule(row)">
-                启动
+                {{ t('transfer.taskList.start') }}
               </el-button>
               <el-button size="small" type="warning" @click="handlePause(row)" :disabled="!canPauseSchedule(row)">
-                暂停
+                {{ t('transfer.taskList.pause') }}
               </el-button>
               <el-button size="small" @click="handleExecute(row)" :disabled="isRunning(row)">
-                单次执行
+                {{ t('transfer.taskList.runOnce') }}
               </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="isRunning(row)">
-                删除
+                {{ t('transfer.taskList.delete') }}
               </el-button>
             </template>
           </template>
@@ -135,6 +135,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
@@ -142,6 +143,7 @@ import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const loading = ref(false)
 const tasks = ref([])
@@ -226,7 +228,7 @@ const handleDetail = (id) => {
 const handleExecute = async (task) => {
   try {
     await taskAPI.start(task.id)
-    const message = isManualTask(task) ? '任务执行已提交' : '单次执行已提交'
+    const message = isManualTask(task) ? t('transfer.taskList.executeSubmitted') : t('transfer.taskList.runOnceSubmitted')
     ElMessage.success(message)
     await loadTasks()
     await loadStatistics()
@@ -238,13 +240,13 @@ const handleExecute = async (task) => {
 // 停止手动任务
 const handleStop = async (task) => {
   try {
-    await ElMessageBox.confirm('确定要停止该任务吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('transfer.taskList.stopConfirm'), t('transfer.taskList.hint'), {
+      confirmButtonText: t('transfer.taskList.confirm'),
+      cancelButtonText: t('transfer.taskList.cancel'),
       type: 'warning'
     })
     await taskAPI.stop(task.id)
-    ElMessage.success('任务已停止')
+    ElMessage.success(t('transfer.taskList.stopped'))
     await loadTasks()
     await loadStatistics()
   } catch (error) {
@@ -257,13 +259,13 @@ const handleStop = async (task) => {
 // 暂停定时任务
 const handlePause = async (task) => {
   try {
-    await ElMessageBox.confirm('确定要暂停该定时任务吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('transfer.taskList.pauseConfirm'), t('transfer.taskList.hint'), {
+      confirmButtonText: t('transfer.taskList.confirm'),
+      cancelButtonText: t('transfer.taskList.cancel'),
       type: 'warning'
     })
     await taskAPI.pause(task.id)
-    ElMessage.success('任务已暂停')
+    ElMessage.success(t('transfer.taskList.paused'))
     await loadTasks()
     await loadStatistics()
   } catch (error) {
@@ -277,7 +279,7 @@ const handlePause = async (task) => {
 const handleResume = async (task) => {
   try {
     await taskAPI.resume(task.id)
-    ElMessage.success('任务已启用')
+    ElMessage.success(t('transfer.taskList.resumed'))
     await loadTasks()
     await loadStatistics()
   } catch (error) {
@@ -288,13 +290,13 @@ const handleResume = async (task) => {
 // 删除任务
 const handleDelete = async (task) => {
   try {
-    await ElMessageBox.confirm('确定要删除该任务吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('transfer.taskList.deleteConfirm'), t('transfer.taskList.hint'), {
+      confirmButtonText: t('transfer.taskList.confirm'),
+      cancelButtonText: t('transfer.taskList.cancel'),
       type: 'warning'
     })
     await taskAPI.delete(task.id)
-    ElMessage.success('任务已删除')
+    ElMessage.success(t('transfer.taskList.deleted'))
     await loadTasks()
     await loadStatistics()
   } catch (error) {

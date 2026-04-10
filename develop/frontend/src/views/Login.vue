@@ -2,14 +2,14 @@
   <div class="login-container">
     <el-card class="login-card">
       <template #header>
-        <h2>数据开发 - 登录</h2>
+        <h2>{{ t('develop.login.title') }}</h2>
       </template>
 
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin">
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="用户名"
+            :placeholder="t('develop.login.usernamePlaceholder')"
             prefix-icon="User"
             size="large"
           />
@@ -19,7 +19,7 @@
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="密码"
+            :placeholder="t('develop.login.passwordPlaceholder')"
             prefix-icon="Lock"
             size="large"
             @keyup.enter="handleLogin"
@@ -34,7 +34,7 @@
             @click="handleLogin"
             style="width: 100%"
           >
-            登录
+            {{ t('develop.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -55,7 +55,9 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -69,8 +71,8 @@ const form = ref({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ required: true, message: t('develop.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('develop.login.passwordRequired'), trigger: 'blur' }]
 }
 
 const handleLogin = async () => {
@@ -84,7 +86,7 @@ const handleLogin = async () => {
 
     try {
       await authStore.login(form.value.username, form.value.password)
-      ElMessage.success('登录成功')
+      ElMessage.success(t('develop.login.success'))
 
       // 优先跳转到 redirect 参数指定的页面
       const redirect = route.query.redirect || '/sql'
@@ -95,13 +97,13 @@ const handleLogin = async () => {
       // 区分登录失败和跳转失败
       if (err.response) {
         // API 请求失败
-        error.value = err.response?.data?.error || '登录失败，请检查用户名和密码'
+        error.value = err.response?.data?.error || t('develop.login.failed')
       } else if (err.name === 'NavigationDuplicated') {
         // 路由跳转重复（可忽略）
         console.warn('[Login] Navigation duplicated, already at target page')
       } else {
         // 其他错误（可能是路由守卫拒绝）
-        error.value = '登录后跳转失败，请刷新页面重试'
+        error.value = t('develop.login.redirectFailed')
         console.error('[Login] Unexpected error:', err)
       }
     } finally {

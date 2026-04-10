@@ -5,18 +5,18 @@
       <div class="header-left">
         <el-button text @click="$router.back()">
           <el-icon><ArrowLeft /></el-icon>
-          返回
+          {{ t('model.common.back') }}
         </el-button>
-        <span class="table-name">{{ table.name || '加载中...' }}</span>
+        <span class="table-name">{{ table.name || t('model.common.loading') }}</span>
         <el-tag :type="statusTagType(table.status)" size="small">
           {{ statusLabel(table.status) }}
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button type="success" @click="handlePreviewDDL">
           <el-icon><View /></el-icon>
-          预览 DDL
+          {{ t('model.logical_table.preview_ddl') }}
         </el-button>
       </div>
     </div>
@@ -25,37 +25,37 @@
       <!-- 基本信息 -->
       <el-col :span="24">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">基本信息</span></template>
+          <template #header><span class="card-title">{{ t('model.logical_table.basic_info') }}</span></template>
           <el-form :model="form" label-width="100px">
             <el-row :gutter="16">
               <el-col :span="12">
-                <el-form-item label="逻辑表名">
+                <el-form-item :label="t('model.logical_table.name')">
                   <el-input v-model="form.name" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="物理表名">
+                <el-form-item :label="t('model.logical_table.code')">
                   <el-input :value="table.code" disabled />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="业务域">
+                <el-form-item :label="t('model.entity.domain')">
                   <el-select v-model="form.domain_id" clearable style="width:100%">
                     <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="表类型">
+                <el-form-item :label="t('model.logical_table.table_type')">
                   <el-select v-model="form.table_type" style="width:100%">
-                    <el-option label="实体表 (entity)" value="entity" />
-                    <el-option label="事实表 (fact)" value="fact" />
-                    <el-option label="维度表 (dimension)" value="dimension" />
+                    <el-option :label="t('model.logical_table.type_entity')" value="entity" />
+                    <el-option :label="t('model.logical_table.type_fact')" value="fact" />
+                    <el-option :label="t('model.logical_table.type_dimension')" value="dimension" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="数仓分层">
+                <el-form-item :label="t('model.logical_table.layer')">
                   <el-select v-model="form.layer" clearable style="width:100%">
                     <el-option label="ODS" value="ods" />
                     <el-option label="DWD" value="dwd" />
@@ -66,28 +66,28 @@
               </el-col>
               <!-- 事实表专属：粒度声明 -->
               <el-col v-if="form.table_type === 'fact'" :span="24">
-                <el-form-item label="粒度声明">
+                <el-form-item :label="t('model.logical_table.grain_description')">
                   <el-input
                     v-model="form.grain_description"
                     type="textarea"
                     :rows="2"
-                    placeholder="描述每行记录代表什么，如：每行代表一笔支付事务"
+                    :placeholder="t('model.logical_table.grain_placeholder')"
                   />
                 </el-form-item>
               </el-col>
               <!-- 维度表专属：SCD 类型 -->
               <el-col v-if="form.table_type === 'dimension'" :span="8">
-                <el-form-item label="SCD 类型">
+                <el-form-item :label="t('model.logical_table.scd_type')">
                   <el-select v-model="form.scd_type" style="width:100%">
-                    <el-option label="0 - 静态（不变化）" :value="0" />
-                    <el-option label="1 - 覆盖（无历史）" :value="1" />
-                    <el-option label="2 - 拉链（保留历史）" :value="2" />
-                    <el-option label="3 - 混合（部分历史）" :value="3" />
+                    <el-option :label="t('model.logical_table.scd_0')" :value="0" />
+                    <el-option :label="t('model.logical_table.scd_1')" :value="1" />
+                    <el-option :label="t('model.logical_table.scd_2')" :value="2" />
+                    <el-option :label="t('model.logical_table.scd_3')" :value="3" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="24">
-                <el-form-item label="描述">
+                <el-form-item :label="t('model.entity.description')">
                   <el-input v-model="form.description" type="textarea" :rows="2" />
                 </el-form-item>
               </el-col>
@@ -101,46 +101,46 @@
         <el-card shadow="never">
           <template #header>
             <div class="card-header-with-action">
-              <span class="card-title">字段定义</span>
+              <span class="card-title">{{ t('model.field.title') }}</span>
               <el-button type="primary" size="small" @click="openFieldDialog()">
                 <el-icon><Plus /></el-icon>
-                添加字段
+                {{ t('model.field.add') }}
               </el-button>
             </div>
           </template>
 
           <el-table :data="fields" v-loading="fieldLoading" stripe>
-            <el-table-column label="序号" type="index" width="60" />
-            <el-table-column label="字段名" prop="name" min-width="120" />
-            <el-table-column label="物理列名" prop="column_name" min-width="140" />
-            <el-table-column label="数据类型" prop="data_type" width="110">
+            <el-table-column :label="t('model.field.index')" type="index" width="60" />
+            <el-table-column :label="t('model.field.name')" prop="name" min-width="120" />
+            <el-table-column :label="t('model.field.column_name')" prop="column_name" min-width="140" />
+            <el-table-column :label="t('model.field.data_type')" prop="data_type" width="110">
               <template #default="{ row }">
                 <el-tag type="info" size="small">
                   {{ row.data_type.toUpperCase() }}{{ row.length ? `(${row.length})` : '' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="字段角色" width="130">
+            <el-table-column :label="t('model.field.field_role')" width="130">
               <template #default="{ row }">
                 <el-tag :type="fieldRoleTagType(row.field_role)" size="small">
                   {{ fieldRoleLabel(row.field_role) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="约束" width="140">
+            <el-table-column :label="t('model.field.constraints')" width="140">
               <template #default="{ row }">
                 <el-tag v-if="row.is_pk" type="warning" size="small">PK</el-tag>
-                <el-tag v-if="row.is_partition" type="success" size="small">分区</el-tag>
+                <el-tag v-if="row.is_partition" type="success" size="small">{{ t('model.field.is_partition') }}</el-tag>
                 <el-tag v-if="!row.nullable" type="danger" size="small">NOT NULL</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="描述" prop="description" show-overflow-tooltip />
-            <el-table-column label="操作" width="130" fixed="right">
+            <el-table-column :label="t('model.field.description')" prop="description" show-overflow-tooltip />
+            <el-table-column :label="t('model.field.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openFieldDialog(row)">编辑</el-button>
-                <el-popconfirm title="确定删除该字段吗？" @confirm="deleteField(row.id)">
+                <el-button link type="primary" @click="openFieldDialog(row)">{{ t('model.common.edit') }}</el-button>
+                <el-popconfirm :title="t('model.field.delete_confirm')" @confirm="deleteField(row.id)">
                   <template #reference>
-                    <el-button link type="danger">删除</el-button>
+                    <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -154,32 +154,32 @@
         <el-card shadow="never">
           <template #header>
             <div class="card-header-with-action">
-              <span class="card-title">关联指标</span>
+              <span class="card-title">{{ t('model.metric.title') }}</span>
               <el-button type="primary" size="small" @click="openMetricDialog">
                 <el-icon><Plus /></el-icon>
-                关联指标
+                {{ t('model.metric.add') }}
               </el-button>
             </div>
           </template>
           <el-table :data="metrics" v-loading="metricLoading" stripe>
-            <el-table-column label="指标 ID" prop="metric_id" width="90" />
-            <el-table-column label="指标名称" min-width="160">
+            <el-table-column :label="t('model.metric.metric_id')" prop="metric_id" width="90" />
+            <el-table-column :label="t('model.metric.metric_name')" min-width="160">
               <template #default="{ row }">
                 {{ metricNameMap[row.metric_id] || `指标#${row.metric_id}` }}
               </template>
             </el-table-column>
-            <el-table-column label="计算字段" width="160">
+            <el-table-column :label="t('model.metric.calc_field')" width="160">
               <template #default="{ row }">
                 <span v-if="row.field_id">{{ fieldNameMap[row.field_id] || `字段#${row.field_id}` }}</span>
                 <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>
-            <el-table-column label="备注" prop="note" show-overflow-tooltip />
-            <el-table-column label="操作" width="80" fixed="right">
+            <el-table-column :label="t('model.metric.note')" prop="note" show-overflow-tooltip />
+            <el-table-column :label="t('model.metric.actions')" width="80" fixed="right">
               <template #default="{ row }">
-                <el-popconfirm title="确定解除关联？" @confirm="removeMetric(row.id)">
+                <el-popconfirm :title="t('model.metric.remove_confirm')" @confirm="removeMetric(row.id)">
                   <template #reference>
-                    <el-button link type="danger">解除</el-button>
+                    <el-button link type="danger">{{ t('model.metric.remove') }}</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -192,29 +192,29 @@
       <el-col :span="24" style="margin-top:16px">
         <el-card shadow="never">
           <template #header>
-            <span class="card-title">物化配置</span>
+            <span class="card-title">{{ t('model.materialization.title') }}</span>
           </template>
           <el-form :model="materializationForm" label-width="110px">
             <el-row :gutter="16">
               <el-col :span="8">
-                <el-form-item label="Schema 名">
-                  <el-input v-model="materializationForm.schema_name" placeholder="默认 public" />
+                <el-form-item :label="t('model.materialization.schema_name')">
+                  <el-input v-model="materializationForm.schema_name" :placeholder="t('model.materialization.schema_placeholder')" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="物理表名">
-                  <el-input v-model="materializationForm.table_name" placeholder="默认使用 code" />
+                <el-form-item :label="t('model.materialization.table_name')">
+                  <el-input v-model="materializationForm.table_name" :placeholder="t('model.materialization.table_placeholder')" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="分区字段">
+                <el-form-item :label="t('model.materialization.partition_by')">
                   <el-select v-model="materializationForm.partition_by" placeholder="可选" clearable style="width:100%">
                     <el-option v-for="f in fields" :key="f.id" :label="f.column_name" :value="f.column_name" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="分区类型">
+                <el-form-item :label="t('model.materialization.partition_type')">
                   <el-select v-model="materializationForm.partition_type" placeholder="RANGE" style="width:100%">
                     <el-option label="RANGE" value="range" />
                     <el-option label="LIST" value="list" />
@@ -223,8 +223,8 @@
                 </el-form-item>
               </el-col>
               <el-col :span="16">
-                <el-form-item label="额外 SQL 选项">
-                  <el-input v-model="materializationForm.extra_options" placeholder="如：WITH (autovacuum_enabled = true)" />
+                <el-form-item :label="t('model.materialization.extra_options')">
+                  <el-input v-model="materializationForm.extra_options" :placeholder="t('model.materialization.extra_placeholder')" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -236,19 +236,19 @@
     <!-- 字段对话框 -->
     <el-dialog
       v-model="fieldDialogVisible"
-      :title="editingField ? '编辑字段' : '添加字段'"
+      :title="editingField ? t('model.field.edit') : t('model.field.add')"
       width="580px"
     >
       <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-width="110px">
-        <el-form-item label="字段显示名" prop="name">
-          <el-input v-model="fieldForm.name" placeholder="中文名称" />
+        <el-form-item :label="t('model.field.display_name')" prop="name">
+          <el-input v-model="fieldForm.name" :placeholder="t('model.field.display_name_placeholder')" />
         </el-form-item>
-        <el-form-item label="物理列名" prop="column_name">
-          <el-input v-model="fieldForm.column_name" placeholder="英文列名（snake_case）" />
+        <el-form-item :label="t('model.field.column_name')" prop="column_name">
+          <el-input v-model="fieldForm.column_name" :placeholder="t('model.field.column_name_placeholder')" />
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="数据类型" prop="data_type">
+            <el-form-item :label="t('model.field.data_type')" prop="data_type">
               <el-select v-model="fieldForm.data_type" style="width:100%">
                 <el-option label="string" value="string" />
                 <el-option label="int" value="int" />
@@ -266,7 +266,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="长度">
+            <el-form-item :label="t('model.field.length')">
               <el-input-number
                 v-model="fieldForm.length"
                 :min="0"
@@ -277,20 +277,20 @@
           </el-col>
         </el-row>
         <!-- 字段角色 -->
-        <el-form-item label="字段角色">
+        <el-form-item :label="t('model.field.field_role')">
           <el-select v-model="fieldForm.field_role" style="width:100%">
-            <el-option label="普通字段" value="regular" />
-            <el-option v-if="form.table_type === 'fact'" label="可加度量" value="measure_additive" />
-            <el-option v-if="form.table_type === 'fact'" label="半可加度量" value="measure_semi" />
-            <el-option v-if="form.table_type === 'fact'" label="不可加度量" value="measure_non" />
-            <el-option v-if="form.table_type === 'fact'" label="维度外键" value="dimension_fk" />
-            <el-option v-if="form.table_type === 'fact'" label="退化维度" value="degenerate_dim" />
+            <el-option :label="t('model.field.role_regular')" value="regular" />
+            <el-option v-if="form.table_type === 'fact'" :label="t('model.field.role_measure_additive')" value="measure_additive" />
+            <el-option v-if="form.table_type === 'fact'" :label="t('model.field.role_measure_semi')" value="measure_semi" />
+            <el-option v-if="form.table_type === 'fact'" :label="t('model.field.role_measure_non')" value="measure_non" />
+            <el-option v-if="form.table_type === 'fact'" :label="t('model.field.role_dimension_fk')" value="dimension_fk" />
+            <el-option v-if="form.table_type === 'fact'" :label="t('model.field.role_degenerate_dim')" value="degenerate_dim" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联数据元">
+        <el-form-item :label="t('model.field.element')">
           <el-select
             v-model="fieldForm.element_id"
-            placeholder="可选，选择后自动关联"
+            :placeholder="t('model.field.element_placeholder')"
             clearable
             filterable
             style="width:100%"
@@ -306,44 +306,44 @@
         </el-form-item>
         <el-row :gutter="8">
           <el-col :span="8">
-            <el-form-item label="主键">
+            <el-form-item :label="t('model.field.is_pk')">
               <el-switch v-model="fieldForm.is_pk" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="允许为空">
+            <el-form-item :label="t('model.field.nullable')">
               <el-switch v-model="fieldForm.nullable" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="分区字段">
+            <el-form-item :label="t('model.field.is_partition')">
               <el-switch v-model="fieldForm.is_partition" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="默认值">
-          <el-input v-model="fieldForm.default_value" placeholder="如：CURRENT_TIMESTAMP / NULL / 0" />
+        <el-form-item :label="t('model.field.default_value')">
+          <el-input v-model="fieldForm.default_value" :placeholder="t('model.field.default_value_placeholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('model.field.description')">
           <el-input v-model="fieldForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="fieldDialogVisible = false">取消</el-button>
+        <el-button @click="fieldDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleFieldSubmit" :loading="fieldSubmitting">
-          {{ editingField ? '保存' : '添加' }}
+          {{ editingField ? t('model.common.save') : t('model.common.add') }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 关联指标对话框 -->
-    <el-dialog v-model="metricDialogVisible" title="关联指标" width="520px">
+    <el-dialog v-model="metricDialogVisible" :title="t('model.metric.add')" width="520px">
       <el-form :model="metricForm" label-width="90px">
-        <el-form-item label="选择指标" required>
+        <el-form-item :label="t('model.metric.metric_name')" required>
           <el-select
             v-model="metricForm.metric_id"
             filterable
-            placeholder="搜索指标名称"
+            :placeholder="t('model.metric.select_placeholder')"
             style="width:100%"
             @focus="loadAvailableMetrics"
           >
@@ -355,8 +355,8 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="计算字段">
-          <el-select v-model="metricForm.field_id" clearable placeholder="可选，指标来自哪个字段" style="width:100%">
+        <el-form-item :label="t('model.metric.calc_field')">
+          <el-select v-model="metricForm.field_id" clearable :placeholder="t('model.metric.field_placeholder')" style="width:100%">
             <el-option
               v-for="f in measureFields"
               :key="f.id"
@@ -365,13 +365,13 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="t('model.metric.note')">
           <el-input v-model="metricForm.note" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="metricDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleAddMetric" :loading="metricSubmitting">关联</el-button>
+        <el-button @click="metricDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleAddMetric" :loading="metricSubmitting">{{ t('model.metric.associate') }}</el-button>
       </template>
     </el-dialog>
 
@@ -387,6 +387,9 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const tableId = parseInt(route.params.id)
@@ -447,13 +450,17 @@ const fieldForm = reactive({
   field_role: 'regular', hierarchy_id: null, hierarchy_level: null
 })
 const fieldRules = {
-  name: [{ required: true, message: '请输入字段名', trigger: 'blur' }],
-  column_name: [{ required: true, message: '请输入物理列名', trigger: 'blur' }],
-  data_type: [{ required: true, message: '请选择数据类型', trigger: 'change' }]
+  name: [{ required: true, message: t('model.field.name_required'), trigger: 'blur' }],
+  column_name: [{ required: true, message: t('model.field.column_required'), trigger: 'blur' }],
+  data_type: [{ required: true, message: t('model.field.type_required'), trigger: 'change' }]
 }
 
 const statusTagType = (s) => ({ draft: 'info', approved: 'success', materialized: 'warning' }[s] ?? 'info')
-const statusLabel = (s) => ({ draft: '草稿', approved: '已审批', materialized: '已物化' }[s] ?? s)
+const statusLabel = (s) => ({
+  draft: t('model.common.status_draft'),
+  approved: t('model.common.status_approved'),
+  materialized: t('model.common.status_materialized')
+}[s] ?? s)
 
 const fieldRoleTagType = (role) => {
   const map = {
@@ -469,14 +476,14 @@ const fieldRoleTagType = (role) => {
 
 const fieldRoleLabel = (role) => {
   const map = {
-    regular: '普通',
-    measure_additive: '可加度量',
-    measure_semi: '半可加',
-    measure_non: '不可加',
-    dimension_fk: '维度FK',
-    degenerate_dim: '退化维'
+    regular: t('model.field.role_label_regular'),
+    measure_additive: t('model.field.role_label_additive'),
+    measure_semi: t('model.field.role_label_semi'),
+    measure_non: t('model.field.role_label_non'),
+    dimension_fk: t('model.field.role_label_fk'),
+    degenerate_dim: t('model.field.role_label_degenerate')
   }
-  return (map[role] ?? role) || '普通'
+  return (map[role] ?? role) || t('model.field.role_label_regular')
 }
 
 const loadTable = async () => {
@@ -529,7 +536,7 @@ const loadAvailableMetrics = async () => {
     const res = await standardMetricAPI.list({ page_size: 500 })
     availableMetrics.value = res.data.data || res.data || []
   } catch {
-    ElMessage.error('加载指标列表失败')
+    ElMessage.error(t('model.metric.load_failed'))
   }
 }
 
@@ -538,10 +545,10 @@ const handleSave = async () => {
   try {
     const updateData = { ...form, materialization: materializationForm }
     await logicalTableAPI.update(tableId, updateData)
-    ElMessage.success('保存成功')
+    ElMessage.success(t('model.common.save_success'))
     loadTable()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '保存失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.save_failed'))
   } finally {
     saving.value = false
   }
@@ -553,7 +560,7 @@ const handlePreviewDDL = async () => {
     ddlContent.value = res.ddl || ''
     ddlDialogVisible.value = true
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || 'DDL 预览失败')
+    ElMessage.error(err.response?.data?.error || t('model.logical_table.ddl_failed'))
   }
 }
 
@@ -602,15 +609,15 @@ const handleFieldSubmit = async () => {
   try {
     if (editingField.value) {
       await logicalTableAPI.updateField(tableId, editingField.value.id, fieldForm)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('model.common.update_success'))
     } else {
       await logicalTableAPI.createField(tableId, fieldForm)
-      ElMessage.success('添加成功')
+      ElMessage.success(t('model.common.add_success'))
     }
     fieldDialogVisible.value = false
     loadFields()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '操作失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
   } finally {
     fieldSubmitting.value = false
   }
@@ -619,10 +626,10 @@ const handleFieldSubmit = async () => {
 const deleteField = async (fieldId) => {
   try {
     await logicalTableAPI.deleteField(tableId, fieldId)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('model.common.delete_success'))
     loadFields()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('model.common.delete_failed'))
   }
 }
 
@@ -634,17 +641,17 @@ const openMetricDialog = () => {
 
 const handleAddMetric = async () => {
   if (!metricForm.metric_id) {
-    ElMessage.warning('请选择指标')
+    ElMessage.warning(t('model.metric.select_required'))
     return
   }
   metricSubmitting.value = true
   try {
     await logicalTableAPI.addMetric(tableId, metricForm)
-    ElMessage.success('关联成功')
+    ElMessage.success(t('model.metric.associate_success'))
     metricDialogVisible.value = false
     loadMetrics()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '关联失败')
+    ElMessage.error(err.response?.data?.error || t('model.metric.associate_failed'))
   } finally {
     metricSubmitting.value = false
   }
@@ -653,10 +660,10 @@ const handleAddMetric = async () => {
 const removeMetric = async (mappingId) => {
   try {
     await logicalTableAPI.removeMetric(tableId, mappingId)
-    ElMessage.success('已解除关联')
+    ElMessage.success(t('model.metric.remove_success'))
     loadMetrics()
   } catch {
-    ElMessage.error('操作失败')
+    ElMessage.error(t('model.common.op_failed'))
   }
 }
 

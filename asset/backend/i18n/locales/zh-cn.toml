@@ -1,0 +1,41 @@
+[asset.common.invalid_id]
+other = "无效的ID"
+
+[asset.common.delete_success]
+other = "删除成功"
+
+[asset.common.update_success]
+other = "已更新"
+
+[asset.type.not_found]
+other = "资产类型不存在"
+
+[asset.type.read_only]
+other = "资产类型管理为只读，请通过系统初始化配置"
+
+[asset.type.invalid_type_id]
+other = "无效的类型ID"
+
+[asset.catalog.not_found]
+other = "目录不存在"
+
+[asset.asset.not_found]
+other = "资产不存在"
+
+[asset.asset.published]
+other = "资产已上架"
+
+[asset.asset.offlined]
+other = "资产已下架"
+
+[asset.application.approve_success]
+other = "审批通过"
+
+[asset.application.reject_success]
+other = "已驳回"
+
+[asset.authorization.revoke_success]
+other = "授权已撤销"
+
+[asset.rating.missing_asset_id]
+other = "缺少 asset_id 参数"

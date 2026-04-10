@@ -3,21 +3,21 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <h2>任务管理</h2>
+        <h2>{{ t('develop.taskManagement.title') }}</h2>
         <el-button type="primary" @click="handleCreate">
           <el-icon><Plus /></el-icon>
-          新建任务
+          {{ t('develop.taskManagement.newTask') }}
         </el-button>
         <el-button @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
-          刷新
+          {{ t('develop.taskManagement.refresh') }}
         </el-button>
       </div>
       <div class="toolbar-right">
         <!-- 筛选器 -->
         <el-input
           v-model="filters.keyword"
-          placeholder="搜索任务名称"
+          :placeholder="t('develop.taskManagement.searchPlaceholder')"
           clearable
           style="width: 200px; margin-right: 10px;"
         >
@@ -27,23 +27,23 @@
         </el-input>
         <el-select
           v-model="filters.dev_type"
-          placeholder="任务类型"
+          :placeholder="t('develop.taskManagement.filterType')"
           clearable
           style="width: 120px; margin-right: 10px;"
         >
-          <el-option label="查询" value="query" />
-          <el-option label="工作流" value="workflow" />
-          <el-option label="Notebook开发" value="notebook" />
+          <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
+          <el-option :label="t('develop.taskManagement.typeWorkflow')" value="workflow" />
+          <el-option :label="t('develop.taskManagement.typeNotebook')" value="notebook" />
         </el-select>
         <el-select
           v-model="filters.status"
-          placeholder="状态"
+          :placeholder="t('develop.taskManagement.filterStatus')"
           clearable
           style="width: 120px;"
         >
-          <el-option label="活跃" value="active" />
-          <el-option label="停用" value="inactive" />
-          <el-option label="归档" value="archived" />
+          <el-option :label="t('develop.queryTasks.statusActive')" value="active" />
+          <el-option :label="t('develop.queryTasks.statusInactive')" value="inactive" />
+          <el-option :label="t('develop.queryTasks.statusArchived')" value="archived" />
         </el-select>
       </div>
     </div>
@@ -58,27 +58,27 @@
         height="100%"
       >
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="任务名称" min-width="150" show-overflow-tooltip />
-        <el-table-column label="类型" width="100">
+        <el-table-column prop="name" :label="t('develop.taskManagement.colName')" min-width="150" show-overflow-tooltip />
+        <el-table-column :label="t('develop.taskManagement.colType')" width="100">
           <template #default="{ row }">
             <el-tag :type="getTypeColor(row.dev_type)">
               {{ getTypeLabel(row.dev_type) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="关联资源" width="150">
+        <el-table-column :label="t('develop.taskManagement.colResource')" width="150">
           <template #default="{ row }">
             {{ getResourceName(row.engine_id) }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('develop.taskManagement.colStatus')" width="100">
           <template #default="{ row }">
             <el-tag :type="getStatusColor(row.status)">
               {{ getStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="最后执行" width="180">
+        <el-table-column :label="t('develop.taskManagement.colLastExecution')" width="180">
           <template #default="{ row }">
             <div v-if="row.last_executed_at">
               <div>{{ formatTime(row.last_executed_at) }}</div>
@@ -91,15 +91,15 @@
                 {{ row.last_execution_status }}
               </el-tag>
             </div>
-            <span v-else class="text-muted">未执行</span>
+            <span v-else class="text-muted">{{ t('develop.taskManagement.notExecuted') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="160">
+        <el-table-column :label="t('develop.taskManagement.colCreatedAt')" width="160">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column :label="t('develop.taskManagement.colActions')" width="260" fixed="right">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -107,7 +107,7 @@
               @click="handleExecute(row)"
             >
               <el-icon><VideoPlay /></el-icon>
-              执行
+              {{ t('develop.taskManagement.execute') }}
             </el-button>
             <el-button
               type="default"
@@ -115,7 +115,7 @@
               @click="handleEdit(row)"
             >
               <el-icon><Edit /></el-icon>
-              编辑
+              {{ t('develop.taskManagement.edit') }}
             </el-button>
             <el-button
               type="info"
@@ -123,7 +123,7 @@
               @click="handleView(row)"
             >
               <el-icon><View /></el-icon>
-              详情
+              {{ t('develop.taskManagement.detail') }}
             </el-button>
             <el-button
               type="danger"
@@ -131,7 +131,7 @@
               @click="handleDelete(row)"
             >
               <el-icon><Delete /></el-icon>
-              删除
+              {{ t('develop.taskManagement.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -154,29 +154,29 @@
     <!-- 创建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="dialogMode === 'create' ? '新建任务' : '编辑任务'"
+      :title="dialogMode === 'create' ? t('develop.taskManagement.createDialogTitle') : t('develop.taskManagement.editDialogTitle')"
       width="600px"
     >
       <el-form :model="formData" label-width="100px">
-        <el-form-item label="任务名称" required>
-          <el-input v-model="formData.name" placeholder="请输入任务名称" />
+        <el-form-item :label="t('develop.taskManagement.fieldName')" required>
+          <el-input v-model="formData.name" :placeholder="t('develop.taskManagement.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="显示名称">
-          <el-input v-model="formData.display_name" placeholder="可选" />
+        <el-form-item :label="t('develop.taskManagement.fieldDisplayName')">
+          <el-input v-model="formData.display_name" :placeholder="t('develop.taskManagement.optional')" />
         </el-form-item>
-        <el-form-item label="任务类型" required>
+        <el-form-item :label="t('develop.taskManagement.fieldType')" required>
           <el-select v-model="formData.dev_type" style="width: 100%;">
-            <el-option label="查询" value="query" />
-            <el-option label="工作流" value="workflow" />
-            <el-option label="Notebook开发" value="notebook" />
+            <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
+            <el-option :label="t('develop.taskManagement.typeWorkflow')" value="workflow" />
+            <el-option :label="t('develop.taskManagement.typeNotebook')" value="notebook" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联资源">
+        <el-form-item :label="t('develop.taskManagement.fieldResource')">
           <el-select
             v-model="formData.engine_id"
             style="width: 100%;"
             clearable
-            placeholder="选择关联资源"
+            :placeholder="t('develop.taskManagement.resourcePlaceholder')"
           >
             <el-option
               v-for="res in engines"
@@ -186,15 +186,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('develop.taskManagement.fieldDescription')">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="任务描述"
+            :placeholder="t('develop.taskManagement.descriptionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="标签">
+        <el-form-item :label="t('develop.taskManagement.fieldTags')">
           <el-tag
             v-for="tag in formData.tags"
             :key="tag"
@@ -218,32 +218,32 @@
             size="small"
             @click="showTagInput"
           >
-            + 添加标签
+            + {{ t('develop.taskManagement.addTag') }}
           </el-button>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSave">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ t('develop.taskManagement.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSave">{{ t('develop.taskManagement.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 执行对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
-      title="执行任务"
+      :title="t('develop.taskManagement.executeDialogTitle')"
       width="500px"
     >
       <el-form label-width="100px">
-        <el-form-item label="任务名称">
+        <el-form-item :label="t('develop.taskManagement.fieldName')">
           <el-input :value="currentTask?.name" disabled />
         </el-form-item>
-        <el-form-item label="任务类型">
+        <el-form-item :label="t('develop.taskManagement.fieldType')">
           <el-tag :type="getTypeColor(currentTask?.dev_type)">
             {{ getTypeLabel(currentTask?.dev_type) }}
           </el-tag>
         </el-form-item>
-        <el-form-item label="执行参数">
+        <el-form-item :label="t('develop.taskManagement.execParams')">
           <el-input
             v-model="executeInputs"
             type="textarea"
@@ -253,13 +253,13 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="executeDialogVisible = false">取消</el-button>
+        <el-button @click="executeDialogVisible = false">{{ t('develop.taskManagement.cancel') }}</el-button>
         <el-button
           type="primary"
           @click="confirmExecute"
           :loading="executing"
         >
-          执行
+          {{ t('develop.taskManagement.execute') }}
         </el-button>
       </template>
     </el-dialog>
@@ -269,6 +269,7 @@
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
@@ -289,6 +290,7 @@ import {
 } from '@/api/devItem'
 
 const router = useRouter()
+const { t } = useI18n()
 
 // 状态管理
 const loading = ref(false)
@@ -349,7 +351,7 @@ const loadTasks = async () => {
     pagination.total = data.total || 0
   } catch (error) {
     console.error('加载任务失败:', error)
-    ElMessage.error('加载失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.taskManagement.loadFailed') + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
@@ -367,7 +369,11 @@ const loadEngines = async () => {
 
 // 工具函数
 const getTypeLabel = (type) => {
-  const labels = { query: '查询工作台', workflow: '工作流编辑器', notebook: 'Notebook开发' }
+  const labels = {
+    query: t('develop.taskManagement.typeQuery'),
+    workflow: t('develop.taskManagement.typeWorkflow'),
+    notebook: t('develop.taskManagement.typeNotebook')
+  }
   return labels[type] || type
 }
 
@@ -377,7 +383,11 @@ const getTypeColor = (type) => {
 }
 
 const getStatusLabel = (status) => {
-  const labels = { active: '活跃', inactive: '停用', archived: '归档' }
+  const labels = {
+    active: t('develop.queryTasks.statusActive'),
+    inactive: t('develop.queryTasks.statusInactive'),
+    archived: t('develop.queryTasks.statusArchived')
+  }
   return labels[status] || status
 }
 
@@ -445,7 +455,7 @@ const handleView = (row) => {
   } else if (row.dev_type === 'workflow') {
     router.push({ path: '/workflow', query: { taskId: row.id } })
   } else {
-    ElMessage.info('该类型暂不支持查看详情')
+    ElMessage.info(t('develop.taskManagement.viewNotSupported'))
   }
 }
 
@@ -464,17 +474,17 @@ const confirmExecute = async () => {
     try {
       inputs = JSON.parse(executeInputs.value)
     } catch {
-      ElMessage.warning('执行参数必须是有效的 JSON')
+      ElMessage.warning(t('develop.taskManagement.invalidJson'))
       return
     }
 
     await executeDevItem(currentTask.value.id, inputs)
-    ElMessage.success('任务已提交执行')
+    ElMessage.success(t('develop.taskManagement.executeSubmitted'))
     executeDialogVisible.value = false
     loadTasks() // 刷新列表
   } catch (error) {
     console.error('执行任务失败:', error)
-    ElMessage.error('执行失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.taskManagement.executeFailed') + (error.response?.data?.error || error.message))
   } finally {
     executing.value = false
   }
@@ -483,40 +493,40 @@ const confirmExecute = async () => {
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除任务 "${row.name}" 吗？`,
-      '确认删除',
+      t('develop.taskManagement.deleteConfirmMsg', { name: row.name }),
+      t('develop.taskManagement.deleteConfirmTitle'),
       { type: 'warning' }
     )
     await deleteDevItem(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('develop.taskManagement.deleteSuccess'))
     loadTasks()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除任务失败:', error)
-      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('develop.taskManagement.deleteFailed') + (error.response?.data?.error || error.message))
     }
   }
 }
 
 const handleSave = async () => {
   if (!formData.name) {
-    ElMessage.warning('请输入任务名称')
+    ElMessage.warning(t('develop.taskManagement.nameRequired'))
     return
   }
 
   try {
     if (dialogMode.value === 'create') {
       await createDevItem(formData)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('develop.taskManagement.createSuccess'))
     } else {
       await updateDevItem(formData.id, formData)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('develop.taskManagement.updateSuccess'))
     }
     dialogVisible.value = false
     loadTasks()
   } catch (error) {
     console.error('保存任务失败:', error)
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.taskManagement.saveFailed') + (error.response?.data?.error || error.message))
   }
 }
 

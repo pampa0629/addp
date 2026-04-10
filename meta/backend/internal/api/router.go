@@ -7,8 +7,10 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/audit"
 	auth "github.com/addp/common/middleware/auth"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
+	_ "github.com/addp/meta/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -20,6 +22,7 @@ import (
 func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(i18nmiddleware.I18nMiddleware())
 	router.Use(requestLogger())
 
 	// Swagger 文档

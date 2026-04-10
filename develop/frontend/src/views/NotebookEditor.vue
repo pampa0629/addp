@@ -3,13 +3,13 @@
     <!-- 左侧 Notebook 列表 -->
     <el-aside width="320px" class="notebook-sidebar">
       <div class="sidebar-header">
-        <h3>Notebook 列表</h3>
+        <h3>{{ t('develop.notebook.listTitle') }}</h3>
         <div class="actions">
           <el-button type="primary" size="small" @click="showCreateDialog">
-            <el-icon><Plus /></el-icon> 新建
+            <el-icon><Plus /></el-icon> {{ t('develop.notebook.create') }}
           </el-button>
           <el-button type="success" size="small" @click="showUploadDialog">
-            <el-icon><Upload /></el-icon> 上传
+            <el-icon><Upload /></el-icon> {{ t('develop.notebook.upload') }}
           </el-button>
           <el-button size="small" @click="loadNotebooks">
             <el-icon><Refresh /></el-icon>
@@ -19,7 +19,7 @@
 
       <el-input
         v-model="searchKeyword"
-        placeholder="搜索 Notebook"
+        :placeholder="t('develop.notebook.searchPlaceholder')"
         clearable
         class="search-input"
         @input="loadNotebooks"
@@ -30,7 +30,7 @@
       </el-input>
 
       <div class="notebook-list" v-loading="loading">
-        <el-empty v-if="!loading && notebooks.length === 0" description="暂无 Notebook" />
+        <el-empty v-if="!loading && notebooks.length === 0" :description="t('develop.notebook.empty')" />
 
         <div
           v-for="notebook in notebooks"
@@ -47,19 +47,19 @@
           </div>
 
           <div class="notebook-actions" @click.stop>
-            <el-tooltip content="在 Jupyter Lab 中打开">
+            <el-tooltip :content="t('develop.notebook.openInJupyter')">
               <el-button type="primary" size="small" text @click="openInJupyter(notebook)">
                 <el-icon><Document /></el-icon>
               </el-button>
             </el-tooltip>
 
-            <el-tooltip content="执行">
+            <el-tooltip :content="t('develop.notebook.execute')">
               <el-button type="success" size="small" text @click="showExecuteDialog(notebook)">
                 <el-icon><VideoPlay /></el-icon>
               </el-button>
             </el-tooltip>
 
-            <el-tooltip content="执行历史">
+            <el-tooltip :content="t('develop.notebook.history')">
               <el-button type="info" size="small" text @click="viewHistory(notebook)">
                 <el-icon><Clock /></el-icon>
               </el-button>
@@ -72,10 +72,10 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="download">
-                    <el-icon><Download /></el-icon> 下载
+                    <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
                   </el-dropdown-item>
                   <el-dropdown-item command="delete" divided>
-                    <el-icon><Delete /></el-icon> 删除
+                    <el-icon><Delete /></el-icon> {{ t('develop.notebook.delete') }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -101,7 +101,7 @@
     <!-- 右侧 Jupyter Lab -->
     <el-main class="jupyter-container">
       <div v-if="!currentNotebook" class="empty-state">
-        <el-empty description="请选择一个 Notebook 或创建新的 Notebook" />
+        <el-empty :description="t('develop.notebook.selectHint')" />
       </div>
 
       <div v-else class="jupyter-wrapper">
@@ -109,35 +109,35 @@
           <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
           <div class="toolbar-actions">
             <el-button size="small" @click="refreshJupyter">
-              <el-icon><Refresh /></el-icon> 刷新
+              <el-icon><Refresh /></el-icon> {{ t('develop.notebook.refresh') }}
             </el-button>
             <el-button size="small" @click="openInNewTab">
-              <el-icon><TopRight /></el-icon> 新窗口打开
+              <el-icon><TopRight /></el-icon> {{ t('develop.notebook.openNewTab') }}
             </el-button>
             <el-button size="small" @click="showHelp">
-              <el-icon><QuestionFilled /></el-icon> 帮助
+              <el-icon><QuestionFilled /></el-icon> {{ t('develop.notebook.help') }}
             </el-button>
           </div>
         </div>
 
         <!-- 虚拟环境初始化卡片 -->
-        <div v-if="checkingVenv" class="venv-status-card" v-loading="true" element-loading-text="正在检查开发环境...">
-          <el-empty description="正在检查开发环境状态..." />
+        <div v-if="checkingVenv" class="venv-status-card" v-loading="true" :element-loading-text="t('develop.notebook.checkingVenv')">
+          <el-empty :description="t('develop.notebook.checkingVenvStatus')" />
         </div>
 
         <div v-else-if="!venvReady" class="venv-init-card">
-          <el-result icon="warning" title="需要初始化开发环境">
+          <el-result icon="warning" :title="t('develop.notebook.venvRequired')">
             <template #sub-title>
               <div class="venv-init-tips">
-                <p>首次使用 Notebook 需要初始化租户专属的 Python 虚拟环境</p>
-                <p>初始化后您将拥有:</p>
+                <p>{{ t('develop.notebook.venvInitHint') }}</p>
+                <p>{{ t('develop.notebook.venvInitBenefits') }}</p>
                 <ul>
-                  <li>✅ 独立的 Python 虚拟环境（继承预装的常用库）</li>
-                  <li>✅ 自动注入的数据源连接（无需手动配置）</li>
-                  <li>✅ 可自由安装 Python 库（不影响其他租户）</li>
-                  <li>✅ 环境持久化保存（ADDP 重启后仍然保留）</li>
+                  <li>{{ t('develop.notebook.venvBenefit1') }}</li>
+                  <li>{{ t('develop.notebook.venvBenefit2') }}</li>
+                  <li>{{ t('develop.notebook.venvBenefit3') }}</li>
+                  <li>{{ t('develop.notebook.venvBenefit4') }}</li>
                 </ul>
-                <p class="time-note">⏱️ 初始化过程约需 30 秒</p>
+                <p class="time-note">{{ t('develop.notebook.venvInitTime') }}</p>
               </div>
             </template>
             <template #extra>
@@ -147,7 +147,7 @@
                 @click="initVenvEnvironment"
                 :loading="initLoading"
               >
-                {{ initLoading ? '正在初始化...' : '立即初始化' }}
+                {{ initLoading ? t('develop.notebook.initializing') : t('develop.notebook.initNow') }}
               </el-button>
             </template>
           </el-result>
@@ -167,34 +167,34 @@
     <!-- 新建 Notebook 对话框 -->
     <el-dialog
       v-model="createDialogVisible"
-      title="新建 Notebook"
+      :title="t('develop.notebook.createDialogTitle')"
       width="600px"
     >
       <el-form :model="createForm" label-width="100px">
-        <el-form-item label="名称" required>
-          <el-input v-model="createForm.name" placeholder="请输入 Notebook 名称" />
+        <el-form-item :label="t('develop.notebook.fieldName')" required>
+          <el-input v-model="createForm.name" :placeholder="t('develop.notebook.namePlaceholder')" />
         </el-form-item>
 
-        <el-form-item label="描述">
+        <el-form-item :label="t('develop.notebook.fieldDescription')">
           <el-input
             v-model="createForm.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入描述"
+            :placeholder="t('develop.notebook.descriptionPlaceholder')"
           />
         </el-form-item>
 
         <el-form-item label="Kernel">
-          <el-select v-model="createForm.kernel" placeholder="选择 Kernel">
+          <el-select v-model="createForm.kernel" :placeholder="t('develop.notebook.selectKernel')">
             <el-option label="Python 3" value="python3" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="数据源">
+        <el-form-item :label="t('develop.notebook.fieldDataSource')">
           <el-select
             v-model="createForm.data_sources"
             multiple
-            placeholder="选择可用的数据源"
+            :placeholder="t('develop.notebook.selectDataSource')"
             style="width: 100%"
           >
             <el-option
@@ -208,19 +208,19 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmCreate" :loading="creating">确定</el-button>
+        <el-button @click="createDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmCreate" :loading="creating">{{ t('develop.notebook.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 上传 Notebook 对话框 -->
     <el-dialog
       v-model="uploadDialogVisible"
-      title="上传 Notebook"
+      :title="t('develop.notebook.uploadDialogTitle')"
       width="600px"
     >
       <el-form :model="uploadForm" label-width="100px">
-        <el-form-item label="文件" required>
+        <el-form-item :label="t('develop.notebook.fieldFile')" required>
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
@@ -229,32 +229,32 @@
             :on-change="handleFileChange"
           >
             <template #trigger>
-              <el-button type="primary">选择文件</el-button>
+              <el-button type="primary">{{ t('develop.notebook.selectFile') }}</el-button>
             </template>
             <template #tip>
-              <div class="el-upload__tip">只能上传 .ipynb 文件</div>
+              <div class="el-upload__tip">{{ t('develop.notebook.uploadTip') }}</div>
             </template>
           </el-upload>
         </el-form-item>
 
-        <el-form-item label="名称" required>
-          <el-input v-model="uploadForm.name" placeholder="请输入 Notebook 名称" />
+        <el-form-item :label="t('develop.notebook.fieldName')" required>
+          <el-input v-model="uploadForm.name" :placeholder="t('develop.notebook.namePlaceholder')" />
         </el-form-item>
 
-        <el-form-item label="描述">
+        <el-form-item :label="t('develop.notebook.fieldDescription')">
           <el-input
             v-model="uploadForm.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入描述"
+            :placeholder="t('develop.notebook.descriptionPlaceholder')"
           />
         </el-form-item>
 
-        <el-form-item label="数据源">
+        <el-form-item :label="t('develop.notebook.fieldDataSource')">
           <el-select
             v-model="uploadForm.data_sources"
             multiple
-            placeholder="选择可用的数据源"
+            :placeholder="t('develop.notebook.selectDataSource')"
             style="width: 100%"
           >
             <el-option
@@ -268,15 +268,15 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmUpload" :loading="uploading">确定上传</el-button>
+        <el-button @click="uploadDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmUpload" :loading="uploading">{{ t('develop.notebook.confirmUpload') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 执行 Notebook 对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
-      title="执行 Notebook"
+      :title="t('develop.notebook.executeDialogTitle')"
       width="600px"
     >
       <el-form :model="executeForm" label-width="100px">
@@ -284,7 +284,7 @@
           <el-input :value="executeNotebook?.display_name || executeNotebook?.name" disabled />
         </el-form-item>
 
-        <el-form-item label="参数">
+        <el-form-item :label="t('develop.notebook.fieldParams')">
           <el-input
             v-model="executeForm.parameters"
             type="textarea"
@@ -293,11 +293,11 @@
           />
         </el-form-item>
 
-        <el-form-item label="数据源">
+        <el-form-item :label="t('develop.notebook.fieldDataSource')">
           <el-select
             v-model="executeForm.data_source_ids"
             multiple
-            placeholder="选择数据源（可选）"
+            :placeholder="t('develop.notebook.selectDataSourceOptional')"
             style="width: 100%"
           >
             <el-option
@@ -307,59 +307,59 @@
               :value="ds.id"
             />
           </el-select>
-          <div class="form-tip">选择的数据源连接信息将自动注入到 Notebook 执行环境中</div>
+          <div class="form-tip">{{ t('develop.notebook.dataSourceInjectHint') }}</div>
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="executeDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmExecute" :loading="executing">确定执行</el-button>
+        <el-button @click="executeDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmExecute" :loading="executing">{{ t('develop.notebook.confirmExecute') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 帮助对话框 -->
-    <el-dialog v-model="helpDialogVisible" title="Notebook 开发帮助" width="600px">
+    <el-dialog v-model="helpDialogVisible" :title="t('develop.notebook.helpDialogTitle')" width="600px">
       <div class="help-content">
-        <h3>🚀 快速开始</h3>
-        <p>Notebook 开发基于 Jupyter Lab，提供交互式的 Python 开发环境。</p>
+        <h3>🚀 {{ t('develop.notebook.helpQuickStart') }}</h3>
+        <p>{{ t('develop.notebook.helpQuickStartDesc') }}</p>
 
-        <h3>📝 主要功能</h3>
+        <h3>📝 {{ t('develop.notebook.helpFeatures') }}</h3>
         <ul>
-          <li><strong>代码执行</strong>: 在 Cell 中编写 Python 代码并执行</li>
-          <li><strong>数据分析</strong>: 支持 pandas, numpy, geopandas 等数据分析库</li>
-          <li><strong>可视化</strong>: 支持 matplotlib, seaborn, plotly 等可视化库</li>
-          <li><strong>地理空间</strong>: 支持 GIS 数据处理和空间分析</li>
+          <li><strong>{{ t('develop.notebook.helpFeatureCode') }}</strong>: {{ t('develop.notebook.helpFeatureCodeDesc') }}</li>
+          <li><strong>{{ t('develop.notebook.helpFeatureData') }}</strong>: {{ t('develop.notebook.helpFeatureDataDesc') }}</li>
+          <li><strong>{{ t('develop.notebook.helpFeatureViz') }}</strong>: {{ t('develop.notebook.helpFeatureVizDesc') }}</li>
+          <li><strong>{{ t('develop.notebook.helpFeatureGeo') }}</strong>: {{ t('develop.notebook.helpFeatureGeoDesc') }}</li>
         </ul>
 
-        <h3>⌨️ 常用快捷键</h3>
+        <h3>⌨️ {{ t('develop.notebook.helpShortcuts') }}</h3>
         <ul>
-          <li><code>Shift + Enter</code>: 执行当前 Cell 并跳转到下一个</li>
-          <li><code>Ctrl + Enter</code>: 执行当前 Cell 但停留在当前位置</li>
-          <li><code>A</code>: 在上方插入新 Cell (命令模式)</li>
-          <li><code>B</code>: 在下方插入新 Cell (命令模式)</li>
-          <li><code>DD</code>: 删除当前 Cell (命令模式)</li>
-          <li><code>M</code>: 转换为 Markdown Cell (命令模式)</li>
-          <li><code>Y</code>: 转换为 Code Cell (命令模式)</li>
+          <li><code>Shift + Enter</code>: {{ t('develop.notebook.shortcutShiftEnter') }}</li>
+          <li><code>Ctrl + Enter</code>: {{ t('develop.notebook.shortcutCtrlEnter') }}</li>
+          <li><code>A</code>: {{ t('develop.notebook.shortcutA') }}</li>
+          <li><code>B</code>: {{ t('develop.notebook.shortcutB') }}</li>
+          <li><code>DD</code>: {{ t('develop.notebook.shortcutDD') }}</li>
+          <li><code>M</code>: {{ t('develop.notebook.shortcutM') }}</li>
+          <li><code>Y</code>: {{ t('develop.notebook.shortcutY') }}</li>
         </ul>
 
-        <h3>📦 预装库</h3>
+        <h3>📦 {{ t('develop.notebook.helpPreinstalled') }}</h3>
         <ul>
-          <li>数据处理: pandas, numpy, scipy</li>
-          <li>可视化: matplotlib, seaborn, plotly</li>
-          <li>地理空间: geopandas, shapely, fiona</li>
-          <li>数据库: psycopg2, sqlalchemy</li>
+          <li>{{ t('develop.notebook.helpPreinstalledData') }}: pandas, numpy, scipy</li>
+          <li>{{ t('develop.notebook.helpPreinstalledViz') }}: matplotlib, seaborn, plotly</li>
+          <li>{{ t('develop.notebook.helpPreinstalledGeo') }}: geopandas, shapely, fiona</li>
+          <li>{{ t('develop.notebook.helpPreinstalledDb') }}: psycopg2, sqlalchemy</li>
         </ul>
 
-        <h3>💡 提示</h3>
+        <h3>💡 {{ t('develop.notebook.helpTips') }}</h3>
         <ul>
-          <li>使用 <code>!</code> 前缀可以执行 Shell 命令</li>
-          <li>使用 <code>?</code> 后缀可以查看对象文档</li>
-          <li>使用 <code>%%time</code> 魔术命令测量代码执行时间</li>
+          <li>{{ t('develop.notebook.helpTip1') }}</li>
+          <li>{{ t('develop.notebook.helpTip2') }}</li>
+          <li>{{ t('develop.notebook.helpTip3') }}</li>
         </ul>
       </div>
       <template #footer>
         <el-button type="primary" @click="helpDialogVisible = false">
-          知道了
+          {{ t('develop.notebook.gotIt') }}
         </el-button>
       </template>
     </el-dialog>
@@ -368,6 +368,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, Upload, Refresh, Search, Document, VideoPlay, Clock, More,
@@ -381,6 +382,7 @@ import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 
 const router = useRouter()
+const { t } = useI18n()
 
 // 列表相关
 const notebooks = ref([])
@@ -474,7 +476,7 @@ const loadNotebooks = async () => {
     total.value = response.total || 0
   } catch (error) {
     console.error('加载 Notebook 列表失败:', error)
-    ElMessage.error('加载 Notebook 列表失败')
+    ElMessage.error(t('develop.notebook.loadListFailed'))
   } finally {
     loading.value = false
   }
@@ -487,7 +489,7 @@ const loadDataSources = async () => {
     dataSources.value = Array.isArray(data) ? data : []
   } catch (error) {
     console.error('加载数据源列表失败:', error)
-    ElMessage.error('加载数据源列表失败')
+    ElMessage.error(t('develop.notebook.loadDataSourceFailed'))
   }
 }
 
@@ -539,7 +541,7 @@ const showCreateDialog = () => {
 // 确认新建
 const confirmCreate = async () => {
   if (!createForm.value.name) {
-    ElMessage.warning('请输入 Notebook 名称')
+    ElMessage.warning(t('develop.notebook.nameRequired'))
     return
   }
 
@@ -588,12 +590,12 @@ const confirmCreate = async () => {
       data_sources: createForm.value.data_sources
     })
 
-    ElMessage.success('创建成功')
+    ElMessage.success(t('develop.notebook.createSuccess'))
     createDialogVisible.value = false
     await loadNotebooks()
   } catch (error) {
     console.error('创建失败:', error)
-    ElMessage.error(error.response?.data?.error || '创建失败')
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.createFailed'))
   } finally {
     creating.value = false
   }
@@ -621,12 +623,12 @@ const handleFileChange = (file) => {
 // 确认上传
 const confirmUpload = async () => {
   if (!uploadForm.value.file) {
-    ElMessage.warning('请选择文件')
+    ElMessage.warning(t('develop.notebook.selectFileRequired'))
     return
   }
 
   if (!uploadForm.value.name) {
-    ElMessage.warning('请输入 Notebook 名称')
+    ElMessage.warning(t('develop.notebook.nameRequired'))
     return
   }
 
@@ -638,12 +640,12 @@ const confirmUpload = async () => {
       data_sources: uploadForm.value.data_sources
     })
 
-    ElMessage.success('上传成功')
+    ElMessage.success(t('develop.notebook.uploadSuccess'))
     uploadDialogVisible.value = false
     await loadNotebooks()
   } catch (error) {
     console.error('上传失败:', error)
-    ElMessage.error(error.response?.data?.error || '上传失败')
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.uploadFailed'))
   } finally {
     uploading.value = false
   }
@@ -666,7 +668,7 @@ const confirmExecute = async () => {
   try {
     parameters = JSON.parse(executeForm.value.parameters || '{}')
   } catch (error) {
-    ElMessage.error('参数格式不正确，请输入有效的 JSON')
+    ElMessage.error(t('develop.notebook.invalidParams'))
     return
   }
 
@@ -678,7 +680,7 @@ const confirmExecute = async () => {
       data_source_ids: executeForm.value.data_source_ids
     })
 
-    ElMessage.success(`Notebook 已提交执行，执行 ID: ${response.execution_id}`)
+    ElMessage.success(t('develop.notebook.executeSubmitted', { id: response.execution_id }))
     executeDialogVisible.value = false
 
     // 跳转到执行监控页面
@@ -688,7 +690,7 @@ const confirmExecute = async () => {
     })
   } catch (error) {
     console.error('执行失败:', error)
-    ElMessage.error(error.response?.data?.error || '执行失败')
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.executeFailed'))
   } finally {
     executing.value = false
   }
@@ -729,10 +731,10 @@ const downloadNotebook = async (notebook) => {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('下载成功')
+    ElMessage.success(t('develop.notebook.downloadSuccess'))
   } catch (error) {
     console.error('下载失败:', error)
-    ElMessage.error('下载失败')
+    ElMessage.error(t('develop.notebook.downloadFailed'))
   }
 }
 
@@ -740,17 +742,17 @@ const downloadNotebook = async (notebook) => {
 const deleteNotebook = async (notebook) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除 Notebook "${notebook.display_name || notebook.name}" 吗？`,
-      '确认删除',
+      t('develop.notebook.deleteConfirmMsg', { name: notebook.display_name || notebook.name }),
+      t('develop.notebook.deleteConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('develop.notebook.confirm'),
+        cancelButtonText: t('develop.notebook.cancel'),
         type: 'warning'
       }
     )
 
     await deleteDevItem(notebook.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('develop.notebook.deleteSuccess'))
 
     // 如果删除的是当前选中的 Notebook，清空选中状态
     if (currentNotebook.value && currentNotebook.value.id === notebook.id) {
@@ -761,7 +763,7 @@ const deleteNotebook = async (notebook) => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除失败:', error)
-      ElMessage.error('删除失败')
+      ElMessage.error(t('develop.notebook.deleteFailed'))
     }
   }
 }
@@ -782,7 +784,7 @@ const checkVenvStatus = async () => {
     venvReady.value = venvInfo.value.exists
   } catch (error) {
     console.error('检查虚拟环境状态失败:', error)
-    ElMessage.error('检查虚拟环境状态失败')
+    ElMessage.error(t('develop.notebook.checkVenvFailed'))
     venvReady.value = false
   } finally {
     checkingVenv.value = false
@@ -793,16 +795,16 @@ const checkVenvStatus = async () => {
 const initVenvEnvironment = async () => {
   try {
     initLoading.value = true
-    ElMessage.info('正在初始化开发环境，请稍候...')
+    ElMessage.info(t('develop.notebook.initializingVenv'))
 
     const res = await initVenv()
     venvInfo.value = res.data?.data || res.data
     venvReady.value = true
 
-    ElMessage.success('开发环境初始化成功！')
+    ElMessage.success(t('develop.notebook.venvInitSuccess'))
   } catch (error) {
     console.error('初始化虚拟环境失败:', error)
-    ElMessage.error(error.response?.data?.error || '初始化失败')
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.venvInitFailed'))
     venvReady.value = false
   } finally {
     initLoading.value = false

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
@@ -106,14 +108,14 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	table, err := h.svc.GetLogicalTable(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "table not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgTableNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -129,7 +131,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -160,7 +162,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -182,7 +184,7 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -205,7 +207,7 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -234,12 +236,12 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 	fieldID, err := strconv.ParseInt(c.Param("fid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid field id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidFieldID)})
 		return
 	}
 
@@ -268,12 +270,12 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 	fieldID, err := strconv.ParseInt(c.Param("fid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid field id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidFieldID)})
 		return
 	}
 
@@ -295,7 +297,7 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 func (h *LogicalTableHandler) PreviewDDL(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 

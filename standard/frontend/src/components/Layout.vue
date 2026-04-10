@@ -9,20 +9,20 @@
     <el-header class="header">
       <div class="header-left">
         <el-icon class="logo-icon"><DataAnalysis /></el-icon>
-        <span class="title">数据标准与建模</span>
+        <span class="title">{{ $t('standard.layout.title') }}</span>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || $t('standard.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ $t('standard.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -36,61 +36,61 @@
           <el-sub-menu index="standard">
             <template #title>
               <el-icon><Document /></el-icon>
-              <span>数据标准</span>
+              <span>{{ $t('standard.layout.dataStandard') }}</span>
             </template>
             <el-menu-item index="/standard/domains">
               <el-icon><Grid /></el-icon>
-              <span>业务域管理</span>
+              <span>{{ $t('standard.layout.domains') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/glossaries">
               <el-icon><Reading /></el-icon>
-              <span>业务术语词典</span>
+              <span>{{ $t('standard.layout.glossaries') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/elements">
               <el-icon><Collection /></el-icon>
-              <span>数据元管理</span>
+              <span>{{ $t('standard.layout.elements') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/code-sets">
               <el-icon><List /></el-icon>
-              <span>码值集管理</span>
+              <span>{{ $t('standard.layout.codeSets') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/units">
               <el-icon><Odometer /></el-icon>
-              <span>计量单位</span>
+              <span>{{ $t('standard.layout.units') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/classifications">
               <el-icon><Share /></el-icon>
-              <span>分类与分级</span>
+              <span>{{ $t('standard.layout.classifications') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/dimension-hierarchies">
               <el-icon><SortDown /></el-icon>
-              <span>维度层级</span>
+              <span>{{ $t('standard.layout.dimensionHierarchies') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/metrics">
               <el-icon><TrendCharts /></el-icon>
-              <span>指标管理</span>
+              <span>{{ $t('standard.layout.metrics') }}</span>
             </el-menu-item>
             <el-menu-item index="/standard/documents">
               <el-icon><Files /></el-icon>
-              <span>标准文档</span>
+              <span>{{ $t('standard.layout.documents') }}</span>
             </el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="modeling">
             <template #title>
               <el-icon><Box /></el-icon>
-              <span>数据建模</span>
+              <span>{{ $t('standard.layout.dataModeling') }}</span>
             </template>
             <el-menu-item index="/modeling/dw-layers">
               <el-icon><Tickets /></el-icon>
-              <span>数仓分层</span>
+              <span>{{ $t('standard.layout.dwLayers') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/entities">
               <el-icon><Memo /></el-icon>
-              <span>业务实体</span>
+              <span>{{ $t('standard.layout.entities') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/logical-tables">
               <el-icon><Operation /></el-icon>
-              <span>逻辑表设计</span>
+              <span>{{ $t('standard.layout.logicalTables') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

@@ -34,7 +34,8 @@
       :current-node-key="currentNodeKey"
       :node-actions="nodeActions"
       :expand-on-click-node="true"
-      title="存储引擎"
+      :title="t('manager.explorer.storageEngines')"
+      :count-text="(count) => t('manager.explorer.countText', { count })"
       @refresh="handleRefresh"
       @node-click="handleNodeClick"
       @node-action="handleNodeAction"
@@ -47,10 +48,13 @@
 <script setup>
 import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { ResourceTree } from '@addp/common-frontend'
 import { parseLocator } from '@addp/common-frontend'
 import { useExplorerStore } from '@/stores/explorer'
 import client from '@/api/client'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps({
@@ -72,7 +76,7 @@ const nodeActions = computed(() => {
     {
       id: 'refresh',
       name: 'refresh',
-      label: '刷新',
+      label: t('manager.explorer.refresh'),
       icon: 'Refresh',
       visible: () => true
     },
@@ -80,7 +84,7 @@ const nodeActions = computed(() => {
     {
       id: 'embedding',
       name: 'embedding',
-      label: '向量化',
+      label: t('manager.explorer.vectorize'),
       icon: 'MagicStick',
       visible: (node) => {
         return (node.engineType === 'minio' || node.engineType === 's3') && node.type === 'object'
@@ -90,7 +94,7 @@ const nodeActions = computed(() => {
     {
       id: 'embedding-batch',
       name: 'embedding-batch',
-      label: '批量向量化',
+      label: t('manager.explorer.batchVectorize'),
       icon: 'Files',
       visible: (node) => {
         return (node.engineType === 'minio' || node.engineType === 's3') && (node.type === 'directory' || node.type === 'bucket')
@@ -138,9 +142,9 @@ const handleRefresh = async () => {
       )
     }
 
-    ElMessage.success('刷新成功')
+    ElMessage.success(t('manager.explorer.refreshSuccess'))
   } catch (error) {
-    ElMessage.error('刷新失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
   }
 }
 
@@ -166,13 +170,12 @@ const handleNodeClick = async (node) => {
         await store.loadTree(node.engineId)
       } catch (error) {
         console.error('加载引擎内容失败:', error)
-        ElMessage.error('加载引擎内容失败: ' + error.message)
+        ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
       }
     }
     return
   }
 
-  // 容器节点（directory/bucket/prefix/schema/database）：
   // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
   if (isDirLike) {
@@ -187,7 +190,7 @@ const handleNodeClick = async (node) => {
         }
       } catch (error) {
         console.error('加载子节点失败:', error)
-        ElMessage.error('加载子节点失败: ' + error.message)
+        ElMessage.error(t('manager.explorer.loadChildrenFailed', { error: error.message }))
       }
     }
   }
@@ -200,9 +203,9 @@ const handleNodeAction = async ({ node, action }) => {
   if (action === 'refresh') {
     try {
       await store.refreshNode(locator)
-      ElMessage.success('刷新成功')
+      ElMessage.success(t('manager.explorer.refreshSuccess'))
     } catch (error) {
-      ElMessage.error('刷新失败: ' + error.message)
+      ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
     }
     return
   }
@@ -210,7 +213,7 @@ const handleNodeAction = async ({ node, action }) => {
   if (action === 'embedding' || action === 'embedding-batch') {
     // 只支持 MinIO/S3 对象存储
     if (node.engineType !== 'minio' && node.engineType !== 's3') {
-      ElMessage.warning('向量化功能仅支持对象存储（MinIO/S3）')
+      ElMessage.warning(t('manager.explorer.vectorizeOnlyStorage'))
       return
     }
 
@@ -230,7 +233,7 @@ const handleNodeAction = async ({ node, action }) => {
       if (action === 'embedding') {
         // 单个对象向量化
         if (node.type !== 'object') {
-          ElMessage.warning('该操作仅适用于单个文件')
+          ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
           return
         }
         params.scope = 'object'
@@ -244,7 +247,7 @@ const handleNodeAction = async ({ node, action }) => {
         } else if (node.type === 'bucket') {
           params.scope = 'bucket'
         } else {
-          ElMessage.warning('批量向量化仅适用于目录或 Bucket')
+          ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
           return
         }
       }
@@ -258,15 +261,15 @@ const handleNodeAction = async ({ node, action }) => {
 
       // 显示成功消息
       if (action === 'embedding') {
-        ElMessage.success(`向量化任务已提交（文件：${params.object_key}）`)
+        ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: params.object_key }))
       } else {
-        ElMessage.success(`批量向量化任务已提交（${node.type === 'bucket' ? 'Bucket' : '目录'}：${node.label}）`)
+        ElMessage.success(t('manager.explorer.batchVectorizeSubmitted', { label: node.label }))
       }
 
       console.log('向量化任务响应:', response.data)
     } catch (error) {
       console.error('向量化失败:', error)
-      ElMessage.error('向量化失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('manager.explorer.vectorizeFailed', { error: error.response?.data?.error || error.message }))
     }
   }
 }
@@ -291,7 +294,7 @@ const handleNodeExpand = async (node) => {
       await store.loadTree(node.engineId)
     } catch (error) {
       console.error('加载引擎内容失败:', error)
-      ElMessage.error('加载引擎内容失败: ' + error.message)
+      ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
     }
     return
   }
@@ -322,7 +325,7 @@ const handleNodeExpand = async (node) => {
       }
     } catch (error) {
       console.error('增量加载子节点失败:', error)
-      ElMessage.error('加载子节点失败: ' + error.message)
+      ElMessage.error(t('manager.explorer.loadChildrenFailed', { error: error.message }))
     }
   }
 }

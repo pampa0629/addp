@@ -1,44 +1,44 @@
 <template>
   <div class="step4-configure">
-    <h3>任务配置</h3>
-    <p class="step-description">设置任务名称、描述和调度计划</p>
+    <h3>{{ t('transfer.taskWizard.configPage') }}</h3>
+    <p class="step-description">{{ t('transfer.taskWizard.configPageDesc') }}</p>
 
     <el-form :model="wizardState" label-width="120px" :rules="rules" ref="formRef">
       <!-- 任务名称 -->
-      <el-form-item label="任务名称" prop="taskName" required>
+      <el-form-item :label="t('transfer.taskWizard.taskNameLabel2')" prop="taskName" required>
         <el-input
           v-model="wizardState.taskName.value"
-          placeholder="请输入任务名称"
+          :placeholder="t('transfer.taskWizard.taskNamePlaceholder2')"
           maxlength="50"
           show-word-limit
         />
       </el-form-item>
 
       <!-- 任务描述 -->
-      <el-form-item label="任务描述" prop="taskDescription">
+      <el-form-item :label="t('transfer.taskWizard.taskDescLabel2')" prop="taskDescription">
         <el-input
           v-model="wizardState.taskDescription.value"
           type="textarea"
           :rows="3"
-          placeholder="请输入任务描述（可选）"
+          :placeholder="t('transfer.taskWizard.taskDescPlaceholder')"
           maxlength="200"
           show-word-limit
         />
       </el-form-item>
 
       <!-- 调度计划 -->
-      <el-form-item label="调度计划">
+      <el-form-item :label="t('transfer.taskWizard.scheduleLabel2')">
         <el-radio-group v-model="scheduleMode">
-          <el-radio value="once">立即执行一次</el-radio>
-          <el-radio value="cron">定时调度</el-radio>
+          <el-radio value="once">{{ t('transfer.taskWizard.runOnce') }}</el-radio>
+          <el-radio value="cron">{{ t('transfer.taskWizard.cronSchedule') }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="scheduleMode === 'cron'" label="Cron表达式">
+      <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.cronExpression')">
         <div class="cron-config">
           <el-input
             v-model="wizardState.schedule.value"
-            placeholder="例如: 0 0 * * * (每天0点)"
+            :placeholder="t('transfer.taskWizard.cronPlaceholder')"
             style="margin-bottom: 12px"
           />
           <div class="cron-presets">
@@ -53,7 +53,7 @@
           </div>
           <div class="cron-hint">
             <el-alert
-              title="Cron格式：秒 分 时 日 月 周"
+              :title="t('transfer.taskWizard.cronFormat')"
               type="info"
               :closable="false"
             />
@@ -61,22 +61,22 @@
         </div>
       </el-form-item>
 
-      <el-form-item v-if="scheduleMode === 'cron'" label="定时任务启用">
+      <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.enableScheduleLabel')">
         <el-switch v-model="wizardState.enabled.value" />
-        <span class="form-hint">启用后定时任务将按计划自动执行</span>
+        <span class="form-hint">{{ t('transfer.taskWizard.enableScheduleHint') }}</span>
       </el-form-item>
 
       <!-- 高级选项 -->
-      <el-divider content-position="left">高级选项</el-divider>
+      <el-divider content-position="left">{{ t('transfer.taskWizard.advancedOptions') }}</el-divider>
 
-      <el-form-item label="批处理大小">
+      <el-form-item :label="t('transfer.taskWizard.batchProcessSize')">
         <el-input-number
           v-model="wizardState.batchSize.value"
           :min="100"
           :max="50000"
           :step="100"
         />
-        <span class="form-hint">单次读写的记录数（推荐：小数据 1000，中等数据 5000，大数据 10000）</span>
+        <span class="form-hint">{{ t('transfer.taskWizard.batchProcessHint') }}</span>
       </el-form-item>
     </el-form>
   </div>
@@ -84,6 +84,9 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   wizardState: {
@@ -96,17 +99,17 @@ const formRef = ref(null)
 const scheduleMode = ref('once')
 
 const cronPresets = [
-  { label: '每小时', value: '0 0 * * * *' },
-  { label: '每天0点', value: '0 0 0 * * *' },
-  { label: '每天8点', value: '0 0 8 * * *' },
-  { label: '每周一', value: '0 0 0 * * 1' },
-  { label: '每月1号', value: '0 0 0 1 * *' }
+  { label: t('transfer.taskWizard.cronPresetEveryHour'), value: '0 0 * * * *' },
+  { label: t('transfer.taskWizard.cronPresetEveryDayMidnight'), value: '0 0 0 * * *' },
+  { label: t('transfer.taskWizard.cronPresetEveryDay8'), value: '0 0 8 * * *' },
+  { label: t('transfer.taskWizard.cronPresetEveryMonday'), value: '0 0 0 * * 1' },
+  { label: t('transfer.taskWizard.cronPresetEveryMonth1'), value: '0 0 0 1 * *' }
 ]
 
 const rules = {
   taskName: [
-    { required: true, message: '请输入任务名称', trigger: 'blur' },
-    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
+    { required: true, message: t('transfer.taskWizard.taskNameRequired2'), trigger: 'blur' },
+    { min: 2, max: 50, message: t('transfer.taskWizard.taskNameLengthRule'), trigger: 'blur' }
   ]
 }
 </script>

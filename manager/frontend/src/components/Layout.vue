@@ -11,7 +11,7 @@
         <el-icon :size="24" style="margin-right: 10px">
           <DataAnalysis />
         </el-icon>
-        <h1>数据管理模块</h1>
+        <h1>{{ t('manager.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown>
@@ -24,7 +24,7 @@
             <el-dropdown-menu>
               <el-dropdown-item @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('manager.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -41,15 +41,15 @@
         >
           <el-menu-item index="/data-explorer">
             <el-icon><Search /></el-icon>
-            <span>数据探查</span>
+            <span>{{ t('manager.layout.dataExplorer') }}</span>
           </el-menu-item>
           <el-menu-item index="/data-retrieval">
             <el-icon><Document /></el-icon>
-            <span>数据检索</span>
+            <span>{{ t('manager.layout.dataRetrieval') }}</span>
           </el-menu-item>
           <el-menu-item index="/vectorization-tasks">
             <el-icon><List /></el-icon>
-            <span>向量化任务</span>
+            <span>{{ t('manager.layout.vectorizationTasks') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -66,6 +66,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   DataAnalysis,
   User,
@@ -79,6 +80,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 // 检测是否在 iframe 中
 const isInIframe = ref(window.self !== window.top)
@@ -101,7 +103,7 @@ onMounted(async () => {
 
 const handleLogout = () => {
   authStore.logout()
-  ElMessage.success('已退出登录')
+  ElMessage.success(t('manager.layout.logoutSuccess'))
   router.push('/login')
 }
 </script>

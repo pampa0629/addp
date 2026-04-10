@@ -1,0 +1,14 @@
+[meta.cache.cleared_all]
+other = "All resource caches cleared"
+
+[meta.cache.cleared]
+other = "Resource cache cleared"
+
+[meta.cache.cleared_engine]
+other = "Cache for resource {{.ID}} cleared"
+
+[meta.cache.refreshed]
+other = "Resource cache refreshed"
+
+[meta.cache.failed]
+other = "Failed to refresh cache: {{.Err}}"

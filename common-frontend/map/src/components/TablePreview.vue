@@ -3,7 +3,7 @@
     <!-- 地图预览控制栏（有几何字段时始终显示，switch 在 v-if 块外部避免销毁时报错） -->
     <div v-if="hasGeometry" class="map-controls">
       <div class="toggle-wrapper">
-        <span>地图预览</span>
+        <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
       <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
@@ -63,18 +63,21 @@
         :current-page="currentPage"
         @current-change="handlePageChange"
       />
-      <div class="tip">最多展示前 50 行数据</div>
+      <div class="tip">{{ t('map.maxRows') }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import { useResizable } from '../composables/useResizable'
 import MapContainer from './map/MapContainer.vue'
 import WKT from 'ol/format/WKT'
 import GeoJSON from 'ol/format/GeoJSON'
+
+const { t } = useI18n()
 
 const wktFormat = new WKT()
 const geojsonFormat = new GeoJSON()
@@ -148,7 +151,7 @@ const formatCellValue = (value) => {
 
 const buildPopupContent = (row) => {
   if (!row) {
-    return '<div class="map-popup-content">暂无数据</div>'
+    return `<div class="map-popup-content">${t('map.noData')}</div>`
   }
   const rowsHtml = (displayColumns.value || [])
     .map((col) => {
@@ -157,7 +160,7 @@ const buildPopupContent = (row) => {
       return `<div class="map-popup-row"><span class="map-popup-label">${label}</span><span class="map-popup-value">${value}</span></div>`
     })
     .join('')
-  return `<div class="map-popup-content">${rowsHtml || '<div class="map-popup-row">暂无可展示字段</div>'}</div>`
+  return `<div class="map-popup-content">${rowsHtml || `<div class="map-popup-row">${t('map.noFieldData')}</div>`}</div>`
 }
 
 // 过滤掉几何列后的显示列

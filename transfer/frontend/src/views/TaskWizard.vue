@@ -5,57 +5,57 @@
         <div class="card-header">
           <el-button @click="handleBack">
             <el-icon><ArrowLeft /></el-icon>
-            返回
+            {{ t('transfer.taskWizard.back') }}
           </el-button>
-          <span>{{ isEdit ? '编辑任务' : '创建数据传输任务' }}</span>
+          <span>{{ isEdit ? t('transfer.taskWizard.editTask') : t('transfer.taskWizard.createTask') }}</span>
         </div>
       </template>
 
       <el-steps :active="currentStep" finish-status="success" align-center>
-        <el-step title="基本信息" />
-        <el-step title="源设置" />
-        <el-step title="目标设置" />
-        <el-step title="字段映射" />
-        <el-step title="完成" />
+        <el-step :title="t('transfer.taskWizard.stepBasicInfo')" />
+        <el-step :title="t('transfer.taskWizard.stepSourceConfig')" />
+        <el-step :title="t('transfer.taskWizard.stepTargetConfig')" />
+        <el-step :title="t('transfer.taskWizard.stepFieldMapping')" />
+        <el-step :title="t('transfer.taskWizard.stepComplete')" />
       </el-steps>
 
       <div class="step-content">
         <!-- 步骤 1: 基本信息 -->
         <div v-show="currentStep === 0" class="step-panel">
           <el-form :model="taskForm" ref="basicFormRef" label-width="120px">
-            <el-form-item label="任务名称" prop="name" :rules="[{ required: true, message: '请输入任务名称' }]">
-              <el-input v-model="taskForm.name" placeholder="例如：用户数据每日同步" />
+            <el-form-item :label="t('transfer.taskWizard.taskName')" prop="name" :rules="[{ required: true, message: t('transfer.taskWizard.taskNameRequired') }]">
+              <el-input v-model="taskForm.name" :placeholder="t('transfer.taskWizard.taskNamePlaceholder')" />
             </el-form-item>
 
-            <el-form-item label="任务描述">
+            <el-form-item :label="t('transfer.taskWizard.taskDescription')">
               <el-input v-model="taskForm.description" type="textarea" :rows="3"
-                placeholder="描述任务的用途和注意事项" />
+                :placeholder="t('transfer.taskWizard.taskDescriptionPlaceholder')" />
             </el-form-item>
 
-            <el-form-item label="执行模式">
+            <el-form-item :label="t('transfer.taskWizard.executionMode')">
               <el-radio-group v-model="taskForm.mode">
-                <el-radio-button value="batch">批处理</el-radio-button>
-                <el-radio-button value="stream">流式</el-radio-button>
-                <el-radio-button value="micro-batch">微批</el-radio-button>
+                <el-radio-button value="batch">{{ t('transfer.taskWizard.batchMode') }}</el-radio-button>
+                <el-radio-button value="stream">{{ t('transfer.taskWizard.streamMode') }}</el-radio-button>
+                <el-radio-button value="micro-batch">{{ t('transfer.taskWizard.microBatchMode') }}</el-radio-button>
               </el-radio-group>
               <div class="hint">
-                <p>• 批处理：适合定期大批量数据传输（推荐）</p>
-                <p>• 流式：适合实时数据传输</p>
-                <p>• 微批：小批量实时传输</p>
+                <p>• {{ t('transfer.taskWizard.batchModeHint') }}</p>
+                <p>• {{ t('transfer.taskWizard.streamModeHint') }}</p>
+                <p>• {{ t('transfer.taskWizard.microBatchModeHint') }}</p>
               </div>
             </el-form-item>
 
-            <el-form-item label="批量大小">
+            <el-form-item :label="t('transfer.taskWizard.batchSize')">
               <el-input-number v-model="taskForm.batch_size" :min="100" :max="10000" :step="100" />
-              <div class="hint">每批处理的记录数，推荐 1000-5000</div>
+              <div class="hint">{{ t('transfer.taskWizard.batchSizeHint') }}</div>
             </el-form-item>
 
-            <el-form-item label="最大并行度">
+            <el-form-item :label="t('transfer.taskWizard.maxParallelism')">
               <el-input-number v-model="taskForm.max_parallelism" :min="1" :max="32" />
-              <div class="hint">同时运行的 Worker 数量，推荐 2-8</div>
+              <div class="hint">{{ t('transfer.taskWizard.maxParallelismHint') }}</div>
             </el-form-item>
 
-            <el-form-item label="定时调度">
+            <el-form-item :label="t('transfer.taskWizard.schedule')">
               <ScheduleConfig v-model="taskForm.schedule" :allow-custom-cron="true" />
             </el-form-item>
           </el-form>
@@ -64,9 +64,9 @@
         <!-- 步骤 2: 选择源数据源 -->
         <div v-show="currentStep === 1" class="step-panel">
           <div class="step-section">
-            <h3 class="step-section__title">选择源数据源</h3>
+            <h3 class="step-section__title">{{ t('transfer.taskWizard.selectSourceDataSource') }}</h3>
             <el-form label-width="120px">
-            <el-form-item label="数据源类型">
+            <el-form-item :label="t('transfer.taskWizard.sourceDataType')">
               <el-radio-group v-model="sourceConnectorType" @change="handleSourceTypeChange">
                 <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
                 <el-radio-button value="mysql">MySQL</el-radio-button>
@@ -75,10 +75,10 @@
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item label="选择数据源">
+            <el-form-item :label="t('transfer.taskWizard.sourceEngine')">
               <el-select
                 v-model="selectedSourceValue"
-                placeholder="选择数据源"
+                :placeholder="t('transfer.taskWizard.selectSourceEngine')"
                 style="width: 100%"
                 filterable
                 :loading="loadingSystemEngines || loadingLocalEngines"
@@ -92,19 +92,19 @@
               </el-select>
               <div class="hint">
                 <p>
-                  从系统管理 — 存储引擎中配置（全局可用）
-                  <el-link type="primary" @click="openSystemEngines">去配置</el-link>
+                  {{ t('transfer.taskWizard.systemEngineGlobal') }}
+                  <el-link type="primary" @click="openSystemEngines">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                 </p>
                 <p>
-                  在数据传输模块配置（只有数据传输可用）
-                  <el-link type="primary" @click="openLocalEngineDialog('source')">去配置</el-link>
+                  {{ t('transfer.taskWizard.localEngineTransfer') }}
+                  <el-link type="primary" @click="openLocalEngineDialog('source')">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                   <template v-if="selectedSourceLocalResource">
-                    <el-link type="primary" @click="openLocalEngineDialog('source', selectedSourceLocalResource)">编辑当前</el-link>
+                    <el-link type="primary" @click="openLocalEngineDialog('source', selectedSourceLocalResource)">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                     <el-link
                       type="success"
                       :loading="syncingLocalResource"
                       @click="handleSyncLocalResource('source')"
-                    >同步到 System</el-link>
+                    >{{ t('transfer.taskWizard.syncToSystem') }}</el-link>
                   </template>
                 </p>
               </div>
@@ -117,17 +117,17 @@
               style="margin-top: 20px"
             >
               <template #title>
-                已选择数据源：{{ selectedSourceResource.name }}
+                {{ t('transfer.taskWizard.selectSourceDataSource') }}：{{ selectedSourceResource.name }}
               </template>
               <div style="margin-top: 10px; font-size: 13px;">
                 <p v-if="selectedSourceResource.connection_info.host">
-                  主机：{{ selectedSourceResource.connection_info.host }}:{{ selectedSourceResource.connection_info.port }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedSourceResource.connection_info.host }}:{{ selectedSourceResource.connection_info.port }}
                 </p>
                 <p v-if="selectedSourceResource.connection_info.database">
-                  数据库：{{ selectedSourceResource.connection_info.database }}
+                  {{ t('transfer.taskDetail.database') }}：{{ selectedSourceResource.connection_info.database }}
                 </p>
                 <p v-if="selectedSourceResource.connection_info.bucket">
-                  存储桶：{{ selectedSourceResource.connection_info.bucket }}
+                  {{ t('transfer.taskDetail.bucket') }}：{{ selectedSourceResource.connection_info.bucket }}
                 </p>
               </div>
             </el-alert>
@@ -139,20 +139,20 @@
               style="margin-top: 20px"
             >
               <template #title>
-                已选择本地存储引擎：{{ selectedSourceLocalResource.name }}
+                {{ t('transfer.taskWizard.localEngineTransfer') }}：{{ selectedSourceLocalResource.name }}
               </template>
               <div style="margin-top: 10px; font-size: 13px;">
                 <p v-if="selectedSourceLocalResource.connection_info && selectedSourceLocalResource.connection_info.host">
-                  主机：{{ selectedSourceLocalResource.connection_info.host }}:{{ selectedSourceLocalResource.connection_info.port }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedSourceLocalResource.connection_info.host }}:{{ selectedSourceLocalResource.connection_info.port }}
                 </p>
                 <p v-if="selectedSourceLocalResource.connection_info && selectedSourceLocalResource.connection_info.endpoint">
-                  端点：{{ selectedSourceLocalResource.connection_info.endpoint }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedSourceLocalResource.connection_info.endpoint }}
                 </p>
                 <p v-if="selectedSourceLocalResource.connection_info && selectedSourceLocalResource.connection_info.database">
-                  数据库：{{ selectedSourceLocalResource.connection_info.database }}
+                  {{ t('transfer.taskDetail.database') }}：{{ selectedSourceLocalResource.connection_info.database }}
                 </p>
                 <p v-if="selectedSourceLocalResource.connection_info && selectedSourceLocalResource.connection_info.bucket">
-                  存储桶：{{ selectedSourceLocalResource.connection_info.bucket }}
+                  {{ t('transfer.taskDetail.bucket') }}：{{ selectedSourceLocalResource.connection_info.bucket }}
                 </p>
               </div>
             </el-alert>
@@ -160,33 +160,33 @@
           </div>
 
           <div class="step-section">
-            <h3 class="step-section__title">配置读取参数</h3>
+            <h3 class="step-section__title">{{ t('transfer.taskWizard.configReadParams') }}</h3>
             <el-alert
               v-if="selectedSourceLocalResource && !['spatialite','sqlite'].includes(sourceConnectorType)"
               type="warning"
               :closable="false"
               style="margin-bottom: 12px"
             >
-              本地存储引擎不会自动同步元数据，请根据实际情况手动配置查询。
+              {{ t('transfer.taskWizard.localEngineMetaHint') }}
             </el-alert>
             <el-alert type="info" :closable="false" style="margin-bottom: 20px">
-              根据源类型配置读取参数
+              {{ t('transfer.taskWizard.readParamsHint') }}
             </el-alert>
 
             <!-- PostgreSQL/MySQL 源配置 -->
             <div v-if="['postgresql', 'mysql'].includes(sourceConnectorType)">
               <el-form label-width="120px">
-                <el-form-item label="查询方式">
+                <el-form-item :label="t('transfer.taskWizard.queryMode')">
                   <el-radio-group v-model="sourceConfig.queryType">
-                    <el-radio-button value="table">选择表</el-radio-button>
-                    <el-radio-button value="sql">自定义 SQL</el-radio-button>
+                    <el-radio-button value="table">{{ t('transfer.taskWizard.selectTable') }}</el-radio-button>
+                    <el-radio-button value="sql">{{ t('transfer.taskWizard.customSQL') }}</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
 
-                <el-form-item v-if="sourceConfig.queryType === 'table'" label="表名">
+                <el-form-item v-if="sourceConfig.queryType === 'table'" :label="t('transfer.taskWizard.dataTable')">
                   <el-select
                     v-model="sourceConfig.table"
-                    placeholder="选择表"
+                    :placeholder="t('transfer.taskWizard.selectDataTable')"
                     filterable
                     style="width: 100%"
                     :loading="loadingSourceTables"
@@ -200,34 +200,34 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从元数据模块自动获取可用表列表。选择表后将自动获取字段信息。
+                    {{ t('transfer.taskWizard.tableModeMetaHint') }}
                     <el-button type="primary" link size="small" @click="handleLoadSourceTables">
-                      刷新列表
+                      {{ t('transfer.taskWizard.refreshList') }}
                     </el-button>
                   </div>
                 </el-form-item>
 
-                <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
+                <el-form-item v-if="sourceConfig.queryType === 'sql'" :label="t('transfer.taskWizard.sqlQuery')">
                   <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
-                    placeholder="SELECT * FROM users WHERE status = 'active'" />
-                  <div class="hint">支持使用 ? 作为参数占位符</div>
+                    :placeholder="t('transfer.taskWizard.sqlQueryPlaceholder')" />
+                  <div class="hint">{{ t('transfer.taskWizard.sqlQueryHint') }}</div>
                 </el-form-item>
 
                 <el-form-item v-if="sourceConfig.queryType === 'sql' && sourceConfig.query?.includes('?')"
-                  label="查询参数">
-                  <el-input v-model="sourceConfig.parameters" placeholder='["value1", "value2"]（JSON 数组）' />
+                  :label="t('transfer.taskWizard.queryParameters')">
+                  <el-input v-model="sourceConfig.parameters" :placeholder="t('transfer.taskWizard.queryParametersPlaceholder')" />
                 </el-form-item>
 
-                <el-form-item label="增量字段">
+                <el-form-item :label="t('transfer.taskWizard.incrementalField')">
                   <el-input v-model="sourceConfig.incremental_field"
-                    placeholder="用于增量同步的字段，如：updated_at" />
-                  <div class="hint">留空则全量读取，填写字段名则只读取变更数据</div>
+                    :placeholder="t('transfer.taskWizard.incrementalFieldPlaceholder')" />
+                  <div class="hint">{{ t('transfer.taskWizard.incrementalFieldHint') }}</div>
                 </el-form-item>
 
-                <el-form-item v-if="sourceConfig.incremental_field" label="增量类型">
+                <el-form-item v-if="sourceConfig.incremental_field" :label="t('transfer.taskWizard.incrementalType')">
                   <el-select v-model="sourceConfig.incremental_type">
-                    <el-option label="时间戳" value="timestamp" />
-                    <el-option label="整数 ID" value="integer" />
+                    <el-option :label="t('transfer.taskWizard.timestampType')" value="timestamp" />
+                    <el-option :label="t('transfer.taskWizard.integerType')" value="integer" />
                   </el-select>
                 </el-form-item>
               </el-form>
@@ -236,17 +236,17 @@
             <!-- SpatiaLite/SQLite 源配置 -->
             <div v-if="['spatialite', 'sqlite'].includes(sourceConnectorType)">
               <el-form label-width="120px">
-                <el-form-item label="查询方式">
+                <el-form-item :label="t('transfer.taskWizard.queryMode')">
                   <el-radio-group v-model="sourceConfig.queryType">
-                    <el-radio-button value="table">选择表</el-radio-button>
-                    <el-radio-button value="sql">自定义 SQL</el-radio-button>
+                    <el-radio-button value="table">{{ t('transfer.taskWizard.selectTable') }}</el-radio-button>
+                    <el-radio-button value="sql">{{ t('transfer.taskWizard.customSQL') }}</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
 
-                <el-form-item v-if="sourceConfig.queryType === 'table'" label="表名">
+                <el-form-item v-if="sourceConfig.queryType === 'table'" :label="t('transfer.taskWizard.dataTable')">
                   <el-select
                     v-model="sourceConfig.table"
-                    placeholder="选择表"
+                    :placeholder="t('transfer.taskWizard.selectDataTable')"
                     filterable
                     style="width: 100%"
                     :loading="loadingSourceTables"
@@ -260,26 +260,26 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从本地资源实时扫描 SQLite/SpatiaLite 表。选择表后将自动获取字段信息。
+                    {{ t('transfer.taskWizard.spatialiteTableHint') }}
                     <el-button type="primary" link size="small" @click="handleLoadSourceTables">
-                      刷新列表
+                      {{ t('transfer.taskWizard.refreshList') }}
                     </el-button>
                   </div>
                 </el-form-item>
 
-                <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
+                <el-form-item v-if="sourceConfig.queryType === 'sql'" :label="t('transfer.taskWizard.sqlQuery')">
                   <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
                     placeholder="SELECT id, ST_AsBinary(geom) AS geom, name FROM pois" />
-                  <div class="hint">自定义 SQL 需自行对几何列使用 ST_AsBinary() 并命名为原列名（注意：使用 ST_AsBinary 而非 AsBinary，以确保兼容 PostGIS）。</div>
+                  <div class="hint">{{ t('transfer.taskWizard.sqlCustomHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="WHERE 条件">
-                  <el-input v-model="sourceConfig.where_clause" placeholder="可选：status = 'active'" />
+                <el-form-item :label="t('transfer.taskWizard.whereClause')">
+                  <el-input v-model="sourceConfig.where_clause" :placeholder="t('transfer.taskWizard.whereClausePlaceholder')" />
                 </el-form-item>
 
-                <el-form-item label="空间字段">
-                  <el-input v-model="sourceConfig.geometry_fields" placeholder="可选：以逗号分隔，如 geom,geom2" />
-                  <div class="hint">不填则自动探测（基于 geometry_columns）。</div>
+                <el-form-item :label="t('transfer.taskWizard.spatialFields')">
+                  <el-input v-model="sourceConfig.geometry_fields" :placeholder="t('transfer.taskWizard.spatialFieldsPlaceholder')" />
+                  <div class="hint">{{ t('transfer.taskWizard.spatialFieldsHint') }}</div>
                 </el-form-item>
               </el-form>
             </div>
@@ -287,19 +287,19 @@
             <!-- CSV/JSON 文件源配置 -->
             <div v-if="['csv', 'json'].includes(sourceConnectorType)">
               <el-form label-width="120px">
-                <el-form-item label="文件路径">
+                <el-form-item :label="t('transfer.taskWizard.filePath')">
                   <el-input v-model="sourceConfig.path"
-                    placeholder="文件路径，如：imports/users.csv" />
+                    placeholder="imports/users.csv" />
                 </el-form-item>
 
-                <el-form-item v-if="sourceConnectorType === 'csv'" label="CSV 选项">
-                  <el-checkbox v-model="sourceConfig.has_header">包含表头</el-checkbox>
-                  <el-input v-model="sourceConfig.delimiter" placeholder="分隔符"
+                <el-form-item v-if="sourceConnectorType === 'csv'" :label="t('transfer.taskWizard.csvOptions')">
+                  <el-checkbox v-model="sourceConfig.has_header">{{ t('transfer.taskWizard.includeHeader') }}</el-checkbox>
+                  <el-input v-model="sourceConfig.delimiter" :placeholder="t('transfer.taskWizard.delimiter')"
                     style="width: 100px; margin-left: 10px" />
-                  <div class="hint">分隔符默认为逗号 (,)</div>
+                  <div class="hint">{{ t('transfer.taskWizard.delimiterDefaultHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="编码">
+                <el-form-item :label="t('transfer.taskWizard.encoding')">
                   <el-select v-model="sourceConfig.encoding">
                     <el-option label="UTF-8" value="utf-8" />
                     <el-option label="GBK" value="gbk" />
@@ -312,25 +312,25 @@
             <!-- S3/MinIO 源配置 -->
             <div v-if="sourceConnectorType === 's3'">
               <el-form label-width="120px">
-                <el-form-item label="对象前缀">
+                <el-form-item :label="t('transfer.taskWizard.objectPrefix')">
                   <el-input v-model="sourceConfig.prefix"
-                    placeholder="对象前缀/目录，如：data/exports/" />
-                  <div class="hint">留空则读取整个存储桶</div>
+                    :placeholder="t('transfer.taskWizard.objectPrefixPlaceholder')" />
+                  <div class="hint">{{ t('transfer.taskWizard.objectPrefixHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="递归读取">
+                <el-form-item :label="t('transfer.taskWizard.recursiveRead')">
                   <el-switch v-model="sourceConfig.recursive" />
-                  <div class="hint">是否递归读取子目录</div>
+                  <div class="hint">{{ t('transfer.taskWizard.recursiveHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="包含模式">
+                <el-form-item :label="t('transfer.taskWizard.includePatterns')">
                   <el-input v-model="sourceConfig.include_patterns"
-                    placeholder='["*.json", "*.csv"]（JSON 数组）' />
+                    placeholder='["*.json", "*.csv"]' />
                 </el-form-item>
 
-                <el-form-item label="排除模式">
+                <el-form-item :label="t('transfer.taskWizard.excludePatterns')">
                   <el-input v-model="sourceConfig.exclude_patterns"
-                    placeholder='["*.tmp", "*.log"]（JSON 数组）' />
+                    placeholder='["*.tmp", "*.log"]' />
                 </el-form-item>
               </el-form>
             </div>
@@ -340,24 +340,20 @@
         <!-- 步骤 3: 目标设置 -->
         <div v-show="currentStep === 2" class="step-panel">
           <div class="step-section">
-            <h3 class="step-section__title">选择目标数据源</h3>
+            <h3 class="step-section__title">{{ t('transfer.taskWizard.selectTargetDataSource') }}</h3>
             <el-form label-width="120px">
-            <el-form-item label="目标类型">
+            <el-form-item :label="t('transfer.taskWizard.targetType')">
               <el-radio-group v-model="targetConnectorType" @change="handleTargetTypeChange">
                 <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
                 <el-radio-button value="mysql">MySQL</el-radio-button>
-                <el-radio-button value="s3">对象存储（MinIO/S3）</el-radio-button>
+                <el-radio-button value="s3">{{ t('transfer.taskWizard.objectStorage') }}</el-radio-button>
               </el-radio-group>
-              <div class="hint" style="margin-top: 10px">
-                <p>• 数据库：直接写入到数据库表</p>
-                <p>• 对象存储：导出为文件，可选 CSV、JSON、Parquet 等格式</p>
-              </div>
             </el-form-item>
 
-            <el-form-item label="选择数据源">
+            <el-form-item :label="t('transfer.taskWizard.selectTargetDataSource')">
               <el-select
                 v-model="selectedTargetValue"
-                placeholder="选择目标数据源"
+                :placeholder="t('transfer.taskWizard.selectTargetEngine')"
                 style="width: 100%"
                 filterable
                 :loading="loadingSystemEngines || loadingLocalEngines"
@@ -371,19 +367,19 @@
               </el-select>
               <div class="hint">
                 <p>
-                  从系统管理 — 存储引擎中配置（全局可用）
-                  <el-link type="primary" @click="openSystemEngines">去配置</el-link>
+                  {{ t('transfer.taskWizard.systemEngineGlobal') }}
+                  <el-link type="primary" @click="openSystemEngines">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                 </p>
                 <p>
-                  在数据传输模块配置（只有数据传输可用）
-                  <el-link type="primary" @click="openLocalEngineDialog('target')">去配置</el-link>
+                  {{ t('transfer.taskWizard.localEngineTransfer') }}
+                  <el-link type="primary" @click="openLocalEngineDialog('target')">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                   <template v-if="selectedTargetLocalResource">
-                    <el-link type="primary" @click="openLocalEngineDialog('target', selectedTargetLocalResource)">编辑当前</el-link>
+                    <el-link type="primary" @click="openLocalEngineDialog('target', selectedTargetLocalResource)">{{ t('transfer.taskWizard.editCurrent') }}</el-link>
                     <el-link
                       type="success"
                       :loading="syncingLocalResource"
                       @click="handleSyncLocalResource('target')"
-                    >同步到 System</el-link>
+                    >{{ t('transfer.taskWizard.syncToSystem') }}</el-link>
                   </template>
                 </p>
               </div>
@@ -396,17 +392,17 @@
               style="margin-top: 20px"
             >
               <template #title>
-                已选择目标：{{ selectedTargetResource.name }}
+                {{ t('transfer.taskWizard.selectTargetDataSource') }}：{{ selectedTargetResource.name }}
               </template>
               <div style="margin-top: 10px; font-size: 13px;">
                 <p v-if="selectedTargetResource.connection_info.host">
-                  主机：{{ selectedTargetResource.connection_info.host }}:{{ selectedTargetResource.connection_info.port }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedTargetResource.connection_info.host }}:{{ selectedTargetResource.connection_info.port }}
                 </p>
                 <p v-if="selectedTargetResource.connection_info.database">
-                  数据库：{{ selectedTargetResource.connection_info.database }}
+                  {{ t('transfer.taskDetail.database') }}：{{ selectedTargetResource.connection_info.database }}
                 </p>
                 <p v-if="selectedTargetResource.connection_info.bucket">
-                  存储桶：{{ selectedTargetResource.connection_info.bucket }}
+                  {{ t('transfer.taskDetail.bucket') }}：{{ selectedTargetResource.connection_info.bucket }}
                 </p>
               </div>
             </el-alert>
@@ -418,20 +414,20 @@
               style="margin-top: 20px"
             >
               <template #title>
-                已选择本地存储引擎：{{ selectedTargetLocalResource.name }}
+                {{ t('transfer.taskWizard.localEngineTransfer') }}：{{ selectedTargetLocalResource.name }}
               </template>
               <div style="margin-top: 10px; font-size: 13px;">
                 <p v-if="selectedTargetLocalResource.connection_info && selectedTargetLocalResource.connection_info.host">
-                  主机：{{ selectedTargetLocalResource.connection_info.host }}:{{ selectedTargetLocalResource.connection_info.port }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedTargetLocalResource.connection_info.host }}:{{ selectedTargetLocalResource.connection_info.port }}
                 </p>
                 <p v-if="selectedTargetLocalResource.connection_info && selectedTargetLocalResource.connection_info.endpoint">
-                  端点：{{ selectedTargetLocalResource.connection_info.endpoint }}
+                  {{ t('transfer.taskDetail.host') }}：{{ selectedTargetLocalResource.connection_info.endpoint }}
                 </p>
                 <p v-if="selectedTargetLocalResource.connection_info && selectedTargetLocalResource.connection_info.database">
-                  数据库：{{ selectedTargetLocalResource.connection_info.database }}
+                  {{ t('transfer.taskDetail.database') }}：{{ selectedTargetLocalResource.connection_info.database }}
                 </p>
                 <p v-if="selectedTargetLocalResource.connection_info && selectedTargetLocalResource.connection_info.bucket">
-                  存储桶：{{ selectedTargetLocalResource.connection_info.bucket }}
+                  {{ t('transfer.taskDetail.bucket') }}：{{ selectedTargetLocalResource.connection_info.bucket }}
                 </p>
               </div>
             </el-alert>
@@ -439,18 +435,18 @@
           </div>
 
           <div class="step-section">
-            <h3 class="step-section__title">配置写入参数</h3>
+            <h3 class="step-section__title">{{ t('transfer.taskWizard.configWriteParams') }}</h3>
             <el-alert type="info" :closable="false" style="margin-bottom: 20px">
-              根据目标类型配置写入参数
+              {{ t('transfer.taskWizard.writeParamsHint') }}
             </el-alert>
 
             <!-- PostgreSQL/MySQL 目标配置 -->
             <div v-if="['postgresql', 'mysql'].includes(targetConnectorType)">
               <el-form label-width="140px">
-                <el-form-item label="目标表名">
+                <el-form-item :label="t('transfer.taskWizard.targetTableName')">
                   <el-select
                     v-model="targetConfig.table"
-                    placeholder="选择表"
+                    :placeholder="t('transfer.taskWizard.selectTableOrInput')"
                     filterable
                     allow-create
                     default-first-option
@@ -467,42 +463,42 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从元数据模块自动获取可用表列表;输入新表名后按回车确认。选择表后将自动获取字段信息。
+                    {{ t('transfer.taskWizard.targetTableMetaHint') }}
                     <el-button type="primary" link size="small" @click="handleLoadTargetTables">
-                      刷新列表
+                      {{ t('transfer.taskWizard.refreshList') }}
                     </el-button>
                   </div>
                 </el-form-item>
 
-                <el-form-item label="写入模式">
+                <el-form-item :label="t('transfer.taskWizard.writeMode')">
                   <el-radio-group v-model="targetConfig.mode">
-                    <el-radio-button value="insert">插入（INSERT）</el-radio-button>
-                    <el-radio-button value="upsert">更新插入（UPSERT）</el-radio-button>
-                    <el-radio-button value="replace">替换（REPLACE）</el-radio-button>
+                    <el-radio-button value="insert">{{ t('transfer.taskWizard.insert') }}</el-radio-button>
+                    <el-radio-button value="upsert">{{ t('transfer.taskWizard.upsert') }}</el-radio-button>
+                    <el-radio-button value="replace">{{ t('transfer.taskWizard.replace') }}</el-radio-button>
                   </el-radio-group>
                   <div class="hint">
-                    <p>• 插入：遇到冲突则报错</p>
-                    <p>• 更新插入：遇到冲突则更新</p>
-                    <p>• 替换：先删除再插入</p>
+                    <p>• {{ t('transfer.taskWizard.insertHint') }}</p>
+                    <p>• {{ t('transfer.taskWizard.upsertHint') }}</p>
+                    <p>• {{ t('transfer.taskWizard.replaceHint') }}</p>
                   </div>
                 </el-form-item>
 
-                <el-form-item v-if="targetConfig.mode !== 'insert'" label="冲突键">
+                <el-form-item v-if="targetConfig.mode !== 'insert'" :label="t('transfer.taskWizard.conflictKeys')">
                   <el-input v-model="targetConfig.conflict_keys"
-                    placeholder='["id"]（JSON 数组，用于判断冲突的字段）' />
+                    placeholder='["id"]' />
                 </el-form-item>
 
-                <el-form-item label="冲突策略">
+                <el-form-item :label="t('transfer.taskWizard.conflictStrategy')">
                   <el-select v-model="targetConfig.conflict_strategy">
-                    <el-option label="跳过" value="skip" />
-                    <el-option label="更新" value="update" />
-                    <el-option label="报错" value="error" />
+                    <el-option :label="t('transfer.taskWizard.skip')" value="skip" />
+                    <el-option :label="t('transfer.taskWizard.update')" value="update" />
+                    <el-option :label="t('transfer.taskWizard.error')" value="error" />
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="自动扫描元数据">
+                <el-form-item :label="t('transfer.taskWizard.autoScanMetadata')">
                   <el-switch v-model="taskForm.auto_scan_metadata" />
-                  <div class="hint">任务完成后自动扫描目标引擎的元数据，更新数据目录</div>
+                  <div class="hint">{{ t('transfer.taskWizard.autoScanHint') }}</div>
                 </el-form-item>
               </el-form>
             </div>
@@ -510,7 +506,7 @@
             <!-- S3/MinIO 目标配置 -->
             <div v-if="targetConnectorType === 's3'">
               <el-form label-width="140px">
-                <el-form-item label="输出格式">
+                <el-form-item :label="t('transfer.taskWizard.outputFormat')">
                   <el-radio-group v-model="selectedTargetFormat">
                     <el-radio-button value="csv">CSV</el-radio-button>
                     <el-radio-button value="csv-wkt" :disabled="!hasSpatialSource">CSV（WKT）</el-radio-button>
@@ -520,9 +516,7 @@
                     <el-radio-button value="geojson" :disabled="!hasSpatialSource">GeoJSON</el-radio-button>
                     <el-radio-button value="shapefile" :disabled="!hasSpatialSource">Shapefile</el-radio-button>
                   </el-radio-group>
-                  <div class="hint">
-                    CSV/JSON 适用于常规表格；CSV（WKT）、GeoJSON 与 Shapefile 可导出空间数据。若当前源表没有空间字段，空间格式会自动禁用。
-                  </div>
+                  <div class="hint">{{ t('transfer.taskWizard.outputFormatHint') }}</div>
                 </el-form-item>
 
                 <el-alert
@@ -531,7 +525,7 @@
                   :closable="false"
                   style="margin-bottom: 12px"
                 >
-                  导出为 GeoJSON FeatureCollection，适合 WebGIS 或空间分析。
+                  {{ t('transfer.taskWizard.geojsonHint') }}
                 </el-alert>
 
                 <el-alert
@@ -540,16 +534,16 @@
                   :closable="false"
                   style="margin-bottom: 12px"
                 >
-                  将生成 .shp/.shx/.dbf，并自动打包成 ZIP。
+                  {{ t('transfer.taskWizard.shapefileHint') }}
                 </el-alert>
 
-                <el-form-item v-if="needsGeometrySelection" label="空间字段">
+                <el-form-item v-if="needsGeometrySelection" :label="t('transfer.taskWizard.spatialField')">
                   <template v-if="selectedTargetFormat === 'csv-wkt'">
                     <el-select
                       v-model="selectedGeometryFieldsMulti"
                       multiple
                       filterable
-                      placeholder="请选择导出的空间字段"
+                      :placeholder="t('transfer.taskWizard.geometryFieldPlaceholder')"
                       style="width: 100%"
                     >
                       <el-option
@@ -559,15 +553,13 @@
                         :value="field"
                       />
                     </el-select>
-                    <div class="hint">
-                      将所选空间字段分别转换为 WKT 字符串写入 CSV。
-                    </div>
+                    <div class="hint">{{ t('transfer.taskWizard.wktMultiSelectHint') }}</div>
                   </template>
                   <template v-else>
                     <el-select
                       v-model="selectedGeometryField"
                       filterable
-                      placeholder="请选择主空间字段"
+                      :placeholder="t('transfer.taskWizard.geometryFieldPlaceholder')"
                       style="width: 100%"
                     >
                       <el-option
@@ -577,13 +569,11 @@
                         :value="field"
                       />
                     </el-select>
-                    <div class="hint">
-                      GeoJSON 和 Shapefile 需指定一个主空间字段作为几何。
-                    </div>
+                    <div class="hint">{{ t('transfer.taskWizard.primaryGeometryHint') }}</div>
                   </template>
                 </el-form-item>
 
-                <el-form-item label="输出路径">
+                <el-form-item :label="t('transfer.taskWizard.outputPath')">
                   <el-input
                     v-model="targetConfig.path"
                     :placeholder="pathPlaceholder"
@@ -595,34 +585,34 @@
                         @click="openObjectStoragePicker"
                         :disabled="!canOpenObjectStoragePicker"
                       >
-                        选择目录
+                        {{ t('transfer.taskWizard.selectDirectory') }}
                       </el-button>
                     </template>
                   </el-input>
                   <div class="hint">
-                    文件将存储在对象存储的指定目录。{{ objectStorageDirectoryHint }}
+                    {{ t('transfer.taskWizard.outputPathHint') }} {{ objectStorageDirectoryHint }}
                   </div>
                 </el-form-item>
 
-                <el-form-item v-if="showCSVOptions" label="CSV 选项">
-                  <el-checkbox v-model="targetConfig.headers">包含表头</el-checkbox>
-                  <el-input v-model="targetConfig.delimiter" placeholder="分隔符"
+                <el-form-item v-if="showCSVOptions" :label="t('transfer.taskWizard.csvHeaderOption')">
+                  <el-checkbox v-model="targetConfig.headers">{{ t('transfer.taskWizard.includeHeader') }}</el-checkbox>
+                  <el-input v-model="targetConfig.delimiter" :placeholder="t('transfer.taskWizard.delimiter')"
                     style="width: 100px; margin-left: 10px" />
-                  <div class="hint">分隔符默认为逗号 (,)，也可使用制表符 (\t) 或其他字符</div>
+                  <div class="hint">{{ t('transfer.taskWizard.delimiterDefaultHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="压缩方式">
+                <el-form-item :label="t('transfer.taskWizard.compressionMode')">
                   <el-select v-model="targetConfig.compression">
-                    <el-option label="不压缩" value="none" />
+                    <el-option :label="t('transfer.taskWizard.noCompression')" value="none" />
                     <el-option label="Gzip" value="gzip" />
                     <el-option label="Zip" value="zip" />
                   </el-select>
-                  <div class="hint">压缩可以减少存储空间，但会增加处理时间</div>
+                  <div class="hint">{{ t('transfer.taskWizard.compressionHint') }}</div>
                 </el-form-item>
 
-                <el-form-item label="覆盖已有文件">
+                <el-form-item :label="t('transfer.taskWizard.overwrite')">
                   <el-switch v-model="targetConfig.overwrite" />
-                  <div class="hint">如果文件已存在，是否覆盖</div>
+                  <div class="hint">{{ t('transfer.taskWizard.overwriteHint') }}</div>
                 </el-form-item>
               </el-form>
             </div>
@@ -644,28 +634,28 @@
 
         <!-- 步骤 5: 确认 -->
         <div v-show="currentStep === 4" class="step-panel">
-          <el-result icon="success" title="任务配置完成" sub-title="请检查以下配置信息">
+          <el-result icon="success" :title="t('transfer.taskWizard.taskBasicInfo')" :sub-title="t('transfer.taskWizard.confirmCreateDesc')">
             <template #extra>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="任务名称">{{ taskForm.name }}</el-descriptions-item>
-                <el-descriptions-item label="执行模式">{{ taskForm.mode }}</el-descriptions-item>
-                <el-descriptions-item label="批量大小">{{ taskForm.batch_size }}</el-descriptions-item>
-                <el-descriptions-item label="定时调度" :span="2">
-                  {{ taskForm.schedule ? describeCron(taskForm.schedule) : '无（手动触发）' }}
+                <el-descriptions-item :label="t('transfer.taskWizard.taskNameLabel')">{{ taskForm.name }}</el-descriptions-item>
+                <el-descriptions-item :label="t('transfer.taskWizard.executionMode')">{{ taskForm.mode }}</el-descriptions-item>
+                <el-descriptions-item :label="t('transfer.taskWizard.batchSize')">{{ taskForm.batch_size }}</el-descriptions-item>
+                <el-descriptions-item :label="t('transfer.taskWizard.scheduleLabel')" :span="2">
+                  {{ taskForm.schedule ? describeCron(taskForm.schedule) : t('transfer.taskWizard.noSchedule') }}
                 </el-descriptions-item>
-                <el-descriptions-item label="源数据源">
+                <el-descriptions-item :label="t('transfer.taskDetail.sourceDataSource')">
                   {{ sourceResourceDisplayName }}
                 </el-descriptions-item>
-                <el-descriptions-item label="目标数据源">
+                <el-descriptions-item :label="t('transfer.taskDetail.targetDataSource')">
                   {{ targetResourceDisplayName }}
                 </el-descriptions-item>
-                <el-descriptions-item label="字段映射" :span="2">
-                  {{ fieldMappings.length }} 个字段
+                <el-descriptions-item :label="t('transfer.taskWizard.stepFieldMapping')" :span="2">
+                  {{ t('transfer.taskWizard.fieldMappingCount', { count: fieldMappings.length }) }}
                 </el-descriptions-item>
               </el-descriptions>
 
               <div style="margin-top: 20px;">
-                <el-checkbox v-model="startImmediately">创建后立即执行</el-checkbox>
+                <el-checkbox v-model="startImmediately">{{ t('transfer.taskWizard.taskStarted') }}</el-checkbox>
               </div>
             </template>
           </el-result>
@@ -673,17 +663,17 @@
       </div>
 
       <div class="step-actions">
-        <el-button v-if="currentStep > 0" @click="prevStep">上一步</el-button>
-        <el-button v-if="currentStep < 4" type="primary" @click="nextStep">下一步</el-button>
+        <el-button v-if="currentStep > 0" @click="prevStep">{{ t('transfer.taskWizard.previousStep') }}</el-button>
+        <el-button v-if="currentStep < 4" type="primary" @click="nextStep">{{ t('transfer.taskWizard.nextStep') }}</el-button>
         <el-button v-if="currentStep === 4" type="success" @click="handleSubmit" :loading="submitting">
-          {{ isEdit ? '更新任务' : '创建任务' }}
+          {{ isEdit ? t('transfer.taskWizard.updateTask') : t('transfer.taskWizard.createTask2') }}
         </el-button>
       </div>
     </el-card>
 
     <el-dialog
       v-model="localResourceDialogVisible"
-      :title="localResourceDialogMode === 'edit' ? '编辑本地存储引擎' : '新建本地存储引擎'"
+      :title="localResourceDialogMode === 'edit' ? t('transfer.taskWizard.editLocalEngine') : t('transfer.taskWizard.createLocalEngine')"
       width="600px"
     >
       <StorageEngineForm
@@ -692,10 +682,10 @@
         :is-edit="localResourceDialogMode === 'edit'"
       />
       <template #footer>
-        <el-button @click="localResourceDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="testingLocalResource" @click="handleTestLocalResource">测试连接</el-button>
+        <el-button @click="localResourceDialogVisible = false">{{ t('transfer.taskWizard.cancel') }}</el-button>
+        <el-button type="warning" :loading="testingLocalResource" @click="handleTestLocalResource">{{ t('transfer.taskWizard.testConnection') }}</el-button>
         <el-button type="primary" :loading="savingLocalResource" @click="handleSaveLocalResource">
-          {{ localResourceDialogMode === 'edit' ? '保存' : '创建' }}
+          {{ localResourceDialogMode === 'edit' ? t('transfer.taskWizard.save') : t('transfer.taskWizard.create') }}
         </el-button>
       </template>
     </el-dialog>
@@ -715,6 +705,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { taskAPI } from '@/api/tasks'
 import { localEnginesAPI } from '@/api/localEngines'
 import { systemEnginesAPI } from '@/api/systemEngines'
@@ -725,6 +716,7 @@ import axios from 'axios'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const isEdit = computed(() => !!route.params.id)
 
 const currentStep = ref(0)
@@ -863,7 +855,7 @@ watch(
         console.error('自动加载源字段失败:', e)
         // 只在非初始化阶段显示错误提示
         if (!loadingTask.value && !isInitializingFromTask.value) {
-          ElMessage.warning(`自动获取源字段失败: ${e.message || '未知错误'}`)
+          ElMessage.warning(t('transfer.taskWizard.autoFetchSourceFailed', { error: e.message || '' }))
         }
       }
     }, 300)
@@ -1103,8 +1095,8 @@ const loadSystemResources = async () => {
       ElMessage.closeAll()
       ElMessage.warning(
         error.response?.status === 503
-          ? 'System 模块暂不可用，当前仅显示数据传输模块的存储引擎'
-          : '无法连接到 System 模块，请检查网络或服务状态'
+          ? t('transfer.taskWizard.systemUnavailable503')
+          : t('transfer.taskWizard.cannotConnectSystem')
       )
     }
   } finally {
@@ -1119,7 +1111,7 @@ const loadLocalResources = async () => {
     localResources.value = data || []
   } catch (error) {
     console.error('加载本地存储引擎失败:', error)
-    ElMessage.error(error.response?.data?.error || '加载本地存储引擎失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.loadLocalEngineFailed', { error: '' }))
   } finally {
     loadingLocalEngines.value = false
   }
@@ -1681,14 +1673,14 @@ const handleTargetTypeChange = () => {
 
 const openObjectStoragePicker = () => {
   if (!canOpenObjectStoragePicker.value) {
-    ElMessage.warning('请先选择对象存储资源')
+    ElMessage.warning(t('transfer.taskWizard.selectObjectStorageFirst'))
     return
   }
 
   const option = selectedTargetOption.value
   const resourceId = option?.resource?.id
   if (!resourceId) {
-    ElMessage.warning('资源信息不完整，请重新选择')
+    ElMessage.warning(t('transfer.taskWizard.resourceInfoIncomplete'))
     return
   }
 
@@ -1741,7 +1733,7 @@ watch(localResourceDialogVisible, (visible) => {
 const handleTestLocalResource = async () => {
   const valid = await localResourceFormRef.value?.validate()
   if (!valid) {
-    ElMessage.warning('请完善存储引擎信息后再测试连接')
+    ElMessage.warning(t('transfer.taskWizard.completeEngineInfo'))
     return
   }
 
@@ -1749,12 +1741,12 @@ const handleTestLocalResource = async () => {
   try {
     const result = await localEnginesAPI.testConnection(localResourceForm.value)
     if (result.success) {
-      ElMessage.success('连接测试成功')
+      ElMessage.success(t('transfer.taskWizard.connectionTestSuccess'))
     } else {
-      ElMessage.error(result.error || '连接测试失败')
+      ElMessage.error(result.error || t('transfer.taskWizard.connectionTestFailed'))
     }
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || '连接测试失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.connectionTestFailed'))
   } finally {
     testingLocalResource.value = false
   }
@@ -1763,7 +1755,7 @@ const handleTestLocalResource = async () => {
 const handleSaveLocalResource = async () => {
   const valid = await localResourceFormRef.value?.validate()
   if (!valid) {
-    ElMessage.warning('请先完善存储引擎配置')
+    ElMessage.warning(t('transfer.taskWizard.completeEngineConfig'))
     return
   }
 
@@ -1777,10 +1769,10 @@ const handleSaveLocalResource = async () => {
         is_active: localResourceForm.value.is_active,
         connection_info: localResourceForm.value.connection_info
       })
-      ElMessage.success('存储引擎已更新')
+      ElMessage.success(t('transfer.taskWizard.engineUpdated'))
     } else {
       saved = await localEnginesAPI.create(localResourceForm.value)
-      ElMessage.success('存储引擎创建成功')
+      ElMessage.success(t('transfer.taskWizard.engineCreated'))
     }
 
     await loadLocalResources()
@@ -1794,7 +1786,7 @@ const handleSaveLocalResource = async () => {
     localResourceDialogVisible.value = false
   } catch (error) {
     console.error('保存存储引擎失败:', error)
-    ElMessage.error(error.response?.data?.error || '保存存储引擎失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.saveEngineFailed', { error: '' }))
   } finally {
     savingLocalResource.value = false
   }
@@ -1803,14 +1795,14 @@ const handleSaveLocalResource = async () => {
 const handleSyncLocalResource = async (scope) => {
   const resource = scope === 'source' ? selectedSourceLocalResource.value : selectedTargetLocalResource.value
   if (!resource) {
-    ElMessage.warning('请选择需要同步的存储引擎')
+    ElMessage.warning(t('transfer.taskWizard.selectSyncEngine'))
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定将存储引擎「${resource.name}」同步到 System 模块吗？`,
-      '同步到 System',
+      t('transfer.taskWizard.syncConfirm', { name: resource.name }),
+      t('transfer.taskWizard.syncConfirmTitle'),
       { type: 'info' }
     )
   } catch {
@@ -1820,11 +1812,10 @@ const handleSyncLocalResource = async (scope) => {
   syncingLocalResource.value = true
   try {
     await localEnginesAPI.syncToSystem(resource.id)
-    ElMessage.success('已同步到 System 模块')
+    ElMessage.success(t('transfer.taskWizard.syncedToSystem'))
     await loadSystemResources()
   } catch (error) {
-    console.error('同步到 System 失败:', error)
-    ElMessage.error(error.response?.data?.error || '同步失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.syncFailed'))
   } finally {
     syncingLocalResource.value = false
   }
@@ -1865,7 +1856,7 @@ const loadTaskForEdit = async () => {
     if (sourceScope === 'system' || (sourceEngineId && !sourceScope)) {
       const systemResource = systemResources.value.find(res => res.id === sourceEngineId) || null
       if (sourceEngineId && !systemResource) {
-        ElMessage.warning('未找到源数据源，请重新选择')
+        ElMessage.warning(t('transfer.taskWizard.sourceNotFound'))
       }
       const resolvedType = normalizeConnectorType(systemResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
@@ -1874,7 +1865,7 @@ const loadTaskForEdit = async () => {
     } else if (sourceScope === 'local') {
       const localResource = localResources.value.find(res => res.id === sourceEngineId) || null
       if (sourceEngineId && !localResource) {
-        ElMessage.warning('未找到本地源存储引擎，请重新选择')
+        ElMessage.warning(t('transfer.taskWizard.localSourceNotFound'))
       }
       const resolvedType = normalizeConnectorType(localResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
@@ -1893,7 +1884,7 @@ const loadTaskForEdit = async () => {
     if (targetScope === 'system' || (targetEngineId && !targetScope)) {
       const systemResource = systemResources.value.find(res => res.id === targetEngineId) || null
       if (targetEngineId && !systemResource) {
-        ElMessage.warning('未找到目标数据源，请重新选择')
+        ElMessage.warning(t('transfer.taskWizard.targetNotFound'))
       }
       const resolvedTypeRaw = normalizeConnectorType(systemResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
@@ -1903,7 +1894,7 @@ const loadTaskForEdit = async () => {
     } else if (targetScope === 'local') {
       const localResource = localResources.value.find(res => res.id === targetEngineId) || null
       if (targetEngineId && !localResource) {
-        ElMessage.warning('未找到本地目标存储引擎，请重新选择')
+        ElMessage.warning(t('transfer.taskWizard.localTargetNotFound'))
       }
       const resolvedTypeRaw = normalizeConnectorType(localResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
@@ -1978,7 +1969,7 @@ const loadTaskForEdit = async () => {
     }
   } catch (error) {
     console.error('加载任务详情失败:', error)
-    ElMessage.error(error.response?.data?.error || '加载任务详情失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.loadTaskFailed', { error: '' }))
   } finally {
     loadingTask.value = false
     // 使用 nextTick 确保所有响应式更新完成后再解除初始化标志
@@ -1989,7 +1980,7 @@ const loadTaskForEdit = async () => {
 
 const handleLoadSourceTables = async () => {
   if (!selectedSourceOption.value && !selectedSourceLocalResource.value) {
-    ElMessage.warning('请先选择源数据源')
+    ElMessage.warning(t('transfer.taskWizard.selectSourceFirst'))
     return
   }
 
@@ -2006,9 +1997,9 @@ const handleLoadSourceTables = async () => {
       })
       if (response.data && Array.isArray(response.data)) {
         availableSourceTables.value = response.data.map(item => item.name || item)
-        ElMessage.success(`已加载 ${availableSourceTables.value.length} 个表`)
+        ElMessage.success(t('transfer.taskWizard.tablesLoaded', { count: availableSourceTables.value.length }))
       } else {
-        ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
+        ElMessage.warning(t('transfer.taskWizard.noTablesFound'))
       }
     } else {
       // 本地资源：统一调用后端列出表（支持 postgresql/mysql/spatialite/sqlite）
@@ -2020,11 +2011,11 @@ const handleLoadSourceTables = async () => {
       } else {
         availableSourceTables.value = []
       }
-      ElMessage.success(`已加载 ${availableSourceTables.value.length} 个表`)
+      ElMessage.success(t('transfer.taskWizard.localTablesLoaded', { count: availableSourceTables.value.length }))
     }
   } catch (error) {
     console.error('加载表列表失败:', error)
-    ElMessage.error('加载表列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('transfer.taskWizard.loadTablesFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     loadingSourceTables.value = false
   }
@@ -2032,12 +2023,12 @@ const handleLoadSourceTables = async () => {
 
 const handleLoadTargetTables = async () => {
   if (!targetIsSystem.value) {
-    ElMessage.info('本地存储引擎暂不支持从元数据模块加载表，请手动配置')
+    ElMessage.info(t('transfer.taskWizard.localStorageNotSupported'))
     return
   }
 
   if (!selectedTargetOption.value) {
-    ElMessage.warning('请先选择数据源')
+    ElMessage.warning(t('transfer.taskWizard.selectTargetFirst'))
     return
   }
 
@@ -2057,16 +2048,16 @@ const handleLoadTargetTables = async () => {
     const tableList = Array.isArray(response.data?.data) ? response.data.data : (response.data || [])
     if (Array.isArray(tableList) && tableList.length > 0) {
       availableTargetTables.value = tableList.map(item => item.name || item)
-      ElMessage.success(`已加载 ${availableTargetTables.value.length} 个表`)
+      ElMessage.success(t('transfer.taskWizard.tablesLoaded', { count: availableTargetTables.value.length }))
     } else {
-      ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
+      ElMessage.warning(t('transfer.taskWizard.noTablesFound'))
     }
   } catch (error) {
     console.error('加载表列表失败:', error)
     if (error.response?.status === 404 || error.response?.data?.error?.includes('未找到')) {
-      ElMessage.warning('该数据源尚未扫描元数据，请先到元数据模块进行扫描')
+      ElMessage.warning(t('transfer.taskWizard.targetNotScanned'))
     } else {
-      ElMessage.error('加载表列表失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('transfer.taskWizard.loadTablesFailed', { error: error.response?.data?.error || error.message }))
     }
   } finally {
     loadingTargetTables.value = false
@@ -2082,7 +2073,7 @@ const handleTargetTableChange = (newTable) => {
   // 清空已有的字段映射
   fieldMappings.value = []
   // 提示用户
-  ElMessage.info('目标表已更改,请进入字段映射步骤重新配置')
+  ElMessage.info(t('transfer.taskWizard.targetTableChanged'))
 }
 
 const handleFetchFields = async (type) => {
@@ -2095,17 +2086,17 @@ const handleFetchFields = async (type) => {
 
   // 验证必要参数
   if (useSystem && !resourceId) {
-    ElMessage.warning(`请先选择${isSource ? '源' : '目标'}数据源`)
+    ElMessage.warning(t('transfer.taskWizard.selectSourceRequired'))
     return
   }
 
   if (!useSystem && !localResource) {
-    ElMessage.warning(`请先选择${isSource ? '源' : '目标'}本地存储引擎`)
+    ElMessage.warning(t('transfer.taskWizard.selectTargetRequired'))
     return
   }
 
   if (!tableName) {
-    ElMessage.warning(`请先选择${isSource ? '源' : '目标'}表`)
+    ElMessage.warning(isSource ? t('transfer.taskWizard.selectSourceRequired') : t('transfer.taskWizard.selectTargetRequired'))
     return
   }
 
@@ -2165,10 +2156,8 @@ const handleFetchFields = async (type) => {
             syncGeometryFieldsToConfig()
           }
 
-          ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
+          ElMessage.success(t('transfer.taskWizard.fieldCountLoaded', { count: sourceFields.value.length }))
           sourceFieldsLoaded.value = true
-        } else {
-          // 处理目标字段
           if (response.data.length > 0 && typeof response.data[0] === 'object') {
             targetFieldDetails.value = response.data.map(field => ({
               name: field.name || '',
@@ -2185,16 +2174,16 @@ const handleFetchFields = async (type) => {
             }))
             targetFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
           }
-          ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
+          ElMessage.success(t('transfer.taskWizard.targetFieldCountLoaded', { count: targetFields.value.length }))
           targetFieldsLoaded.value = true
         }
       } else {
-        ElMessage.warning(`未获取到${isSource ? '源' : '目标'}字段信息,请确认元数据已扫描`)
+        ElMessage.warning(t('transfer.taskWizard.fieldInfoNotFound'))
       }
     } else {
       // 本地资源: 直接从数据库扫描字段
       if (!localResource) {
-        ElMessage.info(`该类型本地资源暂不支持自动获取字段,请手动维护映射`)
+        ElMessage.info(t('transfer.taskWizard.localResourceNotSupported'))
         return
       }
 
@@ -2221,7 +2210,7 @@ const handleFetchFields = async (type) => {
             syncGeometryFieldsToConfig()
           }
 
-          ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
+          ElMessage.success(t('transfer.taskWizard.fieldCountLoaded', { count: sourceFields.value.length }))
           sourceFieldsLoaded.value = true
         } else {
           targetFieldDetails.value = data.map(field => ({
@@ -2231,11 +2220,11 @@ const handleFetchFields = async (type) => {
             standard_type: field.standard_type || field.StandardType || ''  // 添加标准化类型
           }))
           targetFields.value = targetFieldDetails.value.map(f => f.name).filter(Boolean)
-          ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
+          ElMessage.success(t('transfer.taskWizard.targetFieldCountLoaded', { count: targetFields.value.length }))
           targetFieldsLoaded.value = true
         }
       } else {
-        ElMessage.warning(`未获取到${isSource ? '源' : '目标'}字段信息,请检查表名是否正确`)
+        ElMessage.warning(t('transfer.taskWizard.fieldInfoNotFound'))
       }
     }
   } catch (error) {
@@ -2251,9 +2240,9 @@ const handleFetchFields = async (type) => {
 
     // 只对源字段显示错误提示
     if (error.response?.status === 404) {
-      ElMessage.error(`未找到表「${tableName}」的字段信息,请先到元数据模块扫描该数据源`)
+      ElMessage.error(t('transfer.taskWizard.tableFieldNotFound', { name: tableName }))
     } else {
-      ElMessage.error(`获取字段列表失败: ${errorMsg}`)
+      ElMessage.error(t('transfer.taskWizard.fieldsFetchFailed', { error: errorMsg }))
     }
 
     // 抛出异常，让调用方知道获取失败
@@ -2278,17 +2267,17 @@ const nextStep = async () => {
     try {
       await basicFormRef.value?.validate()
     } catch {
-      ElMessage.warning('请完善基本信息')
+      ElMessage.warning(t('transfer.taskWizard.basicInfoRequired'))
       return
     }
   } else if (currentStep.value === 1) {
     if (!selectedSourceOption.value) {
-      ElMessage.warning('请选择源数据源')
+      ElMessage.warning(t('transfer.taskWizard.selectSourceRequired'))
       return
     }
   } else if (currentStep.value === 2) {
     if (!selectedTargetOption.value) {
-      ElMessage.warning('请选择目标数据源')
+      ElMessage.warning(t('transfer.taskWizard.selectTargetRequired'))
       return
     }
   }
@@ -2328,7 +2317,7 @@ const autoFetchAndMapFields = async () => {
         await handleFetchFields('source')
       } else if (sourceConfig.value.queryType === 'sql') {
         console.log('SQL 模式,无法自动获取源字段')
-        ElMessage.info('SQL 模式下无法自动获取字段,请手动添加映射')
+        ElMessage.info(t('transfer.taskWizard.sqlModeInfo'))
       } else {
         console.log('缺少必要参数,无法获取源字段:', {
           isSystem: sourceIsSystem.value,
@@ -2376,9 +2365,9 @@ const autoFetchAndMapFields = async () => {
               console.log('目标字段为空(可能是新表),使用源字段作为目标字段')
               if (sourceFields.value.length > 0) {
                 targetFields.value = [...sourceFields.value]
-                ElMessage.info('目标表可能是新表,已使用源字段自动创建映射')
+              ElMessage.info(t('transfer.taskWizard.targetTableNewAutoMapped'))
               } else {
-                ElMessage.warning('源字段和目标字段都为空,无法自动映射')
+              ElMessage.warning(t('transfer.taskWizard.sourceFieldsEmpty'))
               }
             }
           } catch (error) {
@@ -2387,12 +2376,12 @@ const autoFetchAndMapFields = async () => {
             if (sourceFields.value.length > 0) {
               console.log('使用源字段作为目标字段 (异常情况)')
               targetFields.value = [...sourceFields.value]
-              ElMessage.info('无法从元数据获取目标字段,已使用源字段自动创建映射')
+              ElMessage.info(t('transfer.taskWizard.targetTableNewAutoMapped'))
             }
           }
         } else {
           console.log('数据库目标但未选表,跳过获取目标字段')
-          ElMessage.warning('请先在目标设置中选择或输入目标表名')
+          ElMessage.warning(t('transfer.taskWizard.selectTargetFirst'))
         }
       } else if (targetConnectorType.value === 's3' ||
                  (!targetIsSystem.value &&
@@ -2412,7 +2401,7 @@ const autoFetchAndMapFields = async () => {
           type: targetConnectorType.value,
           localResource: selectedTargetLocalResource.value?.engine_type
         })
-        ElMessage.warning('无法识别目标类型,请检查目标数据源配置')
+        ElMessage.warning(t('transfer.taskWizard.selectTargetRequired'))
       }
     } else {
       console.log(`目标字段已存在: ${targetFields.value.length} 个`)
@@ -2428,16 +2417,16 @@ const autoFetchAndMapFields = async () => {
       performAutoMatch()
     } else if (sourceFields.value.length === 0) {
       console.warn('源字段列表为空,无法自动映射')
-      ElMessage.warning('源字段列表为空,无法自动映射。请检查源数据源配置或手动添加映射。')
+      ElMessage.warning(t('transfer.taskWizard.sourceFieldsEmpty'))
     } else if (targetFields.value.length === 0) {
       console.warn('目标字段列表为空,无法自动映射')
-      ElMessage.warning('目标字段列表为空,无法自动映射。请检查目标数据源配置或手动添加映射。')
+      ElMessage.warning(t('transfer.taskWizard.targetFieldsEmpty'))
     }
 
     console.log('=== 字段自动获取流程完成 ===')
   } catch (error) {
     console.error('自动字段映射失败:', error)
-    ElMessage.error('自动字段映射失败: ' + error.message)
+    ElMessage.error(t('transfer.taskWizard.autoFieldMappingFailed', { error: error.message }))
   }
 }
 
@@ -2555,9 +2544,9 @@ const performAutoMatch = () => {
   // 更新映射并提示用户
   if (newMappings.length > 0) {
     fieldMappings.value = newMappings
-    ElMessage.success(`已自动匹配 ${newMappings.length} 个字段`)
+    ElMessage.success(t('transfer.taskWizard.autoMatched', { count: newMappings.length }))
   } else {
-    ElMessage.warning('未找到可匹配的字段，请手动添加映射')
+    ElMessage.warning(t('transfer.taskWizard.noMatchingFields'))
   }
 }
 
@@ -2654,7 +2643,7 @@ const handleSubmit = async () => {
       config.source.scope = 'system'
       const engineId = selectedSourceOption.value?.resource?.id
       if (!engineId) {
-        ElMessage.warning('源数据源配置错误：缺少引擎ID')
+        ElMessage.warning(t('transfer.taskWizard.selectSourceRequired'))
         submitting.value = false
         return
       }
@@ -2678,7 +2667,7 @@ const handleSubmit = async () => {
         connection_info: localResource.connection_info
       }
     } else {
-      ElMessage.warning('请选择源数据源')
+      ElMessage.warning(t('transfer.taskWizard.selectSourceRequired'))
       submitting.value = false
       return
     }
@@ -2687,7 +2676,7 @@ const handleSubmit = async () => {
       config.target.scope = 'system'
       const engineId = selectedTargetOption.value?.resource?.id
       if (!engineId) {
-        ElMessage.warning('目标数据源配置错误：缺少引擎ID')
+        ElMessage.warning(t('transfer.taskWizard.selectTargetRequired'))
         submitting.value = false
         return
       }
@@ -2711,7 +2700,7 @@ const handleSubmit = async () => {
         connection_info: localResource.connection_info
       }
     } else {
-      ElMessage.warning('请选择目标数据源')
+      ElMessage.warning(t('transfer.taskWizard.selectTargetRequired'))
       submitting.value = false
       return
     }
@@ -2725,18 +2714,18 @@ const handleSubmit = async () => {
     let taskId
     if (isEdit.value) {
       await taskAPI.update(route.params.id, data)
-      ElMessage.success('任务更新成功')
+      ElMessage.success(t('transfer.taskWizard.taskUpdateSuccess'))
       taskId = route.params.id
     } else {
       const result = await taskAPI.create(data)
-      ElMessage.success('任务创建成功')
+      ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
       taskId = result.id
       if (startImmediately.value) {
         try {
           await taskAPI.start(taskId)
-          ElMessage.success('任务已开始执行')
+          ElMessage.success(t('transfer.taskWizard.taskStarted'))
         } catch (error) {
-          ElMessage.warning('任务创建成功，但启动失败')
+          ElMessage.warning(t('transfer.taskWizard.taskCreateSuccessStartFailed'))
         }
       }
     }
@@ -2747,7 +2736,7 @@ const handleSubmit = async () => {
     })
   } catch (error) {
     console.error('提交失败:', error)
-    ElMessage.error(error.response?.data?.error || '提交失败')
+    ElMessage.error(error.response?.data?.error || t('transfer.taskWizard.submitFailed'))
   } finally {
     submitting.value = false
   }

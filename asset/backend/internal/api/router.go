@@ -7,6 +7,8 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	i18nkeys "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -27,6 +29,9 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 		}
 		c.Next()
 	})
+
+	// i18n 中间件
+	router.Use(commoni18n.I18nMiddleware())
 
 	// 健康检查（无需认证）
 	router.GET("/health", func(c *gin.Context) {
@@ -66,25 +71,25 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 		typeGroup.GET("/:id", func(c *gin.Context) {
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			t, err := typeSvc.GetType(id)
 			if err != nil {
-				commonAPI.NotFoundError(c, "资产类型不存在")
+				commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgTypeNotFound))
 				return
 			}
 			commonAPI.SuccessResponse(c, t)
 		})
 
 		typeGroup.POST("", func(c *gin.Context) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "资产类型管理为只读，请通过系统初始化配置"})
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, i18nkeys.MsgTypeReadOnly)})
 		})
 		typeGroup.PUT("/:id", func(c *gin.Context) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "资产类型管理为只读"})
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, i18nkeys.MsgTypeReadOnly)})
 		})
 		typeGroup.DELETE("/:id", func(c *gin.Context) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "资产类型管理为只读"})
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, i18nkeys.MsgTypeReadOnly)})
 		})
 	}
 
@@ -117,12 +122,12 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			cat, err := catalogSvc.Get(tenantID, id)
 			if err != nil {
-				commonAPI.NotFoundError(c, "目录不存在")
+				commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCatalogNotFound))
 				return
 			}
 			commonAPI.SuccessResponse(c, cat)
@@ -146,7 +151,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			var req service.UpdateCatalogReq
@@ -165,14 +170,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := catalogSvc.Delete(tenantID, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "删除成功"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgDeleteSuccess)})
 		})
 	}
 
@@ -215,12 +220,12 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			asset, err := assetSvc.Get(tenantID, id)
 			if err != nil {
-				commonAPI.NotFoundError(c, "资产不存在")
+				commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgAssetNotFound))
 				return
 			}
 			commonAPI.SuccessResponse(c, asset)
@@ -232,7 +237,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			userID := commonAuth.GetUserID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			var req service.UpdateAssetReq
@@ -252,14 +257,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := assetSvc.Delete(tenantID, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "删除成功"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgDeleteSuccess)})
 		})
 
 		// 上架（draft/offline → published）
@@ -267,14 +272,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := assetSvc.Publish(tenantID, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "资产已上架"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgAssetPublished)})
 		})
 
 		// 下架（published → offline）
@@ -282,14 +287,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := assetSvc.Offline(tenantID, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "资产已下架"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgAssetOfflined)})
 		})
 
 		// 批量上架
@@ -374,7 +379,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 		assetGroup.GET("/type-fields/:type_id", func(c *gin.Context) {
 			typeID, err := strconv.ParseInt(c.Param("type_id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的类型ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidTypeID))
 				return
 			}
 			schemas, err := assetSvc.GetTypeFieldSchemas(typeID)
@@ -439,7 +444,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			app, err := applicationSvc.Get(tenantID, id)
@@ -456,7 +461,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			reviewerID := commonAuth.GetUserID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			var req service.ApproveApplicationReq
@@ -467,7 +472,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "审批通过"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgApproveSuccess)})
 		})
 
 		// POST /api/asset/applications/:id/reject — 审批驳回
@@ -476,7 +481,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			reviewerID := commonAuth.GetUserID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			var req service.RejectApplicationReq
@@ -487,7 +492,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "已驳回"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRejectSuccess)})
 		})
 
 		// POST /api/asset/applications/:id/revoke — 通过申请ID撤销对应授权
@@ -496,14 +501,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			revokedBy := commonAuth.GetUserID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := applicationSvc.RevokeByApplication(tenantID, revokedBy, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "授权已撤销"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRevokeSuccess)})
 		})
 	}
 
@@ -550,7 +555,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			auth, err := authorizationSvc.Get(tenantID, id)
@@ -567,14 +572,14 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			revokedBy := commonAuth.GetUserID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			if err := authorizationSvc.Revoke(tenantID, revokedBy, id); err != nil {
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "授权已撤销"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRevokeSuccess)})
 		})
 	}
 
@@ -643,7 +648,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 			if err != nil {
-				commonAPI.BadRequestError(c, "无效的ID")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
 				return
 			}
 			var body struct {
@@ -656,7 +661,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"message": "已更新"})
+			commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgUpdateSuccess)})
 		})
 
 		// GET /api/asset/ratings/stats?asset_id=X — 获取资产评价统计
@@ -664,7 +669,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			tenantID := commonAuth.GetTenantID(c)
 			assetID, err := strconv.ParseInt(c.Query("asset_id"), 10, 64)
 			if err != nil || assetID <= 0 {
-				commonAPI.BadRequestError(c, "缺少 asset_id 参数")
+				commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgMissingAssetID))
 				return
 			}
 			stats, err := ratingSvc.GetStats(uint(tenantID), assetID)

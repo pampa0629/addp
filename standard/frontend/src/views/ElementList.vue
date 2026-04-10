@@ -1,8 +1,8 @@
 <template>
   <div class="element-list">
     <div class="page-header">
-      <h2>数据元管理</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建数据元</el-button>
+      <h2>{{ $t('standard.element.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.element.create') }}</el-button>
     </div>
 
     <!-- 筛选栏 -->
@@ -11,22 +11,22 @@
         <el-col :span="8">
           <el-input
             v-model="filters.keyword"
-            placeholder="搜索名称、编码或定义"
+            :placeholder="$t('standard.element.searchPlaceholder')"
             clearable
             @change="loadElements"
             :prefix-icon="Search"
           />
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.domain_id" placeholder="选择业务域" clearable @change="loadElements">
+          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="loadElements">
             <el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.status" placeholder="选择状态" clearable @change="loadElements">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已审批" value="approved" />
-            <el-option label="已废弃" value="deprecated" />
+          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="loadElements">
+            <el-option :label="$t('standard.common.draft')" value="draft" />
+            <el-option :label="$t('standard.common.approved')" value="approved" />
+            <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
           </el-select>
         </el-col>
       </el-row>
@@ -35,21 +35,21 @@
     <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="elements" v-loading="loading" stripe>
-        <el-table-column label="名称" min-width="140">
+        <el-table-column :label="$t('standard.element.nameLabel')" min-width="140">
           <template #default="{ row }">
             <el-link type="primary" @click="goToDetail(row)">{{ row.name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column label="英文编码" prop="code" width="150" />
-        <el-table-column label="数据类型" width="100">
+        <el-table-column :label="$t('standard.element.codeLabel')" prop="code" width="150" />
+        <el-table-column :label="$t('standard.element.dataTypeLabel')" width="100">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.data_type }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="所属业务域" width="120">
+        <el-table-column :label="$t('standard.glossary.domainLabel')" width="120">
           <template #default="{ row }">{{ getDomainName(row.domain_id) || '-' }}</template>
         </el-table-column>
-        <el-table-column label="质量规则" width="100" align="center">
+        <el-table-column :label="$t('standard.element.qualityRulesCount')" width="100" align="center">
           <template #default="{ row }">
             <el-badge
               :value="getRuleCount(row.quality_rules)"
@@ -62,16 +62,16 @@
             <span v-else class="no-rules">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
+        <el-table-column :label="$t('standard.common.status')" width="90">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goToDetail(row)">详情</el-button>
-            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">审批</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
+            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">{{ $t('standard.common.approve') }}</el-button>
+            <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -88,49 +88,49 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="dialogVisible" title="新建数据元" width="600px">
+    <el-dialog v-model="dialogVisible" :title="$t('standard.element.createTitle')" width="600px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="中文名称" prop="name">
-          <el-input v-model="form.name" placeholder="如：手机号码" />
+        <el-form-item :label="$t('standard.element.nameLabel')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('standard.element.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="英文编码" prop="code">
-          <el-input v-model="form.code" placeholder="如：mobile_phone（唯一）" />
+        <el-form-item :label="$t('standard.element.codeLabel')" prop="code">
+          <el-input v-model="form.code" :placeholder="$t('standard.element.codePlaceholder')" />
         </el-form-item>
-        <el-form-item label="数据类型" prop="data_type">
+        <el-form-item :label="$t('standard.element.dataTypeLabel')" prop="data_type">
           <el-select v-model="form.data_type" style="width: 100%">
-            <el-option label="字符串 (string)" value="string" />
-            <el-option label="整数 (int)" value="int" />
-            <el-option label="浮点数 (float)" value="float" />
-            <el-option label="日期时间 (date)" value="date" />
-            <el-option label="布尔 (bool)" value="bool" />
-            <el-option label="JSON (json)" value="json" />
+            <el-option :label="$t('standard.element.dataTypeString')" value="string" />
+            <el-option :label="$t('standard.element.dataTypeInt')" value="int" />
+            <el-option :label="$t('standard.element.dataTypeFloat')" value="float" />
+            <el-option :label="$t('standard.element.dataTypeDate')" value="date" />
+            <el-option :label="$t('standard.element.dataTypeBool')" value="bool" />
+            <el-option :label="$t('standard.element.dataTypeJson')" value="json" />
           </el-select>
         </el-form-item>
-        <el-form-item label="长度" v-if="['string'].includes(form.data_type)">
+        <el-form-item :label="$t('standard.element.lengthLabel')" v-if="['string'].includes(form.data_type)">
           <el-input-number v-model="form.length" :min="1" />
         </el-form-item>
-        <el-form-item label="允许为空">
+        <el-form-item :label="$t('standard.element.nullableLabel')">
           <el-switch v-model="form.nullable" />
         </el-form-item>
-        <el-form-item label="所属业务域">
-          <el-select v-model="form.domain_id" placeholder="选择业务域（可选）" clearable style="width: 100%">
+        <el-form-item :label="$t('standard.glossary.domainLabel')">
+          <el-select v-model="form.domain_id" :placeholder="$t('standard.common.domainOptional')" clearable style="width: 100%">
             <el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="计量单位">
-          <el-select v-model="form.unit_id" clearable filterable placeholder="选择单位（可选）" style="width: 100%">
+        <el-form-item :label="$t('standard.element.unitLabel')">
+          <el-select v-model="form.unit_id" clearable filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
             <el-option-group v-for="cat in unitsByCategory" :key="cat.id" :label="cat.name">
               <el-option v-for="u in cat.units" :key="u.id" :label="`${u.name}（${u.symbol}）`" :value="u.id" />
             </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item label="业务含义">
+        <el-form-item :label="$t('standard.element.definitionLabel')">
           <el-input v-model="form.definition" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">创建</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ $t('standard.element.create') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -139,11 +139,13 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Plus, Search, Checked } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { domainAPI, elementAPI, unitAPI } from '../api/standard'
 
 const router = useRouter()
+const { t } = useI18n()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
@@ -157,7 +159,7 @@ const unitsByCategory = computed(() => {
   const map = {}
   units.value.forEach(u => {
     const catId = u.category_id || 0
-    const catName = u.category?.name || '其他'
+    const catName = u.category?.name || t('standard.element.other')
     if (!map[catId]) map[catId] = { id: catId, name: catName, units: [] }
     map[catId].units.push(u)
   })
@@ -183,14 +185,14 @@ const form = ref({
   definition: ''
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入英文编码', trigger: 'blur' }],
-  data_type: [{ required: true, message: '请选择数据类型', trigger: 'change' }]
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('standard.element.nameRequired'), trigger: 'blur' }],
+  code: [{ required: true, message: t('standard.element.codeRequired'), trigger: 'blur' }],
+  data_type: [{ required: true, message: t('standard.element.dataTypeRequired'), trigger: 'change' }]
+}))
 
 const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || 'info')
-const statusLabel = (s) => ({ draft: '草稿', approved: '已审批', deprecated: '已废弃' }[s] || s)
+const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 
 const getRuleCount = (qr) => {
   if (!qr || !qr.rules) return 0
@@ -240,7 +242,7 @@ const loadElements = async () => {
     elements.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -267,11 +269,11 @@ const handleSubmit = async () => {
     submitting.value = true
     try {
       await elementAPI.create(form.value)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('standard.common.createSuccess'))
       dialogVisible.value = false
       await loadElements()
     } catch (e) {
-      ElMessage.error(e.response?.data?.error || '创建失败')
+      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
     } finally {
       submitting.value = false
     }
@@ -281,21 +283,21 @@ const handleSubmit = async () => {
 const handleApprove = async (row) => {
   try {
     await elementAPI.approve(row.id)
-    ElMessage.success('审批成功')
+    ElMessage.success(t('standard.common.approveSuccess'))
     await loadElements()
   } catch (e) {
-    ElMessage.error('审批失败')
+    ElMessage.error(t('standard.common.approveFailed'))
   }
 }
 
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除数据元「${row.name}」？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.element.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
     await elementAPI.delete(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     await loadElements()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

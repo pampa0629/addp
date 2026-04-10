@@ -5,7 +5,7 @@
         <!-- 左侧：存储引擎列表 -->
         <div class="left-panel" :style="{ width: leftPanelWidth + 'px' }">
           <div class="panel-header">
-            <h3>存储引擎列表</h3>
+            <h3>{{ t('meta.scan.storageEngineList') }}</h3>
             <el-button
               type="primary"
               @click="handleAutoScan"
@@ -13,7 +13,7 @@
               class="auto-scan-button"
             >
               <el-icon><Search /></el-icon>
-              一键扫描未扫描引擎
+              {{ t('meta.scan.autoScanUnscanned') }}
             </el-button>
           </div>
           <el-table
@@ -24,7 +24,7 @@
             @row-click="handleSelectResource"
             height="600"
           >
-            <el-table-column label="引擎信息" min-width="220">
+            <el-table-column :label="t('meta.scan.engineInfo')" min-width="220">
               <template #default="{ row }">
                 <div class="engine-info">
                   <!-- 第一行：类型标签 + 名称 -->
@@ -48,51 +48,51 @@
                   <!-- 第三行：Schema统计（tooltip显示） -->
                   <el-tooltip placement="top">
                     <template #content>
-                      总数: {{ row.total_schemas || 0 }}<br>
-                      已扫描: {{ row.scanned_schemas || 0 }}<br>
-                      未扫描: {{ row.unscanned_schemas || 0 }}
+                      {{ t('meta.scan.totalCount', { n: row.total_schemas || 0 }) }}<br>
+                      {{ t('meta.scan.scannedCount', { n: row.scanned_schemas || 0 }) }}<br>
+                      {{ t('meta.scan.unscannedCount', { n: row.unscanned_schemas || 0 }) }}
                     </template>
                     <div class="engine-stats">
-                      {{ row.total_schemas || 0 }}个{{ getSchemaTerminology(row.resource_type) }}
-                      <span class="stat-scanned" v-if="row.scanned_schemas">({{ row.scanned_schemas }}已扫)</span>
-                      <span class="stat-unscanned" v-if="row.unscanned_schemas">/{{ row.unscanned_schemas }}未扫</span>
+                      {{ row.total_schemas || 0 }}{{ getSchemaTerminology(row.resource_type) }}
+                      <span class="stat-scanned" v-if="row.scanned_schemas">({{ row.scanned_schemas }}{{ t('meta.scan.scannedSuffix', { n: '' }).replace('{n}', '') }})</span>
+                      <span class="stat-unscanned" v-if="row.unscanned_schemas">/{{ row.unscanned_schemas }}{{ t('meta.scan.unscannedSuffix', { n: '' }).replace('{n}', '') }}</span>
                     </div>
                   </el-tooltip>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="状态概览" width="180">
+            <el-table-column :label="t('meta.scan.statusOverview')" width="180">
               <template #default="{ row }">
                 <div class="status-overview">
                   <!-- 调度状态 -->
                   <div class="schedule-status">
                     <el-tooltip
                       v-if="resourcePlanMap[row.id]"
-                      :content="`${resourcePlanMap[row.id].description}\n下次执行：${resourcePlanMap[row.id].nextRun}`"
+                      :content="`${resourcePlanMap[row.id].description}\n${t('meta.scan.nextRun', { time: resourcePlanMap[row.id].nextRun })}`"
                       placement="top"
                     >
                       <div class="schedule-indicator">
                         <el-icon :color="resourcePlanMap[row.id].enabled ? 'var(--el-color-success)' : 'var(--addp-text-tertiary)'">
                           <Clock />
                         </el-icon>
-                        <span>{{ resourcePlanMap[row.id].enabled ? '调度已启用' : '调度未启用' }}</span>
+                        <span>{{ resourcePlanMap[row.id].enabled ? t('meta.scan.scheduleEnabled') : t('meta.scan.scheduleDisabled') }}</span>
                       </div>
                     </el-tooltip>
                     <div v-else class="schedule-indicator schedule-none">
                       <el-icon color="#C0C4CC"><Clock /></el-icon>
-                      <span>未配置调度</span>
+                      <span>{{ t('meta.scan.noSchedule') }}</span>
                     </div>
                   </div>
 
                   <!-- 上次扫描 -->
                   <div class="last-scan" v-if="row.scanned_at">
-                    <span class="label">上次扫描：</span>
+                    <span class="label">{{ t('meta.scan.lastScan') }}</span>
                     <span class="time">{{ formatShortTime(row.scanned_at) }}</span>
                   </div>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right">
+            <el-table-column :label="t('meta.scan.actions')" width="140" fixed="right">
               <template #default="{ row }">
                 <div class="engine-actions">
                   <el-button
@@ -102,7 +102,7 @@
                     @click.stop="handleScheduleClick(row)"
                   >
                     <el-icon><Clock /></el-icon>
-                    调度
+                    {{ t('meta.scan.schedule') }}
                   </el-button>
                 </div>
               </template>
@@ -123,7 +123,7 @@
             <div v-if="selectedResource" class="schema-actions-bar">
               <!-- 选中提示 -->
               <div v-if="selectedSchemas.length" class="selection-info">
-                已选中 <strong>{{ selectedSchemas.length }}</strong> 个{{ getSchemaTerminology(selectedResource.resource_type) }}
+                {{ t('meta.scan.selectedCount', { n: selectedSchemas.length, term: getSchemaTerminology(selectedResource.resource_type) }) }}
               </div>
 
               <!-- 批量操作按钮 -->
@@ -135,7 +135,7 @@
                 :loading="scanning"
               >
                 <el-icon><Search /></el-icon>
-                批量扫描
+                {{ t('meta.scan.batchScan') }}
               </el-button>
 
               <!-- 刷新按钮 -->
@@ -145,13 +145,13 @@
                 size="default"
               >
                 <el-icon><Refresh /></el-icon>
-                刷新
+                {{ t('meta.scan.refresh') }}
               </el-button>
             </div>
           </div>
 
           <div v-if="!selectedResource" class="empty-state">
-            <el-empty description="请从左侧选择一个存储引擎" />
+            <el-empty :description="t('meta.scan.selectEngineHint')" />
           </div>
 
           <div v-else class="schema-table-wrapper">
@@ -180,7 +180,7 @@
                       <!-- 调度状态图标 -->
                       <el-tooltip
                         v-if="getSchemaPlan(row)"
-                        :content="`独立调度：${getSchemaPlan(row).description}\n下次执行：${getSchemaPlan(row).nextRun}`"
+                        :content="t('meta.scan.independentScheduleTooltip', { desc: getSchemaPlan(row).description, next: getSchemaPlan(row).nextRun })"
                         placement="top"
                       >
                         <el-icon color="var(--el-color-primary)" :size="16" class="schedule-icon">
@@ -189,7 +189,7 @@
                       </el-tooltip>
                       <el-tooltip
                         v-else-if="hasEngineSchedule"
-                        :content="`继承引擎调度：${engineScheduleDesc}`"
+                        :content="t('meta.scan.inheritEngineScheduleTooltip', { desc: engineScheduleDesc })"
                         placement="top"
                       >
                         <el-icon color="var(--addp-text-tertiary)" :size="16" class="schedule-icon">
@@ -202,17 +202,17 @@
                     <div class="schema-details">
                       <span v-if="row.table_count !== undefined">
                         <el-icon :size="12"><Document /></el-icon>
-                        {{ row.table_count }}张表
+                        {{ row.table_count }}{{ t('meta.scan.tables') }}
                       </span>
                       <span v-if="row.scanned_at" class="detail-separator">·</span>
                       <span v-if="row.scanned_at">
-                        上次扫描：{{ formatShortTime(row.scanned_at) }}
+                        {{ t('meta.scan.lastScanTime', { time: formatShortTime(row.scanned_at) }) }}
                       </span>
                     </div>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="240" fixed="right">
+              <el-table-column :label="t('meta.scan.actions')" width="240" fixed="right">
                 <template #default="{ row }">
                   <div class="schema-actions">
                     <el-button
@@ -222,7 +222,7 @@
                       :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
                     >
                       <el-icon><Search /></el-icon>
-                      {{ row.scan_status === '已扫描' ? '重新扫描' : '扫描' }}
+                      {{ row.scan_status === '已扫描' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
                     </el-button>
                     <el-button
                       type="success"
@@ -231,7 +231,7 @@
                       @click.stop="handleSchemaSchedule(row)"
                     >
                       <el-icon><Clock /></el-icon>
-                      调度
+                      {{ t('meta.scan.schedule') }}
                     </el-button>
                   </div>
                 </template>
@@ -243,7 +243,7 @@
     </el-card>
 
     <!-- 扫描进度对话框 -->
-    <el-dialog v-model="showScanDialog" title="扫描进度" width="500px" :close-on-click-modal="false">
+    <el-dialog v-model="showScanDialog" :title="t('meta.scan.scanProgressTitle')" width="500px" :close-on-click-modal="false">
       <div v-if="scanning">
         <el-progress :percentage="scanProgress" :status="scanProgress === 100 ? 'success' : undefined" />
         <p style="margin-top: 20px; text-align: center; color: #999">{{ scanMessage }}</p>
@@ -251,24 +251,24 @@
       <div v-else-if="scanResult">
         <el-result
           :icon="scanResult.status === 'success' ? 'success' : 'error'"
-          :title="scanResult.status === 'success' ? '扫描完成' : '扫描失败'"
+          :title="scanResult.status === 'success' ? t('meta.scan.scanComplete') : t('meta.scan.scanFailed')"
         >
           <template #sub-title>
-            <div>扫描了 {{ scanResult.schemas_scanned }} 个Schema</div>
-            <div>发现 {{ scanResult.tables_scanned }} 个表</div>
-            <div>扫描 {{ scanResult.fields_scanned }} 个字段</div>
-            <div>耗时: {{ scanResult.duration_ms }}ms</div>
+            <div>{{ t('meta.scan.scannedSchemas', { n: scanResult.schemas_scanned }) }}</div>
+            <div>{{ t('meta.scan.foundTables', { n: scanResult.tables_scanned }) }}</div>
+            <div>{{ t('meta.scan.scannedFields', { n: scanResult.fields_scanned }) }}</div>
+            <div>{{ t('meta.scan.duration', { n: scanResult.duration_ms }) }}</div>
           </template>
         </el-result>
       </div>
       <template #footer>
-        <el-button @click="closeScanDialog">关闭</el-button>
+        <el-button @click="closeScanDialog">{{ t('meta.scan.close') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="scheduleDialogVisible"
-      title="引擎定时扫描设置"
+      :title="t('meta.scan.engineScheduleSettings')"
       width="600px"
       @close="resetScheduleForm"
     >
@@ -279,30 +279,30 @@
         :closable="false"
         style="margin-bottom: 16px"
       >
-        当前引擎下共 {{ inheritanceInfo.total }} 个{{ getSchemaTerminology(selectedResource.resource_type) }}：
+        {{ t('meta.scan.engineSchemaCount', { n: inheritanceInfo.total, term: getSchemaTerminology(selectedResource.resource_type) }) }}
         <ul style="margin: 8px 0 0 20px">
-          <li>{{ inheritanceInfo.independent }} 个已配置独立调度</li>
-          <li>{{ inheritanceInfo.inherited }} 个将继承引擎调度</li>
+          <li>{{ inheritanceInfo.independent }}{{ t('meta.scan.withIndependentSchedule') }}</li>
+          <li>{{ inheritanceInfo.inherited }}{{ t('meta.scan.willInheritSchedule') }}</li>
         </ul>
         <div style="margin-top: 8px; color: var(--addp-text-tertiary)">
-          引擎调度只会扫描未配置独立调度的{{ getSchemaTerminology(selectedResource.resource_type) }}
+          {{ t('meta.scan.engineScheduleNote', { term: getSchemaTerminology(selectedResource.resource_type) }) }}
         </div>
       </el-alert>
 
       <ScheduleConfig v-model="scheduleCron" />
 
       <el-form label-width="100px" style="margin-top: 20px">
-        <el-form-item label="是否启用">
+        <el-form-item :label="t('meta.scan.enableSchedule')">
           <el-switch v-model="scheduleEnabled" />
         </el-form-item>
         <div class="schedule-hint">
-          提交后会为当前存储引擎创建（或更新）一个定时扫描任务，按设定频率自动执行。
+          {{ t('meta.scan.scheduleHint') }}
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="scheduleDialogVisible = false">取消</el-button>
+        <el-button @click="scheduleDialogVisible = false">{{ t('meta.scan.cancel') }}</el-button>
         <el-button type="primary" @click="submitScheduleForm" :loading="savingSchedule">
-          保存
+          {{ t('meta.scan.save') }}
         </el-button>
       </template>
     </el-dialog>
@@ -310,7 +310,7 @@
     <!-- Schema调度设置对话框 -->
     <el-dialog
       v-model="schemaScheduleDialogVisible"
-      :title="`${currentSchema?.name || ''} - 定时扫描设置`"
+      :title="`${currentSchema?.name || ''}${t('meta.scan.schemaScheduleTitle')}`"
       width="600px"
     >
       <!-- 继承说明 -->
@@ -320,34 +320,34 @@
         :closable="false"
         style="margin-bottom: 16px"
       >
-        当前继承引擎级调度：{{ engineScheduleDesc }}
-        <br />配置独立调度后将不再继承引擎设置
+        {{ t('meta.scan.inheritEngineSchedule', { desc: engineScheduleDesc }) }}
+        <br />{{ t('meta.scan.independentScheduleNote') }}
       </el-alert>
 
       <!-- 调度配置 -->
       <ScheduleConfig v-model="schemaScheduleCron" />
 
       <el-form label-width="100px" style="margin-top: 20px">
-        <el-form-item label="扫描深度">
+        <el-form-item :label="t('meta.scan.scanDepth')">
           <el-radio-group v-model="schemaScheduleDepth">
-            <el-radio value="basic">基础扫描（仅结构）</el-radio>
-            <el-radio value="deep">深度扫描（含数据统计）</el-radio>
+            <el-radio value="basic">{{ t('meta.scan.basicScan') }}</el-radio>
+            <el-radio value="deep">{{ t('meta.scan.deepScan') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="是否启用">
+        <el-form-item :label="t('meta.scan.enableSchedule')">
           <el-switch v-model="schemaScheduleEnabled" />
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="schemaScheduleDialogVisible = false">取消</el-button>
+        <el-button @click="schemaScheduleDialogVisible = false">{{ t('meta.scan.cancel') }}</el-button>
         <el-button
           type="primary"
           @click="submitSchemaSchedule"
           :loading="savingSchedule"
         >
-          保存
+          {{ t('meta.scan.save') }}
         </el-button>
       </template>
     </el-dialog>
@@ -357,9 +357,12 @@
 <script setup>
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
+
+const { t } = useI18n()
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
 
@@ -490,16 +493,16 @@ const inheritanceInfo = computed(() => {
 
 // 计算右侧面板标题（根据引擎类型显示 Schema 或 Collection 或 Bucket）
 const rightPanelTitle = computed(() => {
-  if (!selectedResource.value) return 'Schema列表'
+  if (!selectedResource.value) return t('meta.scan.schemaList')
   const terminology = getSchemaTerminology(selectedResource.value.resource_type)
-  return `${terminology}列表 - ${selectedResource.value.name}`
+  return `${terminology}${t('meta.scan.schemaList').replace('Schema', '')} - ${selectedResource.value.name}`
 })
 
 // 计算表格列标题（根据引擎类型显示 Schema信息 或 Collection信息 或 Bucket信息）
 const schemaColumnLabel = computed(() => {
-  if (!selectedResource.value) return 'Schema信息'
+  if (!selectedResource.value) return t('meta.scan.schemaInfo')
   const terminology = getSchemaTerminology(selectedResource.value.resource_type)
-  return `${terminology}信息`
+  return `${terminology}${t('meta.scan.schemaInfo').replace('Schema', '')}`
 })
 
 // 加载引擎列表
@@ -525,7 +528,7 @@ const loadEngines = async () => {
     }
     enforceBounds()
   } catch (error) {
-    ElMessage.error('加载引擎列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.loadEnginesFailed', { msg: error.response?.data?.error || error.message }))
   } finally {
     loadingResources.value = false
   }
@@ -676,7 +679,7 @@ const loadSchemas = async () => {
         id: scanned.id,
         name: scanned.schema_name,
         schema_name: scanned.schema_name,
-        scan_status: '连接失败 - ' + scanned.scan_status,
+        scan_status: t('meta.scan.connectionFailed', { status: scanned.scan_status }),
         table_count: scanned.table_count || 0,
         scanned_at: scanned.scanned_at || '',
         total_size_bytes: scanned.total_size_bytes || 0
@@ -698,7 +701,7 @@ const loadSchemas = async () => {
       })
     }
   } catch (error) {
-    ElMessage.error('加载Schema列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.loadSchemasFailed', { msg: error.response?.data?.error || error.message }))
     schemas.value = []
   } finally {
     loadingSchemas.value = false
@@ -714,7 +717,7 @@ const loadScanTasks = async () => {
   try {
     allScanTasks.value = await metaApi.getScanTasks()
   } catch (error) {
-    ElMessage.error('加载扫描任务失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.loadTasksFailed', { msg: error.response?.data?.error || error.message }))
   }
 }
 
@@ -741,25 +744,25 @@ const getConnectionIconColor = (status) => {
 
 const getConnectionStatusLabel = (status) => {
   const labelMap = {
-    'online': '在线',
-    'offline': '离线',
-    'unknown': '未知',
-    'checking': '检测中'
+    'online': t('meta.scan.online'),
+    'offline': t('meta.scan.offline'),
+    'unknown': t('meta.scan.unknown'),
+    'checking': t('meta.scan.checking')
   }
-  return labelMap[status] || '未检测'
+  return labelMap[status] || t('meta.scan.notChecked')
 }
 
 const getConnectionTooltip = (row) => {
-  if (!row.connection_status) return '未检测'
+  if (!row.connection_status) return t('meta.scan.notChecked')
 
-  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}`
+  let tooltip = t('meta.scan.statusLabel', { status: getConnectionStatusLabel(row.connection_status) })
 
   if (row.last_check_at) {
-    tooltip += `\n检测时间: ${row.last_check_at}`
+    tooltip += `\n${t('meta.scan.checkTime', { time: row.last_check_at })}`
   }
 
   if (row.check_message) {
-    tooltip += `\n详情: ${row.check_message}`
+    tooltip += `\n${t('meta.scan.details', { msg: row.check_message })}`
   }
 
   return tooltip
@@ -779,9 +782,9 @@ const deriveAutoTaskSchemas = () => {
 
 const getAutoScheduleTaskName = () => {
   if (selectedResource.value?.name) {
-    return `${selectedResource.value.name} 定时扫描`
+    return `${selectedResource.value.name}${t('meta.scan.engineScheduledScan')}`
   }
-  return '定时扫描任务'
+  return t('meta.scan.scheduledScanTask')
 }
 
 const ensureAutoScheduleDescription = desc => {
@@ -789,7 +792,7 @@ const ensureAutoScheduleDescription = desc => {
   if (text.includes(AUTO_SCHEDULE_DESC_MARK)) {
     return text
   }
-  const suffix = text.trim().length ? ` ${text.trim()}` : ' 由模块自动创建'
+  const suffix = text.trim().length ? ` ${text.trim()}` : t('meta.scan.autoCreated')
   return `${AUTO_SCHEDULE_DESC_MARK}${suffix}`
 }
 
@@ -806,15 +809,15 @@ const prefillScheduleForm = task => {
 const handleAutoScan = async () => {
   try {
     await ElMessageBox.confirm(
-      '将自动扫描所有未扫描的引擎，这可能需要一些时间。是否继续？',
-      '确认自动扫描',
+      t('meta.scan.autoScanConfirmMsg'),
+      t('meta.scan.autoScanConfirmTitle'),
       { type: 'warning' }
     )
 
     autoScanning.value = true
     showScanDialog.value = true
     scanProgress.value = 0
-    scanMessage.value = '正在扫描...'
+    scanMessage.value = t('meta.scan.scanningMsg')
     scanResult.value = null
 
     // 模拟进度
@@ -829,7 +832,7 @@ const handleAutoScan = async () => {
     scanProgress.value = 100
 
     scanResult.value = res
-    ElMessage.success('自动扫描完成')
+    ElMessage.success(t('meta.scan.autoScanComplete'))
 
     // 刷新引擎列表
     await loadEngines()
@@ -838,7 +841,7 @@ const handleAutoScan = async () => {
     }
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('自动扫描失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('meta.scan.autoScanFailed', { msg: error.response?.data?.error || error.message }))
     }
   } finally {
     autoScanning.value = false
@@ -854,15 +857,15 @@ const handleBatchScan = async () => {
 
   try {
     await ElMessageBox.confirm(
-      `将扫描 ${selectedSchemas.value.length} 个${terminology}，是否继续？`,
-      `确认批量扫描`,
+      t('meta.scan.batchScanConfirmMsg', { n: selectedSchemas.value.length, term: terminology }),
+      t('meta.scan.batchScanConfirmTitle'),
       { type: 'warning' }
     )
 
     scanning.value = true
     showScanDialog.value = true
     scanProgress.value = 0
-    scanMessage.value = '正在扫描...'
+    scanMessage.value = t('meta.scan.scanningMsg')
     scanResult.value = null
 
     let schemaNames = null
@@ -888,14 +891,14 @@ const handleBatchScan = async () => {
     scanProgress.value = 100
 
     scanResult.value = res
-    ElMessage.success('批量扫描完成')
+    ElMessage.success(t('meta.scan.batchScanComplete'))
 
     // 刷新Schema列表
     await loadSchemas()
     await loadEngines()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('批量扫描失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('meta.scan.batchScanFailed', { msg: error.response?.data?.error || error.message }))
     }
   } finally {
     scanning.value = false
@@ -904,7 +907,7 @@ const handleBatchScan = async () => {
 
 const submitScheduleForm = async () => {
   if (!selectedResource.value) {
-    ElMessage.warning('请先选择存储引擎')
+    ElMessage.warning(t('meta.scan.selectEngineFirst'))
     return
   }
 
@@ -934,11 +937,11 @@ const submitScheduleForm = async () => {
       await metaApi.createScanTask(selectedResource.value.id, payload)
     }
 
-    ElMessage.success('定时扫描设置已保存')
+    ElMessage.success(t('meta.scan.scheduleSaved'))
     scheduleDialogVisible.value = false
     await loadScanTasks()
   } catch (error) {
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.saveFailed', { msg: error.response?.data?.error || error.message }))
   } finally {
     savingSchedule.value = false
   }
@@ -952,13 +955,13 @@ const handleScanSchema = async (schema) => {
 
   try {
     await metaApi.scanEngine(selectedResource.value.id, [schemaName])
-    ElMessage.success(`Schema "${schemaName}" 扫描完成`)
+    ElMessage.success(t('meta.scan.schemaScanComplete', { name: schemaName }))
 
     // 刷新列表
     await loadSchemas()
     await loadEngines()
   } catch (error) {
-    ElMessage.error('扫描失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.scanError', { msg: error.response?.data?.error || error.message }))
   } finally {
     scanningSchemas[key] = false
   }
@@ -1027,17 +1030,17 @@ const submitSchemaSchedule = async () => {
         currentSchemaTask.value.id,
         payload
       )
-      ElMessage.success('调度设置已更新')
+      ElMessage.success(t('meta.scan.scheduleUpdated'))
     } else {
       // 创建新任务
       await metaApi.createScanTask(selectedResource.value.id, payload)
-      ElMessage.success('调度设置已创建')
+      ElMessage.success(t('meta.scan.scheduleCreated'))
     }
 
     schemaScheduleDialogVisible.value = false
     await loadScanTasks()
   } catch (error) {
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.scan.saveFailed', { msg: error.response?.data?.error || error.message }))
   } finally {
     savingSchedule.value = false
   }
@@ -1053,7 +1056,7 @@ const closeScanDialog = () => {
 
 function formatScheduleDescription(task) {
   if (!task.schedule) {
-    return '手动触发'
+    return t('meta.scan.manualTrigger')
   }
   return describeCron(task.schedule)
 }
@@ -1070,9 +1073,9 @@ function formatShortTime(datetime) {
   const now = new Date()
   const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24))
 
-  if (diffDays === 0) return '今天'
-  if (diffDays === 1) return '昨天'
-  if (diffDays < 7) return `${diffDays}天前`
+  if (diffDays === 0) return t('meta.scan.today')
+  if (diffDays === 1) return t('meta.scan.yesterday')
+  if (diffDays < 7) return t('meta.scan.daysAgo', { n: diffDays })
 
   return date.toLocaleDateString('zh-CN', {
     month: '2-digit',

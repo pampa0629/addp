@@ -2,12 +2,15 @@
   <div>
     <el-card>
       <template #header>
-        <span>目录管理</span>
+        <span>{{ t('manager.directories.title') }}</span>
       </template>
-      <el-empty description="功能开发中..." />
+      <el-empty :description="t('manager.directories.comingSoon')" />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 </script>

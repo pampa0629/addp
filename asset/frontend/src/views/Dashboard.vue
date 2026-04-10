@@ -1,45 +1,45 @@
 <template>
   <div class="dashboard" v-loading="loading">
     <!-- 资产状态汇总 -->
-    <div class="section-title">资产总览</div>
+    <div class="section-title">{{ t('asset.dashboard.assetOverview') }}</div>
     <div class="stat-cards">
       <div class="stat-card total">
         <div class="stat-value">{{ stats.asset_total }}</div>
-        <div class="stat-label">全部资产</div>
+        <div class="stat-label">{{ t('asset.dashboard.totalAssets') }}</div>
       </div>
       <div class="stat-card draft">
         <div class="stat-value">{{ stats.asset_draft }}</div>
-        <div class="stat-label">草稿</div>
+        <div class="stat-label">{{ t('asset.dashboard.draft') }}</div>
       </div>
       <div class="stat-card published">
         <div class="stat-value">{{ stats.asset_published }}</div>
-        <div class="stat-label">已上架</div>
+        <div class="stat-label">{{ t('asset.dashboard.published') }}</div>
       </div>
       <div class="stat-card offline">
         <div class="stat-value">{{ stats.asset_offline }}</div>
-        <div class="stat-label">已下架</div>
+        <div class="stat-label">{{ t('asset.dashboard.offline') }}</div>
       </div>
     </div>
 
     <!-- 申请与授权汇总 -->
-    <div class="section-title" style="margin-top: 28px">申请与授权</div>
+    <div class="section-title" style="margin-top: 28px">{{ t('asset.dashboard.applicationAndAuth') }}</div>
     <div class="stat-cards">
       <div class="stat-card total">
         <div class="stat-value">{{ stats.application_total }}</div>
-        <div class="stat-label">申请总数</div>
+        <div class="stat-label">{{ t('asset.dashboard.totalApplications') }}</div>
       </div>
       <div class="stat-card draft">
         <div class="stat-value">{{ stats.application_pending }}</div>
-        <div class="stat-label">待审批</div>
+        <div class="stat-label">{{ t('asset.dashboard.pending') }}</div>
       </div>
       <div class="stat-card published">
         <div class="stat-value">{{ stats.authorization_active }}</div>
-        <div class="stat-label">有效授权</div>
+        <div class="stat-label">{{ t('asset.dashboard.activeAuth') }}</div>
       </div>
       <div class="stat-card rating">
         <div class="stat-value">{{ stats.rating_count }}</div>
         <div class="stat-label">
-          评价数
+          {{ t('asset.dashboard.ratingCount') }}
           <span v-if="stats.rating_count > 0" class="avg-score">
             (均 {{ stats.rating_avg_score.toFixed(1) }} 分)
           </span>
@@ -50,7 +50,7 @@
     <!-- 趋势图区域 -->
     <div class="trends-section">
       <div class="trend-panel">
-        <div class="trend-title">近 30 天上架趋势</div>
+        <div class="trend-title">{{ t('asset.dashboard.publishTrend') }}</div>
         <div class="trend-chart" v-if="publishTrendData.length > 0">
           <div class="bar-chart">
             <div
@@ -69,11 +69,11 @@
             </div>
           </div>
         </div>
-        <el-empty v-else description="近 30 天无上架记录" :image-size="60" />
+        <el-empty v-else :description="t('asset.dashboard.noPublishRecord')" :image-size="60" />
       </div>
 
       <div class="trend-panel">
-        <div class="trend-title">近 30 天申请趋势</div>
+        <div class="trend-title">{{ t('asset.dashboard.applicationTrend') }}</div>
         <div class="trend-chart" v-if="applicationTrendData.length > 0">
           <div class="bar-chart">
             <div
@@ -92,7 +92,7 @@
             </div>
           </div>
         </div>
-        <el-empty v-else description="近 30 天无申请记录" :image-size="60" />
+        <el-empty v-else :description="t('asset.dashboard.noApplicationRecord')" :image-size="60" />
       </div>
     </div>
   </div>
@@ -102,6 +102,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { statsAPI } from '../api/asset'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const stats = ref({
@@ -154,7 +157,7 @@ async function fetchStats() {
     const data = await statsAPI.dashboard()
     stats.value = data
   } catch (err) {
-    ElMessage.error('获取统计数据失败')
+    ElMessage.error(t('asset.dashboard.fetchFailed'))
   } finally {
     loading.value = false
   }

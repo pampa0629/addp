@@ -1,8 +1,8 @@
 <template>
   <div class="catalog-management">
     <div class="page-header">
-      <h2>目录管理</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreate(null)">新建根目录</el-button>
+      <h2>{{ t('asset.catalog.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.catalog.newRootCatalog') }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -48,8 +48,8 @@
               </span>
             </template>
           </el-tree>
-          <el-empty v-else-if="!loading" description="暂无目录，点击右上角新建">
-            <el-button type="primary" :icon="Plus" @click="openCreate(null)">新建根目录</el-button>
+          <el-empty v-else-if="!loading" :description="t('asset.catalog.emptyDesc')">
+            <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.catalog.newRootCatalog') }}</el-button>
           </el-empty>
         </el-card>
       </el-col>
@@ -58,64 +58,67 @@
       <el-col :span="16">
         <el-card v-if="selected" class="detail-card">
           <template #header>
-            <span>目录详情</span>
+            <span>{{ t('asset.catalog.detailTitle') }}</span>
           </template>
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="名称">{{ selected.name }}</el-descriptions-item>
-            <el-descriptions-item label="描述">{{ selected.description || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="排序">{{ selected.sort_order }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ formatTime(selected.created_at) }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ formatTime(selected.updated_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.catalog.name')">{{ selected.name }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.catalog.description')">{{ selected.description || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.catalog.sortOrder')">{{ selected.sort_order }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.catalog.createdAt')">{{ formatTime(selected.created_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.catalog.updatedAt')">{{ formatTime(selected.updated_at) }}</el-descriptions-item>
           </el-descriptions>
           <div class="detail-actions">
-            <el-button :icon="Plus" @click="openCreate(selected)">添加子目录</el-button>
-            <el-button :icon="Edit" @click="openEdit(selected)">编辑</el-button>
-            <el-button :icon="Delete" type="danger" @click="handleDelete(selected)">删除</el-button>
+            <el-button :icon="Plus" @click="openCreate(selected)">{{ t('asset.catalog.addSubCatalog') }}</el-button>
+            <el-button :icon="Edit" @click="openEdit(selected)">{{ t('asset.catalog.edit') }}</el-button>
+            <el-button :icon="Delete" type="danger" @click="handleDelete(selected)">{{ t('asset.catalog.delete') }}</el-button>
           </div>
         </el-card>
-        <el-empty v-else description="选中左侧目录查看详情" />
+        <el-empty v-else :description="t('asset.catalog.selectHint')" />
       </el-col>
     </el-row>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑目录' : (parentNode ? `新建子目录（父：${parentNode.name}）` : '新建根目录')"
+      :title="isEdit ? t('asset.catalog.editDialog') : (parentNode ? t('asset.catalog.newRootCatalog') + `（${parentNode.name}）` : t('asset.catalog.newRootCatalog'))"
       width="480px"
       @closed="resetForm"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入目录名称" maxlength="200" show-word-limit />
+        <el-form-item :label="t('asset.catalog.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('asset.catalog.namePlaceholder')" maxlength="200" show-word-limit />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('asset.catalog.sortOrder')">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" style="width:160px" />
-          <span class="input-hint">数值越小越靠前</span>
+          <span class="input-hint">{{ t('asset.catalog.sortOrderHint') }}</span>
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('asset.catalog.description')">
           <el-input
             v-model="form.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入目录描述（可选）"
+            :placeholder="t('asset.catalog.descriptionPlaceholder')"
             maxlength="500"
             show-word-limit
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+        <el-button @click="dialogVisible = false">{{ t('asset.catalog.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">{{ t('asset.catalog.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { catalogAPI } from '../api/asset'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const treeData = ref([])
@@ -130,9 +133,9 @@ const submitting = ref(false)
 const formRef = ref(null)
 
 const form = ref({ name: '', description: '', sort_order: 0 })
-const rules = {
-  name: [{ required: true, message: '请输入目录名称', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('asset.catalog.nameRequired'), trigger: 'blur' }]
+}))
 
 async function loadTree() {
   loading.value = true
@@ -140,7 +143,7 @@ async function loadTree() {
     const res = await catalogAPI.tree()
     treeData.value = res || []
   } catch (e) {
-    ElMessage.error('加载目录失败')
+    ElMessage.error(t('asset.catalog.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -183,7 +186,7 @@ async function handleSubmit() {
         description: form.value.description,
         sort_order: form.value.sort_order
       })
-      ElMessage.success('更新成功')
+      ElMessage.success(t('asset.catalog.updateSuccess'))
     } else {
       await catalogAPI.create({
         name: form.value.name,
@@ -191,13 +194,13 @@ async function handleSubmit() {
         sort_order: form.value.sort_order,
         parent_id: parentNode.value?.id || null
       })
-      ElMessage.success('创建成功')
+      ElMessage.success(t('asset.catalog.createSuccess'))
     }
     dialogVisible.value = false
     selected.value = null
     await loadTree()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || (isEdit.value ? '更新失败' : '创建失败'))
+    ElMessage.error(e.response?.data?.error || (isEdit.value ? t('asset.catalog.updateFailed') : t('asset.catalog.createFailed')))
   } finally {
     submitting.value = false
   }
@@ -205,17 +208,17 @@ async function handleSubmit() {
 
 async function handleDelete(data) {
   await ElMessageBox.confirm(
-    `确定删除目录「${data.name}」？删除前请确保该目录下无子目录且无关联资产。`,
-    '删除确认',
-    { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' }
+    `${t('asset.catalog.deleteConfirmTitle')}「${data.name}」？`,
+    t('asset.catalog.deleteConfirmTitle'),
+    { type: 'warning', confirmButtonText: t('asset.catalog.deleteButton'), confirmButtonClass: 'el-button--danger' }
   )
   try {
     await catalogAPI.delete(data.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('asset.catalog.deleteSuccess'))
     if (selected.value?.id === data.id) selected.value = null
     await loadTree()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '删除失败')
+    ElMessage.error(e.response?.data?.error || t('asset.catalog.deleteFailed'))
   }
 }
 

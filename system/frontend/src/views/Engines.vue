@@ -3,35 +3,35 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>引擎管理</span>
+          <span>{{ t('system.engine.title') }}</span>
           <div class="header-buttons">
-            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">注册标准引擎</el-button>
-            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">注册扩展引擎</el-button>
+            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">{{ t('system.engine.addStorage') }}</el-button>
+            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">{{ t('system.engine.addCompute') }}</el-button>
           </div>
         </div>
       </template>
 
       <!-- 能力过滤栏 -->
       <div class="filter-bar">
-        <span class="filter-label">过滤:</span>
+        <span class="filter-label">{{ t('system.engine.filter') }}</span>
         <el-checkbox-group v-model="selectedCategories" @change="handleFilterChange">
-          <el-checkbox value="storage">存储</el-checkbox>
-          <el-checkbox value="compute">计算</el-checkbox>
-          <el-checkbox value="standard">标准引擎</el-checkbox>
-          <el-checkbox value="extension">扩展引擎</el-checkbox>
-          <el-checkbox value="builtin">内置</el-checkbox>
+          <el-checkbox value="storage">{{ t('system.engine.filterStorage') }}</el-checkbox>
+          <el-checkbox value="compute">{{ t('system.engine.filterCompute') }}</el-checkbox>
+          <el-checkbox value="standard">{{ t('system.engine.filterStandard') }}</el-checkbox>
+          <el-checkbox value="extension">{{ t('system.engine.filterExtension') }}</el-checkbox>
+          <el-checkbox value="builtin">{{ t('system.engine.filterBuiltin') }}</el-checkbox>
         </el-checkbox-group>
       </div>
 
       <el-table :data="filteredEngines" v-loading="loading" stripe :row-class-name="tableRowClassName">
         <!-- ID -->
-        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="id" :label="t('system.engine.columns.id')" width="80" />
 
         <!-- 名称 -->
-        <el-table-column prop="name" label="名称" min-width="150" />
+        <el-table-column prop="name" :label="t('system.engine.columns.name')" min-width="150" />
 
         <!-- 类型 -->
-        <el-table-column prop="resource_type" label="类型" width="150">
+        <el-table-column prop="resource_type" :label="t('system.engine.columns.type')" width="150">
           <template #default="{ row }">
             <el-tag :type="getEngineTypeColor(row.engine_type)">
               {{ getEngineTypeLabel(row.engine_type) }}
@@ -40,7 +40,7 @@
         </el-table-column>
 
         <!-- 连接状态（图标方式） -->
-        <el-table-column label="连接" width="100" align="center">
+        <el-table-column :label="t('system.engine.columns.connection')" width="100" align="center">
           <template #default="{ row }">
             <el-tooltip
               :content="getConnectionTooltip(row)"
@@ -55,16 +55,16 @@
         </el-table-column>
 
         <!-- 激活状态 -->
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('system.engine.columns.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'">
-              {{ row.is_active ? '激活' : '禁用' }}
+              {{ row.is_active ? t('system.engine.status.active') : t('system.engine.status.disabled') }}
             </el-tag>
           </template>
         </el-table-column>
 
         <!-- 能力标签 -->
-        <el-table-column label="能力" min-width="220">
+        <el-table-column :label="t('system.engine.columns.capabilities')" min-width="220">
           <template #default="{ row }">
             <el-tag
               v-for="tag in parseCapabilities(row.capabilities)"
@@ -79,38 +79,38 @@
         </el-table-column>
 
         <!-- 引擎分类 -->
-        <el-table-column label="分类" width="100">
+        <el-table-column :label="t('system.engine.columns.category')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.engine_category === 'standard' ? 'success' : 'warning'" size="small">
-              {{ row.engine_category === 'standard' ? '标准' : '扩展' }}
+              {{ row.engine_category === 'standard' ? t('system.engine.category.standard') : t('system.engine.category.extension') }}
             </el-tag>
           </template>
         </el-table-column>
 
         <!-- 注册/内置标识 -->
-        <el-table-column label="注册/内置" width="100">
+        <el-table-column :label="t('system.engine.columns.builtin')" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.is_builtin" type="info" size="small" effect="plain">
-              内置
+              {{ t('system.engine.builtin.builtin') }}
             </el-tag>
             <el-tag v-else type="success" size="small" effect="light">
-              注册
+              {{ t('system.engine.builtin.registered') }}
             </el-tag>
           </template>
         </el-table-column>
 
         <!-- 创建时间 -->
-        <el-table-column label="创建时间" width="160">
+        <el-table-column :label="t('system.engine.columns.createdAt')" width="160">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column label="操作" width="340" fixed="right">
+        <el-table-column :label="t('system.engine.columns.actions')" width="340" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="testConnection(row)">测试</el-button>
-            <el-button size="small" @click="viewEngineDetails(row)">详情</el-button>
+            <el-button size="small" type="primary" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
+            <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
             <el-button
               size="small"
               type="warning"
@@ -118,7 +118,7 @@
               :disabled="row.is_builtin"
               @click="editEngine(row)"
             >
-              编辑
+              {{ t('system.engine.actions.edit') }}
             </el-button>
             <el-button
               size="small"
@@ -127,7 +127,7 @@
               :disabled="row.is_builtin"
               @click="deleteEngine(row)"
             >
-              删除
+              {{ t('system.engine.actions.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -146,14 +146,14 @@
     <!-- 引擎类型选择对话框 -->
     <el-dialog
       v-model="typeSelectionVisible"
-      title="选择引擎类型"
+      :title="t('system.engine.typeSelection.title')"
       width="500px"
     >
       <div class="engine-type-selection">
         <el-card class="type-card" shadow="hover" @click="confirmEngineType('storage')">
           <div class="type-icon">📦</div>
-          <h3>存储引擎</h3>
-          <p>数据库、对象存储等数据存储服务</p>
+          <h3>{{ t('system.engine.typeSelection.storage') }}</h3>
+          <p>{{ t('system.engine.typeSelection.storageDesc') }}</p>
           <ul>
             <li>PostgreSQL</li>
             <li>MySQL</li>
@@ -164,12 +164,12 @@
 
         <el-card class="type-card" shadow="hover" @click="confirmEngineType('compute')">
           <div class="type-icon">🔧</div>
-          <h3>计算引擎</h3>
-          <p>提供计算能力的服务</p>
+          <h3>{{ t('system.engine.typeSelection.compute') }}</h3>
+          <p>{{ t('system.engine.typeSelection.computeDesc') }}</p>
           <ul>
-            <li>空间计算引擎</li>
-            <li>工作流引擎</li>
-            <li>数据处理服务</li>
+            <li>Spatial Engine</li>
+            <li>Workflow Engine</li>
+            <li>Data Processing</li>
           </ul>
         </el-card>
       </div>
@@ -199,66 +199,66 @@
       />
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">{{ t('system.engine.actions.cancel') }}</el-button>
         <el-button
           v-if="!isComputeEngineForm"
           type="warning"
           :loading="testing"
           @click="testBeforeCreate"
         >
-          测试连接
+          {{ t('system.engine.actions.testConnection') }}
         </el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">{{ t('system.engine.actions.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 引擎详情弹窗 -->
     <el-dialog
       v-model="detailsVisible"
-      :title="`引擎详情 - ${selectedEngine?.name || ''}`"
+      :title="t('system.engine.dialog.details', { name: selectedEngine?.name || '' })"
       width="800px"
       destroy-on-close
     >
       <div v-loading="detailsLoading" style="min-height: 300px">
         <el-tabs v-if="selectedEngine" type="border-card">
           <!-- 基本信息标签页 -->
-          <el-tab-pane label="基本信息">
+          <el-tab-pane :label="t('system.engine.dialog.detailTabs.basic')">
             <el-descriptions :column="2" border>
-              <el-descriptions-item label="ID">{{ selectedEngine.id }}</el-descriptions-item>
-              <el-descriptions-item label="名称">{{ selectedEngine.name }}</el-descriptions-item>
-              <el-descriptions-item label="引擎类型">
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.id')">{{ selectedEngine.id }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.name')">{{ selectedEngine.name }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.engineType')">
                 <el-tag :type="getEngineTypeColor(selectedEngine.engine_type)">
                   {{ getEngineTypeLabel(selectedEngine.engine_type) }}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="引擎分类">
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.category')">
                 <el-tag :type="selectedEngine.engine_category === 'standard' ? 'success' : 'warning'">
-                  {{ selectedEngine.engine_category === 'standard' ? '标准引擎' : '扩展引擎' }}
+                  {{ selectedEngine.engine_category === 'standard' ? t('system.engine.dialog.basicInfo.standardEngine') : t('system.engine.dialog.basicInfo.extensionEngine') }}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="注册方式">
-                <el-tag v-if="selectedEngine.is_builtin" type="info">内置引擎</el-tag>
-                <el-tag v-else type="success">用户注册</el-tag>
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.registration')">
+                <el-tag v-if="selectedEngine.is_builtin" type="info">{{ t('system.engine.dialog.basicInfo.builtinEngine') }}</el-tag>
+                <el-tag v-else type="success">{{ t('system.engine.dialog.basicInfo.userRegistered') }}</el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="激活状态">
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.status')">
                 <el-tag :type="selectedEngine.is_active ? 'success' : 'danger'">
-                  {{ selectedEngine.is_active ? '激活' : '禁用' }}
+                  {{ selectedEngine.is_active ? t('system.engine.status.active') : t('system.engine.status.disabled') }}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="创建时间" :span="2">
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.createdAt')" :span="2">
                 {{ formatDate(selectedEngine.created_at) }}
               </el-descriptions-item>
-              <el-descriptions-item label="更新时间" :span="2">
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.updatedAt')" :span="2">
                 {{ formatDate(selectedEngine.updated_at) }}
               </el-descriptions-item>
-              <el-descriptions-item label="描述" :span="2">
-                {{ selectedEngine.description || '无' }}
+              <el-descriptions-item :label="t('system.engine.dialog.basicInfo.description')" :span="2">
+                {{ selectedEngine.description || t('system.engine.dialog.basicInfo.none') }}
               </el-descriptions-item>
             </el-descriptions>
           </el-tab-pane>
 
           <!-- 连接配置标签页 -->
-          <el-tab-pane label="连接配置" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
+          <el-tab-pane :label="t('system.engine.dialog.detailTabs.connection')" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
             <el-descriptions :column="1" border>
               <el-descriptions-item
                 v-for="[key, value] in sortedConnectionInfo"
@@ -271,61 +271,61 @@
           </el-tab-pane>
 
           <!-- 能力声明标签页 -->
-          <el-tab-pane label="能力声明" v-if="selectedEngine.capabilities">
+          <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="selectedEngine.capabilities">
             <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 20px">
-              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">存储能力</div>
+              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">{{ t('system.engine.dialog.capabilities.storageCapabilities') }}</div>
               <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
-                <el-table-column prop="type" label="类型" width="150">
+                <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="150">
                   <template #default="{ row }">
                     {{ getStorageTypeLabel(row.type) }}
                   </template>
                 </el-table-column>
-                <el-table-column prop="engine" label="引擎" />
+                <el-table-column prop="engine" :label="t('system.engine.dialog.capabilities.engine')" />
               </el-table>
             </div>
             <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
-              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">计算能力</div>
+              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">{{ t('system.engine.dialog.capabilities.computeCapabilities') }}</div>
               <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
-                <el-table-column prop="type" label="类型" width="150">
+                <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="150">
                   <template #default="{ row }">
                     {{ getComputeTypeLabel(row.type) }}
                   </template>
                 </el-table-column>
-                <el-table-column prop="dev_modes" label="开发模式" width="150">
+                <el-table-column prop="dev_modes" :label="t('system.engine.dialog.capabilities.devModes')" width="150">
                   <template #default="{ row }">
                     <el-tag v-for="mode in row.dev_modes" :key="mode" size="small" style="margin: 2px">
                       {{ mode }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="description" label="描述" />
+                <el-table-column prop="description" :label="t('system.engine.dialog.capabilities.description')" />
               </el-table>
             </div>
           </el-tab-pane>
 
           <!-- 扫描配置标签页 -->
-          <el-tab-pane label="扫描配置" v-if="selectedEngine.scan_config">
+          <el-tab-pane :label="t('system.engine.dialog.detailTabs.scan')" v-if="selectedEngine.scan_config">
             <el-descriptions :column="2" border>
-              <el-descriptions-item label="立即扫描" :span="2">
+              <el-descriptions-item :label="t('system.engine.dialog.scan.immediateScan')" :span="2">
                 <el-tag :type="selectedEngine.scan_config.immediate_scan ? 'success' : 'info'">
-                  {{ selectedEngine.scan_config.immediate_scan ? '是' : '否' }}
+                  {{ selectedEngine.scan_config.immediate_scan ? t('system.engine.dialog.scan.yes') : t('system.engine.dialog.scan.no') }}
                 </el-tag>
                 <span v-if="selectedEngine.scan_config.immediate_scan" style="margin-left: 8px">
-                  (深度: {{ selectedEngine.scan_config.immediate_depth || 'basic' }})
+                  {{ t('system.engine.dialog.scan.depth', { depth: selectedEngine.scan_config.immediate_depth || 'basic' }) }}
                 </span>
               </el-descriptions-item>
-              <el-descriptions-item label="定时扫描" :span="2">
+              <el-descriptions-item :label="t('system.engine.dialog.scan.scheduledScan')" :span="2">
                 <el-tag :type="selectedEngine.scan_config.scheduled_scan ? 'success' : 'info'">
-                  {{ selectedEngine.scan_config.scheduled_scan ? '是' : '否' }}
+                  {{ selectedEngine.scan_config.scheduled_scan ? t('system.engine.dialog.scan.yes') : t('system.engine.dialog.scan.no') }}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan" label="调度类型">
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan" :label="t('system.engine.dialog.scan.scheduleType')">
                 {{ selectedEngine.scan_config.schedule_type }}
               </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.cron_expression" label="Cron 表达式">
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.cron_expression" :label="t('system.engine.dialog.scan.cronExpression')">
                 {{ selectedEngine.scan_config.cron_expression }}
               </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.schedule_time" label="调度时间">
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.schedule_time" :label="t('system.engine.dialog.scan.scheduleTime')">
                 {{ selectedEngine.scan_config.schedule_time }}
               </el-descriptions-item>
             </el-descriptions>
@@ -333,7 +333,7 @@
         </el-tabs>
       </div>
       <template #footer>
-        <el-button @click="detailsVisible = false">关闭</el-button>
+        <el-button @click="detailsVisible = false">{{ t('system.engine.dialog.close') }}</el-button>
       </template>
     </el-dialog>
 </template>
@@ -344,6 +344,9 @@ import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, EngineForm } from '@common-ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const engines = ref([])
 const loading = ref(false)
@@ -381,10 +384,10 @@ const form = ref({
 })
 
 const dialogTitle = computed(() => {
-  if (isEdit.value) return '编辑引擎'
-  if (selectedEngineCategory.value === 'storage') return '新建存储引擎'
-  if (selectedEngineCategory.value === 'compute') return '新建计算引擎'
-  return '新建引擎'
+  if (isEdit.value) return t('system.engine.dialog.edit')
+  if (selectedEngineCategory.value === 'storage') return t('system.engine.dialog.addStorage')
+  if (selectedEngineCategory.value === 'compute') return t('system.engine.dialog.addCompute')
+  return t('system.engine.dialog.add')
 })
 
 // 是否使用计算引擎表单
@@ -396,7 +399,7 @@ const isComputeEngineForm = computed(() => {
 // 过滤后的引擎列表
 const filteredEngines = computed(() => {
   if (selectedCategories.value.length === 0) {
-    return [] // 全不选则隐藏所有
+    return []
   }
 
   return engines.value.filter(engine => {
@@ -406,26 +409,16 @@ const filteredEngines = computed(() => {
     const isBuiltin = engine.is_builtin
     const engineCategory = engine.engine_category
 
-    // 能力维度过滤（storage / compute）
     const matchesCapability =
       (selectedCategories.value.includes('storage') && hasStorage) ||
       (selectedCategories.value.includes('compute') && hasCompute)
 
-    // 引擎分类维度过滤（standard / extension）
     const matchesEngineCategory =
       (selectedCategories.value.includes('standard') && engineCategory === 'standard') ||
       (selectedCategories.value.includes('extension') && engineCategory === 'extension')
 
-    // 内置维度过滤
-    // - 如果勾选了"内置",则内置引擎和用户引擎都显示
-    // - 如果未勾选"内置",则只显示用户引擎(is_builtin=false)
     const matchesBuiltin = selectedCategories.value.includes('builtin') || !isBuiltin
 
-    // 组合过滤逻辑
-    // - 如果选择了能力过滤（storage/compute），必须匹配能力
-    // - 如果选择了分类过滤（standard/extension），必须匹配分类
-    // - 如果两者都没选，显示空
-    // - 如果两者都选了，需要同时满足
     const hasCapabilityFilter = selectedCategories.value.includes('storage') || selectedCategories.value.includes('compute')
     const hasCategoryFilter = selectedCategories.value.includes('standard') || selectedCategories.value.includes('extension')
 
@@ -437,7 +430,7 @@ const filteredEngines = computed(() => {
     } else if (hasCategoryFilter) {
       matches = matchesEngineCategory
     } else {
-      matches = false // 如果只选了"内置"但没选其他，不显示任何引擎
+      matches = false
     }
 
     return matches && matchesBuiltin
@@ -450,25 +443,19 @@ const sortedConnectionInfo = computed(() => {
     return []
   }
 
-  // 定义字段显示的优先顺序
   const fieldOrder = ['host', 'port', 'database', 'user', 'password', 'sslmode']
   const connectionInfo = selectedEngine.value.connection_info
   const entries = Object.entries(connectionInfo)
 
-  // 排序：优先显示 fieldOrder 中的字段，然后是其他字段（按字母顺序）
   const sorted = entries.sort((a, b) => {
     const [keyA] = a
     const [keyB] = b
     const indexA = fieldOrder.indexOf(keyA)
     const indexB = fieldOrder.indexOf(keyB)
 
-    // 如果 A 在优先顺序中，B 不在，A 排前面
     if (indexA !== -1 && indexB === -1) return -1
-    // 如果 B 在优先顺序中，A 不在，B 排前面
     if (indexA === -1 && indexB !== -1) return 1
-    // 如果都在优先顺序中，按照顺序索引排序
     if (indexA !== -1 && indexB !== -1) return indexA - indexB
-    // 如果都不在优先顺序中，按字母顺序排序
     return keyA.localeCompare(keyB)
   })
 
@@ -489,45 +476,29 @@ const parseCapabilities = (capabilitiesJSON) => {
   const caps = parseCapabilitiesJSON(capabilitiesJSON)
   const tags = []
 
-  // 存储能力
   if (caps.storage) {
     caps.storage.forEach(s => {
       if (s.type) {
-        const typeMap = {
-          'relational_db': '关系数据库',
-          'object_storage': '对象存储',
-          'graph_db': '图数据库'
-        }
-        tags.push(typeMap[s.type] || s.type)
+        tags.push(getStorageTypeLabel(s.type))
       }
       if (s.engine) tags.push(s.engine)
     })
   }
 
-  // 计算能力
   if (caps.compute) {
     caps.compute.forEach(c => {
       if (c.type) {
-        const typeMap = {
-          'sql_query': 'SQL查询',
-          'spatial': '空间计算',
-          'tile_cache': '瓦片缓存',
-          'scan': '元数据扫描',
-          'workflow': '工作流'
-        }
-        tags.push(typeMap[c.type] || c.type)
+        tags.push(getComputeTypeLabel(c.type))
       }
       if (c.description) tags.push(c.description)
       if (c.category) tags.push(c.category)
     })
   }
 
-  return tags.length > 0 ? tags : ['无']
+  return tags.length > 0 ? tags : [t('system.engine.capabilities.none')]
 }
 
-const handleFilterChange = () => {
-  // 过滤变化时自动重新渲染（computed 会自动处理）
-}
+const handleFilterChange = () => {}
 
 const engineTypeMap = {
   'postgresql': 'PostgreSQL',
@@ -539,8 +510,8 @@ const engineTypeMap = {
   'neo4j': 'Neo4j',
   'spark': 'Apache Spark',
   'spatialite': 'SpatiaLite/SQLite',
-  'database': '数据库',
-  'compute_engine': '计算引擎'
+  'database': 'Database',
+  'compute_engine': 'Compute Engine'
 }
 
 const getEngineTypeLabel = (type) => {
@@ -561,18 +532,18 @@ const getEngineTypeColor = (type) => {
 }
 
 const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleString('zh-CN')
+  return new Date(dateString).toLocaleString()
 }
 
 // 获取连接状态标签
 const getConnectionStatusLabel = (status) => {
   const labelMap = {
-    'online': '在线',
-    'offline': '离线',
-    'unknown': '未知',
-    'checking': '检测中'
+    'online': t('system.engine.connection.online'),
+    'offline': t('system.engine.connection.offline'),
+    'unknown': t('system.engine.connection.unknown'),
+    'checking': t('system.engine.connection.checking')
   }
-  return labelMap[status] || '未检测'
+  return labelMap[status] || t('system.engine.connection.notChecked')
 }
 
 // 获取连接状态图标 CSS class
@@ -586,29 +557,18 @@ const getConnectionStatusClass = (status) => {
   return classMap[status] || 'status-unknown'
 }
 
-// 获取连接状态标签类型（颜色）- 保留用于其他地方
-const getConnectionStatusType = (status) => {
-  const typeMap = {
-    'online': 'success',
-    'offline': 'danger',
-    'unknown': 'info',
-    'checking': 'primary'
-  }
-  return typeMap[status] || 'info'
-}
-
 // 获取连接状态提示信息
 const getConnectionTooltip = (row) => {
-  if (!row.connection_status) return '未检测'
+  if (!row.connection_status) return t('system.engine.connection.notChecked')
 
-  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}`
+  let tooltip = t('system.engine.connection.statusLine', { status: getConnectionStatusLabel(row.connection_status) })
 
   if (row.last_check_at) {
-    tooltip += `\n最后检测: ${formatDate(row.last_check_at)}`
+    tooltip += `\n${t('system.engine.connection.lastCheck', { time: formatDate(row.last_check_at) })}`
   }
 
   if (row.check_message) {
-    tooltip += `\n详情: ${row.check_message}`
+    tooltip += `\n${t('system.engine.connection.detail', { msg: row.check_message })}`
   }
 
   return tooltip
@@ -618,26 +578,16 @@ const loadEngines = async () => {
   loading.value = true
   try {
     const response = await enginesAPI.list(currentPage.value, pageSize.value)
-    // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
     engines.value = response?.data || []
     total.value = response?.total || 0
   } catch (error) {
-    ElMessage.error('加载引擎列表失败')
+    ElMessage.error(t('system.engine.msg.loadFailed'))
     console.error(error)
   } finally {
     loading.value = false
   }
 }
 
-const showAddDialog = () => {
-  isEdit.value = false
-  editId.value = null
-  selectedEngineCategory.value = ''
-  resetForm()
-  typeSelectionVisible.value = true
-}
-
-// 直接打开存储引擎表单
 const showAddStorageDialog = () => {
   isEdit.value = false
   editId.value = null
@@ -646,7 +596,6 @@ const showAddStorageDialog = () => {
   dialogVisible.value = true
 }
 
-// 直接打开计算引擎表单
 const showAddComputeDialog = () => {
   isEdit.value = false
   editId.value = null
@@ -665,11 +614,9 @@ const editEngine = (row) => {
   isEdit.value = true
   editId.value = row.id
 
-  // 根据引擎类型设置分类（用于表单选择）
   if (row.engine_type === 'compute_engine') {
     selectedEngineCategory.value = 'compute'
 
-    // 计算引擎使用完整字段
     form.value = {
       unique_identifier: row.unique_identifier || '',
       name: row.name || '',
@@ -690,7 +637,6 @@ const editEngine = (row) => {
   } else {
     selectedEngineCategory.value = 'storage'
 
-    // 存储引擎使用原有字段
     form.value = {
       engine_type: row.engine_type,
       name: row.name,
@@ -704,31 +650,28 @@ const editEngine = (row) => {
 }
 
 const testBeforeCreate = async () => {
-  // 根据表单类型选择校验
   const formRef = isComputeEngineForm.value ? resourceFormRef.value : storageFormRef.value
   const valid = await formRef?.validate()
   if (!valid) {
-    ElMessage.warning('请完整填写必填信息')
+    ElMessage.warning(t('system.engine.msg.fillRequired'))
     return
   }
 
-  // 计算引擎暂不支持测试连接（需要健康检查端点）
   if (isComputeEngineForm.value) {
-    ElMessage.info('计算引擎需要在保存后通过健康检查端点测试')
+    ElMessage.info(t('system.engine.msg.computeTestHint'))
     return
   }
 
   testing.value = true
   try {
-    // 始终使用当前表单数据测试（编辑模式初始化时已从 API 获取解密后的连接信息）
     const response = await enginesAPI.testConnection(form.value)
     if (response.success) {
-      ElMessage.success('连接测试成功！')
+      ElMessage.success(t('system.engine.msg.testSuccess'))
     } else {
-      ElMessage.error(`连接测试失败: ${response.error || response.message}`)
+      ElMessage.error(t('system.engine.msg.testFailed', { error: response.error || response.message }))
     }
   } catch (error) {
-    ElMessage.error(`连接测试失败: ${error.response?.data?.error || error.message}`)
+    ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     testing.value = false
   }
@@ -738,33 +681,27 @@ const testConnection = async (row) => {
   try {
     const response = await enginesAPI.testExistingConnection(row.id)
     if (response.success) {
-      ElMessage.success('连接测试成功！')
-      // 刷新列表以更新连接状态图标
+      ElMessage.success(t('system.engine.msg.testSuccess'))
       await loadEngines()
     } else {
-      ElMessage.error(`连接测试失败: ${response.error || response.message}`)
-      // 即使失败也刷新，因为后端可能更新了状态
+      ElMessage.error(t('system.engine.msg.testFailed', { error: response.error || response.message }))
       await loadEngines()
     }
   } catch (error) {
-    ElMessage.error(`连接测试失败: ${error.response?.data?.error || error.message}`)
-    // 刷新列表
+    ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
     await loadEngines()
   }
 }
 
 const submitForm = async () => {
-  // 根据表单类型选择校验
   const formRef = isComputeEngineForm.value ? resourceFormRef.value : storageFormRef.value
   const valid = await formRef?.validate()
   if (!valid) return
 
   submitting.value = true
   try {
-    // 准备提交数据
     let submitData = { ...form.value }
 
-    // 计算引擎需要解析JSON字段
     if (isComputeEngineForm.value) {
       try {
         submitData.capabilities = JSON.parse(submitData.capabilities || '{}')
@@ -775,55 +712,53 @@ const submitForm = async () => {
           submitData.health_check_config = JSON.parse(submitData.health_check_config)
         }
       } catch (e) {
-        ElMessage.error('JSON 格式错误，请检查')
+        ElMessage.error(t('system.engine.msg.jsonError'))
         return
       }
     }
 
     if (isEdit.value) {
       await enginesAPI.update(editId.value, submitData)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('system.engine.msg.updateSuccess'))
     } else {
       await enginesAPI.create(submitData)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('system.engine.msg.createSuccess'))
     }
     dialogVisible.value = false
     loadEngines()
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || '操作失败')
+    ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
   } finally {
     submitting.value = false
   }
 }
 
 const deleteEngine = (row) => {
-  // 前端二次检查（尽管按钮已禁用）
   if (row.is_builtin) {
-    ElMessage.warning('内置引擎不可删除')
+    ElMessage.warning(t('system.engine.msg.builtinCannotDelete'))
     return
   }
 
   ElMessageBox.confirm(
-    `确定要删除引擎 "${row.name}" 吗？此操作不可恢复。`,
-    '确认删除',
+    t('system.engine.msg.deleteConfirm', { name: row.name }),
+    t('system.engine.msg.deleteTitle'),
     {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+      confirmButtonText: 'OK',
+      cancelButtonText: 'Cancel',
       type: 'warning'
     }
   ).then(async () => {
     try {
       await enginesAPI.delete(row.id)
-      ElMessage.success('删除成功')
+      ElMessage.success(t('system.engine.msg.deleteSuccess'))
       loadEngines()
     } catch (error) {
-      const errorMsg = error.response?.data?.error || '删除失败'
+      const errorMsg = error.response?.data?.error || t('system.engine.msg.opFailed')
       ElMessage.error(errorMsg)
     }
   }).catch(() => {})
 }
 
-// 查看引擎详情
 const viewEngineDetails = async (row) => {
   detailsLoading.value = true
   detailsVisible.value = true
@@ -833,7 +768,7 @@ const viewEngineDetails = async (row) => {
     const response = await enginesAPI.getById(row.id)
     selectedEngine.value = response
   } catch (error) {
-    ElMessage.error('获取引擎详情失败')
+    ElMessage.error(t('system.engine.msg.detailFailed'))
     console.error(error)
     detailsVisible.value = false
   } finally {
@@ -841,22 +776,12 @@ const viewEngineDetails = async (row) => {
   }
 }
 
-// 格式化JSON字符串
-const formatJSON = (jsonStr) => {
-  if (!jsonStr) return 'N/A'
-  try {
-    return JSON.stringify(JSON.parse(jsonStr), null, 2)
-  } catch {
-    return jsonStr
-  }
-}
-
 // 获取存储类型标签
 const getStorageTypeLabel = (type) => {
   const typeMap = {
-    'relational_db': '关系数据库',
-    'object_storage': '对象存储',
-    'graph_db': '图数据库'
+    'relational_db': t('system.engine.capabilities.relationalDb'),
+    'object_storage': t('system.engine.capabilities.objectStorage'),
+    'graph_db': t('system.engine.capabilities.graphDb')
   }
   return typeMap[type] || type
 }
@@ -864,11 +789,11 @@ const getStorageTypeLabel = (type) => {
 // 获取计算类型标签
 const getComputeTypeLabel = (type) => {
   const typeMap = {
-    'sql_query': 'SQL查询',
-    'spatial': '空间计算',
-    'tile_cache': '瓦片缓存',
-    'scan': '元数据扫描',
-    'workflow': '工作流'
+    'sql_query': t('system.engine.capabilities.sqlQuery'),
+    'spatial': t('system.engine.capabilities.spatial'),
+    'tile_cache': t('system.engine.capabilities.tileCache'),
+    'scan': t('system.engine.capabilities.scan'),
+    'workflow': t('system.engine.capabilities.workflow')
   }
   return typeMap[type] || type
 }
@@ -880,7 +805,6 @@ const tableRowClassName = ({ row }) => {
 
 const resetForm = () => {
   if (isComputeEngineForm.value) {
-    // 计算引擎表单重置
     form.value = {
       unique_identifier: '',
       name: '',
@@ -894,7 +818,6 @@ const resetForm = () => {
     }
     resourceFormRef.value?.reset()
   } else {
-    // 存储引擎表单重置
     form.value = {
       engine_type: '',
       name: '',

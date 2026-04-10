@@ -5,9 +5,9 @@
       <div class="toolbar-left">
         <el-button @click="handleBack">
           <el-icon><ArrowLeft /></el-icon>
-          返回
+          {{ t('develop.executionDetail.back') }}
         </el-button>
-        <h2>执行详情</h2>
+        <h2>{{ t('develop.executionDetail.title') }}</h2>
         <el-tag
           :type="getStatusColor(execution?.status)"
           size="large"
@@ -26,7 +26,7 @@
           @click="handleCancel"
         >
           <el-icon><Close /></el-icon>
-          取消执行
+          {{ t('develop.executionDetail.cancelExecution') }}
         </el-button>
         <el-button
           v-if="['failed', 'timeout', 'cancelled'].includes(execution?.status)"
@@ -34,11 +34,11 @@
           @click="handleRetry"
         >
           <el-icon><Refresh /></el-icon>
-          重新执行
+          {{ t('develop.executionDetail.reExecute') }}
         </el-button>
         <el-button @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
-          刷新
+          {{ t('develop.executionDetail.refresh') }}
         </el-button>
       </div>
     </div>
@@ -48,44 +48,44 @@
       <el-card>
         <template #header>
           <div class="card-header">
-            <span>基本信息</span>
+            <span>{{ t('develop.executionDetail.basicInfo') }}</span>
           </div>
         </template>
         <el-descriptions :column="3" border>
-          <el-descriptions-item label="执行ID">
+          <el-descriptions-item :label="t('develop.executionDetail.execId')">
             {{ execution?.execution_id }}
           </el-descriptions-item>
-          <el-descriptions-item label="任务名称">
+          <el-descriptions-item :label="t('develop.executionDetail.taskName')">
             {{ execution?.dev_item?.name || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="任务类型">
+          <el-descriptions-item :label="t('develop.executionDetail.taskType')">
             <el-tag :type="getTypeColor(execution?.dev_type)">
               {{ getTypeLabel(execution?.dev_type) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="触发方式">
+          <el-descriptions-item :label="t('develop.executionDetail.triggerType')">
             {{ getTriggerLabel(execution?.trigger_type) }}
           </el-descriptions-item>
-          <el-descriptions-item label="开始时间">
+          <el-descriptions-item :label="t('develop.executionDetail.startTime')">
             {{ formatTime(execution?.started_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="完成时间">
+          <el-descriptions-item :label="t('develop.executionDetail.endTime')">
             {{ formatTime(execution?.completed_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="执行时长">
+          <el-descriptions-item :label="t('develop.executionDetail.duration')">
             {{ formatDuration(execution?.execution_time_ms) }}
           </el-descriptions-item>
-          <el-descriptions-item label="影响行数">
+          <el-descriptions-item :label="t('develop.executionDetail.rowsAffected')">
             {{ execution?.rows_affected || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="当前步骤">
+          <el-descriptions-item :label="t('develop.executionDetail.currentStep')">
             {{ execution?.current_step || '-' }}
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- 进度条 -->
         <div style="margin-top: 16px;">
-          <div style="margin-bottom: 8px; color: var(--addp-text-secondary);">执行进度</div>
+          <div style="margin-bottom: 8px; color: var(--addp-text-secondary);">{{ t('develop.executionDetail.progress') }}</div>
           <el-progress
             :percentage="execution?.progress || 0"
             :status="getProgressStatus(execution?.status)"
@@ -97,8 +97,7 @@
     <!-- Tab 页签 -->
     <div class="content-area">
       <el-tabs v-model="activeTab" type="border-card" style="height: 100%;">
-        <!-- Tab 1: 执行结果 -->
-        <el-tab-pane label="执行结果" name="result">
+        <el-tab-pane :label="t('develop.executionDetail.tabResult')" name="result">
           <div class="tab-content">
             <div v-if="execution?.status === 'success' && execution?.result">
               <!-- 查询结果: 使用 QueryResult 组件 -->
@@ -109,30 +108,30 @@
               <!-- 工作流结果: 使用表格展示任务列表 -->
               <div v-else-if="execution.dev_type === 'workflow'">
                 <div class="workflow-result">
-                  <h3>工作流执行结果</h3>
+                  <h3>{{ t('develop.executionDetail.workflowResult') }}</h3>
                   <el-table
                     v-if="execution.result.tasks && execution.result.tasks.length > 0"
                     :data="execution.result.tasks"
                     stripe
                     border
                   >
-                    <el-table-column prop="id" label="任务ID" width="150" />
-                    <el-table-column prop="operator" label="算子" width="120" />
-                    <el-table-column label="状态" width="100">
+                    <el-table-column prop="id" :label="t('develop.executionDetail.taskId')" width="150" />
+                    <el-table-column prop="operator" :label="t('develop.executionDetail.operator')" width="120" />
+                    <el-table-column :label="t('develop.executionDetail.taskStatus')" width="100">
                       <template #default="{ row }">
                         <el-tag :type="getTaskStatusColor(row.status)">
                           {{ row.status }}
                         </el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="duration_ms" label="耗时" width="100">
+                    <el-table-column prop="duration_ms" :label="t('develop.executionDetail.taskDuration')" width="100">
                       <template #default="{ row }">
                         {{ formatDuration(row.duration_ms) }}
                       </template>
                     </el-table-column>
-                    <el-table-column prop="output_path" label="输出路径" min-width="200" />
+                    <el-table-column prop="output_path" :label="t('develop.executionDetail.outputPath')" min-width="200" />
                   </el-table>
-                  <el-empty v-else description="暂无任务数据" />
+                  <el-empty v-else :description="t('develop.executionDetail.noTaskData')" />
                 </div>
               </div>
 
@@ -142,13 +141,13 @@
               </div>
             </div>
 
-            <el-empty v-else-if="execution?.status === 'running'" description="执行中，结果尚未生成" />
-            <el-empty v-else-if="!execution?.result" description="暂无执行结果" />
+            <el-empty v-else-if="execution?.status === 'running'" :description="t('develop.executionDetail.resultPending')" />
+            <el-empty v-else-if="!execution?.result" :description="t('develop.executionDetail.noResult')" />
           </div>
         </el-tab-pane>
 
         <!-- Tab 2: 执行日志 -->
-        <el-tab-pane label="执行日志" name="logs">
+        <el-tab-pane :label="t('develop.executionDetail.tabLogs')" name="logs">
           <div class="tab-content">
             <el-timeline v-if="logs.length > 0">
               <el-timeline-item
@@ -166,12 +165,12 @@
                 </div>
               </el-timeline-item>
             </el-timeline>
-            <el-empty v-else description="暂无日志" />
+            <el-empty v-else :description="t('develop.executionDetail.noLogs')" />
           </div>
         </el-tab-pane>
 
         <!-- Tab 3: 输入参数 -->
-        <el-tab-pane label="输入参数" name="inputs">
+        <el-tab-pane :label="t('develop.executionDetail.tabInputs')" name="inputs">
           <div class="tab-content">
             <pre class="json-result">{{ JSON.stringify(execution?.inputs || {}, null, 2) }}</pre>
           </div>
@@ -180,18 +179,18 @@
         <!-- Tab 4: 错误信息 -->
         <el-tab-pane
           v-if="execution?.status === 'failed'"
-          label="错误信息"
+          :label="t('develop.executionDetail.tabError')"
           name="error"
         >
           <div class="tab-content">
             <el-alert
               type="error"
-              :title="execution?.error_message || '未知错误'"
+              :title="execution?.error_message || t('develop.executionDetail.unknownError')"
               :closable="false"
               show-icon
             >
               <template v-if="execution?.result?.traceback">
-                <div style="margin-top: 12px; margin-bottom: 8px; font-weight: bold;">详细堆栈信息:</div>
+                <div style="margin-top: 12px; margin-bottom: 8px; font-weight: bold;">{{ t('develop.executionDetail.stackTrace') }}:</div>
                 <pre class="error-traceback">{{ execution.result.traceback }}</pre>
               </template>
               <pre v-else style="margin-top: 8px; white-space: pre-wrap;">{{ execution?.error_message }}</pre>
@@ -206,6 +205,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -223,6 +223,7 @@ import QueryResult from '@/components/QueryResult.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 // 状态管理
 const execution = ref(null)
@@ -247,7 +248,7 @@ const loadExecution = async (silent = false) => {
   } catch (error) {
     console.error('加载执行详情失败:', error)
     if (!silent) {
-      ElMessage.error('加载失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('develop.executionDetail.loadFailed') + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -271,7 +272,11 @@ const loadLogs = async () => {
 
 // 工具函数
 const getTypeLabel = (type) => {
-  const labels = { query: '查询', workflow: '工作流', script: '脚本' }
+  const labels = {
+    query: t('develop.execution.typeQuery'),
+    workflow: t('develop.execution.typeWorkflow'),
+    script: t('develop.execution.typeScript')
+  }
   return labels[type] || type
 }
 
@@ -282,12 +287,12 @@ const getTypeColor = (type) => {
 
 const getStatusLabel = (status) => {
   const labels = {
-    pending: '等待中',
-    running: '运行中',
-    success: '成功',
-    failed: '失败',
-    timeout: '超时',
-    cancelled: '已取消'
+    pending: t('develop.execution.statusPending'),
+    running: t('develop.execution.statusRunning'),
+    success: t('develop.execution.statusSuccess'),
+    failed: t('develop.execution.statusFailed'),
+    timeout: t('develop.execution.statusTimeout'),
+    cancelled: t('develop.execution.statusCancelled')
   }
   return labels[status] || status
 }
@@ -316,9 +321,9 @@ const getProgressStatus = (status) => {
 
 const getTriggerLabel = (trigger) => {
   const labels = {
-    manual: '手动',
-    schedule: '定时',
-    orchestrator: '编排',
+    manual: t('develop.execution.triggerManual'),
+    schedule: t('develop.execution.triggerSchedule'),
+    orchestrator: t('develop.execution.triggerOrchestrator'),
     api: 'API'
   }
   return labels[trigger] || trigger
@@ -375,16 +380,16 @@ const handleBack = () => {
 
 const handleCancel = async () => {
   try {
-    await ElMessageBox.confirm('确定要取消此执行吗？', '确认取消', {
+    await ElMessageBox.confirm(t('develop.execution.cancelConfirmMsg'), t('develop.execution.cancelConfirmTitle'), {
       type: 'warning'
     })
     await cancelExecution(route.params.id)
-    ElMessage.success('已取消')
+    ElMessage.success(t('develop.execution.cancelSuccess'))
     loadExecution()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('取消执行失败:', error)
-      ElMessage.error('取消失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('develop.execution.cancelFailed') + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -392,11 +397,11 @@ const handleCancel = async () => {
 const handleRetry = async () => {
   try {
     await retryExecution(route.params.id)
-    ElMessage.success('已提交重试')
+    ElMessage.success(t('develop.execution.retrySubmitted'))
     router.push('/executions')
   } catch (error) {
     console.error('重试执行失败:', error)
-    ElMessage.error('重试失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.execution.retryFailed') + (error.response?.data?.error || error.message))
   }
 }
 

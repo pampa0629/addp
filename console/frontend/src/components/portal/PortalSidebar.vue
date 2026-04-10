@@ -6,7 +6,7 @@
         size="small"
         :icon="isCollapsed ? Expand : Fold"
         @click="$emit('toggle-collapse')"
-        :title="isCollapsed ? '展开菜单' : '收起菜单'"
+        :title="isCollapsed ? t('console.sidebar.expand') : t('console.sidebar.collapse')"
       />
     </div>
 
@@ -26,14 +26,14 @@
             :index="sidebarMenus[module].index"
           >
             <el-icon><component :is="sidebarMenus[module].icon" /></el-icon>
-            <span>{{ sidebarMenus[module].label }}</span>
+            <span>{{ t(sidebarMenus[module].label) }}</span>
           </el-menu-item>
 
           <!-- 子菜单 -->
           <el-sub-menu v-else :index="module">
             <template #title>
               <el-icon><component :is="sidebarMenus[module].icon" /></el-icon>
-              <span>{{ sidebarMenus[module].label }}</span>
+              <span>{{ t(sidebarMenus[module].label) }}</span>
             </template>
             <el-menu-item
               v-for="item in sidebarMenus[module].items"
@@ -41,7 +41,7 @@
               :index="item.index"
             >
               <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ item.label }}</span>
+              <span>{{ t(item.label) }}</span>
             </el-menu-item>
           </el-sub-menu>
         </template>
@@ -52,7 +52,10 @@
 
 <script setup>
 import { ref, computed, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Fold, Expand } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   activeGroupModules: { type: Array, required: true },
@@ -71,8 +74,6 @@ const sidebarWidth = computed(() => (props.isCollapsed ? '72px' : '240px'))
 defineExpose({
   async openModule(module, groupModules) {
     if (!menuRef.value) return
-    // el-sub-menu 向父 el-menu 的注册发生在子组件 onMounted，
-    // 需再等一个 tick 确保注册完成，open() 才有效
     await nextTick()
     const isSubMenu = !props.sidebarMenus[module]?.flat
     groupModules.forEach(m => {

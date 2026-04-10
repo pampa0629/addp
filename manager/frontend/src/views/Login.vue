@@ -2,18 +2,18 @@
   <div class="login-container">
     <el-card class="login-card">
       <template #header>
-        <h2>数据管理模块 - 登录</h2>
+        <h2>{{ t('manager.login.title') }}</h2>
       </template>
       <el-form :model="form" @submit.prevent="handleLogin">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" placeholder="请输入用户名" />
+        <el-form-item :label="t('manager.login.username')">
+          <el-input v-model="form.username" :placeholder="t('manager.login.usernamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" />
+        <el-form-item :label="t('manager.login.password')">
+          <el-input v-model="form.password" type="password" :placeholder="t('manager.login.passwordPlaceholder')" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" native-type="submit" :loading="loading" style="width: 100%">
-            登录
+            {{ t('manager.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -26,7 +26,9 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -39,17 +41,17 @@ const loading = ref(false)
 
 const handleLogin = async () => {
   if (!form.value.username || !form.value.password) {
-    ElMessage.warning('请输入用户名和密码')
+    ElMessage.warning(t('manager.login.required'))
     return
   }
 
   loading.value = true
   try {
     await authStore.login(form.value.username, form.value.password)
-    ElMessage.success('登录成功')
+    ElMessage.success(t('manager.login.success'))
     router.push('/')
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || '登录失败')
+    ElMessage.error(error.response?.data?.error || t('manager.login.failed'))
   } finally {
     loading.value = false
   }

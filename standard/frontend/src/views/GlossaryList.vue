@@ -1,8 +1,8 @@
 <template>
   <div class="glossary-list">
     <div class="page-header">
-      <h2>业务术语词典</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建术语</el-button>
+      <h2>{{ $t('standard.glossary.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.glossary.create') }}</el-button>
     </div>
 
     <!-- 筛选栏 -->
@@ -11,14 +11,14 @@
         <el-col :span="8">
           <el-input
             v-model="filters.keyword"
-            placeholder="搜索术语名称或定义"
+            :placeholder="$t('standard.glossary.searchPlaceholder')"
             clearable
             @change="loadGlossaries"
             :prefix-icon="Search"
           />
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.domain_id" placeholder="选择业务域" clearable @change="loadGlossaries">
+          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="loadGlossaries">
             <el-option
               v-for="domain in domainList"
               :key="domain.id"
@@ -28,10 +28,10 @@
           </el-select>
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.status" placeholder="选择状态" clearable @change="loadGlossaries">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已审批" value="approved" />
-            <el-option label="已废弃" value="deprecated" />
+          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="loadGlossaries">
+            <el-option :label="$t('standard.common.draft')" value="draft" />
+            <el-option :label="$t('standard.common.approved')" value="approved" />
+            <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
           </el-select>
         </el-col>
       </el-row>
@@ -40,7 +40,7 @@
     <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="glossaries" v-loading="loading" stripe>
-        <el-table-column label="术语名称" min-width="150">
+        <el-table-column :label="$t('standard.glossary.nameLabel')" min-width="150">
           <template #default="{ row }">
             <span class="term-name">{{ row.name }}</span>
             <div v-if="row.alias && row.alias.length > 0" class="alias-list">
@@ -48,28 +48,28 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="所属业务域" width="120">
+        <el-table-column :label="$t('standard.glossary.domainLabel')" width="120">
           <template #default="{ row }">
             <span>{{ getDomainName(row.domain_id) || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="业务定义" prop="definition" show-overflow-tooltip />
-        <el-table-column label="状态" width="90">
+        <el-table-column :label="$t('standard.glossary.definitionLabel')" prop="definition" show-overflow-tooltip />
+        <el-table-column :label="$t('standard.common.status')" width="90">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标签" width="180">
+        <el-table-column :label="$t('standard.common.tags')" width="180">
           <template #default="{ row }">
             <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" class="tag-item">{{ tag }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goToDetail(row)">详情</el-button>
-            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">审批</el-button>
-            <el-button link type="warning" @click="handleDeprecate(row)" v-if="row.status === 'approved'">废弃</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
+            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">{{ $t('standard.common.approve') }}</el-button>
+            <el-button link type="warning" @click="handleDeprecate(row)" v-if="row.status === 'approved'">{{ $t('standard.common.deprecate') }}</el-button>
+            <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -86,62 +86,59 @@
     </el-card>
 
     <!-- 创建/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="editMode ? '编辑业务术语' : '新建业务术语'" width="600px">
+    <el-dialog v-model="dialogVisible" :title="editMode ? $t('standard.glossary.editTitle') : $t('standard.glossary.createTitle')" width="600px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="术语名称" prop="name">
-          <el-input v-model="form.name" placeholder="如：客户" />
+        <el-form-item :label="$t('standard.glossary.nameLabel')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('standard.glossary.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="别名">
+        <el-form-item :label="$t('standard.glossary.aliasLabel')">
           <el-select
             v-model="form.alias"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="输入后回车添加别名"
+            multiple filterable allow-create default-first-option
+            :placeholder="$t('standard.glossary.aliasPlaceholder')"
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="所属业务域">
-          <el-select v-model="form.domain_id" placeholder="选择业务域（可选）" clearable style="width: 100%">
+        <el-form-item :label="$t('standard.glossary.domainLabel')">
+          <el-select v-model="form.domain_id" :placeholder="$t('standard.common.domainOptional')" clearable style="width: 100%">
             <el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="业务定义" prop="definition">
-          <el-input v-model="form.definition" type="textarea" :rows="4" placeholder="请输入业务定义" />
+        <el-form-item :label="$t('standard.glossary.definitionLabel')" prop="definition">
+          <el-input v-model="form.definition" type="textarea" :rows="4" :placeholder="$t('standard.glossary.definitionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="使用示例">
+        <el-form-item :label="$t('standard.glossary.exampleLabel')">
           <el-input v-model="form.example" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="$t('standard.glossary.noteLabel')">
           <el-input v-model="form.note" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="标签">
+        <el-form-item :label="$t('standard.common.tags')">
           <el-select
             v-model="form.tags"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="输入后回车添加标签"
+            multiple filterable allow-create default-first-option
+            :placeholder="$t('standard.common.tagsPlaceholder')"
             style="width: 100%"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ $t('standard.common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI } from '../api/standard'
+
+const { t } = useI18n()
 
 const router = useRouter()
 
@@ -173,13 +170,13 @@ const form = ref({
   tags: []
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入术语名称', trigger: 'blur' }],
-  definition: [{ required: true, message: '请输入业务定义', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
+  definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }]
+}))
 
 const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || 'info')
-const statusLabel = (s) => ({ draft: '草稿', approved: '已审批', deprecated: '已废弃' }[s] || s)
+const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 
 const flattenDomains = (nodes) => {
   const result = []
@@ -215,7 +212,7 @@ const loadGlossaries = async () => {
     glossaries.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -260,15 +257,15 @@ const handleSubmit = async () => {
     try {
       if (editMode.value) {
         await glossaryAPI.update(editingId.value, form.value)
-        ElMessage.success('更新成功')
+        ElMessage.success(t('standard.common.updateSuccess'))
       } else {
         await glossaryAPI.create(form.value)
-        ElMessage.success('创建成功')
+        ElMessage.success(t('standard.common.createSuccess'))
       }
       dialogVisible.value = false
       await loadGlossaries()
     } catch (e) {
-      ElMessage.error(e.response?.data?.error || '操作失败')
+      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
     } finally {
       submitting.value = false
     }
@@ -278,32 +275,32 @@ const handleSubmit = async () => {
 const handleApprove = async (row) => {
   try {
     await glossaryAPI.approve(row.id)
-    ElMessage.success('审批成功')
+    ElMessage.success(t('standard.common.approveSuccess'))
     await loadGlossaries()
   } catch (e) {
-    ElMessage.error('审批失败')
+    ElMessage.error(t('standard.common.approveFailed'))
   }
 }
 
 const handleDeprecate = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认废弃术语「${row.name}」？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.glossary.confirmDeprecate', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
     await glossaryAPI.deprecate(row.id)
-    ElMessage.success('已废弃')
+    ElMessage.success(t('standard.common.deprecated'))
     await loadGlossaries()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('操作失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
   }
 }
 
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除术语「${row.name}」？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.glossary.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
     await glossaryAPI.delete(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     await loadGlossaries()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

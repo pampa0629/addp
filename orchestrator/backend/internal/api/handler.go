@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -76,7 +78,7 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 	// 如果启用且有 Cron 表达式，调度任务
 	if req.Enabled && req.Schedule != "" {
 		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "调度失败: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.schedule_failed", err.Error())})
 			return
 		}
 	}
@@ -114,13 +116,13 @@ func (h *OrchestrationHandler) List(c *gin.Context) {
 func (h *OrchestrationHandler) Get(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
 	orch, err := h.orchRepo.GetByID(uint(id))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "编排不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
 	}
 
@@ -137,13 +139,13 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 func (h *OrchestrationHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
 	orch, err := h.orchRepo.GetByID(uint(id))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "编排不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
 	}
 
@@ -166,7 +168,7 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 	h.scheduler.Unschedule(req.ID)
 	if req.Enabled && req.Schedule != "" {
 		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "调度失败: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.schedule_failed", err.Error())})
 			return
 		}
 	}
@@ -184,7 +186,7 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 func (h *OrchestrationHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
@@ -195,7 +197,7 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, "orchestrator.success.deleted")})
 }
 
 // Execute 手动触发编排执行
@@ -208,13 +210,13 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 func (h *OrchestrationHandler) Execute(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
 	orch, err := h.orchRepo.GetByID(uint(id))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "编排不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
 	}
 
@@ -241,7 +243,7 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
@@ -309,7 +311,7 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
 
@@ -319,7 +321,7 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	ctx := c.Request.Context()
 	exec, err := h.executionService.GetExecution(ctx, uint(id), tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "执行不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.execution_not_found")})
 		return
 	}
 
@@ -334,7 +336,7 @@ func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
 	// 使用 TaskProviderRegistry 获取所有任务提供者
 	providers, err := h.taskProviderRegistry.ListAllProviders(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取任务提供者失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.list_providers_failed", err.Error())})
 		return
 	}
 
@@ -364,7 +366,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	}
 
 	if moduleName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 module_name 或 module 参数"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.missing_module_param")})
 		return
 	}
 
@@ -373,13 +375,13 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 1. 从 TaskProviderRegistry 获取任务提供者配置
 	provider, err := h.taskProviderRegistry.GetProvider(ctx, moduleName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到任务提供者 %s: %v", moduleName, err)})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.provider_not_found", fmt.Sprintf("%s: %v", moduleName, err))})
 		return
 	}
 
 	// 2. 构建目标 URL
 	if provider.BaseURL == "" || provider.TaskListEndpoint == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务提供者未配置完整的 API 信息"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, "orchestrator.error.provider_not_configured")})
 		return
 	}
 
@@ -413,7 +415,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 4. 发送 HTTP 请求（默认使用 GET 方法）
 	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建请求失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.create_request_failed", err.Error())})
 		return
 	}
 
@@ -424,7 +426,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("调用模块 API 失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.call_module_api_failed", err.Error())})
 		return
 	}
 	defer resp.Body.Close()
@@ -432,14 +434,14 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 6. 读取响应
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取响应失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.read_response_failed", err.Error())})
 		return
 	}
 
 	// 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":       fmt.Sprintf("模块 API 返回错误，状态码: %d", resp.StatusCode),
+			"error":       fmt.Sprintf("%s，状态码: %d", commoni18n.T(c, "orchestrator.error.module_api_error"), resp.StatusCode),
 			"target_url":  targetURL,
 			"status_code": resp.StatusCode,
 			"body":        string(body),
@@ -451,7 +453,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	var respData interface{}
 	if err := json.Unmarshal(body, &respData); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":      fmt.Sprintf("解析响应失败: %v", err),
+			"error":      commoni18n.TWithDetail(c, "orchestrator.error.parse_response_failed", err.Error()),
 			"target_url": targetURL,
 			"body":       string(body),
 		})

@@ -11,7 +11,7 @@
             :type="service?.config_type === 'table' ? 'success' : 'warning'"
             size="large"
           >
-            {{ service?.config_type === 'table' ? '表配置' : 'SQL配置' }}
+            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
           </el-tag>
 
           <!-- 协议标签 -->
@@ -26,32 +26,32 @@
         </div>
       </div>
       <div class="header-right">
-        <el-button @click="goToEdit">编辑</el-button>
-        <el-button type="danger" @click="handleDelete">删除</el-button>
+        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
     <!-- 服务信息卡片 -->
-    <el-card header="服务信息" style="margin-bottom: 20px">
+    <el-card :header="t('service.query.cardServiceInfo')" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="服务名称">
+        <el-descriptions-item :label="t('service.query.labelServiceName')">
           <code>{{ service?.service_name }}</code>
         </el-descriptions-item>
-        <el-descriptions-item label="标题">
+        <el-descriptions-item :label="t('service.query.labelTitle')">
           {{ service?.title }}
         </el-descriptions-item>
-        <el-descriptions-item label="配置方式">
+        <el-descriptions-item :label="t('service.query.labelConfigType')">
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'">
-            {{ service?.config_type === 'table' ? '表配置' : 'SQL配置' }}
+            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="存储引擎">
+        <el-descriptions-item :label="t('service.query.labelEngine')">
           Engine #{{ service?.engine_id }}
         </el-descriptions-item>
-        <el-descriptions-item label="描述" :span="2">
-          {{ service?.description || '无' }}
+        <el-descriptions-item :label="t('service.query.labelDescription')" :span="2">
+          {{ service?.description || t('service.common.none') }}
         </el-descriptions-item>
-        <el-descriptions-item label="关键词" :span="2">
+        <el-descriptions-item :label="t('service.query.labelKeywords')" :span="2">
           <el-tag
             v-for="kw in service?.keywords"
             :key="kw"
@@ -60,29 +60,29 @@
           >
             {{ kw }}
           </el-tag>
-          <span v-if="!service?.keywords || service.keywords.length === 0">无</span>
+          <span v-if="!service?.keywords || service.keywords.length === 0">{{ t('service.common.none') }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="最大返回数">
+        <el-descriptions-item :label="t('service.query.labelMaxFeatures')">
           {{ service?.max_features }}
         </el-descriptions-item>
-        <el-descriptions-item label="公开访问">
+        <el-descriptions-item :label="t('service.query.labelPublicAccess')">
           <el-tag :type="service?.public_access ? 'success' : 'info'" size="small">
-            {{ service?.public_access ? '是' : '否' }}
+            {{ service?.public_access ? t('service.common.yes') : t('service.common.no') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('service.query.labelStatus')">
           <el-tag :type="getStatusType(service?.status)" size="small">
             {{ getStatusText(service?.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">
+        <el-descriptions-item :label="t('service.query.labelCreatedAt')">
           {{ formatDate(service?.created_at) }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <!-- 数据源配置卡片 -->
-    <el-card header="数据源配置" style="margin-bottom: 20px">
+    <el-card :header="t('service.query.cardDataSource')" style="margin-bottom: 20px">
       <!-- 表配置模式 -->
       <div v-if="service?.config_type === 'table'">
         <el-descriptions :column="2" border>
@@ -96,15 +96,15 @@
 
         <!-- 空间字段信息 -->
         <div v-if="hasGeometry" style="margin-top: 16px">
-          <el-divider content-position="left">空间字段配置</el-divider>
+          <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="几何列">
+            <el-descriptions-item :label="t('service.query.labelGeomColumn')">
               <code>{{ geometryConfig?.column }}</code>
             </el-descriptions-item>
-            <el-descriptions-item label="坐标系">
+            <el-descriptions-item :label="t('service.query.labelSrid')">
               EPSG:{{ geometryConfig?.srid }}
             </el-descriptions-item>
-            <el-descriptions-item label="几何类型" :span="2">
+            <el-descriptions-item :label="t('service.query.labelGeomType')" :span="2">
               <el-tag
                 v-for="type in geometryConfig?.types"
                 :key="type"
@@ -115,7 +115,7 @@
                 {{ type }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item v-if="geometryConfig?.extent" label="空间范围" :span="2">
+            <el-descriptions-item v-if="geometryConfig?.extent" :label="t('service.query.labelExtent')" :span="2">
               <code style="font-size: 12px">
                 {{ JSON.stringify(geometryConfig.extent) }}
               </code>
@@ -125,9 +125,9 @@
 
         <!-- 字段配置 -->
         <div v-if="defaultFields || filterableFields" style="margin-top: 16px">
-          <el-divider content-position="left">字段配置</el-divider>
+          <el-divider content-position="left">{{ t('service.query.dividerFields') }}</el-divider>
           <el-descriptions :column="1" border>
-            <el-descriptions-item v-if="defaultFields" label="默认返回字段">
+            <el-descriptions-item v-if="defaultFields" :label="t('service.query.labelDefaultFields')">
               <el-tag
                 v-for="field in defaultFields"
                 :key="field"
@@ -137,7 +137,7 @@
                 {{ field }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item v-if="filterableFields" label="可过滤字段">
+            <el-descriptions-item v-if="filterableFields" :label="t('service.query.labelFilterableFields')">
               <el-tag
                 v-for="field in filterableFields"
                 :key="field"
@@ -156,8 +156,8 @@
       <div v-else-if="service?.config_type === 'sql'">
         <el-alert
           type="info"
-          title="SQL查询模式"
-          description="使用自定义SQL查询，仅支持分页参数，不支持动态filter/fields/orderBy"
+          :title="t('service.query.sqlModeTitle')"
+          :description="t('service.query.sqlModeDesc')"
           :closable="false"
           style="margin-bottom: 16px"
         />
@@ -167,12 +167,12 @@
 
         <!-- 空间字段信息（SQL模式） -->
         <div v-if="hasGeometry" style="margin-top: 16px">
-          <el-divider content-position="left">空间字段配置</el-divider>
+          <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="几何列">
+            <el-descriptions-item :label="t('service.query.labelGeomColumn')">
               <code>{{ geometryConfig?.column }}</code>
             </el-descriptions-item>
-            <el-descriptions-item label="坐标系">
+            <el-descriptions-item :label="t('service.query.labelSrid')">
               EPSG:{{ geometryConfig?.srid }}
             </el-descriptions-item>
           </el-descriptions>
@@ -181,37 +181,37 @@
     </el-card>
 
     <!-- 服务端点卡片 -->
-    <el-card header="服务端点" style="margin-bottom: 20px">
+    <el-card :header="t('service.query.cardEndpoints')" style="margin-bottom: 20px">
       <!-- REST API 端点 -->
       <div v-if="isProtocolEnabled('rest_api')" class="endpoint-item">
         <div class="endpoint-title">
           <el-icon><Link /></el-icon>
-          <span>REST API 查询端点</span>
+          <span>{{ t('service.query.restApiEndpointTitle') }}</span>
         </div>
         <div class="endpoint-url">
           <el-input :value="restApiEndpoint" readonly />
-          <el-button @click="copyEndpoint(restApiEndpoint)">复制</el-button>
-          <el-button @click="testRestAPI">测试</el-button>
+          <el-button @click="copyEndpoint(restApiEndpoint)">{{ t('service.common.copy') }}</el-button>
+          <el-button @click="testRestAPI">{{ t('service.common.test') }}</el-button>
         </div>
 
         <!-- Table模式：显示查询参数说明 -->
         <div v-if="service?.config_type === 'table'" style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
-          <strong>支持的查询参数：</strong>
+          <strong>{{ t('service.query.supportedParams') }}</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
-            <li><code>filter</code>：WHERE条件（如：name='张三' AND age>20）</li>
-            <li><code>fields</code>：返回字段列表（如：id,name,age）</li>
-            <li><code>orderBy</code>：排序（如：age DESC, name ASC）</li>
-            <li><code>page</code> 和 <code>page_size</code>：分页参数</li>
-            <li><code>format</code>：输出格式（json/csv/geojson）</li>
+            <li><code>filter</code>：{{ t('service.query.paramFilter') }}</li>
+            <li><code>fields</code>：{{ t('service.query.paramFields') }}</li>
+            <li><code>orderBy</code>：{{ t('service.query.paramOrderBy') }}</li>
+            <li><code>page</code> {{ t('service.query.paramAnd') }} <code>page_size</code>：{{ t('service.query.paramPage') }}</li>
+            <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
           </ul>
         </div>
 
         <!-- SQL模式：显示查询参数说明 -->
         <div v-else style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
-          <strong>支持的查询参数：</strong>
+          <strong>{{ t('service.query.supportedParams') }}</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
-            <li><code>page</code> 和 <code>page_size</code>：分页参数</li>
-            <li><code>format</code>：输出格式（json/csv/geojson）</li>
+            <li><code>page</code> {{ t('service.query.paramAnd') }} <code>page_size</code>：{{ t('service.query.paramPage') }}</li>
+            <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
           </ul>
         </div>
       </div>
@@ -228,7 +228,7 @@
           :closable="false"
           style="margin-bottom: 12px"
         >
-          OGC API Features 已自动启用（检测到空间字段）
+          {{ t('service.query.ogcAutoEnabled') }}
         </el-alert>
 
         <!-- Landing Page -->
@@ -236,8 +236,8 @@
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Landing Page:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesLandingPage" readonly />
-            <el-button @click="copyEndpoint(ogcFeaturesLandingPage)">复制</el-button>
-            <el-button @click="testEndpoint(ogcFeaturesLandingPage)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcFeaturesLandingPage)">{{ t('service.common.copy') }}</el-button>
+            <el-button @click="testEndpoint(ogcFeaturesLandingPage)">{{ t('service.common.test') }}</el-button>
           </div>
         </div>
 
@@ -246,8 +246,8 @@
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Collections:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesCollections" readonly />
-            <el-button @click="copyEndpoint(ogcFeaturesCollections)">复制</el-button>
-            <el-button @click="testEndpoint(ogcFeaturesCollections)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcFeaturesCollections)">{{ t('service.common.copy') }}</el-button>
+            <el-button @click="testEndpoint(ogcFeaturesCollections)">{{ t('service.common.test') }}</el-button>
           </div>
         </div>
 
@@ -256,31 +256,31 @@
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Conformance:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesConformance" readonly />
-            <el-button @click="copyEndpoint(ogcFeaturesConformance)">复制</el-button>
-            <el-button @click="testEndpoint(ogcFeaturesConformance)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcFeaturesConformance)">{{ t('service.common.copy') }}</el-button>
+            <el-button @click="testEndpoint(ogcFeaturesConformance)">{{ t('service.common.test') }}</el-button>
           </div>
         </div>
 
         <!-- Items (实际数据) -->
         <div style="margin-bottom: 12px">
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">
-            Items (实际地理数据，限制10条):
+            {{ t('service.query.ogcItemsLabel') }}
           </div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesItems" readonly />
-            <el-button @click="copyEndpoint(ogcFeaturesItems)">复制</el-button>
-            <el-button type="primary" @click="testEndpoint(ogcFeaturesItems)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcFeaturesItems)">{{ t('service.common.copy') }}</el-button>
+            <el-button type="primary" @click="testEndpoint(ogcFeaturesItems)">{{ t('service.common.test') }}</el-button>
           </div>
         </div>
       </div>
 
       <div v-if="!isProtocolEnabled('rest_api') && !isProtocolEnabled('ogc_features')" class="no-endpoints">
-        <el-empty description="未启用任何协议" />
+        <el-empty :description="t('service.query.noProtocols')" />
       </div>
     </el-card>
 
     <!-- 数据预览卡片 -->
-    <el-card header="数据预览" style="margin-bottom: 20px">
+    <el-card :header="t('service.query.cardPreview')" style="margin-bottom: 20px">
       <div class="preview-controls">
         <el-button
           type="primary"
@@ -288,10 +288,10 @@
           :loading="previewLoading"
           :disabled="!isProtocolEnabled('rest_api')"
         >
-          {{ previewData.length > 0 ? '刷新数据' : '加载数据' }}
+          {{ previewData.length > 0 ? t('service.query.refreshData') : t('service.query.loadData') }}
         </el-button>
         <div v-if="previewData.length > 0" style="color: var(--addp-text-secondary); font-size: 14px">
-          共 {{ previewPagination.total }} 条记录，当前显示 {{ previewData.length }} 条
+          {{ t('service.query.previewCount', { total: previewPagination.total, count: previewData.length }) }}
         </div>
       </div>
 
@@ -315,7 +315,7 @@
         >
           <template #default="{ row }">
             <span v-if="isGeometryColumn(column)" class="geometry-data">
-              [几何数据]
+              {{ t('service.query.geometryData') }}
             </span>
             <span v-else>{{ formatCellValue(row[column]) }}</span>
           </template>
@@ -337,7 +337,7 @@
 
       <!-- 空状态 -->
       <div v-if="previewData.length === 0 && !previewLoading" class="preview-empty">
-        <el-empty description="点击「加载数据」按钮查看数据预览" />
+        <el-empty :description="t('service.query.previewEmpty')" />
       </div>
     </el-card>
   </div>
@@ -348,10 +348,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
 import { copyToClipboard } from '../utils/serviceHelper'
 import axios from 'axios'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -432,9 +434,9 @@ const isProtocolEnabled = (protocolName) => {
 // 方法：获取状态文本
 const getStatusText = (status) => {
   const statusMap = {
-    active: '活跃',
-    inactive: '非活跃',
-    error: '错误'
+    active: t('service.query.statusActive'),
+    inactive: t('service.query.statusInactive'),
+    error: t('service.query.statusError')
   }
   return statusMap[status] || status
 }
@@ -458,9 +460,9 @@ const formatDate = (dateString) => {
 const copyEndpoint = async (url) => {
   const success = await copyToClipboard(url)
   if (success) {
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('service.common.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('service.common.copyFailed'))
   }
 }
 
@@ -483,7 +485,7 @@ const loadService = async () => {
     const response = await queryServiceAPI.getService(serviceId.value)
     service.value = response
   } catch (error) {
-    ElMessage.error('加载服务详情失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.query.loadServiceFailed') + ': ' + (error.message || t('service.common.unknownError')))
     console.error('Failed to load service:', error)
   } finally {
     loading.value = false
@@ -494,21 +496,21 @@ const loadService = async () => {
 const handleDelete = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要删除此查询服务吗？删除后无法恢复。',
-      '确认删除',
+      t('service.query.deleteServiceConfirm'),
+      t('service.common.deleteConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('service.common.confirm'),
+        cancelButtonText: t('service.common.cancel'),
         type: 'warning'
       }
     )
 
     await queryServiceAPI.deleteService(serviceId.value)
-    ElMessage.success('查询服务已删除')
+    ElMessage.success(t('service.query.deleteServiceSuccess'))
     router.push('/query-services')
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + (error.message || '未知错误'))
+      ElMessage.error(t('service.query.deleteServiceFailed') + ': ' + (error.message || t('service.common.unknownError')))
     }
   }
 }
@@ -525,7 +527,7 @@ const goToEdit = () => {
 // 数据预览方法
 const loadPreviewData = async () => {
   if (!service.value?.service_name) {
-    ElMessage.warning('服务信息未加载')
+    ElMessage.warning(t('service.query.serviceNotLoaded'))
     return
   }
 
@@ -553,13 +555,13 @@ const loadPreviewData = async () => {
         previewPagination.value.total = response.data.pagination.total
       }
 
-      ElMessage.success(`成功加载 ${response.data.data.length} 条数据`)
+      ElMessage.success(t('service.query.loadPreviewSuccess', { count: response.data.data.length }))
     } else {
-      ElMessage.warning('未获取到数据')
+      ElMessage.warning(t('service.query.noDataWarning'))
     }
   } catch (error) {
     console.error('加载数据预览失败:', error)
-    ElMessage.error('加载数据预览失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message))
   } finally {
     previewLoading.value = false
   }

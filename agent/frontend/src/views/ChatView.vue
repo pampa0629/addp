@@ -3,7 +3,7 @@
     <!-- 左侧会话列表 -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <el-button type="primary" size="small" @click="createSession" :icon="Plus">新对话</el-button>
+        <el-button type="primary" size="small" @click="createSession" :icon="Plus">{{ t('agent.chat.newSession') }}</el-button>
       </div>
       <div class="session-list">
         <div
@@ -24,7 +24,7 @@
             @click.stop="deleteSession(session.id)"
           />
         </div>
-        <el-empty v-if="sessions.length === 0" description="暂无对话" :image-size="60" />
+        <el-empty v-if="sessions.length === 0" :description="t('agent.chat.noSessions')" :image-size="60" />
       </div>
     </aside>
 
@@ -33,7 +33,7 @@
       <div class="messages-area" ref="messagesAreaRef">
         <div v-if="messages.length === 0" class="empty-hint">
           <el-icon size="48" color="var(--el-text-color-secondary)"><ChatDotRound /></el-icon>
-          <p>你好！我是 ADDP AI 助手，可以帮你完成数据管理、分析、发布等操作。</p>
+          <p>{{ t('agent.chat.welcome') }}</p>
           <div class="quick-actions">
             <el-tag
               v-for="hint in quickHints"
@@ -71,7 +71,7 @@
           v-model="inputText"
           type="textarea"
           :rows="3"
-          placeholder="输入消息，Ctrl+Enter 发送..."
+          :placeholder="t('agent.chat.inputPlaceholder')"
           resize="none"
           @keydown.ctrl.enter="handleSend"
         />
@@ -81,7 +81,7 @@
           @click="handleSend"
           :icon="Position"
         >
-          发送
+          {{ t('agent.chat.send') }}
         </el-button>
       </div>
     </main>
@@ -92,11 +92,13 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { Plus, Delete, ChatDotRound, Position } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import { useAuthStore } from '../store/auth'
 import { sessionAPI } from '../api/index'
 import { DAGViewer } from '@addp/common-frontend/dag'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 
 const sessions = ref([])
@@ -108,12 +110,12 @@ const streamContent = ref('')
 const streamDagData = ref(null)
 const messagesAreaRef = ref(null)
 
-const quickHints = [
-  '查看我的数据目录',
-  '有哪些数据源可以使用？',
-  '如何导入一个 Shapefile？',
-  '帮我执行一个 SQL 查询',
-]
+const quickHints = computed(() => [
+  t('agent.quickHints.viewCatalog'),
+  t('agent.quickHints.listSources'),
+  t('agent.quickHints.importShapefile'),
+  t('agent.quickHints.runSQL'),
+])
 
 function renderMarkdown(content) {
   return marked.parse(content || '')
@@ -134,7 +136,7 @@ async function createSession() {
     sessions.value.unshift(session)
     await switchSession(session.id)
   } catch (e) {
-    ElMessage.error('创建会话失败')
+    ElMessage.error(t('agent.chat.createFailed'))
   }
 }
 
@@ -162,7 +164,7 @@ async function deleteSession(sessionId) {
       messages.value = []
     }
   } catch (e) {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('agent.chat.deleteFailed'))
   }
 }
 
@@ -244,7 +246,7 @@ async function handleSend() {
     messages.value.push({
       id: Date.now() + 1,
       role: 'assistant',
-      content: fullContent || '已生成工作流',
+      content: fullContent || t('agent.chat.workflowGenerated'),
       result_type: dagData ? 'dag' : 'text',
       dagData: dagData,
     })
@@ -257,11 +259,11 @@ async function handleSend() {
       session.title = content.slice(0, 30)
     }
   } catch (e) {
-    ElMessage.error('发送失败: ' + e.message)
+    ElMessage.error(t('agent.chat.sendFailed', { msg: e.message }))
     messages.value.push({
       id: Date.now() + 1,
       role: 'assistant',
-      content: '抱歉，发生了错误，请重试。',
+      content: t('agent.chat.errorReply'),
       result_type: 'error',
     })
   } finally {

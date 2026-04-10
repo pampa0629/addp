@@ -6,6 +6,8 @@ import (
 
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
+	developi18n "github.com/addp/develop/backend/i18n"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -65,7 +67,7 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "执行已启动",
+		"message":      commoni18n.T(c, developi18n.MsgExecutionStarted),
 		"execution_id": executionID,
 	})
 }
@@ -105,7 +107,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "执行已启动",
+		"message":      commoni18n.T(c, developi18n.MsgExecutionStarted),
 		"execution_id": executionID,
 	})
 }
@@ -190,7 +192,7 @@ func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "执行已取消"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, developi18n.MsgExecutionCancelled)})
 }
 
 // RetryExecution 重试执行
@@ -211,7 +213,7 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "重试已启动",
+		"message":      commoni18n.T(c, developi18n.MsgRetryStarted),
 		"execution_id": newExecutionID,
 	})
 }
@@ -263,7 +265,7 @@ func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	// 暂时返回占位响应
 	c.JSON(http.StatusOK, gin.H{
 		"execution_id": executionID,
-		"logs":         []string{"日志功能开发中..."},
+		"logs":         []string{commoni18n.T(c, developi18n.MsgLogsNotReady)},
 	})
 }
 
@@ -308,6 +310,6 @@ func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"execution_id": executionID,
-		"message":      "参数化执行已启动",
+		"message":      commoni18n.T(c, developi18n.MsgParamExecStarted),
 	})
 }

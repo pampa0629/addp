@@ -8,9 +8,10 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
+      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
     port: 5180,

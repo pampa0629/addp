@@ -12,7 +12,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
     port: 5170,

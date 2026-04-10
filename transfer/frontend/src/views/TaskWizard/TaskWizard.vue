@@ -1,12 +1,12 @@
 <template>
-  <div class="task-wizard" v-loading="loading" element-loading-text="加载任务详情中...">
+  <div class="task-wizard" v-loading="loading" :element-loading-text="t('transfer.taskWizard.loadingTaskDetail')">
     <!-- 步骤指示器 -->
     <el-steps :active="wizardState.currentStep.value" finish-status="success" align-center>
-      <el-step title="选择数据源" description="配置源数据库和表" />
-      <el-step title="选择目标" description="配置目标数据库和表" />
-      <el-step title="字段映射" description="配置字段对应关系" />
-      <el-step title="任务配置" description="设置任务名称和调度" />
-      <el-step title="确认创建" description="预览并提交任务" />
+      <el-step :title="t('transfer.taskWizard.stepSelectSource')" :description="t('transfer.taskWizard.configureSourceDesc')" />
+      <el-step :title="t('transfer.taskWizard.stepSelectTarget')" :description="t('transfer.taskWizard.configureTargetDesc')" />
+      <el-step :title="t('transfer.taskWizard.stepFieldMapping')" :description="t('transfer.taskWizard.fieldMappingDesc')" />
+      <el-step :title="t('transfer.taskWizard.stepConfigure')" :description="t('transfer.taskWizard.configureTaskDesc')" />
+      <el-step :title="t('transfer.taskWizard.stepReview')" :description="t('transfer.taskWizard.confirmCreateDesc')" />
     </el-steps>
 
     <!-- 步骤内容 -->
@@ -29,7 +29,7 @@
         v-if="wizardState.currentStep.value > 0"
         @click="wizardState.prevStep"
       >
-        上一步
+        {{ t('transfer.taskWizard.previousStep') }}
       </el-button>
 
       <el-button
@@ -38,7 +38,7 @@
         :disabled="!wizardState.canGoNext.value"
         @click="wizardState.nextStep"
       >
-        下一步
+        {{ t('transfer.taskWizard.nextStep') }}
       </el-button>
 
       <el-button
@@ -47,11 +47,11 @@
         @click="handleSubmit"
         :loading="submitting"
       >
-        {{ isEditMode ? '更新任务' : '创建任务' }}
+        {{ isEditMode ? t('transfer.taskWizard.updateTask') : t('transfer.taskWizard.createTask2') }}
       </el-button>
 
       <el-button @click="handleCancel">
-        取消
+        {{ t('transfer.taskWizard.cancel') }}
       </el-button>
     </div>
   </div>
@@ -60,6 +60,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
@@ -75,6 +76,7 @@ import Step5Review from './Step5Review.vue'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const wizardState = useTaskWizardState()
 const submitting = ref(false)
 const loading = ref(false)
@@ -112,9 +114,9 @@ async function loadTaskDetail() {
     await loadSourceFieldsForEdit(task)
     await loadTargetFieldsForEdit(task)
 
-    ElMessage.success('任务详情加载成功')
+    ElMessage.success(t('transfer.taskWizard.taskDetailLoadSuccess'))
   } catch (error) {
-    ElMessage.error('加载任务详情失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('transfer.taskWizard.taskDetailLoadFailed', { error: error.response?.data?.message || error.message }))
     console.error('加载任务详情失败:', error)
   } finally {
     loading.value = false
@@ -195,15 +197,15 @@ async function loadTargetFieldsForEdit(task) {
 async function handleSubmit() {
   try {
     const confirmMessage = isEditMode.value
-      ? '确认更新此数据传输任务吗？'
-      : '确认创建此数据传输任务吗？'
+      ? t('transfer.taskWizard.confirmUpdate')
+      : t('transfer.taskWizard.confirmCreate')
 
     await ElMessageBox.confirm(
       confirmMessage,
-      '确认',
+      t('transfer.taskWizard.confirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('transfer.taskWizard.confirmOk'),
+        cancelButtonText: t('transfer.taskWizard.confirmCancel'),
         type: 'warning'
       }
     )
@@ -230,15 +232,15 @@ async function handleSubmit() {
 async function handleCancel() {
   try {
     const confirmMessage = isEditMode.value
-      ? '确定要取消编辑任务吗？未保存的数据将丢失'
-      : '确定要取消创建任务吗？未保存的数据将丢失'
+      ? t('transfer.taskWizard.cancelEditConfirm')
+      : t('transfer.taskWizard.cancelCreateConfirm')
 
     await ElMessageBox.confirm(
       confirmMessage,
-      '警告',
+      t('transfer.taskWizard.warningTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '继续编辑',
+        confirmButtonText: t('transfer.taskWizard.confirmOk'),
+        cancelButtonText: t('transfer.taskWizard.continueEditing'),
         type: 'warning'
       }
     )

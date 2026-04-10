@@ -1,0 +1,23 @@
+[transfer.task.created]
+other = "Task created successfully"
+
+[transfer.task.updated]
+other = "Task updated successfully"
+
+[transfer.task.deleted]
+other = "Task deleted successfully"
+
+[transfer.task.started]
+other = "Task started successfully"
+
+[transfer.task.stopped]
+other = "Task stopped successfully"
+
+[transfer.task.paused]
+other = "Task paused successfully"
+
+[transfer.task.resumed]
+other = "Task resumed successfully"
+
+[transfer.execution.cancelled]
+other = "Execution cancelled successfully"

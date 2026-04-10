@@ -1,0 +1,41 @@
+[system.auth.token_gen_failed]
+other = "Failed to generate token"
+
+[system.auth.register_disabled]
+other = "Registration is disabled"
+
+[system.auth.missing_auth_header]
+other = "Missing Authorization header"
+
+[system.auth.invalid_auth_format]
+other = "Invalid Authorization format"
+
+[system.auth.invalid_token]
+other = "Invalid token"
+
+[system.auth.token_refresh_failed]
+other = "Failed to refresh token"
+
+[system.log.not_found]
+other = "Log not found"
+
+[system.log.export_failed]
+other = "Export failed"
+
+[system.log.audit_create_failed]
+other = "Failed to create audit log"
+
+[system.log.audit_created]
+other = "Audit log created"
+
+[system.module.not_found]
+other = "Module not found"
+
+[system.module.registered]
+other = "Module registered successfully"
+
+[system.module.heartbeat]
+other = "Heartbeat updated successfully"
+
+[system.module.deleted]
+other = "Module unregistered successfully"

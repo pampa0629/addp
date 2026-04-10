@@ -1,0 +1,41 @@
+[asset.common.invalid_id]
+other = "Invalid ID"
+
+[asset.common.delete_success]
+other = "Deleted successfully"
+
+[asset.common.update_success]
+other = "Updated"
+
+[asset.type.not_found]
+other = "Asset type not found"
+
+[asset.type.read_only]
+other = "Asset type management is read-only, configure via system initialization"
+
+[asset.type.invalid_type_id]
+other = "Invalid type ID"
+
+[asset.catalog.not_found]
+other = "Catalog not found"
+
+[asset.asset.not_found]
+other = "Asset not found"
+
+[asset.asset.published]
+other = "Asset published"
+
+[asset.asset.offlined]
+other = "Asset taken offline"
+
+[asset.application.approve_success]
+other = "Approved"
+
+[asset.application.reject_success]
+other = "Rejected"
+
+[asset.authorization.revoke_success]
+other = "Authorization revoked"
+
+[asset.rating.missing_asset_id]
+other = "Missing asset_id parameter"

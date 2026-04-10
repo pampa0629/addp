@@ -1,36 +1,36 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="导入数据"
+    :title="t('manager.import.title')"
     width="600px"
     :close-on-click-modal="false"
     @close="handleClose"
   >
     <el-form :model="form" label-width="120px">
-      <el-form-item label="目标引擎">
+      <el-form-item :label="t('manager.import.targetEngine')">
         <el-input :value="engineName" disabled />
       </el-form-item>
 
-      <el-form-item label="目标 Schema">
+      <el-form-item :label="t('manager.import.targetSchema')">
         <el-input :value="schemaName" disabled />
       </el-form-item>
 
-      <el-form-item label="目标表名">
+      <el-form-item :label="t('manager.import.targetTable')">
         <el-input
           v-model="form.targetTable"
-          placeholder="留空则使用文件名"
+          :placeholder="t('manager.import.targetTablePlaceholder')"
           clearable
         />
       </el-form-item>
 
-      <el-form-item label="文件编码">
-        <el-select v-model="form.encoding" placeholder="选择编码">
+      <el-form-item :label="t('manager.import.encoding')">
+        <el-select v-model="form.encoding" :placeholder="t('manager.import.encodingPlaceholder')">
           <el-option label="UTF-8" value="UTF-8" />
           <el-option label="GBK" value="GBK" />
         </el-select>
       </el-form-item>
 
-      <el-form-item label="选择文件">
+      <el-form-item :label="t('manager.import.file')">
         <el-upload
           ref="uploadRef"
           :auto-upload="false"
@@ -42,11 +42,11 @@
         >
           <el-icon class="el-icon--upload"><upload-filled /></el-icon>
           <div class="el-upload__text">
-            拖拽文件到此处或 <em>点击上传</em>
+            {{ t('manager.import.uploadHint') }}
           </div>
           <template #tip>
             <div class="el-upload__tip">
-              仅支持 Shapefile ZIP 包（包含 .shp/.dbf/.shx 文件）
+              {{ t('manager.import.uploadTip') }}
             </div>
           </template>
         </el-upload>
@@ -60,14 +60,14 @@
     </div>
 
     <template #footer>
-      <el-button @click="handleClose" :disabled="importing">取消</el-button>
+      <el-button @click="handleClose" :disabled="importing">{{ t('manager.import.cancel') }}</el-button>
       <el-button
         type="primary"
         @click="handleImport"
         :loading="importing"
         :disabled="!form.file"
       >
-        {{ importing ? '导入中...' : '开始导入' }}
+        {{ importing ? t('manager.import.importing') : t('manager.import.start') }}
       </el-button>
     </template>
   </el-dialog>
@@ -77,7 +77,10 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { importData, getTransferExecutionStatus } from '@/api/import'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: Boolean,
@@ -107,30 +110,26 @@ const progressText = ref('')
 const transferExecutionId = ref(null)
 const pollingTimer = ref(null)
 
-// 文件选择
 const handleFileChange = (file) => {
   form.value.file = file.raw
 }
 
-// 文件数量超限
 const handleExceed = () => {
-  ElMessage.warning('只能上传一个文件')
+  ElMessage.warning(t('manager.import.fileLimitExceeded'))
 }
 
-// 开始导入
 const handleImport = async () => {
   if (!form.value.file) {
-    ElMessage.warning('请选择文件')
+    ElMessage.warning(t('manager.import.selectFile'))
     return
   }
 
   importing.value = true
   progress.value = 0
   progressStatus.value = ''
-  progressText.value = '正在上传文件...'
+  progressText.value = t('manager.import.uploading')
 
   try {
-    // 构建 FormData
     const formData = new FormData()
     formData.append('file', form.value.file)
     formData.append('target_engine_id', props.engineId)
@@ -142,23 +141,20 @@ const handleImport = async () => {
       formData.append('encoding', form.value.encoding)
     }
 
-    // 调用导入 API
     const result = await importData(formData)
     transferExecutionId.value = result.transfer_execution_id
 
     progress.value = 30
-    progressText.value = '文件上传成功，正在导入数据...'
+    progressText.value = t('manager.import.uploadSuccess')
 
-    // 开始轮询任务状态
     startPolling()
   } catch (error) {
     importing.value = false
     const errorMsg = error.response?.data?.error || error.message
-    ElMessage.error('导入失败: ' + errorMsg)
+    ElMessage.error(t('manager.import.importFailed', { msg: errorMsg }))
   }
 }
 
-// 轮询执行状态
 const startPolling = () => {
   pollingTimer.value = setInterval(async () => {
     try {
@@ -166,32 +162,31 @@ const startPolling = () => {
 
       if (execution.status === 'pending' || execution.status === 'running') {
         progress.value = execution.status === 'running' ? 60 : 40
-        progressText.value = '正在导入数据...'
+        progressText.value = t('manager.import.importingData')
       } else if (execution.status === 'success') {
         progress.value = 100
         progressStatus.value = 'success'
-        progressText.value = '导入成功！'
+        progressText.value = t('manager.import.importSuccess')
         stopPolling()
         setTimeout(() => {
           importing.value = false
-          ElMessage.success('数据导入成功')
+          ElMessage.success(t('manager.import.importSuccessMsg'))
           emit('success')
           handleClose()
         }, 1500)
       } else if (execution.status === 'failed') {
         progressStatus.value = 'exception'
-        progressText.value = '导入失败: ' + (execution.error_msg || '未知错误')
+        progressText.value = t('manager.import.importFailed', { msg: execution.error_msg || '' })
         stopPolling()
         importing.value = false
-        ElMessage.error('导入失败')
+        ElMessage.error(t('manager.import.importFailedMsg'))
       }
     } catch (error) {
       console.error('轮询任务状态失败:', error)
     }
-  }, 2000) // 每 2 秒轮询一次
+  }, 2000)
 }
 
-// 停止轮询
 const stopPolling = () => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
@@ -199,7 +194,6 @@ const stopPolling = () => {
   }
 }
 
-// 关闭对话框
 const handleClose = () => {
   stopPolling()
   form.value = {

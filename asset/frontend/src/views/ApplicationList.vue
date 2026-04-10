@@ -2,16 +2,16 @@
   <div class="application-list">
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <!-- ===== 申请与授权 ===== -->
-      <el-tab-pane label="申请与授权" name="applications">
+      <el-tab-pane :label="t('asset.application.tab')" name="applications">
         <div v-loading="loading">
           <div class="toolbar">
             <el-radio-group v-model="displayStatus" @change="handleFilterChange">
-              <el-radio-button value="">全部</el-radio-button>
-              <el-radio-button value="pending">待审批</el-radio-button>
-              <el-radio-button value="authorized">已授权</el-radio-button>
-              <el-radio-button value="expired">已过期</el-radio-button>
-              <el-radio-button value="revoked">已撤销</el-radio-button>
-              <el-radio-button value="rejected">已驳回</el-radio-button>
+              <el-radio-button value="">{{ t('asset.application.all') }}</el-radio-button>
+              <el-radio-button value="pending">{{ t('asset.application.pending') }}</el-radio-button>
+              <el-radio-button value="authorized">{{ t('asset.application.authorized') }}</el-radio-button>
+              <el-radio-button value="expired">{{ t('asset.application.expired') }}</el-radio-button>
+              <el-radio-button value="revoked">{{ t('asset.application.revoked') }}</el-radio-button>
+              <el-radio-button value="rejected">{{ t('asset.application.rejected') }}</el-radio-button>
             </el-radio-group>
           </div>
 
@@ -23,18 +23,18 @@
             style="width: 100%"
           >
             <el-table-column type="selection" width="48" />
-            <el-table-column label="资产名称" min-width="160">
+            <el-table-column :label="t('asset.application.assetName')" min-width="160">
               <template #default="{ row }">
-                <span class="asset-name">{{ row.asset_name || `资产 #${row.asset_id}` }}</span>
+                <span class="asset-name">{{ row.asset_name || `Asset #${row.asset_id}` }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="申请人 ID" width="100" prop="applicant_id" />
-            <el-table-column label="申请理由" min-width="180" show-overflow-tooltip prop="reason" />
-            <el-table-column label="时长（天）" width="100" prop="duration_day" align="center" />
-            <el-table-column label="提交时间" width="160">
+            <el-table-column :label="t('asset.application.applicantId')" width="100" prop="applicant_id" />
+            <el-table-column :label="t('asset.application.reason')" min-width="180" show-overflow-tooltip prop="reason" />
+            <el-table-column :label="t('asset.application.duration')" width="100" prop="duration_day" align="center" />
+            <el-table-column :label="t('asset.application.submittedAt')" width="160">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="到期时间" width="160">
+            <el-table-column :label="t('asset.application.expiresAt')" width="160">
               <template #default="{ row }">
                 <span v-if="row.auth_expires_at" :class="{ 'expired-text': isExpired(row.auth_expires_at) }">
                   {{ formatDate(row.auth_expires_at) }}
@@ -42,23 +42,23 @@
                 <span v-else style="color: var(--el-text-color-placeholder)">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="审批备注" min-width="120" show-overflow-tooltip>
+            <el-table-column :label="t('asset.application.reviewNote')" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">
                 <span>{{ row.review_note || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
+            <el-table-column :label="t('asset.application.status')" width="100" align="center">
               <template #default="{ row }">
                 <el-tag :type="DISPLAY_STATUS_CONFIG[deriveDisplayStatus(row)]?.type" size="small">
                   {{ DISPLAY_STATUS_CONFIG[deriveDisplayStatus(row)]?.label }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" align="center" fixed="right">
+            <el-table-column :label="t('asset.application.actions')" width="140" align="center" fixed="right">
               <template #default="{ row }">
                 <template v-if="deriveDisplayStatus(row) === 'pending'">
-                  <el-button type="primary" size="small" text @click="openApproveDialog(row)">通过</el-button>
-                  <el-button type="danger" size="small" text @click="openRejectDialog(row)">驳回</el-button>
+                  <el-button type="primary" size="small" text @click="openApproveDialog(row)">{{ t('asset.application.approve') }}</el-button>
+                  <el-button type="danger" size="small" text @click="openRejectDialog(row)">{{ t('asset.application.reject') }}</el-button>
                 </template>
                 <el-button
                   v-else-if="deriveDisplayStatus(row) === 'authorized'"
@@ -66,16 +66,16 @@
                   size="small"
                   text
                   @click="revokeByApplication(row)"
-                >撤销</el-button>
+                >{{ t('asset.application.revoke') }}</el-button>
                 <span v-else style="font-size: 12px; color: var(--el-text-color-placeholder)">-</span>
               </template>
             </el-table-column>
           </el-table>
 
           <div class="batch-bar" v-if="selectedRows.length > 0">
-            <span class="selected-count">已选 {{ selectedRows.length }} 条</span>
-            <el-button type="primary" size="small" @click="batchApprove">批量通过</el-button>
-            <el-button type="danger" size="small" plain @click="openBatchRejectDialog">批量驳回</el-button>
+            <span class="selected-count">{{ t('asset.application.selectedCount', { count: selectedRows.length }) }}</span>
+            <el-button type="primary" size="small" @click="batchApprove">{{ t('asset.application.batchApprove') }}</el-button>
+            <el-button type="danger" size="small" plain @click="openBatchRejectDialog">{{ t('asset.application.batchReject') }}</el-button>
           </div>
 
           <div class="pagination-bar">
@@ -93,54 +93,54 @@
       <!-- ===== 问题反馈 ===== -->
       <el-tab-pane name="feedbacks">
         <template #label>
-          问题反馈
+          {{ t('asset.application.feedbackTab') }}
           <el-badge v-if="unhandledCount > 0" :value="unhandledCount" type="danger" style="margin-left: 4px" />
         </template>
         <div v-loading="feedbackLoading">
           <div class="toolbar">
             <el-radio-group v-model="feedbackFilter" @change="fetchFeedbacks">
-              <el-radio-button value="">全部反馈</el-radio-button>
-              <el-radio-button value="unhandled">待处理</el-radio-button>
-              <el-radio-button value="handled">已处理</el-radio-button>
+              <el-radio-button value="">{{ t('asset.application.allFeedback') }}</el-radio-button>
+              <el-radio-button value="unhandled">{{ t('asset.application.unhandled') }}</el-radio-button>
+              <el-radio-button value="handled">{{ t('asset.application.handled') }}</el-radio-button>
             </el-radio-group>
           </div>
 
           <el-table :data="feedbacks" border style="width: 100%">
-            <el-table-column label="资产名称" min-width="160">
+            <el-table-column :label="t('asset.application.assetName')" min-width="160">
               <template #default="{ row }">
-                <span class="asset-name">{{ row.asset_name || `资产 #${row.asset_id}` }}</span>
+                <span class="asset-name">{{ row.asset_name || `Asset #${row.asset_id}` }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="用户" width="120" prop="user_name" />
-            <el-table-column label="评分" width="140" align="center">
+            <el-table-column :label="t('asset.application.user')" width="120" prop="user_name" />
+            <el-table-column :label="t('asset.application.score')" width="140" align="center">
               <template #default="{ row }">
                 <el-rate :model-value="row.score" disabled allow-half size="small" />
               </template>
             </el-table-column>
-            <el-table-column label="问题标签" min-width="200">
+            <el-table-column :label="t('asset.application.tags')" min-width="200">
               <template #default="{ row }">
                 <el-tag v-for="tag in row.tags" :key="tag" size="small" type="warning" style="margin-right: 4px">{{ tag }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="评价内容" min-width="200" show-overflow-tooltip prop="comment" />
-            <el-table-column label="提交时间" width="160">
+            <el-table-column :label="t('asset.application.comment')" min-width="200" show-overflow-tooltip prop="comment" />
+            <el-table-column :label="t('asset.application.submittedAt')" width="160">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
+            <el-table-column :label="t('asset.application.status')" width="100" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.is_handled ? 'success' : 'warning'" size="small">
-                  {{ row.is_handled ? '已处理' : '待处理' }}
+                  {{ row.is_handled ? t('asset.application.handled') : t('asset.application.unhandled') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="110" align="center" fixed="right">
+            <el-table-column :label="t('asset.application.actions')" width="110" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button
                   :type="row.is_handled ? 'info' : 'primary'"
                   size="small"
                   text
                   @click="toggleHandled(row)"
-                >{{ row.is_handled ? '撤回' : '标记已处理' }}</el-button>
+                >{{ row.is_handled ? t('asset.application.withdraw') : t('asset.application.markHandled') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -159,48 +159,51 @@
     </el-tabs>
 
     <!-- 审批通过对话框 -->
-    <el-dialog v-model="approveDialogVisible" title="审批通过" width="420px">
+    <el-dialog v-model="approveDialogVisible" :title="t('asset.application.approveDialogTitle')" width="420px">
       <el-form label-width="80px">
-        <el-form-item label="备注">
+        <el-form-item :label="t('asset.application.note')">
           <el-input
             v-model="approveNote"
             type="textarea"
             :rows="3"
-            placeholder="可填写备注（选填）"
+            :placeholder="t('asset.application.notePlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="approveDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="confirmApprove">确认通过</el-button>
+        <el-button @click="approveDialogVisible = false">{{ t('asset.application.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="confirmApprove">{{ t('asset.application.confirmApprove') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 审批驳回对话框 -->
-    <el-dialog v-model="rejectDialogVisible" title="审批驳回" width="420px">
+    <el-dialog v-model="rejectDialogVisible" :title="t('asset.application.rejectDialogTitle')" width="420px">
       <el-form ref="rejectFormRef" :model="rejectForm" :rules="rejectRules" label-width="80px">
-        <el-form-item label="驳回原因" prop="reason">
+        <el-form-item :label="t('asset.application.rejectReason')" prop="reason">
           <el-input
             v-model="rejectForm.reason"
             type="textarea"
             :rows="3"
-            placeholder="请填写驳回原因（必填）"
+            :placeholder="t('asset.application.rejectReasonPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="rejectDialogVisible = false">取消</el-button>
-        <el-button type="danger" :loading="submitting" @click="confirmReject">确认驳回</el-button>
+        <el-button @click="rejectDialogVisible = false">{{ t('asset.application.cancel') }}</el-button>
+        <el-button type="danger" :loading="submitting" @click="confirmReject">{{ t('asset.application.confirmReject') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { formatDate } from '@common-ui'
 import { applicationAPI, ratingAPI } from '../api/asset'
+
+const { t } = useI18n()
 
 // ===== Tab =====
 const activeTab = ref('applications')
@@ -226,17 +229,17 @@ const currentRow = ref(null)
 const rejectDialogVisible = ref(false)
 const rejectFormRef = ref(null)
 const rejectForm = ref({ reason: '' })
-const rejectRules = {
-  reason: [{ required: true, message: '驳回原因不能为空', trigger: 'blur' }]
-}
+const rejectRules = computed(() => ({
+  reason: [{ required: true, message: t('asset.application.rejectReasonRequired'), trigger: 'blur' }]
+}))
 
-const DISPLAY_STATUS_CONFIG = {
-  pending:    { label: '待审批', type: 'warning' },
-  authorized: { label: '已授权', type: 'success' },
-  expired:    { label: '已过期', type: 'info' },
-  revoked:    { label: '已撤销', type: 'info' },
-  rejected:   { label: '已驳回', type: 'danger' },
-}
+const DISPLAY_STATUS_CONFIG = computed(() => ({
+  pending:    { label: t('asset.application.pending'), type: 'warning' },
+  authorized: { label: t('asset.application.authorized'), type: 'success' },
+  expired:    { label: t('asset.application.expired'), type: 'info' },
+  revoked:    { label: t('asset.application.revoked'), type: 'info' },
+  rejected:   { label: t('asset.application.rejected'), type: 'danger' },
+}))
 
 function deriveDisplayStatus(row) {
   if (row.status === 'pending') return 'pending'
@@ -269,7 +272,7 @@ async function fetchApplications() {
     applications.value = data.data || []
     total.value = data.total || 0
   } catch {
-    ElMessage.error('获取申请列表失败')
+    ElMessage.error(t('asset.application.fetchFailed'))
   } finally {
     loading.value = false
   }
@@ -285,11 +288,11 @@ async function confirmApprove() {
   submitting.value = true
   try {
     await applicationAPI.approve(currentRow.value.id, { note: approveNote.value })
-    ElMessage.success('审批通过')
+    ElMessage.success(t('asset.application.approveSuccess'))
     approveDialogVisible.value = false
     fetchApplications()
   } catch (err) {
-    ElMessage.error(err.message || '操作失败')
+    ElMessage.error(err.message || t('asset.application.operationFailed'))
   } finally {
     submitting.value = false
   }
@@ -308,11 +311,11 @@ async function confirmReject() {
     submitting.value = true
     try {
       await applicationAPI.reject(currentRow.value.id, { reason: rejectForm.value.reason })
-      ElMessage.success('已驳回')
+      ElMessage.success(t('asset.application.rejectSuccess'))
       rejectDialogVisible.value = false
       fetchApplications()
     } catch (err) {
-      ElMessage.error(err.message || '操作失败')
+      ElMessage.error(err.message || t('asset.application.operationFailed'))
     } finally {
       submitting.value = false
     }
@@ -322,25 +325,25 @@ async function confirmReject() {
 async function revokeByApplication(row) {
   try {
     await ElMessageBox.confirm(
-      `确认撤销"${row.asset_name || `资产 #${row.asset_id}`}"的授权？`,
-      '撤销授权',
-      { type: 'warning', confirmButtonText: '确认撤销', confirmButtonClass: 'el-button--danger' }
+      t('asset.application.revokeConfirmMsg', { name: row.asset_name || `#${row.asset_id}` }),
+      t('asset.application.revokeConfirmTitle'),
+      { type: 'warning', confirmButtonText: t('asset.application.confirmRevoke'), confirmButtonClass: 'el-button--danger' }
     )
   } catch { return }
   try {
     await applicationAPI.revokeAuth(row.id)
-    ElMessage.success('授权已撤销')
+    ElMessage.success(t('asset.application.revokeSuccess'))
     fetchApplications()
   } catch (err) {
-    ElMessage.error(err.message || '撤销失败')
+    ElMessage.error(err.message || t('asset.application.revokeFailed'))
   }
 }
 
 async function batchApprove() {
   const pendingRows = selectedRows.value.filter(r => r.status === 'pending')
-  if (pendingRows.length === 0) { ElMessage.warning('所选记录中无待审批申请'); return }
+  if (pendingRows.length === 0) { ElMessage.warning(t('asset.application.noPendingSelected')); return }
   try {
-    await ElMessageBox.confirm(`确认批量通过 ${pendingRows.length} 条申请？`, '批量通过', { type: 'warning' })
+    await ElMessageBox.confirm(t('asset.application.batchApproveConfirm', { count: pendingRows.length }), t('asset.application.batchApprove'), { type: 'warning' })
   } catch { return }
   submitting.value = true
   let successCount = 0
@@ -348,13 +351,13 @@ async function batchApprove() {
     try { await applicationAPI.approve(row.id, { note: '' }); successCount++ } catch { /* 忽略单条失败 */ }
   }
   submitting.value = false
-  ElMessage.success(`已通过 ${successCount} 条`)
+  ElMessage.success(t('asset.application.batchApproveSuccess', { count: successCount }))
   fetchApplications()
 }
 
 function openBatchRejectDialog() {
   const pendingRows = selectedRows.value.filter(r => r.status === 'pending')
-  if (pendingRows.length === 0) { ElMessage.warning('所选记录中无待审批申请'); return }
+  if (pendingRows.length === 0) { ElMessage.warning(t('asset.application.noPendingSelected')); return }
   currentRow.value = null
   rejectForm.value.reason = ''
   rejectDialogVisible.value = true
@@ -379,7 +382,7 @@ async function fetchFeedbacks() {
     feedbacks.value = data.data || []
     feedbackTotal.value = data.total || 0
   } catch {
-    ElMessage.error('获取问题反馈失败')
+    ElMessage.error(t('asset.application.fetchFeedbackFailed'))
   } finally {
     feedbackLoading.value = false
   }
@@ -396,10 +399,10 @@ async function toggleHandled(row) {
   try {
     await ratingAPI.markHandled(row.id, !row.is_handled)
     row.is_handled = !row.is_handled
-    ElMessage.success(row.is_handled ? '已标记为已处理' : '已撤回处理标记')
+    ElMessage.success(row.is_handled ? t('asset.application.markedHandled') : t('asset.application.markedUnhandled'))
     fetchUnhandledCount()
   } catch (err) {
-    ElMessage.error(err.message || '操作失败')
+    ElMessage.error(err.message || t('asset.application.operationFailed'))
   }
 }
 

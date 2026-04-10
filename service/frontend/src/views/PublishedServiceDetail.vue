@@ -5,40 +5,40 @@
       <div class="header-left">
         <h2>{{ service?.title }}</h2>
         <div class="service-meta">
-          <el-tag type="primary" size="large">查询服务</el-tag>
+          <el-tag type="primary" size="large">{{ t('service.published.queryServiceTag') }}</el-tag>
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'" size="small">
-            {{ service?.config_type === 'table' ? '表模式' : 'SQL模式' }}
+            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : t('service.published.sqlModeTag') }}
           </el-tag>
         </div>
       </div>
       <div class="header-right">
-        <el-button @click="goToEdit">编辑</el-button>
-        <el-button @click="goToTest">测试服务</el-button>
-        <el-button type="danger" @click="handleDelete">删除</el-button>
+        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button @click="goToTest">{{ t('service.published.testService') }}</el-button>
+        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
     <!-- 服务信息卡片 -->
-    <el-card header="服务信息" style="margin-bottom: 20px">
+    <el-card :header="t('service.published.detailTitle')" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="服务名称">
+        <el-descriptions-item :label="t('service.published.colServiceNameDetail')">
           {{ service?.service_name }}
         </el-descriptions-item>
-        <el-descriptions-item label="标题">
+        <el-descriptions-item :label="t('service.published.colTitleDetail')">
           {{ service?.title }}
         </el-descriptions-item>
-        <el-descriptions-item label="配置类型">
+        <el-descriptions-item :label="t('service.published.colConfigTypeDetail')">
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'">
-            {{ service?.config_type === 'table' ? '表模式' : 'SQL模式' }}
+            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : t('service.published.sqlModeTag') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="存储引擎">
+        <el-descriptions-item :label="t('service.published.colEngineDetail')">
           Engine #{{ service?.engine_id }}
         </el-descriptions-item>
-        <el-descriptions-item label="描述" :span="2">
-          {{ service?.description || '无' }}
+        <el-descriptions-item :label="t('service.published.colDescriptionDetail')" :span="2">
+          {{ service?.description || t('service.common.none') }}
         </el-descriptions-item>
-        <el-descriptions-item label="关键词" :span="2">
+        <el-descriptions-item :label="t('service.published.colKeywordsDetail')" :span="2">
           <el-tag
             v-for="kw in service?.keywords"
             :key="kw"
@@ -47,43 +47,43 @@
           >
             {{ kw }}
           </el-tag>
-          <span v-if="!service?.keywords || service.keywords.length === 0">无</span>
+          <span v-if="!service?.keywords || service.keywords.length === 0">{{ t('service.common.none') }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="最大要素数">
+        <el-descriptions-item :label="t('service.published.colMaxFeaturesDetail')">
           {{ service?.max_features }}
         </el-descriptions-item>
-        <el-descriptions-item label="公开访问">
+        <el-descriptions-item :label="t('service.published.colPublicAccessDetail')">
           <el-tag :type="service?.public_access ? 'success' : 'info'" size="small">
-            {{ service?.public_access ? '是' : '否' }}
+            {{ service?.public_access ? t('service.common.yes') : t('service.common.no') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('service.published.colStatusDetail')">
           <el-tag
             :type="service?.status === 'active' ? 'success' : service?.status === 'inactive' ? 'warning' : 'danger'"
             size="small"
           >
-            {{ service?.status === 'active' ? '活动' : service?.status === 'inactive' ? '未激活' : '错误' }}
+            {{ service?.status === 'active' ? t('service.published.statusActive') : service?.status === 'inactive' ? t('service.published.statusInactive') : t('service.published.statusError') }}
           </el-tag>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <!-- 数据源信息卡片 -->
-    <el-card header="数据源" style="margin-bottom: 20px">
+    <el-card :header="t('service.published.dataSourceTitle')" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
         <template v-if="service?.config_type === 'table'">
           <el-descriptions-item label="Schema">
             {{ service?.schema_name }}
           </el-descriptions-item>
-          <el-descriptions-item label="表名">
+          <el-descriptions-item :label="t('service.published.tableNameLabel')">
             {{ service?.table_name }}
           </el-descriptions-item>
-          <el-descriptions-item label="完整路径" :span="2">
+          <el-descriptions-item :label="t('service.published.fullPathLabel')" :span="2">
             <el-tag type="info">{{ service?.schema_name }}.{{ service?.table_name }}</el-tag>
           </el-descriptions-item>
         </template>
         <template v-else-if="service?.config_type === 'sql'">
-          <el-descriptions-item label="SQL 查询" :span="2">
+          <el-descriptions-item :label="t('service.published.sqlQueryLabel')" :span="2">
             <pre style="background: var(--addp-bg-secondary); padding: 12px; border-radius: 4px; overflow-x: auto">{{ service?.sql_query }}</pre>
           </el-descriptions-item>
         </template>
@@ -91,15 +91,15 @@
 
       <!-- 几何信息 -->
       <div v-if="hasGeometry" style="margin-top: 16px">
-        <el-divider content-position="left">空间字段信息</el-divider>
+        <el-divider content-position="left">{{ t('service.published.spatialFieldTitle') }}</el-divider>
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="几何列">
+          <el-descriptions-item :label="t('service.published.geometryColumnLabel')">
             {{ geometryInfo.column }}
           </el-descriptions-item>
-          <el-descriptions-item label="坐标系">
+          <el-descriptions-item :label="t('service.published.sridLabel')">
             EPSG:{{ geometryInfo.srid }}
           </el-descriptions-item>
-          <el-descriptions-item label="几何类型" :span="2">
+          <el-descriptions-item :label="t('service.published.geometryTypeLabel')" :span="2">
             <el-tag
               v-for="type in geometryInfo.types"
               :key="type"
@@ -115,7 +115,7 @@
     </el-card>
 
     <!-- 服务端点卡片 -->
-    <el-card header="服务端点" style="margin-bottom: 20px">
+    <el-card :header="t('service.published.endpointsTitle')" style="margin-bottom: 20px">
       <!-- REST API 端点 -->
       <div v-if="service?.endpoints?.rest_api" class="endpoint-item">
         <div class="endpoint-title">
@@ -124,16 +124,16 @@
         </div>
         <div class="endpoint-url">
           <el-input :value="service.endpoints.rest_api" readonly />
-          <el-button @click="copyEndpoint(service.endpoints.rest_api)">复制</el-button>
-          <el-button @click="testEndpoint(service.endpoints.rest_api)">测试</el-button>
+          <el-button @click="copyEndpoint(service.endpoints.rest_api)">{{ t('service.common.copy') }}</el-button>
+          <el-button @click="testEndpoint(service.endpoints.rest_api)">{{ t('service.common.test') }}</el-button>
         </div>
         <div style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
-          <strong>支持的查询参数：</strong>
+          <strong>{{ t('service.query.supportedParams') }}</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
-            <li><code>page</code> 和 <code>page_size</code>：分页参数</li>
-            <li><code>format</code>：输出格式 (json, csv, geojson)</li>
-            <li><code>fields</code>：指定返回的字段</li>
-            <li><code>filter</code>：条件过滤</li>
+            <li><code>page</code> {{ t('service.query.paramAnd') }} <code>page_size</code>：{{ t('service.query.paramPage') }}</li>
+            <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
+            <li><code>fields</code>：{{ t('service.query.paramFields') }}</li>
+            <li><code>filter</code>：{{ t('service.query.paramFilter') }}</li>
           </ul>
         </div>
       </div>
@@ -146,8 +146,8 @@
         </div>
         <div class="endpoint-url">
           <el-input :value="service.endpoints.ogc_features" readonly />
-          <el-button @click="copyEndpoint(service.endpoints.ogc_features)">复制</el-button>
-          <el-button @click="testEndpoint(service.endpoints.ogc_features)">测试</el-button>
+          <el-button @click="copyEndpoint(service.endpoints.ogc_features)">{{ t('service.common.copy') }}</el-button>
+          <el-button @click="testEndpoint(service.endpoints.ogc_features)">{{ t('service.common.test') }}</el-button>
         </div>
         <div style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
           Collections: <code>{{ service.endpoints.ogc_features_collections }}</code>
@@ -156,22 +156,22 @@
 
       <el-empty
         v-if="!service?.endpoints || Object.keys(service.endpoints).length === 0"
-        description="未配置任何服务端点"
+        :description="t('service.common.notConfigured')"
       />
     </el-card>
 
     <!-- 协议配置卡片 -->
-    <el-card header="协议配置">
+    <el-card :header="t('service.published.protocolConfigTitle')">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="REST API">
           <el-tag
             :type="isProtocolEnabled('rest_api') ? 'success' : 'info'"
             size="small"
           >
-            {{ isProtocolEnabled('rest_api') ? '已启用' : '未启用' }}
+            {{ isProtocolEnabled('rest_api') ? t('service.published.protocolEnabled') : t('service.published.protocolDisabled') }}
           </el-tag>
           <span v-if="isProtocolEnabled('rest_api')" style="margin-left: 12px; color: var(--addp-text-secondary)">
-            支持格式: {{ getProtocolFormats('rest_api').join(', ') }}
+            {{ t('service.published.supportedFormats') }}: {{ getProtocolFormats('rest_api').join(', ') }}
           </span>
         </el-descriptions-item>
         <el-descriptions-item label="OGC API Features">
@@ -179,10 +179,10 @@
             :type="isProtocolEnabled('ogc_features') ? 'success' : 'info'"
             size="small"
           >
-            {{ isProtocolEnabled('ogc_features') ? '已启用' : '未启用' }}
+            {{ isProtocolEnabled('ogc_features') ? t('service.published.protocolEnabled') : t('service.published.protocolDisabled') }}
           </el-tag>
           <span v-if="isProtocolEnabled('ogc_features')" style="margin-left: 12px; color: var(--addp-text-secondary)">
-            版本: {{ getProtocolVersion('ogc_features') }}
+            {{ t('service.published.version') }}: {{ getProtocolVersion('ogc_features') }}
           </span>
         </el-descriptions-item>
       </el-descriptions>
@@ -195,9 +195,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import publishedServiceAPI from '../api/publishedService'
 import { copyToClipboard } from '../utils/serviceHelper'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -246,7 +248,7 @@ const loadService = async () => {
     const data = await publishedServiceAPI.getService(route.params.id)
     service.value = data
   } catch (error) {
-    ElMessage.error('加载失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.common.loadFailed') + ': ' + (error.message || t('service.common.unknownError')))
   } finally {
     loading.value = false
   }
@@ -256,9 +258,9 @@ const loadService = async () => {
 const copyEndpoint = async (url) => {
   const success = await copyToClipboard(url)
   if (success) {
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('service.common.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('service.common.copyFailed'))
   }
 }
 
@@ -280,18 +282,18 @@ const goToTest = () => {
 // 删除服务
 const handleDelete = async () => {
   try {
-    await ElMessageBox.confirm('确定要删除该服务吗？此操作不可恢复。', '警告', {
+    await ElMessageBox.confirm(t('service.published.deleteConfirm'), t('service.common.deleteConfirmTitle'), {
       type: 'warning',
-      confirmButtonText: '确定',
-      cancelButtonText: '取消'
+      confirmButtonText: t('service.common.confirm'),
+      cancelButtonText: t('service.common.cancel')
     })
 
     await publishedServiceAPI.deleteService(route.params.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('service.published.deleteSuccess'))
     router.push('/published-services')
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + (error.message || '未知错误'))
+      ElMessage.error(t('service.published.deleteFailed') + ': ' + (error.message || t('service.common.unknownError')))
     }
   }
 }

@@ -4,19 +4,19 @@
       <template #header>
         <div class="login-header">
           <el-icon :size="32"><Platform /></el-icon>
-          <h2>全域数据平台</h2>
+          <h2>{{ t('console.title') }}</h2>
         </div>
       </template>
       <el-form :model="form" @submit.prevent="handleLogin">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" placeholder="请输入用户名" size="large">
+        <el-form-item :label="t('console.login.username')">
+          <el-input v-model="form.username" :placeholder="t('console.login.usernamePlaceholder')" size="large">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
           </el-input>
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large">
+        <el-form-item :label="t('console.login.password')">
+          <el-input v-model="form.password" type="password" :placeholder="t('console.login.passwordPlaceholder')" size="large">
             <template #prefix>
               <el-icon><Lock /></el-icon>
             </template>
@@ -24,7 +24,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" native-type="submit" :loading="loading" size="large" style="width: 100%">
-            登录
+            {{ loading ? t('console.login.loggingIn') : t('console.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -37,9 +37,11 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const form = ref({
   username: '',
@@ -50,30 +52,26 @@ const loading = ref(false)
 
 const handleLogin = async () => {
   if (!form.value.username || !form.value.password) {
-    ElMessage.warning('请输入用户名和密码')
+    ElMessage.warning(t('console.login.inputRequired'))
     return
   }
 
   loading.value = true
   try {
     await authStore.login(form.value.username, form.value.password)
-    ElMessage.success('登录成功')
+    ElMessage.success(t('console.login.success'))
     router.push('/')
   } catch (error) {
-    console.error('登录失败:', error)
+    console.error('Login failed:', error)
 
-    // 详细的错误消息处理
-    let errorMessage = '登录失败'
+    let errorMessage = t('console.login.failed')
 
     if (error.response) {
-      // 服务器返回错误
-      errorMessage = error.response.data?.error || `请求失败 (${error.response.status})`
+      errorMessage = error.response.data?.error || t('console.login.requestFailed', { status: error.response.status })
     } else if (error.request) {
-      // 请求已发送但没有收到响应
-      errorMessage = '网络连接失败，请检查服务器是否启动'
+      errorMessage = t('console.login.networkError')
     } else {
-      // 其他错误
-      errorMessage = error.message || '未知错误'
+      errorMessage = error.message || t('console.login.unknown')
     }
 
     ElMessage.error(errorMessage)

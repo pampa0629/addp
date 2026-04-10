@@ -3,8 +3,10 @@ package api
 import (
 	"net/http"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,7 +35,7 @@ func (h *ModuleRegistryHandler) Register(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "模块注册成功",
+		"message": commoni18n.T(c, sysi18n.MsgModuleRegistered),
 		"module":  req.ModuleName,
 	})
 }
@@ -53,7 +55,7 @@ func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "心跳更新成功",
+		"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat),
 		"module":  req.ModuleName,
 	})
 }
@@ -91,7 +93,7 @@ func (h *ModuleRegistryHandler) GetModule(c *gin.Context) {
 
 	module, err := h.service.GetModule(moduleName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "模块不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleNotFound)})
 		return
 	}
 
@@ -109,7 +111,7 @@ func (h *ModuleRegistryHandler) DeleteModule(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "模块注销成功",
+		"message": commoni18n.T(c, sysi18n.MsgModuleDeleted),
 		"module":  moduleName,
 	})
 }

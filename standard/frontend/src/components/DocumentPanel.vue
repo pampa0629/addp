@@ -2,27 +2,27 @@
   <el-card class="section-card">
     <template #header>
       <div class="card-header">
-        <h3><el-icon class="header-icon"><Document /></el-icon>关联文档</h3>
+        <h3><el-icon class="header-icon"><Document /></el-icon>{{ $t('standard.documentPanel.title') }}</h3>
         <div class="header-actions">
-          <el-button size="small" @click="openLinkDialog">关联已有文档</el-button>
-          <el-button size="small" type="primary" @click="openUploadDialog">上传新文档</el-button>
+          <el-button size="small" @click="openLinkDialog">{{ $t('standard.documentPanel.linkExisting') }}</el-button>
+          <el-button size="small" type="primary" @click="openUploadDialog">{{ $t('standard.documentPanel.uploadNew') }}</el-button>
         </div>
       </div>
     </template>
 
     <div v-if="docs.length === 0 && !loading" class="empty-tip">
-      <el-empty description="暂无关联文档" :image-size="60" />
+      <el-empty :description="$t('standard.documentPanel.noDocuments')" :image-size="60" />
     </div>
 
     <el-table v-else :data="docs" v-loading="loading" size="small">
-      <el-table-column label="文档名称" prop="name" min-width="160" show-overflow-tooltip />
-      <el-table-column label="类型" width="90">
+      <el-table-column :label="$t('standard.documentPanel.docName')" prop="name" min-width="160" show-overflow-tooltip />
+      <el-table-column :label="$t('standard.documentPanel.docType')" width="90">
         <template #default="{ row }">
           <el-tag size="small" :type="docTypeTagType(row.doc_type)">{{ docTypeLabel(row.doc_type) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="来源/标准号" prop="source_org" width="140" show-overflow-tooltip />
-      <el-table-column label="附件" width="100">
+      <el-table-column :label="$t('standard.documentPanel.docSource')" prop="source_org" width="140" show-overflow-tooltip />
+      <el-table-column :label="$t('standard.documentPanel.docAttachment')" width="100">
         <template #default="{ row }">
           <span v-if="row.file_name" class="file-tag">
             <el-icon style="vertical-align:middle;margin-right:2px"><Paperclip /></el-icon>
@@ -31,64 +31,64 @@
           <span v-else class="no-file">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120" align="center" fixed="right">
+      <el-table-column :label="$t('standard.documentPanel.docActions')" width="120" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.file_name" link size="small" type="primary" @click="downloadDoc(row)">下载</el-button>
-          <el-button link size="small" type="danger" @click="unlinkDoc(row)">解除</el-button>
+          <el-button v-if="row.file_name" link size="small" type="primary" @click="downloadDoc(row)">{{ $t('standard.documentPanel.download') }}</el-button>
+          <el-button link size="small" type="danger" @click="unlinkDoc(row)">{{ $t('standard.documentPanel.unlink') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 上传新文档对话框 -->
-    <el-dialog v-model="showUploadDialog" title="上传并关联文档" width="500px" @closed="resetUploadForm">
+    <el-dialog v-model="showUploadDialog" :title="$t('standard.documentPanel.uploadTitle')" width="500px" @closed="resetUploadForm">
       <el-form :model="uploadForm" label-width="90px" size="default">
-        <el-form-item label="文档名称" required>
-          <el-input v-model="uploadForm.name" placeholder="如：GB/T 35273-2020 个人信息安全规范" />
+        <el-form-item :label="$t('standard.documentPanel.nameLabel')" required>
+          <el-input v-model="uploadForm.name" :placeholder="$t('standard.document.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="文档类型">
+        <el-form-item :label="$t('standard.documentPanel.typeLabel')">
           <el-select v-model="uploadForm.doc_type" style="width:100%">
-            <el-option label="国家标准" value="national" />
-            <el-option label="行业标准" value="industry" />
-            <el-option label="企业内部" value="internal" />
-            <el-option label="参考资料" value="reference" />
+            <el-option :label="$t('standard.document.national')" value="national" />
+            <el-option :label="$t('standard.document.industry')" value="industry" />
+            <el-option :label="$t('standard.document.internal')" value="internal" />
+            <el-option :label="$t('standard.document.reference')" value="reference" />
           </el-select>
         </el-form-item>
-        <el-form-item label="来源/标准号">
-          <el-input v-model="uploadForm.source_org" placeholder="如：国家市场监督管理总局" />
+        <el-form-item :label="$t('standard.documentPanel.sourceLabel')">
+          <el-input v-model="uploadForm.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
         </el-form-item>
-        <el-form-item label="版本号">
-          <el-input v-model="uploadForm.version" placeholder="如：2020-01" />
+        <el-form-item :label="$t('standard.documentPanel.versionLabel')">
+          <el-input v-model="uploadForm.version" :placeholder="$t('standard.document.versionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="uploadForm.description" type="textarea" :rows="2" placeholder="可选" />
+        <el-form-item :label="$t('standard.documentPanel.descriptionLabel')">
+          <el-input v-model="uploadForm.description" type="textarea" :rows="2" :placeholder="$t('standard.document.descriptionLabel')" />
         </el-form-item>
-        <el-form-item label="上传文件">
+        <el-form-item :label="$t('standard.documentPanel.fileLabel')">
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
             :limit="1"
             :on-change="onFileChange"
-            :on-exceed="() => ElMessage.warning('只能上传一个文件')"
+            :on-exceed="() => ElMessage.warning(t('standard.documentPanel.fileExceedWarning'))"
             accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
           >
-            <el-button size="small">选择文件</el-button>
+            <el-button size="small">{{ $t('standard.documentPanel.fileSelectBtn') }}</el-button>
             <template #tip>
-              <div class="el-upload__tip">支持 PDF、Word、Excel、PPT 等格式（可选）</div>
+              <div class="el-upload__tip">{{ $t('standard.documentPanel.fileTip') }}</div>
             </template>
           </el-upload>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showUploadDialog = false">取消</el-button>
+        <el-button @click="showUploadDialog = false">{{ $t('standard.common.cancel') }}</el-button>
         <el-button type="primary" @click="submitUpload" :loading="uploading" :disabled="!uploadForm.name">
-          {{ selectedFile ? '上传并关联' : '仅录入元数据' }}
+          {{ selectedFile ? $t('standard.documentPanel.uploadAndLink') : $t('standard.documentPanel.metadataOnly') }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 关联已有文档对话框 -->
-    <el-dialog v-model="showLinkDialog" title="关联已有文档" width="500px" @open="onLinkDialogOpen">
-      <div class="link-tip">搜索已有文档，选择后将关联到当前标准项</div>
+    <el-dialog v-model="showLinkDialog" :title="$t('standard.documentPanel.linkTitle')" width="500px" @open="onLinkDialogOpen">
+      <div class="link-tip">{{ $t('standard.documentPanel.linkTip') }}</div>
       <el-select
         v-model="selectedDocIds"
         multiple
@@ -96,7 +96,7 @@
         remote
         :remote-method="searchDocs"
         :loading="docSearchLoading"
-        placeholder="输入名称或来源搜索文档"
+        :placeholder="$t('standard.documentPanel.searchPlaceholder')"
         style="width: 100%; margin-top: 12px"
         size="large"
       >
@@ -109,9 +109,9 @@
         />
       </el-select>
       <template #footer>
-        <el-button @click="showLinkDialog = false">取消</el-button>
+        <el-button @click="showLinkDialog = false">{{ $t('standard.common.cancel') }}</el-button>
         <el-button type="primary" @click="confirmLink" :disabled="selectedDocIds.length === 0" :loading="linking">
-          确认关联
+          {{ $t('standard.documentPanel.confirmLink') }}
         </el-button>
       </template>
     </el-dialog>
@@ -122,7 +122,10 @@
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Paperclip } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { elementDocumentAPI, glossaryDocumentAPI, metricDocumentAPI, documentAPI } from '../api/standard'
+
+const { t } = useI18n()
 
 const props = defineProps({
   entityType: {
@@ -166,8 +169,13 @@ const docSearchLoading = ref(false)
 const searchedDocs = ref([])
 const selectedDocIds = ref([])
 
-const docTypeLabel = (t) => ({ national: '国家标准', industry: '行业标准', internal: '企业内部', reference: '参考资料' }[t] || t)
-const docTypeTagType = (t) => ({ national: 'danger', industry: 'warning', internal: 'success', reference: '' }[t] || '')
+const docTypeLabel = (type) => ({
+  national: t('standard.document.national'),
+  industry: t('standard.document.industry'),
+  internal: t('standard.document.internal'),
+  reference: t('standard.document.reference')
+}[type] || type)
+const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'success', reference: '' }[type] || '')
 
 const getToken = () => localStorage.getItem('token') || ''
 
@@ -178,7 +186,7 @@ const loadDocs = async () => {
     const res = await api[props.entityType].list(props.entityId)
     docs.value = res || []
   } catch (e) {
-    console.error('加载关联文档失败:', e)
+    console.error('loadDocs error:', e)
   } finally {
     loading.value = false
   }
@@ -194,12 +202,12 @@ const downloadDoc = (doc) => {
 
 const unlinkDoc = async (doc) => {
   try {
-    await ElMessageBox.confirm(`解除与「${doc.name}」的关联？文档本身不会被删除。`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.documentPanel.confirmUnlink', { name: doc.name }), t('standard.common.hint'), { type: 'warning' })
     await api[props.entityType].unlink(props.entityId, doc.id)
-    ElMessage.success('已解除关联')
+    ElMessage.success(t('standard.documentPanel.unlinkSuccess'))
     await loadDocs()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('操作失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
   }
 }
 
@@ -216,32 +224,29 @@ const resetUploadForm = () => {
 const onFileChange = (file) => {
   selectedFile.value = file.raw
   if (!uploadForm.value.name) {
-    // 用文件名（去扩展名）作为默认文档名
     uploadForm.value.name = file.name.replace(/\.[^.]+$/, '')
   }
 }
 
 const submitUpload = async () => {
   if (!uploadForm.value.name) {
-    ElMessage.warning('请填写文档名称')
+    ElMessage.warning(t('standard.documentPanel.nameRequired'))
     return
   }
   uploading.value = true
   try {
-    // 1. 创建文档元数据并关联到当前标准项
     const res = await api[props.entityType].create(props.entityId, uploadForm.value)
     const doc = res
-    // 2. 如果选择了文件则上传
     if (selectedFile.value) {
       const formData = new FormData()
       formData.append('file', selectedFile.value)
       await api[props.entityType].uploadFile(doc.id, formData)
     }
-    ElMessage.success('关联成功')
+    ElMessage.success(t('standard.documentPanel.linkSuccess'))
     showUploadDialog.value = false
     await loadDocs()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     uploading.value = false
   }
@@ -260,7 +265,7 @@ const searchDocs = async (keyword) => {
   docSearchLoading.value = true
   try {
     const res = await documentAPI.list({ keyword, page_size: 50 })
-    searchedDocs.value = res.data || []  // 分页格式，保留 .data
+    searchedDocs.value = res.data || []
   } catch (e) {
     searchedDocs.value = []
   } finally {
@@ -275,12 +280,12 @@ const confirmLink = async () => {
     await Promise.all(
       selectedDocIds.value.map(docId => api[props.entityType].link(props.entityId, docId))
     )
-    ElMessage.success('关联成功')
+    ElMessage.success(t('standard.documentPanel.linkSuccess'))
     showLinkDialog.value = false
     selectedDocIds.value = []
     await loadDocs()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '关联失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     linking.value = false
   }

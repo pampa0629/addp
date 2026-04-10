@@ -1,0 +1,26 @@
+[quality.rule_app.not_found]
+other = "规则应用不存在"
+
+[quality.rule_app.create_failed]
+other = "创建规则应用失败"
+
+[quality.rule_app.delete_failed]
+other = "删除规则应用失败"
+
+[quality.check_task.not_found]
+other = "检查任务不存在"
+
+[quality.check_task.run_failed]
+other = "执行检查任务失败"
+
+[quality.check_task.delete_failed]
+other = "删除检查任务失败"
+
+[quality.issue.not_found]
+other = "问题工单不存在"
+
+[quality.issue.update_failed]
+other = "更新工单状态失败"
+
+[quality.issue.status_invalid]
+other = "无效的工单状态"

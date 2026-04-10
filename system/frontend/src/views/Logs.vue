@@ -2,44 +2,44 @@
   <el-card>
     <template #header>
       <div class="card-header">
-        <span>审计日志</span>
+        <span>{{ t('system.log.title') }}</span>
         <div>
           <el-button-group style="margin-right: 10px">
-            <el-button @click="exportLogs('csv')">导出 CSV</el-button>
-            <el-button @click="exportLogs('json')">导出 JSON</el-button>
+            <el-button @click="exportLogs('csv')">{{ t('system.log.exportCsv') }}</el-button>
+            <el-button @click="exportLogs('json')">{{ t('system.log.exportJson') }}</el-button>
           </el-button-group>
-          <el-button type="primary" :icon="Refresh" @click="loadLogs">刷新</el-button>
+          <el-button type="primary" :icon="Refresh" @click="loadLogs">{{ t('system.log.refresh') }}</el-button>
         </div>
       </div>
     </template>
 
     <!-- 高级过滤 -->
     <el-form :inline="true" class="filter-form">
-      <el-form-item label="快速时间">
+      <el-form-item :label="t('system.log.quickTime')">
         <el-radio-group v-model="quickTimeRange" @change="handleQuickTimeChange">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="today">今天</el-radio-button>
-          <el-radio-button value="yesterday">昨天</el-radio-button>
-          <el-radio-button value="week">最近7天</el-radio-button>
-          <el-radio-button value="month">最近30天</el-radio-button>
+          <el-radio-button value="">{{ t('system.log.quickAll') }}</el-radio-button>
+          <el-radio-button value="today">{{ t('system.log.quickToday') }}</el-radio-button>
+          <el-radio-button value="yesterday">{{ t('system.log.quickYesterday') }}</el-radio-button>
+          <el-radio-button value="week">{{ t('system.log.quickWeek') }}</el-radio-button>
+          <el-radio-button value="month">{{ t('system.log.quickMonth') }}</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item label="时间范围">
+      <el-form-item :label="t('system.log.timeRange')">
         <el-date-picker
           v-model="dateRange"
           type="datetimerange"
-          range-separator="至"
-          start-placeholder="开始时间"
-          end-placeholder="结束时间"
+          :range-separator="t('system.log.rangeSeparator')"
+          :start-placeholder="t('system.log.startTime')"
+          :end-placeholder="t('system.log.endTime')"
           value-format="YYYY-MM-DD HH:mm:ss"
           @change="handleDateRangeChange"
         />
       </el-form-item>
 
-      <el-form-item label="模块">
-        <el-select v-model="moduleFilter" placeholder="全部模块" clearable @change="loadLogs" style="width: 120px">
-          <el-option label="全部" value="" />
+      <el-form-item :label="t('system.log.module')">
+        <el-select v-model="moduleFilter" :placeholder="t('system.log.allModules')" clearable @change="loadLogs" style="width: 120px">
+          <el-option :label="t('system.log.allOption')" value="" />
           <el-option label="System" value="system" />
           <el-option label="Manager" value="manager" />
           <el-option label="Meta" value="meta" />
@@ -50,18 +50,18 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="状态码">
-        <el-select v-model="statusFilter" placeholder="全部状态" clearable @change="loadLogs" style="width: 140px">
-          <el-option label="全部" value="" />
-          <el-option label="成功 (2xx)" value="2xx" />
-          <el-option label="客户端错误 (4xx)" value="4xx" />
-          <el-option label="服务器错误 (5xx)" value="5xx" />
+      <el-form-item :label="t('system.log.statusCode')">
+        <el-select v-model="statusFilter" :placeholder="t('system.log.allStatus')" clearable @change="loadLogs" style="width: 140px">
+          <el-option :label="t('system.log.allOption')" value="" />
+          <el-option :label="t('system.log.statusSuccess')" value="2xx" />
+          <el-option :label="t('system.log.statusClientError')" value="4xx" />
+          <el-option :label="t('system.log.statusServerError')" value="5xx" />
         </el-select>
       </el-form-item>
 
-      <el-form-item label="HTTP方法">
-        <el-select v-model="methodFilter" placeholder="全部" clearable @change="loadLogs" style="width: 110px">
-          <el-option label="全部" value="" />
+      <el-form-item :label="t('system.log.httpMethod')">
+        <el-select v-model="methodFilter" :placeholder="t('system.log.allOption')" clearable @change="loadLogs" style="width: 110px">
+          <el-option :label="t('system.log.allOption')" value="" />
           <el-option label="POST" value="POST" />
           <el-option label="PUT" value="PUT" />
           <el-option label="DELETE" value="DELETE" />
@@ -69,26 +69,25 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="用户名">
-        <el-input v-model="usernameFilter" placeholder="输入用户名" clearable @keyup.enter="loadLogs" style="width: 130px" />
+      <el-form-item :label="t('system.log.username')">
+        <el-input v-model="usernameFilter" :placeholder="t('system.log.usernamePlaceholder')" clearable @keyup.enter="loadLogs" style="width: 130px" />
       </el-form-item>
 
-      <el-form-item label="IP地址">
-        <el-input v-model="ipFilter" placeholder="输入IP" clearable @keyup.enter="loadLogs" style="width: 130px" />
+      <el-form-item :label="t('system.log.ipAddress')">
+        <el-input v-model="ipFilter" :placeholder="t('system.log.ipPlaceholder')" clearable @keyup.enter="loadLogs" style="width: 130px" />
       </el-form-item>
 
       <el-form-item>
-        <el-button type="primary" @click="loadLogs">查询</el-button>
-        <el-button @click="resetFilters">重置</el-button>
+        <el-button type="primary" @click="loadLogs">{{ t('system.log.query') }}</el-button>
+        <el-button @click="resetFilters">{{ t('system.log.reset') }}</el-button>
       </el-form-item>
     </el-form>
 
     <!-- 日志列表 -->
     <el-table :data="logs" v-loading="loading" stripe @row-click="showDetails">
-      <el-table-column prop="id" label="ID" width="70" />
+      <el-table-column prop="id" :label="t('system.log.columns.id')" width="70" />
 
-      <!-- 操作: HTTP方法 + 路径 -->
-      <el-table-column label="操作" min-width="220">
+      <el-table-column :label="t('system.log.columns.action')" min-width="220">
         <template #default="{ row }">
           <el-tag :type="getMethodType(row.http_method)" size="small" style="margin-right: 8px">
             {{ row.http_method }}
@@ -97,10 +96,9 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="username" label="用户" width="110" />
+      <el-table-column prop="username" :label="t('system.log.columns.user')" width="110" />
 
-      <!-- 状态码 (100%有数据,颜色标识) -->
-      <el-table-column label="状态" width="70">
+      <el-table-column :label="t('system.log.columns.status')" width="70">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.http_status)" size="small">
             {{ row.http_status }}
@@ -108,8 +106,7 @@
         </template>
       </el-table-column>
 
-      <!-- 耗时 (慢请求高亮) -->
-      <el-table-column label="耗时" width="80" sortable>
+      <el-table-column :label="t('system.log.columns.duration')" width="80" sortable>
         <template #default="{ row }">
           <span :class="{ 'slow': row.duration_ms > 1000, 'warning': row.duration_ms > 500 }">
             {{ row.duration_ms }}ms
@@ -117,9 +114,9 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="ip_address" label="IP" width="130" />
-      <el-table-column prop="module_name" label="模块" width="90" />
-      <el-table-column label="时间" width="160" sortable>
+      <el-table-column prop="ip_address" :label="t('system.log.columns.ip')" width="130" />
+      <el-table-column prop="module_name" :label="t('system.log.columns.module')" width="90" />
+      <el-table-column :label="t('system.log.columns.time')" width="160" sortable>
         <template #default="{ row }">
           {{ formatDateTime(row.created_at) }}
         </template>
@@ -139,31 +136,28 @@
     />
 
     <!-- 日志详情对话框 -->
-    <el-dialog v-model="detailsVisible" title="操作详情" width="800px">
+    <el-dialog v-model="detailsVisible" :title="t('system.log.detail.title')" width="800px">
       <el-descriptions :column="2" border v-if="currentLog">
-        <!-- 始终显示的字段 -->
-        <el-descriptions-item label="日志ID">{{ currentLog.id }}</el-descriptions-item>
-        <el-descriptions-item label="请求ID">{{ currentLog.request_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('system.log.detail.logId')">{{ currentLog.id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('system.log.detail.requestId')">{{ currentLog.request_id }}</el-descriptions-item>
 
-        <!-- SuperAdmin标识 -->
-        <el-descriptions-item label="操作用户">
-          {{ currentLog.username || '未认证' }}
+        <el-descriptions-item :label="t('system.log.detail.user')">
+          {{ currentLog.username || t('system.log.detail.unauthenticated') }}
           <el-tag v-if="currentLog.username === 'SuperAdmin'" type="danger" size="small" style="margin-left: 8px">
-            超管
+            {{ t('system.log.detail.superAdmin') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="所属租户">
-          {{ currentLog.tenant_id || '系统级操作' }}
+        <el-descriptions-item :label="t('system.log.detail.tenant')">
+          {{ currentLog.tenant_id || t('system.log.detail.systemOp') }}
         </el-descriptions-item>
 
-        <!-- 操作和结果 -->
-        <el-descriptions-item label="操作">
+        <el-descriptions-item :label="t('system.log.detail.action')">
           <el-tag :type="getMethodType(currentLog.http_method)">
             {{ currentLog.http_method }}
           </el-tag>
           <span style="margin-left: 8px">{{ currentLog.resource_path }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="结果">
+        <el-descriptions-item :label="t('system.log.detail.result')">
           <el-tag :type="getStatusType(currentLog.http_status)">
             {{ currentLog.http_status }}
           </el-tag>
@@ -172,39 +166,39 @@
           </span>
         </el-descriptions-item>
 
-        <!-- 条件显示: 仅在有值时显示 -->
-        <el-descriptions-item v-if="currentLog.entity_type" label="操作资源" :span="2">
+        <el-descriptions-item v-if="currentLog.entity_type" :label="t('system.log.detail.resource')" :span="2">
           {{ currentLog.entity_type }} #{{ currentLog.entity_id }}
         </el-descriptions-item>
 
-        <el-descriptions-item label="来源">
+        <el-descriptions-item :label="t('system.log.detail.source')">
           {{ currentLog.ip_address }} / {{ currentLog.module_name }}
         </el-descriptions-item>
-        <el-descriptions-item label="时间">
+        <el-descriptions-item :label="t('system.log.detail.time')">
           {{ formatDateTime(currentLog.created_at) }}
         </el-descriptions-item>
 
-        <!-- 错误信息: 仅失败时显示 -->
-        <el-descriptions-item v-if="currentLog.http_status >= 400" label="错误信息" :span="2">
-          <div class="error-box">{{ currentLog.error_message || '无详细信息' }}</div>
+        <el-descriptions-item v-if="currentLog.http_status >= 400" :label="t('system.log.detail.error')" :span="2">
+          <div class="error-box">{{ currentLog.error_message || t('system.log.detail.noError') }}</div>
         </el-descriptions-item>
       </el-descriptions>
 
-      <!-- 请求详情: JSON展示 -->
-      <el-divider>请求详情</el-divider>
+      <el-divider>{{ t('system.log.detail.requestDetail') }}</el-divider>
       <div v-if="currentLog?.request_body" class="code-block">
         <pre>{{ formatJSON(currentLog.request_body) }}</pre>
       </div>
-      <div v-else class="empty-text">无请求详情</div>
+      <div v-else class="empty-text">{{ t('system.log.detail.noRequest') }}</div>
     </el-dialog>
   </el-card>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { logsAPI } from '../api/logs'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const logs = ref([])
 const loading = ref(false)
@@ -357,7 +351,7 @@ const loadLogs = async () => {
     logs.value = response.data || []
     total.value = response.total || 0
   } catch (error) {
-    ElMessage.error('加载日志列表失败')
+    ElMessage.error(t('system.log.msg.loadFailed'))
     console.error(error)
   } finally {
     loading.value = false
@@ -425,10 +419,10 @@ const exportLogs = (format) => {
       a.click()
       document.body.removeChild(a)
       window.URL.revokeObjectURL(blobUrl)
-      ElMessage.success(`导出 ${format.toUpperCase()} 成功`)
+      ElMessage.success(t('system.log.msg.exportSuccess', { format: format.toUpperCase() }))
     })
     .catch(() => {
-      ElMessage.error('导出失败')
+      ElMessage.error(t('system.log.msg.exportFailed'))
     })
 }
 

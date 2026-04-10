@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/addp/common/logger"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/middleware/ratelimit"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
@@ -85,6 +86,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService))
+
+	// i18n 中间件（从 Accept-Language 头解析语言）
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// 根路由
 	router.GET("/", func(c *gin.Context) {

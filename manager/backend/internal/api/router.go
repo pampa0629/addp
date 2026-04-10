@@ -6,9 +6,11 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	_ "github.com/addp/manager/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
@@ -33,6 +35,9 @@ func SetupRouter(
 	importHandler *ImportHandler,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// i18n 中间件（解析 Accept-Language 请求头）
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

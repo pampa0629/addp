@@ -9,21 +9,20 @@
     <el-header class="header">
       <div class="header-left">
         <el-icon class="logo-icon"><Folder /></el-icon>
-        <span class="title">数据资产管理</span>
+        <span class="title">{{ t('asset.layout.title') }}</span>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('asset.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
-              </el-dropdown-item>
+                {{ t('asset.layout.logout') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -36,36 +35,36 @@
           <el-sub-menu index="asset-catalog">
             <template #title>
               <el-icon><Folder /></el-icon>
-              <span>资产目录</span>
+              <span>{{ t('asset.layout.assetCatalog') }}</span>
             </template>
             <el-menu-item index="/asset/type-definitions">
               <el-icon><Grid /></el-icon>
-              <span>资产类型</span>
+              <span>{{ t('asset.layout.assetTypes') }}</span>
             </el-menu-item>
             <el-menu-item index="/asset/categories">
               <el-icon><Files /></el-icon>
-              <span>目录管理</span>
+              <span>{{ t('asset.layout.catalogManagement') }}</span>
             </el-menu-item>
             <el-menu-item index="/asset/assets">
               <el-icon><List /></el-icon>
-              <span>资产工作台</span>
+              <span>{{ t('asset.layout.assetWorkbench') }}</span>
             </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="asset-apply">
             <template #title>
               <el-icon><Document /></el-icon>
-              <span>申请与授权</span>
+              <span>{{ t('asset.layout.applicationAndAuth') }}</span>
             </template>
             <el-menu-item index="/asset/applications">
               <el-icon><Tickets /></el-icon>
-              <span>申请与授权</span>
+              <span>{{ t('asset.layout.applicationAndAuth') }}</span>
             </el-menu-item>
           </el-sub-menu>
 
           <el-menu-item index="/asset/dashboard">
             <el-icon><DataAnalysis /></el-icon>
-            <span>运营看板</span>
+            <span>{{ t('asset.layout.dashboard') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -81,6 +80,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { useI18n } from 'vue-i18n'
 import {
   User, ArrowDown, SwitchButton, Folder,
   Grid, Files, List, Document, Tickets, DataAnalysis
@@ -89,6 +89,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 const isInIframe = ref(false)
 
 onMounted(() => {

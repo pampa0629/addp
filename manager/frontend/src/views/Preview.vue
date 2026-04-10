@@ -2,12 +2,15 @@
   <div>
     <el-card>
       <template #header>
-        <span>数据预览</span>
+        <span>{{ t('manager.preview.title') }}</span>
       </template>
-      <el-empty description="功能开发中..." />
+      <el-empty :description="t('manager.preview.comingSoon')" />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 </script>

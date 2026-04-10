@@ -2,7 +2,7 @@
   <el-select
     :model-value="modelValue"
     @update:model-value="handleChange"
-    placeholder="请选择存储引擎"
+    :placeholder="t('develop.engineSelect.placeholder')"
     filterable
     :loading="loading"
   >
@@ -22,8 +22,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { listEngines } from '@/api/engines'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
@@ -59,7 +62,7 @@ const loadEngines = async () => {
     engines.value = Array.isArray(data) ? data : []
   } catch (error) {
     console.error('获取引擎列表失败:', error)
-    ElMessage.error('获取存储引擎列表失败')
+    ElMessage.error(t('develop.engineSelect.loadFailed'))
     engines.value = []
   } finally {
     loading.value = false

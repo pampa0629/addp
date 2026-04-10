@@ -1,13 +1,13 @@
 <template>
   <div class="build-task-detail">
     <div class="page-header">
-      <el-button text @click="$router.back()">← 返回</el-button>
-      <h2>{{ task?.name || '构建任务详情' }}</h2>
+      <el-button text @click="$router.back()">← {{ t('graph.common.back') }}</el-button>
+      <h2>{{ task?.name || t('graph.build.taskDetail') }}</h2>
       <div class="header-actions">
-        <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">运行任务</el-button>
-        <el-button v-if="task?.status === 'running'" type="warning" @click="handleCancel">取消</el-button>
+        <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">{{ t('graph.build.runTask') }}</el-button>
+        <el-button v-if="task?.status === 'running'" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
         <el-button @click="$router.push(`/graphs/${graphId}/review`)">
-          审核队列
+          {{ t('graph.build.reviewQueue') }}
           <el-badge v-if="pendingCount > 0" :value="pendingCount" style="margin-left:6px" />
         </el-button>
       </div>
@@ -19,20 +19,20 @@
       <!-- 任务信息 -->
       <el-card class="info-card">
         <div class="info-grid">
-          <div class="info-item"><span class="label">状态</span><el-tag :type="statusTagType(task.status)">{{ statusLabel(task.status) }}</el-tag></div>
-          <div class="info-item"><span class="label">置信度阈值</span>{{ task.confidence_threshold }}</div>
-          <div class="info-item"><span class="label">Chunk 大小</span>{{ task.chunk_size }} 字符</div>
-          <div class="info-item"><span class="label">Overlap</span>{{ task.chunk_overlap }} 字符</div>
+          <div class="info-item"><span class="label">{{ t('graph.common.status') }}</span><el-tag :type="statusTagType(task.status)">{{ statusLabel(task.status) }}</el-tag></div>
+          <div class="info-item"><span class="label">{{ t('graph.build.confidenceThreshold') }}</span>{{ task.confidence_threshold }}</div>
+          <div class="info-item"><span class="label">{{ t('graph.build.chunkSize') }}</span>{{ task.chunk_size }} {{ t('graph.build.chars') }}</div>
+          <div class="info-item"><span class="label">Overlap</span>{{ task.chunk_overlap }} {{ t('graph.build.chars') }}</div>
           <div class="info-item" v-if="task.execution_id">
             <span class="label">Monitor ID</span>
             <el-text type="info" size="small">{{ task.execution_id }}</el-text>
           </div>
         </div>
         <div v-if="task.stats && task.stats.total_materials" class="stats-row">
-          <el-statistic title="总材料" :value="task.stats.total_materials" />
-          <el-statistic title="已处理" :value="task.stats.processed" />
-          <el-statistic title="自动写入" :value="task.stats.auto_written" />
-          <el-statistic title="待审核" :value="task.stats.pending_review" />
+          <el-statistic :title="t('graph.build.statTotalMaterials')" :value="task.stats.total_materials" />
+          <el-statistic :title="t('graph.build.statProcessed')" :value="task.stats.processed" />
+          <el-statistic :title="t('graph.build.statAutoWritten')" :value="task.stats.auto_written" />
+          <el-statistic :title="t('graph.build.statPendingReview')" :value="task.stats.pending_review" />
         </div>
         <div v-if="task.error_message" class="error-msg">{{ task.error_message }}</div>
       </el-card>
@@ -41,7 +41,7 @@
       <el-card class="materials-card">
         <template #header>
           <div class="card-header">
-            <span>构建材料</span>
+            <span>{{ t('graph.build.materials') }}</span>
             <el-upload
               v-if="canUpload"
               :action="''"
@@ -51,7 +51,7 @@
               accept=".txt,.md,.csv"
               multiple
             >
-              <el-button size="small">上传文件</el-button>
+              <el-button size="small">{{ t('graph.build.uploadFile') }}</el-button>
             </el-upload>
           </div>
         </template>
@@ -64,28 +64,28 @@
         </div>
 
         <el-table :data="materials" size="small" v-if="materials.length > 0">
-          <el-table-column prop="file_name" label="文件名" />
-          <el-table-column label="大小" width="100">
+          <el-table-column prop="file_name" :label="t('graph.build.fileName')" />
+          <el-table-column :label="t('graph.build.fileSize')" width="100">
             <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
+          <el-table-column :label="t('graph.common.status')" width="100">
             <template #default="{ row }">
               <el-tag :type="matStatusType(row.status)" size="small">{{ matStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="进度" width="160">
+          <el-table-column :label="t('graph.build.progress')" width="160">
             <template #default="{ row }">
               <span v-if="row.total_chunks > 0">{{ row.processed_chunks }}/{{ row.total_chunks }}</span>
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="80">
+          <el-table-column :label="t('graph.common.actions')" width="80">
             <template #default="{ row }">
-              <el-button size="small" type="danger" text @click="handleDeleteMaterial(row.id)">删除</el-button>
+              <el-button size="small" type="danger" text @click="handleDeleteMaterial(row.id)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无材料，请上传文本文件" />
+        <el-empty v-else :description="t('graph.build.noMaterials')" />
       </el-card>
     </template>
   </div>
@@ -97,6 +97,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -121,7 +124,7 @@ async function loadTask() {
     const countRes = await buildAPI.getPendingCount(graphId)
     pendingCount.value = countRes.count || 0
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('graph.common.loadFailed'))
   }
 }
 
@@ -129,11 +132,11 @@ async function handleRun() {
   running.value = true
   try {
     await buildAPI.runTask(graphId, taskId)
-    ElMessage.success('任务已启动')
+    ElMessage.success(t('graph.build.taskStarted'))
     await loadTask()
     startPolling()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '启动失败')
+    ElMessage.error(e.response?.data?.error || t('graph.build.startFailed'))
   } finally {
     running.value = false
   }
@@ -142,11 +145,11 @@ async function handleRun() {
 async function handleCancel() {
   try {
     await buildAPI.cancelTask(graphId, taskId)
-    ElMessage.success('任务已取消')
+    ElMessage.success(t('graph.build.taskCancelled'))
     stopPolling()
     await loadTask()
   } catch (e) {
-    ElMessage.error('取消失败')
+    ElMessage.error(t('graph.build.cancelFailed'))
   }
 }
 
@@ -160,22 +163,22 @@ async function handleFileChange(file) {
       const idx = uploadingFiles.value.findIndex(f => f.name === file.name)
       if (idx >= 0) uploadingFiles.value[idx].progress = Math.round(e.loaded / e.total * 100)
     })
-    ElMessage.success(`${file.name} 上传成功`)
+    ElMessage.success(t('graph.build.uploadSuccess', { name: file.name }))
     await loadTask()
   } catch (e) {
-    ElMessage.error(`${file.name} 上传失败`)
+    ElMessage.error(t('graph.build.uploadFailed', { name: file.name }))
   } finally {
     uploadingFiles.value = uploadingFiles.value.filter(f => f.name !== file.name)
   }
 }
 
 async function handleDeleteMaterial(materialId) {
-  await ElMessageBox.confirm('确认删除该材料？', '提示', { type: 'warning' })
+  await ElMessageBox.confirm(t('graph.build.confirmDeleteMaterial'), t('graph.common.confirmDelete'), { type: 'warning' })
   try {
     await buildAPI.deleteMaterial(graphId, taskId, materialId)
     await loadTask()
   } catch (e) {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('graph.common.deleteFailed'))
   }
 }
 
@@ -200,13 +203,24 @@ function statusTagType(s) {
   return { pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: '' }[s] || 'info'
 }
 function statusLabel(s) {
-  return { pending: '待运行', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已取消' }[s] || s
+  return {
+    pending: t('graph.build.statusPending'),
+    running: t('graph.build.statusRunning'),
+    completed: t('graph.build.statusCompleted'),
+    failed: t('graph.build.statusFailed'),
+    cancelled: t('graph.build.statusCancelled')
+  }[s] || s
 }
 function matStatusType(s) {
   return { pending: 'info', processing: 'warning', completed: 'success', failed: 'danger' }[s] || 'info'
 }
 function matStatusLabel(s) {
-  return { pending: '待处理', processing: '处理中', completed: '已完成', failed: '失败' }[s] || s
+  return {
+    pending: t('graph.build.matPending'),
+    processing: t('graph.build.matProcessing'),
+    completed: t('graph.build.matCompleted'),
+    failed: t('graph.build.statusFailed')
+  }[s] || s
 }
 function formatSize(bytes) {
   if (!bytes) return '-'

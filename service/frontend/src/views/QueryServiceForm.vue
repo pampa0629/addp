@@ -2,7 +2,7 @@
   <div class="query-service-form" v-loading="loading">
     <div class="page-header">
       <el-button @click="goBack" :icon="ArrowLeft" circle />
-      <h2>{{ isEdit ? '编辑查询服务' : '创建查询服务' }}</h2>
+      <h2>{{ isEdit ? t('service.query.formEditTitle') : t('service.query.formCreateTitle') }}</h2>
     </div>
 
     <!-- 步骤条（仅新建模式显示） -->
@@ -13,16 +13,16 @@
       align-center
       style="margin-bottom: 30px"
     >
-      <el-step title="选择配置方式" />
-      <el-step title="配置数据源" />
-      <el-step title="配置服务信息" />
+      <el-step :title="t('service.query.stepSelectMode')" />
+      <el-step :title="t('service.query.stepConfigSource')" />
+      <el-step :title="t('service.query.stepConfigService')" />
     </el-steps>
 
     <!-- Step 0: 选择配置方式（仅新建模式） -->
     <div v-if="!isEdit && currentStep === 0">
       <el-card class="config-step-card">
         <template #header>
-          <span>选择数据源配置方式</span>
+          <span>{{ t('service.query.selectModeTitle') }}</span>
         </template>
 
         <el-radio-group v-model="form.config_type" class="config-radio-group">
@@ -33,14 +33,14 @@
           >
             <el-radio value="table" class="config-radio">
               <div class="config-content">
-                <h3><el-icon><Grid /></el-icon> 表配置模式（推荐新手）</h3>
-                <p class="description">通过界面选择数据表，系统自动检测空间字段和元数据</p>
+                <h3><el-icon><Grid /></el-icon> {{ t('service.query.tableModeTitle') }}</h3>
+                <p class="description">{{ t('service.query.tableModeDesc') }}</p>
                 <div class="features">
-                  <p>✅ 支持动态查询参数（filter、fields、orderBy）</p>
-                  <p>✅ 可选择默认返回字段和可过滤字段</p>
-                  <p>✅ 自动检测空间字段并启用 OGC Features</p>
+                  <p>{{ t('service.query.tableModeFeature1') }}</p>
+                  <p>{{ t('service.query.tableModeFeature2') }}</p>
+                  <p>{{ t('service.query.tableModeFeature3') }}</p>
                 </div>
-                <el-tag type="success" size="small">适用场景：单表查询、快速发布数据服务</el-tag>
+                <el-tag type="success" size="small">{{ t('service.query.tableModeTag') }}</el-tag>
               </div>
             </el-radio>
           </div>
@@ -52,14 +52,14 @@
           >
             <el-radio value="sql" class="config-radio">
               <div class="config-content">
-                <h3><el-icon><Document /></el-icon> SQL 配置模式（适合高级用户）</h3>
-                <p class="description">编写自定义 SQL 查询语句，灵活控制数据输出</p>
+                <h3><el-icon><Document /></el-icon> {{ t('service.query.sqlModeTitle') }}</h3>
+                <p class="description">{{ t('service.query.sqlModeDesc') }}</p>
                 <div class="features">
-                  <p>✅ 支持复杂查询（JOIN、子查询、聚合）</p>
-                  <p>✅ 支持计算字段和自定义过滤逻辑</p>
-                  <p>⚠️ 仅支持分页参数（page、page_size、format）</p>
+                  <p>{{ t('service.query.sqlModeFeature1') }}</p>
+                  <p>{{ t('service.query.sqlModeFeature2') }}</p>
+                  <p>{{ t('service.query.sqlModeFeature3') }}</p>
                 </div>
-                <el-tag type="warning" size="small">适用场景：复杂业务查询、多表关联、数据计算</el-tag>
+                <el-tag type="warning" size="small">{{ t('service.query.sqlModeTag') }}</el-tag>
               </div>
             </el-radio>
           </div>
@@ -73,7 +73,7 @@
       <div v-if="form.config_type === 'table'">
         <el-card>
           <template #header>
-            <span>选择数据表</span>
+            <span>{{ t('service.query.selectTableTitle') }}</span>
           </template>
 
           <DataSourceCascader
@@ -91,25 +91,25 @@
             <!-- 字段配置（可选） -->
             <el-divider content-position="left">字段配置（可选）</el-divider>
 
-            <el-form-item label="默认返回字段">
+            <el-form-item :label="t('service.query.defaultFieldsLabel')">
               <el-input
                 v-model="defaultFieldsInput"
-                placeholder="留空返回所有字段，或输入字段列表（用逗号分隔）"
+                :placeholder="t('service.query.defaultFieldsPlaceholder')"
                 style="width: 100%"
               />
               <div class="help-text">
-                示例：id,name,category,geom（未配置则返回所有字段，API 可通过 fields 参数覆盖）
+                {{ t('service.query.defaultFieldsHelp') }}
               </div>
             </el-form-item>
 
-            <el-form-item label="可过滤字段">
+            <el-form-item :label="t('service.query.filterableFieldsLabel')">
               <el-input
                 v-model="filterableFieldsInput"
-                placeholder="留空允许过滤所有字段，或输入允许过滤的字段（用逗号分隔）"
+                :placeholder="t('service.query.filterableFieldsPlaceholder')"
                 style="width: 100%"
               />
               <div class="help-text">
-                示例：name,category（未配置则允许过滤所有字段）
+                {{ t('service.query.filterableFieldsHelp') }}
               </div>
             </el-form-item>
           </el-form>
@@ -120,12 +120,12 @@
       <div v-else-if="form.config_type === 'sql'">
         <el-card>
           <template #header>
-            <span>编写 SQL 查询</span>
+            <span>{{ t('service.query.writeSqlTitle') }}</span>
           </template>
 
           <el-form :model="form" label-width="120px">
-            <el-form-item label="存储引擎" required>
-              <el-select v-model="form.engine_id" placeholder="请选择存储引擎" style="width: 400px">
+            <el-form-item :label="t('service.query.engineLabel')" required>
+              <el-select v-model="form.engine_id" :placeholder="t('service.query.enginePlaceholder')" style="width: 400px">
                 <el-option
                   v-for="engine in sqlSupportedEngines"
                   :key="engine.id"
@@ -134,11 +134,11 @@
                 />
               </el-select>
               <div class="help-text">
-                仅显示支持 SQL 查询的存储引擎
+                {{ t('service.query.engineHelp') }}
               </div>
             </el-form-item>
 
-            <el-form-item label="SQL 查询语句" required>
+            <el-form-item :label="t('service.query.sqlLabel')" required>
               <el-input
                 v-model="form.sql_query"
                 type="textarea"
@@ -147,7 +147,7 @@
                 style="font-family: 'Courier New', monospace"
               />
               <div class="help-text">
-                ⚠️ SQL 语句固定，仅支持分页参数（page、page_size），不支持动态 filter/fields/orderBy
+                {{ t('service.query.sqlHelp') }}
               </div>
             </el-form-item>
 
@@ -160,38 +160,38 @@
                 :disabled="!form.engine_id || !form.sql_query"
                 @click="detectSQLSpatialFields"
               >
-                检测空间字段
+                {{ t('service.query.detectSpatialBtn') }}
               </el-button>
               <div class="help-text">
-                自动检测 SQL 查询结果是否包含空间字段，并填充几何列配置
+                {{ t('service.query.detectSpatialHelp') }}
               </div>
             </el-form-item>
 
-            <el-form-item label="包含空间字段">
+            <el-form-item :label="t('service.query.hasSpatialLabel')">
               <el-checkbox v-model="sqlHasGeometry">
-                SQL 查询结果包含空间字段
+                {{ t('service.query.hasSpatialCheckbox') }}
               </el-checkbox>
             </el-form-item>
 
             <div v-if="sqlHasGeometry">
-              <el-form-item label="几何列名" required>
-                <el-input v-model="sqlGeometryColumn" placeholder="例如: geometry" style="width: 300px" />
+              <el-form-item :label="t('service.query.geometryColumnLabel')" required>
+                <el-input v-model="sqlGeometryColumn" :placeholder="t('service.query.geometryColumnPlaceholder')" style="width: 300px" />
                 <div class="help-text">
-                  SQL 查询返回的几何列名称（必须在 SELECT 中）
+                  {{ t('service.query.geometryColumnHelp') }}
                 </div>
               </el-form-item>
 
-              <el-form-item label="坐标系 (SRID)" required>
+              <el-form-item :label="t('service.query.sridLabel')" required>
                 <el-input-number v-model="sqlSrid" :min="0" :max="999999" placeholder="例如: 4326" />
                 <div class="help-text">
-                  空间坐标系统标识符（如 4326 = WGS84）
+                  {{ t('service.query.sridHelp') }}
                 </div>
               </el-form-item>
 
-              <el-form-item label="几何类型" v-if="sqlGeometryType">
+              <el-form-item :label="t('service.query.geometryTypeLabel')" v-if="sqlGeometryType">
                 <el-tag>{{ sqlGeometryType }}</el-tag>
                 <div class="help-text">
-                  检测到的几何类型
+                  {{ t('service.query.geometryTypeHelp') }}
                 </div>
               </el-form-item>
             </div>
@@ -204,42 +204,42 @@
     <div v-if="isEdit || currentStep === 2">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="140px">
         <!-- 基本信息 -->
-        <el-card header="基本信息" style="margin-bottom: 20px">
-          <el-form-item label="配置方式" v-if="!isEdit">
+        <el-card :header="t('service.query.basicInfoTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.query.configTypeLabel')" v-if="!isEdit">
             <el-tag :type="form.config_type === 'table' ? 'success' : 'warning'" size="large">
-              {{ form.config_type === 'table' ? '表配置' : 'SQL配置' }}
+              {{ form.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
             </el-tag>
             <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 13px">
-              （配置方式创建后不可变更）
+              {{ t('service.query.configTypeNote') }}
             </span>
           </el-form-item>
 
-          <el-form-item label="服务名称" prop="service_name" required>
+          <el-form-item :label="t('service.query.serviceNameLabel')" prop="service_name" required>
             <el-input
               v-model="form.service_name"
-              placeholder="例如: beijing_poi"
+              :placeholder="t('service.query.serviceNamePlaceholder')"
               :disabled="isEdit"
               style="width: 400px"
             />
             <div class="help-text">
-              仅支持英文、数字和下划线，用于服务 URL
+              {{ t('service.query.serviceNameHelp') }}
             </div>
           </el-form-item>
 
-          <el-form-item label="服务标题" prop="title" required>
-            <el-input v-model="form.title" placeholder="例如: 北京POI数据查询" style="width: 400px" />
+          <el-form-item :label="t('service.query.titleLabel')" prop="title" required>
+            <el-input v-model="form.title" :placeholder="t('service.query.titlePlaceholder')" style="width: 400px" />
           </el-form-item>
 
-          <el-form-item label="服务描述">
+          <el-form-item :label="t('service.query.descriptionLabel')">
             <el-input
               type="textarea"
               v-model="form.description"
               :rows="3"
-              placeholder="服务的简要描述"
+              :placeholder="t('service.query.descriptionPlaceholder')"
             />
           </el-form-item>
 
-          <el-form-item label="关键词">
+          <el-form-item :label="t('service.query.keywordsLabel')">
             <div class="keyword-input">
               <el-tag
                 v-for="tag in form.keywords"
@@ -260,51 +260,51 @@
                 @blur="handleInputConfirm"
               />
               <el-button v-else size="small" @click="showInput">
-                + 添加关键词
+                {{ t('service.common.addKeyword') }}
               </el-button>
             </div>
           </el-form-item>
         </el-card>
 
         <!-- 协议配置 -->
-        <el-card header="协议配置" style="margin-bottom: 20px">
+        <el-card :header="t('service.query.protocolConfigTitle')" style="margin-bottom: 20px">
           <el-alert type="info" :closable="false" style="margin-bottom: 16px">
-            REST API 默认启用。检测到空间字段时，OGC API Features 会自动启用。
+            {{ t('service.query.protocolAlert') }}
           </el-alert>
 
-          <el-form-item label="REST API">
+          <el-form-item :label="t('service.query.restApiLabel')">
             <el-checkbox v-model="enableRestApi" disabled>
-              启用 REST API（默认启用）
+              {{ t('service.query.restApiCheckbox') }}
             </el-checkbox>
             <div class="help-text">
-              提供 JSON/CSV/GeoJSON 格式的查询接口
+              {{ t('service.query.restApiHelp') }}
             </div>
           </el-form-item>
 
-          <el-form-item label="OGC Features">
+          <el-form-item :label="t('service.query.ogcFeaturesLabel')">
             <el-checkbox v-model="enableOgcFeatures" :disabled="!hasGeometryField">
-              启用 OGC API Features
+              {{ t('service.query.ogcFeaturesCheckbox') }}
             </el-checkbox>
             <div class="help-text">
-              {{ hasGeometryField ? '检测到空间字段，自动启用（可手动禁用）' : '未检测到空间字段，无法启用' }}
+              {{ hasGeometryField ? t('service.query.ogcFeaturesHelpEnabled') : t('service.query.ogcFeaturesHelpDisabled') }}
             </div>
           </el-form-item>
         </el-card>
 
         <!-- 访问控制 -->
-        <el-card header="访问控制" style="margin-bottom: 20px">
-          <el-form-item label="公开访问">
+        <el-card :header="t('service.query.accessControlTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.query.publicAccessLabel')">
             <el-checkbox v-model="form.public_access">
-              允许公开访问（无需 JWT 认证）
+              {{ t('service.query.publicAccessCheckbox') }}
             </el-checkbox>
             <div class="help-text">
-              启用后，任何人都可以访问查询端点
+              {{ t('service.query.publicAccessHelp') }}
             </div>
           </el-form-item>
 
-          <el-form-item label="最大返回数" prop="max_features">
+          <el-form-item :label="t('service.query.maxFeaturesLabel')" prop="max_features">
             <el-input-number v-model="form.max_features" :min="1" :max="10000" />
-            <div class="help-text">单次查询返回的最大记录数量</div>
+            <div class="help-text">{{ t('service.query.maxFeaturesHelp') }}</div>
           </el-form-item>
         </el-card>
       </el-form>
@@ -313,7 +313,7 @@
     <!-- 操作按钮 -->
     <div class="button-group">
       <el-button v-if="!isEdit && currentStep > 0" @click="prevStep">
-        上一步
+        {{ t('service.query.prevStep') }}
       </el-button>
       <el-button
         v-if="!isEdit && currentStep < 2"
@@ -321,7 +321,7 @@
         :disabled="!canProceed"
         @click="nextStep"
       >
-        下一步
+        {{ t('service.query.nextStep') }}
       </el-button>
       <el-button
         v-if="isEdit || currentStep === 2"
@@ -329,10 +329,10 @@
         @click="handleSubmit"
         :loading="submitting"
       >
-        {{ isEdit ? '更新' : '创建' }}
+        {{ isEdit ? t('service.query.updateBtn') : t('service.query.createBtn') }}
       </el-button>
       <el-button @click="goBack">
-        取消
+        {{ t('service.common.cancel') }}
       </el-button>
     </div>
   </div>
@@ -343,9 +343,11 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
 import { DataSourceCascader, detectTableMetadata } from '@common-ui'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -404,19 +406,19 @@ const inputValue = ref('')
 const inputRef = ref(null)
 
 // 表单验证规则
-const rules = {
+const rules = computed(() => ({
   service_name: [
-    { required: true, message: '请输入服务名称', trigger: 'blur' },
-    { pattern: /^[a-z0-9_]+$/, message: '仅支持小写英文、数字和下划线', trigger: 'blur' }
+    { required: true, message: t('service.query.serviceNamePlaceholder'), trigger: 'blur' },
+    { pattern: /^[a-z0-9_]+$/, message: t('service.query.serviceNameHelp'), trigger: 'blur' }
   ],
   title: [
-    { required: true, message: '请输入服务标题', trigger: 'blur' }
+    { required: true, message: t('service.query.titlePlaceholder'), trigger: 'blur' }
   ],
   max_features: [
-    { required: true, message: '请设置最大返回数', trigger: 'blur' },
+    { required: true, message: t('service.query.maxFeaturesHelp'), trigger: 'blur' },
     { type: 'number', min: 1, max: 10000, message: '范围: 1-10000', trigger: 'blur' }
   ]
-}
+}))
 
 // 计算属性：是否检测到空间字段
 const hasGeometryField = computed(() => {
@@ -469,12 +471,12 @@ const detectSpatialFields = async () => {
 
     if (spatialMetadata.value.hasGeometry) {
       enableOgcFeatures.value = true
-      ElMessage.success('检测到空间字段，已自动启用 OGC API Features')
+      ElMessage.success(t('service.query.detectSpatialSuccess', { column: spatialMetadata.value.geometryColumn, srid: spatialMetadata.value.srid }))
     } else {
-      ElMessage.info('未检测到空间字段')
+      ElMessage.info(t('service.query.detectSpatialNone'))
     }
   } catch (error) {
-    ElMessage.warning('空间字段检测失败: ' + (error.message || '未知错误'))
+    ElMessage.warning(t('service.query.detectSpatialFailed') + ': ' + (error.message || t('service.common.unknownError')))
     spatialMetadata.value = { hasGeometry: false }
   } finally {
     detecting.value = false
@@ -484,7 +486,7 @@ const detectSpatialFields = async () => {
 // 方法：检测 SQL 查询结果的空间字段
 const detectSQLSpatialFields = async () => {
   if (!form.engine_id || !form.sql_query) {
-    ElMessage.warning('请先选择存储引擎并输入 SQL 查询')
+    ElMessage.warning(t('service.query.detectSqlRequired'))
     return
   }
 
@@ -509,7 +511,7 @@ const detectSQLSpatialFields = async () => {
       sqlSrid.value = response.srid || 4326
       sqlGeometryType.value = response.geometry_type || ''
 
-      ElMessage.success(`检测到空间字段: ${response.geometry_column} (SRID: ${response.srid})`)
+      ElMessage.success(t('service.query.detectSpatialSuccess', { column: response.geometry_column, srid: response.srid }))
     } else {
       // 未检测到空间字段
       sqlHasGeometry.value = false
@@ -517,11 +519,11 @@ const detectSQLSpatialFields = async () => {
       sqlSrid.value = 4326
       sqlGeometryType.value = ''
 
-      ElMessage.info('未检测到空间字段')
+      ElMessage.info(t('service.query.detectSpatialNone'))
     }
   } catch (error) {
     console.error('[QueryServiceForm] SQL spatial detection failed:', error)
-    ElMessage.warning('空间字段检测失败: ' + (error.message || error.response?.data?.error || '未知错误'))
+    ElMessage.warning(t('service.query.detectSpatialFailed') + ': ' + (error.message || error.response?.data?.error || t('service.common.unknownError')))
   } finally {
     detectingSQLSpatial.value = false
   }
@@ -555,7 +557,7 @@ const handleTableSelection = (selection) => {
       extent: selection.extent
     }
     enableOgcFeatures.value = true
-    ElMessage.success(`检测到空间字段: ${selection.geometryColumn}`)
+    ElMessage.success(t('service.query.detectSpatialSuccess', { column: selection.geometryColumn, srid: selection.srid }))
   } else {
     spatialMetadata.value = { hasGeometry: false }
     enableOgcFeatures.value = false
@@ -670,15 +672,15 @@ const handleSubmit = async () => {
     // 提交
     if (isEdit.value) {
       await queryServiceAPI.updateService(route.params.id, requestData)
-      ElMessage.success('查询服务已更新')
+      ElMessage.success(t('service.query.updateSuccess'))
     } else {
       await queryServiceAPI.createService(requestData)
-      ElMessage.success('查询服务已创建')
+      ElMessage.success(t('service.query.createSuccess'))
     }
 
     router.push('/query-services')
   } catch (error) {
-    ElMessage.error((isEdit.value ? '更新' : '创建') + '失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.query.submitFailed') + ': ' + (error.message || t('service.common.unknownError')))
     console.error('Failed to submit:', error)
   } finally {
     submitting.value = false
@@ -698,7 +700,7 @@ onMounted(async () => {
     engines.value = response?.data || []
   } catch (error) {
     console.error('[QueryServiceForm] 加载存储引擎失败:', error)
-    ElMessage.warning('加载存储引擎失败，SQL 模式可能无法使用')
+    ElMessage.warning(t('service.query.loadEnginesFailed'))
   }
 
   if (isEdit.value) {

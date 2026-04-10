@@ -1,0 +1,21 @@
+{
+  "map": {
+    "preview": "地图预览",
+    "truncated": "内容较大，仅展示部分",
+    "shapefileTruncated": "仅展示部分要素",
+    "geometryType": "几何类型",
+    "featureCount": "要素总数",
+    "previewCount": "预览条目",
+    "encoding": "编码",
+    "bboxTitle": "边界范围",
+    "fieldsTitle": "字段信息",
+    "fieldName": "字段名",
+    "fieldType": "类型",
+    "fieldLength": "长度",
+    "fieldPrecision": "精度",
+    "maxRows": "最多展示前 50 行数据",
+    "unknown": "未知",
+    "noData": "暂无数据",
+    "noFieldData": "暂无可展示字段"
+  }
+}

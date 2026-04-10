@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
@@ -65,11 +67,11 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 	if err != nil {
 		// 根据错误类型返回不同状态码
 		if err.Error() == "service name already exists" {
-			c.JSON(http.StatusConflict, gin.H{"error": "服务名称已存在，请使用其他名称"})
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNameExists)})
 			return
 		}
 		if err.Error() == "first_layer is required" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "必须提供第一个图层配置"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgLayerRequired)})
 			return
 		}
 		// 其他错误返回 500

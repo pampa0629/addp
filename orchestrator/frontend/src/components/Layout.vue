@@ -8,20 +8,20 @@
   <div v-else class="layout">
     <el-header class="header">
       <div class="header-left">
-        <h1>Orchestrator 任务编排</h1>
+        <h1>{{ t('orchestrator.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('orchestrator.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('orchestrator.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -38,12 +38,12 @@
         >
           <el-menu-item index="/orchestrations">
             <el-icon><List /></el-icon>
-            <span>任务编排</span>
+            <span>{{ t('orchestrator.layout.orchestrations') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/executions">
             <el-icon><Clock /></el-icon>
-            <span>执行记录</span>
+            <span>{{ t('orchestrator.layout.executions') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -58,6 +58,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import {
   User,
@@ -67,6 +68,7 @@ import {
   Clock
 } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const isInIframe = ref(false)

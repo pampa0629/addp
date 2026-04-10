@@ -5,48 +5,48 @@
       <div class="header-left">
         <el-button text @click="$router.back()">
           <el-icon><ArrowLeft /></el-icon>
-          返回
+          {{ t('model.common.back') }}
         </el-button>
-        <span class="entity-name">{{ entity.name || '加载中...' }}</span>
+        <span class="entity-name">{{ entity.name || t('model.common.loading') }}</span>
         <el-tag :type="entity.status === 'approved' ? 'success' : 'info'" size="small">
-          {{ entity.status === 'approved' ? '已审批' : '草稿' }}
+          {{ entity.status === 'approved' ? t('model.common.status_approved') : t('model.common.status_draft') }}
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button
           v-if="entity.status === 'draft'"
           type="success"
           @click="handleApprove"
-        >审批通过</el-button>
+        >{{ t('model.entity.approve') }}</el-button>
       </div>
     </div>
 
     <!-- Tab 标签页 -->
     <el-tabs v-model="activeTab" type="border-card">
       <!-- 基本信息标签页 -->
-      <el-tab-pane label="基本信息" name="basic">
+      <el-tab-pane :label="t('model.logical_table.basic_info')" name="basic">
         <el-form :model="form" label-width="90px">
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="实体名称">
+              <el-form-item :label="t('model.entity.name')">
                 <el-input v-model="form.name" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="英文编码">
+              <el-form-item :label="t('model.entity.code')">
                 <el-input :value="entity.code" disabled />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="业务域">
+              <el-form-item :label="t('model.entity.domain')">
                 <el-select v-model="form.domain_id" clearable style="width:100%">
                   <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="24">
-              <el-form-item label="描述">
+              <el-form-item :label="t('model.entity.description')">
                 <el-input v-model="form.description" type="textarea" :rows="2" />
               </el-form-item>
             </el-col>
@@ -55,42 +55,42 @@
       </el-tab-pane>
 
       <!-- 属性列表标签页 -->
-      <el-tab-pane label="属性列表" name="attributes">
+      <el-tab-pane :label="t('model.attribute.title')" name="attributes">
         <div class="tab-header">
           <el-button type="primary" size="small" @click="openAttrDialog()">
             <el-icon><Plus /></el-icon>
-            添加属性
+            {{ t('model.attribute.add') }}
           </el-button>
         </div>
 
         <el-table :data="attributes" v-loading="attrLoading" stripe>
-          <el-table-column label="序号" type="index" width="60" />
-          <el-table-column label="属性名称" prop="name" min-width="140" />
-          <el-table-column label="关联数据元" width="160">
+          <el-table-column :label="t('model.attribute.index')" type="index" width="60" />
+          <el-table-column :label="t('model.attribute.name')" prop="name" min-width="140" />
+          <el-table-column :label="t('model.attribute.element')" width="160">
             <template #default="{ row }">
               {{ getElementName(row.element_id) || '-' }}
             </template>
           </el-table-column>
-          <el-table-column label="主键" width="80">
+          <el-table-column :label="t('model.attribute.is_pk')" width="80">
             <template #default="{ row }">
               <el-tag v-if="row.is_pk" type="warning" size="small">PK</el-tag>
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="可空" width="80">
+          <el-table-column :label="t('model.attribute.nullable')" width="80">
             <template #default="{ row }">
               <el-tag :type="row.nullable ? 'info' : 'danger'" size="small">
-                {{ row.nullable ? '是' : '否' }}
+                {{ row.nullable ? t('model.common.yes') : t('model.common.no') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="描述" prop="description" show-overflow-tooltip />
-          <el-table-column label="操作" width="130" fixed="right">
+          <el-table-column :label="t('model.attribute.description')" prop="description" show-overflow-tooltip />
+          <el-table-column :label="t('model.attribute.actions')" width="130" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openAttrDialog(row)">编辑</el-button>
-              <el-popconfirm title="确定删除该属性吗？" @confirm="deleteAttr(row.id)">
+              <el-button link type="primary" @click="openAttrDialog(row)">{{ t('model.common.edit') }}</el-button>
+              <el-popconfirm :title="t('model.attribute.delete_confirm')" @confirm="deleteAttr(row.id)">
                 <template #reference>
-                  <el-button link type="danger">删除</el-button>
+                  <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                 </template>
               </el-popconfirm>
             </template>
@@ -99,26 +99,26 @@
       </el-tab-pane>
 
       <!-- 实体关系标签页 -->
-      <el-tab-pane label="实体关系" name="relations">
+      <el-tab-pane :label="t('model.relation.title')" name="relations">
         <!-- 上半部分：关系管理 -->
         <div class="relations-management">
           <div class="tab-header">
             <el-button type="primary" size="small" @click="openRelationDialog()">
               <el-icon><Plus /></el-icon>
-              添加关系
+              {{ t('model.relation.add') }}
             </el-button>
           </div>
 
           <el-table :data="relations" v-loading="relationLoading" stripe>
-            <el-table-column label="序号" type="index" width="60" />
-            <el-table-column label="关系类型" width="120">
+            <el-table-column :label="t('model.relation.index')" type="index" width="60" />
+            <el-table-column :label="t('model.relation.type')" width="120">
               <template #default="{ row }">
                 <el-tag :type="getRelationTypeTag(row.relation_type)" size="small">
                   {{ formatRelationType(row.relation_type) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="方向" width="250">
+            <el-table-column :label="t('model.relation.direction')" width="250">
               <template #default="{ row }">
                 <span v-if="row.source_entity === entityId">
                   {{ entity.name }} → {{ getEntityName(row.target_entity) }}
@@ -128,21 +128,21 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="目标实体" width="150">
+            <el-table-column :label="t('model.relation.target')" width="150">
               <template #default="{ row }">
                 <el-link type="primary" @click="navigateToEntity(getTargetEntityId(row))">
                   {{ getTargetEntityName(row) }}
                 </el-link>
               </template>
             </el-table-column>
-            <el-table-column label="关系名称" prop="name" min-width="120" />
-            <el-table-column label="描述" prop="description" show-overflow-tooltip />
-            <el-table-column label="操作" width="130" fixed="right">
+            <el-table-column :label="t('model.relation.name')" prop="name" min-width="120" />
+            <el-table-column :label="t('model.relation.description')" prop="description" show-overflow-tooltip />
+            <el-table-column :label="t('model.relation.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openRelationDialog(row)">编辑</el-button>
-                <el-popconfirm title="确定删除该关系吗？" @confirm="deleteRelation(row.id)">
+                <el-button link type="primary" @click="openRelationDialog(row)">{{ t('model.common.edit') }}</el-button>
+                <el-popconfirm :title="t('model.relation.delete_confirm')" @confirm="deleteRelation(row.id)">
                   <template #reference>
-                    <el-button link type="danger">删除</el-button>
+                    <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -156,13 +156,13 @@
         <!-- 下半部分：局部ER图 -->
         <div class="local-er-diagram">
           <div class="diagram-toolbar">
-            <h3>实体关系图</h3>
+            <h3>{{ t('model.er_diagram.local_er_title') }}</h3>
             <div>
               <el-button size="small" @click="refreshLocalDiagram">
-                <el-icon><Refresh /></el-icon> 刷新
+                <el-icon><Refresh /></el-icon> {{ t('model.er_diagram.refresh') }}
               </el-button>
               <el-button size="small" @click="copyMermaidCode">
-                <el-icon><DocumentCopy /></el-icon> 复制Mermaid代码
+                <el-icon><DocumentCopy /></el-icon> {{ t('model.er_diagram.copy_mermaid') }}
               </el-button>
             </div>
           </div>
@@ -178,17 +178,17 @@
     <!-- 属性对话框 -->
     <el-dialog
       v-model="attrDialogVisible"
-      :title="editingAttr ? '编辑属性' : '添加属性'"
+      :title="editingAttr ? t('model.attribute.edit') : t('model.attribute.add')"
       width="480px"
     >
       <el-form ref="attrFormRef" :model="attrForm" :rules="attrRules" label-width="100px">
-        <el-form-item label="属性名称" prop="name">
-          <el-input v-model="attrForm.name" placeholder="属性中文名" />
+        <el-form-item :label="t('model.attribute.name')" prop="name">
+          <el-input v-model="attrForm.name" :placeholder="t('model.attribute.name_placeholder')" />
         </el-form-item>
-        <el-form-item label="关联数据元">
+        <el-form-item :label="t('model.attribute.element')">
           <el-select
             v-model="attrForm.element_id"
-            placeholder="可选，选择后自动关联标准"
+            :placeholder="t('model.attribute.element_placeholder')"
             clearable
             filterable
             style="width:100%"
@@ -201,20 +201,20 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="是否主键">
+        <el-form-item :label="t('model.field.is_pk')">
           <el-switch v-model="attrForm.is_pk" />
         </el-form-item>
-        <el-form-item label="允许为空">
+        <el-form-item :label="t('model.field.nullable')">
           <el-switch v-model="attrForm.nullable" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('model.attribute.description')">
           <el-input v-model="attrForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="attrDialogVisible = false">取消</el-button>
+        <el-button @click="attrDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleAttrSubmit" :loading="attrSubmitting">
-          {{ editingAttr ? '保存' : '添加' }}
+          {{ editingAttr ? t('model.common.save') : t('model.common.add') }}
         </el-button>
       </template>
     </el-dialog>
@@ -222,26 +222,26 @@
     <!-- 关系对话框 -->
     <el-dialog
       v-model="relationDialogVisible"
-      :title="editingRelation ? '编辑关系' : '添加关系'"
+      :title="editingRelation ? t('model.relation.edit') : t('model.relation.add')"
       width="600px"
     >
       <el-form ref="relationFormRef" :model="relationForm" :rules="relationRules" label-width="100px">
-        <el-form-item label="关系方向">
+        <el-form-item :label="t('model.relation.direction')">
           <el-radio-group v-model="relationForm.direction">
             <el-radio value="outgoing">
-              {{ entity.name }} 指向其他实体
+              {{ entity.name }} {{ t('model.relation.direction_outgoing', { name: '' }) }}
             </el-radio>
             <el-radio value="incoming">
-              其他实体指向 {{ entity.name }}
+              {{ t('model.relation.direction_incoming', { name: entity.name }) }}
             </el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="目标实体" prop="targetEntityId">
+        <el-form-item :label="t('model.relation.target')" prop="targetEntityId">
           <el-select
             v-model="relationForm.targetEntityId"
             filterable
-            placeholder="选择目标实体"
+            :placeholder="t('model.relation.target_placeholder')"
             style="width:100%"
           >
             <el-option
@@ -253,22 +253,22 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="关系类型" prop="relationType">
+        <el-form-item :label="t('model.relation.type')" prop="relationType">
           <el-select v-model="relationForm.relationType" style="width:100%">
-            <el-option label="一对一" value="one_to_one" />
-            <el-option label="一对多" value="one_to_many" />
-            <el-option label="多对多" value="many_to_many" />
+            <el-option :label="t('model.relation.one_to_one')" value="one_to_one" />
+            <el-option :label="t('model.relation.one_to_many')" value="one_to_many" />
+            <el-option :label="t('model.relation.many_to_many')" value="many_to_many" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="关系名称">
+        <el-form-item :label="t('model.relation.name')">
           <el-input
             v-model="relationForm.name"
             placeholder="如：places, belongs_to, has"
           />
         </el-form-item>
 
-        <el-form-item label="描述">
+        <el-form-item :label="t('model.relation.description')">
           <el-input
             v-model="relationForm.description"
             type="textarea"
@@ -278,9 +278,9 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="relationDialogVisible = false">取消</el-button>
+        <el-button @click="relationDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleRelationSubmit" :loading="relationSubmitting">
-          保存
+          {{ t('model.common.save') }}
         </el-button>
       </template>
     </el-dialog>
@@ -294,6 +294,9 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, DocumentCopy } from '@element-plus/icons-vue'
 import { entityAPI, entityRelationAPI, domainAPI, elementAPI } from '../api/model'
 import mermaid from 'mermaid'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -325,7 +328,7 @@ const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
 
 const attrForm = reactive({ name: '', element_id: null, is_pk: false, nullable: true, description: '' })
 const attrRules = {
-  name: [{ required: true, message: '请输入属性名称', trigger: 'blur' }]
+  name: [{ required: true, message: t('model.attribute.name_required'), trigger: 'blur' }]
 }
 
 const relationForm = reactive({
@@ -336,15 +339,15 @@ const relationForm = reactive({
   description: ''
 })
 const relationRules = {
-  targetEntityId: [{ required: true, message: '请选择目标实体', trigger: 'change' }],
-  relationType: [{ required: true, message: '请选择关系类型', trigger: 'change' }]
+  targetEntityId: [{ required: true, message: t('model.relation.target_required'), trigger: 'change' }],
+  relationType: [{ required: true, message: t('model.relation.type_required'), trigger: 'change' }]
 }
 
 // 排除当前实体的其他实体列表
 const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId))
 
 const getElementName = (id) => elements.value.find(e => e.id === id)?.name
-const getEntityName = (id) => allEntities.value.find(e => e.id === id)?.name || `实体${id}`
+const getEntityName = (id) => allEntities.value.find(e => e.id === id)?.name || `Entity#${id}`
 
 const getRelationTypeTag = (type) => {
   const map = { one_to_one: 'success', one_to_many: 'primary', many_to_many: 'warning' }
@@ -352,7 +355,11 @@ const getRelationTypeTag = (type) => {
 }
 
 const formatRelationType = (type) => {
-  const map = { one_to_one: '一对一', one_to_many: '一对多', many_to_many: '多对多' }
+  const map = {
+    one_to_one: t('model.relation.one_to_one'),
+    one_to_many: t('model.relation.one_to_many'),
+    many_to_many: t('model.relation.many_to_many')
+  }
   return map[type] || type
 }
 
@@ -404,10 +411,10 @@ const handleSave = async () => {
   saving.value = true
   try {
     await entityAPI.update(entityId, form)
-    ElMessage.success('保存成功')
+    ElMessage.success(t('model.common.save_success'))
     loadEntity()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '保存失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.save_failed'))
   } finally {
     saving.value = false
   }
@@ -416,10 +423,10 @@ const handleSave = async () => {
 const handleApprove = async () => {
   try {
     await entityAPI.approve(entityId)
-    ElMessage.success('审批通过')
+    ElMessage.success(t('model.entity.approve_success'))
     loadEntity()
   } catch {
-    ElMessage.error('审批失败')
+    ElMessage.error(t('model.entity.approve_failed'))
   }
 }
 
@@ -445,15 +452,15 @@ const handleAttrSubmit = async () => {
   try {
     if (editingAttr.value) {
       await entityAPI.updateAttribute(entityId, editingAttr.value.id, attrForm)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('model.common.update_success'))
     } else {
       await entityAPI.createAttribute(entityId, attrForm)
-      ElMessage.success('添加成功')
+      ElMessage.success(t('model.common.add_success'))
     }
     attrDialogVisible.value = false
     loadAttributes()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '操作失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
   } finally {
     attrSubmitting.value = false
   }
@@ -462,10 +469,10 @@ const handleAttrSubmit = async () => {
 const deleteAttr = async (attrId) => {
   try {
     await entityAPI.deleteAttribute(entityId, attrId)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('model.common.delete_success'))
     loadAttributes()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('model.common.delete_failed'))
   }
 }
 
@@ -505,16 +512,16 @@ const handleRelationSubmit = async () => {
 
     if (editingRelation.value) {
       await entityRelationAPI.update(editingRelation.value.id, payload)
-      ElMessage.success('关系已更新')
+      ElMessage.success(t('model.relation.updated'))
     } else {
       await entityRelationAPI.create(payload)
-      ElMessage.success('关系已添加')
+      ElMessage.success(t('model.relation.added'))
     }
 
     relationDialogVisible.value = false
     loadRelations()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '操作失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
   } finally {
     relationSubmitting.value = false
   }
@@ -523,10 +530,10 @@ const handleRelationSubmit = async () => {
 const deleteRelation = async (relationId) => {
   try {
     await entityRelationAPI.delete(relationId)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('model.common.delete_success'))
     loadRelations()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('model.common.delete_failed'))
   }
 }
 
@@ -593,7 +600,7 @@ const refreshLocalDiagram = async () => {
     await renderMermaid()
   } catch (err) {
     console.error('生成ER图失败:', err)
-    ElMessage.error('生成ER图失败')
+    ElMessage.error(t('model.er_diagram.generate_failed'))
   } finally {
     mermaidLoading.value = false
   }
@@ -642,7 +649,7 @@ const renderMermaid = async () => {
         await mermaid.run({ nodes: [mermaidEl] })
       } catch (err) {
         console.error('Mermaid渲染错误:', err)
-        ElMessage.error('ER图渲染失败，请检查数据格式')
+        ElMessage.error(t('model.er_diagram.render_failed'))
       }
     }
   }
@@ -652,9 +659,9 @@ const renderMermaid = async () => {
 const copyMermaidCode = async () => {
   try {
     await navigator.clipboard.writeText(localMermaidCode.value)
-    ElMessage.success('Mermaid代码已复制到剪贴板')
+    ElMessage.success(t('model.er_diagram.copy_mermaid_success'))
   } catch {
-    ElMessage.error('复制失败')
+    ElMessage.error(t('model.common.copy_failed'))
   }
 }
 

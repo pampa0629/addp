@@ -1,0 +1,11 @@
+[monitor.auth.tenant_not_found]
+other = "未找到租户信息"
+
+[monitor.execution.invalid_id]
+other = "无效的执行记录ID"
+
+[monitor.execution.not_found]
+other = "执行记录不存在"
+
+[monitor.health.module_not_found]
+other = "模块不存在"

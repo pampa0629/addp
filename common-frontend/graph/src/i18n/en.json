@@ -1,0 +1,18 @@
+{
+  "graph": {
+    "noData": "No graph data",
+    "nodes": "Nodes",
+    "relationships": "Relationships",
+    "fitView": "Fit View",
+    "noSchema": "No graph schema data, please scan metadata first",
+    "nodeLegend": "Node Labels",
+    "relationLegend": "Relationship Types",
+    "nodeCount": "Node Count",
+    "properties": "Properties",
+    "noEntities": "No entity types, please add entity types first",
+    "identifier": "Identifier",
+    "displayName": "Display Name",
+    "propList": "Property List",
+    "unique": "Unique"
+  }
+}

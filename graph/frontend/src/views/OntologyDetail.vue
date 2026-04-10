@@ -2,103 +2,103 @@
   <div class="page-container">
     <div class="page-header">
       <el-button link @click="$router.push('/ontologies')">
-        <el-icon><ArrowLeft /></el-icon> 返回
+        <el-icon><ArrowLeft /></el-icon> {{ t('graph.common.back') }}
       </el-button>
       <h2>{{ ontology?.name }}</h2>
       <el-tag :type="ontology?.status === 'active' ? 'success' : 'info'" size="small">
-        {{ ontology?.status === 'active' ? '启用' : '归档' }}
+        {{ ontology?.status === 'active' ? t('graph.common.active') : t('graph.common.archived') }}
       </el-tag>
-      <el-button size="small" @click="$router.push(`/ontologies/${$route.params.id}/edit`)">编辑</el-button>
-      <el-button size="small" type="success" @click="showVersionDialog = true">创建版本快照</el-button>
-      <el-button size="small" type="warning" @click="openImportFromModel">从 Model 导入</el-button>
-      <el-button size="small" type="info" @click="openInferFromEngine">从 Neo4j 推导</el-button>
+      <el-button size="small" @click="$router.push(`/ontologies/${$route.params.id}/edit`)">{{ t('graph.common.edit') }}</el-button>
+      <el-button size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createSnapshot') }}</el-button>
+      <el-button size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
+      <el-button size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
     </div>
 
     <el-tabs v-model="activeTab">
       <!-- 实体类型 -->
-      <el-tab-pane label="实体类型" name="entities">
+      <el-tab-pane :label="t('graph.ontology.entityTypes')" name="entities">
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="showEntityForm(null)">
-            <el-icon><Plus /></el-icon> 添加实体类型
+            <el-icon><Plus /></el-icon> {{ t('graph.ontology.addEntityType') }}
           </el-button>
         </div>
         <el-table :data="entityTypes" border size="small">
-          <el-table-column prop="name" label="标识符" width="150" />
-          <el-table-column prop="label" label="显示名" width="150" />
-          <el-table-column prop="description" label="描述" show-overflow-tooltip />
-          <el-table-column label="空间图层" width="120">
+          <el-table-column prop="name" :label="t('graph.ontology.identifier')" width="150" />
+          <el-table-column prop="label" :label="t('graph.ontology.displayName')" width="150" />
+          <el-table-column prop="description" :label="t('graph.common.description')" show-overflow-tooltip />
+          <el-table-column :label="t('graph.ontology.spatialLayer')" width="120">
             <template #default="{ row }">
               <template v-if="row.is_spatial_layer">
                 <el-tag type="success" size="small">
-                  空间·{{ row.spatial_layer_config?.geometry_type === 'wkt' ? '线面' : '点' }}
+                  {{ t('graph.ontology.spatial') }}·{{ row.spatial_layer_config?.geometry_type === 'wkt' ? t('graph.ontology.linePolygon') : t('graph.ontology.point') }}
                 </el-tag>
               </template>
               <template v-else-if="getSpatialAncestor(row)">
-                <el-tooltip :content="`继承 ${getSpatialAncestor(row)} 空间图层`" placement="top">
+                <el-tooltip :content="t('graph.ontology.inheritSpatial', { name: getSpatialAncestor(row) })" placement="top">
                   <el-icon style="color:var(--el-color-success);cursor:default"><Location /></el-icon>
                 </el-tooltip>
               </template>
             </template>
           </el-table-column>
-          <el-table-column label="颜色" width="80">
+          <el-table-column :label="t('graph.ontology.color')" width="80">
             <template #default="{ row }">
               <span class="color-dot" :style="{ background: row.color }"></span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120">
+          <el-table-column :label="t('graph.common.actions')" width="120">
             <template #default="{ row }">
-              <el-button link size="small" @click="showEntityForm(row)">编辑</el-button>
-              <el-button link type="danger" size="small" @click="deleteEntityType(row)">删除</el-button>
+              <el-button link size="small" @click="showEntityForm(row)">{{ t('graph.common.edit') }}</el-button>
+              <el-button link type="danger" size="small" @click="deleteEntityType(row)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- 关系类型 -->
-      <el-tab-pane label="关系类型" name="relations">
+      <el-tab-pane :label="t('graph.ontology.relationTypes')" name="relations">
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="showRelationForm(null)">
-            <el-icon><Plus /></el-icon> 添加关系类型
+            <el-icon><Plus /></el-icon> {{ t('graph.ontology.addRelationType') }}
           </el-button>
         </div>
         <el-table :data="relationTypes" border size="small">
-          <el-table-column prop="name" label="标识符" width="150" />
-          <el-table-column prop="label" label="显示名" width="150" />
-          <el-table-column label="来源 → 目标" width="200">
+          <el-table-column prop="name" :label="t('graph.ontology.identifier')" width="150" />
+          <el-table-column prop="label" :label="t('graph.ontology.displayName')" width="150" />
+          <el-table-column :label="t('graph.ontology.sourceTarget')" width="200">
             <template #default="{ row }">
-              {{ row.source_type?.label || row.source_type?.name || '任意' }}
-              → {{ row.target_type?.label || row.target_type?.name || '任意' }}
+              {{ row.source_type?.label || row.source_type?.name || t('graph.ontology.any') }}
+              → {{ row.target_type?.label || row.target_type?.name || t('graph.ontology.any') }}
             </template>
           </el-table-column>
-          <el-table-column prop="directed" label="有向" width="80">
+          <el-table-column prop="directed" :label="t('graph.ontology.directed')" width="80">
             <template #default="{ row }">
               <el-tag size="small" :type="row.directed ? 'primary' : 'info'">
-                {{ row.directed ? '有向' : '无向' }}
+                {{ row.directed ? t('graph.ontology.directed') : t('graph.ontology.undirected') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120">
+          <el-table-column :label="t('graph.common.actions')" width="120">
             <template #default="{ row }">
-              <el-button link size="small" @click="showRelationForm(row)">编辑</el-button>
-              <el-button link type="danger" size="small" @click="deleteRelationType(row)">删除</el-button>
+              <el-button link size="small" @click="showRelationForm(row)">{{ t('graph.common.edit') }}</el-button>
+              <el-button link type="danger" size="small" @click="deleteRelationType(row)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- 版本历史 -->
-      <el-tab-pane label="版本历史" name="versions">
+      <el-tab-pane :label="t('graph.ontology.versionHistory')" name="versions">
         <el-table :data="versions" border size="small">
-          <el-table-column prop="version" label="版本号" width="120" />
-          <el-table-column prop="description" label="描述" show-overflow-tooltip />
-          <el-table-column prop="created_at" label="创建时间" width="180">
+          <el-table-column prop="version" :label="t('graph.ontology.versionNumber')" width="120" />
+          <el-table-column prop="description" :label="t('graph.common.description')" show-overflow-tooltip />
+          <el-table-column prop="created_at" :label="t('graph.common.createdAt')" width="180">
             <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- 图形视图 -->
-      <el-tab-pane label="图形视图" name="graph">
+      <el-tab-pane :label="t('graph.ontology.graphView')" name="graph">
         <div class="graph-tab-container">
           <OntologyView :entity-types="entityTypes" :relation-types="relationTypes" />
         </div>
@@ -106,19 +106,19 @@
     </el-tabs>
 
     <!-- 实体类型表单对话框 -->
-    <el-dialog v-model="entityDialogVisible" :title="editingEntity ? '编辑实体类型' : '添加实体类型'" width="750px">
+    <el-dialog v-model="entityDialogVisible" :title="editingEntity ? t('graph.ontology.editEntityType') : t('graph.ontology.addEntityType')" width="750px">
       <el-form ref="entityFormRef" :model="entityForm" :rules="entityRules" label-width="80px">
-        <el-form-item label="标识符" prop="name">
-          <el-input v-model="entityForm.name" placeholder="英文，如 Person" />
+        <el-form-item :label="t('graph.ontology.identifier')" prop="name">
+          <el-input v-model="entityForm.name" :placeholder="t('graph.ontology.identifierPlaceholder')" />
         </el-form-item>
-        <el-form-item label="显示名" prop="label">
-          <el-input v-model="entityForm.label" placeholder="如 人物" />
+        <el-form-item :label="t('graph.ontology.displayName')" prop="label">
+          <el-input v-model="entityForm.label" :placeholder="t('graph.ontology.displayNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('graph.common.description')">
           <el-input v-model="entityForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="父类型">
-          <el-select v-model="entityForm.parent_id" placeholder="无（顶级类型）" clearable style="width:100%">
+        <el-form-item :label="t('graph.ontology.parentType')">
+          <el-select v-model="entityForm.parent_id" :placeholder="t('graph.ontology.noParent')" clearable style="width:100%">
             <el-option
               v-for="et in entityTypes.filter(e => e.id !== editingEntity?.id)"
               :key="et.id"
@@ -127,177 +127,177 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="颜色">
+        <el-form-item :label="t('graph.ontology.color')">
           <el-color-picker v-model="entityForm.color" />
         </el-form-item>
-        <el-form-item label="空间图层">
+        <el-form-item :label="t('graph.ontology.spatialLayer')">
           <el-switch v-model="entityForm.is_spatial_layer" @change="onSpatialLayerToggle" />
           <span v-if="entityForm.is_spatial_layer" style="margin-left:12px;font-size:12px;color:var(--el-text-color-secondary)">
-            请继续选择几何类型
+            {{ t('graph.ontology.selectGeometryType') }}
           </span>
         </el-form-item>
         <template v-if="entityForm.is_spatial_layer">
-          <el-form-item label="几何类型">
+          <el-form-item :label="t('graph.ontology.geometryType')">
             <el-radio-group v-model="entityForm.spatial_layer_config.geometry_type" @change="onGeometryTypeChange">
-              <el-radio value="point">点（lon + lat）</el-radio>
-              <el-radio value="wkt">线/面（WKT）</el-radio>
+              <el-radio value="point">{{ t('graph.ontology.pointLonLat') }}</el-radio>
+              <el-radio value="wkt">{{ t('graph.ontology.linePolygonWkt') }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item v-if="entityForm.spatial_layer_config.geometry_type" label="图层配置">
+          <el-form-item v-if="entityForm.spatial_layer_config.geometry_type" :label="t('graph.ontology.layerConfig')">
             <div style="display:flex;flex-direction:column;gap:8px;width:100%">
               <div style="display:flex;align-items:center;gap:8px">
-                <span style="width:80px;flex-shrink:0;font-size:13px">图层名称</span>
+                <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.layerName') }}</span>
                 <el-input v-model="entityForm.spatial_layer_config.layer_name" size="small" style="flex:1" />
               </div>
               <template v-if="entityForm.spatial_layer_config.geometry_type === 'point'">
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="width:80px;flex-shrink:0;font-size:13px">经度字段</span>
-                  <el-input v-model="entityForm.spatial_layer_config.lon_field" size="small" style="flex:1" placeholder="默认: lon" />
+                  <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.lonField') }}</span>
+                  <el-input v-model="entityForm.spatial_layer_config.lon_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultLon')" />
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="width:80px;flex-shrink:0;font-size:13px">纬度字段</span>
-                  <el-input v-model="entityForm.spatial_layer_config.lat_field" size="small" style="flex:1" placeholder="默认: lat" />
+                  <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.latField') }}</span>
+                  <el-input v-model="entityForm.spatial_layer_config.lat_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultLat')" />
                 </div>
               </template>
               <template v-if="entityForm.spatial_layer_config.geometry_type === 'wkt'">
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="width:80px;flex-shrink:0;font-size:13px">几何字段</span>
-                  <el-input v-model="entityForm.spatial_layer_config.geom_field" size="small" style="flex:1" placeholder="默认: wkt" />
+                  <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.geomField') }}</span>
+                  <el-input v-model="entityForm.spatial_layer_config.geom_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultWkt')" />
                 </div>
               </template>
             </div>
           </el-form-item>
         </template>
-        <el-form-item label="属性定义">
+        <el-form-item :label="t('graph.ontology.propertyDefs')">
           <div class="prop-table">
             <el-table :data="entityForm.properties" border size="small" style="width:100%">
-              <el-table-column label="字段名(name)" min-width="110">
+              <el-table-column :label="t('graph.ontology.fieldName')" min-width="110">
                 <template #default="{ row }">
-                  <el-input v-model="row.name" size="small" placeholder="英文字段名" />
+                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.fieldNamePlaceholder')" />
                 </template>
               </el-table-column>
-              <el-table-column label="显示名" min-width="90">
+              <el-table-column :label="t('graph.ontology.displayName')" min-width="90">
                 <template #default="{ row }">
-                  <el-input v-model="row.label" size="small" placeholder="中文名" />
+                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder2')" />
                 </template>
               </el-table-column>
-              <el-table-column label="数据类型" min-width="110">
+              <el-table-column :label="t('graph.ontology.dataType')" min-width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.data_type" size="small">
                     <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
-              <el-table-column label="必填" width="60" align="center">
+              <el-table-column :label="t('graph.ontology.required')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.required" />
                 </template>
               </el-table-column>
-              <el-table-column label="唯一" width="60" align="center">
+              <el-table-column :label="t('graph.ontology.unique')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.unique" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="60" align="center">
+              <el-table-column :label="t('graph.common.actions')" width="60" align="center">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="entityForm.properties.splice($index, 1)">删</el-button>
+                  <el-button link type="danger" size="small" @click="entityForm.properties.splice($index, 1)">{{ t('graph.common.del') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            <el-button size="small" style="margin-top:8px" @click="addEntityProp">+ 添加属性</el-button>
+            <el-button size="small" style="margin-top:8px" @click="addEntityProp">+ {{ t('graph.ontology.addProperty') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="entityDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitEntityType">保存</el-button>
+        <el-button @click="entityDialogVisible = false">{{ t('graph.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitEntityType">{{ t('graph.common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 关系类型表单对话框 -->
-    <el-dialog v-model="relationDialogVisible" :title="editingRelation ? '编辑关系类型' : '添加关系类型'" width="750px">
+    <el-dialog v-model="relationDialogVisible" :title="editingRelation ? t('graph.ontology.editRelationType') : t('graph.ontology.addRelationType')" width="750px">
       <el-form ref="relationFormRef" :model="relationForm" :rules="relationRules" label-width="80px">
-        <el-form-item label="标识符" prop="name">
-          <el-input v-model="relationForm.name" placeholder="英文，如 KNOWS" />
+        <el-form-item :label="t('graph.ontology.identifier')" prop="name">
+          <el-input v-model="relationForm.name" :placeholder="t('graph.ontology.relationIdentifierPlaceholder')" />
         </el-form-item>
-        <el-form-item label="显示名" prop="label">
-          <el-input v-model="relationForm.label" placeholder="如 认识" />
+        <el-form-item :label="t('graph.ontology.displayName')" prop="label">
+          <el-input v-model="relationForm.label" :placeholder="t('graph.ontology.relationDisplayNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('graph.common.description')">
           <el-input v-model="relationForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="来源类型">
-          <el-select v-model="relationForm.source_type_id" placeholder="任意" clearable>
+        <el-form-item :label="t('graph.ontology.sourceType')">
+          <el-select v-model="relationForm.source_type_id" :placeholder="t('graph.ontology.any')" clearable>
             <el-option v-for="et in entityTypes" :key="et.id" :label="et.label || et.name" :value="et.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标类型">
-          <el-select v-model="relationForm.target_type_id" placeholder="任意" clearable>
+        <el-form-item :label="t('graph.ontology.targetType')">
+          <el-select v-model="relationForm.target_type_id" :placeholder="t('graph.ontology.any')" clearable>
             <el-option v-for="et in entityTypes" :key="et.id" :label="et.label || et.name" :value="et.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="有向">
+        <el-form-item :label="t('graph.ontology.directed')">
           <el-switch v-model="relationForm.directed" />
         </el-form-item>
-        <el-form-item label="属性定义">
+        <el-form-item :label="t('graph.ontology.propertyDefs')">
           <div class="prop-table">
             <el-table :data="relationForm.properties" border size="small" style="width:100%">
-              <el-table-column label="字段名(name)" min-width="110">
+              <el-table-column :label="t('graph.ontology.fieldName')" min-width="110">
                 <template #default="{ row }">
-                  <el-input v-model="row.name" size="small" placeholder="英文字段名" />
+                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.fieldNamePlaceholder')" />
                 </template>
               </el-table-column>
-              <el-table-column label="显示名" min-width="90">
+              <el-table-column :label="t('graph.ontology.displayName')" min-width="90">
                 <template #default="{ row }">
-                  <el-input v-model="row.label" size="small" placeholder="中文名" />
+                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder2')" />
                 </template>
               </el-table-column>
-              <el-table-column label="数据类型" min-width="110">
+              <el-table-column :label="t('graph.ontology.dataType')" min-width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.data_type" size="small">
                     <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
-              <el-table-column label="必填" width="60" align="center">
+              <el-table-column :label="t('graph.ontology.required')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.required" />
                 </template>
               </el-table-column>
-              <el-table-column label="唯一" width="60" align="center">
+              <el-table-column :label="t('graph.ontology.unique')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.unique" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="60" align="center">
+              <el-table-column :label="t('graph.common.actions')" width="60" align="center">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="relationForm.properties.splice($index, 1)">删</el-button>
+                  <el-button link type="danger" size="small" @click="relationForm.properties.splice($index, 1)">{{ t('graph.common.del') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            <el-button size="small" style="margin-top:8px" @click="addRelationProp">+ 添加属性</el-button>
+            <el-button size="small" style="margin-top:8px" @click="addRelationProp">+ {{ t('graph.ontology.addProperty') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="relationDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitRelationType">保存</el-button>
+        <el-button @click="relationDialogVisible = false">{{ t('graph.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitRelationType">{{ t('graph.common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 版本快照对话框 -->
-    <el-dialog v-model="showVersionDialog" title="创建版本快照" width="400px">
+    <el-dialog v-model="showVersionDialog" :title="t('graph.ontology.createSnapshot')" width="400px">
       <el-form ref="versionFormRef" :model="versionForm" :rules="versionRules" label-width="80px">
-        <el-form-item label="版本号" prop="version">
-          <el-input v-model="versionForm.version" placeholder="如 1.0.0" />
+        <el-form-item :label="t('graph.ontology.versionNumber')" prop="version">
+          <el-input v-model="versionForm.version" :placeholder="t('graph.ontology.versionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('graph.common.description')">
           <el-input v-model="versionForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showVersionDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitVersion">保存</el-button>
+        <el-button @click="showVersionDialog = false">{{ t('graph.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitVersion">{{ t('graph.common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -326,6 +326,9 @@ import { ontologyAPI } from '../api/ontology'
 import { OntologyView } from '@addp/common-frontend/graph'
 import ImportFromModelDialog from '../components/ImportFromModelDialog.vue'
 import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const ontologyId = route.params.id
@@ -345,14 +348,14 @@ const entityForm = ref({
   is_spatial_layer: false,
   spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
 })
-const entityRules = { name: [{ required: true, message: '请输入标识符', trigger: 'blur' }] }
+const entityRules = computed(() => ({ name: [{ required: true, message: t('graph.ontology.identifierRequired'), trigger: 'blur' }] }))
 
 // relation form
 const relationDialogVisible = ref(false)
 const editingRelation = ref(null)
 const relationFormRef = ref(null)
 const relationForm = ref({ name: '', label: '', description: '', source_type_id: null, target_type_id: null, directed: true, properties: [] })
-const relationRules = { name: [{ required: true, message: '请输入标识符', trigger: 'blur' }] }
+const relationRules = computed(() => ({ name: [{ required: true, message: t('graph.ontology.identifierRequired'), trigger: 'blur' }] }))
 
 const dataTypes = [
   { value: 'string', label: 'string' },
@@ -376,7 +379,7 @@ const addRelationProp = () => {
 const showVersionDialog = ref(false)
 const versionFormRef = ref(null)
 const versionForm = ref({ version: '', description: '' })
-const versionRules = { version: [{ required: true, message: '请输入版本号', trigger: 'blur' }] }
+const versionRules = computed(() => ({ version: [{ required: true, message: t('graph.ontology.versionRequired'), trigger: 'blur' }] }))
 
 const loadOntology = async () => {
   const res = await ontologyAPI.get(ontologyId)
@@ -446,14 +449,14 @@ const onGeometryTypeChange = (newType) => {
   // 追加新预填字段
   if (newType === 'point') {
     if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.lon_field || p.name === 'lon')) {
-      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lon_field || 'lon', label: '经度', data_type: 'float', required: false, unique: false })
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lon_field || 'lon', label: t('graph.ontology.longitude'), data_type: 'float', required: false, unique: false })
     }
     if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.lat_field || p.name === 'lat')) {
-      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lat_field || 'lat', label: '纬度', data_type: 'float', required: false, unique: false })
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lat_field || 'lat', label: t('graph.ontology.latitude'), data_type: 'float', required: false, unique: false })
     }
   } else if (newType === 'wkt') {
     if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.geom_field || p.name === 'wkt')) {
-      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.geom_field || 'wkt', label: '几何(WKT)', data_type: 'geometry', required: false, unique: false })
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.geom_field || 'wkt', label: t('graph.ontology.geometryWkt'), data_type: 'geometry', required: false, unique: false })
     }
   }
   // 更新图层名称默认值
@@ -489,19 +492,19 @@ const submitEntityType = async () => {
     } else {
       await ontologyAPI.createEntityType(ontologyId, payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('graph.common.saveSuccess'))
     entityDialogVisible.value = false
     loadOntology()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '保存失败')
+    ElMessage.error(e.response?.data?.error || t('graph.common.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 const deleteEntityType = async (row) => {
-  await ElMessageBox.confirm(`确认删除实体类型「${row.name}」？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(t('graph.ontology.confirmDeleteEntity', { name: row.name }), t('graph.common.confirmDelete'), { type: 'warning' })
   await ontologyAPI.deleteEntityType(ontologyId, row.id)
-  ElMessage.success('删除成功')
+  ElMessage.success(t('graph.common.deleteSuccess'))
   loadOntology()
 }
 
@@ -529,19 +532,19 @@ const submitRelationType = async () => {
     } else {
       await ontologyAPI.createRelationType(ontologyId, relationForm.value)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('graph.common.saveSuccess'))
     relationDialogVisible.value = false
     loadOntology()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '保存失败')
+    ElMessage.error(e.response?.data?.error || t('graph.common.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 const deleteRelationType = async (row) => {
-  await ElMessageBox.confirm(`确认删除关系类型「${row.name}」？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(t('graph.ontology.confirmDeleteRelation', { name: row.name }), t('graph.common.confirmDelete'), { type: 'warning' })
   await ontologyAPI.deleteRelationType(ontologyId, row.id)
-  ElMessage.success('删除成功')
+  ElMessage.success(t('graph.common.deleteSuccess'))
   loadOntology()
 }
 
@@ -551,18 +554,18 @@ const submitVersion = async () => {
   saving.value = true
   try {
     await ontologyAPI.createVersion(ontologyId, versionForm.value)
-    ElMessage.success('版本快照创建成功')
+    ElMessage.success(t('graph.ontology.snapshotSuccess'))
     showVersionDialog.value = false
     versionForm.value = { version: '', description: '' }
     loadVersions()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '创建失败')
+    ElMessage.error(e.response?.data?.error || t('graph.common.createFailed'))
   } finally {
     saving.value = false
   }
 }
 
-const formatDate = (str) => str ? new Date(str).toLocaleString('zh-CN') : '-'
+const formatDate = (str) => str ? new Date(str).toLocaleString() : '-'
 </script>
 
 <style scoped>

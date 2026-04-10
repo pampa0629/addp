@@ -3,7 +3,7 @@
     <!-- 搜索框 -->
     <el-input
       v-model="searchQuery"
-      placeholder="搜索算子..."
+      :placeholder="t('develop.operatorPalette.searchPlaceholder')"
       clearable
       prefix-icon="Search"
       class="search-input"
@@ -45,7 +45,7 @@
                       <h4>{{ operator.name }}</h4>
                       <p class="description">{{ operator.description }}</p>
                       <div class="params-section" v-if="operator.params && Object.keys(operator.params).length > 0">
-                        <h5>参数:</h5>
+                        <h5>{{ t('develop.operatorPalette.params') }}:</h5>
                         <ul>
                           <li v-for="(desc, paramName) in operator.params" :key="paramName">
                             <strong>{{ paramName }}</strong>: {{ desc }}
@@ -66,7 +66,7 @@
       <!-- 空状态 -->
       <el-empty
         v-if="!loading && filteredCategories.length === 0"
-        description="未找到匹配的算子"
+        :description="t('develop.operatorPalette.notFound')"
         :image-size="80"
       />
 
@@ -84,9 +84,12 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as operatorApi from '@/api/operator'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps({
@@ -144,7 +147,7 @@ const loadOperators = async () => {
     operators.value = res.operators || []
   } catch (error) {
     console.error('[OperatorPalette] 加载失败:', error)
-    loadError.value = '加载算子列表失败: ' + (error.response?.data?.error || error.message)
+    loadError.value = t('develop.operatorPalette.loadFailed') + (error.response?.data?.error || error.message)
     ElMessage.error(loadError.value)
   } finally {
     loading.value = false
@@ -163,7 +166,7 @@ const categorizedOperators = computed(() => {
   // 按分类组织算子 (operators.value 现在是数组)
   operators.value.forEach((op) => {
     // 后端已经返回中文分类名，直接使用
-    const categoryName = op.category || '其他'
+    const categoryName = op.category || t('develop.operatorPalette.other')
     const categoryIcon = categoryIcons[categoryName] || '📝'
 
     if (!categories[categoryName]) {
@@ -178,7 +181,7 @@ const categorizedOperators = computed(() => {
     const params = {}
     if (op.parameters && Array.isArray(op.parameters)) {
       op.parameters.forEach(param => {
-        params[param.name] = param.description || `${param.name}参数`
+        params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
       })
     }
 

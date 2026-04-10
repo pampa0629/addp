@@ -3,9 +3,9 @@
     <ResourceTree
       :tree-data="treeData"
       :loading="loading"
-      title="任务库"
+      :title="t('orchestrator.taskPanel.title')"
       default-expand-all
-      empty-text="暂无任务"
+      :empty-text="t('orchestrator.taskPanel.emptyText')"
       :show-count="false"
       card-shadow="never"
       height="100%"
@@ -59,11 +59,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Rank, FolderOpened } from '@element-plus/icons-vue'
 import { ResourceTree } from '@addp/common-frontend'
 import computeEnginesAPI from '../api/computeEngines'
 import modulesApi from '../api/modules'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const treeData = ref([])
@@ -93,7 +96,7 @@ async function loadAllTasks() {
     console.log('树形数据已构建:', treeData.value)
   } catch (error) {
     console.error('加载任务失败:', error)
-    ElMessage.error('加载任务失败')
+    ElMessage.error(t('orchestrator.taskPanel.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -115,7 +118,7 @@ async function loadEngineTasks(engine) {
     // 构建子节点（任务列表）
     const children = tasks.map(task => ({
       id: `${identifier}-task-${task.id}`,
-      label: task.display_name || task.name || `任务 ${task.id}`,
+      label: task.display_name || task.name || `Task ${task.id}`,
       type: 'task',
       metadata: {
         provider: identifier,        // TaskProvider module_name，如 "manager"
@@ -160,7 +163,7 @@ async function loadEngineTasks(engine) {
 // 刷新所有任务
 async function refreshAll() {
   await loadAllTasks()
-  ElMessage.success('任务列表已刷新')
+  ElMessage.success(t('orchestrator.taskPanel.refreshSuccess'))
 }
 
 // 拖拽任务到画布

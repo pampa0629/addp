@@ -3,8 +3,8 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>编排引擎登录</h2>
-          <p class="subtitle">Orchestration Engine</p>
+          <h2>{{ t('orchestrator.login.title') }}</h2>
+          <p class="subtitle">{{ t('orchestrator.login.subtitle') }}</p>
         </div>
       </template>
 
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('orchestrator.login.usernamePlaceholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('orchestrator.login.passwordPlaceholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             style="width: 100%"
             :loading="loading"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('orchestrator.login.loggingIn') : t('orchestrator.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -53,10 +53,12 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -68,8 +70,8 @@ const loginForm = reactive({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ required: true, message: t('orchestrator.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('orchestrator.login.passwordRequired'), trigger: 'blur' }]
 }
 
 const loading = ref(false)
@@ -82,7 +84,7 @@ const handleLogin = async () => {
     loading.value = true
     try {
       await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success('登录成功')
+      ElMessage.success(t('orchestrator.login.success'))
 
       const redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : null
       if (redirectPath) {
@@ -91,7 +93,7 @@ const handleLogin = async () => {
         router.push({ name: 'OrchestrationList' })
       }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '登录失败')
+      ElMessage.error(error.response?.data?.error || t('orchestrator.login.failed'))
     } finally {
       loading.value = false
     }

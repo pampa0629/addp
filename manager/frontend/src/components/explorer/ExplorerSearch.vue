@@ -3,7 +3,7 @@
     <!-- 搜索输入框 -->
     <el-input
       v-model="keyword"
-      placeholder="搜索数据源（至少 2 个字符）..."
+      :placeholder="t('manager.explorer.searchPlaceholder')"
       clearable
       :prefix-icon="Search"
       @input="handleSearchInput"
@@ -20,19 +20,19 @@
       <!-- 加载状态 -->
       <div v-if="searching" class="search-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
-        <span>搜索中...</span>
+        <span>{{ t('manager.explorer.searching') }}</span>
       </div>
 
       <!-- 无结果 -->
       <div v-else-if="results.length === 0 && keyword.length >= 2" class="no-results">
-        <el-empty description="未找到匹配的数据源" :image-size="80" />
+        <el-empty :description="t('manager.explorer.noMatchingDataSources')" :image-size="80" />
       </div>
 
       <!-- 结果列表 -->
       <div v-else-if="results.length > 0" class="results-list">
         <div class="results-header">
-          <span class="results-count">找到 {{ total }} 个结果</span>
-          <el-button text size="small" @click="handleClear">清除</el-button>
+          <span class="results-count">{{ t('manager.explorer.foundResults', { n: total }) }}</span>
+          <el-button text size="small" @click="handleClear">{{ t('manager.explorer.clear') }}</el-button>
         </div>
 
         <el-scrollbar max-height="400px">
@@ -71,7 +71,7 @@
               <el-tag size="small" effect="plain">
                 {{ getMatchTypeLabel(result.match_type) }}
               </el-tag>
-              <span class="score">评分: {{ (result.score * 100).toFixed(0) }}%</span>
+              <span class="score">{{ t('manager.explorer.score') }}: {{ (result.score * 100).toFixed(0) }}%</span>
             </div>
           </div>
         </el-scrollbar>
@@ -84,8 +84,11 @@
 import { ref, watch } from 'vue'
 import { Search, Loading, FolderOpened, ArrowRight, Document, Coin, Collection, Folder } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { useExplorerStore } from '@/stores/explorer'
 import { debounce } from 'lodash-es'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps({
@@ -150,7 +153,7 @@ const performSearch = debounce(async () => {
     }
   } catch (error) {
     console.error('搜索失败:', error)
-    ElMessage.error('搜索失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.searchFailed', { error: error.message }))
     results.value = []
     total.value = 0
   } finally {
@@ -218,10 +221,10 @@ const getNodeTypeColor = (type) => {
 // 工具函数：获取匹配类型标签
 const getMatchTypeLabel = (matchType) => {
   const labelMap = {
-    exact: '精确匹配',
-    prefix: '前缀匹配',
-    contains: '包含匹配',
-    metadata: '元数据匹配'
+    exact: t('manager.explorer.matchExact'),
+    prefix: t('manager.explorer.matchPrefix'),
+    contains: t('manager.explorer.matchContains'),
+    metadata: t('manager.explorer.matchMetadata')
   }
   return labelMap[matchType] || matchType
 }

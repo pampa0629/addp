@@ -2,10 +2,10 @@
   <div class="analysis-page">
     <!-- 顶部：图谱选择 -->
     <div class="page-header">
-      <h2>图算法分析</h2>
+      <h2>{{ t('graph.analysis.title') }}</h2>
       <el-select
         v-model="selectedGraphId"
-        placeholder="请选择知识图谱"
+        :placeholder="t('graph.analysis.selectGraph')"
         style="width: 280px"
         @change="onGraphChange"
       >
@@ -17,10 +17,10 @@
         />
       </el-select>
       <el-tag v-if="capabilities" :type="capabilities.gds_available ? 'success' : 'info'" size="small">
-        {{ capabilities.gds_available ? `GDS ${capabilities.gds_version}` : 'GDS 不可用' }}
+        {{ capabilities.gds_available ? `GDS ${capabilities.gds_version}` : t('graph.analysis.gdsUnavailable') }}
       </el-tag>
       <el-tag v-if="capabilities" :type="capabilities.spatial_available ? 'success' : 'info'" size="small">
-        {{ capabilities.spatial_available ? 'Spatial 可用' : 'Spatial 不可用' }}
+        {{ capabilities.spatial_available ? t('graph.analysis.spatialAvailable') : t('graph.analysis.spatialUnavailable') }}
       </el-tag>
       <el-button
         v-if="capabilities?.spatial_available && capabilities?.pending_layers?.length > 0"
@@ -29,22 +29,22 @@
         :loading="syncing"
         @click="syncSpatialLayers"
       >
-        同步空间图层 ({{ capabilities.pending_layers.length }})
+        {{ t('graph.analysis.syncSpatialLayers') }} ({{ capabilities.pending_layers.length }})
       </el-button>
     </div>
 
     <div v-if="!selectedGraphId" class="empty-hint">
-      <el-empty description="请先选择知识图谱" />
+      <el-empty :description="t('graph.analysis.selectGraphFirst')" />
     </div>
 
     <div v-else class="main-area">
       <!-- 左侧：算法配置 -->
       <div class="config-panel">
-        <div class="section-title">选择算法</div>
+        <div class="section-title">{{ t('graph.analysis.selectAlgo') }}</div>
 
         <el-collapse v-model="openGroups" class="algo-collapse">
           <!-- 基础算法 -->
-          <el-collapse-item name="cypher" title="基础算法">
+          <el-collapse-item name="cypher" :title="t('graph.analysis.basicAlgos')">
             <el-radio-group v-model="selectedAlgo" class="algo-list">
               <el-radio
                 v-for="algo in cypherAlgos"
@@ -61,8 +61,8 @@
           <!-- GDS 算法 -->
           <el-collapse-item name="gds">
             <template #title>
-              <span>GDS 算法</span>
-              <el-tag v-if="!capabilities?.gds_available" type="info" size="small" style="margin-left:6px">需插件</el-tag>
+              <span>{{ t('graph.analysis.gdsAlgos') }}</span>
+              <el-tag v-if="!capabilities?.gds_available" type="info" size="small" style="margin-left:6px">{{ t('graph.analysis.needPlugin') }}</el-tag>
             </template>
             <el-radio-group v-model="selectedAlgo" class="algo-list" :disabled="!capabilities?.gds_available">
               <el-radio
@@ -81,8 +81,8 @@
           <!-- Spatial 算法 -->
           <el-collapse-item name="spatial">
             <template #title>
-              <span>Spatial 算法</span>
-              <el-tag v-if="!capabilities?.spatial_available" type="info" size="small" style="margin-left:6px">需插件</el-tag>
+              <span>{{ t('graph.analysis.spatialAlgos') }}</span>
+              <el-tag v-if="!capabilities?.spatial_available" type="info" size="small" style="margin-left:6px">{{ t('graph.analysis.needPlugin') }}</el-tag>
             </template>
             <el-radio-group v-model="selectedAlgo" class="algo-list" :disabled="!capabilities?.spatial_available">
               <el-radio
@@ -99,17 +99,16 @@
           </el-collapse-item>
         </el-collapse>
 
-        <!-- 参数配置 -->
-        <div v-if="selectedAlgo" class="section-title" style="margin-top:16px">参数配置</div>
+        <div v-if="selectedAlgo" class="section-title" style="margin-top:16px">{{ t('graph.analysis.paramConfig') }}</div>
 
         <!-- 度中心性 -->
         <template v-if="selectedAlgo === 'degree_centrality'">
           <el-form label-width="80px" size="small">
-            <el-form-item label="结果数量">
+            <el-form-item :label="t('graph.analysis.resultCount')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
-            <el-form-item label="实体类型">
-              <el-select v-model="params.nodeLabels" multiple placeholder="不限（全部类型）" style="width:100%">
+            <el-form-item :label="t('graph.analysis.entityType')">
+              <el-select v-model="params.nodeLabels" multiple :placeholder="t('graph.analysis.allTypes')" style="width:100%">
                 <el-option v-for="l in schema.labels" :key="l" :label="l" :value="l" />
               </el-select>
             </el-form-item>
@@ -119,13 +118,13 @@
         <!-- K跳邻居 -->
         <template v-if="selectedAlgo === 'khop_neighbors'">
           <el-form label-width="80px" size="small">
-            <el-form-item label="起始节点">
+            <el-form-item :label="t('graph.analysis.startNode')">
               <el-select
                 v-model="params.nodeId"
                 filterable
                 remote
                 clearable
-                placeholder="输入名称搜索节点"
+                :placeholder="t('graph.analysis.searchNodePlaceholder')"
                 :remote-method="(q) => fetchNodes(q, 'khop')"
                 :loading="nodeSearch.khop.loading"
                 style="width:100%"
@@ -142,10 +141,10 @@
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item label="跳数">
+            <el-form-item :label="t('graph.analysis.hops')">
               <el-input-number v-model="params.hops" :min="1" :max="4" style="width:100%" />
             </el-form-item>
-            <el-form-item label="结果上限">
+            <el-form-item :label="t('graph.analysis.resultLimit')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
           </el-form>
@@ -154,13 +153,13 @@
         <!-- 多路最短路径 -->
         <template v-if="selectedAlgo === 'multi_path'">
           <el-form size="small">
-            <div class="section-label">节点对（最多 5 对）</div>
+            <div class="section-label">{{ t('graph.analysis.nodePairs') }}</div>
             <div v-for="(pair, idx) in params.pairs" :key="idx" class="pair-block">
-              <div class="pair-index">第 {{ idx + 1 }} 对</div>
+              <div class="pair-index">{{ t('graph.analysis.pairIndex', { n: idx + 1 }) }}</div>
               <el-select
                 v-model="pair.src"
                 filterable remote clearable
-                placeholder="起点：输入名称搜索"
+                :placeholder="t('graph.analysis.srcPlaceholder')"
                 :remote-method="(q) => fetchNodes(q, `pair_src_${idx}`)"
                 :loading="nodeSearch[`pair_src_${idx}`]?.loading"
                 style="width:100%; margin-bottom:4px"
@@ -176,7 +175,7 @@
               <el-select
                 v-model="pair.tgt"
                 filterable remote clearable
-                placeholder="终点：输入名称搜索"
+                :placeholder="t('graph.analysis.tgtPlaceholder')"
                 :remote-method="(q) => fetchNodes(q, `pair_tgt_${idx}`)"
                 :loading="nodeSearch[`pair_tgt_${idx}`]?.loading"
                 style="width:100%"
@@ -193,36 +192,36 @@
                 v-if="params.pairs.length > 1"
                 link type="danger" size="small" style="margin-top:4px"
                 @click="removePair(idx)"
-              >移除</el-button>
+              >{{ t('graph.analysis.remove') }}</el-button>
             </div>
             <el-button
               v-if="params.pairs.length < 5"
               link type="primary" size="small"
               @click="addPair"
-            >+ 添加节点对</el-button>
+            >+ {{ t('graph.analysis.addPair') }}</el-button>
           </el-form>
         </template>
 
         <!-- GDS 通用参数 -->
         <template v-if="['pagerank', 'louvain', 'wcc', 'betweenness'].includes(selectedAlgo)">
           <el-form label-width="80px" size="small">
-            <el-form-item label="结果数量">
+            <el-form-item :label="t('graph.analysis.resultCount')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
-            <el-form-item label="实体类型">
-              <el-select v-model="params.nodeLabels" multiple placeholder="不限（全部类型）" style="width:100%">
+            <el-form-item :label="t('graph.analysis.entityType')">
+              <el-select v-model="params.nodeLabels" multiple :placeholder="t('graph.analysis.allTypes')" style="width:100%">
                 <el-option v-for="l in schema.labels" :key="l" :label="l" :value="l" />
               </el-select>
             </el-form-item>
-            <el-form-item label="关系类型">
-              <el-select v-model="params.relTypes" multiple placeholder="不限（全部关系）" style="width:100%">
+            <el-form-item :label="t('graph.analysis.relationType')">
+              <el-select v-model="params.relTypes" multiple :placeholder="t('graph.analysis.allRelations')" style="width:100%">
                 <el-option v-for="r in availableRelTypes" :key="r" :label="r" :value="r" />
               </el-select>
               <div v-if="params.nodeLabels.length > 0 && availableRelTypes.length === 0" style="font-size:11px;color:var(--el-color-warning);margin-top:4px">
-                所选节点类型之间无直接关系，GDS 投影将为空图
+                {{ t('graph.analysis.noRelsBetweenTypes') }}
               </div>
               <div v-else-if="params.nodeLabels.length > 0" style="font-size:11px;color:var(--el-text-color-secondary);margin-top:4px">
-                已按节点类型过滤（仅显示两端节点均在选中类型内的关系）
+                {{ t('graph.analysis.filteredByNodeType') }}
               </div>
             </el-form-item>
           </el-form>
@@ -231,25 +230,25 @@
         <!-- 邻近节点参数 -->
         <template v-if="selectedAlgo === 'nearby_nodes'">
           <div v-if="!capabilities?.spatial_layers?.length" style="font-size:12px;color:var(--el-color-warning);padding:8px 0">
-            请先在本体中定义空间图层类型并同步到该图谱
+            {{ t('graph.analysis.noSpatialLayers') }}
           </div>
           <el-form v-else label-width="80px" size="small">
-            <el-form-item label="空间图层">
-              <el-select v-model="params.layer" placeholder="选择空间图层" style="width:100%" @change="onLayerChange('nearby')">
+            <el-form-item :label="t('graph.analysis.spatialLayer')">
+              <el-select v-model="params.layer" :placeholder="t('graph.analysis.selectSpatialLayer')" style="width:100%" @change="onLayerChange('nearby')">
                 <el-option
                   v-for="l in capabilities.spatial_layers"
                   :key="l.name" :label="l.name" :value="l.name"
                 >
                   <span>{{ l.name }}</span>
-                  <span class="node-type-tag">{{ l.config?.geometry_type === 'wkt' ? '线面' : '点' }}</span>
+                  <span class="node-type-tag">{{ l.config?.geometry_type === 'wkt' ? t('graph.ontology.linePolygon') : t('graph.ontology.point') }}</span>
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item label="参照节点">
+            <el-form-item :label="t('graph.analysis.referenceNode')">
               <el-select
                 v-model="params.nearbyNodeId"
                 filterable remote clearable
-                placeholder="输入名称搜索节点"
+                :placeholder="t('graph.analysis.searchNodePlaceholder')"
                 :remote-method="(q) => fetchNodes(q, 'nearby')"
                 :loading="nodeSearch.nearby?.loading"
                 style="width:100%"
@@ -264,16 +263,16 @@
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item v-if="params.nearbyNodeId" label="坐标">
+            <el-form-item v-if="params.nearbyNodeId" :label="t('graph.analysis.coordinates')">
               <span style="font-size:12px;color:var(--el-text-color-secondary)">
                 lon: {{ params.lon !== undefined ? params.lon.toFixed(6) : '-' }},
                 lat: {{ params.lat !== undefined ? params.lat.toFixed(6) : '-' }}
               </span>
             </el-form-item>
-            <el-form-item label="半径(km)">
+            <el-form-item :label="t('graph.analysis.radiusKm')">
               <el-input-number v-model="params.radiusKm" :min="0.1" :max="1000" :precision="1" style="width:100%" />
             </el-form-item>
-            <el-form-item label="结果上限">
+            <el-form-item :label="t('graph.analysis.resultLimit')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
           </el-form>
@@ -282,19 +281,19 @@
         <!-- 区域内节点参数 -->
         <template v-if="selectedAlgo === 'within_area'">
           <div v-if="!wktLayers.length || !pointLayers.length" style="font-size:12px;color:var(--el-color-warning);padding:8px 0">
-            需要至少一个面图层（WKT）和一个点图层，请先在本体中定义并同步
+            {{ t('graph.analysis.needWktAndPointLayers') }}
           </div>
           <el-form v-else label-width="80px" size="small">
-            <el-form-item label="面图层">
-              <el-select v-model="params.areaLayer" placeholder="选择区域图层（如城市）" style="width:100%" @change="onAreaLayerChange">
+            <el-form-item :label="t('graph.analysis.areaLayer')">
+              <el-select v-model="params.areaLayer" :placeholder="t('graph.analysis.selectAreaLayer')" style="width:100%" @change="onAreaLayerChange">
                 <el-option v-for="l in wktLayers" :key="l.name" :label="l.name" :value="l.name" />
               </el-select>
             </el-form-item>
-            <el-form-item label="区域节点">
+            <el-form-item :label="t('graph.analysis.areaNode')">
               <el-select
                 v-model="params.areaNodeId"
                 filterable remote clearable
-                placeholder="输入名称搜索区域节点"
+                :placeholder="t('graph.analysis.searchAreaNode')"
                 :remote-method="(q) => fetchNodes(q, 'area')"
                 :loading="nodeSearch.area?.loading"
                 style="width:100%"
@@ -309,12 +308,12 @@
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item label="点图层">
-              <el-select v-model="params.pointLayer" placeholder="选择点图层（如公司）" style="width:100%">
+            <el-form-item :label="t('graph.analysis.pointLayer')">
+              <el-select v-model="params.pointLayer" :placeholder="t('graph.analysis.selectPointLayer')" style="width:100%">
                 <el-option v-for="l in pointLayers" :key="l.name" :label="l.name" :value="l.name" />
               </el-select>
             </el-form-item>
-            <el-form-item label="结果上限">
+            <el-form-item :label="t('graph.analysis.resultLimit')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
           </el-form>
@@ -327,36 +326,36 @@
           style="width:100%; margin-top:8px"
           @click="runAlgorithm"
         >
-          执行分析
+          {{ t('graph.analysis.runAnalysis') }}
         </el-button>
       </div>
 
       <!-- 右侧：结果展示 -->
       <div class="result-panel">
         <div v-if="!result && !running" class="result-empty">
-          <el-empty description="选择算法并执行后，结果将在此显示" />
+          <el-empty :description="t('graph.analysis.resultEmpty')" />
         </div>
 
-        <div v-if="running" class="result-empty" v-loading="true" element-loading-text="算法执行中..." style="min-height:300px" />
+        <div v-if="running" class="result-empty" v-loading="true" :element-loading-text="t('graph.analysis.running')" style="min-height:300px" />
 
         <template v-if="result && !running">
           <div class="result-header">
             <span class="result-title">{{ result.algorithm_name }}</span>
             <div class="result-meta">
               <el-tag v-if="result.metadata?.elapsed_ms !== undefined" size="small" type="info">
-                耗时 {{ result.metadata.elapsed_ms }}ms
+                {{ t('graph.analysis.elapsed') }} {{ result.metadata.elapsed_ms }}ms
               </el-tag>
               <el-tag v-if="result.metadata?.node_count !== undefined" size="small" type="success">
-                {{ result.metadata.node_count }} 个节点
+                {{ result.metadata.node_count }} {{ t('graph.analysis.nodeCount') }}
               </el-tag>
               <el-tag v-if="result.metadata?.edge_count !== undefined" size="small" type="success">
-                {{ result.metadata.edge_count }} 条关系
+                {{ result.metadata.edge_count }} {{ t('graph.analysis.edgeCount') }}
               </el-tag>
               <el-tag v-if="result.metadata?.community_count !== undefined" size="small" type="warning">
-                {{ result.metadata.community_count }} 个社区
+                {{ result.metadata.community_count }} {{ t('graph.analysis.communityCount') }}
               </el-tag>
               <el-tag v-if="result.metadata?.score_unit" size="small" type="info">
-                距离单位: {{ result.metadata.score_unit }}
+                {{ t('graph.analysis.distanceUnit') }}: {{ result.metadata.score_unit }}
               </el-tag>
             </div>
             <el-tag v-if="result.warning" type="warning" size="small" style="margin-top:4px">
@@ -371,15 +370,15 @@
             style="width:100%"
             max-height="600"
           >
-            <el-table-column prop="rank" label="排名" width="60" align="center" />
-            <el-table-column prop="display_name" label="节点名称" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="entity_type" label="实体类型" width="120" />
+            <el-table-column prop="rank" :label="t('graph.analysis.rank')" width="60" align="center" />
+            <el-table-column prop="display_name" :label="t('graph.analysis.nodeName')" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="entity_type" :label="t('graph.analysis.entityType')" width="120" />
             <el-table-column v-if="result.algorithm !== 'within_area'" :label="scoreColumnLabel" width="120" align="right">
               <template #default="{ row }">{{ formatScore(row) }}</template>
             </el-table-column>
             <el-table-column
               v-if="result.algorithm === 'louvain' || result.algorithm === 'wcc'"
-              prop="community_id" label="社区 ID" width="90" align="center"
+              prop="community_id" :label="t('graph.analysis.communityId')" width="90" align="center"
             />
           </el-table>
 
@@ -397,10 +396,10 @@
           </div>
 
           <div v-if="result.subgraph && result.subgraph.nodes?.length === 0" class="result-empty">
-            <el-empty description="未找到符合条件的路径或邻居" />
+            <el-empty :description="t('graph.analysis.noPathOrNeighbors')" />
           </div>
           <div v-if="result.node_scores && result.node_scores.length === 0 && !(result.subgraph?.nodes?.length > 0)" class="result-empty">
-            <el-empty description="图谱中暂无符合条件的数据" />
+            <el-empty :description="t('graph.analysis.noMatchingData')" />
           </div>
         </template>
       </div>
@@ -415,6 +414,9 @@ import { knowledgeGraphAPI } from '../api/ontology'
 import { analysisAPI } from '../api/analysis'
 import { browseAPI } from '../api/browse'
 import GraphCanvas from '../components/GraphCanvas.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const graphs = ref([])
 const selectedGraphId = ref(null)
@@ -480,29 +482,29 @@ const params = reactive({
   pointLayer: '',
 })
 
-const cypherAlgos = [
-  { value: 'degree_centrality', label: '度中心性',    desc: '按节点的关联关系数量排名' },
-  { value: 'khop_neighbors',    label: 'K跳邻居',    desc: '展示指定节点的 K 跳邻居子图' },
-  { value: 'multi_path',        label: '多路最短路径', desc: '计算多对节点间的所有最短路径' },
-]
+const cypherAlgos = computed(() => [
+  { value: 'degree_centrality', label: t('graph.analysis.degreeCentrality'), desc: t('graph.analysis.degreeCentralityDesc') },
+  { value: 'khop_neighbors', label: t('graph.analysis.khopNeighbors'), desc: t('graph.analysis.khopNeighborsDesc') },
+  { value: 'multi_path', label: t('graph.analysis.multiPath'), desc: t('graph.analysis.multiPathDesc') },
+])
 
-const gdsAlgos = [
-  { value: 'pagerank',    label: 'PageRank',        desc: '衡量节点在图中的综合影响力' },
-  { value: 'betweenness', label: '介数中心性',       desc: '衡量节点作为其他节点间路径桥梁的程度' },
-  { value: 'louvain',     label: 'Louvain 社区发现', desc: '将图划分为高度内聚的社区' },
-  { value: 'wcc',         label: '弱连通分量',        desc: '识别图中互相不可达的独立连通子图' },
-]
+const gdsAlgos = computed(() => [
+  { value: 'pagerank', label: 'PageRank', desc: t('graph.analysis.pagerankDesc') },
+  { value: 'betweenness', label: t('graph.analysis.betweenness'), desc: t('graph.analysis.betweennessDesc') },
+  { value: 'louvain', label: t('graph.analysis.louvain'), desc: t('graph.analysis.louvainDesc') },
+  { value: 'wcc', label: t('graph.analysis.wcc'), desc: t('graph.analysis.wccDesc') },
+])
 
-const spatialAlgos = [
-  { value: 'nearby_nodes', label: '邻近节点',   desc: '查找指定坐标半径范围内的节点，按距离排序' },
-  { value: 'within_area',  label: '区域内节点', desc: '查找面要素（如城市）范围内的所有点节点（如公司）' },
-]
+const spatialAlgos = computed(() => [
+  { value: 'nearby_nodes', label: t('graph.analysis.nearbyNodes'), desc: t('graph.analysis.nearbyNodesDesc') },
+  { value: 'within_area', label: t('graph.analysis.withinArea'), desc: t('graph.analysis.withinAreaDesc') },
+])
 
 // 得分列标题（Spatial 算法显示距离单位）
 const scoreColumnLabel = computed(() => {
-  if (result.value?.algorithm === 'nearby_nodes') return '距离(km)'
-  if (result.value?.algorithm === 'louvain' || result.value?.algorithm === 'wcc') return '社区'
-  return '得分'
+  if (result.value?.algorithm === 'nearby_nodes') return t('graph.analysis.distanceKm')
+  if (result.value?.algorithm === 'louvain' || result.value?.algorithm === 'wcc') return t('graph.analysis.community')
+  return t('graph.analysis.score')
 })
 
 // 通用节点搜索
@@ -581,7 +583,7 @@ const load = async () => {
   try {
     graphs.value = await knowledgeGraphAPI.list() || []
   } catch {
-    ElMessage.error('加载图谱列表失败')
+    ElMessage.error(t('graph.common.loadFailed'))
   }
 }
 
@@ -596,7 +598,7 @@ const syncSpatialLayers = async () => {
     const caps = await analysisAPI.getCapabilities(selectedGraphId.value)
     capabilities.value = caps.data || caps
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '空间图层同步失败')
+    ElMessage.error(e.response?.data?.error || t('graph.analysis.syncFailed'))
   } finally {
     syncing.value = false
   }
@@ -620,7 +622,7 @@ const onGraphChange = async (id) => {
     if (capabilities.value?.gds_available) openGroups.value.push('gds')
     if (capabilities.value?.spatial_available) openGroups.value.push('spatial')
   } catch {
-    ElMessage.error('加载图谱信息失败')
+    ElMessage.error(t('graph.analysis.loadGraphFailed'))
   }
 }
 
@@ -636,25 +638,25 @@ const runAlgorithm = async () => {
   }
 
   if (selectedAlgo.value === 'khop_neighbors') {
-    if (!params.nodeId) { ElMessage.warning('请搜索并选择起始节点'); return }
+    if (!params.nodeId) { ElMessage.warning(t('graph.analysis.selectStartNode')); return }
     req.params = { node_id: params.nodeId, hops: params.hops }
   } else if (selectedAlgo.value === 'multi_path') {
     const validPairs = params.pairs.filter(p => p.src && p.tgt)
-    if (validPairs.length === 0) { ElMessage.warning('请至少选择一对起点和终点节点'); return }
+    if (validPairs.length === 0) { ElMessage.warning(t('graph.analysis.selectAtLeastOnePair')); return }
     req.params = { pairs: validPairs.map(p => [p.src, p.tgt]) }
   } else if (selectedAlgo.value === 'nearby_nodes') {
-    if (!params.layer) { ElMessage.warning('请选择空间图层'); return }
-    if (!params.nearbyNodeId) { ElMessage.warning('请搜索并选择参照节点'); return }
-    if (params.lon === undefined || params.lat === undefined) { ElMessage.warning('所选节点无坐标信息'); return }
+    if (!params.layer) { ElMessage.warning(t('graph.analysis.selectSpatialLayer')); return }
+    if (!params.nearbyNodeId) { ElMessage.warning(t('graph.analysis.selectReferenceNode')); return }
+    if (params.lon === undefined || params.lat === undefined) { ElMessage.warning(t('graph.analysis.noCoordinates')); return }
     req.params = {
       lon: params.lon, lat: params.lat,
       radius_km: params.radiusKm,
       layer: params.layer,
     }
   } else if (selectedAlgo.value === 'within_area') {
-    if (!params.areaLayer) { ElMessage.warning('请选择面图层'); return }
-    if (!params.areaNodeId) { ElMessage.warning('请搜索并选择区域节点'); return }
-    if (!params.pointLayer) { ElMessage.warning('请选择点图层'); return }
+    if (!params.areaLayer) { ElMessage.warning(t('graph.analysis.selectAreaLayer')); return }
+    if (!params.areaNodeId) { ElMessage.warning(t('graph.analysis.selectAreaNode')); return }
+    if (!params.pointLayer) { ElMessage.warning(t('graph.analysis.selectPointLayer')); return }
     const areaLayerInfo = capabilities.value?.spatial_layers?.find(l => l.name === params.areaLayer)
     const geomField = areaLayerInfo?.config?.geom_field || 'wkt'
     req.params = {
@@ -671,7 +673,7 @@ const runAlgorithm = async () => {
     const res = await analysisAPI.runAlgorithm(selectedGraphId.value, req)
     result.value = res.data || res
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '算法执行失败')
+    ElMessage.error(e.response?.data?.error || t('graph.analysis.algoFailed'))
   } finally {
     running.value = false
   }

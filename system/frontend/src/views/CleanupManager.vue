@@ -3,7 +3,7 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>垃圾数据清理</span>
+          <span>{{ t('system.cleanup.title') }}</span>
           <div class="header-actions">
             <el-button
               type="primary"
@@ -11,13 +11,13 @@
               :loading="scanLoading"
               @click="startScan"
             >
-              扫描垃圾数据
+              {{ t('system.cleanup.scan') }}
             </el-button>
             <el-button
               :icon="Refresh"
               @click="loadHistory"
             >
-              刷新历史
+              {{ t('system.cleanup.refreshHistory') }}
             </el-button>
           </div>
         </div>
@@ -26,13 +26,13 @@
       <!-- 当前扫描/执行任务 -->
       <el-alert
         v-if="currentTask"
-        :title="`${currentTask.action === 'scan' ? '扫描' : '清理'}任务进行中`"
+        :title="t('system.cleanup.taskInProgress', { action: currentTask.action === 'scan' ? t('system.cleanup.history.actionScan') : t('system.cleanup.history.actionCleanup') })"
         type="info"
         :closable="false"
         style="margin-bottom: 20px"
       >
-        <div>任务ID: {{ currentTask.task_id }}</div>
-        <div>状态: {{ getStatusText(currentTask.status) }}</div>
+        <div>{{ t('system.cleanup.taskId', { id: currentTask.task_id }) }}</div>
+        <div>{{ t('system.cleanup.taskStatus', { status: getStatusText(currentTask.status) }) }}</div>
         <el-progress
           v-if="currentTask.progress"
           :percentage="Math.round((currentTask.progress.completed / currentTask.progress.total) * 100)"
@@ -42,54 +42,54 @@
 
       <!-- 扫描结果 -->
       <div v-if="scanResult" class="scan-result">
-        <el-descriptions title="扫描结果" :column="2" border>
-          <el-descriptions-item label="扫描时间">
+        <el-descriptions :title="t('system.cleanup.scanResult.title')" :column="2" border>
+          <el-descriptions-item :label="t('system.cleanup.scanResult.scanTime')">
             {{ formatTime(scanResult.task.started_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="扫描范围">
+          <el-descriptions-item :label="t('system.cleanup.scanResult.scanScope')">
             {{ scanResult.task.expected_modules?.join(', ') }}
           </el-descriptions-item>
-          <el-descriptions-item label="风险等级">
+          <el-descriptions-item :label="t('system.cleanup.scanResult.riskLevel')">
             <el-tag :type="getRiskLevelType(scanResult.summary.risk_level)">
               {{ getRiskLevelText(scanResult.summary.risk_level) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="待清理项">
-            {{ scanResult.summary.total_items_to_clean }} 项
+          <el-descriptions-item :label="t('system.cleanup.scanResult.itemsToClean')">
+            {{ t('system.cleanup.scanResult.items', { count: scanResult.summary.total_items_to_clean }) }}
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- Meta 模块扫描详情 -->
         <div v-if="scanResult.results?.meta" class="module-result">
-          <h3>Meta 模块扫描详情</h3>
+          <h3>{{ t('system.cleanup.meta.title') }}</h3>
           <el-row :gutter="20">
             <el-col :span="8">
-              <el-statistic title="软删除数据" :value="scanResult.results.meta.statistics.soft_deleted?.items || 0">
-                <template #suffix>项</template>
+              <el-statistic :title="t('system.cleanup.meta.softDeleted')" :value="scanResult.results.meta.statistics.soft_deleted?.items || 0">
+                <template #suffix>{{ t('system.cleanup.meta.count') }}</template>
               </el-statistic>
-              <div class="stat-detail">节点: {{ scanResult.results.meta.statistics.soft_deleted?.nodes || 0 }}</div>
+              <div class="stat-detail">{{ t('system.cleanup.meta.nodes', { count: scanResult.results.meta.statistics.soft_deleted?.nodes || 0 }) }}</div>
             </el-col>
             <el-col :span="8">
-              <el-statistic title="无效引擎数据" :value="scanResult.results.meta.statistics.invalid_engines?.count || 0">
-                <template #suffix>个引擎</template>
+              <el-statistic :title="t('system.cleanup.meta.invalidEngines')" :value="scanResult.results.meta.statistics.invalid_engines?.count || 0">
+                <template #suffix>{{ t('system.cleanup.meta.engines') }}</template>
               </el-statistic>
             </el-col>
             <el-col :span="8">
-              <el-statistic title="重复指纹" :value="scanResult.results.meta.statistics.duplicate_fingerprints?.count || 0">
-                <template #suffix>个</template>
+              <el-statistic :title="t('system.cleanup.meta.duplicateFingerprints')" :value="scanResult.results.meta.statistics.duplicate_fingerprints?.count || 0">
+                <template #suffix>{{ t('system.cleanup.meta.count') }}</template>
               </el-statistic>
             </el-col>
           </el-row>
 
           <!-- 无效引擎详情 -->
           <div v-if="scanResult.results.meta.statistics.invalid_engines?.details?.length > 0" class="invalid-engines">
-            <h4>无效引擎详情</h4>
+            <h4>{{ t('system.cleanup.meta.invalidEngineDetail') }}</h4>
             <el-table :data="scanResult.results.meta.statistics.invalid_engines.details" border>
-              <el-table-column prop="engine_id" label="引擎ID" width="100" />
-              <el-table-column prop="engine_name" label="引擎名称" />
-              <el-table-column prop="reason" label="原因" />
-              <el-table-column prop="affected_nodes" label="影响节点" width="100" />
-              <el-table-column prop="affected_items" label="影响数据项" width="100" />
+              <el-table-column prop="engine_id" :label="t('system.cleanup.meta.engineId')" width="100" />
+              <el-table-column prop="engine_name" :label="t('system.cleanup.meta.engineName')" />
+              <el-table-column prop="reason" :label="t('system.cleanup.meta.reason')" />
+              <el-table-column prop="affected_nodes" :label="t('system.cleanup.meta.affectedNodes')" width="100" />
+              <el-table-column prop="affected_items" :label="t('system.cleanup.meta.affectedItems')" width="100" />
             </el-table>
           </div>
         </div>
@@ -97,14 +97,14 @@
         <!-- 清理操作 -->
         <div class="cleanup-actions">
           <el-alert
-            title="清理说明"
+            :title="t('system.cleanup.cleanupNote.title')"
             type="warning"
             :closable="false"
             style="margin-bottom: 15px"
           >
             <ul style="margin: 0; padding-left: 20px">
-              <li><strong>标记删除</strong>: 将无效数据标记为软删除状态，可以恢复</li>
-              <li><strong>物理删除</strong>: 永久删除已标记的软删除数据，<strong style="color: red">不可恢复</strong></li>
+              <li><strong>{{ t('system.cleanup.cleanupNote.softDelete') }}</strong>: {{ t('system.cleanup.cleanupNote.softDeleteDesc') }}</li>
+              <li><strong>{{ t('system.cleanup.cleanupNote.hardDelete') }}</strong>: {{ t('system.cleanup.cleanupNote.hardDeleteDesc') }}</li>
             </ul>
           </el-alert>
 
@@ -115,12 +115,12 @@
               :loading="executeLoading"
               @click="executeCleanup('soft_delete')"
             >
-              标记删除无效数据
+              {{ t('system.cleanup.actions.softDelete') }}
             </el-button>
             <el-popconfirm
-              title="物理删除后数据将永久删除，确定继续吗？"
-              confirm-button-text="确定"
-              cancel-button-text="取消"
+              :title="t('system.cleanup.actions.hardDeleteConfirm')"
+              :confirm-button-text="t('system.cleanup.actions.confirm')"
+              :cancel-button-text="t('system.cleanup.actions.cancel')"
               @confirm="executeCleanup('hard_delete')"
             >
               <template #reference>
@@ -129,7 +129,7 @@
                   :icon="Delete"
                   :loading="executeLoading"
                 >
-                  物理删除软删除数据
+                  {{ t('system.cleanup.actions.hardDelete') }}
                 </el-button>
               </template>
             </el-popconfirm>
@@ -139,51 +139,51 @@
 
       <!-- 任务历史 -->
       <div class="task-history">
-        <h3>任务历史</h3>
+        <h3>{{ t('system.cleanup.history.title') }}</h3>
         <el-table
           :data="taskHistory"
           v-loading="historyLoading"
           border
           style="width: 100%"
         >
-          <el-table-column prop="task_id" label="任务ID" width="250" />
-          <el-table-column label="操作类型" width="100">
+          <el-table-column prop="task_id" :label="t('system.cleanup.history.columns.taskId')" width="250" />
+          <el-table-column :label="t('system.cleanup.history.columns.actionType')" width="100">
             <template #default="{ row }">
               <el-tag :type="row.action === 'scan' ? 'info' : 'warning'">
-                {{ row.action === 'scan' ? '扫描' : '清理' }}
+                {{ row.action === 'scan' ? t('system.cleanup.history.actionScan') : t('system.cleanup.history.actionCleanup') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="删除类型" width="120">
+          <el-table-column :label="t('system.cleanup.history.columns.deleteType')" width="120">
             <template #default="{ row }">
-              <el-tag v-if="row.delete_type === 'soft_delete'" type="warning">标记删除</el-tag>
-              <el-tag v-else-if="row.delete_type === 'hard_delete'" type="danger">物理删除</el-tag>
+              <el-tag v-if="row.delete_type === 'soft_delete'" type="warning">{{ t('system.cleanup.history.softDelete') }}</el-tag>
+              <el-tag v-else-if="row.delete_type === 'hard_delete'" type="danger">{{ t('system.cleanup.history.hardDelete') }}</el-tag>
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="100">
+          <el-table-column :label="t('system.cleanup.history.columns.status')" width="100">
             <template #default="{ row }">
               {{ getStatusText(row.status) }}
             </template>
           </el-table-column>
-          <el-table-column label="范围" width="100">
+          <el-table-column :label="t('system.cleanup.history.columns.scope')" width="100">
             <template #default="{ row }">
               {{ row.expected_modules?.join(', ') || '-' }}
             </template>
           </el-table-column>
-          <el-table-column label="开始时间" width="180">
+          <el-table-column :label="t('system.cleanup.history.columns.startTime')" width="180">
             <template #default="{ row }">
               {{ formatTime(row.started_at) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="100">
+          <el-table-column :label="t('system.cleanup.history.columns.actions')" fixed="right" width="100">
             <template #default="{ row }">
               <el-button
                 type="primary"
                 link
                 @click="viewTaskDetail(row.task_id)"
               >
-                查看详情
+                {{ t('system.cleanup.history.viewDetail') }}
               </el-button>
             </template>
           </el-table-column>
@@ -194,7 +194,7 @@
     <!-- 任务详情对话框 -->
     <el-dialog
       v-model="detailDialogVisible"
-      title="任务详情"
+      :title="t('system.cleanup.detail.title')"
       width="70%"
     >
       <pre v-if="taskDetail" style="max-height: 500px; overflow: auto">{{ JSON.stringify(taskDetail, null, 2) }}</pre>
@@ -205,9 +205,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Delete, WarningFilled } from '@element-plus/icons-vue'
 import { cleanupApi } from '../api/cleanup'
+
+const { t } = useI18n()
 
 const scanLoading = ref(false)
 const executeLoading = ref(false)
@@ -225,12 +228,12 @@ const startScan = async () => {
     const response = await cleanupApi.createScanTask({ scope: ['meta'] })
     const taskId = response.task_id
 
-    ElMessage.success('扫描任务已创建')
+    ElMessage.success(t('system.cleanup.msg.scanCreated'))
 
     // 轮询任务状态
     await pollTaskStatus(taskId)
   } catch (error) {
-    ElMessage.error('创建扫描任务失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('system.cleanup.msg.scanFailed', { error: error.message || '' }))
   } finally {
     scanLoading.value = false
   }
@@ -239,7 +242,7 @@ const startScan = async () => {
 // 执行清理
 const executeCleanup = async (deleteType) => {
   if (!scanResult.value) {
-    ElMessage.warning('请先执行扫描')
+    ElMessage.warning(t('system.cleanup.msg.noScanFirst'))
     return
   }
 
@@ -250,12 +253,12 @@ const executeCleanup = async (deleteType) => {
       delete_type: deleteType
     })
 
-    ElMessage.success('清理任务已创建')
+    ElMessage.success(t('system.cleanup.msg.cleanupCreated'))
 
     // 轮询任务状态
     await pollTaskStatus(response.task_id)
   } catch (error) {
-    ElMessage.error('创建清理任务失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('system.cleanup.msg.cleanupFailed', { error: error.message || '' }))
   } finally {
     executeLoading.value = false
   }
@@ -282,7 +285,7 @@ const pollTaskStatus = async (taskId) => {
       }
 
       if (status.status === 'failed') {
-        ElMessage.error('任务执行失败')
+        ElMessage.error(t('system.cleanup.msg.taskFailed'))
         return
       }
 
@@ -320,7 +323,7 @@ const viewTaskDetail = async (taskId) => {
     const detail = await cleanupApi.getTaskStatus(taskId)
     taskDetail.value = detail
   } catch (error) {
-    ElMessage.error('加载任务详情失败')
+    ElMessage.error(t('system.cleanup.msg.detailFailed'))
   }
 }
 
@@ -333,21 +336,20 @@ const formatTime = (time) => {
 // 获取状态文本
 const getStatusText = (status) => {
   const statusMap = {
-    pending: '等待中',
-    running: '运行中',
-    completed: '已完成',
-    completed_with_errors: '完成(有错误)',
-    failed: '失败'
+    pending: t('system.cleanup.status.pending'),
+    running: t('system.cleanup.status.running'),
+    completed: t('system.cleanup.status.completed'),
+    completed_with_errors: t('system.cleanup.status.completedWithErrors'),
+    failed: t('system.cleanup.status.failed')
   }
   return statusMap[status] || status
 }
 
-// 获取风险等级文本
 const getRiskLevelText = (level) => {
   const levelMap = {
-    low: '低',
-    medium: '中',
-    high: '高'
+    low: t('system.cleanup.risk.low'),
+    medium: t('system.cleanup.risk.medium'),
+    high: t('system.cleanup.risk.high')
   }
   return levelMap[level] || level
 }

@@ -3,9 +3,11 @@ package api
 import (
 	"net/http"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -52,7 +54,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	token, err := utils.GenerateToken(user.ID, user.Username, tenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgTokenGenFailed)})
 		return
 	}
 
@@ -75,7 +77,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Router       /register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	if !h.cfg.AllowPublicRegistration {
-		c.JSON(http.StatusForbidden, gin.H{"error": "注册功能已关闭"})
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, sysi18n.MsgRegisterDisabled)})
 		return
 	}
 
@@ -107,33 +109,29 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // Refresh 刷新 JWT Token
 // 接受即将过期或已过期的 token，返回新的 token
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	// 从 Authorization header 提取 token
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 Authorization 头"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgMissingAuthHeader)})
 		return
 	}
 
-	// 期望格式: "Bearer <token>"
 	const bearerPrefix = "Bearer "
 	if len(authHeader) < len(bearerPrefix) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的 Authorization 格式"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidAuthFormat)})
 		return
 	}
 
 	tokenString := authHeader[len(bearerPrefix):]
 
-	// 解析 token (允许过期)
 	claims, err := utils.ParseTokenAllowExpired(tokenString, h.cfg.JWTSecret)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的 token: " + err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.TWithDetail(c, sysi18n.MsgInvalidToken, err.Error())})
 		return
 	}
 
-	// 生成新的 token (使用相同的用户信息)
 	newToken, err := utils.GenerateToken(claims.UserID, claims.Username, claims.TenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成新 token 失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgTokenRefreshFailed)})
 		return
 	}
 

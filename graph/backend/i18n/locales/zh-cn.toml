@@ -1,0 +1,62 @@
+[graph.err.load_failed]
+other = "加载失败"
+
+[graph.err.save_failed]
+other = "保存失败"
+
+[graph.err.delete_failed]
+other = "删除失败"
+
+[graph.err.not_found]
+other = "资源不存在"
+
+[graph.err.unauthorized]
+other = "未授权"
+
+[graph.ontology.created]
+other = "本体创建成功"
+
+[graph.ontology.updated]
+other = "本体更新成功"
+
+[graph.ontology.deleted]
+other = "本体删除成功"
+
+[graph.kg.created]
+other = "知识图谱创建成功"
+
+[graph.kg.updated]
+other = "知识图谱更新成功"
+
+[graph.kg.deleted]
+other = "知识图谱删除成功"
+
+[graph.build.task_started]
+other = "任务已启动"
+
+[graph.build.task_cancelled]
+other = "任务已取消"
+
+[graph.build.task_restarted]
+other = "任务已重新启动"
+
+[graph.review.approved]
+other = "已写入 Neo4j"
+
+[graph.review.rejected]
+other = "已拒绝"
+
+[graph.review.modified]
+other = "已修改并写入 Neo4j"
+
+[graph.review.batch_approved]
+other = "批量通过成功"
+
+[graph.review.batch_rejected]
+other = "批量拒绝成功"
+
+[graph.analysis.algo_failed]
+other = "算法执行失败"
+
+[graph.service.not_public]
+other = "该图谱未开放公开访问"

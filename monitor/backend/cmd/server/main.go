@@ -10,6 +10,7 @@ import (
 	"github.com/addp/monitor/internal/api"
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/service"
+	_ "github.com/addp/monitor/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

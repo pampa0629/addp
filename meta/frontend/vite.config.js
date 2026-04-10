@@ -8,9 +8,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n'),
+      '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
+      'element-plus': resolve(__dirname, 'node_modules/element-plus')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
     port: 5175,
@@ -26,6 +29,12 @@ export default defineConfig({
         target: 'http://localhost:8000', // 统一通过 Gateway 访问
         changeOrigin: true
       }
+    },
+    fs: {
+      allow: [
+        resolve(__dirname, '..'),
+        resolve(__dirname, '../../common-frontend')
+      ]
     }
   }
 })

@@ -5,15 +5,15 @@
       <div class="header-left">
         <el-button text @click="$router.back()">
           <el-icon><ArrowLeft /></el-icon>
-          返回
+          {{ $t('standard.common.back') }}
         </el-button>
-        <span class="code-set-name">{{ codeSet.name || '加载中...' }}</span>
+        <span class="code-set-name">{{ codeSet.name || '...' }}</span>
         <el-tag :type="codeSet.type === 'system' ? 'success' : 'info'" size="small">
-          {{ codeSet.type === 'system' ? '系统内置' : '自定义' }}
+          {{ codeSet.type === 'system' ? $t('standard.codeSet.typeSystem') : $t('standard.codeSet.typeCustom') }}
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ $t('standard.common.save') }}</el-button>
       </div>
     </div>
 
@@ -21,29 +21,29 @@
       <!-- 基本信息 -->
       <el-col :span="24">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">基本信息</span></template>
+          <template #header><span class="card-title">{{ $t('standard.codeSet.basicInfo') }}</span></template>
           <el-form :model="form" label-width="90px">
             <el-row :gutter="16">
               <el-col :span="12">
-                <el-form-item label="编码">
+                <el-form-item :label="$t('standard.codeSet.codeLabel')">
                   <el-input :value="codeSet.code" disabled />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="名称">
+                <el-form-item :label="$t('standard.codeSet.nameLabel')">
                   <el-input v-model="form.name" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="类型">
+                <el-form-item :label="$t('standard.common.type')">
                   <el-select v-model="form.type" style="width:100%">
-                    <el-option label="自定义" value="custom" />
-                    <el-option label="系统内置" value="system" />
+                    <el-option :label="$t('standard.codeSet.typeCustom')" value="custom" />
+                    <el-option :label="$t('standard.codeSet.typeSystem')" value="system" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="24">
-                <el-form-item label="描述">
+                <el-form-item :label="$t('standard.common.description')">
                   <el-input v-model="form.description" type="textarea" :rows="2" />
                 </el-form-item>
               </el-col>
@@ -57,33 +57,33 @@
         <el-card shadow="never">
           <template #header>
             <div class="card-header-with-action">
-              <span class="card-title">码值项</span>
+              <span class="card-title">{{ $t('standard.codeSet.items') }}</span>
               <el-button type="primary" size="small" @click="openItemDialog()">
                 <el-icon><Plus /></el-icon>
-                添加码值项
+                {{ $t('standard.codeSet.addItem') }}
               </el-button>
             </div>
           </template>
 
           <el-table :data="items" v-loading="itemLoading" stripe>
-            <el-table-column label="序号" type="index" width="60" />
-            <el-table-column label="编码" prop="code" width="150" />
-            <el-table-column label="显示值" prop="value" min-width="140" />
-            <el-table-column label="排序" prop="sort_order" width="80" />
-            <el-table-column label="启用" width="80">
+            <el-table-column label="#" type="index" width="60" />
+            <el-table-column :label="$t('standard.codeSet.itemCode')" prop="code" width="150" />
+            <el-table-column :label="$t('standard.codeSet.itemValue')" prop="value" min-width="140" />
+            <el-table-column :label="$t('standard.common.sort')" prop="sort_order" width="80" />
+            <el-table-column :label="$t('standard.codeSet.itemActive')" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-                  {{ row.is_active ? '是' : '否' }}
+                  {{ row.is_active ? $t('standard.unit.yes') : $t('standard.unit.no') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="描述" prop="description" show-overflow-tooltip />
-            <el-table-column label="操作" width="130" fixed="right">
+            <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
+            <el-table-column :label="$t('standard.common.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openItemDialog(row)">编辑</el-button>
-                <el-popconfirm title="确定删除该码值项吗？" @confirm="deleteItem(row.id)">
+                <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
+                <el-popconfirm :title="$t('standard.codeSet.confirmDeleteItem')" @confirm="deleteItem(row.id)">
                   <template #reference>
-                    <el-button link type="danger">删除</el-button>
+                    <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -96,30 +96,30 @@
     <!-- 码值项对话框 -->
     <el-dialog
       v-model="itemDialogVisible"
-      :title="editingItem ? '编辑码值项' : '添加码值项'"
+      :title="editingItem ? $t('standard.common.edit') + $t('standard.codeSet.items') : $t('standard.codeSet.addItem')"
       width="480px"
     >
       <el-form ref="itemFormRef" :model="itemForm" :rules="itemRules" label-width="100px">
-        <el-form-item label="编码" prop="code">
+        <el-form-item :label="$t('standard.codeSet.itemCode')" prop="code">
           <el-input v-model="itemForm.code" placeholder="如：1, M, active" :disabled="!!editingItem" />
         </el-form-item>
-        <el-form-item label="显示值" prop="value">
+        <el-form-item :label="$t('standard.codeSet.itemValue')" prop="value">
           <el-input v-model="itemForm.value" placeholder="如：男、启用" />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="$t('standard.common.sort')">
           <el-input-number v-model="itemForm.sort_order" :min="0" style="width:100%" />
         </el-form-item>
-        <el-form-item label="是否启用">
+        <el-form-item :label="$t('standard.codeSet.itemActive')">
           <el-switch v-model="itemForm.is_active" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.common.description')">
           <el-input v-model="itemForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="itemDialogVisible = false">取消</el-button>
+        <el-button @click="itemDialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleItemSubmit" :loading="itemSubmitting">
-          {{ editingItem ? '保存' : '添加' }}
+          {{ editingItem ? $t('standard.common.save') : $t('standard.codeSet.addItem') }}
         </el-button>
       </template>
     </el-dialog>
@@ -127,14 +127,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const codeSetId = parseInt(route.params.id)
 
 const saving = ref(false)
@@ -149,10 +151,10 @@ const form = reactive({ name: '', type: 'custom', description: '' })
 const items = ref([])
 
 const itemForm = reactive({ code: '', value: '', description: '', sort_order: 0, is_active: true })
-const itemRules = {
-  code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
-  value: [{ required: true, message: '请输入显示值', trigger: 'blur' }]
-}
+const itemRules = computed(() => ({
+  code: [{ required: true, message: t('standard.codeSet.codeRequired'), trigger: 'blur' }],
+  value: [{ required: true, message: t('standard.codeSet.nameRequired'), trigger: 'blur' }]
+}))
 
 const loadCodeSet = async () => {
   const res = await codeSetAPI.get(codeSetId)
@@ -178,10 +180,10 @@ const handleSave = async () => {
   saving.value = true
   try {
     await codeSetAPI.update(codeSetId, form)
-    ElMessage.success('保存成功')
+    ElMessage.success(t('standard.common.saveSuccess'))
     loadCodeSet()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '保存失败')
+    ElMessage.error(err.response?.data?.error || t('standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -209,15 +211,15 @@ const handleItemSubmit = async () => {
   try {
     if (editingItem.value) {
       await codeSetAPI.updateItem(codeSetId, editingItem.value.id, itemForm)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('standard.common.updateSuccess'))
     } else {
       await codeSetAPI.createItem(codeSetId, itemForm)
-      ElMessage.success('添加成功')
+      ElMessage.success(t('standard.common.createSuccess'))
     }
     itemDialogVisible.value = false
     loadItems()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '操作失败')
+    ElMessage.error(err.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     itemSubmitting.value = false
   }
@@ -226,10 +228,10 @@ const handleItemSubmit = async () => {
 const deleteItem = async (itemId) => {
   try {
     await codeSetAPI.deleteItem(codeSetId, itemId)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     loadItems()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

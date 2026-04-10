@@ -3,9 +3,9 @@
     <div class="panel-header">
       <span class="panel-title">
         <el-tag v-if="selected.type === 'node'" :style="{ backgroundColor: selected.color, borderColor: selected.color }" effect="dark" size="small">
-          {{ selected.entity_type || (selected.labels && selected.labels[0]) || '节点' }}
+          {{ selected.entity_type || (selected.labels && selected.labels[0]) || t('graph.nodePanel.node') }}
         </el-tag>
-        <el-tag v-else type="info" size="small">关系</el-tag>
+        <el-tag v-else type="info" size="small">{{ t('graph.nodePanel.relation') }}</el-tag>
         <span class="panel-name">{{ displayName }}</span>
       </span>
       <el-button :icon="Close" text size="small" @click="$emit('close')" />
@@ -15,8 +15,8 @@
 
     <div class="panel-body">
       <!-- 属性列表 -->
-      <div class="section-title">属性</div>
-      <el-empty v-if="!hasProperties" description="无属性" :image-size="40" />
+      <div class="section-title">{{ t('graph.nodePanel.properties') }}</div>
+      <el-empty v-if="!hasProperties" :description="t('graph.nodePanel.noProperties')" :image-size="40" />
       <div v-else class="props-table">
         <div v-for="(val, key) in selected.properties" :key="key" class="prop-row">
           <span class="prop-key">{{ key }}</span>
@@ -28,21 +28,24 @@
     <!-- 节点操作按钮（仅节点有） -->
     <div v-if="selected.type === 'node'" class="panel-actions">
       <el-button size="small" type="primary" plain @click="$emit('expand', selected.id)">
-        展开邻居
+        {{ t('graph.nodePanel.expandNeighbors') }}
       </el-button>
       <el-button size="small" type="warning" plain @click="$emit('set-path-node', selected.id)">
-        路径起/终点
+        {{ t('graph.nodePanel.setPathNode') }}
       </el-button>
     </div>
   </div>
   <div v-else class="panel-empty">
-    <el-empty description="点击节点或关系查看详情" :image-size="60" />
+    <el-empty :description="t('graph.nodePanel.clickToView')" :image-size="60" />
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { Close } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   selected: { type: Object, default: null }

@@ -3,7 +3,7 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>数据传输登录</h2>
+          <h2>{{ t('transfer.login.title') }}</h2>
           <p class="subtitle">Data Transfer</p>
         </div>
       </template>
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('transfer.login.usernamePlaceholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('transfer.login.passwordPlaceholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             style="width: 100%"
             :loading="loading"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('transfer.login.loggingIn') : t('transfer.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -53,12 +53,14 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const authStore = useAuthStore()
 const formRef = ref(null)
 
@@ -68,8 +70,8 @@ const loginForm = reactive({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ required: true, message: t('transfer.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('transfer.login.passwordRequired'), trigger: 'blur' }]
 }
 
 const loading = ref(false)
@@ -82,7 +84,7 @@ const handleLogin = async () => {
     loading.value = true
     try {
       await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success('登录成功')
+      ElMessage.success(t('transfer.login.success'))
 
       const redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : null
       if (redirectPath) {
@@ -91,7 +93,7 @@ const handleLogin = async () => {
         router.push({ name: 'TaskList' })
       }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '登录失败')
+      ElMessage.error(error.response?.data?.error || t('transfer.login.failed'))
     } finally {
       loading.value = false
     }

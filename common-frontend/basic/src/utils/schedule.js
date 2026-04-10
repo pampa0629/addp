@@ -2,17 +2,20 @@
  * 前端调度配置工具函数
  * 支持 daily/weekly/monthly 转换为 Cron 表达式
  * 统一各模块的调度配置逻辑
+ *
+ * 描述生成函数（buildScheduleFromForm / generateScheduleDescription / describeCron）
+ * 接受可选的 t 参数（vue-i18n 的翻译函数）。若提供则使用多语言输出，否则回退到中文。
  */
 
-// 预设选项
+// 预设选项（key 对应 i18n schedule.presetLabel.* 和 schedule.presetDesc.*）
 const presetOptions = [
-  { key: 'every-minute', label: '每分钟', cron: '* * * * *', description: '每分钟执行一次' },
-  { key: 'every-15min', label: '每15分钟', cron: '*/15 * * * *', description: '每 15 分钟执行一次' },
-  { key: 'every-30min', label: '每30分钟', cron: '*/30 * * * *', description: '每 30 分钟执行一次' },
-  { key: 'hourly', label: '每小时', cron: '0 * * * *', description: '每小时整点执行' },
-  { key: 'daily-midnight', label: '每天凌晨', cron: '0 0 * * *', description: '每天 00:00 执行' },
-  { key: 'weekly-monday', label: '每周一零点', cron: '0 0 * * 1', description: '每周一 00:00 执行' },
-  { key: 'monthly-first', label: '每月1号零点', cron: '0 0 1 * *', description: '每月 1 号 00:00 执行' }
+  { key: 'every-minute', i18nKey: 'everyMinute', label: '每分钟', cron: '* * * * *', description: '每分钟执行一次' },
+  { key: 'every-15min', i18nKey: 'every15min', label: '每15分钟', cron: '*/15 * * * *', description: '每 15 分钟执行一次' },
+  { key: 'every-30min', i18nKey: 'every30min', label: '每30分钟', cron: '*/30 * * * *', description: '每 30 分钟执行一次' },
+  { key: 'hourly', i18nKey: 'hourly', label: '每小时', cron: '0 * * * *', description: '每小时整点执行' },
+  { key: 'daily-midnight', i18nKey: 'dailyMidnight', label: '每天凌晨', cron: '0 0 * * *', description: '每天 00:00 执行' },
+  { key: 'weekly-monday', i18nKey: 'weeklyMonday', label: '每周一零点', cron: '0 0 * * 1', description: '每周一 00:00 执行' },
+  { key: 'monthly-first', i18nKey: 'monthlyFirst', label: '每月1号零点', cron: '0 0 1 * *', description: '每月 1 号 00:00 执行' }
 ]
 
 const presetOptionMapByKey = presetOptions.reduce((acc, item) => {
@@ -25,7 +28,7 @@ const presetOptionMapByCron = presetOptions.reduce((acc, item) => {
   return acc
 }, {})
 
-// 星期选项
+// 星期选项（value 对应 i18n schedule.weekday.*）
 const weeklyOptions = [
   { value: '1', label: '周一' },
   { value: '2', label: '周二' },
@@ -71,19 +74,30 @@ const sortWeekDays = (days = []) => {
 }
 
 /**
+ * 获取星期显示名称（支持 i18n）
+ */
+const getWeekdayLabel = (day, t) => {
+  if (t) {
+    return t(`schedule.weekday.${day}`, weeklyLabelMap[day] || `Day${day}`)
+  }
+  return weeklyLabelMap[day] || `周${day}`
+}
+
+/**
  * 从表单构建调度配置
  * @param {Object} form - 表单数据 { mode, time, weekDays, dayOfMonth }
+ * @param {Function} [t] - vue-i18n 翻译函数（可选）
  * @returns {Object|null} - { cron, description } 或 null
  */
-const buildScheduleFromForm = (form) => {
+const buildScheduleFromForm = (form, t) => {
   if (!form) return null
   const { hour, minute, display } = normalizeTimeString(form.time || '09:00')
 
   if (form.mode === 'daily') {
-    return {
-      cron: `${minute} ${hour} * * *`,
-      description: `每天 ${display} 执行`
-    }
+    const desc = t
+      ? t('schedule.desc.daily', { time: display })
+      : `每天 ${display} 执行`
+    return { cron: `${minute} ${hour} * * *`, description: desc }
   }
 
   if (form.mode === 'weekly') {
@@ -91,19 +105,23 @@ const buildScheduleFromForm = (form) => {
     if (sortedDays.length === 0) {
       return null
     }
-    const labels = sortedDays.map(day => weeklyLabelMap[day] || `周${day}`)
+    const labels = sortedDays.map(day => getWeekdayLabel(day, t))
+    const daysStr = labels.join(t ? ' ' : '、')
+    const desc = t
+      ? t('schedule.desc.weekly', { days: daysStr, time: display })
+      : `每周${daysStr} ${display} 执行`
     return {
       cron: `${minute} ${hour} * * ${sortedDays.join(',')}`,
-      description: `每周${labels.join('、')} ${display} 执行`
+      description: desc
     }
   }
 
   if (form.mode === 'monthly') {
     const day = Math.min(Math.max(Number(form.dayOfMonth) || 1, 1), 31)
-    return {
-      cron: `${minute} ${hour} ${day} * *`,
-      description: `每月 ${day} 日 ${display} 执行`
-    }
+    const desc = t
+      ? t('schedule.desc.monthly', { day, time: display })
+      : `每月 ${day} 日 ${display} 执行`
+    return { cron: `${minute} ${hour} ${day} * *`, description: desc }
   }
 
   return null
@@ -111,16 +129,18 @@ const buildScheduleFromForm = (form) => {
 
 /**
  * 生成调度描述
+ * @param {Object} form
+ * @param {Function} [t]
  */
-const generateScheduleDescription = (form) => {
-  const result = buildScheduleFromForm(form)
+const generateScheduleDescription = (form, t) => {
+  const result = buildScheduleFromForm(form, t)
   if (result) {
     return result.description
   }
   if (form?.mode === 'weekly' && (!form.weekDays || form.weekDays.length === 0)) {
-    return '请选择至少一个执行日'
+    return t ? t('schedule.error.selectDay') : '请选择至少一个执行日'
   }
-  return '请选择完整的执行时间'
+  return t ? t('schedule.error.selectComplete') : '请选择完整的执行时间'
 }
 
 /**
@@ -180,23 +200,27 @@ const decodeScheduleToForm = (cron) => {
 }
 
 /**
- * 描述 Cron 表达式（中文）
+ * 描述 Cron 表达式
  * @param {String} cron - Cron 表达式
- * @returns {String} - 中文描述
+ * @param {Function} [t] - vue-i18n 翻译函数（可选）
+ * @returns {String} - 本地化描述
  */
-const describeCron = (cron) => {
+const describeCron = (cron, t) => {
   if (!cron) return ''
   const normalized = cron.trim().replace(/\s+/g, ' ')
 
   // 检查预设选项
-  if (presetOptionMapByCron[normalized]) {
-    return presetOptionMapByCron[normalized].description
+  const preset = presetOptionMapByCron[normalized]
+  if (preset) {
+    return t
+      ? t(`schedule.presetDesc.${preset.i18nKey}`, preset.description)
+      : preset.description
   }
 
   // 尝试解码为标准格式
   const decoded = decodeScheduleToForm(normalized)
   if (decoded) {
-    const result = buildScheduleFromForm(decoded)
+    const result = buildScheduleFromForm(decoded, t)
     if (result) {
       return result.description
     }
@@ -205,17 +229,22 @@ const describeCron = (cron) => {
   // 匹配 */N 格式（每N分钟）
   const intervalMatch = normalized.match(/^\*\/(\d+) \* \* \* \*$/)
   if (intervalMatch) {
-    return `每 ${intervalMatch[1]} 分钟执行一次`
+    return t
+      ? t('schedule.desc.everyN', { n: intervalMatch[1] })
+      : `每 ${intervalMatch[1]} 分钟执行一次`
   }
 
   // 匹配每小时格式
   const hourlyMatch = normalized.match(/^(\d{1,2}) \* \* \* \*$/)
   if (hourlyMatch) {
     const minute = Math.min(Math.max(Number(hourlyMatch[1]) || 0, 0), 59)
-    return `每小时的 ${String(minute).padStart(2, '0')} 分执行`
+    const minuteStr = String(minute).padStart(2, '0')
+    return t
+      ? t('schedule.desc.hourlyAt', { minute: minuteStr })
+      : `每小时的 ${minuteStr} 分执行`
   }
 
-  return '已设置自定义调度'
+  return t ? t('schedule.desc.custom') : '已设置自定义调度'
 }
 
 /**

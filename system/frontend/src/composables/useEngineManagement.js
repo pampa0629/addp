@@ -1,12 +1,14 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enginesAPI } from '../api/engines'
+import { useI18n } from 'vue-i18n'
 
 /**
  * 引擎管理 Composable
  * 封装引擎 CRUD 逻辑,消除重复代码
  */
 export function useEngineManagement() {
+  const { t } = useI18n()
   const engines = ref([])
   const loading = ref(false)
 
@@ -35,12 +37,12 @@ export function useEngineManagement() {
   }
 
   // 连接状态映射
-  const connectionStatusMap = {
-    'online': { text: '在线', type: 'success' },
-    'offline': { text: '离线', type: 'danger' },
-    'unknown': { text: '未知', type: 'info' },
-    'checking': { text: '检测中', type: 'warning' }
-  }
+  const getConnectionStatusMap = () => ({
+    'online': { text: t('system.engine.connection.online'), type: 'success' },
+    'offline': { text: t('system.engine.connection.offline'), type: 'danger' },
+    'unknown': { text: t('system.engine.connection.unknown'), type: 'info' },
+    'checking': { text: t('system.engine.connection.checking'), type: 'warning' }
+  })
 
   /**
    * 获取引擎类型显示文本
@@ -60,7 +62,7 @@ export function useEngineManagement() {
    * 获取连接状态显示信息
    */
   const getConnectionStatus = (status) => {
-    return connectionStatusMap[status] || { text: status, type: 'info' }
+    return getConnectionStatusMap()[status] || { text: status, type: 'info' }
   }
 
   /**
@@ -73,7 +75,7 @@ export function useEngineManagement() {
       engines.value = response.engines || []
       return { success: true, data: response }
     } catch (error) {
-      ElMessage.error('加载引擎列表失败')
+      ElMessage.error(t('system.engine.msg.loadFailed'))
       console.error(error)
       return { success: false, error }
     } finally {
@@ -87,10 +89,10 @@ export function useEngineManagement() {
   const createEngine = async (engineData) => {
     try {
       await enginesAPI.create(engineData)
-      ElMessage.success('创建引擎成功')
+      ElMessage.success(t('system.engine.msg.createSuccess'))
       return { success: true }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '创建引擎失败')
+      ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
       return { success: false, error }
     }
   }
@@ -101,10 +103,10 @@ export function useEngineManagement() {
   const updateEngine = async (engineId, engineData) => {
     try {
       await enginesAPI.update(engineId, engineData)
-      ElMessage.success('更新引擎成功')
+      ElMessage.success(t('system.engine.msg.updateSuccess'))
       return { success: true }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '更新引擎失败')
+      ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
       return { success: false, error }
     }
   }
@@ -115,22 +117,21 @@ export function useEngineManagement() {
   const deleteEngine = async (engine) => {
     try {
       await ElMessageBox.confirm(
-        `确定要删除引擎 "${engine.name}" 吗？`,
-        '警告',
+        t('system.engine.msg.deleteConfirm', { name: engine.name }),
+        t('system.engine.msg.deleteTitle'),
         {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
+          confirmButtonText: 'OK',
+          cancelButtonText: 'Cancel',
           type: 'warning',
         }
       )
 
       await enginesAPI.delete(engine.id)
-      ElMessage.success('删除成功')
+      ElMessage.success(t('system.engine.msg.deleteSuccess'))
       return { success: true }
     } catch (error) {
-      // 用户取消或API错误
       if (error !== 'cancel') {
-        ElMessage.error(error.response?.data?.error || '删除失败')
+        ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
       }
       return { success: false, error }
     }
@@ -143,13 +144,13 @@ export function useEngineManagement() {
     try {
       const response = await enginesAPI.testConnection(engineId)
       if (response.success) {
-        ElMessage.success('连接测试成功')
+        ElMessage.success(t('system.engine.msg.testSuccess'))
       } else {
-        ElMessage.error(`连接测试失败: ${response.error || '未知错误'}`)
+        ElMessage.error(t('system.engine.msg.testFailed', { error: response.error || 'Unknown error' }))
       }
       return response
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '连接测试失败')
+      ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
       return { success: false, error }
     }
   }
@@ -161,13 +162,13 @@ export function useEngineManagement() {
     try {
       const response = await enginesAPI.testConnectionBeforeCreate(engineData)
       if (response.success) {
-        ElMessage.success('连接测试成功')
+        ElMessage.success(t('system.engine.msg.testSuccess'))
       } else {
-        ElMessage.error(`连接测试失败: ${response.error || '未知错误'}`)
+        ElMessage.error(t('system.engine.msg.testFailed', { error: response.error || 'Unknown error' }))
       }
       return response
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '连接测试失败')
+      ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
       return { success: false, error }
     }
   }

@@ -3,16 +3,16 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <h2>实体关系图（ER图）</h2>
+          <h2>{{ t('model.er_diagram.title') }}</h2>
           <div class="toolbar">
             <el-button type="primary" @click="showImportDialog">
-              <el-icon><Upload /></el-icon> 导入Mermaid
+              <el-icon><Upload /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
             </el-button>
             <el-button @click="exportMermaid">
-              <el-icon><Download /></el-icon> 导出Mermaid
+              <el-icon><Download /></el-icon> {{ t('model.er_diagram.export_mermaid') }}
             </el-button>
             <el-button @click="refreshDiagram">
-              <el-icon><Refresh /></el-icon> 刷新
+              <el-icon><Refresh /></el-icon> {{ t('model.er_diagram.refresh') }}
             </el-button>
           </div>
         </div>
@@ -20,8 +20,7 @@
 
       <div class="diagram-info">
         <el-alert type="info" :closable="false">
-          当前显示 <strong>{{ entities.length }}</strong> 个实体，
-          <strong>{{ relations.length }}</strong> 个关系
+          {{ t('model.er_diagram.entity_count', { count: entities.length, relations: relations.length }) }}
         </el-alert>
       </div>
 
@@ -34,21 +33,21 @@
     <!-- 导入对话框 -->
     <el-dialog
       v-model="importDialogVisible"
-      title="导入Mermaid ER图"
+      :title="t('model.er_diagram.import_dialog_title')"
       width="800px"
     >
       <el-tabs v-model="importTab">
-        <el-tab-pane label="粘贴代码" name="paste">
+        <el-tab-pane :label="t('model.er_diagram.paste_code')" name="paste">
           <el-input
             v-model="importMermaidCode"
             type="textarea"
             :rows="20"
-            placeholder="粘贴Mermaid ER图代码..."
+            :placeholder="t('model.er_diagram.paste_placeholder')"
           />
           <div class="import-tips">
             <el-alert type="info" :closable="false">
               <template #title>
-                <p><strong>支持的格式示例：</strong></p>
+                <p><strong>{{ t('model.er_diagram.format_example') }}</strong></p>
                 <pre style="margin-top: 10px; font-size: 12px;">erDiagram
     CUSTOMER {
         bigint id PK
@@ -65,7 +64,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="上传文件" name="file">
+        <el-tab-pane :label="t('model.er_diagram.upload_file')" name="file">
           <el-upload
             drag
             accept=".md,.mmd,.mermaid,.txt"
@@ -75,11 +74,11 @@
           >
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
             <div class="el-upload__text">
-              拖拽文件到此处或 <em>点击上传</em>
+              {{ t('model.er_diagram.drag_upload') }} <em>{{ t('model.er_diagram.click_upload') }}</em>
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 .md, .mmd, .mermaid, .txt 格式
+                {{ t('model.er_diagram.upload_tip') }}
               </div>
             </template>
           </el-upload>
@@ -87,9 +86,9 @@
       </el-tabs>
 
       <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button @click="importDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="executeImport" :loading="importing">
-          导入（合并模式）
+          {{ t('model.er_diagram.import_merge') }}
         </el-button>
       </template>
     </el-dialog>
@@ -102,6 +101,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
 import mermaid from 'mermaid'
 import { entityAPI, entityRelationAPI } from '../api/model'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const entities = ref([])
 const relations = ref([])
@@ -134,7 +136,7 @@ const refreshDiagram = async () => {
     await renderMermaid()
   } catch (err) {
     console.error('加载ER图失败:', err)
-    ElMessage.error('加载ER图失败')
+    ElMessage.error(t('model.er_diagram.load_failed'))
   } finally {
     diagramLoading.value = false
   }
@@ -204,7 +206,7 @@ const renderMermaid = async () => {
         await mermaid.run({ nodes: [mermaidEl] })
       } catch (err) {
         console.error('Mermaid渲染错误:', err)
-        ElMessage.error('ER图渲染失败，请检查数据格式')
+        ElMessage.error(t('model.er_diagram.render_failed'))
       }
     }
   }
@@ -221,10 +223,10 @@ const exportMermaid = async () => {
     link.click()
     URL.revokeObjectURL(url)
 
-    ElMessage.success('ER图已导出')
+    ElMessage.success(t('model.er_diagram.export_success'))
   } catch (err) {
     console.error('导出失败:', err)
-    ElMessage.error('导出失败')
+    ElMessage.error(t('model.er_diagram.export_failed'))
   }
 }
 
@@ -249,7 +251,7 @@ const handleFileUpload = (file) => {
 // 执行导入
 const executeImport = async () => {
   if (!importMermaidCode.value.trim()) {
-    ElMessage.warning('请输入或上传Mermaid代码')
+    ElMessage.warning(t('model.er_diagram.import_empty'))
     return
   }
 
@@ -257,8 +259,8 @@ const executeImport = async () => {
     importing.value = true
 
     await ElMessageBox.confirm(
-      '导入将以合并模式进行：已存在的实体将更新，新实体将创建，现有数据不会删除。是否继续？',
-      '确认导入',
+      t('model.er_diagram.import_confirm_msg'),
+      t('model.er_diagram.import_confirm_title'),
       { type: 'warning' }
     )
 
@@ -268,13 +270,17 @@ const executeImport = async () => {
       mode: 'merge'
     })
 
-    ElMessage.success(`导入成功：创建${result.data.created_entities}个实体，更新${result.data.updated_entities}个实体，创建${result.data.created_relations}个关系`)
+    ElMessage.success(t('model.er_diagram.import_success', {
+      created: result.data.created_entities,
+      updated: result.data.updated_entities,
+      relations: result.data.created_relations
+    }))
     importDialogVisible.value = false
     refreshDiagram()
   } catch (error) {
     if (error !== 'cancel') {
-      const errorMsg = error.response?.data?.error || error.message || '导入失败'
-      ElMessage.error('导入失败：' + errorMsg)
+      const errorMsg = error.response?.data?.error || error.message || t('model.er_diagram.export_failed')
+      ElMessage.error(t('model.er_diagram.import_failed', { msg: errorMsg }))
     }
   } finally {
     importing.value = false

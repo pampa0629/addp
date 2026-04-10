@@ -13,6 +13,7 @@ import (
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
+	_ "github.com/addp/orchestrator/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

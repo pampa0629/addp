@@ -2,15 +2,15 @@
   <div class="metric-list">
     <div class="page-header">
       <div class="header-left">
-        <h2>指标管理</h2>
+        <h2>{{ $t('standard.metric.title') }}</h2>
         <el-radio-group v-model="filterType" size="small" @change="loadMetrics">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="atomic">原子指标</el-radio-button>
-          <el-radio-button value="derived">派生指标</el-radio-button>
-          <el-radio-button value="composite">复合指标</el-radio-button>
+          <el-radio-button value="">{{ $t('standard.metric.all') }}</el-radio-button>
+          <el-radio-button value="atomic">{{ $t('standard.metric.atomic') }}</el-radio-button>
+          <el-radio-button value="derived">{{ $t('standard.metric.derived') }}</el-radio-button>
+          <el-radio-button value="composite">{{ $t('standard.metric.composite') }}</el-radio-button>
         </el-radio-group>
       </div>
-      <el-button type="primary" @click="showCreateDialog = true">新增指标</el-button>
+      <el-button type="primary" @click="showCreateDialog = true">{{ $t('standard.metric.create') }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -19,12 +19,12 @@
         <el-card class="category-card">
           <template #header>
             <div class="card-header">
-              <span>指标目录</span>
-              <el-button link size="small" @click="showCategoryDialog = true">管理</el-button>
+              <span>{{ $t('standard.metric.categoryTitle') }}</span>
+              <el-button link size="small" @click="showCategoryDialog = true">{{ $t('standard.metric.categoryManageBtn') }}</el-button>
             </div>
           </template>
           <div class="category-item" :class="{ active: !selectedCategoryID }" @click="selectCategory(null)">
-            全部指标
+            {{ $t('standard.metric.allMetrics') }}
           </div>
           <el-tree
             :data="categoryTree"
@@ -46,33 +46,33 @@
       <el-col :span="19">
         <el-card>
           <div class="toolbar">
-            <el-input v-model="keyword" placeholder="搜索指标名称/编码/口径" clearable @change="loadMetrics" style="width:280px" />
-            <el-select v-model="filterStatus" placeholder="状态" clearable @change="loadMetrics" style="width:120px">
-              <el-option label="草稿" value="draft" />
-              <el-option label="已审批" value="approved" />
-              <el-option label="已废弃" value="deprecated" />
+            <el-input v-model="keyword" :placeholder="$t('standard.metric.searchPlaceholder')" clearable @change="loadMetrics" style="width:280px" />
+            <el-select v-model="filterStatus" :placeholder="$t('standard.common.status')" clearable @change="loadMetrics" style="width:120px">
+              <el-option :label="$t('standard.common.draft')" value="draft" />
+              <el-option :label="$t('standard.common.approved')" value="approved" />
+              <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
             </el-select>
           </div>
 
           <el-table :data="metrics" v-loading="loading" size="small" @row-click="openDetail">
-            <el-table-column label="指标名称" prop="name" min-width="140" />
-            <el-table-column label="编码" prop="code" width="140" />
-            <el-table-column label="类型" width="90">
+            <el-table-column :label="$t('standard.metric.nameLabel')" prop="name" min-width="140" />
+            <el-table-column :label="$t('standard.common.code')" prop="code" width="140" />
+            <el-table-column :label="$t('standard.common.type')" width="90">
               <template #default="{ row }">
                 <el-tag size="small" :type="typeTagType(row.type)">{{ typeLabel(row.type) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="业务口径" prop="definition" show-overflow-tooltip min-width="200" />
-            <el-table-column label="状态" width="85">
+            <el-table-column :label="$t('standard.metric.definitionLabel')" prop="definition" show-overflow-tooltip min-width="200" />
+            <el-table-column :label="$t('standard.common.status')" width="85">
               <template #default="{ row }">
                 <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link size="small" @click.stop="openDetail(row)">详情</el-button>
-                <el-button link size="small" type="success" v-if="row.status === 'draft'" @click.stop="approveMetric(row)">审批</el-button>
-                <el-button link size="small" type="danger" @click.stop="deleteMetric(row)">删除</el-button>
+                <el-button link size="small" @click.stop="openDetail(row)">{{ $t('standard.common.detail') }}</el-button>
+                <el-button link size="small" type="success" v-if="row.status === 'draft'" @click.stop="approveMetric(row)">{{ $t('standard.common.approve') }}</el-button>
+                <el-button link size="small" type="danger" @click.stop="deleteMetric(row)">{{ $t('standard.common.delete') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -92,32 +92,32 @@
     </el-row>
 
     <!-- 新增指标对话框 -->
-    <el-dialog v-model="showCreateDialog" title="新增指标" width="600px">
+    <el-dialog v-model="showCreateDialog" :title="$t('standard.metric.createTitle')" width="600px">
       <el-form :model="form" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="指标名称" required>
+            <el-form-item :label="$t('standard.metric.nameLabel')" required>
               <el-input v-model="form.name" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="英文编码" required>
+            <el-form-item :label="$t('standard.metric.codeLabel')" required>
               <el-input v-model="form.code" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="指标类型" required>
+            <el-form-item :label="$t('standard.metric.typeLabel')" required>
               <el-select v-model="form.type" style="width:100%">
-                <el-option label="原子指标" value="atomic" />
-                <el-option label="派生指标" value="derived" />
-                <el-option label="复合指标" value="composite" />
+                <el-option :label="$t('standard.metric.atomic')" value="atomic" />
+                <el-option :label="$t('standard.metric.derived')" value="derived" />
+                <el-option :label="$t('standard.metric.composite')" value="composite" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="所属目录">
+            <el-form-item :label="$t('standard.metric.categoryLabel')">
               <el-tree-select
                 v-model="form.category_id"
                 :data="categoryTree"
@@ -127,26 +127,26 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="业务口径">
-          <el-input v-model="form.definition" type="textarea" :rows="3" placeholder="描述指标的业务含义和计算口径" />
+        <el-form-item :label="$t('standard.metric.definitionLabel')">
+          <el-input v-model="form.definition" type="textarea" :rows="3" :placeholder="$t('standard.metric.definitionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="计算公式" v-if="form.type === 'composite'">
-          <el-input v-model="form.formula" type="textarea" :rows="2" placeholder="如：metric_a / metric_b × 100%" />
+        <el-form-item :label="$t('standard.metric.formulaLabel')" v-if="form.type === 'composite'">
+          <el-input v-model="form.formula" type="textarea" :rows="2" :placeholder="$t('standard.metric.formulaPlaceholder')" />
         </el-form-item>
-        <el-form-item label="基准指标" v-if="form.type === 'derived'">
-          <el-select v-model="form.base_metric_id" filterable clearable style="width:100%" placeholder="选择基准原子指标">
+        <el-form-item :label="$t('standard.metric.baseMetricLabel')" v-if="form.type === 'derived'">
+          <el-select v-model="form.base_metric_id" filterable clearable style="width:100%" :placeholder="$t('standard.metric.baseMetricPlaceholder')">
             <el-option v-for="m in atomicMetrics" :key="m.id" :label="`${m.name}（${m.code}）`" :value="m.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" @click="createMetric" :loading="saving">创建</el-button>
+        <el-button @click="showCreateDialog = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="createMetric" :loading="saving">{{ $t('standard.metric.create') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 指标目录管理对话框 -->
-    <el-dialog v-model="showCategoryDialog" title="指标目录管理" width="500px">
+    <el-dialog v-model="showCategoryDialog" :title="$t('standard.metric.categoryManage')" width="500px">
       <div class="category-manage">
         <el-tree
           :data="categoryTree"
@@ -159,8 +159,8 @@
               <span>{{ data.name }}</span>
               <span class="tree-code">{{ data.code }}</span>
               <div class="tree-actions">
-                <el-button link size="small" @click.stop="addSubCategory(data.id)">子级</el-button>
-                <el-button link size="small" type="danger" @click.stop="deleteCategory(data)">删除</el-button>
+                <el-button link size="small" @click.stop="addSubCategory(data.id)">{{ $t('standard.metric.addSubCategory') }}</el-button>
+                <el-button link size="small" type="danger" @click.stop="deleteCategory(data)">{{ $t('standard.common.delete') }}</el-button>
               </div>
             </div>
           </template>
@@ -169,26 +169,26 @@
         <el-form :model="categoryForm" label-width="80px" size="small">
           <el-row :gutter="12">
             <el-col :span="12">
-              <el-form-item label="名称">
+              <el-form-item :label="$t('standard.common.name')">
                 <el-input v-model="categoryForm.name" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="编码">
+              <el-form-item :label="$t('standard.common.code')">
                 <el-input v-model="categoryForm.code" />
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="上级目录">
+          <el-form-item :label="$t('standard.metric.categoryLabel')">
             <el-tree-select
               v-model="categoryForm.parent_id"
               :data="categoryTree"
               :props="{ label: 'name', value: 'id', children: 'children' }"
-              clearable placeholder="不选则为顶级" style="width:100%"
+              clearable :placeholder="$t('standard.metric.categoryParentPlaceholder')" style="width:100%"
             />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="createCategory" :loading="saving">新增目录</el-button>
+            <el-button type="primary" @click="createCategory" :loading="saving">{{ $t('standard.metric.addCategory') }}</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -200,9 +200,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 
+const { t } = useI18n()
 const router = useRouter()
 const metrics = ref([])
 const categories = ref([])
@@ -228,9 +230,9 @@ function buildTree(list, parentId = null) {
   return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
 }
 
-const typeLabel = (t) => ({ atomic: '原子', derived: '派生', composite: '复合' }[t] || t)
-const typeTagType = (t) => ({ atomic: 'primary', derived: 'warning', composite: 'success' }[t] || '')
-const statusLabel = (s) => ({ draft: '草稿', approved: '已审批', deprecated: '已废弃' }[s] || s)
+const typeLabel = (type) => ({ atomic: t('standard.metric.atomicShort'), derived: t('standard.metric.derivedShort'), composite: t('standard.metric.compositeShort') }[type] || type)
+const typeTagType = (type) => ({ atomic: 'primary', derived: 'warning', composite: 'success' }[type] || '')
+const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || '')
 
 const loadMetrics = async () => {
@@ -266,12 +268,12 @@ const createMetric = async () => {
   saving.value = true
   try {
     await metricAPI.create(form.value)
-    ElMessage.success('创建成功')
+    ElMessage.success(t('standard.common.createSuccess'))
     showCreateDialog.value = false
     form.value = { name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null }
     loadMetrics()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '创建失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -283,23 +285,23 @@ const openDetail = (row) => {
 
 const approveMetric = async (row) => {
   try {
-    await ElMessageBox.confirm('确认审批通过？', '提示', { type: 'info' })
+    await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
     await metricAPI.approve(row.id)
-    ElMessage.success('审批成功')
+    ElMessage.success(t('standard.common.approveSuccess'))
     loadMetrics()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('审批失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
   }
 }
 
 const deleteMetric = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除指标"${row.name}"？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.metric.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
     await metricAPI.delete(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     loadMetrics()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 
@@ -307,11 +309,11 @@ const createCategory = async () => {
   saving.value = true
   try {
     await metricCategoryAPI.create(categoryForm.value)
-    ElMessage.success('创建成功')
+    ElMessage.success(t('standard.common.createSuccess'))
     categoryForm.value = { name: '', code: '', parent_id: null }
     await loadCategories()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '创建失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -323,12 +325,12 @@ const addSubCategory = (parentId) => {
 
 const deleteCategory = async (data) => {
   try {
-    await ElMessageBox.confirm(`确认删除目录"${data.name}"？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.metric.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
     await metricCategoryAPI.delete(data.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     await loadCategories()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

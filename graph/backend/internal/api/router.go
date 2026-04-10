@@ -3,11 +3,13 @@ package api
 import (
 	"github.com/addp/graph/internal/config"
 	commonAuth "github.com/addp/common/middleware/auth"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "github.com/addp/graph/docs"
+	_ "github.com/addp/graph/i18n"
 )
 
 func SetupRouter(
@@ -20,6 +22,9 @@ func SetupRouter(
 	serviceHandler *ServiceHandler,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// i18n 中间件（解析 Accept-Language 请求头）
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// 健康检查（无需认证）
 	router.GET("/health", func(c *gin.Context) {

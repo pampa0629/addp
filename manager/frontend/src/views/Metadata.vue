@@ -3,16 +3,15 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <h2>元数据管理</h2>
-          <p class="subtitle">浏览和管理数据库表及对象存储文件</p>
+          <h2>{{ t('manager.metadata.title') }}</h2>
+          <p class="subtitle">{{ t('manager.metadata.subtitle') }}</p>
         </div>
       </template>
 
       <div class="datasource-selector">
         <el-select
           v-model="selectedDataSourceId"
-          placeholder="选择数据源"
-          @change="handleDataSourceChange"
+          :placeholder="t('manager.metadata.selectDataSource')"          @change="handleDataSourceChange"
           size="large"
           style="width: 300px"
         >
@@ -34,23 +33,23 @@
           :disabled="!selectedDataSourceId"
         >
           <el-icon><Refresh /></el-icon>
-          扫描元数据
+          {{ t('manager.metadata.scanMetadata') }}
         </el-button>
       </div>
 
       <el-tabs v-model="activeTab" class="metadata-tabs">
-        <el-tab-pane label="元数据" name="metadata">
+        <el-tab-pane :label="t('manager.metadata.tabMetadata')" name="metadata">
           <div
             v-if="selectedDataSource && selectedDataSource.resource_type === 'postgresql'"
             class="table-section"
           >
             <div class="section-header">
-              <h3>数据库表</h3>
+              <h3>{{ t('manager.metadata.dbTables') }}</h3>
               <div class="filter-group">
                 <el-radio-group v-model="tableFilter" @change="loadTables">
-                  <el-radio-button value="all">全部 ({{ scanResult?.total_items || 0 }})</el-radio-button>
-                  <el-radio-button value="managed">已纳管 ({{ scanResult?.managed_items || 0 }})</el-radio-button>
-                  <el-radio-button value="unmanaged">未纳管 ({{ scanResult?.unmanaged_items || 0 }})</el-radio-button>
+                  <el-radio-button value="all">{{ t('manager.metadata.filterAll', { count: scanResult?.total_items || 0 }) }}</el-radio-button>
+                  <el-radio-button value="managed">{{ t('manager.metadata.filterManaged', { count: scanResult?.managed_items || 0 }) }}</el-radio-button>
+                  <el-radio-button value="unmanaged">{{ t('manager.metadata.filterUnmanaged', { count: scanResult?.unmanaged_items || 0 }) }}</el-radio-button>
                 </el-radio-group>
               </div>
             </div>
@@ -61,43 +60,43 @@
               stripe
               style="width: 100%; margin-top: 16px"
             >
-              <el-table-column prop="full_name" label="表名" min-width="200">
+              <el-table-column prop="full_name" :label="t('manager.metadata.colTableName')" min-width="200">
                 <template #default="{ row }">
                   <el-tooltip :content="`${row.schema_name}.${row.table_name}`" placement="top">
                     <span>{{ row.full_name }}</span>
                   </el-tooltip>
                 </template>
               </el-table-column>
-              <el-table-column prop="table_type" label="类型" width="120">
+              <el-table-column prop="table_type" :label="t('manager.metadata.colType')" width="120">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.table_type === 'BASE TABLE' ? '' : 'info'">
                     {{ row.table_type }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="table_size" label="大小" width="120">
+              <el-table-column prop="table_size" :label="t('manager.metadata.colSize')" width="120">
                 <template #default="{ row }">
                   {{ formatBytes(row.table_size) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="row_count" label="行数" width="120">
+              <el-table-column prop="row_count" :label="t('manager.metadata.colRowCount')" width="120">
                 <template #default="{ row }">
                   {{ row.row_count !== null && row.row_count !== undefined ? row.row_count.toLocaleString() : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column prop="is_managed" label="状态" width="100">
+              <el-table-column prop="is_managed" :label="t('manager.metadata.colStatus')" width="100">
                 <template #default="{ row }">
                   <el-tag :type="row.is_managed ? 'success' : 'info'" size="small">
-                    {{ row.is_managed ? '已纳管' : '未纳管' }}
+                    {{ row.is_managed ? t('manager.metadata.statusManaged') : t('manager.metadata.statusUnmanaged') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="last_scanned" label="最后扫描" width="180">
+              <el-table-column prop="last_scanned" :label="t('manager.metadata.colLastScanned')" width="180">
                 <template #default="{ row }">
                   {{ row.last_scanned ? formatDateTime(row.last_scanned) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="200" fixed="right">
+              <el-table-column :label="t('manager.metadata.colActions')" width="200" fixed="right">
                 <template #default="{ row }">
                   <el-button
                     v-if="!row.is_managed"
@@ -106,7 +105,7 @@
                     @click="handleManageTable(row)"
                     :loading="managingTableId === row.id"
                   >
-                    纳管
+                    {{ t('manager.metadata.actionManage') }}
                   </el-button>
                   <el-button
                     v-else
@@ -115,7 +114,7 @@
                     @click="handleUnmanageTable(row)"
                     :loading="managingTableId === row.id"
                   >
-                    取消纳管
+                    {{ t('manager.metadata.actionUnmanage') }}
                   </el-button>
                   <el-button
                     v-if="row.is_managed"
@@ -123,7 +122,7 @@
                     size="small"
                     @click="handleViewMetadata(row)"
                   >
-                    查看元数据
+                    {{ t('manager.metadata.actionViewMetadata') }}
                   </el-button>
                 </template>
               </el-table-column>
@@ -134,31 +133,31 @@
             v-if="selectedDataSource && selectedDataSource.resource_type === 'minio'"
             class="minio-section"
           >
-            <el-empty description="对象存储元数据管理功能开发中">
-              <el-tag type="info">MinIO 元数据扫描功能即将推出</el-tag>
+            <el-empty :description="t('manager.metadata.minioComingSoon')">
+              <el-tag type="info">{{ t('manager.metadata.minioTag') }}</el-tag>
             </el-empty>
           </div>
 
           <div v-if="!selectedDataSourceId" class="empty-state">
-            <el-empty description="请先选择一个数据源进行元数据管理" />
+            <el-empty :description="t('manager.metadata.selectDataSourceHint')" />
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="扫描任务" name="tasks">
+        <el-tab-pane :label="t('manager.metadata.tabTasks')" name="tasks">
           <div v-if="selectedDataSourceId" class="tasks-section">
             <div class="tasks-toolbar">
               <div class="tasks-actions">
                 <el-button type="primary" @click="openTaskDialog">
-                  新建任务
+                  {{ t('manager.metadata.newTask') }}
                 </el-button>
                 <el-button type="success" @click="handleManualScan" :loading="manualScanning">
                   <el-icon><Refresh /></el-icon>
-                  立即扫描
+                  {{ t('manager.metadata.scanNow') }}
                 </el-button>
               </div>
               <div class="tasks-refresh">
-                <el-button text @click="loadScanTasks(true)" :loading="loadingTasks">刷新任务</el-button>
-                <el-button text @click="loadScanRuns()" :loading="loadingRuns">刷新运行</el-button>
+                <el-button text @click="loadScanTasks(true)" :loading="loadingTasks">{{ t('manager.metadata.refreshTasks') }}</el-button>
+                <el-button text @click="loadScanRuns()" :loading="loadingRuns">{{ t('manager.metadata.refreshRuns') }}</el-button>
               </div>
             </div>
 
@@ -166,10 +165,10 @@
               :data="scanTasks"
               v-loading="loadingTasks"
               class="tasks-table"
-              empty-text="暂无扫描任务"
+              :empty-text="t('manager.metadata.noTasks')"
               style="width: 100%"
             >
-              <el-table-column label="任务名称" min-width="220">
+              <el-table-column :label="t('manager.metadata.colTaskName')" min-width="220">
                 <template #default="{ row }">
                   <div class="task-name">
                     <div class="task-name__title">{{ row.name }}</div>
@@ -177,38 +176,38 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="调度" min-width="240">
+              <el-table-column :label="t('manager.metadata.colSchedule')" min-width="240">
                 <template #default="{ row }">
-                  {{ row.schedule ? describeCron(row.schedule) : '手动触发' }}
+                  {{ row.schedule ? describeCron(row.schedule) : t('manager.metadata.scheduleManual') }}
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="120">
+              <el-table-column :label="t('manager.metadata.colEnabled')" width="120">
                 <template #default="{ row }">
                   <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                    {{ row.enabled ? '已启用' : '已停用' }}
+                    {{ row.enabled ? t('manager.metadata.statusEnabled') : t('manager.metadata.statusDisabled') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="上次执行" width="170">
+              <el-table-column :label="t('manager.metadata.colLastRun')" width="170">
                 <template #default="{ row }">
                   {{ row.last_run_at ? formatDateTime(row.last_run_at) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="下次执行" width="170">
+              <el-table-column :label="t('manager.metadata.colNextRun')" width="170">
                 <template #default="{ row }">
                   {{ row.next_run_at ? formatDateTime(row.next_run_at) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="240" fixed="right">
+              <el-table-column :label="t('manager.metadata.colActions')" width="240" fixed="right">
                 <template #default="{ row }">
-                  <el-button type="primary" link @click="openTaskDialog(row)">编辑</el-button>
+                  <el-button type="primary" link @click="openTaskDialog(row)">{{ t('manager.metadata.actionEdit') }}</el-button>
                   <el-button
                     type="warning"
                     link
                     @click="handleToggleTask(row)"
                     :loading="togglingTaskId === row.id"
                   >
-                    {{ row.enabled ? '停用' : '启用' }}
+                    {{ row.enabled ? t('manager.metadata.actionDisable') : t('manager.metadata.actionEnable') }}
                   </el-button>
                   <el-button
                     type="success"
@@ -216,7 +215,7 @@
                     @click="handleTriggerTask(row)"
                     :loading="triggeringTaskId === row.id"
                   >
-                    触发
+                    {{ t('manager.metadata.actionTrigger') }}
                   </el-button>
                   <el-button
                     type="danger"
@@ -224,7 +223,7 @@
                     @click="handleDeleteTask(row)"
                     :loading="deletingTaskId === row.id"
                   >
-                    删除
+                    {{ t('manager.metadata.actionDelete') }}
                   </el-button>
                 </template>
               </el-table-column>
@@ -233,18 +232,18 @@
             <el-divider />
 
             <div class="runs-header">
-              <h3>运行监控</h3>
-              <el-tag type="info" size="small">自动每 8 秒刷新一次</el-tag>
+              <h3>{{ t('manager.metadata.runMonitor') }}</h3>
+              <el-tag type="info" size="small">{{ t('manager.metadata.autoRefresh') }}</el-tag>
             </div>
 
             <el-table
               :data="scanRuns"
               v-loading="loadingRuns"
               class="runs-table"
-              empty-text="暂无运行记录"
+              :empty-text="t('manager.metadata.noRuns')"
               style="width: 100%"
             >
-              <el-table-column label="任务" min-width="220">
+              <el-table-column :label="t('manager.metadata.colTask')" min-width="220">
                 <template #default="{ row }">
                   <div class="run-task">
                     <div class="run-task__name">{{ runDisplayName(row) }}</div>
@@ -264,14 +263,14 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="140">
+              <el-table-column :label="t('manager.metadata.colRunStatus')" width="140">
                 <template #default="{ row }">
                   <el-tag :type="statusTagType(row.status)" size="small">
                     {{ formatRunStatus(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="进度" width="220">
+              <el-table-column :label="t('manager.metadata.colProgress')" width="220">
                 <template #default="{ row }">
                   <el-progress
                     :text-inside="true"
@@ -281,30 +280,30 @@
                   />
                 </template>
               </el-table-column>
-              <el-table-column label="开始时间" width="170">
+              <el-table-column :label="t('manager.metadata.colStartTime')" width="170">
                 <template #default="{ row }">
                   {{ row.started_at ? formatDateTime(row.started_at) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="完成时间" width="170">
+              <el-table-column :label="t('manager.metadata.colFinishTime')" width="170">
                 <template #default="{ row }">
                   {{ row.completed_at ? formatDateTime(row.completed_at) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="最后状态" min-width="200">
+              <el-table-column :label="t('manager.metadata.colLastMessage')" min-width="200">
                 <template #default="{ row }">
                   {{ row.progress_message || '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="120" fixed="right">
+              <el-table-column :label="t('manager.metadata.colActions')" width="120" fixed="right">
                 <template #default="{ row }">
-                  <el-button type="primary" link @click="viewRunDetail(row)">详情</el-button>
+                  <el-button type="primary" link @click="viewRunDetail(row)">{{ t('manager.metadata.actionDetail') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
           </div>
           <div v-else class="empty-state">
-            <el-empty description="请先选择一个数据源进行配置" />
+          <el-empty :description="t('manager.metadata.selectDataSourceForConfig')" />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -312,62 +311,62 @@
 
     <el-dialog
       v-model="metadataDialogVisible"
-      title="表元数据详情"
+      :title="t('manager.metadata.metadataDialogTitle')"
       width="80%"
       destroy-on-close
     >
       <div v-if="selectedTable" class="metadata-detail">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="完整表名">{{ selectedTable.full_name }}</el-descriptions-item>
-          <el-descriptions-item label="表类型">{{ selectedTable.table_type }}</el-descriptions-item>
-          <el-descriptions-item label="Schema">{{ selectedTable.schema_name }}</el-descriptions-item>
-          <el-descriptions-item label="表名">{{ selectedTable.table_name }}</el-descriptions-item>
-          <el-descriptions-item label="行数" :span="2">
+          <el-descriptions-item :label="t('manager.metadata.colFullName')">{{ selectedTable.full_name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.colTableType')">{{ selectedTable.table_type }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.colSchema')">{{ selectedTable.schema_name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.colTableName2')">{{ selectedTable.table_name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.colRowCount2')" :span="2">
             {{ selectedTable.row_count?.toLocaleString() || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="大小">{{ formatBytes(selectedTable.table_size) }}</el-descriptions-item>
-          <el-descriptions-item label="纳管时间" :span="2">
+          <el-descriptions-item :label="t('manager.metadata.colSize2')">{{ formatBytes(selectedTable.table_size) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.colManagedTime')" :span="2">
             {{ selectedTable.last_managed ? formatDateTime(selectedTable.last_managed) : '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="注释" :span="2">
-            {{ selectedTable.comment || '无' }}
+          <el-descriptions-item :label="t('manager.metadata.colComment')" :span="2">
+            {{ selectedTable.comment || t('manager.metadata.noComment') }}
           </el-descriptions-item>
         </el-descriptions>
 
-        <el-divider>字段信息</el-divider>
+        <el-divider>{{ t('manager.metadata.fieldInfo') }}</el-divider>
         <el-table
           v-if="selectedTable.schema"
           :data="parseSchema(selectedTable.schema)"
           border
           style="width: 100%"
         >
-          <el-table-column prop="name" label="字段名" width="200" />
-          <el-table-column prop="data_type" label="数据类型" width="150" />
-          <el-table-column prop="is_nullable" label="可空" width="80">
+          <el-table-column prop="name" :label="t('manager.metadata.colFieldName')" width="200" />
+          <el-table-column prop="data_type" :label="t('manager.metadata.colDataType')" width="150" />
+          <el-table-column prop="is_nullable" :label="t('manager.metadata.colNullable')" width="80">
             <template #default="{ row }">
               <el-tag :type="row.is_nullable ? 'info' : 'warning'" size="small">
-                {{ row.is_nullable ? '是' : '否' }}
+                {{ row.is_nullable ? t('manager.metadata.nullableYes') : t('manager.metadata.nullableNo') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="is_primary_key" label="主键" width="80">
+          <el-table-column prop="is_primary_key" :label="t('manager.metadata.colPrimaryKey')" width="80">
             <template #default="{ row }">
               <el-icon v-if="row.is_primary_key" color="var(--el-color-success)"><Key /></el-icon>
             </template>
           </el-table-column>
-          <el-table-column prop="default_value" label="默认值" min-width="150">
+          <el-table-column prop="default_value" :label="t('manager.metadata.colDefaultValue')" min-width="150">
             <template #default="{ row }">
               {{ row.default_value || '-' }}
             </template>
           </el-table-column>
-          <el-table-column prop="comment" label="注释" min-width="200">
+          <el-table-column prop="comment" :label="t('manager.metadata.colComment')" min-width="200">
             <template #default="{ row }">
               {{ row.comment || '-' }}
             </template>
           </el-table-column>
         </el-table>
 
-        <el-divider>采样数据 (前10行)</el-divider>
+        <el-divider>{{ t('manager.metadata.sampleData') }}</el-divider>
         <div v-if="selectedTable.sample_data" class="sample-data">
           <el-table
             :data="parseSampleData(selectedTable.sample_data)"
@@ -394,36 +393,35 @@
 
     <el-dialog
       v-model="taskDialogVisible"
-      :title="taskDialogTitle"
-      width="580px"
+      :title="taskDialogTitle"      width="580px"
       @close="handleTaskDialogClose"
     >
       <el-form ref="taskFormRef" :model="taskForm" :rules="taskFormRules" label-width="100px">
-        <el-form-item label="任务名称" prop="name">
-          <el-input v-model="taskForm.name" placeholder="请输入任务名称" />
+        <el-form-item :label="t('manager.metadata.labelTaskName')" prop="name">
+          <el-input v-model="taskForm.name" :placeholder="t('manager.metadata.placeholderTaskName')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('manager.metadata.labelDescription')">
           <el-input
             v-model="taskForm.description"
             type="textarea"
             :rows="2"
-            placeholder="任务用途，可选"
+            :placeholder="t('manager.metadata.placeholderDescription')"
           />
         </el-form-item>
-        <el-form-item label="Schema 列表">
+        <el-form-item :label="t('manager.metadata.labelSchemaList')">
           <el-input
             v-model="taskForm.schemaInput"
-            placeholder="逗号分隔，例如: public, sales"
+            :placeholder="t('manager.metadata.placeholderSchemaList')"
           />
         </el-form-item>
-        <el-form-item label="对象路径">
+        <el-form-item :label="t('manager.metadata.labelObjectPath')">
           <el-input
             v-model="taskForm.objectPathInput"
-            placeholder="对象存储路径，逗号分隔"
+            :placeholder="t('manager.metadata.placeholderObjectPath')"
           />
         </el-form-item>
-        <el-form-item label="扫描深度">
-          <el-select v-model="taskForm.scanDepth" placeholder="选择扫描深度">
+        <el-form-item :label="t('manager.metadata.labelScanDepth')">
+          <el-select v-model="taskForm.scanDepth" :placeholder="t('manager.metadata.placeholderSchedule')">
             <el-option
               v-for="item in scanDepthOptions"
               :key="item.value"
@@ -432,60 +430,60 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="定时调度">
+        <el-form-item :label="t('manager.metadata.labelSchedule')">
           <ScheduleConfig
             v-model="taskForm.schedule"
             :allow-custom-cron="true"
           />
         </el-form-item>
-        <el-form-item label="是否启用">
+        <el-form-item :label="t('manager.metadata.labelEnabled')">
           <el-switch v-model="taskForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="taskDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitTaskForm" :loading="savingTask">保存</el-button>
+        <el-button @click="taskDialogVisible = false">{{ t('manager.metadata.cancelBtn') }}</el-button>
+        <el-button type="primary" @click="submitTaskForm" :loading="savingTask">{{ t('manager.metadata.saveBtn') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="runDetailVisible"
-      title="运行详情"
+      :title="t('manager.metadata.runDetailTitle')"
       width="640px"
     >
       <div v-if="viewingRun" class="run-detail">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="运行 ID">{{ viewingRun.id }}</el-descriptions-item>
-          <el-descriptions-item label="任务 ID">
-            {{ viewingRun.task_id || '即时扫描' }}
+          <el-descriptions-item :label="t('manager.metadata.labelRunId')">{{ viewingRun.id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.labelTaskId')">
+            {{ viewingRun.task_id || t('manager.metadata.instantScan') }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态">{{ formatRunStatus(viewingRun.status) }}</el-descriptions-item>
-          <el-descriptions-item label="触发方式">{{ formatTriggerType(viewingRun.trigger_type) }}</el-descriptions-item>
-          <el-descriptions-item label="开始时间" :span="2">
+          <el-descriptions-item :label="t('manager.metadata.labelRunStatus')">{{ formatRunStatus(viewingRun.status) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.labelTriggerType')">{{ formatTriggerType(viewingRun.trigger_type) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.metadata.labelStartTime')" :span="2">
             {{ viewingRun.started_at ? formatDateTime(viewingRun.started_at) : '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="完成时间" :span="2">
+          <el-descriptions-item :label="t('manager.metadata.labelFinishTime')" :span="2">
             {{ viewingRun.completed_at ? formatDateTime(viewingRun.completed_at) : '-' }}
           </el-descriptions-item>
         </el-descriptions>
 
         <el-divider />
         <div class="run-dialog-section">
-          <h4>进度信息</h4>
-          <p>{{ viewingRun.progress_message || '暂无进度描述' }}</p>
+          <h4>{{ t('manager.metadata.progressInfo') }}</h4>
+          <p>{{ viewingRun.progress_message || t('manager.metadata.noProgress') }}</p>
         </div>
 
         <div v-if="viewingRun.error_message" class="run-dialog-section">
-          <h4>错误信息</h4>
+          <h4>{{ t('manager.metadata.errorInfo') }}</h4>
           <pre class="json-block">{{ viewingRun.error_message }}</pre>
         </div>
 
         <div class="run-dialog-section">
-          <h4>结果摘要</h4>
+          <h4>{{ t('manager.metadata.resultSummary') }}</h4>
           <div v-if="viewingRun.result_summary && Object.keys(viewingRun.result_summary).length">
             <pre class="json-block">{{ formatJSON(viewingRun.result_summary) }}</pre>
           </div>
-          <el-empty v-else description="暂无结果数据" />
+          <el-empty v-else :description="t('manager.metadata.noResult')" />
         </div>
       </div>
     </el-dialog>
@@ -495,8 +493,11 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { managerAPI } from '../api/manager'
 import { ScheduleConfig, describeCron } from '@common-ui'
+
+const { t } = useI18n()
 
 const dataSources = ref([])
 const selectedDataSourceId = ref(null)
@@ -542,10 +543,10 @@ const taskForm = reactive({
 })
 
 const taskFormRules = {
-  name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }]
+  name: [{ required: true, message: t('manager.metadata.taskNameRequired'), trigger: 'blur' }]
 }
 
-const taskDialogTitle = computed(() => (editingTaskId.value ? '编辑扫描任务' : '新建扫描任务'))
+const taskDialogTitle = computed(() => (editingTaskId.value ? t('manager.metadata.taskDialogEdit') : t('manager.metadata.taskDialogCreate')))
 
 const runDetailVisible = ref(false)
 const viewingRun = ref(null)
@@ -564,16 +565,16 @@ const runDisplayName = (run) => {
     return run.name
   }
   if (run.task_id) {
-    return taskMap.value[run.task_id]?.name || `任务 #${run.task_id}`
+    return taskMap.value[run.task_id]?.name || t('manager.metadata.taskRef', { id: run.task_id })
   }
-  return '即时扫描'
+  return t('manager.metadata.instantScan')
 }
 
-const scanDepthOptions = [
-  { label: '基础 (basic)', value: 'basic' },
-  { label: '深入 (deep)', value: 'deep' },
-  { label: '全量 (full)', value: 'full' }
-]
+const scanDepthOptions = computed(() => [
+  { label: t('manager.metadata.scanDepthBasic'), value: 'basic' },
+  { label: t('manager.metadata.scanDepthDeep'), value: 'deep' },
+  { label: t('manager.metadata.scanDepthFull'), value: 'full' }
+])
 
 let runPollingTimer = null
 
@@ -588,7 +589,7 @@ const loadDataSources = async () => {
     }
   } catch (error) {
     console.error('加载数据源失败:', error)
-    ElMessage.error('加载数据源失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.loadDataSourcesFailed', { error: error.response?.data?.error || error.message }))
   }
 }
 
@@ -618,7 +619,7 @@ const handleScanMetadata = async () => {
     const response = await managerAPI.scanDataSource(selectedDataSourceId.value)
     scanResult.value = response.data
 
-    ElMessage.success(`扫描完成! 共发现 ${response.data.total_items} 个表`)
+    ElMessage.success(t('manager.metadata.scanSuccess', { total: response.data.total_items }))
 
     loadTables()
     if (activeTab.value === 'tasks') {
@@ -626,7 +627,7 @@ const handleScanMetadata = async () => {
     }
   } catch (error) {
     console.error('扫描元数据失败:', error)
-    ElMessage.error('扫描失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.scanFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     scanning.value = false
   }
@@ -652,7 +653,7 @@ const loadTables = async () => {
     }
   } catch (error) {
     console.error('加载表列表失败:', error)
-    ElMessage.error('加载失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.loadTablesFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     loadingTables.value = false
   }
@@ -662,11 +663,11 @@ const handleManageTable = async (table) => {
   managingTableId.value = table.id
   try {
     await managerAPI.manageTable(table.id)
-    ElMessage.success('表已纳管，正在提取详细元数据...')
+    ElMessage.success(t('manager.metadata.managedSuccess'))
     await loadTables()
   } catch (error) {
     console.error('纳管表失败:', error)
-    ElMessage.error('纳管失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.manageFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     managingTableId.value = null
   }
@@ -676,11 +677,11 @@ const handleUnmanageTable = async (table) => {
   managingTableId.value = table.id
   try {
     await managerAPI.unmanageTable(table.id)
-    ElMessage.success('已取消纳管')
+    ElMessage.success(t('manager.metadata.unmanagedSuccess'))
     await loadTables()
   } catch (error) {
     console.error('取消纳管失败:', error)
-    ElMessage.error('取消纳管失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.unmanagedFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     managingTableId.value = null
   }
@@ -702,7 +703,7 @@ const loadScanTasks = async (silent = false) => {
   } catch (error) {
     console.error('加载扫描任务失败:', error)
     if (!silent) {
-      ElMessage.error('加载扫描任务失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('manager.metadata.loadTasksFailed', { error: error.response?.data?.error || error.message }))
     }
   } finally {
     if (!silent) {
@@ -722,7 +723,7 @@ const loadScanRuns = async (silent = false) => {
   } catch (error) {
     console.error('加载扫描运行失败:', error)
     if (!silent) {
-      ElMessage.error('加载运行记录失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('manager.metadata.loadRunsFailed', { error: error.response?.data?.error || error.message }))
     }
   } finally {
     if (!silent) {
@@ -802,10 +803,10 @@ const submitTaskForm = () => {
     try {
       if (editingTaskId.value) {
         await managerAPI.updateScanTask(selectedDataSourceId.value, editingTaskId.value, payload)
-        ElMessage.success('任务已更新')
+        ElMessage.success(t('manager.metadata.taskUpdated'))
       } else {
         await managerAPI.createScanTask(selectedDataSourceId.value, payload)
-        ElMessage.success('任务已创建')
+        ElMessage.success(t('manager.metadata.taskCreated'))
       }
       handleTaskDialogClose()
       await loadScanTasks(true)
@@ -814,7 +815,7 @@ const submitTaskForm = () => {
       }
     } catch (error) {
       console.error('保存扫描任务失败:', error)
-      ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('manager.metadata.taskSaveFailed', { error: error.response?.data?.error || error.message }))
     } finally {
       savingTask.value = false
     }
@@ -868,11 +869,11 @@ const handleToggleTask = async (task) => {
   try {
     const payload = buildTaskPayloadFromTask(task, { enabled: !task.enabled })
     await managerAPI.updateScanTask(selectedDataSourceId.value, task.id, payload)
-    ElMessage.success(task.enabled ? '任务已停用' : '任务已启用')
+    ElMessage.success(task.enabled ? t('manager.metadata.taskDisabled') : t('manager.metadata.taskEnabled'))
     await loadScanTasks(true)
   } catch (error) {
     console.error('更新任务状态失败:', error)
-    ElMessage.error('更新任务状态失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.toggleTaskFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     togglingTaskId.value = null
   }
@@ -883,12 +884,12 @@ const handleTriggerTask = async (task) => {
   triggeringTaskId.value = task.id
   try {
     await managerAPI.triggerScanTask(selectedDataSourceId.value, task.id)
-    ElMessage.success('任务已触发执行')
+    ElMessage.success(t('manager.metadata.taskTriggered'))
     await loadScanRuns()
     startRunPolling()
   } catch (error) {
     console.error('触发任务失败:', error)
-    ElMessage.error('触发任务失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.triggerFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     triggeringTaskId.value = null
   }
@@ -897,10 +898,10 @@ const handleTriggerTask = async (task) => {
 const handleDeleteTask = async (task) => {
   if (!selectedDataSourceId.value) return
   try {
-    await ElMessageBox.confirm(`确认删除任务 “${task.name}” 吗？`, '删除确认', {
+    await ElMessageBox.confirm(t('manager.metadata.deleteConfirm', { name: task.name }), t('manager.metadata.deleteConfirmTitle'), {
       type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
+      confirmButtonText: t('manager.metadata.deleteConfirmBtn'),
+      cancelButtonText: t('manager.metadata.deleteCancelBtn')
     })
   } catch (cancel) {
     return
@@ -909,11 +910,11 @@ const handleDeleteTask = async (task) => {
   deletingTaskId.value = task.id
   try {
     await managerAPI.deleteScanTask(selectedDataSourceId.value, task.id)
-    ElMessage.success('任务已删除')
+    ElMessage.success(t('manager.metadata.taskDeleted'))
     await loadScanTasks(true)
   } catch (error) {
     console.error('删除任务失败:', error)
-    ElMessage.error('删除任务失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.deleteFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     deletingTaskId.value = null
   }
@@ -924,12 +925,12 @@ const handleManualScan = async () => {
   manualScanning.value = true
   try {
     await managerAPI.createManualScanRun(selectedDataSourceId.value, { scan_depth: 'deep', scan_type: 'manual' })
-    ElMessage.success('已提交即时扫描，稍后更新运行状态')
+    ElMessage.success(t('manager.metadata.instantScanSubmitted'))
     await loadScanRuns()
     startRunPolling()
   } catch (error) {
     console.error('提交即时扫描失败:', error)
-    ElMessage.error('提交即时扫描失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.metadata.instantScanFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     manualScanning.value = false
   }
@@ -937,18 +938,12 @@ const handleManualScan = async () => {
 
 const formatRunStatus = (status) => {
   switch (status) {
-    case 'pending':
-      return '待执行'
-    case 'running':
-      return '执行中'
-    case 'success':
-      return '已完成'
-    case 'failed':
-      return '失败'
-    case 'canceled':
-      return '已取消'
-    default:
-      return status || '-'
+    case 'pending': return t('manager.metadata.statusPending')
+    case 'running': return t('manager.metadata.statusRunning')
+    case 'success': return t('manager.metadata.statusSuccess')
+    case 'failed': return t('manager.metadata.statusFailed')
+    case 'canceled': return t('manager.metadata.statusCanceled')
+    default: return status || '-'
   }
 }
 
@@ -971,14 +966,10 @@ const statusTagType = (status) => {
 
 const formatTriggerType = (type) => {
   switch (type) {
-    case 'manual':
-      return '手动'
-    case 'scheduled':
-      return '定时'
-    case 'system':
-      return '系统'
-    default:
-      return type || '-'
+    case 'manual': return t('manager.metadata.triggerManual')
+    case 'scheduled': return t('manager.metadata.triggerScheduled')
+    case 'system': return t('manager.metadata.triggerSystem')
+    default: return type || '-'
   }
 }
 

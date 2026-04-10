@@ -2,56 +2,56 @@
   <div class="task-detail">
     <el-button @click="$router.back()" style="margin-bottom: 20px;">
       <el-icon><ArrowLeft /></el-icon>
-      返回
+      {{ t('transfer.taskDetail.back') }}
     </el-button>
 
     <el-card v-loading="loading">
       <template #header>
         <div class="header">
-          <span>任务详情 - {{ task.name }}</span>
+          <span>{{ t('transfer.taskDetail.taskDetailTitle', { name: task.name }) }}</span>
           <div>
             <template v-if="isManualTask">
               <el-button type="primary" @click="handleExecute" :disabled="task.status === 'running'">
-                执行
+                {{ t('transfer.taskDetail.execute') }}
               </el-button>
               <el-button type="warning" @click="handleStop" :disabled="task.status !== 'running'">
-                停止
+                {{ t('transfer.taskDetail.stop') }}
               </el-button>
             </template>
             <template v-else>
               <el-button type="primary" @click="handleResume" :disabled="!canStartSchedule">
-                启动
+                {{ t('transfer.taskDetail.start') }}
               </el-button>
               <el-button type="warning" @click="handlePause" :disabled="!canPauseSchedule">
-                暂停
+                {{ t('transfer.taskDetail.pause') }}
               </el-button>
               <el-button @click="handleExecute" :disabled="task.status === 'running'">
-                单次执行
+                {{ t('transfer.taskDetail.runOnce') }}
               </el-button>
             </template>
-            <el-button @click="handleEdit" :disabled="!canEditTask">编辑</el-button>
-            <el-button @click="openJsonDialog">查看JSON配置</el-button>
+            <el-button @click="handleEdit" :disabled="!canEditTask">{{ t('transfer.taskDetail.edit') }}</el-button>
+            <el-button @click="openJsonDialog">{{ t('transfer.taskDetail.viewJsonConfig') }}</el-button>
           </div>
         </div>
       </template>
 
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="任务ID">{{ task.id }}</el-descriptions-item>
-        <el-descriptions-item label="任务名称">{{ task.name }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('transfer.taskDetail.taskId')">{{ task.id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.taskName')">{{ task.name }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.status')">
           <el-tag :type="getTaskStatusTagType(task)">{{ getTaskStatusLabel(task) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="批量大小">{{ task.batch_size }}</el-descriptions-item>
-        <el-descriptions-item label="定时调度">{{ formatSchedule(task.schedule) }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">
+        <el-descriptions-item :label="t('transfer.taskDetail.batchSize')">{{ task.batch_size }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.schedule')">{{ formatSchedule(task.schedule) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.createdAt')">
           {{ formatDate(task.created_at) }}
         </el-descriptions-item>
-        <el-descriptions-item label="描述" :span="2">
+        <el-descriptions-item :label="t('transfer.taskDetail.description')" :span="2">
           {{ task.description || '-' }}
         </el-descriptions-item>
       </el-descriptions>
 
-      <el-divider content-position="left">源数据源</el-divider>
+      <el-divider content-position="left">{{ t('transfer.taskDetail.sourceDataSource') }}</el-divider>
       <el-descriptions :column="2" border v-if="sourceDetails.length">
         <el-descriptions-item
           v-for="item in sourceDetails"
@@ -63,7 +63,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <el-divider content-position="left">目标数据源</el-divider>
+      <el-divider content-position="left">{{ t('transfer.taskDetail.targetDataSource') }}</el-divider>
       <el-descriptions :column="2" border v-if="targetDetails.length">
         <el-descriptions-item
           v-for="item in targetDetails"
@@ -75,33 +75,33 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <el-divider>执行记录</el-divider>
+      <el-divider>{{ t('transfer.taskDetail.executionRecords') }}</el-divider>
       <el-table :data="executions" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="id" :label="t('transfer.taskDetail.id')" width="80" />
+        <el-table-column prop="status" :label="t('transfer.taskDetail.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="getExecutionTagType(row.status)">
               {{ getExecutionLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="records_written" label="已写入记录" width="120" />
-        <el-table-column prop="start_time" label="开始时间" width="180">
+        <el-table-column prop="records_written" :label="t('transfer.taskDetail.recordsWritten')" width="120" />
+        <el-table-column prop="start_time" :label="t('transfer.taskDetail.startTime')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.start_time) }}
           </template>
         </el-table-column>
-        <el-table-column prop="end_time" label="结束时间" width="180">
+        <el-table-column prop="end_time" :label="t('transfer.taskDetail.endTime')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.end_time) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column :label="t('transfer.taskDetail.actions')" width="150">
           <template #default="{ row }">
-            <el-button size="small" @click="viewExecution(row.id)">详情</el-button>
+            <el-button size="small" @click="viewExecution(row.id)">{{ t('transfer.taskDetail.detail') }}</el-button>
             <el-button size="small" type="primary" @click="retryExecution(row.id)"
               v-if="row.status === 'failed'">
-              重试
+              {{ t('transfer.taskDetail.retry') }}
             </el-button>
           </template>
         </el-table-column>
@@ -111,8 +111,8 @@
     <el-dialog v-model="jsonDialogVisible" width="700px">
       <template #header>
         <div class="json-dialog-header">
-          <span>JSON 配置</span>
-          <el-button size="small" type="primary" @click="handleCopyJson">复制</el-button>
+          <span>{{ t('transfer.taskDetail.jsonConfig') }}</span>
+          <el-button size="small" type="primary" @click="handleCopyJson">{{ t('transfer.taskDetail.copy') }}</el-button>
         </div>
       </template>
       <pre class="json-pre">{{ formattedConfig }}</pre>
@@ -124,10 +124,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -160,21 +163,21 @@ const systemResourceMap = computed(() => {
   return map
 })
 
-const connectorTypeLabels = {
+const connectorTypeLabels = computed(() => ({
   postgresql: 'PostgreSQL',
   mysql: 'MySQL',
-  s3: '对象存储（S3 兼容）',
-  minio: '对象存储（MinIO）',
-  oss: '对象存储（OSS）',
-  csv: 'CSV 文件',
-  json: 'JSON 文件'
-}
+  s3: t('transfer.taskDetail.objectStorageS3'),
+  minio: t('transfer.taskDetail.objectStorageMinio'),
+  oss: t('transfer.taskDetail.objectStorageOss'),
+  csv: t('transfer.taskDetail.csvFile'),
+  json: t('transfer.taskDetail.jsonFile')
+}))
 
-const incrementalTypeLabels = {
-  timestamp: '时间戳',
-  numeric: '数值',
-  string: '字符串'
-}
+const incrementalTypeLabels = computed(() => ({
+  timestamp: t('transfer.taskDetail.timestampType'),
+  numeric: t('transfer.taskDetail.numericType'),
+  string: t('transfer.taskDetail.stringType')
+}))
 
 const loadTask = async () => {
   if (!route.params.id) return
@@ -199,26 +202,26 @@ const loadSystemResources = async () => {
     const data = await systemEnginesAPI.list()
     systemResources.value = Array.isArray(data) ? data : []
   } catch (error) {
-    console.error('加载系统资源失败:', error)
+    console.error(t('transfer.taskDetail.loadSystemResourcesFailed'), error)
   }
 }
 
 const handleExecute = async () => {
   await taskAPI.start(route.params.id)
-  const message = isManualTask.value ? '任务执行已提交' : '单次执行已提交'
+  const message = isManualTask.value ? t('transfer.taskDetail.executeSubmitted') : t('transfer.taskDetail.runOnceSubmitted')
   ElMessage.success(message)
   await loadTask()
 }
 
 const handleStop = async () => {
   try {
-    await ElMessageBox.confirm('确定要停止该任务吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('transfer.taskDetail.stopConfirm'), t('transfer.taskDetail.hint'), {
+      confirmButtonText: t('transfer.taskDetail.confirm'),
+      cancelButtonText: t('transfer.taskDetail.cancel'),
       type: 'warning'
     })
     await taskAPI.stop(route.params.id)
-    ElMessage.success('任务已停止')
+    ElMessage.success(t('transfer.taskDetail.taskStopped'))
     await loadTask()
   } catch (error) {
     if (error !== 'cancel') {
@@ -229,13 +232,13 @@ const handleStop = async () => {
 
 const handlePause = async () => {
   try {
-    await ElMessageBox.confirm('确定要暂停该定时任务吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('transfer.taskDetail.pauseConfirm'), t('transfer.taskDetail.hint'), {
+      confirmButtonText: t('transfer.taskDetail.confirm'),
+      cancelButtonText: t('transfer.taskDetail.cancel'),
       type: 'warning'
     })
     await taskAPI.pause(route.params.id)
-    ElMessage.success('任务已暂停')
+    ElMessage.success(t('transfer.taskDetail.taskPaused'))
     await loadTask()
   } catch (error) {
     if (error !== 'cancel') {
@@ -246,13 +249,13 @@ const handlePause = async () => {
 
 const handleResume = async () => {
   await taskAPI.resume(route.params.id)
-  ElMessage.success('任务已启用')
+  ElMessage.success(t('transfer.taskDetail.taskResumed'))
   await loadTask()
 }
 
 const handleEdit = () => {
   if (!canEditTask.value) {
-    ElMessage.warning('任务执行中，无法编辑')
+    ElMessage.warning(t('transfer.taskDetail.taskRunning'))
     return
   }
   router.push(`/tasks/${route.params.id}/edit`)
@@ -264,7 +267,7 @@ const viewExecution = (id) => {
 
 const retryExecution = async (id) => {
   await executionAPI.retry(id)
-  ElMessage.success('重试已提交')
+  ElMessage.success(t('transfer.taskDetail.retrySubmitted'))
   loadTask()
 }
 
@@ -741,7 +744,7 @@ const copyToClipboard = (text) => {
     const successful = document.execCommand('copy')
     document.body.removeChild(textarea)
     if (!successful) {
-      throw new Error('复制失败')
+      throw new Error(t('transfer.taskDetail.copyFailed'))
     }
   } catch (err) {
     document.body.removeChild(textarea)
@@ -751,14 +754,14 @@ const copyToClipboard = (text) => {
 
 const formatScopeLabel = (scope) => {
   if (!scope) return ''
-  if (scope === 'system') return '系统资源'
-  if (scope === 'local') return '本地存储引擎'
+  if (scope === 'system') return t('transfer.taskDetail.scopeSystem')
+  if (scope === 'local') return t('transfer.taskDetail.scopeLocal')
   return scope
 }
 
 const formatValue = (value) => {
   if (value === undefined || value === null) return '-'
-  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (typeof value === 'boolean') return value ? t('transfer.taskDetail.boolYes') : t('transfer.taskDetail.boolNo')
   if (Array.isArray(value)) {
     const joined = value.filter(item => item !== undefined && item !== null && item !== '').join('、')
     return joined || '-'
@@ -777,7 +780,7 @@ const formatValue = (value) => {
 
 const getConnectorTypeLabel = (type) => {
   const lower = toLower(type)
-  return connectorTypeLabels[lower] || (type ? type.toUpperCase() : '')
+  return connectorTypeLabels.value[lower] || (type ? type.toUpperCase() : '')
 }
 
 const inferScope = (config, fallbackId) => {
@@ -800,7 +803,7 @@ const buildConnectorDetails = (role) => {
   const items = []
 
   const scope = inferScope(config, fallbackId)
-  addItem(items, '范围', formatScopeLabel(scope))
+  addItem(items, t('transfer.taskDetail.rangeLabel'), formatScopeLabel(scope))
 
   if (scope === 'system') {
     const resourceId = fallbackId ?? config.system_engine_id
@@ -812,72 +815,72 @@ const buildConnectorDetails = (role) => {
     const labelParts = []
     if (resourceName) labelParts.push(resourceName)
     if (resourceId !== undefined && resourceId !== null) labelParts.push(`ID: ${resourceId}`)
-    addItem(items, '数据源', labelParts.length ? labelParts.join(' / ') : '未配置')
-    addItem(items, '连接类型', getConnectorTypeLabel(resourceType))
+    addItem(items, t('transfer.taskDetail.dataSource'), labelParts.length ? labelParts.join(' / ') : t('transfer.taskDetail.notConfigured'))
+    addItem(items, t('transfer.taskDetail.connectionType'), getConnectorTypeLabel(resourceType))
   } else if (scope === 'local') {
     const resourceId = config.engine_id
     const resourceName = config.local_resource_name
     const labelParts = []
     if (resourceName) labelParts.push(resourceName)
     if (resourceId !== undefined && resourceId !== null) labelParts.push(`ID: ${resourceId}`)
-    addItem(items, '数据源', labelParts.length ? labelParts.join(' / ') : '未配置')
-    addItem(items, '连接类型', getConnectorTypeLabel(config.resource_type || config.type || config.driver))
+    addItem(items, t('transfer.taskDetail.dataSource'), labelParts.length ? labelParts.join(' / ') : t('transfer.taskDetail.notConfigured'))
+    addItem(items, t('transfer.taskDetail.connectionType'), getConnectorTypeLabel(config.resource_type || config.type || config.driver))
   } else {
-    addItem(items, '数据源', '未配置')
-    addItem(items, '连接类型', getConnectorTypeLabel(config.resource_type || config.type || config.driver))
+    addItem(items, t('transfer.taskDetail.dataSource'), t('transfer.taskDetail.notConfigured'))
+    addItem(items, t('transfer.taskDetail.connectionType'), getConnectorTypeLabel(config.resource_type || config.type || config.driver))
   }
 
   const queryType = toLower(config.queryType || config.query_type)
   if (config.table) {
-    addItem(items, '表名', config.table)
+    addItem(items, t('transfer.taskDetail.tableName'), config.table)
   }
   if (config.query) {
-    const label = queryType === 'sql' ? 'SQL 查询' : '查询'
+    const label = queryType === 'sql' ? t('transfer.taskDetail.sqlQuery') : t('transfer.taskDetail.query')
     addItem(items, label, config.query, 2)
   }
   if (config.path) {
-    addItem(items, '路径', config.path, 2)
+    addItem(items, t('transfer.taskDetail.path'), config.path, 2)
   }
 
   if (config.prefix) {
-    addItem(items, '前缀', config.prefix)
+    addItem(items, t('transfer.taskDetail.prefix'), config.prefix)
   }
   if (config.format) {
-    addItem(items, '格式', config.format)
+    addItem(items, t('transfer.taskDetail.format'), config.format)
   }
   if (config.encoding) {
-    addItem(items, '编码', config.encoding)
+    addItem(items, t('transfer.taskDetail.encoding'), config.encoding)
   }
   if (config.delimiter) {
-    addItem(items, '分隔符', config.delimiter)
+    addItem(items, t('transfer.taskDetail.delimiter'), config.delimiter)
   }
   if (config.incremental_field) {
-    addItem(items, '增量字段', config.incremental_field)
-    addItem(items, '增量类型', incrementalTypeLabels[toLower(config.incremental_type)] || config.incremental_type)
+    addItem(items, t('transfer.taskDetail.incrementalField'), config.incremental_field)
+    addItem(items, t('transfer.taskDetail.incrementalType'), incrementalTypeLabels.value[toLower(config.incremental_type)] || config.incremental_type)
   }
   if (config.include_patterns) {
-    addItem(items, '包含模式', config.include_patterns)
+    addItem(items, t('transfer.taskDetail.includePatterns'), config.include_patterns)
   }
   if (config.exclude_patterns) {
-    addItem(items, '排除模式', config.exclude_patterns)
+    addItem(items, t('transfer.taskDetail.excludePatterns'), config.exclude_patterns)
   }
   if (config.geometry_fields || config.geometry_field) {
     const fields = Array.isArray(config.geometry_fields)
       ? config.geometry_fields
       : [config.geometry_field].filter(Boolean)
-    addItem(items, '空间字段', fields)
+    addItem(items, t('transfer.taskDetail.spatialFields'), fields)
   }
   if (config.spatial_format) {
-    addItem(items, '空间格式', config.spatial_format)
+    addItem(items, t('transfer.taskDetail.spatialFormat'), config.spatial_format)
   }
   if (config.has_header !== undefined) {
-    addItem(items, '包含表头', !!config.has_header)
+    addItem(items, t('transfer.taskDetail.hasHeader'), !!config.has_header)
   }
   if (config.recursive !== undefined) {
-    addItem(items, '递归遍历', !!config.recursive)
+    addItem(items, t('transfer.taskDetail.recursive'), !!config.recursive)
   }
   if (config.overwrite !== undefined) {
-    addItem(items, '覆盖写入', !!config.overwrite)
+    addItem(items, t('transfer.taskDetail.overwrite'), !!config.overwrite)
   }
 
   const connection =
@@ -887,10 +890,10 @@ const buildConnectorDetails = (role) => {
       : {})
   if (connection.host) {
     const host = connection.port ? `${connection.host}:${connection.port}` : connection.host
-    addItem(items, '主机', host)
+    addItem(items, t('transfer.taskDetail.host'), host)
   }
   if (connection.database) {
-    addItem(items, '数据库', connection.database)
+    addItem(items, t('transfer.taskDetail.database'), connection.database)
   }
   if (connection.schema) {
     addItem(items, 'Schema', connection.schema)
@@ -899,13 +902,13 @@ const buildConnectorDetails = (role) => {
     addItem(items, 'Endpoint', connection.endpoint)
   }
   if (connection.bucket) {
-    addItem(items, '存储桶', connection.bucket)
+    addItem(items, t('transfer.taskDetail.bucket'), connection.bucket)
   }
   if (connection.region) {
-    addItem(items, '区域', connection.region)
+    addItem(items, t('transfer.taskDetail.region'), connection.region)
   }
   if (connection.path) {
-    addItem(items, '目录', connection.path)
+    addItem(items, t('transfer.taskDetail.directory'), connection.path)
   }
 
   return items
@@ -943,10 +946,10 @@ const openJsonDialog = () => {
 const handleCopyJson = () => {
   try {
     copyToClipboard(formattedConfig.value)
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('transfer.taskDetail.copiedToClipboard'))
   } catch (error) {
     console.error('复制失败:', error)
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('transfer.taskDetail.copyFailed'))
   }
 }
 

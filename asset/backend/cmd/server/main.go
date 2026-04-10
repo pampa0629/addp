@@ -8,6 +8,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/asset/internal/api"
 	"github.com/addp/asset/internal/config"
+	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/models"
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"

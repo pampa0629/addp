@@ -2,8 +2,8 @@
   <div class="metric-detail" v-loading="loading">
     <div class="page-header">
       <div class="header-left">
-        <el-button :icon="ArrowLeft" @click="goBack">返回</el-button>
-        <h2>指标详情</h2>
+        <el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button>
+        <h2>{{ $t('standard.metric.detailTitle') }}</h2>
         <el-tag :type="statusType(metric.status)" size="small" v-if="metric.status">
           {{ statusLabel(metric.status) }}
         </el-tag>
@@ -12,9 +12,9 @@
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="saveChanges" :loading="saving">保存</el-button>
-        <el-button type="success" @click="handleApprove" v-if="metric.status === 'draft'" :disabled="saving">审批</el-button>
-        <el-button type="warning" @click="handleDeprecate" v-if="metric.status === 'approved'" :disabled="saving">废弃</el-button>
+        <el-button type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
+        <el-button type="success" @click="handleApprove" v-if="metric.status === 'draft'" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
+        <el-button type="warning" @click="handleDeprecate" v-if="metric.status === 'approved'" :disabled="saving">{{ $t('standard.common.deprecate') }}</el-button>
       </div>
     </div>
 
@@ -22,32 +22,32 @@
       <el-col :span="16">
         <!-- 基本信息 -->
         <el-card class="section-card">
-          <template #header><h3>基本信息</h3></template>
+          <template #header><h3>{{ $t('standard.metric.basicInfo') }}</h3></template>
           <el-form :model="metric" label-width="100px" size="default">
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="指标名称">
+                <el-form-item :label="$t('standard.metric.nameLabel')">
                   <el-input v-model="metric.name" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="英文编码">
+                <el-form-item :label="$t('standard.metric.codeLabel')">
                   <el-input v-model="metric.code" disabled />
                 </el-form-item>
               </el-col>
             </el-row>
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="指标类型">
+                <el-form-item :label="$t('standard.metric.typeLabel')">
                   <el-select v-model="metric.type" style="width:100%">
-                    <el-option label="原子指标" value="atomic" />
-                    <el-option label="派生指标" value="derived" />
-                    <el-option label="复合指标" value="composite" />
+                    <el-option :label="$t('standard.metric.atomic')" value="atomic" />
+                    <el-option :label="$t('standard.metric.derived')" value="derived" />
+                    <el-option :label="$t('standard.metric.composite')" value="composite" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="所属目录">
+                <el-form-item :label="$t('standard.metric.categoryLabel')">
                   <el-tree-select
                     v-model="metric.category_id"
                     :data="categoryTree"
@@ -57,22 +57,22 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-form-item label="业务口径">
-              <el-input v-model="metric.definition" type="textarea" :rows="4" placeholder="描述指标的业务含义和计算口径" />
+            <el-form-item :label="$t('standard.metric.definitionLabel')">
+              <el-input v-model="metric.definition" type="textarea" :rows="4" :placeholder="$t('standard.metric.definitionPlaceholder')" />
             </el-form-item>
-            <el-form-item label="计算公式" v-if="metric.type === 'composite'">
-              <el-input v-model="metric.formula" type="textarea" :rows="2" placeholder="如：metric_a / metric_b × 100%" />
+            <el-form-item :label="$t('standard.metric.formulaLabel')" v-if="metric.type === 'composite'">
+              <el-input v-model="metric.formula" type="textarea" :rows="2" :placeholder="$t('standard.metric.formulaPlaceholder')" />
             </el-form-item>
-            <el-form-item label="基准指标" v-if="metric.type === 'derived'">
-              <el-select v-model="metric.base_metric_id" filterable clearable style="width:100%" placeholder="选择基准原子指标">
+            <el-form-item :label="$t('standard.metric.baseMetricLabel')" v-if="metric.type === 'derived'">
+              <el-select v-model="metric.base_metric_id" filterable clearable style="width:100%" :placeholder="$t('standard.metric.baseMetricPlaceholder')">
                 <el-option v-for="m in atomicMetrics" :key="m.id" :label="`${m.name}（${m.code}）`" :value="m.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="标签">
+            <el-form-item :label="$t('standard.common.tags')">
               <el-select
                 v-model="metric.tags"
                 multiple filterable allow-create default-first-option
-                placeholder="输入后回车添加标签" style="width:100%"
+                :placeholder="$t('standard.common.tagsPlaceholder')" style="width:100%"
               />
             </el-form-item>
           </el-form>
@@ -85,19 +85,19 @@
       <el-col :span="8">
         <!-- 元数据 -->
         <el-card class="section-card">
-          <template #header><h3>元数据</h3></template>
+          <template #header><h3>{{ $t('standard.common.metadata') }}</h3></template>
           <el-descriptions :column="1" size="small">
-            <el-descriptions-item label="ID">{{ metric.id }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ formatTime(metric.created_at) }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ formatTime(metric.updated_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('standard.common.id')">{{ metric.id }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('standard.common.createdAt')">{{ formatTime(metric.created_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('standard.common.updatedAt')">{{ formatTime(metric.updated_at) }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
 
         <!-- 关联数据元（只读） -->
         <el-card class="section-card">
-          <template #header><h3>关联数据元</h3></template>
+          <template #header><h3>{{ $t('standard.metric.relatedElements') }}</h3></template>
           <div v-if="!relatedElements || relatedElements.length === 0" style="color: var(--el-text-color-secondary); font-size: 13px; padding: 8px 0;">
-            暂无关联数据元
+            {{ $t('standard.metric.noElements') }}
           </div>
           <div v-else class="element-list">
             <div v-for="e in relatedElements" :key="e.id" class="element-item">
@@ -114,11 +114,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
@@ -133,14 +135,14 @@ function buildTree(list, parentId = null) {
   return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
 }
 
-const typeLabel = (t) => ({ atomic: '原子指标', derived: '派生指标', composite: '复合指标' }[t] || t)
-const typeTagType = (t) => ({ atomic: 'primary', derived: 'warning', composite: 'success' }[t] || '')
+const typeLabel = (type) => ({ atomic: t('standard.metric.atomic'), derived: t('standard.metric.derived'), composite: t('standard.metric.composite') }[type] || type)
+const typeTagType = (type) => ({ atomic: 'primary', derived: 'warning', composite: 'success' }[type] || '')
 const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || 'info')
-const statusLabel = (s) => ({ draft: '草稿', approved: '已审批', deprecated: '已废弃' }[s] || s)
+const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 
-const formatTime = (t) => {
-  if (!t) return '-'
-  return new Date(t).toLocaleString('zh-CN')
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN')
 }
 
 const goBack = () => router.push('/standard/metrics')
@@ -152,7 +154,7 @@ const loadMetric = async () => {
     metric.value = res || {}
     if (!metric.value.tags) metric.value.tags = []
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('standard.common.loadFailed'))
     goBack()
   } finally {
     loading.value = false
@@ -171,7 +173,7 @@ const loadCategories = async () => {
 const loadAtomicMetrics = async () => {
   try {
     const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
-    atomicMetrics.value = (res.data || []).filter(m => m.id !== Number(route.params.id))  // 分页格式，保留 .data
+    atomicMetrics.value = (res.data || []).filter(m => m.id !== Number(route.params.id))
   } catch (e) {
     console.error('加载原子指标失败:', e)
   }
@@ -181,10 +183,10 @@ const saveChanges = async () => {
   saving.value = true
   try {
     await metricAPI.update(route.params.id, metric.value)
-    ElMessage.success('保存成功')
+    ElMessage.success(t('standard.common.saveSuccess'))
     await loadMetric()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '保存失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -192,23 +194,23 @@ const saveChanges = async () => {
 
 const handleApprove = async () => {
   try {
-    await ElMessageBox.confirm('确认审批通过？审批后状态变为"已审批"', '提示', { type: 'info' })
+    await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
     await metricAPI.approve(route.params.id)
-    ElMessage.success('审批成功')
+    ElMessage.success(t('standard.common.approveSuccess'))
     await loadMetric()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('审批失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
   }
 }
 
 const handleDeprecate = async () => {
   try {
-    await ElMessageBox.confirm('确认废弃该指标？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.metric.confirmDeprecate'), t('standard.common.hint'), { type: 'warning' })
     await metricAPI.deprecate(route.params.id)
-    ElMessage.success('已废弃')
+    ElMessage.success(t('standard.common.deprecated'))
     await loadMetric()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('操作失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
   }
 }
 

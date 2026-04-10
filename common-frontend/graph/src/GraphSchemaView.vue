@@ -1,16 +1,16 @@
 <template>
   <div class="graph-schema-view">
     <div v-if="isEmpty" class="empty-state">
-      <el-empty description="暂无图 Schema 数据，请先扫描元数据" :image-size="80" />
+      <el-empty :description="t('graph.noSchema')" :image-size="80" />
     </div>
     <div v-else ref="wrapperRef" class="graph-container-wrapper">
       <!-- 图例 -->
       <div class="legend">
         <span class="legend-item">
-          <span class="legend-dot node-dot"></span>节点标签
+          <span class="legend-dot node-dot"></span>{{ t('graph.nodeLegend') }}
         </span>
         <span class="legend-item">
-          <span class="legend-arrow"></span>关系类型
+          <span class="legend-arrow"></span>{{ t('graph.relationLegend') }}
         </span>
       </div>
       <div ref="containerRef" class="graph-container" />
@@ -21,11 +21,11 @@
           <el-button text size="small" @click="selectedNode = null">×</el-button>
         </div>
         <div class="detail-row">
-          <span class="detail-key">节点数量</span>
+          <span class="detail-key">{{ t('graph.nodeCount') }}</span>
           <span class="detail-val">{{ selectedNode.count }}</span>
         </div>
         <div v-if="selectedNode.properties?.length" class="detail-row">
-          <span class="detail-key">属性</span>
+          <span class="detail-key">{{ t('graph.properties') }}</span>
           <span class="detail-val props">{{ selectedNode.properties.join(', ') }}</span>
         </div>
       </div>
@@ -35,7 +35,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+
+const { t } = useI18n()
 
 const emit = defineEmits(['node-click'])
 

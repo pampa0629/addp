@@ -11,7 +11,7 @@
         <el-icon :size="24" style="margin-right: 10px">
           <Platform />
         </el-icon>
-        <h1>系统管理模块</h1>
+        <h1>{{ t('system.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown>
@@ -24,7 +24,7 @@
             <el-dropdown-menu>
               <el-dropdown-item @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('system.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -42,33 +42,33 @@
         >
           <el-menu-item index="/">
             <el-icon><HomeFilled /></el-icon>
-            <span>系统概览</span>
+            <span>{{ t('system.layout.overview') }}</span>
           </el-menu-item>
 
           <el-sub-menu index="system">
             <template #title>
               <el-icon><Setting /></el-icon>
-              <span>系统管理</span>
+              <span>{{ t('system.layout.systemMgmt') }}</span>
             </template>
             <el-menu-item index="/users" @click="handleMenuClick('system', 'users')">
               <el-icon><User /></el-icon>
-              <span>用户管理</span>
+              <span>{{ t('system.layout.userMgmt') }}</span>
             </el-menu-item>
             <el-menu-item index="/engines" @click="handleMenuClick('system', 'engines')">
               <el-icon><Connection /></el-icon>
-              <span>引擎管理</span>
+              <span>{{ t('system.layout.engineMgmt') }}</span>
             </el-menu-item>
             <el-menu-item index="/applications" @click="handleMenuClick('system', 'applications')">
               <el-icon><Key /></el-icon>
-              <span>应用管理</span>
+              <span>{{ t('system.layout.appMgmt') }}</span>
             </el-menu-item>
             <el-menu-item index="/logs" @click="handleMenuClick('system', 'logs')">
               <el-icon><Document /></el-icon>
-              <span>日志审计</span>
+              <span>{{ t('system.layout.auditLogs') }}</span>
             </el-menu-item>
             <el-menu-item index="/cleanup" @click="handleMenuClick('system', 'cleanup')">
               <el-icon><Delete /></el-icon>
-              <span>垃圾清理</span>
+              <span>{{ t('system.layout.cleanup') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>
@@ -93,14 +93,14 @@ import {
   Setting,
   Document,
   Connection,
-  DataAnalysis,
   HomeFilled,
-  Monitor,
   Key,
   Delete
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -120,13 +120,12 @@ const user = computed(() => authStore.user)
 const activeMenu = computed(() => route.path)
 
 const handleMenuClick = (section, subsection) => {
-  // 菜单点击处理，路由已通过 index 属性处理
   console.log('Menu clicked:', section, subsection)
 }
 
 const handleLogout = () => {
   authStore.logout()
-  ElMessage.success('退出成功')
+  ElMessage.success(t('system.layout.logoutSuccess'))
   router.push('/login')
 }
 </script>

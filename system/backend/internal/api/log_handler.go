@@ -8,8 +8,10 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -80,7 +82,7 @@ func (h *LogHandler) GetByID(c *gin.Context) {
 
 	log, err := h.logService.GetByID(id)
 	if err != nil {
-		commonapi.RespondError(c, 404, "日志不存在")
+		commonapi.RespondError(c, 404, commoni18n.T(c, sysi18n.MsgLogNotFound))
 		return
 	}
 
@@ -144,7 +146,7 @@ func (h *LogHandler) Export(c *gin.Context) {
 		// 写入表头
 		headers := []string{"ID", "用户ID", "用户名", "租户ID", "HTTP方法", "路径", "资源类型", "资源ID", "IP地址", "时间"}
 		if err := writer.Write(headers); err != nil {
-			commonapi.RespondError(c, 500, "导出失败")
+			commonapi.RespondError(c, 500, commoni18n.T(c, sysi18n.MsgExportFailed))
 			return
 		}
 
@@ -181,7 +183,7 @@ func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	var req models.AuditLogCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// 输出详细错误信息便于调试
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams), "details": err.Error()})
 		return
 	}
 
@@ -212,11 +214,11 @@ func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 
 	// 创建日志
 	if err := h.logService.Create(auditLog); err != nil {
-		commonapi.RespondError(c, 500, "创建审计日志失败")
+		commonapi.RespondError(c, 500, commoni18n.T(c, sysi18n.MsgAuditLogCreateFailed))
 		return
 	}
 
-	commonapi.RespondCreated(c, gin.H{"message": "审计日志已创建"})
+	commonapi.RespondCreated(c, gin.H{"message": commoni18n.T(c, sysi18n.MsgAuditLogCreated)})
 }
 
 // GetStats 获取日志统计（新增）

@@ -2,7 +2,7 @@
   <div class="geojson-preview">
     <div class="controls">
       <div class="toggle-wrapper">
-        <span>地图预览</span>
+        <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
       <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
@@ -24,7 +24,7 @@
 
     <pre class="json-content" :class="{ collapsed: showMap }">{{ formattedJson }}</pre>
 
-    <div v-if="truncated" class="truncate-tip">内容较大，仅展示部分</div>
+    <div v-if="truncated" class="truncate-tip">{{ t('map.truncated') }}</div>
 
     <!-- 元数据展示区域 -->
     <div v-if="hasExtractedMetadata" class="metadata-section">
@@ -35,10 +35,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import MapContainer from './map/MapContainer.vue'
 import { safeStringify } from '../utils/formatters'
 import ExtractedMetadata from './ExtractedMetadata.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   data: {

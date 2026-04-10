@@ -3,10 +3,10 @@
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <h2>查询任务管理</h2>
+        <h2>{{ t('develop.queryTasks.title') }}</h2>
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索任务名称或描述"
+          :placeholder="t('develop.queryTasks.searchPlaceholder')"
           style="width: 300px; margin-left: 20px"
           clearable
           @change="loadTasks"
@@ -20,7 +20,7 @@
       <div class="toolbar-right">
         <el-button type="primary" @click="$router.push('/sql-editor')">
           <el-icon><Plus /></el-icon>
-          新建 查询任务
+          {{ t('develop.queryTasks.newTask') }}
         </el-button>
       </div>
     </div>
@@ -28,18 +28,18 @@
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <el-space>
-        <span>状态:</span>
+        <span>{{ t('develop.queryTasks.statusLabel') }}:</span>
         <el-radio-group v-model="filterStatus" @change="loadTasks">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="active">活跃</el-radio-button>
-          <el-radio-button value="inactive">停用</el-radio-button>
+          <el-radio-button value="">{{ t('develop.queryTasks.filterAll') }}</el-radio-button>
+          <el-radio-button value="active">{{ t('develop.queryTasks.filterActive') }}</el-radio-button>
+          <el-radio-button value="inactive">{{ t('develop.queryTasks.filterInactive') }}</el-radio-button>
         </el-radio-group>
 
         <el-divider direction="vertical" />
 
-        <span>调度:</span>
+        <span>{{ t('develop.queryTasks.scheduleLabel') }}:</span>
         <el-checkbox v-model="filterScheduled" @change="loadTasks">
-          仅显示已调度
+          {{ t('develop.queryTasks.filterScheduled') }}
         </el-checkbox>
       </el-space>
     </div>
@@ -53,7 +53,7 @@
         style="width: 100%"
         @row-click="handleRowClick"
       >
-        <el-table-column prop="name" label="任务名称" min-width="180">
+        <el-table-column prop="name" :label="t('develop.queryTasks.colName')" min-width="180">
           <template #default="{ row }">
             <div>
               <strong>{{ row.display_name || row.name }}</strong>
@@ -64,28 +64,28 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="description" :label="t('develop.queryTasks.colDescription')" min-width="200" show-overflow-tooltip />
 
-        <el-table-column label="数据源" width="150">
+        <el-table-column :label="t('develop.queryTasks.colDataSource')" width="150">
           <template #default="{ row }">
             <el-tag v-if="row.engine_id" size="small" type="info">
-              资源 #{{ row.engine_id }}
+              {{ t('develop.queryTasks.resourceId', { id: row.engine_id }) }}
             </el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="调度" width="200">
+        <el-table-column :label="t('develop.queryTasks.colSchedule')" width="200">
           <template #default="{ row }">
             <ScheduleDisplay
               v-if="row.schedule && row.schedule !== ''"
               :schedule="row.schedule"
             />
-            <span v-else style="color: var(--addp-text-tertiary)">手动触发</span>
+            <span v-else style="color: var(--addp-text-tertiary)">{{ t('develop.queryTasks.manualTrigger') }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('develop.queryTasks.colStatus')" width="100">
           <template #default="{ row }">
             <el-tag
               :type="row.status === 'active' ? 'success' : 'info'"
@@ -96,7 +96,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="最后执行" width="180">
+        <el-table-column :label="t('develop.queryTasks.colLastExecution')" width="180">
           <template #default="{ row }">
             <div v-if="row.last_executed_at">
               <el-tag
@@ -109,11 +109,11 @@
                 {{ formatTime(row.last_executed_at) }}
               </div>
             </div>
-            <span v-else style="color: var(--addp-text-tertiary)">未执行</span>
+            <span v-else style="color: var(--addp-text-tertiary)">{{ t('develop.queryTasks.notExecuted') }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="标签" width="150">
+        <el-table-column :label="t('develop.queryTasks.colTags')" width="150">
           <template #default="{ row }">
             <el-tag
               v-for="tag in (row.tags || []).slice(0, 2)"
@@ -129,13 +129,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="创建时间" width="160">
+        <el-table-column :label="t('develop.queryTasks.colCreatedAt')" width="160">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column :label="t('develop.queryTasks.colActions')" width="200" fixed="right">
           <template #default="{ row }">
             <el-button-group>
               <el-button
@@ -144,14 +144,14 @@
                 @click.stop="handleExecute(row)"
               >
                 <el-icon><VideoPlay /></el-icon>
-                执行
+                {{ t('develop.queryTasks.execute') }}
               </el-button>
               <el-button
                 size="small"
                 @click.stop="handleEdit(row)"
               >
                 <el-icon><Edit /></el-icon>
-                编辑
+                {{ t('develop.queryTasks.edit') }}
               </el-button>
               <el-button
                 size="small"
@@ -182,7 +182,7 @@
     <!-- 编辑任务对话框 -->
     <el-dialog
       v-model="showEditDialog"
-      title="编辑 查询任务"
+      :title="t('develop.queryTasks.editDialogTitle')"
       width="600px"
       :close-on-click-modal="false"
     >
@@ -198,8 +198,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
@@ -215,6 +216,7 @@ import { executeDevItem } from '../api/devItem.js'
 import dayjs from 'dayjs'
 
 const router = useRouter()
+const { t } = useI18n()
 
 // 状态
 const loading = ref(false)
@@ -229,11 +231,11 @@ const filterScheduled = ref(false)
 const showEditDialog = ref(false)
 const editingTask = ref(null)
 
-const statusMap = {
-  active: '活跃',
-  inactive: '停用',
-  archived: '归档'
-}
+const statusMap = computed(() => ({
+  active: t('develop.queryTasks.statusActive'),
+  inactive: t('develop.queryTasks.statusInactive'),
+  archived: t('develop.queryTasks.statusArchived')
+}))
 
 // 加载任务列表
 const loadTasks = async () => {
@@ -251,7 +253,7 @@ const loadTasks = async () => {
     total.value = response.total || 0
   } catch (error) {
     console.error('加载任务列表失败:', error)
-    ElMessage.error('加载任务列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.queryTasks.loadFailed') + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
@@ -284,12 +286,12 @@ const handleRowClick = (row) => {
 const handleExecute = async (task) => {
   try {
     await executeDevItem(task.id)
-    ElMessage.success('任务已提交执行')
+    ElMessage.success(t('develop.queryTasks.executeSubmitted'))
     // 可选：跳转到执行监控页面
     // router.push(`/executions/${executionId}`)
   } catch (error) {
     console.error('执行任务失败:', error)
-    ElMessage.error('执行失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.queryTasks.executeFailed') + (error.response?.data?.error || error.message))
   }
 }
 
@@ -303,12 +305,12 @@ const handleEdit = (task) => {
 const handleUpdateTask = async (taskData) => {
   try {
     await updateQueryTask(editingTask.value.id, taskData)
-    ElMessage.success('任务更新成功')
+    ElMessage.success(t('develop.queryTasks.updateSuccess'))
     showEditDialog.value = false
     loadTasks()
   } catch (error) {
     console.error('更新任务失败:', error)
-    ElMessage.error('更新失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.queryTasks.updateFailed') + (error.response?.data?.error || error.message))
   }
 }
 
@@ -316,22 +318,22 @@ const handleUpdateTask = async (taskData) => {
 const handleDelete = async (task) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除任务 "${task.display_name || task.name}" 吗？`,
-      '删除确认',
+      t('develop.queryTasks.deleteConfirmMsg', { name: task.display_name || task.name }),
+      t('develop.queryTasks.deleteConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('develop.queryTasks.confirm'),
+        cancelButtonText: t('develop.queryTasks.cancel'),
         type: 'warning'
       }
     )
 
     await deleteQueryTask(task.id)
-    ElMessage.success('任务删除成功')
+    ElMessage.success(t('develop.queryTasks.deleteSuccess'))
     loadTasks()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除任务失败:', error)
-      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('develop.queryTasks.deleteFailed') + (error.response?.data?.error || error.message))
     }
   }
 }

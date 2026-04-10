@@ -1,0 +1,11 @@
+[monitor.auth.tenant_not_found]
+other = "Tenant not found"
+
+[monitor.execution.invalid_id]
+other = "Invalid execution ID"
+
+[monitor.execution.not_found]
+other = "Execution record not found"
+
+[monitor.health.module_not_found]
+other = "Module not found"

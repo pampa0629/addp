@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -61,7 +62,7 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 解析请求
 	var req CreateScanTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		commonapi.RespondError(c, 400, "无效的请求参数: "+err.Error())
+		commonapi.RespondError(c, 400, commoni18n.TWithDetail(c, commoni18n.MsgInvalidParams, err.Error()))
 		return
 	}
 
@@ -180,7 +181,7 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 解析请求
 	var req CreateExecuteTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		commonapi.RespondError(c, 400, "无效的请求参数: "+err.Error())
+		commonapi.RespondError(c, 400, commoni18n.TWithDetail(c, commoni18n.MsgInvalidParams, err.Error()))
 		return
 	}
 

@@ -7,16 +7,16 @@
           size="small"
           @click="handleToggleEdgeMode"
         >
-          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? '退出连线' : '连线模式' }}
+          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? t('orchestrator.dagEditor.edgeModeOn') : t('orchestrator.dagEditor.edgeModeOff') }}
         </el-button>
 
         <el-divider direction="vertical" />
 
         <el-button type="danger" size="small" @click="handleDelete" :disabled="!selectedItem">
-          <el-icon><Delete /></el-icon> 删除{{ selectedItem ? (selectedItem.getType && selectedItem.getType() === 'edge' ? '连线' : '节点') : '' }}
+          <el-icon><Delete /></el-icon> {{ t('orchestrator.dagEditor.deleteBtn') }}{{ selectedItem ? (selectedItem.getType && selectedItem.getType() === 'edge' ? t('orchestrator.dagEditor.deleteEdge') : t('orchestrator.dagEditor.deleteNode')) : '' }}
         </el-button>
         <el-button type="info" size="small" @click="handleClear">
-          <el-icon><DocumentDelete /></el-icon> 清空
+          <el-icon><DocumentDelete /></el-icon> {{ t('orchestrator.dagEditor.clearBtn') }}
         </el-button>
       </div>
 
@@ -25,8 +25,8 @@
           <template #title>
             <span class="tips-text">
               {{ isAddEdgeMode
-                ? '🔗 连线模式：依次点击两个节点建立连线'
-                : '💡 从左侧任务库拖拽任务到画布 | 使用连线模式建立依赖关系 | 双击节点可配置参数'
+                ? t('orchestrator.dagEditor.tipEdgeMode')
+                : t('orchestrator.dagEditor.tipDefault')
               }}
             </span>
           </template>
@@ -37,41 +37,41 @@
     <div id="dag-container" ref="container" @dragover.prevent @drop="handleDrop"></div>
 
     <!-- 节点配置抽屉 -->
-    <el-drawer v-model="drawerVisible" title="配置步骤" size="40%">
+    <el-drawer v-model="drawerVisible" :title="t('orchestrator.dagEditor.drawerTitle')" size="40%">
       <el-form :model="currentNode" label-width="100px">
-        <el-form-item label="步骤名称">
-          <el-input v-model="currentNode.name" placeholder="例如: 数据传输"></el-input>
+        <el-form-item :label="t('orchestrator.dagEditor.stepNameLabel')">
+          <el-input v-model="currentNode.name" :placeholder="t('orchestrator.dagEditor.stepNamePlaceholder')"></el-input>
         </el-form-item>
 
-        <el-form-item label="执行模式">
-          <el-tag v-if="currentNode.provider" type="success">任务引用</el-tag>
-          <el-tag v-else-if="currentNode.engineIdentifier" type="primary">引擎调用</el-tag>
-          <el-tag v-else type="info">未配置</el-tag>
+        <el-form-item :label="t('orchestrator.dagEditor.executionModeLabel')">
+          <el-tag v-if="currentNode.provider" type="success">{{ t('orchestrator.dagEditor.modeTaskRef') }}</el-tag>
+          <el-tag v-else-if="currentNode.engineIdentifier" type="primary">{{ t('orchestrator.dagEditor.modeEngineCall') }}</el-tag>
+          <el-tag v-else type="info">{{ t('orchestrator.dagEditor.modeNotConfigured') }}</el-tag>
         </el-form-item>
 
         <template v-if="currentNode.provider">
-          <el-form-item label="提供者">
+          <el-form-item :label="t('orchestrator.dagEditor.providerLabel')">
             <el-input v-model="currentNode.provider" disabled></el-input>
           </el-form-item>
-          <el-form-item label="任务类型">
+          <el-form-item :label="t('orchestrator.dagEditor.taskTypeLabel')">
             <el-input v-model="currentNode.taskType" disabled></el-input>
           </el-form-item>
-          <el-form-item label="任务 ID">
+          <el-form-item :label="t('orchestrator.dagEditor.taskIdLabel')">
             <el-input :model-value="String(currentNode.taskId || '')" disabled></el-input>
           </el-form-item>
         </template>
 
         <template v-else-if="currentNode.engineIdentifier !== undefined">
-          <el-form-item label="引擎标识符">
-            <el-input v-model="currentNode.engineIdentifier" placeholder="例如: meta.scanner.default"></el-input>
+          <el-form-item :label="t('orchestrator.dagEditor.engineIdentifierLabel')">
+            <el-input v-model="currentNode.engineIdentifier" :placeholder="t('orchestrator.dagEditor.engineIdentifierPlaceholder')"></el-input>
           </el-form-item>
         </template>
 
-        <el-form-item label="超时(秒)">
+        <el-form-item :label="t('orchestrator.dagEditor.timeoutLabel')">
           <el-input-number v-model="currentNode.timeout" :min="0" :max="3600"></el-input-number>
         </el-form-item>
 
-        <el-form-item label="参数 (JSON)">
+        <el-form-item :label="t('orchestrator.dagEditor.parametersLabel')">
           <el-input
             type="textarea"
             v-model="parametersStr"
@@ -81,8 +81,8 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="saveNodeConfig">保存</el-button>
-          <el-button @click="drawerVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveNodeConfig">{{ t('orchestrator.dagEditor.saveConfigBtn') }}</el-button>
+          <el-button @click="drawerVisible = false">{{ t('orchestrator.dagEditor.cancelBtn') }}</el-button>
         </el-form-item>
       </el-form>
     </el-drawer>
@@ -91,9 +91,12 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
 import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, generateColor } from '@addp/common-frontend/dag'
+
+const { t } = useI18n()
 
 const props = defineProps({
   initialSteps: {
@@ -163,11 +166,11 @@ onMounted(async () => {
 
     if (hasLoop(source.getID(), target.getID())) {
       graph.value.removeItem(edge)
-      ElMessage.warning('不能创建环形依赖')
+      ElMessage.warning(t('orchestrator.dagEditor.loopDetected'))
       return
     }
 
-    ElMessage.success('已建立依赖关系')
+    ElMessage.success(t('orchestrator.dagEditor.edgeCreated'))
     emitSteps()
   })
 
@@ -194,33 +197,33 @@ function saveNodeConfig() {
     })
 
     drawerVisible.value = false
-    ElMessage.success('配置已保存')
+    ElMessage.success(t('orchestrator.dagEditor.configSaved'))
     emitSteps()
   } catch (error) {
-    ElMessage.error('参数 JSON 格式错误')
+    ElMessage.error(t('orchestrator.dagEditor.jsonError'))
   }
 }
 
 function handleToggleEdgeMode() {
   toggleAddEdgeMode()
   if (isAddEdgeMode.value) {
-    ElMessage.info('已进入连线模式，依次点击两个节点建立连线')
+    ElMessage.info(t('orchestrator.dagEditor.enterEdgeMode'))
   } else {
-    ElMessage.info('已退出连线模式')
+    ElMessage.info(t('orchestrator.dagEditor.exitEdgeMode'))
   }
 }
 
 function handleDelete() {
   if (deleteSelected()) {
     const itemType = selectedItem.value?.getType ? selectedItem.value.getType() : 'edge'
-    ElMessage.success(itemType === 'edge' ? '连线已删除' : '节点已删除')
+    ElMessage.success(itemType === 'edge' ? t('orchestrator.dagEditor.edgeDeleted') : t('orchestrator.dagEditor.nodeDeleted'))
     emitSteps()
   }
 }
 
 function handleClear() {
   clearGraph()
-  ElMessage.info('画布已清空')
+  ElMessage.info(t('orchestrator.dagEditor.canvasCleared'))
   emitSteps()
 }
 
@@ -271,11 +274,11 @@ function handleDrop(event) {
     graph.value.addItem('node', nodeModel)
     graph.value.paint()
 
-    ElMessage.success(`已添加任务: ${nodeData.name}`)
+    ElMessage.success(t('orchestrator.dagEditor.taskAdded', { name: nodeData.name }))
     emitSteps()
   } catch (error) {
     console.error('拖放失败:', error)
-    ElMessage.error('添加节点失败: ' + error.message)
+    ElMessage.error(t('orchestrator.dagEditor.addNodeFailed', { error: error.message }))
   }
 }
 

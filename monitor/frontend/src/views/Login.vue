@@ -3,7 +3,7 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>执行监控登录</h2>
+          <h2>{{ t('monitor.login.title') }}</h2>
           <p class="subtitle">Monitor</p>
         </div>
       </template>
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('monitor.login.username_placeholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('monitor.login.password_placeholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             style="width: 100%"
             :loading="loading"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('monitor.login.submitting') : t('monitor.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -53,10 +53,12 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -68,8 +70,8 @@ const loginForm = reactive({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ required: true, message: t('monitor.login.username_required'), trigger: 'blur' }],
+  password: [{ required: true, message: t('monitor.login.password_required'), trigger: 'blur' }]
 }
 
 const loading = ref(false)
@@ -83,14 +85,14 @@ const handleLogin = async () => {
     loading.value = true
     try {
       await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success('登录成功')
+      ElMessage.success(t('monitor.login.success'))
 
       // 跳转到重定向页面或默认首页
       const redirect = route.query.redirect || '/dashboard'
       router.push(redirect)
     } catch (error) {
       console.error('Login error:', error)
-      ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+      ElMessage.error(error.message || t('monitor.login.failed'))
     } finally {
       loading.value = false
     }

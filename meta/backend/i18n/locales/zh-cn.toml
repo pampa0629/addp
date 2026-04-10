@@ -1,0 +1,14 @@
+[meta.cache.cleared_all]
+other = "已清除所有资源缓存"
+
+[meta.cache.cleared]
+other = "已清除资源缓存"
+
+[meta.cache.cleared_engine]
+other = "已清除资源 {{.ID}} 的缓存"
+
+[meta.cache.refreshed]
+other = "资源缓存已刷新"
+
+[meta.cache.failed]
+other = "刷新缓存失败: {{.Err}}"

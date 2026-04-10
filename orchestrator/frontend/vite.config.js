@@ -8,9 +8,10 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src')
+      '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
   },
   optimizeDeps: {
     include: ['@antv/g6']

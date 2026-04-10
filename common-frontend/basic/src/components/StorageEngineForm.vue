@@ -7,12 +7,12 @@
   >
     <el-form-item
       v-if="typeOptions && typeOptions.length"
-      label="存储引擎类型"
+      :label="t('storageEngine.type')"
       prop="engine_type"
     >
       <el-select
         v-model="formState.engine_type"
-        placeholder="请选择存储引擎类型"
+        :placeholder="t('storageEngine.typePlaceholder')"
         :disabled="isEdit && disableTypeChange"
         @change="handleTypeChange"
       >
@@ -25,273 +25,270 @@
       </el-select>
     </el-form-item>
 
-    <el-form-item label="名称" prop="name">
-      <el-input v-model="formState.name" placeholder="请输入资源名称" />
+    <el-form-item :label="t('storageEngine.name')" prop="name">
+      <el-input v-model="formState.name" :placeholder="t('storageEngine.namePlaceholder')" />
     </el-form-item>
 
     <!-- PostgreSQL -->
     <template v-if="formState.engine_type === 'postgresql'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item label="数据库名" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="数据库名称" />
+      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
       </el-form-item>
-      <el-form-item label="用户名" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" placeholder="数据库用户名" />
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
       </el-form-item>
-      <el-form-item label="密码" prop="connection_info.password">
+      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="数据库密码"
+          :placeholder="t('storageEngine.passwordPlaceholder')"
           show-password
         />
       </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
-        已存储密码，如无需修改请保持占位符不变。
+        {{ t('storageEngine.passwordHint') }}
       </div>
-      <el-form-item label="SSL 模式">
+      <el-form-item :label="t('storageEngine.sslMode')">
         <el-select v-model="formState.connection_info.sslmode">
-          <el-option label="禁用 (disable)" value="disable" />
-          <el-option label="要求 (require)" value="require" />
-          <el-option label="验证CA (verify-ca)" value="verify-ca" />
-          <el-option label="完全验证 (verify-full)" value="verify-full" />
+          <el-option :label="t('storageEngine.sslDisable')" value="disable" />
+          <el-option :label="t('storageEngine.sslRequire')" value="require" />
+          <el-option :label="t('storageEngine.sslVerifyCa')" value="verify-ca" />
+          <el-option :label="t('storageEngine.sslVerifyFull')" value="verify-full" />
         </el-select>
       </el-form-item>
     </template>
 
     <!-- Apache Doris -->
     <template v-else-if="formState.engine_type === 'doris'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item label="数据库名" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="数据库名称" />
+      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
       </el-form-item>
-      <el-form-item label="用户名" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" placeholder="数据库用户名" />
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
       </el-form-item>
-      <el-form-item label="密码（可选）" prop="connection_info.password">
+      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="留空表示无密码（Doris 默认）"
+          placeholder="root"
           show-password
         />
       </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
-        已存储密码，如无需修改请保持占位符不变。
+        {{ t('storageEngine.passwordHint') }}
       </div>
       <div v-else class="field-hint">
-        Doris 默认 root 用户无密码，可留空。如已设置密码请填写。
+        {{ t('storageEngine.hints.dorisPassword') }}
       </div>
     </template>
 
     <!-- ClickHouse -->
     <template v-else-if="formState.engine_type === 'clickhouse'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item label="数据库名" prop="connection_info.database">
+      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
         <el-input v-model="formState.connection_info.database" placeholder="default" />
       </el-form-item>
-      <el-form-item label="用户名" prop="connection_info.user">
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
         <el-input v-model="formState.connection_info.user" placeholder="default" />
       </el-form-item>
-      <el-form-item label="密码（可选）" prop="connection_info.password">
+      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="留空表示无密码"
           show-password
         />
       </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
-        已存储密码，如无需修改请保持占位符不变。
+        {{ t('storageEngine.passwordHint') }}
       </div>
       <div v-else class="field-hint">
-        ClickHouse 默认 default 用户无密码。默认端口: 9000 (Native), 8123 (HTTP)
+        {{ t('storageEngine.hints.clickhousePassword') }}
       </div>
     </template>
 
     <!-- MongoDB -->
     <template v-else-if="formState.engine_type === 'mongodb'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item label="数据库名" prop="connection_info.database">
+      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
         <el-input v-model="formState.connection_info.database" placeholder="business" />
       </el-form-item>
-      <el-form-item label="用户名（可选）">
-        <el-input v-model="formState.connection_info.user" placeholder="留空表示无需认证" />
+      <el-form-item :label="t('storageEngine.username') + ' (' + t('common.optional') + ')'">
+        <el-input v-model="formState.connection_info.user" />
       </el-form-item>
-      <el-form-item label="密码（可选）" prop="connection_info.password">
+      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="留空表示无需认证"
           show-password
         />
       </el-form-item>
-      <el-form-item label="认证库（可选）">
-        <el-input v-model="formState.connection_info.auth_source" placeholder="admin" />
+      <el-form-item :label="t('storageEngine.authSource')">
+        <el-input v-model="formState.connection_info.auth_source" :placeholder="t('storageEngine.authSourcePlaceholder')" />
       </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
-        已存储密码，如无需修改请保持占位符不变。
+        {{ t('storageEngine.passwordHint') }}
       </div>
       <div v-else class="field-hint">
-        MongoDB 默认端口: 27017。启用认证时请填写用户名和密码；认证库（auth_source）是存储用户凭据的数据库，root 用户默认为 admin。
+        {{ t('storageEngine.hints.mongoAuth') }}
       </div>
     </template>
 
     <!-- MinIO / S3 -->
     <template v-else-if="formState.engine_type === 'minio' || formState.engine_type === 's3'">
-      <el-form-item label="端点地址" prop="connection_info.endpoint">
-        <el-input v-model="formState.connection_info.endpoint" placeholder="localhost:9002" />
+      <el-form-item :label="t('storageEngine.endpoint')" prop="connection_info.endpoint">
+        <el-input v-model="formState.connection_info.endpoint" :placeholder="t('storageEngine.endpointPlaceholder')" />
       </el-form-item>
-      <el-form-item label="Access Key" prop="connection_info.access_key">
-        <el-input v-model="formState.connection_info.access_key" placeholder="Access Key" />
+      <el-form-item :label="t('storageEngine.accessKey')" prop="connection_info.access_key">
+        <el-input v-model="formState.connection_info.access_key" :placeholder="t('storageEngine.accessKey')" />
       </el-form-item>
-      <el-form-item label="Secret Key" prop="connection_info.secret_key">
+      <el-form-item :label="t('storageEngine.secretKey')" prop="connection_info.secret_key">
         <el-input
           v-model="formState.connection_info.secret_key"
           type="password"
-          placeholder="Secret Key"
+          :placeholder="t('storageEngine.secretKey')"
           show-password
         />
       </el-form-item>
       <div v-if="hasStoredSecretKey" class="field-hint">
-        已存储密钥，如无需修改请保持占位符不变。
+        {{ t('storageEngine.secretKeyHint') }}
       </div>
-      <el-form-item label="Bucket">
-        <el-input v-model="formState.connection_info.bucket" placeholder="存储桶名称（可选）" />
+      <el-form-item :label="t('storageEngine.bucket')">
+        <el-input v-model="formState.connection_info.bucket" :placeholder="t('storageEngine.bucketPlaceholder')" />
       </el-form-item>
-      <el-form-item label="使用 SSL">
+      <el-form-item :label="t('storageEngine.useSsl')">
         <el-switch v-model="formState.connection_info.use_ssl" />
       </el-form-item>
     </template>
 
     <!-- Neo4j -->
     <template v-else-if="formState.engine_type === 'neo4j'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item label="用户名" prop="connection_info.user">
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
         <el-input v-model="formState.connection_info.user" placeholder="neo4j" />
       </el-form-item>
-      <el-form-item label="密码" prop="connection_info.password">
+      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="数据库密码"
+          :placeholder="t('storageEngine.passwordPlaceholder')"
           show-password
         />
       </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
-        已存储密码，如无需修改请保持占位符不变。
+        {{ t('storageEngine.passwordHint') }}
       </div>
-      <el-form-item label="数据库名（可选）">
-        <el-input v-model="formState.connection_info.database" placeholder="neo4j（留空使用默认）" />
+      <el-form-item :label="t('storageEngine.database') + ' (' + t('common.optional') + ')'">
+        <el-input v-model="formState.connection_info.database" placeholder="neo4j" />
       </el-form-item>
       <div class="field-hint">
-        Neo4j 图数据库，Bolt 协议连接。默认端口: 7687。Community Edition 仅有一个 "neo4j" 数据库。
+        {{ t('storageEngine.hints.neo4j') }}
       </div>
     </template>
 
     <!-- SpatiaLite / SQLite (file-based) -->
     <template v-else-if="formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite'">
-      <el-form-item label="文件路径" prop="connection_info.full_name">
-        <el-input v-model="formState.connection_info.full_name" placeholder="/path/to/data.sqlite 或 .spatialite" />
+      <el-form-item :label="t('storageEngine.filePath')" prop="connection_info.full_name">
+        <el-input v-model="formState.connection_info.full_name" :placeholder="t('storageEngine.filePathPlaceholder')" />
       </el-form-item>
       <div class="field-hint">
-        该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。
+        {{ t('storageEngine.hints.spatialite') }}
       </div>
     </template>
 
     <!-- Apache Spark -->
     <template v-else-if="formState.engine_type === 'spark'">
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" placeholder="10000" />
       </el-form-item>
-      <el-form-item label="数据库名" prop="connection_info.database">
+      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
         <el-input v-model="formState.connection_info.database" placeholder="default" />
       </el-form-item>
-      <el-form-item label="用户名（可选）">
-        <el-input v-model="formState.connection_info.username" placeholder="留空表示无需认证" />
+      <el-form-item :label="t('storageEngine.username') + ' (' + t('common.optional') + ')'">
+        <el-input v-model="formState.connection_info.username" />
       </el-form-item>
-      <el-form-item label="密码（可选）">
+      <el-form-item :label="t('storageEngine.passwordOptional')">
         <el-input
           v-model="formState.connection_info.password"
           type="password"
-          placeholder="留空表示无需认证"
           show-password
         />
       </el-form-item>
       <div class="field-hint">
-        Apache Spark 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000
+        {{ t('storageEngine.hints.spark') }}
       </div>
     </template>
 
     <!-- Python Workflow / Spark Workflow -->
     <template v-else-if="formState.engine_type === 'python_workflow' || formState.engine_type === 'spark_workflow'">
-      <el-form-item label="协议">
+      <el-form-item :label="t('storageEngine.protocol')">
         <el-select v-model="formState.connection_info.protocol">
           <el-option label="HTTP" value="http" />
           <el-option label="HTTPS" value="https" />
         </el-select>
       </el-form-item>
-      <el-form-item label="主机地址" prop="connection_info.host">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
-      <el-form-item label="端口" prop="connection_info.port">
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
       <div class="field-hint">
-        工作流引擎的 API 端点已标准化，无需手动配置。
+        {{ t('storageEngine.hints.workflow') }}
       </div>
     </template>
 
     <!-- 描述 -->
-    <el-form-item label="描述" prop="description">
+    <el-form-item :label="t('storageEngine.description')" prop="description">
       <el-input
         v-model="formState.description"
         type="textarea"
         :rows="2"
-        placeholder="请输入资源描述"
+        :placeholder="t('storageEngine.descPlaceholder')"
       />
     </el-form-item>
 
     <!-- 激活状态 -->
-    <el-form-item v-if="showActiveSwitch" label="激活状态">
+    <el-form-item v-if="showActiveSwitch" :label="t('storageEngine.activeStatus')">
       <el-switch v-model="formState.is_active" />
       <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-        禁用后，该资源将不会出现在可用列表中
+        {{ t('storageEngine.activeHint') }}
       </span>
     </el-form-item>
 
     <!-- 元数据扫描配置 -->
     <el-divider content-position="left">
       <span style="cursor: pointer; user-select: none;" @click="scanConfigExpanded = !scanConfigExpanded">
-        元数据扫描配置（可选）
+        {{ t('storageEngine.scanConfig') }}
         <el-icon style="margin-left: 4px;">
           <component :is="scanConfigExpanded ? 'ArrowDown' : 'ArrowRight'" />
         </el-icon>
@@ -301,76 +298,71 @@
     <!-- 扫描配置内容（可折叠） -->
     <template v-if="scanConfigExpanded">
       <!-- 1. 立即扫描开关 -->
-      <el-form-item label="注册后立即扫描">
+      <el-form-item :label="t('storageEngine.immediateScan')">
         <el-switch v-model="immediateScanEnabled" />
         <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-          保存资源后立即触发一次全量扫描，快速生成元数据
+          {{ t('storageEngine.immediateScanHint') }}
         </span>
       </el-form-item>
 
       <!-- 1.1 立即扫描深度配置（仅在立即扫描启用时显示） -->
       <template v-if="immediateScanEnabled">
-        <el-form-item label="立即扫描深度" style="margin-left: 30px;">
+        <el-form-item :label="t('storageEngine.immediateDepth')" style="margin-left: 30px;">
           <el-radio-group v-model="formState.scan_config.immediate_depth">
-            <el-radio value="basic">基础扫描（推荐）</el-radio>
-            <el-radio value="deep">深度扫描</el-radio>
+            <el-radio value="basic">{{ t('storageEngine.basicScan') }}</el-radio>
+            <el-radio value="deep">{{ t('storageEngine.deepScan') }}</el-radio>
           </el-radio-group>
-          <div class="field-hint">
-            基础扫描仅获取结构信息（表名、字段类型），速度快（秒级）<br/>
-            深度扫描包含统计信息（行数、大小等），可能需要较长时间（分钟级）
-          </div>
+          <div class="field-hint" style="white-space: pre-line;">{{ t('storageEngine.scanDepthHint') }}</div>
         </el-form-item>
       </template>
 
       <!-- 2. 定时扫描开关 -->
-      <el-form-item label="定时自动扫描">
+      <el-form-item :label="t('storageEngine.scheduledScan')">
         <el-switch v-model="scheduledScanEnabled" />
         <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-          按设定的频率自动深度扫描，保持元数据最新
+          {{ t('storageEngine.scheduledScanHint') }}
         </span>
       </el-form-item>
 
       <!-- 2.1 定时扫描详细配置（仅在开关打开时显示） -->
       <template v-if="scheduledScanEnabled">
-        <el-form-item label="扫描频率" style="margin-left: 30px;">
+        <el-form-item :label="t('storageEngine.scanFrequency')" style="margin-left: 30px;">
           <el-radio-group v-model="formState.scan_config.schedule_type">
-            <el-radio value="daily">每天</el-radio>
-            <el-radio value="weekly">每周</el-radio>
+            <el-radio value="daily">{{ t('schedule.mode.daily') }}</el-radio>
+            <el-radio value="weekly">{{ t('schedule.mode.weekly') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="执行时间" style="margin-left: 30px;">
+        <el-form-item :label="t('schedule.execTime')" style="margin-left: 30px;">
           <el-time-select
             v-model="formState.scan_config.schedule_time"
             start="00:00"
             step="01:00"
             end="23:00"
-            placeholder="选择时间"
+            :placeholder="t('schedule.selectTime')"
           />
         </el-form-item>
 
         <el-form-item
           v-if="formState.scan_config.schedule_type === 'weekly'"
-          label="执行日期"
+          :label="t('schedule.execDay')"
           style="margin-left: 30px;"
         >
           <el-checkbox-group v-model="formState.scan_config.schedule_value">
-            <el-checkbox :value="1">周一</el-checkbox>
-            <el-checkbox :value="2">周二</el-checkbox>
-            <el-checkbox :value="3">周三</el-checkbox>
-            <el-checkbox :value="4">周四</el-checkbox>
-            <el-checkbox :value="5">周五</el-checkbox>
-            <el-checkbox :value="6">周六</el-checkbox>
-            <el-checkbox :value="0">周日</el-checkbox>
+            <el-checkbox :value="1">{{ t('storageEngine.weekly_days.1') }}</el-checkbox>
+            <el-checkbox :value="2">{{ t('storageEngine.weekly_days.2') }}</el-checkbox>
+            <el-checkbox :value="3">{{ t('storageEngine.weekly_days.3') }}</el-checkbox>
+            <el-checkbox :value="4">{{ t('storageEngine.weekly_days.4') }}</el-checkbox>
+            <el-checkbox :value="5">{{ t('storageEngine.weekly_days.5') }}</el-checkbox>
+            <el-checkbox :value="6">{{ t('storageEngine.weekly_days.6') }}</el-checkbox>
+            <el-checkbox :value="0">{{ t('storageEngine.weekly_days.0') }}</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
 
         <!-- 2.2 定时扫描深度提示（固定深度扫描） -->
-        <el-form-item label="扫描深度" style="margin-left: 30px;">
-          <span style="color: var(--el-text-color-regular)">深度扫描（固定）</span>
-          <div class="field-hint">
-            定时扫描固定使用深度扫描，获取完整的统计信息（行数、大小、字段分布等）
-          </div>
+        <el-form-item :label="t('storageEngine.scanDepth')" style="margin-left: 30px;">
+          <span style="color: var(--el-text-color-regular)">{{ t('storageEngine.deepScanFixed') }}</span>
+          <div class="field-hint">{{ t('storageEngine.deepScanFixedHint') }}</div>
         </el-form-item>
       </template>
     </template>
@@ -379,7 +371,10 @@
 
 <script setup>
 import { computed, reactive, ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const SENSITIVE_PLACEHOLDER = '********'
 
@@ -649,21 +644,22 @@ watch(
   { deep: true }
 )
 
-const rules = {
-  engine_type: [{ required: true, message: '请选择存储引擎类型', trigger: 'change' }],
-  name: [{ required: true, message: '请输入资源名称', trigger: 'blur' }],
-  'connection_info.host': [{ required: true, message: '请输入主机地址', trigger: 'blur' }],
-  'connection_info.port': [{ required: true, message: '请输入端口', trigger: 'change' }],
-  'connection_info.database': [{ required: true, message: '请输入数据库名', trigger: 'blur' }],
-  'connection_info.user': [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  'connection_info.password': [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  'connection_info.endpoint': [{ required: true, message: '请输入端点地址', trigger: 'blur' }],
-  'connection_info.access_key': [{ required: true, message: '请输入 Access Key', trigger: 'blur' }],
-  'connection_info.secret_key': [{ required: true, message: '请输入 Secret Key', trigger: 'blur' }],
-  'connection_info.full_name': [{ required: true, message: '请输入文件路径', trigger: 'blur' }]
-}
-
+// 表单验证规则（响应式，支持语言切换）
 const computedRules = computed(() => {
+  const rules = {
+    engine_type: [{ required: true, message: t('storageEngine.valid.selectType'), trigger: 'change' }],
+    name: [{ required: true, message: t('storageEngine.valid.inputName'), trigger: 'blur' }],
+    'connection_info.host': [{ required: true, message: t('storageEngine.valid.inputHost'), trigger: 'blur' }],
+    'connection_info.port': [{ required: true, message: t('storageEngine.valid.inputPort'), trigger: 'change' }],
+    'connection_info.database': [{ required: true, message: t('storageEngine.valid.inputDatabase'), trigger: 'blur' }],
+    'connection_info.user': [{ required: true, message: t('storageEngine.valid.inputUsername'), trigger: 'blur' }],
+    'connection_info.password': [{ required: true, message: t('storageEngine.valid.inputPassword'), trigger: 'blur' }],
+    'connection_info.endpoint': [{ required: true, message: t('storageEngine.valid.inputEndpoint'), trigger: 'blur' }],
+    'connection_info.access_key': [{ required: true, message: t('storageEngine.valid.inputAccessKey'), trigger: 'blur' }],
+    'connection_info.secret_key': [{ required: true, message: t('storageEngine.valid.inputSecretKey'), trigger: 'blur' }],
+    'connection_info.full_name': [{ required: true, message: t('storageEngine.valid.inputFilePath'), trigger: 'blur' }]
+  }
+
   if (formState.engine_type === 'postgresql') {
     return {
       engine_type: rules.engine_type,
@@ -689,7 +685,6 @@ const computedRules = computed(() => {
   }
 
   if (formState.engine_type === 'doris') {
-    // Doris 默认 root 用户密码为空，所以密码非必填
     return {
       engine_type: rules.engine_type,
       name: rules.name,
@@ -697,12 +692,10 @@ const computedRules = computed(() => {
       'connection_info.port': rules['connection_info.port'],
       'connection_info.database': rules['connection_info.database'],
       'connection_info.user': rules['connection_info.user']
-      // 注意：没有密码验证规则
     }
   }
 
   if (formState.engine_type === 'clickhouse') {
-    // ClickHouse 默认 default 用户密码为空，所以密码非必填
     return {
       engine_type: rules.engine_type,
       name: rules.name,
@@ -710,19 +703,16 @@ const computedRules = computed(() => {
       'connection_info.port': rules['connection_info.port'],
       'connection_info.database': rules['connection_info.database'],
       'connection_info.user': rules['connection_info.user']
-      // 注意：没有密码验证规则
     }
   }
 
   if (formState.engine_type === 'mongodb') {
-    // MongoDB 用户名和密码可选（无认证模式）
     return {
       engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
       'connection_info.database': rules['connection_info.database']
-      // 注意：user 和 password 都不是必填
     }
   }
 

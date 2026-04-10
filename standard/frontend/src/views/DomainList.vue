@@ -1,8 +1,8 @@
 <template>
   <div class="domain-list">
     <div class="page-header">
-      <h2>业务域管理</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建业务域</el-button>
+      <h2>{{ $t('standard.domain.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.domain.create') }}</el-button>
     </div>
 
     <el-card class="main-card">
@@ -23,53 +23,56 @@
               <el-tag size="small" type="info" class="node-code">{{ data.code }}</el-tag>
             </div>
             <div class="node-actions">
-              <el-button link type="primary" @click.stop="openCreateChildDialog(data)">添加子域</el-button>
-              <el-button link type="primary" @click.stop="openEditDialog(data)">编辑</el-button>
-              <el-button link type="danger" @click.stop="handleDelete(data)">删除</el-button>
+              <el-button link type="primary" @click.stop="openCreateChildDialog(data)">{{ $t('standard.domain.createChild') }}</el-button>
+              <el-button link type="primary" @click.stop="openEditDialog(data)">{{ $t('standard.common.edit') }}</el-button>
+              <el-button link type="danger" @click.stop="handleDelete(data)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </div>
         </template>
       </el-tree>
 
-      <el-empty v-if="!loading && domainTree.length === 0" description="暂无业务域，请点击右上角创建" />
+      <el-empty v-if="!loading && domainTree.length === 0" :description="$t('standard.domain.empty')" />
     </el-card>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editMode ? '编辑业务域' : (parentDomain ? `新建子域（${parentDomain.name}）` : '新建业务域')"
+      :title="editMode ? $t('standard.domain.editTitle') : (parentDomain ? $t('standard.domain.createChildTitle', { name: parentDomain.name }) : $t('standard.domain.create'))"
       width="500px"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" placeholder="如：客户域" />
+        <el-form-item :label="$t('standard.domain.nameLabel')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('standard.domain.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="英文编码" prop="code" v-if="!editMode">
-          <el-input v-model="form.code" placeholder="如：customer（唯一标识）" />
+        <el-form-item :label="$t('standard.domain.codeLabel')" prop="code" v-if="!editMode">
+          <el-input v-model="form.code" :placeholder="$t('standard.domain.codePlaceholder')" />
         </el-form-item>
-        <el-form-item label="图标">
-          <el-input v-model="form.icon" placeholder="Element Plus 图标名（可选）" />
+        <el-form-item :label="$t('standard.domain.iconLabel')">
+          <el-input v-model="form.icon" :placeholder="$t('standard.domain.iconPlaceholder')" />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="$t('standard.domain.sortLabel')">
           <el-input-number v-model="form.sort_order" :min="0" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.domain.descriptionLabel')">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ $t('standard.common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { domainAPI } from '../api/standard'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -89,10 +92,10 @@ const form = ref({
   parent_id: null
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入业务域名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入英文编码', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('standard.domain.nameRequired'), trigger: 'blur' }],
+  code: [{ required: true, message: t('standard.domain.codeRequired'), trigger: 'blur' }]
+}))
 
 const loadDomains = async () => {
   loading.value = true
@@ -100,7 +103,7 @@ const loadDomains = async () => {
     const res = await domainAPI.list()
     domainTree.value = res || []
   } catch (e) {
-    ElMessage.error('加载业务域失败')
+    ElMessage.error(t('standard.domain.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -145,15 +148,15 @@ const handleSubmit = async () => {
     try {
       if (editMode.value) {
         await domainAPI.update(editingId.value, form.value)
-        ElMessage.success('更新成功')
+        ElMessage.success(t('standard.common.updateSuccess'))
       } else {
         await domainAPI.create(form.value)
-        ElMessage.success('创建成功')
+        ElMessage.success(t('standard.common.createSuccess'))
       }
       dialogVisible.value = false
       await loadDomains()
     } catch (e) {
-      ElMessage.error(e.response?.data?.error || '操作失败')
+      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
     } finally {
       submitting.value = false
     }
@@ -162,14 +165,14 @@ const handleSubmit = async () => {
 
 const handleDelete = async (domain) => {
   try {
-    await ElMessageBox.confirm(`确认删除业务域「${domain.name}」？`, '提示', {
+    await ElMessageBox.confirm(t('standard.domain.confirmDelete', { name: domain.name }), t('standard.common.hint'), {
       type: 'warning'
     })
     await domainAPI.delete(domain.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     await loadDomains()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

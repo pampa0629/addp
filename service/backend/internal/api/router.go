@@ -7,7 +7,9 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/service/internal/config"
+	_ "github.com/addp/service/i18n"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
@@ -33,6 +35,9 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// i18n 中间件（解析 Accept-Language 请求头）
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

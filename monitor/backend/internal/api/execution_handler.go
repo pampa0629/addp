@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	moni18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +33,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	// 从 context 获取 tenant_id（由认证中间件注入）
 	tenantIDRaw, exists := c.Get("tenant_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return
 	}
 
@@ -73,7 +75,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return
 	}
 
@@ -83,14 +85,14 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	// 解析 ID
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid execution id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidExecutionID)})
 		return
 	}
 
 	// 查询执行记录
 	execution, err := h.queryService.GetExecution(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
 		return
 	}
 

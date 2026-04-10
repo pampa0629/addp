@@ -9,20 +9,20 @@
     <el-header class="header">
       <div class="header-left">
         <el-icon class="logo-icon"><DataAnalysis /></el-icon>
-        <span class="title">数据建模</span>
+        <span class="title">{{ t('model.layout.title') }}</span>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('model.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('model.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -36,27 +36,27 @@
           <el-sub-menu index="modeling">
             <template #title>
               <el-icon><Box /></el-icon>
-              <span>数据建模</span>
+              <span>{{ t('model.layout.modeling') }}</span>
             </template>
             <el-menu-item index="/modeling/dw-layers">
               <el-icon><Tickets /></el-icon>
-              <span>数仓分层</span>
+              <span>{{ t('model.layout.dwLayers') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/entities">
               <el-icon><Memo /></el-icon>
-              <span>业务实体</span>
+              <span>{{ t('model.layout.entities') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/er-diagram">
               <el-icon><Connection /></el-icon>
-              <span>实体关系图</span>
+              <span>{{ t('model.layout.erDiagram') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/logical-tables">
               <el-icon><Operation /></el-icon>
-              <span>逻辑表设计</span>
+              <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
             <el-menu-item index="/modeling/star-schema">
               <el-icon><Star /></el-icon>
-              <span>星型建模视图</span>
+              <span>{{ t('model.layout.starSchema') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>
@@ -77,6 +77,9 @@ import {
   User, ArrowDown, SwitchButton,
   DataAnalysis, Box, Tickets, Memo, Operation, Connection, Star
 } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()

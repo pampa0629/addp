@@ -3,14 +3,14 @@
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
         <el-col :span="8">
-          <el-input v-model="keyword" placeholder="搜索层级名称/编码" clearable @change="handleSearch">
+          <el-input v-model="keyword" :placeholder="$t('standard.dimHierarchy.searchPlaceholder')" clearable @change="handleSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
         </el-col>
         <el-col :span="4">
           <el-button type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
-            新建维度层级
+            {{ $t('standard.dimHierarchy.create') }}
           </el-button>
         </el-col>
       </el-row>
@@ -18,33 +18,33 @@
 
     <el-card shadow="never" style="margin-top:12px">
       <el-table :data="filteredList" v-loading="loading" stripe>
-        <el-table-column label="层级名称" prop="name" min-width="160">
+        <el-table-column :label="$t('standard.dimHierarchy.nameLabel')" prop="name" min-width="160">
           <template #default="{ row }">
             <el-link type="primary" @click="$router.push(`/standard/dimension-hierarchies/${row.id}`)">
               {{ row.name }}
             </el-link>
           </template>
         </el-table-column>
-        <el-table-column label="编码" prop="code" width="140" />
-        <el-table-column label="层数" width="80">
+        <el-table-column :label="$t('standard.common.code')" prop="code" width="140" />
+        <el-table-column :label="$t('standard.dimHierarchy.levelCountLabel')" width="80">
           <template #default="{ row }">
-            <el-tag type="info" size="small">{{ row.levels?.length ?? 0 }} 层</el-tag>
+            <el-tag type="info" size="small">{{ $t('standard.dimHierarchy.levelCount', { count: row.levels?.length ?? 0 }) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="描述" prop="description" min-width="200" show-overflow-tooltip />
-        <el-table-column label="创建时间" width="160">
+        <el-table-column :label="$t('standard.common.description')" prop="description" min-width="200" show-overflow-tooltip />
+        <el-table-column :label="$t('standard.common.createdAt')" width="160">
           <template #default="{ row }">
             {{ new Date(row.created_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="$router.push(`/standard/dimension-hierarchies/${row.id}`)">
-              管理层级
+              {{ $t('standard.dimHierarchy.manageLevels') }}
             </el-button>
-            <el-popconfirm title="确定删除该维度层级吗？" @confirm="handleDelete(row.id)">
+            <el-popconfirm :title="$t('standard.dimHierarchy.confirmDelete')" @confirm="handleDelete(row.id)">
               <template #reference>
-                <el-button link type="danger">删除</el-button>
+                <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -53,21 +53,21 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="createVisible" title="新建维度层级" width="480px">
+    <el-dialog v-model="createVisible" :title="$t('standard.dimHierarchy.createTitle')" width="480px">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="90px">
-        <el-form-item label="层级名称" prop="name">
-          <el-input v-model="createForm.name" placeholder="如：时间层级、地区层级" />
+        <el-form-item :label="$t('standard.dimHierarchy.nameLabel')" prop="name">
+          <el-input v-model="createForm.name" :placeholder="$t('standard.dimHierarchy.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="编码" prop="code">
-          <el-input v-model="createForm.code" placeholder="如：time_hierarchy" />
+        <el-form-item :label="$t('standard.common.code')" prop="code">
+          <el-input v-model="createForm.code" :placeholder="$t('standard.dimHierarchy.codePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.common.description')">
           <el-input v-model="createForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">创建并编辑层级</el-button>
+        <el-button @click="createVisible = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleCreate" :loading="creating">{{ $t('standard.dimHierarchy.createAndEdit') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -76,10 +76,12 @@
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI } from '../api/standard'
 
+const { t } = useI18n()
 const router = useRouter()
 const loading = ref(false)
 const creating = ref(false)
@@ -89,10 +91,10 @@ const createVisible = ref(false)
 const createFormRef = ref(null)
 
 const createForm = reactive({ name: '', code: '', description: '' })
-const createRules = {
-  name: [{ required: true, message: '请填写层级名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请填写编码', trigger: 'blur' }]
-}
+const createRules = computed(() => ({
+  name: [{ required: true, message: t('standard.dimHierarchy.nameRequired'), trigger: 'blur' }],
+  code: [{ required: true, message: t('standard.dimHierarchy.codeRequired'), trigger: 'blur' }]
+}))
 
 const filteredList = computed(() => {
   if (!keyword.value) return list.value
@@ -106,7 +108,7 @@ async function loadList() {
     const res = await dimensionHierarchyAPI.list()
     list.value = res || []
   } catch {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('standard.dimHierarchy.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -127,7 +129,7 @@ async function handleCreate() {
     createVisible.value = false
     router.push(`/standard/dimension-hierarchies/${res.id}`)
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '创建失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     creating.value = false
   }
@@ -136,10 +138,10 @@ async function handleCreate() {
 async function handleDelete(id) {
   try {
     await dimensionHierarchyAPI.delete(id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('standard.dimHierarchy.deleted'))
     loadList()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('standard.dimHierarchy.deleteFailed'))
   }
 }
 

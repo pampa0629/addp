@@ -1,14 +1,14 @@
 <template>
   <div class="build-manager">
     <div class="page-header">
-      <h2>图谱构建</h2>
-      <el-button type="primary" @click="showCreateDialog = true">+ 新建任务</el-button>
+      <h2>{{ t('graph.build.title') }}</h2>
+      <el-button type="primary" @click="showCreateDialog = true">+ {{ t('graph.build.newTask') }}</el-button>
     </div>
 
     <div v-if="loading" class="loading-wrap"><el-icon class="is-loading"><Loading /></el-icon></div>
 
     <div v-else-if="tasks.length === 0" class="empty-tip">
-      <el-empty description="暂无构建任务，点击右上角新建" />
+      <el-empty :description="t('graph.build.emptyTip')" />
     </div>
 
     <div v-else class="task-list">
@@ -19,58 +19,58 @@
         </div>
         <div v-if="task.description" class="task-desc">{{ task.description }}</div>
         <div class="task-stats" v-if="task.stats && task.stats.total_materials">
-          <span>材料 {{ task.stats.total_materials }}</span>
-          <span>自动写入 {{ task.stats.auto_written }}</span>
-          <span>待审核 {{ task.stats.pending_review }}</span>
+          <span>{{ t('graph.build.statMaterials') }} {{ task.stats.total_materials }}</span>
+          <span>{{ t('graph.build.statAutoWritten') }} {{ task.stats.auto_written }}</span>
+          <span>{{ t('graph.build.statPendingReview') }} {{ task.stats.pending_review }}</span>
         </div>
         <div class="task-footer">
           <span class="task-date">{{ formatDate(task.created_at) }}</span>
           <div class="task-actions" @click.stop>
-            <el-button v-if="task.status === 'pending' || task.status === 'failed'" size="small" type="primary" @click="handleRun(task)">运行</el-button>
-            <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">取消</el-button>
-            <el-button v-if="task.status === 'completed' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">重新运行</el-button>
+            <el-button v-if="task.status === 'pending' || task.status === 'failed'" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
+            <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
+            <el-button v-if="task.status === 'completed' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
             <el-button size="small" @click="goReview(task)">
-              审核
+              {{ t('graph.build.review') }}
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
             </el-button>
-            <el-button size="small" type="danger" @click="handleDelete(task.id)">删除</el-button>
+            <el-button size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- 新建任务弹窗 -->
-    <el-dialog v-model="showCreateDialog" title="新建构建任务" width="480px">
+    <el-dialog v-model="showCreateDialog" :title="t('graph.build.createDialogTitle')" width="480px">
       <el-form :model="createForm" label-width="120px" @submit.prevent>
-        <el-form-item label="任务名称" required>
-          <el-input v-model="createForm.name" placeholder="请输入任务名称" />
+        <el-form-item :label="t('graph.build.taskName')" required>
+          <el-input v-model="createForm.name" :placeholder="t('graph.build.taskNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('graph.common.description')">
           <el-input v-model="createForm.description" type="textarea" rows="2" />
         </el-form-item>
-        <el-form-item label="置信度阈值">
+        <el-form-item :label="t('graph.build.confidenceThreshold')">
           <el-slider v-model="createForm.confidence_threshold" :min="0.1" :max="1.0" :step="0.05" show-input />
         </el-form-item>
         <el-collapse>
-          <el-collapse-item title="高级分块设置">
-            <el-form-item label="Chunk 大小">
+          <el-collapse-item :title="t('graph.build.advancedChunk')">
+            <el-form-item :label="t('graph.build.chunkSize')">
               <el-input-number v-model="createForm.chunk_size" :min="200" :max="4000" :step="100" />
-              <span class="form-hint">字符数（默认 1000）</span>
+              <span class="form-hint">{{ t('graph.build.chunkSizeHint') }}</span>
             </el-form-item>
-            <el-form-item label="Overlap 大小">
+            <el-form-item :label="t('graph.build.chunkOverlap')">
               <el-input-number v-model="createForm.chunk_overlap" :min="0" :max="500" :step="50" />
-              <span class="form-hint">字符数（默认 200）</span>
+              <span class="form-hint">{{ t('graph.build.chunkOverlapHint') }}</span>
             </el-form-item>
-            <el-form-item label="文档上下文">
+            <el-form-item :label="t('graph.build.docContext')">
               <el-input-number v-model="createForm.doc_context_size" :min="0" :max="500" :step="50" />
-              <span class="form-hint">头部字符数（默认 200）</span>
+              <span class="form-hint">{{ t('graph.build.docContextHint') }}</span>
             </el-form-item>
           </el-collapse-item>
         </el-collapse>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
+        <el-button @click="showCreateDialog = false">{{ t('graph.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">{{ t('graph.common.create') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -82,6 +82,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({ graphId: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -113,7 +116,7 @@ async function loadTasks() {
       pendingCounts.value[tasks.value[0].id] = total
     }
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('graph.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -121,7 +124,7 @@ async function loadTasks() {
 
 async function handleCreate() {
   if (!createForm.value.name.trim()) {
-    ElMessage.warning('请输入任务名称')
+    ElMessage.warning(t('graph.build.taskNameRequired'))
     return
   }
   creating.value = true
@@ -130,9 +133,9 @@ async function handleCreate() {
     showCreateDialog.value = false
     createForm.value = { name: '', description: '', confidence_threshold: 0.7, chunk_size: 1000, chunk_overlap: 200, doc_context_size: 200 }
     await loadTasks()
-    ElMessage.success('创建成功')
+    ElMessage.success(t('graph.common.createSuccess'))
   } catch (e) {
-    ElMessage.error('创建失败')
+    ElMessage.error(t('graph.common.createFailed'))
   } finally {
     creating.value = false
   }
@@ -141,42 +144,42 @@ async function handleCreate() {
 async function handleRun(task) {
   try {
     await buildAPI.runTask(props.graphId, task.id)
-    ElMessage.success('任务已启动')
+    ElMessage.success(t('graph.build.taskStarted'))
     await loadTasks()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '启动失败')
+    ElMessage.error(e.response?.data?.error || t('graph.build.startFailed'))
   }
 }
 
 async function handleCancel(task) {
   try {
     await buildAPI.cancelTask(props.graphId, task.id)
-    ElMessage.success('任务已取消')
+    ElMessage.success(t('graph.build.taskCancelled'))
     await loadTasks()
   } catch (e) {
-    ElMessage.error('取消失败')
+    ElMessage.error(t('graph.build.cancelFailed'))
   }
 }
 
 async function handleRerun(task) {
   try {
-    await ElMessageBox.confirm('重新运行将清空本次待审核队列并从头重新处理所有材料，确认？', '确认重新运行', { type: 'warning' })
+    await ElMessageBox.confirm(t('graph.build.confirmRerun'), t('graph.build.confirmRerunTitle'), { type: 'warning' })
     await buildAPI.rerunTask(props.graphId, task.id)
-    ElMessage.success('任务已重新启动')
+    ElMessage.success(t('graph.build.taskRestarted'))
     await loadTasks()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '启动失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('graph.build.startFailed'))
   }
 }
 
 async function handleDelete(taskId) {
-  await ElMessageBox.confirm('删除任务将同时删除所有材料和审核记录，确认？', '确认删除', { type: 'warning' })
+  await ElMessageBox.confirm(t('graph.build.confirmDelete'), t('graph.common.confirmDelete'), { type: 'warning' })
   try {
     await buildAPI.deleteTask(props.graphId, taskId)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('graph.common.deleteSuccess'))
     await loadTasks()
   } catch (e) {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('graph.common.deleteFailed'))
   }
 }
 
@@ -194,12 +197,18 @@ function statusTagType(status) {
 }
 
 function statusLabel(status) {
-  const map = { pending: '待运行', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已取消' }
+  const map = {
+    pending: t('graph.build.statusPending'),
+    running: t('graph.build.statusRunning'),
+    completed: t('graph.build.statusCompleted'),
+    failed: t('graph.build.statusFailed'),
+    cancelled: t('graph.build.statusCancelled')
+  }
   return map[status] || status
 }
 
 function formatDate(d) {
-  return d ? new Date(d).toLocaleString('zh-CN') : '-'
+  return d ? new Date(d).toLocaleString() : '-'
 }
 
 onMounted(loadTasks)

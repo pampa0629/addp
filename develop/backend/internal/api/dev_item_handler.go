@@ -6,6 +6,8 @@ import (
 
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
+	developi18n "github.com/addp/develop/backend/i18n"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -171,7 +173,7 @@ func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, developi18n.MsgDeleteSuccess)})
 }
 
 // ExecuteDevItem 执行开发项
@@ -193,7 +195,7 @@ func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 	// 实际执行逻辑在 dev_execution_handler 中
 	// 这里返回提示信息
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "请使用 POST /api/develop/items/{id}/execute 执行开发项",
+		"message":     commoni18n.T(c, developi18n.MsgUseExecuteEndpoint),
 		"dev_item_id": id,
 	})
 }

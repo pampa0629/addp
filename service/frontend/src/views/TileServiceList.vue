@@ -1,6 +1,6 @@
 <template>
   <div class="tile-service-list">
-    <h1>瓦片服务</h1>
+    <h1>{{ $t('service.tile.listTitle') }}</h1>
 
     <!-- 操作栏 -->
     <div class="toolbar">
@@ -8,32 +8,32 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="搜索瓦片服务..."
+          :placeholder="$t('service.tile.searchPlaceholder')"
           @keyup.enter="handleSearch"
         />
-        <button @click="handleSearch" class="btn btn-primary">搜索</button>
+        <button @click="handleSearch" class="btn btn-primary">{{ $t('service.common.search') }}</button>
       </div>
-      <button @click="goToCreate" class="btn btn-success">+ 创建瓦片服务</button>
+      <button @click="goToCreate" class="btn btn-success">{{ $t('service.tile.createBtn') }}</button>
     </div>
 
     <!-- 服务列表 -->
     <div class="services-container">
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
       <div v-else-if="services.length === 0" class="empty-state">
-        <p>暂无瓦片服务</p>
-        <p class="tip">点击"创建瓦片服务"按钮开始创建</p>
+        <p>{{ $t('service.tile.emptyText') }}</p>
+        <p class="tip">{{ $t('service.tile.emptyTip') }}</p>
       </div>
       <table v-else class="services-table">
         <thead>
           <tr>
-            <th>服务名称</th>
-            <th>标题</th>
-            <th>图层数</th>
-            <th>协议支持</th>
-            <th>访问控制</th>
-            <th>状态</th>
-            <th>创建时间</th>
-            <th>操作</th>
+            <th>{{ $t('service.tile.colServiceName') }}</th>
+            <th>{{ $t('service.tile.colTitle') }}</th>
+            <th>{{ $t('service.tile.colLayers') }}</th>
+            <th>{{ $t('service.tile.colProtocols') }}</th>
+            <th>{{ $t('service.tile.colAccess') }}</th>
+            <th>{{ $t('service.tile.colStatus') }}</th>
+            <th>{{ $t('service.tile.colCreatedAt') }}</th>
+            <th>{{ $t('service.tile.colActions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -42,7 +42,7 @@
             <td>{{ service.title }}</td>
             <td>
               <span class="badge badge-info">
-                {{ service.layers ? service.layers.length : 0 }} 图层
+                {{ $t('service.serviceCard.layerCount', { count: service.layers ? service.layers.length : 0 }) }}
               </span>
             </td>
             <td>
@@ -60,7 +60,7 @@
             </td>
             <td>
               <span class="badge" :class="service.public_access ? 'badge-success' : 'badge-warning'">
-                {{ service.public_access ? '公开' : '私有' }}
+                {{ service.public_access ? $t('service.common.public') : $t('service.common.private') }}
               </span>
             </td>
             <td>
@@ -70,8 +70,8 @@
             </td>
             <td>{{ formatDate(service.created_at) }}</td>
             <td class="actions">
-              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">详情</button>
-              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">删除</button>
+              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">{{ $t('service.common.detail') }}</button>
+              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -85,15 +85,15 @@
         :disabled="page === 1"
         class="btn btn-sm"
       >
-        上一页
+        {{ $t('service.common.prevPage') }}
       </button>
-      <span class="page-info">第 {{ page }} 页，共 {{ totalPages }} 页（共 {{ total }} 项）</span>
+      <span class="page-info">{{ $t('service.common.pageInfo', { page, total: totalPages, count: total }) }}</span>
       <button
         @click="nextPage"
         :disabled="page >= totalPages"
         class="btn btn-sm"
       >
-        下一页
+        {{ $t('service.common.nextPage') }}
       </button>
     </div>
   </div>
@@ -146,7 +146,7 @@ export default {
         console.log('[TileServiceList] 加载了', this.services.length, '个服务，共', this.total, '个')
       } catch (error) {
         console.error('加载瓦片服务失败:', error)
-        alert('加载瓦片服务失败: ' + (error.response?.data?.error || error.message))
+        alert(this.$t('service.tile.loadFailed') + ': ' + (error.response?.data?.error || error.message))
       } finally {
         this.loading = false
       }
@@ -167,17 +167,17 @@ export default {
 
     async confirmDelete(id) {
       const service = this.services.find(s => s.id === id)
-      if (!confirm(`确定要删除瓦片服务 "${service.service_name}" 吗？此操作不可恢复！`)) {
+      if (!confirm(this.$t('service.tile.deleteConfirm', { name: service.service_name }))) {
         return
       }
 
       try {
         await tileServiceAPI.deleteService(id)
-        alert('删除成功')
+        alert(this.$t('service.tile.deleteSuccess'))
         this.loadServices()
       } catch (error) {
         console.error('删除服务失败:', error)
-        alert('删除失败: ' + (error.response?.data?.error || error.message))
+        alert(this.$t('service.tile.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
       }
     },
 
@@ -200,9 +200,9 @@ export default {
 
     statusText(status) {
       const statusMap = {
-        active: '正常',
-        inactive: '未激活',
-        error: '错误'
+        active: this.$t('service.tile.statusActive'),
+        inactive: this.$t('service.tile.statusInactive'),
+        error: this.$t('service.tile.statusError')
       }
       return statusMap[status] || status
     },

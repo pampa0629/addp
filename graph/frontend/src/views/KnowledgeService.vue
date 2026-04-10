@@ -2,7 +2,7 @@
   <div class="ks-container">
     <!-- 左侧：图谱选择 -->
     <div class="ks-sidebar">
-      <div class="ks-sidebar-title">知识图谱</div>
+      <div class="ks-sidebar-title">{{ t('graph.service.knowledgeGraph') }}</div>
       <el-menu
         :default-active="selectedGraphId?.toString()"
         class="ks-menu"
@@ -23,27 +23,26 @@
       <div class="ks-header">
         <h2 class="ks-title">{{ selectedGraph.name }}</h2>
         <el-tag :type="selectedGraph.is_public ? 'success' : 'info'">
-          {{ selectedGraph.is_public ? '公开' : '私有' }}
+          {{ selectedGraph.is_public ? t('graph.service.public') : t('graph.service.private') }}
         </el-tag>
       </div>
 
       <el-tabs v-model="activeTab" class="ks-tabs">
-        <!-- Tab 1: 服务配置 -->
-        <el-tab-pane label="服务配置" name="config">
+        <el-tab-pane :label="t('graph.service.configTab')" name="config">
           <div class="config-panel">
             <el-form label-width="120px">
-              <el-form-item label="公开访问">
+              <el-form-item :label="t('graph.service.publicAccess')">
                 <el-switch
                   v-model="isPublic"
                   :loading="saving"
                   @change="handlePublicToggle"
                 />
-                <span class="config-hint">开启后，无需 JWT 即可访问该图谱的知识服务 API</span>
+                <span class="config-hint">{{ t('graph.service.publicAccessHint') }}</span>
               </el-form-item>
-              <el-form-item label="服务基础 URL">
+              <el-form-item :label="t('graph.service.serviceBaseUrl')">
                 <el-input :model-value="serviceBaseUrl" readonly class="url-input">
                   <template #append>
-                    <el-button @click="copyUrl">复制</el-button>
+                    <el-button @click="copyUrl">{{ t('graph.service.copy') }}</el-button>
                   </template>
                 </el-input>
               </el-form-item>
@@ -52,7 +51,7 @@
         </el-tab-pane>
 
         <!-- Tab 2: API 文档 -->
-        <el-tab-pane label="API 文档" name="docs">
+        <el-tab-pane :label="t('graph.service.apiDocsTab')" name="docs">
           <div class="api-docs">
             <div v-for="ep in endpoints" :key="ep.path" class="endpoint-card">
               <div class="endpoint-header">
@@ -70,7 +69,7 @@
                 </div>
               </div>
               <div class="endpoint-curl">
-                <el-text size="small" type="info">示例</el-text>
+                <el-text size="small" type="info">{{ t('graph.service.example') }}</el-text>
                 <pre class="curl-example">{{ buildCurlExample(ep) }}</pre>
               </div>
             </div>
@@ -78,20 +77,20 @@
         </el-tab-pane>
 
         <!-- Tab 3: 接口测试 -->
-        <el-tab-pane label="接口测试" name="test">
+        <el-tab-pane :label="t('graph.service.testTab')" name="test">
           <div class="test-panel">
             <el-form label-width="80px" class="test-form">
-              <el-form-item label="关键词">
+              <el-form-item :label="t('graph.service.keyword')">
                 <el-input
                   v-model="testQuery"
-                  placeholder="输入搜索关键词"
+                  :placeholder="t('graph.service.keywordPlaceholder')"
                   @keyup.enter="handleTest"
                 />
               </el-form-item>
-              <el-form-item label="实体类型">
+              <el-form-item :label="t('graph.service.entityTypeFilter')">
                 <el-select
                   v-model="testEntityType"
-                  placeholder="全部类型（可选）"
+                  :placeholder="t('graph.service.allTypes')"
                   clearable
                 >
                   <el-option
@@ -103,7 +102,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="handleTest" :loading="testing">搜索</el-button>
+                <el-button type="primary" @click="handleTest" :loading="testing">{{ t('graph.service.search') }}</el-button>
               </el-form-item>
             </el-form>
             <pre v-if="testResult" class="test-result">{{ testResult }}</pre>
@@ -114,7 +113,7 @@
 
     <!-- 未选择图谱 -->
     <div class="ks-empty" v-else>
-      <el-empty description="请从左侧选择知识图谱" />
+      <el-empty :description="t('graph.service.selectGraph')" />
     </div>
   </div>
 </template>
@@ -123,6 +122,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { knowledgeServiceApi } from '../api/knowledgeService'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const graphs = ref([])
 const selectedGraphId = ref(null)
@@ -151,71 +153,71 @@ const endpoints = computed(() => {
     {
       method: 'GET',
       path: `/search`,
-      desc: '全文搜索实体（支持类型过滤和分页）',
+      desc: t('graph.service.endpointSearch'),
       params: [
-        { name: 'q', type: 'string', desc: '搜索关键词（必填）' },
-        { name: 'type', type: 'string', desc: '实体类型 name（可选）' },
-        { name: 'page', type: 'int', desc: '页码，默认 1' },
-        { name: 'page_size', type: 'int', desc: '每页大小，默认 20' },
+        { name: 'q', type: 'string', desc: t('graph.service.paramQ') },
+        { name: 'type', type: 'string', desc: t('graph.service.paramType') },
+        { name: 'page', type: 'int', desc: t('graph.service.paramPage') },
+        { name: 'page_size', type: 'int', desc: t('graph.service.paramPageSize') },
       ],
     },
     {
       method: 'GET',
       path: `${base}/:type`,
-      desc: '按本体类型列出实体（分页）',
+      desc: t('graph.service.endpointListByType'),
       params: [
-        { name: ':type', type: 'string', desc: '本体实体类型 name（路径参数）' },
-        { name: 'page', type: 'int', desc: '页码，默认 1' },
-        { name: 'page_size', type: 'int', desc: '每页大小，默认 20' },
+        { name: ':type', type: 'string', desc: t('graph.service.paramTypePath') },
+        { name: 'page', type: 'int', desc: t('graph.service.paramPage') },
+        { name: 'page_size', type: 'int', desc: t('graph.service.paramPageSize') },
       ],
     },
     {
       method: 'GET',
       path: `${base}/:type/:nodeId`,
-      desc: '获取实体详情（全属性）',
+      desc: t('graph.service.endpointEntityDetail'),
       params: [
-        { name: ':type', type: 'string', desc: '本体实体类型 name' },
-        { name: ':nodeId', type: 'string', desc: 'Neo4j elementId' },
+        { name: ':type', type: 'string', desc: t('graph.service.paramTypeEntity') },
+        { name: ':nodeId', type: 'string', desc: t('graph.service.paramNodeId') },
       ],
     },
     {
       method: 'GET',
       path: `/nodes/:nodeId/neighbors`,
-      desc: '获取节点的所有直接邻居（含关系类型、方向）',
+      desc: t('graph.service.endpointNeighbors'),
       params: [
-        { name: ':nodeId', type: 'string', desc: 'Neo4j elementId' },
-        { name: 'limit', type: 'int', desc: '最多返回数量，默认 100' },
+        { name: ':nodeId', type: 'string', desc: t('graph.service.paramNodeId') },
+        { name: 'limit', type: 'int', desc: t('graph.service.paramLimit') },
       ],
     },
     {
       method: 'POST',
       path: `/subgraph`,
-      desc: '获取实体中心子图（N 跳范围内的节点和关系）',
+      desc: t('graph.service.endpointSubgraph'),
       params: [
-        { name: 'node_id', type: 'string', desc: 'Neo4j elementId（必填）' },
-        { name: 'depth', type: 'int', desc: '跳数（1-3），默认 2' },
-        { name: 'limit', type: 'int', desc: '最多节点数，默认 50' },
+        { name: 'node_id', type: 'string', desc: t('graph.service.paramNodeIdRequired') },
+        { name: 'depth', type: 'int', desc: t('graph.service.paramDepth') },
+        { name: 'limit', type: 'int', desc: t('graph.service.paramLimitDefault50') },
       ],
     },
     {
       method: 'POST',
       path: `/paths`,
-      desc: '查找两节点间的路径',
+      desc: t('graph.service.endpointPaths'),
       params: [
-        { name: 'source_node_id', type: 'string', desc: '起点 elementId（必填）' },
-        { name: 'target_node_id', type: 'string', desc: '终点 elementId（必填）' },
+        { name: 'source_node_id', type: 'string', desc: t('graph.service.paramSourceNodeId') },
+        { name: 'target_node_id', type: 'string', desc: t('graph.service.paramTargetNodeId') },
       ],
     },
     {
       method: 'GET',
       path: `/ontology`,
-      desc: '获取图谱本体描述（实体类型 + 关系类型 + 数量统计）',
+      desc: t('graph.service.endpointOntology'),
       params: [],
     },
     {
       method: 'GET',
       path: `/stats`,
-      desc: '获取图谱统计（节点数、关系数、按标签分组）',
+      desc: t('graph.service.endpointStats'),
       params: [],
     },
   ]
@@ -264,10 +266,10 @@ async function handlePublicToggle(val) {
     await knowledgeServiceApi.updateGraph(selectedGraphId.value, { is_public: val })
     const g = graphs.value.find(g => g.id === selectedGraphId.value)
     if (g) g.is_public = val
-    ElMessage.success(val ? '已设为公开访问' : '已设为私有访问')
+    ElMessage.success(val ? t('graph.service.setPublic') : t('graph.service.setPrivate'))
   } catch (e) {
     isPublic.value = !val
-    ElMessage.error('设置失败')
+    ElMessage.error(t('graph.service.setFailed'))
   } finally {
     saving.value = false
   }
@@ -275,13 +277,13 @@ async function handlePublicToggle(val) {
 
 function copyUrl() {
   navigator.clipboard.writeText(serviceBaseUrl.value)
-    .then(() => ElMessage.success('已复制'))
-    .catch(() => ElMessage.error('复制失败'))
+    .then(() => ElMessage.success(t('graph.service.copied')))
+    .catch(() => ElMessage.error(t('graph.service.copyFailed')))
 }
 
 async function handleTest() {
   if (!testQuery.value.trim()) {
-    ElMessage.warning('请输入搜索关键词')
+    ElMessage.warning(t('graph.service.keywordRequired'))
     return
   }
   testing.value = true
@@ -294,7 +296,7 @@ async function handleTest() {
     )
     testResult.value = JSON.stringify(res, null, 2)
   } catch (e) {
-    testResult.value = `错误: ${e.message || e}`
+    testResult.value = `${t('graph.service.error')}: ${e.message || e}`
   } finally {
     testing.value = false
   }

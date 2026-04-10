@@ -4,6 +4,7 @@ import (
 	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -52,6 +53,7 @@ func SetupRouter(
 		}
 		c.Next()
 	})
+	router.Use(commoni18n.I18nMiddleware())
 
 	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
 	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)

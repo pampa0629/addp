@@ -1,32 +1,32 @@
 <template>
   <div class="orchestration-form">
     <div class="header">
-      <h2>{{ isEdit ? '编辑编排' : '创建编排' }}</h2>
+      <h2>{{ isEdit ? t('orchestrator.orchestrationForm.editTitle') : t('orchestrator.orchestrationForm.createTitle') }}</h2>
       <div>
-        <el-button @click="handleViewJSON">查看 JSON</el-button>
-        <el-button @click="handleCancel">取消</el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+        <el-button @click="handleViewJSON">{{ t('orchestrator.orchestrationForm.viewJsonBtn') }}</el-button>
+        <el-button @click="handleCancel">{{ t('orchestrator.orchestrationForm.cancelBtn') }}</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('orchestrator.orchestrationForm.saveBtn') }}</el-button>
       </div>
     </div>
 
     <el-form :model="form" label-width="120px" class="form-metadata">
-      <el-form-item label="编排名称" required>
-        <el-input v-model="form.name" placeholder="请输入编排名称"></el-input>
+      <el-form-item :label="t('orchestrator.orchestrationForm.nameLabel')" required>
+        <el-input v-model="form.name" :placeholder="t('orchestrator.orchestrationForm.namePlaceholder')"></el-input>
       </el-form-item>
 
-      <el-form-item label="描述">
+      <el-form-item :label="t('orchestrator.orchestrationForm.descriptionLabel')">
         <el-input
           v-model="form.description"
           type="textarea"
           :rows="2"
-          placeholder="请输入描述信息"
+          :placeholder="t('orchestrator.orchestrationForm.descriptionPlaceholder')"
         ></el-input>
       </el-form-item>
 
-      <el-form-item label="定时调度">
+      <el-form-item :label="t('orchestrator.orchestrationForm.scheduleLabel')">
         <div class="schedule-row">
           <el-switch v-model="form.enabled" style="margin-right: 12px;"></el-switch>
-          <span style="margin-right: 12px; color: var(--addp-text-secondary);">启用</span>
+          <span style="margin-right: 12px; color: var(--addp-text-secondary);">{{ t('orchestrator.orchestrationForm.enabledLabel') }}</span>
           <ScheduleConfig
             v-model="form.schedule"
             :allow-custom-cron="true"
@@ -53,14 +53,14 @@
     <!-- JSON 预览对话框 -->
     <el-dialog
       v-model="jsonDialogVisible"
-      title="编排 JSON 配置"
+      :title="t('orchestrator.orchestrationForm.jsonDialogTitle')"
       width="60%"
       :close-on-click-modal="false"
     >
       <div class="json-preview">
         <div class="json-actions">
-          <el-button size="small" @click="copyJSON">复制 JSON</el-button>
-          <el-button size="small" @click="downloadJSON">下载 JSON</el-button>
+          <el-button size="small" @click="copyJSON">{{ t('orchestrator.orchestrationForm.copyJsonBtn') }}</el-button>
+          <el-button size="small" @click="downloadJSON">{{ t('orchestrator.orchestrationForm.downloadJsonBtn') }}</el-button>
         </div>
         <pre class="json-content">{{ formattedJSON }}</pre>
       </div>
@@ -72,12 +72,14 @@
 <script setup>
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { ScheduleConfig } from '@common-ui'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
@@ -122,7 +124,7 @@ async function loadOrchestration(id) {
     const data = await orchestrationAPI.get(id)
     Object.assign(form, data)
   } catch (error) {
-    ElMessage.error('加载编排失败')
+    ElMessage.error(t('orchestrator.orchestrationForm.loadFailed'))
   }
 }
 
@@ -132,12 +134,12 @@ function handleStepsUpdate(steps) {
 
 async function handleSave() {
   if (!form.name) {
-    ElMessage.warning('请输入编排名称')
+    ElMessage.warning(t('orchestrator.orchestrationForm.nameRequired'))
     return
   }
 
   if (!form.steps || form.steps.length === 0) {
-    ElMessage.warning('请至少添加一个步骤')
+    ElMessage.warning(t('orchestrator.orchestrationForm.stepsRequired'))
     return
   }
 
@@ -145,14 +147,14 @@ async function handleSave() {
   try {
     if (isEdit.value) {
       await orchestrationAPI.update(route.params.id, form)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('orchestrator.orchestrationForm.updateSuccess'))
     } else {
       await orchestrationAPI.create(form)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('orchestrator.orchestrationForm.createSuccess'))
     }
     router.push('/orchestrations')
   } catch (error) {
-    ElMessage.error(isEdit.value ? '更新失败' : '创建失败')
+    ElMessage.error(isEdit.value ? t('orchestrator.orchestrationForm.updateFailed') : t('orchestrator.orchestrationForm.createFailed'))
   } finally {
     saving.value = false
   }
@@ -169,9 +171,9 @@ function handleViewJSON() {
 async function copyJSON() {
   try {
     await navigator.clipboard.writeText(formattedJSON.value)
-    ElMessage.success('JSON 已复制到剪贴板')
+    ElMessage.success(t('orchestrator.orchestrationForm.jsonCopied'))
   } catch (error) {
-    ElMessage.error('复制失败')
+    ElMessage.error(t('orchestrator.orchestrationForm.copyFailed'))
   }
 }
 
@@ -185,7 +187,7 @@ function downloadJSON() {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-  ElMessage.success('JSON 已下载')
+  ElMessage.success(t('orchestrator.orchestrationForm.jsonDownloaded'))
 }
 </script>
 

@@ -3,12 +3,12 @@
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <h2>查询开发</h2>
+        <h2>{{ t('develop.query.title') }}</h2>
 
         <!-- 数据源选择 -->
         <el-select
           v-model="selectedEngineId"
-          placeholder="选择数据源"
+          :placeholder="t('develop.query.selectDataSource')"
           style="width: 280px; margin-left: 20px;"
           @change="onEngineChange"
         >
@@ -32,14 +32,14 @@
           :disabled="!selectedEngineId"
         >
           <el-icon><Connection /></el-icon>
-          测试连接
+          {{ t('develop.query.testConnection') }}
         </el-button>
       </div>
 
       <div class="toolbar-right">
         <el-button @click="formatSQL" :disabled="!queryContent">
           <el-icon><MagicStick /></el-icon>
-          格式化
+          {{ t('develop.query.format') }}
         </el-button>
 
         <el-button
@@ -48,7 +48,7 @@
           :disabled="!selectedEngineId || !queryContent"
         >
           <el-icon><FolderAdd /></el-icon>
-          保存为任务
+          {{ t('develop.query.saveAsTask') }}
         </el-button>
 
         <el-button
@@ -58,7 +58,7 @@
           :disabled="!selectedEngineId || !queryContent"
         >
           <el-icon><VideoPlay /></el-icon>
-          执行 (Ctrl+Enter)
+          {{ t('develop.query.execute') }}
         </el-button>
       </div>
     </div>
@@ -70,9 +70,9 @@
         <div class="panel-header">
           <span class="panel-title">
             <el-icon><Edit /></el-icon>
-            查询编辑器
+            {{ t('develop.query.editorTitle') }}
           </span>
-          <span class="hint">提示: 使用 Ctrl+Enter 快速执行</span>
+          <span class="hint">{{ t('develop.query.hint') }}</span>
         </div>
         <div class="editor-content">
           <MonacoEditor
@@ -93,7 +93,7 @@
         <div class="panel-header">
           <span class="panel-title">
             <el-icon><List /></el-icon>
-            执行结果
+            {{ t('develop.query.resultTitle') }}
           </span>
           <div style="display:flex;align-items:center;gap:8px">
             <!-- 图形/表格切换（仅当查询结果含图数据时显示） -->
@@ -102,8 +102,8 @@
               v-model="resultViewMode"
               size="small"
             >
-              <el-radio-button value="table">表格</el-radio-button>
-              <el-radio-button value="graph">图形</el-radio-button>
+              <el-radio-button value="table">{{ t('develop.query.tableView') }}</el-radio-button>
+              <el-radio-button value="graph">{{ t('develop.query.graphView') }}</el-radio-button>
             </el-radio-group>
             <el-button
               v-if="executionResult"
@@ -112,7 +112,7 @@
               @click="clearResult"
             >
               <el-icon><Close /></el-icon>
-              清空
+              {{ t('develop.query.clearResult') }}
             </el-button>
           </div>
         </div>
@@ -139,6 +139,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElLoading } from 'element-plus'
 import {
   Connection,
@@ -159,6 +160,7 @@ import { getDevItem } from '../api/devItem.js'
 import client from '../api/client.js'
 
 const route = useRoute()
+const { t } = useI18n()
 
 // 引擎类型 → 编辑器语言
 const ENGINE_LANGUAGE_MAP = {
@@ -211,7 +213,7 @@ const loadEngines = async () => {
     }
   } catch (error) {
     console.error('Develop: 加载数据源失败:', error)
-    ElMessage.error('加载数据源失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
     engines.value = []
   }
 }
@@ -223,9 +225,9 @@ const handleTestConnection = async () => {
   testingConnection.value = true
   try {
     await testConnection(selectedEngineId.value)
-    ElMessage.success('连接测试成功')
+    ElMessage.success(t('develop.query.testConnectionSuccess'))
   } catch (error) {
-    ElMessage.error('连接失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.query.testConnectionFailed') + (error.response?.data?.error || error.message))
   } finally {
     testingConnection.value = false
   }
@@ -234,19 +236,19 @@ const handleTestConnection = async () => {
 // 执行查询
 const executeQuery = async () => {
   if (!selectedEngineId.value) {
-    ElMessage.warning('请先选择数据源')
+    ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
 
   if (!queryContent.value.trim()) {
-    ElMessage.warning('请输入 查询语句')
+    ElMessage.warning(t('develop.query.enterQueryFirst'))
     return
   }
 
   executing.value = true
   const loadingInstance = ElLoading.service({
     lock: true,
-    text: '正在执行查询...',
+    text: t('develop.query.executing'),
     background: 'rgba(0, 0, 0, 0.7)'
   })
 
@@ -274,13 +276,13 @@ const executeQuery = async () => {
       resultViewMode.value = 'table'
     }
 
-    ElMessage.success('执行成功')
+    ElMessage.success(t('develop.query.executeSuccess'))
   } catch (error) {
     executionResult.value = {
       success: false,
       error: error.response?.data?.error || error.message
     }
-    ElMessage.error('执行失败')
+    ElMessage.error(t('develop.query.executeFailed'))
   } finally {
     executing.value = false
     loadingInstance.close()
@@ -299,9 +301,9 @@ const formatSQL = () => {
       linesBetweenQueries: 2
     })
     queryContent.value = formatted
-    ElMessage.success('格式化成功')
+    ElMessage.success(t('develop.query.formatSuccess'))
   } catch (error) {
-    ElMessage.error('格式化失败: ' + error.message)
+    ElMessage.error(t('develop.query.formatFailed') + error.message)
   }
 }
 
@@ -344,11 +346,11 @@ const applyEngineLanguage = async (engine) => {
 const handleSaveTask = async (taskData) => {
   try {
     await saveQueryTask(taskData)
-    ElMessage.success('查询任务保存成功')
+    ElMessage.success(t('develop.query.saveTaskSuccess'))
     showSaveDialog.value = false
   } catch (error) {
     console.error('保存 查询任务失败:', error)
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.query.saveTaskFailed') + (error.response?.data?.error || error.message))
   }
 }
 
@@ -370,13 +372,13 @@ const loadTask = async (taskId) => {
         selectedEngineId.value = task.engine_id
       }
 
-      ElMessage.success(`已加载 查询任务: ${task.name}`)
+      ElMessage.success(t('develop.query.taskLoaded', { name: task.name }))
     } else {
-      ElMessage.warning('该任务没有 SQL 内容')
+      ElMessage.warning(t('develop.query.taskNoSql'))
     }
   } catch (error) {
     console.error('加载任务失败:', error)
-    ElMessage.error('加载任务失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.query.loadTaskFailed') + (error.response?.data?.error || error.message))
   }
 }
 

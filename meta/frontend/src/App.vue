@@ -1,11 +1,19 @@
 <template>
-  <div id="app">
-    <router-view />
-  </div>
+  <el-config-provider :locale="elementLocale">
+    <div id="app">
+      <router-view />
+    </div>
+  </el-config-provider>
 </template>
 
 <script setup>
-// Meta模块嵌入在Console中，不需要自己的导航和用户菜单
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import enLocale from 'element-plus/es/locale/lang/en'
+
+const { locale } = useI18n()
+const elementLocale = computed(() => locale.value === 'zh-cn' ? zhCn : enLocale)
 </script>
 
 <style>

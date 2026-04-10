@@ -9,20 +9,20 @@
     <el-header class="header">
       <div class="header-left">
         <el-icon class="logo-icon"><CircleCheck /></el-icon>
-        <span class="title">数据质量管理</span>
+        <span class="title">{{ t('quality.layout.title') }}</span>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('quality.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('quality.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -36,23 +36,23 @@
           <el-sub-menu index="quality">
             <template #title>
               <el-icon><CircleCheck /></el-icon>
-              <span>质量管理</span>
+              <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
             <el-menu-item index="/quality/rule-applications">
               <el-icon><Setting /></el-icon>
-              <span>规则应用配置</span>
+              <span>{{ t('quality.layout.ruleApplications') }}</span>
             </el-menu-item>
             <el-menu-item index="/quality/check-tasks">
               <el-icon><List /></el-icon>
-              <span>检查任务</span>
+              <span>{{ t('quality.layout.checkTasks') }}</span>
             </el-menu-item>
             <el-menu-item index="/quality/executions">
               <el-icon><Clock /></el-icon>
-              <span>执行记录</span>
+              <span>{{ t('quality.layout.executions') }}</span>
             </el-menu-item>
             <el-menu-item index="/quality/issues">
               <el-icon><Warning /></el-icon>
-              <span>问题工单</span>
+              <span>{{ t('quality.layout.issues') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>
@@ -73,6 +73,9 @@ import {
   User, ArrowDown, SwitchButton, CircleCheck,
   Setting, List, Clock, Warning
 } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()

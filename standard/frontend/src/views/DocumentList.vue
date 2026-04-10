@@ -2,33 +2,33 @@
   <div class="document-list">
     <div class="page-header">
       <div>
-        <h2>全局文档库</h2>
-        <p class="page-subtitle">集中查看所有已录入的标准文档。如需关联到具体标准项，请前往对应标准项的详情页操作。</p>
+        <h2>{{ $t('standard.document.title') }}</h2>
+        <p class="page-subtitle">{{ $t('standard.document.subtitle') }}</p>
       </div>
-      <el-button type="primary" @click="openCreateDialog">录入文档</el-button>
+      <el-button type="primary" @click="openCreateDialog">{{ $t('standard.document.create') }}</el-button>
     </div>
 
     <el-card>
       <div class="toolbar">
-        <el-input v-model="keyword" placeholder="搜索文档名称/来源机构" clearable @change="loadDocuments" style="width:280px" />
-        <el-select v-model="filterType" placeholder="文档类型" clearable @change="loadDocuments" style="width:140px">
-          <el-option label="国家标准" value="national" />
-          <el-option label="行业标准" value="industry" />
-          <el-option label="企业内部" value="internal" />
-          <el-option label="参考资料" value="reference" />
+        <el-input v-model="keyword" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="loadDocuments" style="width:280px" />
+        <el-select v-model="filterType" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="loadDocuments" style="width:140px">
+          <el-option :label="$t('standard.document.national')" value="national" />
+          <el-option :label="$t('standard.document.industry')" value="industry" />
+          <el-option :label="$t('standard.document.internal')" value="internal" />
+          <el-option :label="$t('standard.document.reference')" value="reference" />
         </el-select>
       </div>
 
       <el-table :data="documents" v-loading="loading" size="small" @row-click="openDetail">
-        <el-table-column label="文档名称" prop="name" min-width="200" show-overflow-tooltip />
-        <el-table-column label="类型" width="90">
+        <el-table-column :label="$t('standard.document.nameLabel')" prop="name" min-width="200" show-overflow-tooltip />
+        <el-table-column :label="$t('standard.common.type')" width="90">
           <template #default="{ row }">
             <el-tag size="small" :type="docTypeTagType(row.doc_type)">{{ docTypeLabel(row.doc_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源/标准号" prop="source_org" width="160" show-overflow-tooltip />
-        <el-table-column label="版本" prop="version" width="80" />
-        <el-table-column label="附件" width="120">
+        <el-table-column :label="$t('standard.document.sourceLabel')" prop="source_org" width="160" show-overflow-tooltip />
+        <el-table-column :label="$t('standard.document.versionLabel')" prop="version" width="80" />
+        <el-table-column :label="$t('standard.document.attachment')" width="120">
           <template #default="{ row }">
             <span v-if="row.file_name" class="file-name" :title="row.file_name">
               <el-icon style="vertical-align:middle;margin-right:2px"><Document /></el-icon>{{ row.file_name }}
@@ -36,13 +36,13 @@
             <span v-else class="no-file">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="录入时间" width="110">
+        <el-table-column :label="$t('standard.document.entryTime')" width="110">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button link size="small" type="primary" v-if="row.file_name" @click.stop="downloadFile(row)">下载</el-button>
-            <el-button link size="small" type="danger" @click.stop="deleteDocument(row)">删除</el-button>
+            <el-button link size="small" type="primary" v-if="row.file_name" @click.stop="downloadFile(row)">{{ $t('standard.document.download') }}</el-button>
+            <el-button link size="small" type="danger" @click.stop="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -60,47 +60,47 @@
     </el-card>
 
     <!-- 录入文档对话框 -->
-    <el-dialog v-model="showCreateDialog" title="录入标准文档" width="520px" @closed="resetForm">
+    <el-dialog v-model="showCreateDialog" :title="$t('standard.document.createTitle')" width="520px" @closed="resetForm">
       <el-form :model="form" label-width="100px">
-        <el-form-item label="文档名称" required>
-          <el-input v-model="form.name" placeholder="如：GB/T 35273-2020 个人信息安全规范" />
+        <el-form-item :label="$t('standard.document.nameLabel')" required>
+          <el-input v-model="form.name" :placeholder="$t('standard.document.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="文档类型">
+        <el-form-item :label="$t('standard.document.typeLabel')">
           <el-select v-model="form.doc_type" style="width:100%">
-            <el-option label="国家标准" value="national" />
-            <el-option label="行业标准" value="industry" />
-            <el-option label="企业内部" value="internal" />
-            <el-option label="参考资料" value="reference" />
+            <el-option :label="$t('standard.document.national')" value="national" />
+            <el-option :label="$t('standard.document.industry')" value="industry" />
+            <el-option :label="$t('standard.document.internal')" value="internal" />
+            <el-option :label="$t('standard.document.reference')" value="reference" />
           </el-select>
         </el-form-item>
-        <el-form-item label="来源/标准号">
-          <el-input v-model="form.source_org" placeholder="如：国家市场监督管理总局" />
+        <el-form-item :label="$t('standard.document.sourceLabel')">
+          <el-input v-model="form.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
         </el-form-item>
-        <el-form-item label="版本号">
-          <el-input v-model="form.version" placeholder="如：2020-01" />
+        <el-form-item :label="$t('standard.document.versionLabel')">
+          <el-input v-model="form.version" :placeholder="$t('standard.document.versionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.document.descriptionLabel')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="文档文件">
+        <el-form-item :label="$t('standard.document.fileLabel')">
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
             :limit="1"
-            :on-exceed="() => ElMessage.warning('只能上传一个文件')"
+            :on-exceed="() => ElMessage.warning(t('standard.document.fileTip'))"
             :on-change="onFileChange"
             :on-remove="() => { selectedFile = null }"
           >
-            <el-button size="small">选择文件</el-button>
+            <el-button size="small">{{ $t('standard.document.fileSelectBtn') }}</el-button>
             <template #tip>
-              <div class="upload-tip">支持 PDF、Word、Excel 等格式，可选</div>
+              <div class="upload-tip">{{ $t('standard.document.fileTip') }}</div>
             </template>
           </el-upload>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" @click="createDocument" :loading="saving">保存</el-button>
+        <el-button @click="showCreateDialog = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="createDocument" :loading="saving">{{ $t('standard.common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -108,69 +108,69 @@
     <el-drawer v-model="showDetail" :title="currentDoc?.name" size="480px">
       <div v-if="currentDoc" class="doc-detail">
         <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="类型">
+          <el-descriptions-item :label="$t('standard.common.type')">
             <el-tag size="small" :type="docTypeTagType(currentDoc.doc_type)">{{ docTypeLabel(currentDoc.doc_type) }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="来源">{{ currentDoc.source_org || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="版本">{{ currentDoc.version || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="录入时间">{{ formatTime(currentDoc.created_at) }}</el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">{{ currentDoc.description || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="$t('standard.document.source')">{{ currentDoc.source_org || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="$t('standard.document.version')">{{ currentDoc.version || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="$t('standard.document.entryTime')">{{ formatTime(currentDoc.created_at) }}</el-descriptions-item>
+          <el-descriptions-item :label="$t('standard.document.descriptionLabel')" :span="2">{{ currentDoc.description || '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <!-- 附件区域 -->
-        <el-divider>附件</el-divider>
+        <el-divider>{{ $t('standard.document.attachment') }}</el-divider>
         <div v-if="currentDoc.file_name" class="file-section">
           <el-icon><Document /></el-icon>
           <span class="file-info">{{ currentDoc.file_name }}（{{ formatFileSize(currentDoc.file_size) }}）</span>
-          <el-button link type="primary" size="small" @click="downloadFile(currentDoc)">下载</el-button>
+          <el-button link type="primary" size="small" @click="downloadFile(currentDoc)">{{ $t('standard.document.download') }}</el-button>
           <el-upload
             :auto-upload="false"
             :show-file-list="false"
             :on-change="(f) => uploadToExisting(currentDoc, f)"
             style="display:inline-block;margin-left:8px"
           >
-            <el-button link size="small">重新上传</el-button>
+            <el-button link size="small">{{ $t('standard.document.reupload') }}</el-button>
           </el-upload>
         </div>
         <div v-else class="file-section no-file-section">
-          <span style="color:var(--el-text-color-secondary);font-size:13px">暂无附件</span>
+          <span style="color:var(--el-text-color-secondary);font-size:13px">{{ $t('standard.document.noAttachment') }}</span>
           <el-upload
             :auto-upload="false"
             :show-file-list="false"
             :on-change="(f) => uploadToExisting(currentDoc, f)"
             style="display:inline-block;margin-left:12px"
           >
-            <el-button size="small" type="primary" plain>上传文件</el-button>
+            <el-button size="small" type="primary" plain>{{ $t('standard.document.uploadFile') }}</el-button>
           </el-upload>
         </div>
 
         <!-- 关联标准项（只读展示） -->
-        <el-divider>已关联的标准项</el-divider>
+        <el-divider>{{ $t('standard.document.relatedItems') }}</el-divider>
         <el-alert
-          title="如需修改关联，请前往对应标准项的详情页操作"
+          :title="$t('standard.document.relatedItemsHint')"
           type="info"
           :closable="false"
           show-icon
           style="margin-bottom: 12px"
         />
         <el-tabs>
-          <el-tab-pane label="数据元" name="elements">
+          <el-tab-pane :label="$t('standard.document.relatedElements')" name="elements">
             <el-tag v-for="m in mappings.elements" :key="m.element_id" size="small" style="margin:4px">
-              数据元 #{{ m.element_id }}{{ m.reference_location ? '（' + m.reference_location + '）' : '' }}
+              {{ $t('standard.document.elementRef', { id: m.element_id }) }}{{ m.reference_location ? '（' + m.reference_location + '）' : '' }}
             </el-tag>
-            <el-empty v-if="!mappings.elements?.length" description="暂无关联" :image-size="60" />
+            <el-empty v-if="!mappings.elements?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
-          <el-tab-pane label="业务术语" name="glossaries">
+          <el-tab-pane :label="$t('standard.document.relatedGlossaries')" name="glossaries">
             <el-tag v-for="m in mappings.glossaries" :key="m.glossary_id" size="small" style="margin:4px">
-              术语 #{{ m.glossary_id }}
+              {{ $t('standard.document.glossaryRef', { id: m.glossary_id }) }}
             </el-tag>
-            <el-empty v-if="!mappings.glossaries?.length" description="暂无关联" :image-size="60" />
+            <el-empty v-if="!mappings.glossaries?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
-          <el-tab-pane label="指标" name="metrics">
+          <el-tab-pane :label="$t('standard.document.relatedMetrics')" name="metrics">
             <el-tag v-for="m in mappings.metrics" :key="m.metric_id" size="small" style="margin:4px">
-              指标 #{{ m.metric_id }}
+              {{ $t('standard.document.metricRef', { id: m.metric_id }) }}
             </el-tag>
-            <el-empty v-if="!mappings.metrics?.length" description="暂无关联" :image-size="60" />
+            <el-empty v-if="!mappings.metrics?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -180,9 +180,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import { documentAPI } from '../api/standard'
+
+const { t } = useI18n()
 
 const documents = ref([])
 const loading = ref(false)
@@ -202,9 +205,14 @@ const uploadRef = ref(null)
 
 const form = ref({ name: '', doc_type: 'reference', source_org: '', version: '', description: '' })
 
-const docTypeLabel = (t) => ({ national: '国家标准', industry: '行业标准', internal: '企业内部', reference: '参考资料' }[t] || t)
-const docTypeTagType = (t) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: 'info' }[t] || 'info')
-const formatTime = (t) => t ? new Date(t).toLocaleDateString('zh-CN') : '-'
+const docTypeLabel = (type) => ({
+  national: t('standard.document.national'),
+  industry: t('standard.document.industry'),
+  internal: t('standard.document.internal'),
+  reference: t('standard.document.reference')
+}[type] || type)
+const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: 'info' }[type] || 'info')
+const formatTime = (time) => time ? new Date(time).toLocaleDateString('zh-CN') : '-'
 const formatFileSize = (bytes) => {
   if (!bytes) return '0 B'
   if (bytes < 1024) return bytes + ' B'
@@ -241,7 +249,7 @@ const loadDocuments = async () => {
 
 const createDocument = async () => {
   if (!form.value.name) {
-    ElMessage.warning('请填写文档名称')
+    ElMessage.warning(t('standard.document.nameRequired'))
     return
   }
   saving.value = true
@@ -253,11 +261,11 @@ const createDocument = async () => {
       fd.append('file', selectedFile)
       await documentAPI.uploadFile(docId, fd)
     }
-    ElMessage.success('创建成功')
+    ElMessage.success(t('standard.common.createSuccess'))
     showCreateDialog.value = false
     loadDocuments()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '创建失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -288,24 +296,24 @@ const uploadToExisting = async (doc, file) => {
   fd.append('file', file.raw)
   try {
     await documentAPI.uploadFile(doc.id, fd)
-    ElMessage.success('文件上传成功')
+    ElMessage.success(t('standard.document.uploadSuccess'))
     const res = await documentAPI.get(doc.id)
     currentDoc.value = res
     const idx = documents.value.findIndex(d => d.id === doc.id)
     if (idx !== -1) documents.value[idx] = res
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '上传失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   }
 }
 
 const deleteDocument = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除文档"${row.name}"？此操作不可恢复。`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.document.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
     await documentAPI.delete(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     loadDocuments()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
   }
 }
 

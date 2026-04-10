@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="DDL 预览"
+    :title="t('model.ddl.title')"
     width="700px"
     :before-close="handleClose"
   >
@@ -9,10 +9,10 @@
       <pre class="ddl-code">{{ ddl }}</pre>
     </div>
     <template #footer>
-      <el-button @click="handleClose">关闭</el-button>
+      <el-button @click="handleClose">{{ t('model.ddl.close') }}</el-button>
       <el-button type="primary" @click="handleCopy">
         <el-icon><CopyDocument /></el-icon>
-        复制到剪贴板
+        {{ t('model.ddl.copy') }}
       </el-button>
     </template>
   </el-dialog>
@@ -22,6 +22,9 @@
 import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
@@ -48,9 +51,9 @@ const handleClose = () => {
 const handleCopy = async () => {
   try {
     await navigator.clipboard.writeText(props.ddl)
-    ElMessage.success('DDL 已复制到剪贴板')
+    ElMessage.success(t('model.ddl.copy_success'))
   } catch {
-    ElMessage.error('复制失败，请手动选择文本复制')
+    ElMessage.error(t('model.ddl.copy_failed'))
   }
 }
 </script>

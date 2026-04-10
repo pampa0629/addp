@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	commonClient "github.com/addp/common/client"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,7 +34,7 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 	engines, err := h.systemClient.ListEngines("postgresql", tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取引擎列表失败",
+			"error":   commoni18n.T(c, servicei18n.MsgGetEnginesFailed),
 			"details": err.Error(),
 		})
 		return

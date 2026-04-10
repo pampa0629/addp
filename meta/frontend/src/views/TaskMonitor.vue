@@ -3,16 +3,16 @@
     <el-card class="filter-card" shadow="never">
       <template #header>
         <div class="filter-header">
-          <h2>任务监控</h2>
+          <h2>{{ t('meta.monitor.title') }}</h2>
           <div class="actions">
-            <el-button type="primary" @click="refresh" :loading="loading">刷新</el-button>
+            <el-button type="primary" @click="refresh" :loading="loading">{{ t('meta.monitor.refresh') }}</el-button>
           </div>
         </div>
       </template>
 
       <el-form :model="filters" label-width="100px" inline @submit.prevent>
-        <el-form-item label="资源">
-          <el-select v-model="filters.engineId" placeholder="全部" clearable style="width: 220px">
+        <el-form-item :label="t('meta.monitor.resource')">
+          <el-select v-model="filters.engineId" :placeholder="t('meta.monitor.all')" clearable style="width: 220px">
             <el-option
               v-for="engine in engines"
               :key="engine.id"
@@ -22,26 +22,26 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="状态">
-          <el-select v-model="filters.status" placeholder="全部" clearable style="width: 180px">
-            <el-option label="待执行" value="pending" />
-            <el-option label="执行中" value="running" />
-            <el-option label="成功" value="success" />
-            <el-option label="失败" value="failed" />
-            <el-option label="已取消" value="canceled" />
+        <el-form-item :label="t('meta.monitor.status')">
+          <el-select v-model="filters.status" :placeholder="t('meta.monitor.all')" clearable style="width: 180px">
+            <el-option :label="t('meta.monitor.pending')" value="pending" />
+            <el-option :label="t('meta.monitor.running')" value="running" />
+            <el-option :label="t('meta.monitor.success')" value="success" />
+            <el-option :label="t('meta.monitor.failed')" value="failed" />
+            <el-option :label="t('meta.monitor.canceled')" value="canceled" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="触发类型">
-          <el-select v-model="filters.triggerType" placeholder="全部" clearable style="width: 180px">
-            <el-option label="手动触发" value="manual" />
-            <el-option label="调度触发" value="scheduled" />
-            <el-option label="系统触发" value="system" />
+        <el-form-item :label="t('meta.monitor.triggerType')">
+          <el-select v-model="filters.triggerType" :placeholder="t('meta.monitor.all')" clearable style="width: 180px">
+            <el-option :label="t('meta.monitor.manual')" value="manual" />
+            <el-option :label="t('meta.monitor.scheduled')" value="scheduled" />
+            <el-option :label="t('meta.monitor.system')" value="system" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="存储引擎">
-          <el-select v-model="filters.storageType" placeholder="全部" clearable style="width: 180px">
+        <el-form-item :label="t('meta.monitor.storageEngine')">
+          <el-select v-model="filters.storageType" :placeholder="t('meta.monitor.all')" clearable style="width: 180px">
             <el-option
               v-for="option in storageTypeOptions"
               :key="option.value"
@@ -51,12 +51,12 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="时间范围">
+        <el-form-item :label="t('meta.monitor.timeRange')">
           <el-date-picker
             v-model="filters.range"
             type="datetimerange"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+            :start-placeholder="t('meta.monitor.startTime')"
+            :end-placeholder="t('meta.monitor.endTime')"
             format="YYYY-MM-DD HH:mm"
             value-format="YYYY-MM-DD HH:mm:ss"
             :default-time="['00:00:00', '23:59:59']"
@@ -66,60 +66,60 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="applyFilters" :loading="loading">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
+          <el-button type="primary" @click="applyFilters" :loading="loading">{{ t('meta.monitor.query') }}</el-button>
+          <el-button @click="resetFilters">{{ t('meta.monitor.reset') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="result-card" shadow="hover">
       <el-table :data="taskRuns" v-loading="loading" height="640">
-        <el-table-column prop="id" label="运行ID" width="90" />
-        <el-table-column prop="task_name" label="任务名称" min-width="200">
+        <el-table-column prop="id" :label="t('meta.monitor.runId')" width="90" />
+        <el-table-column prop="task_name" :label="t('meta.monitor.taskName')" min-width="200">
           <template #default="{ row }">
             <div class="task-name-cell">
               <div class="task-name">{{ runDisplayName(row) }}</div>
-              <div class="task-plan-name" v-if="runPlanName(row)">计划：{{ runPlanName(row) }}</div>
+              <div class="task-plan-name" v-if="runPlanName(row)">{{ t('meta.monitor.plan') }}{{ runPlanName(row) }}</div>
               <div class="resource-name" v-if="row.resource_name">{{ row.resource_name }}</div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="存储引擎" width="140">
+        <el-table-column :label="t('meta.monitor.storageEngine')" width="140">
           <template #default="{ row }">{{ formatStorageType(row) }}</template>
         </el-table-column>
-        <el-table-column label="触发类型" width="120">
+        <el-table-column :label="t('meta.monitor.triggerType')" width="120">
           <template #default="{ row }">{{ formatTriggerType(row.trigger_type) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="120">
+        <el-table-column :label="t('meta.monitor.status')" width="120">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status)">{{ formatRunStatus(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="缓存预处理" width="160">
+        <el-table-column :label="t('meta.monitor.preprocessCache')" width="160">
           <template #default="{ row }">
             <div v-if="row.preprocess_task_count > 0" style="font-size: 12px">
               <el-tag :type="preprocessStatusTag(row.preprocess_status)" size="small">
                 {{ formatPreprocessStatus(row.preprocess_status) }}
               </el-tag>
               <div style="margin-top: 4px; color: var(--addp-text-tertiary)">
-                {{ row.preprocess_success_count }}/{{ row.preprocess_task_count }} 成功
+                {{ t('meta.monitor.preprocessSuccess', { success: row.preprocess_success_count, total: row.preprocess_task_count }) }}
               </div>
             </div>
             <span v-else style="color: #c0c4cc">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="进度" width="180">
+        <el-table-column :label="t('meta.monitor.progress')" width="180">
           <template #default="{ row }">
             <el-progress :percentage="row.progress_percent || 0" :status="progressStatus(row.status)" />
           </template>
         </el-table-column>
-        <el-table-column prop="started_at" label="开始时间" width="180">
+        <el-table-column prop="started_at" :label="t('meta.monitor.startTime')" width="180">
           <template #default="{ row }">{{ formatDate(row.started_at) }}</template>
         </el-table-column>
-        <el-table-column prop="completed_at" label="完成时间" width="180">
+        <el-table-column prop="completed_at" :label="t('meta.monitor.completedTime')" width="180">
           <template #default="{ row }">{{ formatDate(row.completed_at) }}</template>
         </el-table-column>
-        <el-table-column prop="progress_message" label="最新状态" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="progress_message" :label="t('meta.monitor.latestStatus')" min-width="240" show-overflow-tooltip />
       </el-table>
 
       <div class="pagination">
@@ -139,7 +139,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import metaApi from '../api/meta'
+
+const { t } = useI18n()
 
 const engines = ref([])
 const taskRuns = ref([])
@@ -170,8 +173,8 @@ const ENGINE_LABELS = {
   minio: 'MinIO',
   s3: 'S3',
   oss: 'OSS',
-  object_storage: '对象存储',
-  'object-storage': '对象存储'
+  object_storage: t('meta.monitor.objectStorage'),
+  'object-storage': t('meta.monitor.objectStorage')
 }
 
 const prettifyEngine = value => {
@@ -213,7 +216,7 @@ const loadEngines = async () => {
     const res = await metaApi.getResources()
     engines.value = Array.isArray(res) ? res : []
   } catch (error) {
-    ElMessage.error('加载资源列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.monitor.loadResourcesFailed', { msg: error.response?.data?.error || error.message }))
   }
 }
 
@@ -234,7 +237,7 @@ const loadTaskRuns = async () => {
     taskRuns.value = res.items || []
     total.value = res.total || 0
   } catch (error) {
-    ElMessage.error('加载任务运行失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('meta.monitor.loadTaskRunsFailed', { msg: error.response?.data?.error || error.message }))
   } finally {
     loading.value = false
   }
@@ -294,31 +297,21 @@ const progressStatus = status => {
 
 const formatRunStatus = status => {
   switch (status) {
-    case 'pending':
-      return '待执行'
-    case 'running':
-      return '执行中'
-    case 'success':
-      return '成功'
-    case 'failed':
-      return '失败'
-    case 'canceled':
-      return '已取消'
-    default:
-      return status || '-'
+    case 'pending': return t('meta.monitor.pending')
+    case 'running': return t('meta.monitor.running')
+    case 'success': return t('meta.monitor.success')
+    case 'failed': return t('meta.monitor.failed')
+    case 'canceled': return t('meta.monitor.canceled')
+    default: return status || '-'
   }
 }
 
 const formatTriggerType = type => {
   switch (type) {
-    case 'manual':
-      return '手动触发'
-    case 'scheduled':
-      return '调度触发'
-    case 'system':
-      return '系统触发'
-    default:
-      return type || '-'
+    case 'manual': return t('meta.monitor.manual')
+    case 'scheduled': return t('meta.monitor.scheduled')
+    case 'system': return t('meta.monitor.system')
+    default: return type || '-'
   }
 }
 
@@ -329,18 +322,12 @@ const formatDate = value => {
 
 const formatPreprocessStatus = status => {
   switch (status) {
-    case 'pending':
-      return '未开始'
-    case 'running':
-      return '进行中'
-    case 'success':
-      return '成功'
-    case 'failed':
-      return '失败'
-    case 'skipped':
-      return '已跳过'
-    default:
-      return status || '-'
+    case 'pending': return t('meta.monitor.preprocessPending')
+    case 'running': return t('meta.monitor.preprocessRunning')
+    case 'success': return t('meta.monitor.success')
+    case 'failed': return t('meta.monitor.failed')
+    case 'skipped': return t('meta.monitor.preprocessSkipped')
+    default: return status || '-'
   }
 }
 
@@ -371,9 +358,9 @@ const runDisplayName = row => {
     return row.task_plan_name
   }
   if (row.task_id) {
-    return `任务 #${row.task_id}`
+    return t('meta.monitor.taskId', { id: row.task_id })
   }
-  return `运行 #${row.id}`
+  return t('meta.monitor.runIdLabel', { id: row.id })
 }
 
 const runPlanName = row => {

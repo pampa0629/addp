@@ -16,13 +16,13 @@
             >
               <el-tag type="danger" size="small" class="info-badge">
                 <el-icon><Location /></el-icon>
-                空间
+                {{ t('manager.explorer.spatial') }}
               </el-tag>
             </el-tooltip>
             <!-- 普通表标签 -->
             <el-tag v-else size="small" class="info-badge">
               <el-icon><Collection /></el-icon>
-              数据表
+              {{ t('manager.explorer.dataTable') }}
             </el-tag>
             <!-- 总行数 / 预览行数 -->
             <el-tag v-if="tableTotal > 0" size="small" type="info">
@@ -65,7 +65,7 @@
             @click="importDialogVisible = true"
           >
             <el-icon><Upload /></el-icon>
-            导入数据
+            {{ t('manager.explorer.importData') }}
           </el-button>
 
           <!-- 向量化按钮 -->
@@ -93,19 +93,19 @@
                 :disabled="true"
               >
                 <el-icon><Download /></el-icon>
-                下载本页
+                {{ t('manager.explorer.downloadPage') }}
               </el-button>
             </span>
           </el-tooltip>
           <el-button
-            v-else-if="showDownloadControl"
+            v-if="showDownloadControl && !downloadDisabled"
             size="small"
             type="primary"
             :loading="downloading"
             @click="handleDownload"
           >
             <el-icon><Download /></el-icon>
-            下载本页
+            {{ t('manager.explorer.downloadPage') }}
           </el-button>
         </div>
       </div>
@@ -114,7 +114,7 @@
     <!-- 图 Schema 视图 -->
     <div v-if="showGraphSchema && isGraphEngine" class="preview-content graph-schema-content">
       <div v-if="graphSchemaLoading" class="empty-state">
-        <el-empty description="正在加载 Schema 图..." />
+        <el-empty :description="t('manager.explorer.loadingSchemaGraph')" />
       </div>
       <GraphSchemaView
         v-else-if="filteredGraphSchemaData"
@@ -123,13 +123,13 @@
         @node-click="handleSchemaNodeClick"
       />
       <div v-else class="empty-state">
-        <el-empty description="暂无 Schema 数据，请先扫描该引擎的元数据" />
+        <el-empty :description="t('manager.explorer.noSchemaData')" />
       </div>
     </div>
 
     <!-- 无选择节点 -->
     <div v-if="!showGraphSchema && !selectedNode" class="empty-state">
-      <el-empty description="从左侧选择数据查看预览" />
+      <el-empty :description="t('manager.explorer.selectDataToPreview')" />
     </div>
 
     <!-- 无预览数据 -->
@@ -139,11 +139,11 @@
 
     <!-- 无可用预览组件 -->
     <div v-else-if="!showGraphSchema && !hasPreviewComponent" class="empty-state">
-      <el-empty description="暂不支持该文件类型的预览">
+      <el-empty :description="t('manager.explorer.unsupportedFileType')">
         <template #description>
-          <p>不支持 {{ fileExtension || '该类型' }} 文件的在线预览</p>
+          <p>{{ t('manager.explorer.unsupportedFileTypeDetail', { ext: fileExtension || t('manager.explorer.thisType') }) }}</p>
           <p style="font-size: 12px; color: var(--addp-text-tertiary); margin-top: 8px;">
-            支持的格式：PDF、DOCX、WPS、PPTX、图片、JSON、GeoJSON、CSV、SQLite、文本
+            {{ t('manager.explorer.supportedFormats') }}
           </p>
         </template>
       </el-empty>
@@ -176,6 +176,7 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { MagicStick, Download, Location, Collection, Upload, Share } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
@@ -183,6 +184,8 @@ import { GraphSchemaView } from '@addp/common-frontend/graph'
 import client from '@/api/client'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import { useExplorerStore } from '@/stores/explorer'
+
+const { t } = useI18n()
 
 const props = defineProps({
   selectedNode: {
@@ -350,7 +353,7 @@ const deriveBaseFileName = (data, node) => {
 const toBlobFromBase64 = (base64, mime) => {
   const clean = sanitizeBase64(base64)
   if (!clean) {
-    throw new Error('缺少可用的 base64 数据')
+    throw new Error(t('manager.explorer.missingBase64Data'))
   }
   const binary = atob(clean)
   const length = binary.length
@@ -520,7 +523,7 @@ const downloadInfo = computed(() => {
   }
 
   if (previewMode.value === 'node') {
-    return { available: false, reason: '目录节点不支持下载' }
+    return { available: false, reason: t('manager.explorer.dirNodeNoDownload') }
   }
 
   const baseName = deriveBaseFileName(props.previewData, props.selectedNode)
@@ -529,7 +532,7 @@ const downloadInfo = computed(() => {
     const columns = Array.isArray(props.previewData.columns) ? props.previewData.columns : []
     const rows = Array.isArray(props.previewData.rows) ? props.previewData.rows : []
     if (!columns.length) {
-      return { available: false, reason: '暂无可导出的表格数据' }
+      return { available: false, reason: t('manager.explorer.noTableDataToExport') }
     }
     return {
       available: true,
@@ -543,7 +546,7 @@ const downloadInfo = computed(() => {
 
   const nodeType = (objectData.value?.node_type || objectData.value?.nodeType || '').toLowerCase()
   if (['directory', 'bucket', 'prefix'].includes(nodeType)) {
-    return { available: false, reason: '目录节点不支持下载' }
+    return { available: false, reason: t('manager.explorer.dirNodeNoDownload') }
   }
 
   const content = objectData.value?.content || {}
@@ -653,7 +656,7 @@ const downloadInfo = computed(() => {
     }
   }
 
-  return { available: false, reason: '未找到可下载的数据源' }
+  return { available: false, reason: t('manager.explorer.noDownloadSource') }
 })
 
 const store = useExplorerStore()
@@ -684,7 +687,7 @@ const loadGraphSchema = async () => {
     graphSchemaData.value = data
   } catch (error) {
     console.error('加载图 Schema 失败:', error)
-    ElMessage.error('加载图 Schema 失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.explorer.loadGraphSchemaFailed', { error: error.response?.data?.error || error.message }))
     showGraphSchema.value = false
   } finally {
     graphSchemaLoading.value = false
@@ -757,7 +760,7 @@ const handleImportSuccess = async () => {
   if (props.selectedNode?.locator) {
     try {
       await store.refreshNode(props.selectedNode.locator)
-      ElMessage.success('数据导入成功，已刷新目录')
+      ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
     } catch (error) {
       console.error('刷新节点失败:', error)
     }
@@ -774,7 +777,7 @@ const downloadTip = computed(() => downloadInfo.value.reason || '')
 
 const handleDownload = async () => {
   if (!downloadInfo.value.available) {
-    ElMessage.warning(downloadInfo.value.reason || '当前预览不支持下载')
+    ElMessage.warning(downloadInfo.value.reason || t('manager.explorer.downloadNotSupported'))
     return
   }
 
@@ -804,23 +807,23 @@ const handleDownload = async () => {
       case 'csv': {
         const csv = buildCsv(info.columns, info.rows)
         if (!csv) {
-          throw new Error('暂无可导出的表格数据')
+          throw new Error(t('manager.explorer.noTableDataToExport'))
         }
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
         downloadBlob(blob, info.fileName)
         break
       }
       default:
-        throw new Error('未知的下载类型')
+        throw new Error(t('manager.explorer.unknownDownloadType'))
     }
     if (info.note) {
       ElMessage.success(info.note)
     } else {
-      ElMessage.success('下载任务已开始')
+      ElMessage.success(t('manager.explorer.downloadStarted'))
     }
   } catch (error) {
     console.error('下载失败:', error)
-    ElMessage.error(`下载失败: ${error.message || error}`)
+    ElMessage.error(t('manager.explorer.downloadFailed', { error: error.message || error }))
   } finally {
     downloading.value = false
   }
@@ -856,7 +859,7 @@ onUnmounted(() => {
 })
 
 const title = computed(() => {
-  if (!props.selectedNode) return '数据预览'
+  if (!props.selectedNode) return t('manager.explorer.dataPreview')
 
   const node = props.selectedNode
   const nodeType = node.nodeType || node.type
@@ -865,17 +868,17 @@ const title = computed(() => {
   if (['object', 'directory', 'bucket'].includes(nodeType)) {
     const path = node.path || node.table || ''
     if (path) {
-      return `${node.schema}/${path} - 数据预览`
+      return `${node.schema}/${path} - ${t('manager.explorer.dataPreview')}`
     }
-    return `${node.schema || node.label || ''} - 数据预览`
+    return `${node.schema || node.label || ''} - ${t('manager.explorer.dataPreview')}`
   }
 
   // 表格类型
   if (node.schema && node.table) {
-    return `${node.schema}.${node.table} - 数据预览`
+    return `${node.schema}.${node.table} - ${t('manager.explorer.dataPreview')}`
   }
 
-  return `${node.label || ''} - 数据预览`
+  return `${node.label || ''} - ${t('manager.explorer.dataPreview')}`
 })
 
 // 表格信息相关计算属性
@@ -894,11 +897,11 @@ const tableTotalText = computed(() => {
 
   // 如果预览行数小于总行数，说明只是预览了部分数据
   if (rowCount < total) {
-    return `预览 ${rowCount.toLocaleString()} 行（共 ${total.toLocaleString()} 行）`
+    return t('manager.explorer.previewRows', { rowCount: rowCount.toLocaleString(), total: total.toLocaleString() })
   }
 
   // 否则显示总计
-  return `总计 ${total.toLocaleString()} 行`
+  return t('manager.explorer.totalRows', { total: total.toLocaleString() })
 })
 
 const hasGeometry = computed(() => {
@@ -916,7 +919,7 @@ const spatialInfoTooltip = computed(() => {
 
   // 几何列
   if (geometryColumns.length > 0) {
-    parts.push(`几何列: ${geometryColumns.join(', ')}`)
+    parts.push(`${t('manager.explorer.geometryColumns')}: ${geometryColumns.join(', ')}`)
   }
 
   // SRID
@@ -927,7 +930,7 @@ const spatialInfoTooltip = computed(() => {
   // 空间范围
   if (extent && extent.length === 4) {
     const [minX, minY, maxX, maxY] = extent
-    parts.push(`空间范围:\n  minX: ${minX}\n  minY: ${minY}\n  maxX: ${maxX}\n  maxY: ${maxY}`)
+    parts.push(`${t('manager.explorer.spatialExtent')}:\n  minX: ${minX}\n  minY: ${minY}\n  maxX: ${maxX}\n  maxY: ${maxY}`)
   }
 
   return parts.join('\n')
@@ -955,26 +958,26 @@ const objectFileTypeLabel = computed(() => {
   // 从 content_type 推断文件类型
   if (contentType.startsWith('image/')) {
     const format = contentType.split('/')[1].toUpperCase()
-    return `图片 (${format})`
+    return t('manager.explorer.fileTypeImage', { format })
   } else if (contentType.includes('pdf')) {
-    return 'PDF 文档'
+    return t('manager.explorer.fileTypePdf')
   } else if (contentType.includes('json')) {
-    return 'JSON 文件'
+    return t('manager.explorer.fileTypeJson')
   } else if (contentType.includes('text')) {
-    return '文本文件'
+    return t('manager.explorer.fileTypeText')
   } else if (contentType.includes('video')) {
-    return '视频文件'
+    return t('manager.explorer.fileTypeVideo')
   } else if (contentType.includes('audio')) {
-    return '音频文件'
+    return t('manager.explorer.fileTypeAudio')
   }
 
   // 从文件扩展名推断
   const ext = path.split('.').pop()?.toUpperCase()
   if (ext) {
-    return `${ext} 文件`
+    return t('manager.explorer.fileTypeExt', { ext })
   }
 
-  return '文件'
+  return t('manager.explorer.fileTypeGeneric')
 })
 
 // 图片尺寸信息（从 attributes 或 extracted_metadata 中提取）
@@ -1011,24 +1014,24 @@ const objectMetadataTooltip = computed(() => {
     const width = extracted.width || extracted.Width || attributes.width || attributes.Width
     const height = extracted.height || extracted.Height || attributes.height || attributes.Height
     if (width && height) {
-      parts.push(`宽 ${width} 高 ${height}`)
+      parts.push(`${t('manager.explorer.metaWidth')} ${width} ${t('manager.explorer.metaHeight')} ${height}`)
     }
 
     // 文件大小
     if (objectSizeBytes.value > 0) {
-      parts.push(`文件大小: ${formatFileSize(objectSizeBytes.value)}`)
+      parts.push(`${t('manager.explorer.metaFileSize')}: ${formatFileSize(objectSizeBytes.value)}`)
     }
 
     // 图片格式
     const format = extracted.format || extracted.Format || attributes.format || attributes.image_format
     if (format && format !== contentType.split('/')[1]) {
-      parts.push(`格式: ${format}`)
+      parts.push(`${t('manager.explorer.metaFormat')}: ${format}`)
     }
 
     // 颜色模式
     const colorMode = extracted.mode || extracted.Mode || attributes.mode || attributes.color_mode
     if (colorMode) {
-      parts.push(`颜色模式: ${colorMode}`)
+      parts.push(`${t('manager.explorer.metaColorMode')}: ${colorMode}`)
     }
 
     // DPI
@@ -1048,7 +1051,7 @@ const objectMetadataTooltip = computed(() => {
 
     // 文件大小
     if (objectSizeBytes.value > 0) {
-      parts.push(`文件大小: ${formatFileSize(objectSizeBytes.value)}`)
+      parts.push(`${t('manager.explorer.metaFileSize')}: ${formatFileSize(objectSizeBytes.value)}`)
     }
 
     // 视频尺寸（宽 × 高）
@@ -1062,9 +1065,9 @@ const objectMetadataTooltip = computed(() => {
                        extracted.resolution || extracted.Resolution || attributes.resolution
 
     if (width && height) {
-      parts.push(`分辨率: ${width} × ${height}`)
+      parts.push(`${t('manager.explorer.metaResolution')}: ${width} × ${height}`)
     } else if (resolution && typeof resolution === 'string') {
-      parts.push(`分辨率: ${resolution}`)
+      parts.push(`${t('manager.explorer.metaResolution')}: ${resolution}`)
     }
 
     // 时长
@@ -1072,7 +1075,7 @@ const objectMetadataTooltip = computed(() => {
                      extracted.duration || extracted.Duration || attributes.duration
     if (duration) {
       const durationStr = formatDuration(duration)
-      parts.push(`时长: ${durationStr}`)
+      parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 视频编码（codec）
@@ -1080,21 +1083,21 @@ const objectMetadataTooltip = computed(() => {
                        extracted.video_codec || extracted.VideoCodec || attributes.video_codec ||
                        extracted.codec || extracted.Codec || attributes.codec
     if (videoCodec) {
-      parts.push(`视频编码: ${videoCodec}`)
+      parts.push(`${t('manager.explorer.metaVideoCodec')}: ${videoCodec}`)
     }
 
     // 音频编码
     const audioCodec = videoMeta.audio_codec || videoMeta.audio_format ||
                        extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec
     if (audioCodec) {
-      parts.push(`音频编码: ${audioCodec}`)
+      parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
     }
 
     // 帧率
     const fps = videoMeta.frame_rate || videoMeta.fps ||
                 extracted.fps || extracted.FPS || attributes.fps || extracted.frame_rate
     if (fps) {
-      parts.push(`帧率: ${fps} fps`)
+      parts.push(`${t('manager.explorer.metaFrameRate')}: ${fps} fps`)
     }
 
     // 比特率
@@ -1102,7 +1105,7 @@ const objectMetadataTooltip = computed(() => {
                     extracted.bitrate || extracted.Bitrate || attributes.bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
-      parts.push(`比特率: ${bitrateStr}`)
+      parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
     }
   }
 
@@ -1112,27 +1115,27 @@ const objectMetadataTooltip = computed(() => {
     const duration = extracted.duration || extracted.Duration || attributes.duration
     if (duration) {
       const durationStr = formatDuration(duration)
-      parts.push(`时长: ${durationStr}`)
+      parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 音频编码
     const audioCodec = extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec ||
                        extracted.codec || extracted.Codec || attributes.codec
     if (audioCodec) {
-      parts.push(`音频编码: ${audioCodec}`)
+      parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
     }
 
     // 采样率
     const sampleRate = extracted.sample_rate || extracted.SampleRate || attributes.sample_rate
     if (sampleRate) {
-      parts.push(`采样率: ${sampleRate} Hz`)
+      parts.push(`${t('manager.explorer.metaSampleRate')}: ${sampleRate} Hz`)
     }
 
     // 比特率
     const bitrate = extracted.bitrate || extracted.Bitrate || attributes.bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
-      parts.push(`比特率: ${bitrateStr}`)
+      parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
     }
   }
 

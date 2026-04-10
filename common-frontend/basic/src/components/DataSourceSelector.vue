@@ -2,10 +2,10 @@
   <div class="data-source-selector">
     <!-- 引擎选择器 -->
     <div v-if="showEngineSelector" class="engine-selector">
-      <el-form-item label="存储引擎">
+      <el-form-item :label="t('dataSource.engine')">
         <el-select
           v-model="selectedEngineId"
-          placeholder="请选择存储引擎"
+          :placeholder="t('dataSource.enginePlaceholder')"
           style="width: 100%"
           :loading="loadingEngines"
           @change="handleEngineChange"
@@ -49,7 +49,7 @@
               type="success"
               style="margin-left: 8px"
             >
-              空间
+              {{ t('dataSource.spatial') }}
             </el-tag>
             <!-- 多选模式的选中标记 -->
             <el-icon
@@ -74,16 +74,16 @@
       >
         <template #title>
           <div>
-            已选择：<strong>{{ currentSelection.fullName }}</strong>
+            {{ t('dataSource.selected') }}<strong>{{ currentSelection.fullName }}</strong>
           </div>
           <div v-if="currentSelection.hasGeometry" style="margin-top: 8px; font-size: 13px">
             <span>
-              几何列：{{ currentSelection.geometryColumn }}
-              (SRID: {{ currentSelection.srid || 'unknown' }})
+              {{ t('dataSource.geometryColumn') }}{{ currentSelection.geometryColumn }}
+              ({{ t('dataSource.srid') }}: {{ currentSelection.srid || t('common.unknown') }})
             </span>
           </div>
           <div v-else style="margin-top: 8px; font-size: 13px; color: #909399">
-            无几何列
+            {{ t('dataSource.noGeometry') }}
           </div>
         </template>
       </el-alert>
@@ -92,14 +92,14 @@
     <!-- 检测进度提示 -->
     <div v-if="detecting" class="detecting-tip">
       <el-icon class="is-loading"><Loading /></el-icon>
-      <span style="margin-left: 8px">正在检测表结构...</span>
+      <span style="margin-left: 8px">{{ t('dataSource.detecting') }}</span>
     </div>
 
     <!-- 多选模式的选中列表 -->
     <div v-if="selectionMode === 'multiple' && selectedItems.size > 0" class="selected-list">
       <div class="selected-list-header">
-        已选择 {{ selectedItems.size }} 项
-        <el-button text size="small" @click="clearSelection">清空</el-button>
+        {{ t('dataSource.selectedCount', { count: selectedItems.size }) }}
+        <el-button text size="small" @click="clearSelection">{{ t('dataSource.clearSelection') }}</el-button>
       </div>
       <div class="selected-list-items">
         <el-tag
@@ -118,6 +118,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
   Folder,
@@ -128,6 +129,8 @@ import {
 } from '@element-plus/icons-vue'
 import ResourceTree from './ResourceTree.vue'
 import * as DataSourceAPI from '../api/dataSource'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // API 配置
@@ -416,7 +419,7 @@ const handleNodeClick = async (node) => {
   // 如果要求必须有几何列，但检测结果无几何列，则不允许选择
   if (props.requireGeometry && !selection.hasGeometry) {
     console.log('[DataSourceSelector] 不满足 requireGeometry 要求')
-    ElMessage.warning('请选择空间表（包含几何列的表）')
+    ElMessage.warning(t('dataSource.requireSpatial'))
     return
   }
 
@@ -554,7 +557,7 @@ const loadNode = async (node, resolve) => {
     resolve(children || [])
   } catch (error) {
     console.error('[DataSourceSelector] loadNode failed:', error)
-    ElMessage.error(`加载子节点失败: ${error.message}`)
+    ElMessage.error(t('dataSource.loadChildrenFailed', { msg: error.message }))
     resolve([])
   }
 }

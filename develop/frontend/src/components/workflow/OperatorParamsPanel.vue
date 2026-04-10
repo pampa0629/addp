@@ -1,25 +1,25 @@
 <template>
   <div class="operator-params-panel">
     <div v-if="!operator" class="empty-state">
-      <el-empty description="请从画布中选择一个节点" :image-size="100" />
+      <el-empty :description="t('develop.operatorParams.selectNode')" :image-size="100" />
     </div>
 
     <div v-else class="params-form">
       <el-form :model="formData" label-width="120px" label-position="top">
         <!-- 节点基本信息 -->
         <section class="section">
-          <h4 class="section-title">节点信息</h4>
-          <el-form-item label="算子">
+          <h4 class="section-title">{{ t('develop.operatorParams.nodeInfo') }}</h4>
+          <el-form-item :label="t('develop.operatorParams.operator')">
             <el-input :value="operator" disabled />
           </el-form-item>
-          <el-form-item label="节点ID">
+          <el-form-item :label="t('develop.operatorParams.nodeId')">
             <el-input :value="nodeId" disabled />
           </el-form-item>
         </section>
 
         <!-- 参数配置 -->
         <section class="section">
-          <h4 class="section-title">参数配置</h4>
+          <h4 class="section-title">{{ t('develop.operatorParams.paramsConfig') }}</h4>
 
           <el-alert
             v-if="effectiveParameters.length === 0"
@@ -27,7 +27,7 @@
             :closable="false"
             show-icon
           >
-            该算子无需配置参数
+            {{ t('develop.operatorParams.noParams') }}
           </el-alert>
 
           <div v-else>
@@ -35,7 +35,7 @@
               <!-- 特殊处理：数据源级联选择器 -->
               <template v-if="param.ui_type === 'data_source_cascader'">
                 <div class="data-source-section">
-                  <h4 class="subsection-title">{{ param.name || '数据源选择' }}</h4>
+                  <h4 class="subsection-title">{{ param.name || t('develop.operatorParams.dataSourceSelect') }}</h4>
                   <p v-if="param.description" class="subsection-description">
                     {{ param.description }}
                   </p>
@@ -100,8 +100,8 @@
 
         <!-- 保存按钮 -->
         <el-form-item>
-          <el-button type="primary" @click="saveParams">保存参数</el-button>
-          <el-button @click="resetParams">重置</el-button>
+          <el-button type="primary" @click="saveParams">{{ t('develop.operatorParams.saveParams') }}</el-button>
+          <el-button @click="resetParams">{{ t('develop.operatorParams.reset') }}</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -110,12 +110,15 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import EngineSelect from './EngineSelect.vue'
 import SchemaSelect from './SchemaSelect.vue'
 import TableSelect from './TableSelect.vue'
 import { DataSourceCascader } from '@addp/common-frontend'
+
+const { t } = useI18n()
 
 const props = defineProps({
   nodeId: {
@@ -302,9 +305,9 @@ const getComponentProps = (param) => {
 // 获取 placeholder
 const getPlaceholder = (param) => {
   if (param.default !== undefined && param.default !== null) {
-    return `默认: ${param.default}`
+    return t('develop.operatorParams.defaultValue', { value: param.default })
   }
-  return `请输入 ${param.name}`
+  return t('develop.operatorParams.inputPlaceholder', { name: param.name })
 }
 
 // 参数变更处理(级联清空逻辑)
@@ -349,7 +352,7 @@ const handleDataSourceSelection = (selection) => {
   }
 
   console.log('[OperatorParamsPanel] 数据源选择:', selection)
-  ElMessage.success(`已选择: ${selection.fullName}`)
+  ElMessage.success(t('develop.operatorParams.dataSourceSelected', { name: selection.fullName }))
 }
 
 // 保存参数
@@ -357,7 +360,7 @@ const saveParams = () => {
   // 验证必填参数
   for (const param of effectiveParameters.value) {
     if (param.required && !formData.value[param.name]) {
-      ElMessage.warning(`请填写必填参数: ${param.name}`)
+      ElMessage.warning(t('develop.operatorParams.requiredParam', { name: param.name }))
       return
     }
   }
@@ -395,13 +398,13 @@ const saveParams = () => {
     params: cleanedParams
   })
 
-  ElMessage.success('参数已保存')
+  ElMessage.success(t('develop.operatorParams.saveSuccess'))
 }
 
 // 重置参数
 const resetParams = () => {
   formData.value = { ...props.initialParams }
-  ElMessage.info('已重置参数')
+  ElMessage.info(t('develop.operatorParams.resetSuccess'))
 }
 </script>
 

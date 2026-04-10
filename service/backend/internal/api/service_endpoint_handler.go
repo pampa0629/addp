@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -36,20 +38,20 @@ type serviceEndpointResp struct {
 func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	ref := c.Query("ref")
 	if ref == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 ref 参数"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgMissingRef)})
 		return
 	}
 
 	parts := strings.SplitN(ref, ":", 2)
 	if len(parts) != 2 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ref 格式错误，应为 type:id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidRefFormat)})
 		return
 	}
 
 	serviceType := parts[0]
 	id64, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ref 中的 ID 无效"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidRefID)})
 		return
 	}
 	id := uint(id64)
@@ -92,6 +94,6 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 		})
 
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的服务类型: " + serviceType})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgUnsupportedType) + ": " + serviceType})
 	}
 }

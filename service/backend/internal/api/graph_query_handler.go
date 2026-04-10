@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/addp/service/internal/service/data"
@@ -157,7 +159,7 @@ func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, servicei18n.MsgDeleteSuccess)})
 }
 
 // ===== 数据执行 API =====

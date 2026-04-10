@@ -1,7 +1,7 @@
 <template>
   <div class="star-schema-view">
     <div class="view-header">
-      <span class="view-title">星型建模视图</span>
+      <span class="view-title">{{ t('model.star_schema.title') }}</span>
     </div>
 
     <el-row :gutter="16" style="margin-top:12px">
@@ -9,21 +9,21 @@
       <el-col :span="6">
         <el-card shadow="never" class="fact-list-card">
           <template #header>
-            <span class="card-title">事实表</span>
+            <span class="card-title">{{ t('model.star_schema.fact_tables') }}</span>
           </template>
           <div v-loading="loadingTables">
             <div
-              v-for="t in factTables"
-              :key="t.id"
+              v-for="t2 in factTables"
+              :key="t2.id"
               class="fact-item"
-              :class="{ active: selectedTableId === t.id }"
-              @click="selectTable(t)"
+              :class="{ active: selectedTableId === t2.id }"
+              @click="selectTable(t2)"
             >
-              <div class="fact-item-name">{{ t.name }}</div>
-              <div class="fact-item-code">{{ t.code }}</div>
-              <el-tag v-if="t.layer" type="info" size="small">{{ t.layer.toUpperCase() }}</el-tag>
+              <div class="fact-item-name">{{ t2.name }}</div>
+              <div class="fact-item-code">{{ t2.code }}</div>
+              <el-tag v-if="t2.layer" type="info" size="small">{{ t2.layer.toUpperCase() }}</el-tag>
             </div>
-            <el-empty v-if="!loadingTables && factTables.length === 0" description="暂无事实表" :image-size="60" />
+            <el-empty v-if="!loadingTables && factTables.length === 0" :description="t('model.star_schema.no_fact_tables')" :image-size="60" />
           </div>
         </el-card>
       </el-col>
@@ -31,7 +31,7 @@
       <!-- 右侧：星型图 -->
       <el-col :span="18">
         <div v-if="!selectedTable" class="empty-placeholder">
-          <el-empty description="请在左侧选择一张事实表" />
+          <el-empty :description="t('model.star_schema.select_fact_table')" />
         </div>
 
         <template v-else>
@@ -40,22 +40,22 @@
             <template #header>
               <div class="fact-detail-header">
                 <span class="fact-detail-name">{{ selectedTable.name }}</span>
-                <el-tag type="danger" size="small">事实表</el-tag>
+                <el-tag type="danger" size="small">{{ t('model.star_schema.fact_table_tag') }}</el-tag>
                 <el-tag v-if="selectedTable.layer" type="info" size="small">{{ selectedTable.layer.toUpperCase() }}</el-tag>
                 <el-button
                   link
                   type="primary"
                   @click="$router.push(`/modeling/logical-tables/${selectedTable.id}`)"
                 >
-                  查看详情
+                  {{ t('model.star_schema.view_detail') }}
                 </el-button>
               </div>
             </template>
             <div v-if="selectedTable.grain_description" class="grain-desc">
-              <span class="grain-label">粒度：</span>{{ selectedTable.grain_description }}
+              <span class="grain-label">{{ t('model.star_schema.grain_label') }}</span>{{ selectedTable.grain_description }}
             </div>
             <div v-if="measureFields.length > 0" class="measure-fields">
-              <div class="section-label">度量字段：</div>
+              <div class="section-label">{{ t('model.star_schema.measure_fields') }}</div>
               <div class="field-tags">
                 <el-tag
                   v-for="f in measureFields"
@@ -77,13 +77,13 @@
               <el-card shadow="never" v-loading="loadingRelated">
                 <template #header>
                   <div class="card-header-with-action">
-                    <span class="card-title">关联维度表</span>
+                    <span class="card-title">{{ t('model.star_schema.dimension_relations') }}</span>
                     <el-button type="primary" size="small" @click="openAddDimDialog">
-                      添加关联
+                      {{ t('model.star_schema.add_relation') }}
                     </el-button>
                   </div>
                 </template>
-                <div v-if="dimensionRelations.length === 0" class="empty-hint">暂无关联维度表</div>
+                <div v-if="dimensionRelations.length === 0" class="empty-hint">{{ t('model.star_schema.no_dimensions') }}</div>
                 <div v-for="rel in dimensionRelations" :key="rel.id" class="dim-item">
                   <div class="dim-item-left">
                     <span class="dim-name">{{ rel.target_table_name }}</span>
@@ -98,7 +98,7 @@
                       size="small"
                       @click="$router.push(`/modeling/logical-tables/${rel.target_table}`)"
                     >
-                      详情
+                      {{ t('model.star_schema.detail') }}
                     </el-button>
                     <el-button
                       link
@@ -106,7 +106,7 @@
                       size="small"
                       @click="handleRemoveDimRelation(rel)"
                     >
-                      移除
+                      {{ t('model.star_schema.remove') }}
                     </el-button>
                   </div>
                 </div>
@@ -117,9 +117,9 @@
             <el-col :span="12">
               <el-card shadow="never" v-loading="loadingMetrics">
                 <template #header>
-                  <span class="card-title">关联指标</span>
+                  <span class="card-title">{{ t('model.metric.title') }}</span>
                 </template>
-                <div v-if="factMetrics.length === 0" class="empty-hint">暂无关联指标</div>
+                <div v-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_dimensions') }}</div>
                 <div v-for="m in factMetrics" :key="m.id" class="metric-item">
                   <span class="metric-name">{{ metricNameMap[m.metric_id] || `指标#${m.metric_id}` }}</span>
                   <el-tag :type="metricTypeTagType(metricTypeMap[m.metric_id])" size="small">
@@ -133,7 +133,7 @@
           <!-- Mermaid 星型图 -->
           <el-card shadow="never" style="margin-top:12px">
             <template #header>
-              <span class="card-title">拓扑图</span>
+              <span class="card-title">{{ t('model.star_schema.topology') }}</span>
             </template>
             <div ref="mermaidContainer" class="mermaid-container">
               <pre class="mermaid">{{ mermaidCode }}</pre>
@@ -144,12 +144,12 @@
     </el-row>
 
     <!-- 添加维度关联对话框 -->
-    <el-dialog v-model="addDimDialogVisible" title="添加维度表关联" width="480px" :close-on-click-modal="false">
+    <el-dialog v-model="addDimDialogVisible" :title="t('model.star_schema.add_dim_title')" width="480px" :close-on-click-modal="false">
       <el-form :model="addDimForm" label-width="100px" ref="addDimFormRef">
-        <el-form-item label="维度表" prop="target_table" :rules="[{ required: true, message: '请选择维度表' }]">
+        <el-form-item :label="t('model.star_schema.dim_table')" prop="target_table" :rules="[{ required: true, message: t('model.star_schema.dim_table_required') }]">
           <el-select
             v-model="addDimForm.target_table"
-            placeholder="选择维度表"
+            :placeholder="t('model.star_schema.dim_table_placeholder')"
             style="width:100%"
             filterable
             @change="onDimTableChange"
@@ -165,8 +165,8 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="事实表字段" prop="source_field" :rules="[{ required: true, message: '请选择事实表字段' }]">
-          <el-select v-model="addDimForm.source_field" placeholder="选择事实表外键字段" style="width:100%" filterable>
+        <el-form-item :label="t('model.star_schema.source_field')" prop="source_field" :rules="[{ required: true, message: t('model.star_schema.source_field_required') }]">
+          <el-select v-model="addDimForm.source_field" :placeholder="t('model.star_schema.source_field_placeholder')" style="width:100%" filterable>
             <el-option
               v-for="f in tableFields"
               :key="f.id"
@@ -178,10 +178,10 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="维度表字段" prop="target_field" :rules="[{ required: true, message: '请选择维度表字段' }]">
+        <el-form-item :label="t('model.star_schema.target_field')" prop="target_field" :rules="[{ required: true, message: t('model.star_schema.target_field_required') }]">
           <el-select
             v-model="addDimForm.target_field"
-            placeholder="选择维度表主键字段"
+            :placeholder="t('model.star_schema.target_field_placeholder')"
             style="width:100%"
             filterable
             :disabled="!addDimForm.target_table"
@@ -197,16 +197,16 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="关联类型">
+        <el-form-item :label="t('model.star_schema.relation_type')">
           <el-radio-group v-model="addDimForm.relation_type">
-            <el-radio value="fk">外键（FK）</el-radio>
-            <el-radio value="join">关联（JOIN）</el-radio>
+            <el-radio value="fk">{{ t('model.star_schema.fk') }}</el-radio>
+            <el-radio value="join">{{ t('model.star_schema.join') }}</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="addDimDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="addingDim" @click="handleAddDimRelation">确认关联</el-button>
+        <el-button @click="addDimDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="addingDim" @click="handleAddDimRelation">{{ t('model.star_schema.confirm_relation') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -218,6 +218,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import mermaid from 'mermaid'
 import { logicalTableAPI, standardMetricAPI } from '../api/model'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 
@@ -267,12 +270,12 @@ const mermaidCode = computed(() => {
   if (!selectedTable.value) return ''
   const lines = ['flowchart LR']
   const factId = `F${selectedTable.value.id}`
-  lines.push(`  ${factId}["${selectedTable.value.name}\\n(事实表)"]`)
+  lines.push(`  ${factId}["${selectedTable.value.name}\\n${t('model.star_schema.fact_table_label')}"]`)
   lines.push(`  style ${factId} fill:#fef3c7,stroke:#f59e0b`)
 
   dimensionRelations.value.forEach(rel => {
     const dimId = `D${rel.target_table}`
-    lines.push(`  ${dimId}["${rel.target_table_name}\\n(维度)"]`)
+    lines.push(`  ${dimId}["${rel.target_table_name}\\n${t('model.star_schema.dim_label')}"]`)
     lines.push(`  style ${dimId} fill:#dbeafe,stroke:#3b82f6`)
     lines.push(`  ${dimId} --> ${factId}`)
   })
@@ -280,7 +283,7 @@ const mermaidCode = computed(() => {
   factMetrics.value.forEach(m => {
     const mId = `M${m.id}`
     const mName = metricNameMap.value[m.metric_id] || `指标#${m.metric_id}`
-    lines.push(`  ${mId}["${mName}\\n(指标)"]`)
+    lines.push(`  ${mId}["${mName}\\n${t('model.star_schema.metric_label')}"]`)
     lines.push(`  style ${mId} fill:#dcfce7,stroke:#22c55e`)
     lines.push(`  ${factId} --> ${mId}`)
   })
@@ -296,9 +299,9 @@ const measureTagType = (role) => {
 }
 
 const measureRoleHint = (role) => {
-  if (role === 'measure_additive') return ' [可加]'
-  if (role === 'measure_semi') return ' [半可加]'
-  if (role === 'measure_non') return ' [不可加]'
+  if (role === 'measure_additive') return t('model.star_schema.measure_additive')
+  if (role === 'measure_semi') return t('model.star_schema.measure_semi')
+  if (role === 'measure_non') return t('model.star_schema.measure_non')
   return ''
 }
 
@@ -309,11 +312,11 @@ const metricTypeTagType = (t) => {
   return 'info'
 }
 
-const metricTypeLabel = (t) => {
-  if (t === 'atomic') return '原子'
-  if (t === 'derived') return '派生'
-  if (t === 'composite') return '复合'
-  return t || '未知'
+const metricTypeLabel = (type) => {
+  if (type === 'atomic') return t('model.star_schema.metric_atomic')
+  if (type === 'derived') return t('model.star_schema.metric_derived')
+  if (type === 'composite') return t('model.star_schema.metric_composite')
+  return type || t('model.star_schema.metric_unknown')
 }
 
 const loadFactTables = async () => {
@@ -388,13 +391,13 @@ const handleAddDimRelation = async () => {
         target_field: addDimForm.value.target_field,
         relation_type: addDimForm.value.relation_type,
       })
-      ElMessage.success('关联添加成功')
+      ElMessage.success(t('model.star_schema.add_success'))
       addDimDialogVisible.value = false
       // 刷新关联列表
       const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
       dimensionRelations.value = res || []
     } catch (e) {
-      ElMessage.error(e?.response?.data?.error || '添加失败')
+      ElMessage.error(e?.response?.data?.error || t('model.star_schema.add_failed'))
     } finally {
       addingDim.value = false
     }
@@ -404,19 +407,19 @@ const handleAddDimRelation = async () => {
 const handleRemoveDimRelation = async (rel) => {
   try {
     await ElMessageBox.confirm(
-      `确认移除与「${rel.target_table_name}」的关联吗？`,
-      '移除关联',
-      { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消' }
+      t('model.star_schema.remove_confirm', { name: rel.target_table_name }),
+      t('model.star_schema.remove_title'),
+      { type: 'warning', confirmButtonText: t('model.star_schema.remove_btn'), cancelButtonText: t('model.common.cancel') }
     )
   } catch {
     return
   }
   try {
     await logicalTableAPI.removeDimensionRelation(selectedTable.value.id, rel.id)
-    ElMessage.success('已移除')
+    ElMessage.success(t('model.star_schema.remove_success'))
     dimensionRelations.value = dimensionRelations.value.filter(r => r.id !== rel.id)
   } catch (e) {
-    ElMessage.error(e?.response?.data?.error || '移除失败')
+    ElMessage.error(e?.response?.data?.error || t('model.star_schema.remove_failed'))
   }
 }
 

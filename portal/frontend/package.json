@@ -14,7 +14,8 @@
     "pinia": "2.3.0",
     "axios": "1.7.9",
     "element-plus": "2.8.8",
-    "@element-plus/icons-vue": "2.3.2"
+    "@element-plus/icons-vue": "2.3.2",
+    "vue-i18n": "^9.14.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.1",

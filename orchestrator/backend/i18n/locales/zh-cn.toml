@@ -1,0 +1,41 @@
+[orchestrator.error.invalid_id]
+other = "无效的 ID"
+
+[orchestrator.error.orchestration_not_found]
+other = "编排不存在"
+
+[orchestrator.error.execution_not_found]
+other = "执行不存在"
+
+[orchestrator.error.schedule_failed]
+other = "调度失败"
+
+[orchestrator.error.missing_module_param]
+other = "缺少 module_name 或 module 参数"
+
+[orchestrator.error.provider_not_found]
+other = "未找到任务提供者"
+
+[orchestrator.error.provider_not_configured]
+other = "任务提供者未配置完整的 API 信息"
+
+[orchestrator.error.list_providers_failed]
+other = "获取任务提供者失败"
+
+[orchestrator.error.create_request_failed]
+other = "创建请求失败"
+
+[orchestrator.error.call_module_api_failed]
+other = "调用模块 API 失败"
+
+[orchestrator.error.read_response_failed]
+other = "读取响应失败"
+
+[orchestrator.error.module_api_error]
+other = "模块 API 返回错误"
+
+[orchestrator.error.parse_response_failed]
+other = "解析响应失败"
+
+[orchestrator.success.deleted]
+other = "删除成功"

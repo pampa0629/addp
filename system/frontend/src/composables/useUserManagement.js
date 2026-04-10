@@ -1,21 +1,16 @@
 import { ref, reactive, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usersAPI } from '../api/users'
+import { useI18n } from 'vue-i18n'
 
 /**
  * 用户管理 Composable
  * 封装用户 CRUD 逻辑,消除重复代码
  */
 export function useUserManagement() {
+  const { t } = useI18n()
   const users = ref([])
   const loading = ref(false)
-
-  // 用户类型映射
-  const userTypeMap = {
-    'super_admin': '超级管理员',
-    'tenant_admin': '租户管理员',
-    'user': '普通用户'
-  }
 
   const userTypeTagMap = {
     'super_admin': 'danger',
@@ -27,7 +22,12 @@ export function useUserManagement() {
    * 获取用户类型显示文本
    */
   const getUserTypeText = (userType) => {
-    return userTypeMap[userType] || '未知'
+    const map = {
+      'super_admin': t('system.user.types.superAdmin'),
+      'tenant_admin': t('system.user.types.tenantAdmin'),
+      'user': t('system.user.types.user')
+    }
+    return map[userType] || t('system.user.types.unknown')
   }
 
   /**
@@ -44,11 +44,10 @@ export function useUserManagement() {
     loading.value = true
     try {
       const response = await usersAPI.list(page, pageSize)
-      // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
       users.value = response?.data || []
       return { success: true, data: response?.data || [], total: response?.total || 0 }
     } catch (error) {
-      ElMessage.error('加载用户列表失败')
+      ElMessage.error(t('system.user.msg.loadFailed'))
       console.error(error)
       return { success: false, error }
     } finally {
@@ -62,10 +61,10 @@ export function useUserManagement() {
   const createUser = async (userData) => {
     try {
       await usersAPI.create(userData)
-      ElMessage.success('新增用户成功')
+      ElMessage.success(t('system.user.msg.createSuccess'))
       return { success: true }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '新增用户失败')
+      ElMessage.error(error.response?.data?.error || t('system.user.msg.createFailed'))
       return { success: false, error }
     }
   }
@@ -76,10 +75,10 @@ export function useUserManagement() {
   const updateUser = async (userId, userData) => {
     try {
       await usersAPI.update(userId, userData)
-      ElMessage.success('更新用户成功')
+      ElMessage.success(t('system.user.msg.updateSuccess'))
       return { success: true }
     } catch (error) {
-      ElMessage.error(error.response?.data?.error || '更新用户失败')
+      ElMessage.error(error.response?.data?.error || t('system.user.msg.updateFailed'))
       return { success: false, error }
     }
   }
@@ -88,30 +87,28 @@ export function useUserManagement() {
    * 删除用户（带确认）
    */
   const deleteUser = async (user) => {
-    // 检查是否为admin用户
     if (user.username === 'admin') {
-      ElMessage.error('admin账号不能被删除')
+      ElMessage.error(t('system.user.msg.adminCannotDelete'))
       return { success: false }
     }
 
     try {
       await ElMessageBox.confirm(
-        `确定要删除用户 "${user.username}" 吗？`,
-        '警告',
+        t('system.user.msg.deleteConfirm', { username: user.username }),
+        t('system.user.msg.deleteWarning'),
         {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
+          confirmButtonText: 'OK',
+          cancelButtonText: 'Cancel',
           type: 'warning',
         }
       )
 
       await usersAPI.delete(user.id)
-      ElMessage.success('删除成功')
+      ElMessage.success(t('system.user.msg.deleteSuccess'))
       return { success: true }
     } catch (error) {
-      // 用户取消或API错误
       if (error !== 'cancel') {
-        ElMessage.error(error.response?.data?.error || '删除失败')
+        ElMessage.error(error.response?.data?.error || t('system.user.msg.deleteFailed'))
       }
       return { success: false, error }
     }
@@ -123,11 +120,11 @@ export function useUserManagement() {
   const changePassword = async (userId, passwordData) => {
     try {
       await usersAPI.changePassword(userId, passwordData)
-      ElMessage.success('密码修改成功')
+      ElMessage.success(t('system.user.msg.changePasswordSuccess'))
       return { success: true }
     } catch (error) {
-      console.error('修改密码失败:', error)
-      ElMessage.error(error.response?.data?.error || '修改密码失败')
+      console.error('Change password failed:', error)
+      ElMessage.error(error.response?.data?.error || t('system.user.msg.changePasswordFailed'))
       return { success: false, error }
     }
   }
@@ -150,6 +147,7 @@ export function useUserManagement() {
  * 管理用户表单状态和验证规则
  */
 export function useUserForm() {
+  const { t } = useI18n()
   const formRef = ref(null)
   const isEdit = ref(false)
 
@@ -162,23 +160,23 @@ export function useUserForm() {
     user_type: 'user'
   })
 
-  const rules = {
+  const rules = computed(() => ({
     username: [
-      { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' }
+      { required: true, message: t('system.user.rules.usernameRequired'), trigger: 'blur' },
+      { min: 3, max: 20, message: t('system.user.rules.usernameLength'), trigger: 'blur' }
     ],
     password: [
       {
-        required: computed(() => !isEdit.value),
-        message: '请输入密码',
+        required: !isEdit.value,
+        message: t('system.user.rules.passwordRequired'),
         trigger: 'blur'
       },
-      { min: 6, message: '密码长度不能少于 6 位', trigger: 'blur' }
+      { min: 6, message: t('system.user.rules.passwordMin'), trigger: 'blur' }
     ],
     email: [
-      { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
+      { type: 'email', message: t('system.user.rules.emailFormat'), trigger: 'blur' }
     ]
-  }
+  }))
 
   const resetForm = () => {
     userForm.username = ''
@@ -219,6 +217,7 @@ export function useUserForm() {
  * 密码修改表单 Composable
  */
 export function usePasswordForm() {
+  const { t } = useI18n()
   const passwordFormRef = ref(null)
 
   const passwordForm = reactive({
@@ -227,20 +226,20 @@ export function usePasswordForm() {
     confirm_password: ''
   })
 
-  const passwordRules = {
+  const passwordRules = computed(() => ({
     old_password: [
-      { required: true, message: '请输入旧密码', trigger: 'blur' }
+      { required: true, message: t('system.password.rules.oldRequired'), trigger: 'blur' }
     ],
     new_password: [
-      { required: true, message: '请输入新密码', trigger: 'blur' },
-      { min: 6, message: '密码长度不能少于 6 位', trigger: 'blur' }
+      { required: true, message: t('system.password.rules.newRequired'), trigger: 'blur' },
+      { min: 6, message: t('system.password.rules.newMin'), trigger: 'blur' }
     ],
     confirm_password: [
-      { required: true, message: '请再次输入新密码', trigger: 'blur' },
+      { required: true, message: t('system.password.rules.confirmRequired'), trigger: 'blur' },
       {
         validator: (rule, value, callback) => {
           if (value !== passwordForm.new_password) {
-            callback(new Error('两次输入的密码不一致'))
+            callback(new Error(t('system.password.rules.confirmMismatch')))
           } else {
             callback()
           }
@@ -248,7 +247,7 @@ export function usePasswordForm() {
         trigger: 'blur'
       }
     ]
-  }
+  }))
 
   const resetPasswordForm = () => {
     passwordForm.old_password = ''

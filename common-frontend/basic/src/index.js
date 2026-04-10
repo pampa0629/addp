@@ -66,3 +66,16 @@ export { THEME_CONFIGS, THEME_VALUES, getThemeConfig, isThemeDark } from './conf
 
 // Theme Components
 export { default as ThemeSwitcher } from './components/ThemeSwitcher.vue'
+
+// Composables - I18n
+export {
+  createAddpI18n,
+  useAddpI18n,
+  getCurrentLang,
+  SUPPORTED_LANGS,
+  SUPPORTED_LANGUAGES,
+  DEFAULT_LANG
+} from './composables/useAddpI18n'
+
+// I18n Components
+export { default as LangSwitcher } from './components/LangSwitcher.vue'

@@ -2,14 +2,14 @@
   <div class="data-retrieval">
     <el-card class="search-card">
       <div class="search-header">
-        <h2>数据检索</h2>
-        <p class="search-subtitle">支持关键词全文检索与向量语义检索，智能定位数据资产</p>
+        <h2>{{ t('manager.retrieval.title') }}</h2>
+        <p class="search-subtitle">{{ t('manager.retrieval.subtitle') }}</p>
       </div>
       <el-form class="search-form" @submit.prevent="handleSearch">
         <el-form-item class="search-input">
           <el-input
             v-model="keyword"
-            placeholder="请输入搜索关键词，例如：季度报表 / 销售数据"
+            :placeholder="t('manager.retrieval.searchPlaceholder')"
             clearable
             @keyup.enter="handleSearch"
           >
@@ -31,17 +31,17 @@
                   </template>
                   <div class="history-popover">
                     <div class="history-header">
-                      <span>搜索历史</span>
+                      <span>{{ t('manager.retrieval.searchHistory') }}</span>
                       <el-button
                         text
                         size="small"
                         :disabled="historyItems.length === 0 || historyLoading"
                         @click="handleClearHistory"
                       >
-                        清除全部
+                        {{ t('manager.retrieval.clearAll') }}
                       </el-button>
                     </div>
-                    <div v-if="historyLoading" class="history-loading">加载中...</div>
+                    <div v-if="historyLoading" class="history-loading">{{ t('manager.retrieval.loading') }}</div>
                     <el-scrollbar v-else class="history-list">
                       <template v-if="historyItems.length > 0">
                         <div
@@ -53,7 +53,7 @@
                             {{ item.query }}
                           </span>
                           <el-button text size="small" @click.stop="removeHistoryItem(item)">
-                            删除
+                            {{ t('manager.retrieval.deleteHistory') }}
                           </el-button>
                         </div>
                       </template>
@@ -63,7 +63,7 @@
                 </el-popover>
                 <el-button class="search-button" type="primary" size="large" :loading="loading" @click="handleSearch">
                   <el-icon><Search /></el-icon>
-                  <span>搜索</span>
+                  <span>{{ t('manager.retrieval.searchBtn') }}</span>
                 </el-button>
               </div>
             </template>
@@ -75,20 +75,20 @@
     <el-card class="results-card" v-loading="loading">
       <template #header>
         <div class="results-header">
-          <span>检索结果</span>
+          <span>{{ t('manager.retrieval.results') }}</span>
           <span v-if="hasSearched" class="results-count">
-            共 {{ total }} 条记录
+            {{ t('manager.retrieval.resultsCount', { total }) }}
           </span>
         </div>
       </template>
 
       <template v-if="!hasSearched">
-        <el-empty description="输入关键词后开始搜索" />
+        <el-empty :description="t('manager.retrieval.emptyHint')" />
       </template>
 
       <template v-else-if="results.length === 0">
-        <el-empty description="未找到匹配的文档或引擎">
-          <el-button type="primary" @click="resetSearch">重新搜索</el-button>
+        <el-empty :description="t('manager.retrieval.noResults')">
+          <el-button type="primary" @click="resetSearch">{{ t('manager.retrieval.researchBtn') }}</el-button>
         </el-empty>
       </template>
 
@@ -100,7 +100,7 @@
                 <Document />
               </el-icon>
               <span class="result-name">
-                {{ item.title || item.file_name || '未命名文档' }}
+                {{ item.title || item.file_name || t('manager.retrieval.unnamed') }}
               </span>
               <el-tag v-if="item.document_type" type="success" size="small">
                 {{ item.document_type }}
@@ -118,20 +118,20 @@
                 type="primary"
                 @click="navigateToDocument(item)"
               >
-                定位
+                {{ t('manager.retrieval.locating') }}
               </el-button>
             </div>
           </div>
 
           <div class="result-meta">
-            <span>引擎：{{ formatResource(item) }}</span>
-            <span v-if="item.schema">桶/Schema：{{ item.schema }}</span>
-            <span v-if="item.relative_path">路径：{{ item.relative_path }}</span>
-            <span v-if="item.last_modified">更新：{{ formatDate(item.last_modified) }}</span>
-            <span v-if="item.file_size">大小：{{ formatSize(item.file_size) }}</span>
+            <span>{{ t('manager.retrieval.engineLabel') }}{{ formatResource(item) }}</span>
+            <span v-if="item.schema">{{ t('manager.retrieval.bucketLabel') }}{{ item.schema }}</span>
+            <span v-if="item.relative_path">{{ t('manager.retrieval.pathLabel') }}{{ item.relative_path }}</span>
+            <span v-if="item.last_modified">{{ t('manager.retrieval.updatedLabel') }}{{ formatDate(item.last_modified) }}</span>
+            <span v-if="item.file_size">{{ t('manager.retrieval.sizeLabel') }}{{ formatSize(item.file_size) }}</span>
             <span v-if="hasVectorMatch(item)" class="vector-score">
               <el-tag type="warning" size="small" effect="plain">
-                向量相似度：{{ formatVectorScore(item.vector_distance) }}
+                {{ t('manager.retrieval.vectorScore') }}{{ formatVectorScore(item.vector_distance) }}
               </el-tag>
             </span>
           </div>
@@ -164,8 +164,10 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, Search } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import searchAPI from '@/api/search'
 
+const { t } = useI18n()
 const router = useRouter()
 
 const keyword = ref('')
@@ -208,7 +210,7 @@ const loadHistory = async () => {
   } catch (error) {
     console.error('[DataRetrieval] 加载搜索历史失败', error)
     if (historyVisible.value) {
-      ElMessage.error('加载搜索历史失败')
+      ElMessage.error(t('manager.retrieval.loadHistoryFailed'))
     }
   } finally {
     historyLoading.value = false
@@ -236,7 +238,7 @@ const removeHistoryItem = async (item = {}) => {
   }
   try {
     await searchAPI.deleteHistoryItem(item.id)
-    ElMessage.success('已删除所选历史')
+    ElMessage.success(t('manager.retrieval.deleteHistorySuccess'))
     await loadHistory()
   } catch (error) {
     console.error('[DataRetrieval] 删除搜索历史失败', error)
@@ -249,9 +251,9 @@ const handleClearHistory = async () => {
     return
   }
   try {
-    await ElMessageBox.confirm('确认清除全部搜索历史？', '提示', {
-      confirmButtonText: '清除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('manager.retrieval.clearConfirm'), t('common.info'), {
+      confirmButtonText: t('manager.retrieval.clearAll'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning'
     })
   } catch (error) {
@@ -261,7 +263,7 @@ const handleClearHistory = async () => {
   try {
     await searchAPI.clearHistory()
     historyItems.value = []
-    ElMessage.success('已清除全部历史')
+    ElMessage.success(t('manager.retrieval.clearSuccess'))
   } catch (error) {
     console.error('[DataRetrieval] 清除搜索历史失败', error)
     ElMessage.error('清除历史失败')
@@ -275,7 +277,7 @@ onMounted(() => {
 const handleSearch = async () => {
   const trimmed = keyword.value.trim()
   if (!trimmed) {
-    ElMessage.warning('请输入搜索关键词')
+    ElMessage.warning(t('manager.retrieval.searchWarning'))
     return
   }
   page.value = 1
@@ -308,7 +310,7 @@ const fetchResults = async () => {
     hasSearched.value = true
     console.error('[DataRetrieval] 搜索失败', error)
     const message = error.response?.data?.error || error.message
-    ElMessage.error(`搜索失败：${message}`)
+    ElMessage.error(t('manager.retrieval.searchFailed', { msg: message }))
   } finally {
     loading.value = false
   }
@@ -364,9 +366,9 @@ const formatResource = (item = {}) => {
     return name
   }
   if (id) {
-    return `引擎 ${id}`
+    return t('manager.retrieval.engineWithId', { id })
   }
-  return '未知引擎'
+  return t('manager.retrieval.unknownEngine')
 }
 
 const formatDate = (value) => {
@@ -424,11 +426,12 @@ const hasVectorMatch = (item = {}) => {
 }
 
 const navigateToDocument = (item = {}) => {
+  const fileName = item.file_name || t('manager.retrieval.unnamed')
   // 检查必需字段
   const engineId = item.engine_id || item.resource_id
   if (!engineId) {
     ElMessage.warning({
-      message: `文档 "${item.file_name || '未命名'}" 的引擎信息缺失，无法定位。这可能是过期的索引数据。`,
+      message: t('manager.retrieval.missingEngine', { name: fileName }),
       duration: 5000
     })
     return
@@ -438,40 +441,34 @@ const navigateToDocument = (item = {}) => {
   const bucket = item.schema || item.bucket || ''
   if (!bucket) {
     ElMessage.warning({
-      message: `文档 "${item.file_name || '未命名'}" 缺少存储桶信息，无法定位`,
+      message: t('manager.retrieval.missingBucket', { name: fileName }),
       duration: 5000
     })
     return
   }
 
-  // 获取对象路径
-  // 注意：asset_id 可能是 document_id (fingerprint)，不能用于路径
-  // 优先使用 relative_path（Meilisearch 返回的完整路径），其次用 object_key
   let objectPath = item.relative_path || item.object_key || ''
 
-  // 如果 relative_path 只是目录路径，需要拼接文件名
   if (objectPath && item.file_name && !objectPath.endsWith(item.file_name)) {
     objectPath = `${objectPath}/${item.file_name}`.replace(/\/+/g, '/')
   }
 
-  // 如果都没有，尝试从 asset_id 获取（但要排除看起来像 fingerprint 的值）
   if (!objectPath && item.asset_id && item.asset_id.length < 100) {
     objectPath = item.asset_id
   }
 
   if (!objectPath) {
     ElMessage.warning({
-      message: `文档 "${item.file_name || '未命名'}" 缺少对象路径信息，无法定位`,
+      message: t('manager.retrieval.missingPath', { name: fileName }),
       duration: 5000
     })
     return
   }
 
-  // 构建查询参数
   const query = {
     engineId: String(engineId),
     bucket: bucket,
-    objectKey: objectPath  // 使用 objectKey 而不是 objectPath
+    objectKey: objectPath
   }
 
   console.log('[DataRetrieval] 定位到对象:', query)

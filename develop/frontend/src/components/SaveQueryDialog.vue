@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="保存为 查询任务"
+    :title="t('develop.saveQueryDialog.title')"
     width="600px"
     :close-on-click-modal="false"
     @close="handleClose"
@@ -12,43 +12,43 @@
       :rules="rules"
       label-width="100px"
     >
-      <el-form-item label="任务名称" prop="name">
+      <el-form-item :label="t('develop.saveQueryDialog.taskName')" prop="name">
         <el-input
           v-model="formData.name"
-          placeholder="请输入任务名称（唯一标识）"
+          :placeholder="t('develop.saveQueryDialog.taskNamePlaceholder')"
           maxlength="100"
           show-word-limit
         />
       </el-form-item>
 
-      <el-form-item label="显示名称" prop="display_name">
+      <el-form-item :label="t('develop.saveQueryDialog.displayName')" prop="display_name">
         <el-input
           v-model="formData.display_name"
-          placeholder="请输入显示名称（可选）"
+          :placeholder="t('develop.saveQueryDialog.displayNamePlaceholder')"
           maxlength="100"
           show-word-limit
         />
       </el-form-item>
 
-      <el-form-item label="描述" prop="description">
+      <el-form-item :label="t('develop.saveQueryDialog.description')" prop="description">
         <el-input
           v-model="formData.description"
           type="textarea"
           :rows="3"
-          placeholder="请输入任务描述（可选）"
+          :placeholder="t('develop.saveQueryDialog.descriptionPlaceholder')"
           maxlength="500"
           show-word-limit
         />
       </el-form-item>
 
-      <el-form-item label="标签" prop="tags">
+      <el-form-item :label="t('develop.saveQueryDialog.tags')" prop="tags">
         <el-select
           v-model="formData.tags"
           multiple
           filterable
           allow-create
           default-first-option
-          placeholder="请输入标签（可选，支持多个）"
+          :placeholder="t('develop.saveQueryDialog.tagsPlaceholder')"
           style="width: 100%"
         >
           <el-option
@@ -60,7 +60,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="超时时间" prop="timeout">
+      <el-form-item :label="t('develop.saveQueryDialog.timeout')" prop="timeout">
         <el-input-number
           v-model="formData.timeout"
           :min="10"
@@ -69,18 +69,18 @@
           controls-position="right"
           style="width: 200px"
         />
-        <span style="margin-left: 10px; color: var(--addp-text-tertiary)">秒</span>
+        <span style="margin-left: 10px; color: var(--addp-text-tertiary)">{{ t('develop.saveQueryDialog.seconds') }}</span>
       </el-form-item>
 
-      <el-divider content-position="left">调度设置</el-divider>
+      <el-divider content-position="left">{{ t('develop.saveQueryDialog.scheduleSettings') }}</el-divider>
 
-      <el-form-item label="启用调度">
+      <el-form-item :label="t('develop.saveQueryDialog.enableSchedule')">
         <el-switch v-model="scheduledEnabled" />
       </el-form-item>
 
       <el-form-item
         v-if="scheduledEnabled"
-        label="调度配置"
+        :label="t('develop.saveQueryDialog.scheduleConfig')"
         prop="schedule"
       >
         <ScheduleConfig
@@ -91,9 +91,9 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="handleClose">取消</el-button>
+      <el-button @click="handleClose">{{ t('develop.saveQueryDialog.cancel') }}</el-button>
       <el-button type="primary" :loading="saving" @click="handleSave">
-        保存
+        {{ t('develop.saveQueryDialog.save') }}
       </el-button>
     </template>
   </el-dialog>
@@ -101,8 +101,11 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ScheduleConfig } from '@addp/common-frontend'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
@@ -158,16 +161,16 @@ const tagOptions = ref([
 
 const rules = {
   name: [
-    { required: true, message: '请输入任务名称', trigger: 'blur' },
-    { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, message: '只能包含字母、数字、下划线和中文', trigger: 'blur' }
+    { required: true, message: t('develop.saveQueryDialog.nameRequired'), trigger: 'blur' },
+    { min: 2, max: 100, message: t('develop.saveQueryDialog.nameLengthHint'), trigger: 'blur' },
+    { pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, message: t('develop.saveQueryDialog.namePatternHint'), trigger: 'blur' }
   ],
   schedule: [
     {
       validator: (rule, value, callback) => {
         // 使用计算属性判断是否启用调度
         if (scheduledEnabled.value && !value) {
-          callback(new Error('启用调度时必须配置调度表达式'))
+          callback(new Error(t('develop.saveQueryDialog.scheduleRequired')))
         } else {
           callback()
         }

@@ -8,20 +8,20 @@
   <div v-else class="layout">
     <el-header class="header">
       <div class="header-left">
-        <h1>Service 数据服务</h1>
+        <h1>{{ t('service.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('service.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('service.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -38,32 +38,32 @@
         >
           <el-menu-item index="/query-services">
             <el-icon><Search /></el-icon>
-            <span>查询服务</span>
+            <span>{{ t('service.nav.queryService') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/registered-services">
             <el-icon><Link /></el-icon>
-            <span>注册服务</span>
+            <span>{{ t('service.nav.registeredService') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/published-services">
             <el-icon><Share /></el-icon>
-            <span>服务发布</span>
+            <span>{{ t('service.nav.publishedService') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/catalog">
             <el-icon><FolderOpened /></el-icon>
-            <span>服务目录</span>
+            <span>{{ t('service.nav.catalog') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/tile">
             <el-icon><Grid /></el-icon>
-            <span>瓦片服务</span>
+            <span>{{ t('service.nav.tileService') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/graph-services">
             <el-icon><Share /></el-icon>
-            <span>图查询服务</span>
+            <span>{{ t('service.nav.graphService') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -79,6 +79,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { useI18n } from 'vue-i18n'
 import {
   User,
   ArrowDown,
@@ -89,6 +90,8 @@ import {
   FolderOpened,
   Grid
 } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()

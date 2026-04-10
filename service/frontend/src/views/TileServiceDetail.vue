@@ -6,7 +6,7 @@
         <el-button @click="goBack" icon="ArrowLeft" circle />
         <h2>{{ service?.title }}</h2>
         <div class="service-meta">
-          <el-tag type="primary" size="large">瓦片服务</el-tag>
+          <el-tag type="primary" size="large">{{ t('service.tile.listTitle') }}</el-tag>
           <div class="protocol-tags">
             <el-tag v-if="isProtocolEnabled('xyz')" size="small" type="success">
               XYZ
@@ -21,24 +21,24 @@
         </div>
       </div>
       <div class="header-right">
-        <el-button @click="goToEdit">编辑</el-button>
-        <el-button type="danger" @click="handleDelete">删除</el-button>
+        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
     <!-- 服务信息卡片 -->
-    <el-card header="服务信息" style="margin-bottom: 20px">
+    <el-card :header="t('service.tile.detailCardServiceInfo')" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="服务名称">
+        <el-descriptions-item :label="t('service.tile.colServiceName')">
           <code>{{ service?.service_name }}</code>
         </el-descriptions-item>
-        <el-descriptions-item label="标题">
+        <el-descriptions-item :label="t('service.tile.colTitle')">
           {{ service?.title }}
         </el-descriptions-item>
-        <el-descriptions-item label="描述" :span="2">
-          {{ service?.description || '无' }}
+        <el-descriptions-item :label="t('service.tile.descriptionLabel')" :span="2">
+          {{ service?.description || t('service.common.none') }}
         </el-descriptions-item>
-        <el-descriptions-item label="关键词" :span="2">
+        <el-descriptions-item :label="t('service.tile.keywordsLabel')" :span="2">
           <el-tag
             v-for="kw in service?.keywords"
             :key="kw"
@@ -47,31 +47,31 @@
           >
             {{ kw }}
           </el-tag>
-          <span v-if="!service?.keywords || service.keywords.length === 0">无</span>
+          <span v-if="!service?.keywords || service.keywords.length === 0">{{ t('service.common.none') }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="默认坐标系">
+        <el-descriptions-item :label="t('service.tile.defaultSridLabel')">
           EPSG:{{ service?.default_srid || 3857 }}
         </el-descriptions-item>
-        <el-descriptions-item label="公开访问">
+        <el-descriptions-item :label="t('service.tile.publicAccessLabel2')">
           <el-tag :type="service?.public_access ? 'success' : 'info'" size="small">
-            {{ service?.public_access ? '是' : '否' }}
+            {{ service?.public_access ? t('service.common.yes') : t('service.common.no') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('service.tile.colStatus')">
           <el-tag :type="getStatusType(service?.status)" size="small">
             {{ getStatusText(service?.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">
+        <el-descriptions-item :label="t('service.tile.colCreatedAt')">
           {{ formatDate(service?.created_at) }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <!-- 图层管理卡片 -->
-    <el-card header="图层管理" style="margin-bottom: 20px">
+    <el-card :header="t('service.tile.layerManagementTitle')" style="margin-bottom: 20px">
       <div class="layer-actions" style="margin-bottom: 16px">
-        <el-button type="primary" @click="showAddLayerDialog">添加图层</el-button>
+        <el-button type="primary" @click="showAddLayerDialog">{{ t('service.tile.addLayerBtn') }}</el-button>
       </div>
 
       <el-table
@@ -80,20 +80,20 @@
         stripe
         style="width: 100%"
       >
-        <el-table-column prop="layer_name" label="图层名称" min-width="120">
+        <el-table-column prop="layer_name" :label="t('service.tile.colLayerName')" min-width="120">
           <template #default="{ row }">
             <code>{{ row.layer_name }}</code>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="标题" min-width="150" />
-        <el-table-column label="图层类型" width="120">
+        <el-table-column prop="title" :label="t('service.tile.colTitle')" min-width="150" />
+        <el-table-column :label="t('service.tile.colLayerType')" width="120">
           <template #default="{ row }">
             <el-tag :type="row.layer_type === 'dynamic' ? 'success' : 'info'" size="small">
-              {{ row.layer_type === 'dynamic' ? '动态' : '静态' }}
+              {{ row.layer_type === 'dynamic' ? t('service.tile.dynamicLayer') : t('service.tile.staticLayer') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="数据源" min-width="200">
+        <el-table-column :label="t('service.tile.colDataSource')" min-width="200">
           <template #default="{ row }">
             <div v-if="row.layer_type === 'dynamic'">
               <div style="font-size: 12px; color: var(--addp-text-secondary)">
@@ -108,50 +108,50 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="缓存" width="80" align="center">
+        <el-table-column :label="t('service.tile.colCache')" width="80" align="center">
           <template #default="{ row }">
             <el-tag
               v-if="row.layer_type === 'dynamic'"
               :type="row.layer_config?.cache?.enabled ? 'success' : 'info'"
               size="small"
             >
-              {{ row.layer_config?.cache?.enabled ? '已启用' : '未启用' }}
+              {{ row.layer_config?.cache?.enabled ? t('service.tile.cacheEnabled') : t('service.tile.cacheDisabled') }}
             </el-tag>
             <span v-else style="color: var(--addp-text-tertiary); font-size: 12px">N/A</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column :label="t('service.tile.colStatus')" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-              {{ row.enabled ? '启用' : '禁用' }}
+              {{ row.enabled ? t('service.tile.layerEnabled') : t('service.tile.layerDisabled') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column :label="t('service.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="showEditLayerDialog(row)">编辑</el-button>
+            <el-button size="small" @click="showEditLayerDialog(row)">{{ t('service.common.edit') }}</el-button>
             <el-button
               size="small"
               type="warning"
               @click="clearLayerCache(row)"
               :disabled="row.layer_type !== 'dynamic' || !row.layer_config?.cache?.enabled"
             >
-              清理缓存
+              {{ t('service.tile.clearCacheBtn') }}
             </el-button>
-            <el-button size="small" type="danger" @click="deleteLayer(row)">删除</el-button>
+            <el-button size="small" type="danger" @click="deleteLayer(row)">{{ t('service.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <el-empty
         v-if="!service?.layers || service.layers.length === 0"
-        description="暂无图层"
+        :description="t('service.tile.noLayers')"
         style="padding: 40px 0"
       />
     </el-card>
 
     <!-- 服务端点卡片 -->
-    <el-card header="服务端点" style="margin-bottom: 20px">
+    <el-card :header="t('service.tile.endpointsTitle')" style="margin-bottom: 20px">
       <!-- XYZ Tiles 端点 -->
       <div v-if="isProtocolEnabled('xyz')" class="endpoint-item">
         <div class="endpoint-title">
@@ -160,11 +160,11 @@
         </div>
         <div class="endpoint-url">
           <el-input :value="xyzTilesEndpoint" readonly />
-          <el-button @click="copyEndpoint(xyzTilesEndpoint)">复制</el-button>
-          <el-button @click="testXYZTile">测试</el-button>
+          <el-button @click="copyEndpoint(xyzTilesEndpoint)">{{ t('service.common.copy') }}</el-button>
+          <el-button @click="testXYZTile">{{ t('service.tile.testBtn') }}</el-button>
         </div>
         <div style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
-          示例: <code>{{ xyzTilesExample }}</code>
+          {{ t('service.tile.exampleLabel') }}: <code>{{ xyzTilesExample }}</code>
         </div>
       </div>
 
@@ -176,8 +176,8 @@
         </div>
         <div class="endpoint-url">
           <el-input :value="wmtsEndpoint" readonly />
-          <el-button @click="copyEndpoint(wmtsEndpoint)">复制</el-button>
-          <el-button @click="testEndpoint(wmtsEndpoint)">测试</el-button>
+          <el-button @click="copyEndpoint(wmtsEndpoint)">{{ t('service.common.copy') }}</el-button>
+          <el-button @click="testEndpoint(wmtsEndpoint)">{{ t('service.tile.testBtn') }}</el-button>
         </div>
       </div>
 
@@ -193,8 +193,8 @@
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Landing Page:</div>
           <div class="endpoint-url">
             <el-input :value="ogcTilesLandingPage" readonly />
-            <el-button @click="copyEndpoint(ogcTilesLandingPage)">复制</el-button>
-            <el-button @click="testEndpoint(ogcTilesLandingPage)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcTilesLandingPage)">{{ t('service.common.copy') }}</el-button>
+            <el-button @click="testEndpoint(ogcTilesLandingPage)">{{ t('service.tile.testBtn') }}</el-button>
           </div>
         </div>
 
@@ -203,22 +203,22 @@
           <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">TileMatrixSets:</div>
           <div class="endpoint-url">
             <el-input :value="ogcTileMatrixSets" readonly />
-            <el-button @click="copyEndpoint(ogcTileMatrixSets)">复制</el-button>
-            <el-button @click="testEndpoint(ogcTileMatrixSets)">测试</el-button>
+            <el-button @click="copyEndpoint(ogcTileMatrixSets)">{{ t('service.common.copy') }}</el-button>
+            <el-button @click="testEndpoint(ogcTileMatrixSets)">{{ t('service.tile.testBtn') }}</el-button>
           </div>
         </div>
       </div>
 
       <el-empty
         v-if="!isProtocolEnabled('xyz') && !isProtocolEnabled('ogc_tiles')"
-        description="未启用任何瓦片协议"
+        :description="t('service.tile.noProtocolEnabled')"
       />
     </el-card>
 
     <!-- 地图预览卡片 -->
-    <el-card header="地图预览" style="margin-bottom: 20px">
+    <el-card :header="t('service.tile.mapPreviewTitle')" style="margin-bottom: 20px">
       <div class="preview-controls" style="margin-bottom: 16px">
-        <el-select v-model="selectedLayerForPreview" placeholder="选择图层">
+        <el-select v-model="selectedLayerForPreview" :placeholder="t('service.tile.selectLayerPlaceholder')">
           <el-option
             v-for="layer in service?.layers"
             :key="layer.id"
@@ -243,54 +243,54 @@
         v-else
         style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center"
       >
-        <el-empty description="请选择图层查看地图预览" />
+        <el-empty :description="t('service.tile.selectLayerForPreview')" />
       </div>
     </el-card>
 
     <!-- 集成示例卡片 -->
-    <el-card header="集成示例">
+    <el-card :header="t('service.tile.integrationExamplesTitle')">
       <el-tabs>
         <el-tab-pane label="OpenLayers">
           <pre class="code-example">{{ openLayersExample }}</pre>
-          <el-button @click="copyCode(openLayersExample)" style="margin-top: 8px">复制代码</el-button>
+          <el-button @click="copyCode(openLayersExample)" style="margin-top: 8px">{{ t('service.tile.copyCodeBtn') }}</el-button>
         </el-tab-pane>
         <el-tab-pane label="Leaflet">
           <pre class="code-example">{{ leafletExample }}</pre>
-          <el-button @click="copyCode(leafletExample)" style="margin-top: 8px">复制代码</el-button>
+          <el-button @click="copyCode(leafletExample)" style="margin-top: 8px">{{ t('service.tile.copyCodeBtn') }}</el-button>
         </el-tab-pane>
         <el-tab-pane label="Mapbox GL JS">
           <pre class="code-example">{{ mapboxExample }}</pre>
-          <el-button @click="copyCode(mapboxExample)" style="margin-top: 8px">复制代码</el-button>
+          <el-button @click="copyCode(mapboxExample)" style="margin-top: 8px">{{ t('service.tile.copyCodeBtn') }}</el-button>
         </el-tab-pane>
       </el-tabs>
     </el-card>
 
     <!-- 添加/编辑图层对话框 -->
     <el-dialog
-      :title="layerDialogMode === 'add' ? '添加图层' : '编辑图层'"
+      :title="layerDialogMode === 'add' ? t('service.tile.addLayerTitle') : t('service.tile.editLayerTitle')"
       v-model="layerDialogVisible"
       width="600px"
     >
       <el-form :model="layerForm" label-width="100px">
-        <el-form-item label="图层名称">
-          <el-input v-model="layerForm.layer_name" placeholder="例如: roads" />
+        <el-form-item :label="t('service.tile.layerNameLabel')">
+          <el-input v-model="layerForm.layer_name" :placeholder="t('service.tile.layerNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="图层标题">
-          <el-input v-model="layerForm.title" placeholder="例如: 道路图层" />
+        <el-form-item :label="t('service.tile.layerTitleLabel')">
+          <el-input v-model="layerForm.title" :placeholder="t('service.tile.layerTitlePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('service.tile.layerDescLabel')">
           <el-input v-model="layerForm.description" type="textarea" rows="2" />
         </el-form-item>
-        <el-form-item label="图层类型">
+        <el-form-item :label="t('service.tile.colLayerType')">
           <el-radio-group v-model="layerForm.layer_type">
-            <el-radio value="dynamic">动态图层</el-radio>
-            <el-radio value="static">静态图层</el-radio>
+            <el-radio value="dynamic">{{ t('service.tile.dynamicLayer') }}</el-radio>
+            <el-radio value="static">{{ t('service.tile.staticLayer') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
         <!-- 动态图层配置 -->
         <template v-if="layerForm.layer_type === 'dynamic'">
-          <el-form-item label="选择数据表">
+          <el-form-item :label="t('service.tile.selectTableLabel')">
             <DataSourceCascader
               :api-base-url="metaApiBaseUrl"
               :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
@@ -304,52 +304,52 @@
 
           <!-- 显示检测到的空间字段信息 -->
           <div v-if="layerFormSpatialMetadata && layerFormSpatialMetadata.hasGeometry" class="geometry-info">
-            <p>✅ 已自动检测到空间字段：</p>
+            <p>✅ {{ t('service.tile.spatialAutoDetected') }}</p>
             <ul>
-              <li><strong>几何列：</strong>{{ layerFormSpatialMetadata.geometryColumn }}</li>
+              <li><strong>{{ t('service.tile.geomColumnLabel') }}：</strong>{{ layerFormSpatialMetadata.geometryColumn }}</li>
               <li><strong>SRID：</strong>{{ layerFormSpatialMetadata.srid }}</li>
               <li v-if="layerFormSpatialMetadata.geometryTypes && layerFormSpatialMetadata.geometryTypes.length">
-                <strong>几何类型：</strong>{{ layerFormSpatialMetadata.geometryTypes.join(', ') }}
+                <strong>{{ t('service.tile.geomTypeLabel') }}：</strong>{{ layerFormSpatialMetadata.geometryTypes.join(', ') }}
               </li>
             </ul>
           </div>
 
-          <el-form-item label="启用缓存">
+          <el-form-item :label="t('service.tile.enableCacheLabel')">
             <el-switch v-model="layerForm.layer_config.cache.enabled" />
           </el-form-item>
-          <el-form-item v-if="layerForm.layer_config.cache.enabled" label="缓存TTL(秒)">
+          <el-form-item v-if="layerForm.layer_config.cache.enabled" :label="t('service.tile.cacheTtlLabel')">
             <el-input-number v-model="layerForm.layer_config.cache.ttl" :min="60" :max="86400" />
           </el-form-item>
         </template>
 
         <!-- 静态图层配置 -->
         <template v-else-if="layerForm.layer_type === 'static'">
-          <el-form-item label="瓦片路径">
-            <el-input v-model="layerForm.layer_config.tile_path" placeholder="例如: s3://bucket/tiles" />
+          <el-form-item :label="t('service.tile.tilePathLabel')">
+            <el-input v-model="layerForm.layer_config.tile_path" :placeholder="t('service.tile.tilePathPlaceholder')" />
           </el-form-item>
-          <el-form-item label="格式">
+          <el-form-item :label="t('service.tile.tileFormatLabel')">
             <el-select v-model="layerForm.layer_config.format">
               <el-option label="MVT" value="mvt" />
               <el-option label="PNG" value="png" />
               <el-option label="JPEG" value="jpeg" />
             </el-select>
           </el-form-item>
-          <el-form-item label="最小缩放级别">
+          <el-form-item :label="t('service.tile.minZoomLabel')">
             <el-input-number v-model="layerForm.layer_config.zoom_range[0]" :min="0" :max="22" />
           </el-form-item>
-          <el-form-item label="最大缩放级别">
+          <el-form-item :label="t('service.tile.maxZoomLabel')">
             <el-input-number v-model="layerForm.layer_config.zoom_range[1]" :min="0" :max="22" />
           </el-form-item>
         </template>
 
-        <el-form-item label="启用状态">
+        <el-form-item :label="t('service.tile.enabledStatusLabel')">
           <el-switch v-model="layerForm.enabled" />
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="layerDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveLayer">保存</el-button>
+        <el-button @click="layerDialogVisible = false">{{ t('service.common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveLayer">{{ t('service.common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -358,6 +358,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import tileServiceAPI from '@/api/tileService'
@@ -367,6 +368,7 @@ import { DataSourceCascader } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 // 状态
 const service = ref(null)
@@ -548,9 +550,9 @@ const isProtocolEnabled = (protocolName) => {
 // 方法：获取状态文本
 const getStatusText = (status) => {
   const statusMap = {
-    active: '正常',
-    inactive: '未激活',
-    error: '错误'
+    active: t('service.tile.statusActive'),
+    inactive: t('service.tile.statusInactive'),
+    error: t('service.tile.statusError')
   }
   return statusMap[status] || status
 }
@@ -574,9 +576,9 @@ const formatDate = (dateString) => {
 const copyEndpoint = async (url) => {
   const success = await copyToClipboard(url)
   if (success) {
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('service.common.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('service.common.copyFailed'))
   }
 }
 
@@ -584,9 +586,9 @@ const copyEndpoint = async (url) => {
 const copyCode = async (code) => {
   const success = await copyToClipboard(code)
   if (success) {
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('service.common.copied'))
   } else {
-    ElMessage.error('复制失败')
+    ElMessage.error(t('service.common.copyFailed'))
   }
 }
 
@@ -620,7 +622,7 @@ const loadService = async () => {
       selectedLayerForPreview.value = service.value.layers[0].layer_name
     }
   } catch (error) {
-    ElMessage.error('加载服务详情失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('service.tile.loadDetailFailed') + ': ' + (error.response?.data?.error || error.message))
     console.error('Failed to load service:', error)
   } finally {
     loading.value = false
@@ -631,21 +633,21 @@ const loadService = async () => {
 const handleDelete = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要删除此瓦片服务吗？删除后无法恢复。',
-      '确认删除',
+      t('service.tile.deleteServiceConfirm'),
+      t('service.tile.deleteConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('service.common.confirm'),
+        cancelButtonText: t('service.common.cancel'),
         type: 'warning'
       }
     )
 
     await tileServiceAPI.deleteService(serviceId.value)
-    ElMessage.success('瓦片服务已删除')
+    ElMessage.success(t('service.tile.deleteSuccess'))
     router.push('/tile')
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('service.tile.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -736,10 +738,10 @@ const handleLayerTableSelection = (selection) => {
       extent: selection.extent
     }
 
-    ElMessage.success(`检测到空间字段: ${selection.geometryColumn}`)
+    ElMessage.success(t('service.tile.spatialDetectedMsg', { column: selection.geometryColumn }))
   } else {
     layerFormSpatialMetadata.value = { hasGeometry: false }
-    ElMessage.warning('未检测到空间字段，请确认数据表是否包含空间数据')
+    ElMessage.warning(t('service.tile.noSpatialWarning'))
   }
 }
 
@@ -747,37 +749,37 @@ const saveLayer = async () => {
   try {
     if (layerDialogMode.value === 'add') {
       await tileServiceAPI.addLayer(serviceId.value, layerForm.value)
-      ElMessage.success('图层已添加')
+      ElMessage.success(t('service.tile.layerAdded'))
     } else {
       await tileServiceAPI.updateLayer(serviceId.value, layerForm.value.id, layerForm.value)
-      ElMessage.success('图层已更新')
+      ElMessage.success(t('service.tile.layerUpdated'))
     }
 
     layerDialogVisible.value = false
     await loadService() // 重新加载服务
   } catch (error) {
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('service.tile.saveFailed') + ': ' + (error.response?.data?.error || error.message))
   }
 }
 
 const deleteLayer = async (layer) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除图层 "${layer.title}" 吗？此操作不可恢复。`,
-      '确认删除',
+      t('service.tile.deleteLayerConfirm', { title: layer.title }),
+      t('service.tile.deleteConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('service.common.confirm'),
+        cancelButtonText: t('service.common.cancel'),
         type: 'warning'
       }
     )
 
     await tileServiceAPI.deleteLayer(serviceId.value, layer.id)
-    ElMessage.success('图层已删除')
+    ElMessage.success(t('service.tile.layerDeleted'))
     await loadService() // 重新加载服务
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('service.tile.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -785,20 +787,20 @@ const deleteLayer = async (layer) => {
 const clearLayerCache = async (layer) => {
   try {
     await ElMessageBox.confirm(
-      `确定要清理图层 "${layer.title}" 的所有缓存吗？`,
-      '确认清理',
+      t('service.tile.clearCacheConfirm', { title: layer.title }),
+      t('service.tile.clearCacheTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('service.common.confirm'),
+        cancelButtonText: t('service.common.cancel'),
         type: 'warning'
       }
     )
 
     await tileServiceAPI.clearLayerCache(serviceId.value, layer.id)
-    ElMessage.success('缓存已清理')
+    ElMessage.success(t('service.tile.cacheCleared'))
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('清理失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('service.tile.clearCacheFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -814,7 +816,7 @@ const handleTileLoadEnd = (tile) => {
 
 const handleTileLoadError = (tile) => {
   console.error('[TileServiceDetail] 瓦片加载失败', tile)
-  ElMessage.error('瓦片加载失败，请检查服务配置')
+  ElMessage.error(t('service.tile.tileLoadFailed'))
 }
 
 // 生命周期

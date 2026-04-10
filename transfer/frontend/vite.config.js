@@ -33,9 +33,10 @@ export default defineConfig({
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       // 当 common-frontend 导入 element-plus 相关库时，使用当前项目的依赖
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
-      'element-plus': resolve(__dirname, 'node_modules/element-plus')
+      'element-plus': resolve(__dirname, 'node_modules/element-plus'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/transfer/'  // 开发模式用 /，生产模式用 /transfer/
 })

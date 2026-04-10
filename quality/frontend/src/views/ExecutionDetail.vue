@@ -1,53 +1,53 @@
 <template>
   <div v-loading="loading">
-    <el-page-header @back="$router.back()" :content="`执行详情 - ${execution?.execution_id || ''}`" />
+    <el-page-header @back="$router.back()" :content="`${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}`" />
 
     <el-descriptions v-if="execution" :column="2" border style="margin-top:20px">
-      <el-descriptions-item label="状态">
+      <el-descriptions-item :label="t('quality.execution.status')">
         <el-tag :type="statusType(execution.status)">{{ execution.status }}</el-tag>
       </el-descriptions-item>
-      <el-descriptions-item label="质量评分">
+      <el-descriptions-item :label="t('quality.execution.qualityScore')">
         <span v-if="execution.result?.quality_score != null" style="font-size:18px;font-weight:bold">
           {{ execution.result.quality_score.toFixed(1) }}%
         </span>
         <span v-else>-</span>
       </el-descriptions-item>
-      <el-descriptions-item label="总规则数">{{ execution.result?.total_rules ?? '-' }}</el-descriptions-item>
-      <el-descriptions-item label="通过/失败">
+      <el-descriptions-item :label="t('quality.execution.totalRules')">{{ execution.result?.total_rules ?? '-' }}</el-descriptions-item>
+      <el-descriptions-item :label="t('quality.execution.passedFailed')">
         {{ execution.result?.passed_rules ?? '-' }} / {{ execution.result?.failed_rules ?? '-' }}
       </el-descriptions-item>
-      <el-descriptions-item label="执行耗时">{{ execution.execution_time_ms ? execution.execution_time_ms + ' ms' : '-' }}</el-descriptions-item>
-      <el-descriptions-item label="创建时间">{{ execution.created_at ? new Date(execution.created_at).toLocaleString() : '-' }}</el-descriptions-item>
+      <el-descriptions-item :label="t('quality.execution.executionTime')">{{ execution.execution_time_ms ? execution.execution_time_ms + ' ms' : '-' }}</el-descriptions-item>
+      <el-descriptions-item :label="t('quality.execution.createdAt')">{{ execution.created_at ? new Date(execution.created_at).toLocaleString() : '-' }}</el-descriptions-item>
     </el-descriptions>
 
     <template v-if="execution?.result?.field_scores?.length">
-      <h3 style="margin-top:24px">字段质量评分</h3>
+      <h3 style="margin-top:24px">{{ t('quality.execution.fieldScores') }}</h3>
       <el-table :data="execution.result.field_scores" border size="small">
-        <el-table-column prop="column" label="字段" />
-        <el-table-column label="评分" width="120">
+        <el-table-column prop="column" :label="t('quality.execution.field')" />
+        <el-table-column :label="t('quality.execution.score')" width="120">
           <template #default="{ row }">{{ row.score.toFixed(1) }}%</template>
         </el-table-column>
-        <el-table-column prop="passed" label="通过规则" width="100" />
-        <el-table-column prop="failed" label="失败规则" width="100" />
+        <el-table-column prop="passed" :label="t('quality.execution.passedRules')" width="100" />
+        <el-table-column prop="failed" :label="t('quality.execution.failedRules')" width="100" />
       </el-table>
     </template>
 
     <template v-if="execution?.result?.rule_details?.length">
-      <h3 style="margin-top:24px">规则执行明细</h3>
+      <h3 style="margin-top:24px">{{ t('quality.execution.ruleDetails') }}</h3>
       <el-table :data="execution.result.rule_details" border size="small">
-        <el-table-column prop="rule_type" label="规则类型" width="120" />
-        <el-table-column prop="column" label="字段" width="150" />
-        <el-table-column prop="table" label="表名" width="150" />
-        <el-table-column label="通过率" width="100">
+        <el-table-column prop="rule_type" :label="t('quality.execution.ruleType')" width="120" />
+        <el-table-column prop="column" :label="t('quality.execution.column')" width="150" />
+        <el-table-column prop="table" :label="t('quality.execution.table')" width="150" />
+        <el-table-column :label="t('quality.execution.passRate')" width="100">
           <template #default="{ row }">{{ row.pass_rate?.toFixed(1) ?? '-' }}%</template>
         </el-table-column>
-        <el-table-column label="结果" width="80">
+        <el-table-column :label="t('quality.execution.result')" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.passed ? 'success' : 'danger'">{{ row.passed ? '通过' : '失败' }}</el-tag>
+            <el-tag :type="row.passed ? 'success' : 'danger'">{{ row.passed ? t('quality.execution.passed') : t('quality.execution.failed') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="failed_count" label="失败行数" width="100" />
-        <el-table-column prop="error" label="错误信息" show-overflow-tooltip />
+        <el-table-column prop="failed_count" :label="t('quality.execution.failedCount')" width="100" />
+        <el-table-column prop="error" :label="t('quality.execution.errorMsg')" show-overflow-tooltip />
       </el-table>
     </template>
   </div>
@@ -57,7 +57,9 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAPI } from '../api/quality'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const route = useRoute()
 const execution = ref(null)
 const loading = ref(false)

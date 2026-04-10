@@ -26,7 +26,7 @@
     <div class="card-body">
       <h4 class="service-name" :title="getServiceTitle(service)">{{ getServiceTitle(service) }}</h4>
       <p class="service-description" :title="getServiceDescription(service)">
-        {{ getServiceDescription(service) || '暂无描述' }}
+        {{ getServiceDescription(service) || t('service.serviceCard.noDescription') }}
       </p>
       <div class="service-url">
         <el-icon><Link /></el-icon>
@@ -41,7 +41,7 @@
       </div>
       <div v-if="getLayerCount(service) > 0" class="footer-item">
         <el-icon><Grid /></el-icon>
-        <span>{{ getLayerCount(service) }} 图层</span>
+        <span>{{ t('service.serviceCard.layerCount', { count: getLayerCount(service) }) }}</span>
       </div>
     </div>
   </el-card>
@@ -49,7 +49,10 @@
 
 <script setup>
 import { Link, Clock, Grid } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { getEnabledProtocols } from '../utils/serviceHelper'
+
+const { t } = useI18n()
 
 const props = defineProps({
   service: {
@@ -58,175 +61,122 @@ const props = defineProps({
   },
   source: {
     type: String,
-    default: 'external', // 'external', 'query', 'registered', 'tile', 'graph'
+    default: 'external',
     validator: (value) => ['external', 'query', 'registered', 'tile', 'graph'].includes(value)
   }
 })
 
 defineEmits(['click'])
 
-// 服务来源相关
 const getSourceTypeColor = (source) => {
   const colors = {
-    'query': 'primary',       // 查询服务 - 蓝色
-    'registered': 'success',  // 注册服务 - 绿色
-    'tile': 'warning',        // 瓦片服务 - 橙色
-    'external': 'info',       // 外部服务(旧) - 灰色
-    'graph': 'danger'         // 图查询服务 - 红色
+    'query': 'primary',
+    'registered': 'success',
+    'tile': 'warning',
+    'external': 'info',
+    'graph': 'danger'
   }
   return colors[source] || 'info'
 }
 
 const formatSourceType = (source) => {
-  const types = {
-    'query': '查询服务',
-    'registered': '注册服务',
-    'tile': '瓦片服务',
-    'external': '服务注册',
-    'graph': '图查询服务'
-  }
-  return types[source] || source
+  const key = `service.serviceCard.sourceType.${source}`
+  const translated = t(key)
+  return translated !== key ? translated : source
 }
 
-// 服务类型相关
 const getServiceTypes = (service) => {
-  const types = []
-
   if (props.source === 'query') {
-    // 查询服务：返回所有启用的协议
     const protocols = getEnabledProtocols(service)
     return protocols.map(p => p.key)
   } else if (props.source === 'tile') {
-    // 瓦片服务：返回所有启用的协议
     const types = []
     if (service.protocols?.xyz?.enabled) types.push('xyz')
-    if (service.protocols?.wmts?.enabled || service.protocols?.wmts !== false) types.push('wmts')  // WMTS 默认启用
+    if (service.protocols?.wmts?.enabled || service.protocols?.wmts !== false) types.push('wmts')
     if (service.protocols?.ogc_tiles?.enabled) types.push('ogc_api')
     if (service.protocols?.tms?.enabled) types.push('tms')
-    return types.length > 0 ? types : ['xyz']  // 默认至少显示 XYZ
+    return types.length > 0 ? types : ['xyz']
   } else if (props.source === 'registered') {
-    // 注册服务：返回单一service_type
     return [service.service_type || 'unknown']
   } else if (props.source === 'graph') {
-    // 图查询服务：返回config_type
     return [service.config_type || 'unknown']
   } else {
-    // 外部服务（旧）：返回单一service_type
     return [service.service_type || 'unknown']
   }
 }
 
 const getServiceTypeColor = (type) => {
   const colors = {
-    wms: 'success',
-    wfs: 'primary',
-    wmts: 'warning',
-    ogc_api: 'info',
-    ogc_features: 'info',
-    rest_api: 'danger',
-    rest: 'danger',
-    xyz: 'warning',
-    tms: 'warning',
-    label: 'success',
-    cypher: 'warning',
-    unknown: ''
+    wms: 'success', wfs: 'primary', wmts: 'warning', ogc_api: 'info',
+    ogc_features: 'info', rest_api: 'danger', rest: 'danger',
+    xyz: 'warning', tms: 'warning', label: 'success', cypher: 'warning', unknown: ''
   }
   return colors[type] || 'info'
 }
 
 const formatServiceType = (type) => {
-  const types = {
-    wms: 'WMS',
-    wfs: 'WFS',
-    wmts: 'WMTS',
-    ogc_api: 'OGC API',
-    ogc_features: 'OGC Features',
-    rest_api: 'REST API',
-    rest: 'REST',
-    xyz: 'XYZ Tiles',
-    tms: 'TMS',
-    label: '标签模式',
-    cypher: 'Cypher 模式',
-    unknown: '未知'
+  const techTypes = {
+    wms: 'WMS', wfs: 'WFS', wmts: 'WMTS', ogc_api: 'OGC API',
+    ogc_features: 'OGC Features', rest_api: 'REST API', rest: 'REST',
+    xyz: 'XYZ Tiles', tms: 'TMS'
   }
-  return types[type] || type.toUpperCase()
+  if (techTypes[type]) return techTypes[type]
+  const key = `service.serviceCard.serviceType.${type}`
+  const translated = t(key)
+  return translated !== key ? translated : type.toUpperCase()
 }
 
-// 服务状态相关
 const getStatusColor = (status) => {
-  const colors = {
-    active: 'success',
-    inactive: 'info',
-    error: 'danger'
-  }
+  const colors = { active: 'success', inactive: 'info', error: 'danger' }
   return colors[status] || 'info'
 }
 
 const formatStatus = (status) => {
-  const statuses = {
-    active: '活跃',
-    inactive: '未激活',
-    error: '错误'
+  const statusMap = {
+    active: t('service.common.active'),
+    inactive: t('service.common.inactive'),
+    error: t('service.common.error')
   }
-  return statuses[status] || status
+  return statusMap[status] || status
 }
 
-// 获取服务标题（兼容内外部服务）
 const getServiceTitle = (service) => {
-  return service.title || service.name || service.service_name || '未命名服务'
+  return service.title || service.name || service.service_name || t('service.common.unknown')
 }
 
-// 获取服务描述（兼容内外部服务）
 const getServiceDescription = (service) => {
   return service.abstract || service.description || ''
 }
 
-// 获取服务URL（兼容查询服务、注册服务和瓦片服务）
 const getServiceUrl = (service) => {
   if (props.source === 'query') {
-    // 查询服务：构建 REST API URL
     const serviceName = service.service_name
     const protocols = getEnabledProtocols(service)
-    if (protocols.some(p => p.key === 'rest_api')) {
-      return `/api/query/${serviceName}`
-    } else if (protocols.some(p => p.key === 'ogc_features')) {
-      return `/ogc/features/${serviceName}`
-    }
-    return '未配置服务端点'
+    if (protocols.some(p => p.key === 'rest_api')) return `/api/query/${serviceName}`
+    if (protocols.some(p => p.key === 'ogc_features')) return `/ogc/features/${serviceName}`
+    return t('service.common.notConfigured')
   } else if (props.source === 'tile') {
-    // 瓦片服务：返回瓦片端点
     const serviceName = service.service_name
-    if (service.protocols?.xyz?.enabled) {
-      return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
-    } else if (service.protocols?.wmts?.enabled) {
-      return `/wmts/${serviceName}?request=GetCapabilities`
-    } else if (service.protocols?.ogc_tiles?.enabled) {
-      return `/ogc/tiles/${serviceName}`
-    }
-    return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`  // 默认 XYZ
+    if (service.protocols?.xyz?.enabled) return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
+    if (service.protocols?.wmts?.enabled) return `/wmts/${serviceName}?request=GetCapabilities`
+    if (service.protocols?.ogc_tiles?.enabled) return `/ogc/tiles/${serviceName}`
+    return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
   } else if (props.source === 'registered') {
-    // 注册服务：返回端点URL
-    return service.endpoint_url || '未配置'
+    return service.endpoint_url || t('service.common.notConfigured')
   } else if (props.source === 'graph') {
-    // 图查询服务：返回执行端点
     return service.endpoints?.execute || `/api/graph/${service.service_name}`
   } else {
-    // 外部服务（旧）：直接返回URL
-    return service.url || '未配置'
+    return service.url || t('service.common.notConfigured')
   }
 }
 
-// 获取图层数量（兼容内外部服务）
 const getLayerCount = (service) => {
-  if (service.layers && Array.isArray(service.layers)) {
-    return service.layers.length
-  }
+  if (service.layers && Array.isArray(service.layers)) return service.layers.length
   return 0
 }
 
-// 格式化日期
 const formatDate = (dateStr) => {
-  if (!dateStr) return '未检查'
+  if (!dateStr) return t('service.serviceCard.notChecked')
   const date = new Date(dateStr)
   const now = new Date()
   const diff = now - date
@@ -234,10 +184,10 @@ const formatDate = (dateStr) => {
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)
 
-  if (minutes < 60) return `${minutes} 分钟前`
-  if (hours < 24) return `${hours} 小时前`
-  if (days < 7) return `${days} 天前`
-  return date.toLocaleDateString('zh-CN')
+  if (minutes < 60) return t('service.serviceCard.minutesAgo', { n: minutes })
+  if (hours < 24) return t('service.serviceCard.hoursAgo', { n: hours })
+  if (days < 7) return t('service.serviceCard.daysAgo', { n: days })
+  return date.toLocaleDateString()
 }
 </script>
 

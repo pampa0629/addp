@@ -703,7 +703,12 @@
       "Bash(git log:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(open /Users/pampa/code/addp/docs/skills/ui-ux-pro-max-skill/preview/monitor-dashboard-demo.html)",
-      "Bash(TaskStop b6jiwimr9:*)"
+      "Bash(TaskStop b6jiwimr9:*)",
+      "Bash(sed -i '' 's/i18n\\\\.T\\(c, i18n\\\\.MsgLogNotFound\\)/commoni18n.T\\(c, sysi18n.MsgLogNotFound\\)/g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)",
+      "Bash(sed -i '' 's/i18n\\\\.T\\(c, i18n\\\\.MsgExportFailed\\)/commoni18n.T\\(c, sysi18n.MsgExportFailed\\)/g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)",
+      "Bash(sed -i '' 's/i18n\\\\.T\\(c, i18n\\\\.MsgInvalidParams\\)/commoni18n.T\\(c, commoni18n.MsgInvalidParams\\)/g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)",
+      "Bash(sed -i '' 's/i18n\\\\.T\\(c, i18n\\\\.MsgAuditLogCreateFailed\\)/commoni18n.T\\(c, sysi18n.MsgAuditLogCreateFailed\\)/g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)",
+      "Bash(sed -i '' 's/i18n\\\\.T\\(c, i18n\\\\.MsgAuditLogCreated\\)/commoni18n.T\\(c, sysi18n.MsgAuditLogCreated\\)/g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)"
     ],
     "deny": [],
     "ask": [],

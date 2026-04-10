@@ -3,8 +3,8 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>系统管理登录</h2>
-          <p class="subtitle">All Domain Data Platform</p>
+          <h2>{{ t('system.login.title') }}</h2>
+          <p class="subtitle">{{ t('system.login.subtitle') }}</p>
         </div>
       </template>
 
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('system.login.usernamePlaceholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('system.login.passwordPlaceholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             :loading="loading"
             @click="handleLogin"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('system.login.loggingIn') : t('system.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -51,12 +51,14 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref(null)
@@ -66,15 +68,15 @@ const loginForm = reactive({
   password: ''
 })
 
-const rules = {
+const rules = computed(() => ({
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' }
+    { required: true, message: t('system.login.usernameRequired'), trigger: 'blur' }
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
+    { required: true, message: t('system.login.passwordRequired'), trigger: 'blur' },
+    { min: 6, message: t('system.login.passwordMinLength'), trigger: 'blur' }
   ]
-}
+}))
 
 const loading = ref(false)
 
@@ -86,23 +88,19 @@ const handleLogin = async () => {
       loading.value = true
       try {
         await authStore.login(loginForm.username, loginForm.password)
-        ElMessage.success('登录成功')
+        ElMessage.success(t('system.login.success'))
         router.push('/')
       } catch (error) {
-        console.error('登录失败:', error)
+        console.error('Login failed:', error)
 
-        // 详细的错误消息处理
-        let errorMessage = '登录失败'
+        let errorMessage = t('system.login.failed')
 
         if (error.response) {
-          // 服务器返回错误
-          errorMessage = error.response.data?.error || `请求失败 (${error.response.status})`
+          errorMessage = error.response.data?.error || t('system.login.requestFailed', { status: error.response.status })
         } else if (error.request) {
-          // 请求已发送但没有收到响应
-          errorMessage = '网络连接失败，请检查服务器是否启动'
+          errorMessage = t('system.login.networkError')
         } else {
-          // 其他错误
-          errorMessage = error.message || '未知错误'
+          errorMessage = error.message || t('system.login.unknown')
         }
 
         ElMessage.error(errorMessage)

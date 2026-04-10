@@ -3,8 +3,8 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <h3>{{ isEdit ? '编辑服务' : '创建服务' }}</h3>
-          <el-button @click="handleBack">返回</el-button>
+          <h3>{{ isEdit ? t('service.serviceForm.editTitle') : t('service.serviceForm.createTitle') }}</h3>
+          <el-button @click="handleBack">{{ t('service.common.back') }}</el-button>
         </div>
       </template>
 
@@ -15,21 +15,21 @@
         label-width="120px"
         style="max-width: 800px"
       >
-        <el-form-item label="服务名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入服务名称" />
+        <el-form-item :label="t('service.serviceForm.nameLabel')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('service.serviceForm.namePlaceholder')" />
         </el-form-item>
 
-        <el-form-item label="服务描述" prop="description">
+        <el-form-item :label="t('service.serviceForm.descriptionLabel')" prop="description">
           <el-input
             v-model="form.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入服务描述"
+            :placeholder="t('service.serviceForm.descriptionPlaceholder')"
           />
         </el-form-item>
 
-        <el-form-item label="服务类型" prop="service_type">
-          <el-select v-model="form.service_type" placeholder="请选择服务类型" style="width: 100%">
+        <el-form-item :label="t('service.serviceForm.serviceTypeLabel')" prop="service_type">
+          <el-select v-model="form.service_type" :placeholder="t('service.serviceForm.serviceTypePlaceholder')" style="width: 100%">
             <el-option label="WMS (Web Map Service)" value="wms" />
             <el-option label="WFS (Web Feature Service)" value="wfs" />
             <el-option label="WMTS (Web Map Tile Service)" value="wmts" />
@@ -39,28 +39,28 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="服务地址" prop="url">
-          <el-input v-model="form.url" placeholder="请输入服务地址 (http:// 或 https://)" />
+        <el-form-item :label="t('service.serviceForm.urlLabel')" prop="url">
+          <el-input v-model="form.url" :placeholder="t('service.serviceForm.urlPlaceholder')" />
         </el-form-item>
 
-        <el-form-item label="认证类型" prop="auth_type">
+        <el-form-item :label="t('service.serviceForm.authTypeLabel')" prop="auth_type">
           <el-radio-group v-model="form.auth_type">
-            <el-radio value="none">无认证</el-radio>
+            <el-radio value="none">{{ t('service.serviceDetail.authNone') }}</el-radio>
             <el-radio value="basic">Basic Auth</el-radio>
             <el-radio value="bearer">Bearer Token</el-radio>
             <el-radio value="api_key">API Key</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item v-if="form.auth_type === 'basic'" label="用户名" prop="auth_username">
-          <el-input v-model="form.auth_username" placeholder="请输入用户名" />
+        <el-form-item v-if="form.auth_type === 'basic'" :label="t('service.serviceForm.usernameLabel')" prop="auth_username">
+          <el-input v-model="form.auth_username" :placeholder="t('service.serviceForm.usernamePlaceholder')" />
         </el-form-item>
 
-        <el-form-item v-if="form.auth_type === 'basic'" label="密码" prop="auth_password">
+        <el-form-item v-if="form.auth_type === 'basic'" :label="t('service.serviceForm.passwordLabel')" prop="auth_password">
           <el-input
             v-model="form.auth_password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('service.serviceForm.passwordPlaceholder')"
             show-password
           />
         </el-form-item>
@@ -70,34 +70,34 @@
             v-model="form.auth_token"
             type="textarea"
             :rows="3"
-            placeholder="请输入 Bearer Token"
+            :placeholder="t('service.serviceForm.tokenPlaceholder')"
           />
         </el-form-item>
 
         <el-form-item v-if="form.auth_type === 'api_key'" label="API Key" prop="auth_api_key">
-          <el-input v-model="form.auth_api_key" placeholder="请输入 API Key" />
+          <el-input v-model="form.auth_api_key" :placeholder="t('service.serviceForm.apiKeyPlaceholder')" />
         </el-form-item>
 
-        <el-form-item v-if="form.auth_type === 'api_key'" label="Key 名称" prop="auth_key_name">
-          <el-input v-model="form.auth_key_name" placeholder="例如: X-API-Key" />
+        <el-form-item v-if="form.auth_type === 'api_key'" :label="t('service.serviceForm.keyNameLabel')" prop="auth_key_name">
+          <el-input v-model="form.auth_key_name" placeholder="e.g. X-API-Key" />
         </el-form-item>
 
-        <el-form-item label="健康检查地址" prop="health_check">
-          <el-input v-model="form.health_check" placeholder="可选，留空将使用默认检查方式" />
+        <el-form-item :label="t('service.serviceForm.healthCheckLabel')" prop="health_check">
+          <el-input v-model="form.health_check" :placeholder="t('service.serviceForm.healthCheckPlaceholder')" />
         </el-form-item>
 
-        <el-form-item label="状态" prop="status">
+        <el-form-item :label="t('service.serviceForm.statusLabel')" prop="status">
           <el-radio-group v-model="form.status">
-            <el-radio value="active">活跃</el-radio>
-            <el-radio value="inactive">未激活</el-radio>
+            <el-radio value="active">{{ t('service.management.statusActive') }}</el-radio>
+            <el-radio value="inactive">{{ t('service.management.statusInactive') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" :loading="submitting" @click="handleSubmit">
-            {{ isEdit ? '更新' : '创建' }}
+            {{ isEdit ? t('service.common.update') : t('service.common.create') }}
           </el-button>
-          <el-button @click="handleBack">取消</el-button>
+          <el-button @click="handleBack">{{ t('service.common.cancel') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -107,11 +107,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const formRef = ref(null)
 const submitting = ref(false)
 
@@ -132,46 +134,46 @@ const form = ref({
   status: 'active'
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入服务名称', trigger: 'blur' }],
-  service_type: [{ required: true, message: '请选择服务类型', trigger: 'change' }],
+const rules = computed(() => ({
+  name: [{ required: true, message: t('service.serviceForm.nameRequired'), trigger: 'blur' }],
+  service_type: [{ required: true, message: t('service.serviceForm.serviceTypeRequired'), trigger: 'change' }],
   url: [
-    { required: true, message: '请输入服务地址', trigger: 'blur' },
-    { type: 'url', message: '请输入有效的URL', trigger: 'blur' }
+    { required: true, message: t('service.serviceForm.urlRequired'), trigger: 'blur' },
+    { type: 'url', message: t('service.serviceForm.urlInvalid'), trigger: 'blur' }
   ],
   auth_username: [
-    { required: true, message: '请输入用户名', trigger: 'blur', validator: (rule, value, callback) => {
+    { required: true, message: t('service.serviceForm.usernameRequired'), trigger: 'blur', validator: (rule, value, callback) => {
       if (form.value.auth_type === 'basic' && !value) {
-        callback(new Error('请输入用户名'))
+        callback(new Error(t('service.serviceForm.usernameRequired')))
       }
       callback()
     }}
   ],
   auth_password: [
-    { required: true, message: '请输入密码', trigger: 'blur', validator: (rule, value, callback) => {
+    { required: true, message: t('service.serviceForm.passwordRequired'), trigger: 'blur', validator: (rule, value, callback) => {
       if (form.value.auth_type === 'basic' && !value) {
-        callback(new Error('请输入密码'))
+        callback(new Error(t('service.serviceForm.passwordRequired')))
       }
       callback()
     }}
   ],
   auth_token: [
-    { required: true, message: '请输入 Token', trigger: 'blur', validator: (rule, value, callback) => {
+    { required: true, message: t('service.serviceForm.tokenRequired'), trigger: 'blur', validator: (rule, value, callback) => {
       if (form.value.auth_type === 'bearer' && !value) {
-        callback(new Error('请输入 Token'))
+        callback(new Error(t('service.serviceForm.tokenRequired')))
       }
       callback()
     }}
   ],
   auth_api_key: [
-    { required: true, message: '请输入 API Key', trigger: 'blur', validator: (rule, value, callback) => {
+    { required: true, message: t('service.serviceForm.apiKeyRequired'), trigger: 'blur', validator: (rule, value, callback) => {
       if (form.value.auth_type === 'api_key' && !value) {
-        callback(new Error('请输入 API Key'))
+        callback(new Error(t('service.serviceForm.apiKeyRequired')))
       }
       callback()
     }}
   ]
-}
+}))
 
 const loadService = async () => {
   if (!isEdit.value) return
@@ -196,7 +198,7 @@ const loadService = async () => {
       auth_key_name: 'X-API-Key'
     }
   } catch (error) {
-    ElMessage.error('加载服务信息失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('service.serviceForm.loadFailed') + ': ' + (error.response?.data?.message || error.message))
     handleBack()
   }
 }
@@ -241,16 +243,16 @@ const handleSubmit = async () => {
 
     if (isEdit.value) {
       await serviceAPI.update(route.params.id, submitData)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('service.serviceForm.updateSuccess'))
     } else {
       await serviceAPI.create(submitData)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('service.serviceForm.createSuccess'))
     }
 
     handleBack()
   } catch (error) {
     if (error && error.response) {
-      ElMessage.error(error.response?.data?.message || '操作失败')
+      ElMessage.error(error.response?.data?.message || t('service.serviceForm.operationFailed'))
     }
   } finally {
     submitting.value = false

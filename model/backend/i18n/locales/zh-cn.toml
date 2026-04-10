@@ -1,0 +1,32 @@
+[model.common.invalid_id]
+other = "无效的ID"
+
+[model.entity.not_found]
+other = "实体不存在"
+
+[model.entity.invalid_id]
+other = "无效的实体ID"
+
+[model.entity.invalid_attribute_id]
+other = "无效的属性ID"
+
+[model.entity.invalid_entity_id_query]
+other = "无效的 entity_id 参数"
+
+[model.entity_relation.not_found]
+other = "实体关系不存在"
+
+[model.logical_table.not_found]
+other = "逻辑表不存在"
+
+[model.logical_table.invalid_field_id]
+other = "无效的字段ID"
+
+[model.dw_layer.not_found]
+other = "数仓分层不存在"
+
+[model.fact_metric.invalid_mapping_id]
+other = "无效的指标映射ID"
+
+[model.table_relation.invalid_relation_id]
+other = "无效的关联关系ID"

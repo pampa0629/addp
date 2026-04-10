@@ -1,0 +1,41 @@
+[orchestrator.error.invalid_id]
+other = "Invalid ID"
+
+[orchestrator.error.orchestration_not_found]
+other = "Orchestration not found"
+
+[orchestrator.error.execution_not_found]
+other = "Execution not found"
+
+[orchestrator.error.schedule_failed]
+other = "Scheduling failed"
+
+[orchestrator.error.missing_module_param]
+other = "Missing module_name or module parameter"
+
+[orchestrator.error.provider_not_found]
+other = "Task provider not found"
+
+[orchestrator.error.provider_not_configured]
+other = "Task provider API configuration is incomplete"
+
+[orchestrator.error.list_providers_failed]
+other = "Failed to list task providers"
+
+[orchestrator.error.create_request_failed]
+other = "Failed to create request"
+
+[orchestrator.error.call_module_api_failed]
+other = "Failed to call module API"
+
+[orchestrator.error.read_response_failed]
+other = "Failed to read response"
+
+[orchestrator.error.module_api_error]
+other = "Module API returned an error"
+
+[orchestrator.error.parse_response_failed]
+other = "Failed to parse response"
+
+[orchestrator.success.deleted]
+other = "Deleted successfully"

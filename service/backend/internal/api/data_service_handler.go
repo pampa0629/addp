@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/service/data"
 	"github.com/gin-gonic/gin"
@@ -83,14 +85,14 @@ func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
 	table := c.Query("table")
 
 	if engineID == "" || schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要参数: engine_id, schema, table"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgMissingParams)})
 		return
 	}
 
 	// 转换 engine_id 为 uint
 	var id uint
 	if _, err := fmt.Sscanf(engineID, "%d", &id); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的引擎ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidEngineID)})
 		return
 	}
 

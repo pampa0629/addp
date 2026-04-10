@@ -1,7 +1,7 @@
 <template>
   <div class="published-service-form" v-loading="loading">
     <div class="page-header">
-      <h2>{{ isEdit ? '编辑服务' : '创建服务' }}</h2>
+      <h2>{{ isEdit ? t('service.published.formEditTitle') : t('service.published.formCreateTitle') }}</h2>
     </div>
 
     <!-- 步骤条（仅新建模式显示） -->
@@ -12,21 +12,21 @@
       align-center
       style="margin-bottom: 30px"
     >
-      <el-step title="选择数据表" />
-      <el-step title="确认服务类型" />
-      <el-step title="配置服务信息" />
+      <el-step :title="t('service.published.stepSelectTable')" />
+      <el-step :title="t('service.published.stepConfirmType')" />
+      <el-step :title="t('service.published.stepConfigService')" />
     </el-steps>
 
     <!-- Step 0: 选择数据表（仅新建模式） -->
     <div v-if="!isEdit && currentStep === 0">
       <el-card>
         <template #header>
-          <span>选择要发布的数据表</span>
+          <span>{{ t('service.published.selectTableTitle') }}</span>
         </template>
 
         <el-button type="primary" size="large" @click="showTableSelector = true">
           <el-icon style="margin-right: 8px"><FolderOpened /></el-icon>
-          选择数据表
+          {{ t('service.published.selectTableBtn') }}
         </el-button>
 
         <el-alert
@@ -37,15 +37,15 @@
         >
           <template #title>
             <div>
-              已选择表：<strong>{{ selectedTable.fullName }}</strong>
+              {{ t('service.published.selectedTable') }}<strong>{{ selectedTable.fullName }}</strong>
             </div>
             <div v-if="selectedTable.hasGeometry" style="margin-top: 8px; font-size: 13px">
               <el-icon><Location /></el-icon>
-              几何列：{{ selectedTable.geometryColumn }}
+              {{ t('service.published.geometryColumn') }}{{ selectedTable.geometryColumn }}
               (SRID: {{ selectedTable.srid }})
             </div>
             <div v-else style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
-              无几何列
+              {{ t('service.published.noGeometry') }}
             </div>
           </template>
         </el-alert>
@@ -56,7 +56,7 @@
     <div v-if="!isEdit && currentStep === 1">
       <el-card>
         <template #header>
-          <span>选择服务类型</span>
+          <span>{{ t('service.published.selectServiceTypeTitle') }}</span>
         </template>
 
         <el-alert
@@ -65,9 +65,7 @@
           :closable="false"
           style="margin-bottom: 20px"
         >
-          检测到表 <strong>{{ selectedTable.fullName }}</strong> 包含几何列
-          <strong>{{ selectedTable.geometryColumn }}</strong>，
-          您可以选择发布为空间服务或普通数据表服务。
+          {{ t('service.published.hasGeometryAlert', { table: selectedTable.fullName, column: selectedTable.geometryColumn }) }}
         </el-alert>
 
         <el-radio-group v-model="form.service_type" style="width: 100%">
@@ -80,11 +78,11 @@
           >
             <el-radio value="spatial" style="width: 100%">
               <div class="service-type-card">
-                <h3><el-icon><MapLocation /></el-icon> 空间服务</h3>
-                <p>启用 OGC 协议（WFS/WMTS/OGC API），支持在地图上展示</p>
-                <p>可被 QGIS、ArcGIS 等 GIS 工具访问</p>
-                <p>支持添加多个图层，适合主题地图服务</p>
-                <el-tag type="success" size="small">推荐用于地图展示</el-tag>
+                <h3><el-icon><MapLocation /></el-icon> {{ t('service.published.spatialServiceTitle') }}</h3>
+                <p>{{ t('service.published.spatialServiceDesc1') }}</p>
+                <p>{{ t('service.published.spatialServiceDesc2') }}</p>
+                <p>{{ t('service.published.spatialServiceDesc3') }}</p>
+                <el-tag type="success" size="small">{{ t('service.published.spatialServiceTag') }}</el-tag>
               </div>
             </el-radio>
           </el-card>
@@ -97,11 +95,11 @@
           >
             <el-radio value="table" style="width: 100%">
               <div class="service-type-card">
-                <h3><el-icon><Document /></el-icon> 数据表服务</h3>
-                <p>简化的 REST API，适合 Web 应用集成</p>
-                <p>单图层服务，专注于数据查询和导出</p>
-                <p>支持分页、过滤、排序和多种导出格式</p>
-                <el-tag type="primary" size="small">推荐用于业务数据</el-tag>
+                <h3><el-icon><Document /></el-icon> {{ t('service.published.tableServiceTitle') }}</h3>
+                <p>{{ t('service.published.tableServiceDesc1') }}</p>
+                <p>{{ t('service.published.tableServiceDesc2') }}</p>
+                <p>{{ t('service.published.tableServiceDesc3') }}</p>
+                <el-tag type="primary" size="small">{{ t('service.published.tableServiceTag') }}</el-tag>
               </div>
             </el-radio>
           </el-card>
@@ -113,41 +111,41 @@
     <div v-if="isEdit || currentStep === 2">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="140px">
         <!-- 基本信息 -->
-        <el-card header="基本信息" style="margin-bottom: 20px">
-          <el-form-item label="服务类型" v-if="!isEdit">
+        <el-card :header="t('service.published.basicInfoTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.published.serviceTypeLabel')" v-if="!isEdit">
             <el-tag :type="form.service_type === 'spatial' ? 'success' : 'primary'" size="large">
-              {{ form.service_type === 'spatial' ? '空间服务' : '数据表服务' }}
+              {{ form.service_type === 'spatial' ? t('service.published.spatialServiceType') : t('service.published.tableServiceType') }}
             </el-tag>
             <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 13px">
-              （服务类型创建后不可变更）
+              {{ t('service.published.serviceTypeNote') }}
             </span>
           </el-form-item>
 
-          <el-form-item label="服务名称" prop="service_name" required>
+          <el-form-item :label="t('service.published.serviceNameLabel')" prop="service_name" required>
             <el-input
               v-model="form.service_name"
-              placeholder="例如: city_poi"
+              :placeholder="t('service.published.serviceNamePlaceholder')"
               :disabled="isEdit"
             />
             <div class="help-text">
-              仅支持英文、数字和下划线，用于服务 URL
+              {{ t('service.published.serviceNameHelp') }}
             </div>
           </el-form-item>
 
-          <el-form-item label="标题" prop="title" required>
-            <el-input v-model="form.title" placeholder="例如: 城市兴趣点服务" />
+          <el-form-item :label="t('service.published.titleLabel')" prop="title" required>
+            <el-input v-model="form.title" :placeholder="t('service.published.titlePlaceholder')" />
           </el-form-item>
 
-          <el-form-item label="摘要" prop="abstract">
+          <el-form-item :label="t('service.published.abstractLabel')" prop="abstract">
             <el-input
               type="textarea"
               v-model="form.abstract"
               :rows="3"
-              placeholder="服务的简要描述"
+              :placeholder="t('service.published.abstractPlaceholder')"
             />
           </el-form-item>
 
-          <el-form-item label="关键词">
+          <el-form-item :label="t('service.published.keywordsLabel')">
             <div class="keyword-input">
               <el-tag
                 v-for="tag in form.keywords"
@@ -168,15 +166,15 @@
                 @blur="handleInputConfirm"
               />
               <el-button v-else size="small" @click="showInput">
-                + 添加关键词
+                {{ t('service.common.addKeyword') }}
               </el-button>
             </div>
           </el-form-item>
         </el-card>
 
         <!-- 空间服务专属配置 -->
-        <el-card v-if="form.service_type === 'spatial'" header="空间服务配置" style="margin-bottom: 20px">
-          <el-form-item label="默认坐标系" prop="default_srid" required>
+        <el-card v-if="form.service_type === 'spatial'" :header="t('service.published.spatialConfigTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.published.defaultSridLabel')" prop="default_srid" required>
             <el-select v-model="form.default_srid" style="width: 300px">
               <el-option :value="4326" label="EPSG:4326 (WGS84)" />
               <el-option :value="3857" label="EPSG:3857 (Web Mercator)" />
@@ -184,89 +182,89 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="启用协议" v-if="!isEdit">
+          <el-form-item :label="t('service.published.enabledProtocolsLabel')" v-if="!isEdit">
             <el-checkbox-group v-model="enabledProtocols">
               <div style="display: flex; flex-direction: column; gap: 12px">
                 <el-checkbox value="wfs">
                   <strong>WFS 2.0</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
-                    矢量要素查询服务，支持 QGIS、ArcGIS
+                    {{ t('service.published.wfsDesc') }}
                   </span>
                 </el-checkbox>
 
                 <el-checkbox value="wmts">
                   <strong>WMTS 1.0</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
-                    矢量瓦片地图服务，高性能地图展示
+                    {{ t('service.published.wmtsDesc') }}
                   </span>
                 </el-checkbox>
 
                 <el-checkbox value="ogc_api">
                   <strong>OGC API Features</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
-                    现代化 RESTful 空间 API
+                    {{ t('service.published.ogcApiDesc') }}
                   </span>
                 </el-checkbox>
 
                 <el-checkbox value="rest_query" checked disabled>
                   <strong>REST Query API</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
-                    （默认启用）简化 REST 查询 API
+                    {{ t('service.published.restQueryDesc') }}
                   </span>
                 </el-checkbox>
               </div>
             </el-checkbox-group>
           </el-form-item>
 
-          <el-form-item label="最大要素数" prop="max_features">
+          <el-form-item :label="t('service.published.maxFeaturesLabel')" prop="max_features">
             <el-input-number v-model="form.max_features" :min="1" :max="10000" />
-            <div class="help-text">单次查询返回的最大要素数量</div>
+            <div class="help-text">{{ t('service.published.maxFeaturesHelp') }}</div>
           </el-form-item>
         </el-card>
 
         <!-- 数据表服务专属配置 -->
-        <el-card v-if="form.service_type === 'table'" header="数据表服务配置" style="margin-bottom: 20px">
+        <el-card v-if="form.service_type === 'table'" :header="t('service.published.tableConfigTitle')" style="margin-bottom: 20px">
           <el-alert type="info" :closable="false" style="margin-bottom: 16px">
-            数据表服务自动启用 REST Query API，支持灵活的查询、分页、过滤和导出功能。
+            {{ t('service.published.tableConfigAlert') }}
           </el-alert>
 
-          <el-form-item label="默认分页大小">
+          <el-form-item :label="t('service.published.defaultPageSizeLabel')">
             <el-input-number v-model="form.default_page_size" :min="10" :max="100" />
           </el-form-item>
 
-          <el-form-item label="最大返回记录数" prop="max_features">
+          <el-form-item :label="t('service.published.maxRecordsLabel')" prop="max_features">
             <el-input-number v-model="form.max_features" :min="1" :max="10000" />
-            <div class="help-text">单次查询返回的最大记录数量</div>
+            <div class="help-text">{{ t('service.published.maxRecordsHelp') }}</div>
           </el-form-item>
         </el-card>
 
         <!-- 通用配置 -->
-        <el-card header="访问控制" style="margin-bottom: 20px">
-          <el-form-item label="访问权限">
+        <el-card :header="t('service.published.accessControlTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.published.accessPermissionLabel')">
             <el-checkbox v-model="form.public_access">
-              允许公开访问（无需 JWT 认证）
+              {{ t('service.published.publicAccessCheckbox') }}
             </el-checkbox>
             <div class="help-text">
-              启用后，任何人都可以访问此服务的公开端点
+              {{ t('service.published.publicAccessHelp') }}
             </div>
           </el-form-item>
         </el-card>
 
         <!-- 元数据（可选） -->
-        <el-card header="元数据（可选）" style="margin-bottom: 20px">
-          <el-form-item label="提供者名称">
-            <el-input v-model="form.provider_name" placeholder="例如: ADDP 数据平台" />
+        <el-card :header="t('service.published.metadataTitle')" style="margin-bottom: 20px">
+          <el-form-item :label="t('service.published.providerNameLabel')">
+            <el-input v-model="form.provider_name" :placeholder="t('service.published.providerNamePlaceholder')" />
           </el-form-item>
 
-          <el-form-item label="提供者网站">
+          <el-form-item :label="t('service.published.providerSiteLabel')">
             <el-input v-model="form.provider_site" placeholder="https://example.com" />
           </el-form-item>
 
-          <el-form-item label="联系人">
-            <el-input v-model="form.contact_person" placeholder="例如: 张三" />
+          <el-form-item :label="t('service.published.contactPersonLabel')">
+            <el-input v-model="form.contact_person" :placeholder="t('service.published.contactPersonPlaceholder')" />
           </el-form-item>
 
-          <el-form-item label="联系邮箱">
+          <el-form-item :label="t('service.published.contactEmailLabel')">
             <el-input
               v-model="form.contact_email"
               type="email"
@@ -280,7 +278,7 @@
     <!-- 操作按钮 -->
     <div class="button-group">
       <el-button v-if="!isEdit && currentStep > 0" @click="prevStep">
-        上一步
+        {{ t('service.published.prevStep') }}
       </el-button>
       <el-button
         v-if="!isEdit && currentStep < 2"
@@ -288,7 +286,7 @@
         :disabled="!canProceed"
         @click="nextStep"
       >
-        下一步
+        {{ t('service.published.nextStep') }}
       </el-button>
       <el-button
         v-if="isEdit || currentStep === 2"
@@ -296,9 +294,9 @@
         @click="handleSubmit"
         :loading="submitting"
       >
-        {{ isEdit ? '更新' : '创建' }}
+        {{ isEdit ? t('service.published.updateBtn') : t('service.published.createBtn') }}
       </el-button>
-      <el-button @click="$router.back()">取消</el-button>
+      <el-button @click="$router.back()">{{ t('service.common.cancel') }}</el-button>
     </div>
 
     <!-- 表选择器对话框 -->
@@ -313,6 +311,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   FolderOpened,
   Location,
@@ -322,6 +321,7 @@ import {
 import publishedServiceAPI from '../api/publishedService'
 import TableSelector from '../components/TableSelector.vue'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const formRef = ref(null)
@@ -368,30 +368,30 @@ const canProceed = computed(() => {
 })
 
 // 表单验证规则
-const rules = {
+const rules = computed(() => ({
   service_name: [
-    { required: true, message: '请输入服务名称', trigger: 'blur' },
+    { required: true, message: t('service.published.serviceNameRequired'), trigger: 'blur' },
     {
       pattern: /^[a-zA-Z0-9_]+$/,
-      message: '仅支持英文、数字和下划线',
+      message: t('service.published.serviceNameHelp'),
       trigger: 'blur'
     }
   ],
-  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  title: [{ required: true, message: t('service.published.titleRequired'), trigger: 'blur' }],
   default_srid: [
-    { required: true, message: '请选择默认坐标系', trigger: 'change' }
+    { required: true, message: t('service.published.defaultSridRequired'), trigger: 'change' }
   ],
   max_features: [
-    { required: true, message: '请输入最大要素数', trigger: 'blur' },
+    { required: true, message: t('service.published.maxFeaturesRequired'), trigger: 'blur' },
     {
       type: 'number',
       min: 1,
       max: 10000,
-      message: '值必须在 1 到 10000 之间',
+      message: t('service.published.maxFeaturesRange'),
       trigger: 'blur'
     }
   ]
-}
+}))
 
 // 处理表选择
 const handleTableSelected = (table) => {
@@ -415,9 +415,9 @@ const handleTableSelected = (table) => {
 const nextStep = () => {
   if (!canProceed.value) {
     if (currentStep.value === 0) {
-      ElMessage.warning('请先选择数据表')
+      ElMessage.warning(t('service.published.selectTableFirst'))
     } else if (currentStep.value === 1) {
-      ElMessage.warning('请选择服务类型')
+      ElMessage.warning(t('service.published.selectTypeFirst'))
     }
     return
   }
@@ -466,7 +466,7 @@ const loadService = async () => {
       form.value.keywords = []
     }
   } catch (error) {
-    ElMessage.error('加载服务失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.published.loadFailed') + ': ' + (error.message || t('service.common.unknownError')))
   } finally {
     loading.value = false
   }
@@ -501,7 +501,7 @@ const handleSubmit = async () => {
       }
 
       await publishedServiceAPI.updateService(route.params.id, updateData)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('service.published.updateSuccess'))
     } else {
       // 新建模式 - 适配新的 QueryService API
       const createData = {
@@ -550,12 +550,12 @@ const handleSubmit = async () => {
       }
 
       const response = await publishedServiceAPI.createService(createData)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('service.published.createSuccess'))
       router.push(`/published-services/${response.id}`)
     }
   } catch (error) {
     if (error.message) {
-      ElMessage.error('操作失败: ' + error.message)
+      ElMessage.error(t('service.common.saveFailed') + ': ' + error.message)
     }
   } finally {
     submitting.value = false

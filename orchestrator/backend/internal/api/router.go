@@ -7,6 +7,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,9 @@ func SetupRouter(
 	handler := NewOrchestrationHandler(orchRepo, executionService, executor, scheduler, engineRegistry, taskProviderRegistry, httpClient)
 
 	api := router.Group("/api/v1/orchestrator")
+
+	// i18n 中间件（解析 Accept-Language 请求头）
+	api.Use(commoni18n.I18nMiddleware())
 
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {

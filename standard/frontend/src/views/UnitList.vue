@@ -1,7 +1,7 @@
 <template>
   <div class="unit-list">
     <div class="page-header">
-      <h2>计量单位管理</h2>
+      <h2>{{ $t('standard.unit.title') }}</h2>
     </div>
 
     <el-row :gutter="20">
@@ -10,8 +10,8 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>度量类别</span>
-              <el-button size="small" type="primary" @click="showAddCategory = true">新增</el-button>
+              <span>{{ $t('standard.unit.category') }}</span>
+              <el-button size="small" type="primary" @click="showAddCategory = true">{{ $t('standard.unit.addCategory') }}</el-button>
             </div>
           </template>
           <el-tree
@@ -26,8 +26,8 @@
                 <span>{{ data.name }}</span>
                 <span class="tree-node-meta">{{ data.code }}</span>
                 <div class="tree-node-actions">
-                  <el-button link size="small" @click.stop="editCategory(data)">编辑</el-button>
-                  <el-button link size="small" type="danger" @click.stop="deleteCategory(data)" :disabled="data.is_system">删除</el-button>
+                  <el-button link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-button link size="small" type="danger" @click.stop="deleteCategory(data)" :disabled="data.is_system">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </div>
             </template>
@@ -40,30 +40,30 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>{{ selectedCategory ? selectedCategory.name + ' - 计量单位' : '所有计量单位' }}</span>
-              <el-button size="small" type="primary" @click="showAddUnit = true">新增单位</el-button>
+              <span>{{ selectedCategory ? $t('standard.unit.unitsOfCategory', { name: selectedCategory.name }) : $t('standard.unit.allUnits') }}</span>
+              <el-button size="small" type="primary" @click="showAddUnit = true">{{ $t('standard.unit.addUnit') }}</el-button>
             </div>
           </template>
           <el-table :data="units" v-loading="loadingUnits" size="small">
-            <el-table-column label="名称" prop="name" width="120" />
-            <el-table-column label="符号" prop="symbol" width="80" />
-            <el-table-column label="所属类别" width="100">
+            <el-table-column :label="$t('standard.common.name')" prop="name" width="120" />
+            <el-table-column :label="$t('standard.unit.symbolLabel')" prop="symbol" width="80" />
+            <el-table-column :label="$t('standard.unit.belongsTo')" width="100">
               <template #default="{ row }">
                 {{ row.category?.name || '-' }}
               </template>
             </el-table-column>
-            <el-table-column label="描述" prop="description" show-overflow-tooltip />
-            <el-table-column label="系统内置" width="80">
+            <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
+            <el-table-column :label="$t('standard.unit.systemBuiltin')" width="80">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.is_system ? 'info' : 'success'">
-                  {{ row.is_system ? '是' : '否' }}
+                  {{ row.is_system ? $t('standard.unit.yes') : $t('standard.unit.no') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button link size="small" @click="editUnit(row)" :disabled="row.is_system">编辑</el-button>
-                <el-button link size="small" type="danger" @click="deleteUnit(row)" :disabled="row.is_system">删除</el-button>
+                <el-button link size="small" @click="editUnit(row)" :disabled="row.is_system">{{ $t('standard.common.edit') }}</el-button>
+                <el-button link size="small" type="danger" @click="deleteUnit(row)" :disabled="row.is_system">{{ $t('standard.common.delete') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -72,51 +72,51 @@
     </el-row>
 
     <!-- 新增/编辑度量类别对话框 -->
-    <el-dialog v-model="showAddCategory" :title="editingCategory ? '编辑度量类别' : '新增度量类别'" width="400px">
+    <el-dialog v-model="showAddCategory" :title="editingCategory ? $t('standard.unit.editCategory') : $t('standard.unit.createCategory')" width="400px">
       <el-form :model="categoryForm" label-width="80px">
-        <el-form-item label="名称" required>
+        <el-form-item :label="$t('standard.common.name')" required>
           <el-input v-model="categoryForm.name" />
         </el-form-item>
-        <el-form-item label="编码" required>
+        <el-form-item :label="$t('standard.common.code')" required>
           <el-input v-model="categoryForm.code" :disabled="!!editingCategory" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.common.description')">
           <el-input v-model="categoryForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="$t('standard.common.sort')">
           <el-input-number v-model="categoryForm.sort_order" :min="0" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddCategory = false">取消</el-button>
-        <el-button type="primary" @click="saveCategory" :loading="saving">保存</el-button>
+        <el-button @click="showAddCategory = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveCategory" :loading="saving">{{ $t('standard.common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 新增/编辑计量单位对话框 -->
-    <el-dialog v-model="showAddUnit" :title="editingUnit ? '编辑计量单位' : '新增计量单位'" width="400px">
+    <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="400px">
       <el-form :model="unitForm" label-width="80px">
-        <el-form-item label="度量类别" required>
+        <el-form-item :label="$t('standard.unit.categoryLabel')" required>
           <el-select v-model="unitForm.category_id" style="width:100%">
             <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="名称" required>
+        <el-form-item :label="$t('standard.common.name')" required>
           <el-input v-model="unitForm.name" />
         </el-form-item>
-        <el-form-item label="符号">
-          <el-input v-model="unitForm.symbol" placeholder="如：kg、m²、%" />
+        <el-form-item :label="$t('standard.unit.symbolLabel')">
+          <el-input v-model="unitForm.symbol" :placeholder="$t('standard.unit.symbolPlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('standard.common.description')">
           <el-input v-model="unitForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="$t('standard.common.sort')">
           <el-input-number v-model="unitForm.sort_order" :min="0" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddUnit = false">取消</el-button>
-        <el-button type="primary" @click="saveUnit" :loading="saving">保存</el-button>
+        <el-button @click="showAddUnit = false">{{ $t('standard.common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveUnit" :loading="saving">{{ $t('standard.common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -124,9 +124,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { measurementCategoryAPI, unitAPI } from '../api/standard'
 
+const { t } = useI18n()
 const categories = ref([])
 const units = ref([])
 const loadingUnits = ref(false)
@@ -175,17 +177,17 @@ const saveCategory = async () => {
   try {
     if (editingCategory.value) {
       await measurementCategoryAPI.update(editingCategory.value.id, categoryForm.value)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('standard.common.updateSuccess'))
     } else {
       await measurementCategoryAPI.create(categoryForm.value)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('standard.common.createSuccess'))
     }
     showAddCategory.value = false
     editingCategory.value = null
     categoryForm.value = { name: '', code: '', description: '', sort_order: 0 }
     await loadCategories()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -193,14 +195,14 @@ const saveCategory = async () => {
 
 const deleteCategory = async (data) => {
   try {
-    await ElMessageBox.confirm(`确认删除度量类别"${data.name}"？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.unit.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
     await measurementCategoryAPI.delete(data.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     if (selectedCategory.value?.id === data.id) selectedCategory.value = null
     await loadCategories()
     await loadUnits(null)
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('standard.common.deleteFailed'))
   }
 }
 
@@ -215,17 +217,17 @@ const saveUnit = async () => {
   try {
     if (editingUnit.value) {
       await unitAPI.update(editingUnit.value.id, unitForm.value)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('standard.common.updateSuccess'))
     } else {
       await unitAPI.create(unitForm.value)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('standard.common.createSuccess'))
     }
     showAddUnit.value = false
     editingUnit.value = null
     unitForm.value = { category_id: selectedCategory.value?.id || null, name: '', symbol: '', description: '', sort_order: 0 }
     await loadUnits(selectedCategory.value?.id || null)
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -233,12 +235,12 @@ const saveUnit = async () => {
 
 const deleteUnit = async (data) => {
   try {
-    await ElMessageBox.confirm(`确认删除计量单位"${data.name}"？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('standard.unit.confirmDeleteUnit', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
     await unitAPI.delete(data.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('standard.common.deleteSuccess'))
     await loadUnits(selectedCategory.value?.id || null)
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('standard.common.deleteFailed'))
   }
 }
 

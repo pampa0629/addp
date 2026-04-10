@@ -7,13 +7,13 @@
     <el-card v-else>
       <template #header>
         <div class="card-header">
-          <span>{{ currentUser?.user_type === 'user' ? '我的信息' : '用户管理' }}</span>
+          <span>{{ currentUser?.user_type === 'user' ? t('system.user.myInfo') : t('system.user.title') }}</span>
           <el-button
             v-if="currentUser?.user_type === 'tenant_admin'"
             type="primary"
             :icon="Plus"
             @click="openAddDialog"
-          >新增用户</el-button>
+          >{{ t('system.user.add') }}</el-button>
         </div>
       </template>
 
@@ -69,7 +69,9 @@ import Tenants from './Tenants.vue'
 import UserList from '../components/users/UserList.vue'
 import UserFormDialog from '../components/users/UserFormDialog.vue'
 import PasswordDialog from '../components/users/PasswordDialog.vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 

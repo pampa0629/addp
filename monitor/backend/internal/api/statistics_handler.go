@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	moni18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +33,7 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return
 	}
 
@@ -65,7 +67,7 @@ func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return
 	}
 

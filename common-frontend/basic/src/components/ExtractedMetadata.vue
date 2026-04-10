@@ -27,6 +27,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   metadata: {
@@ -35,114 +38,107 @@ const props = defineProps({
   }
 })
 
-const sectionTitleMap = {
-  basic_info: '基础信息',
-  schema_info: '结构信息',
-  stats: '统计信息',
-  technical: '技术信息',
-  quality: '质量信息',
-  custom_attrs: '自定义属性'
-}
+// 节标题映射（响应式，语言切换后自动更新）
+const sectionTitleMap = computed(() => ({
+  basic_info: t('extractedMetadata.sections.basic_info'),
+  schema_info: t('extractedMetadata.sections.schema_info'),
+  stats: t('extractedMetadata.sections.stats'),
+  technical: t('extractedMetadata.sections.technical'),
+  quality: t('extractedMetadata.sections.quality'),
+  custom_attrs: t('extractedMetadata.sections.custom_attrs')
+}))
 
-const customAttrTitleMap = {
-  video_metadata: { title: '视频信息', icon: 'el-icon-video-camera', className: 'section-video' },
-  audio_metadata: { title: '音频信息', icon: 'el-icon-microphone', className: 'section-audio' },
-  geo_metadata: { title: '空间信息', icon: 'el-icon-location', className: 'section-geo' },
-  geojson_metadata: { title: '地理数据', icon: 'el-icon-map-location', className: 'section-geo' },
-  image_metadata: { title: '图像信息', icon: 'el-icon-picture', className: 'section-image' },
-  image_classification: { title: '图像分类', icon: 'el-icon-collection-tag', className: 'section-image' },
-  pdf_metadata: { title: 'PDF 信息', icon: 'el-icon-document', className: 'section-document' },
-  document_metadata: { title: '文档信息', icon: 'el-icon-reading', className: 'section-document' },
-  text_metadata: { title: '文本信息', icon: 'el-icon-tickets', className: 'section-text' },
-  table_metadata: { title: '表格信息', icon: 'el-icon-s-grid', className: 'section-table' },
-  csv_metadata: { title: 'CSV 信息', icon: 'el-icon-s-grid', className: 'section-table' },
-  sqlite_metadata: { title: 'SQLite 信息', icon: 'el-icon-coin', className: 'section-database' },
-  excel_metadata: { title: 'Excel 信息', icon: 'el-icon-s-grid', className: 'section-table' }
-}
+// 自定义属性节配置（响应式）
+const customAttrTitleMap = computed(() => ({
+  video_metadata: { title: t('extractedMetadata.sections.video_metadata'), icon: 'el-icon-video-camera', className: 'section-video' },
+  audio_metadata: { title: t('extractedMetadata.sections.audio_metadata'), icon: 'el-icon-microphone', className: 'section-audio' },
+  geo_metadata: { title: t('extractedMetadata.sections.geo_metadata'), icon: 'el-icon-location', className: 'section-geo' },
+  geojson_metadata: { title: t('extractedMetadata.sections.geojson_metadata'), icon: 'el-icon-map-location', className: 'section-geo' },
+  image_metadata: { title: t('extractedMetadata.sections.image_metadata'), icon: 'el-icon-picture', className: 'section-image' },
+  image_classification: { title: t('extractedMetadata.sections.image_classification'), icon: 'el-icon-collection-tag', className: 'section-image' },
+  pdf_metadata: { title: t('extractedMetadata.sections.pdf_metadata'), icon: 'el-icon-document', className: 'section-document' },
+  document_metadata: { title: t('extractedMetadata.sections.document_metadata'), icon: 'el-icon-reading', className: 'section-document' },
+  text_metadata: { title: t('extractedMetadata.sections.text_metadata'), icon: 'el-icon-tickets', className: 'section-text' },
+  table_metadata: { title: t('extractedMetadata.sections.table_metadata'), icon: 'el-icon-s-grid', className: 'section-table' },
+  csv_metadata: { title: t('extractedMetadata.sections.csv_metadata'), icon: 'el-icon-s-grid', className: 'section-table' },
+  sqlite_metadata: { title: t('extractedMetadata.sections.sqlite_metadata'), icon: 'el-icon-coin', className: 'section-database' },
+  excel_metadata: { title: t('extractedMetadata.sections.excel_metadata'), icon: 'el-icon-s-grid', className: 'section-table' }
+}))
 
-// 字段名称本地化映射
-const fieldLabelMap = {
+// 字段名称本地化映射（响应式）
+const fieldLabelMap = computed(() => ({
   // 图像相关
-  width: '宽度',
-  height: '高度',
-  format: '格式',
-  color_space: '色彩空间',
-  aspect_ratio: '宽高比',
-  resolution: '分辨率',
-  megapixels: '像素数(MP)',
-  size_category: '尺寸分类',
-  orientation: '方向',
-  likely_icon: '可能是图标',
-  likely_banner: '可能是横幅',
-
+  width: t('extractedMetadata.fields.width'),
+  height: t('extractedMetadata.fields.height'),
+  format: t('extractedMetadata.fields.format'),
+  color_space: t('extractedMetadata.fields.color_space'),
+  aspect_ratio: t('extractedMetadata.fields.aspect_ratio'),
+  resolution: t('extractedMetadata.fields.resolution'),
+  megapixels: t('extractedMetadata.fields.megapixels'),
+  size_category: t('extractedMetadata.fields.size_category'),
+  orientation: t('extractedMetadata.fields.orientation'),
+  likely_icon: t('extractedMetadata.fields.likely_icon'),
+  likely_banner: t('extractedMetadata.fields.likely_banner'),
   // 视频相关
-  duration: '时长',
-  codec: '视频编码',
-  bitrate: '比特率',
-  frame_rate: '帧率',
-  audio_codec: '音频编码',
-  audio_channels: '声道数',
-  has_subtitles: '字幕',
-  container: '容器格式',
-
+  duration: t('extractedMetadata.fields.duration'),
+  codec: t('extractedMetadata.fields.codec'),
+  bitrate: t('extractedMetadata.fields.bitrate'),
+  frame_rate: t('extractedMetadata.fields.frame_rate'),
+  audio_codec: t('extractedMetadata.fields.audio_codec'),
+  audio_channels: t('extractedMetadata.fields.audio_channels'),
+  has_subtitles: t('extractedMetadata.fields.has_subtitles'),
+  container: t('extractedMetadata.fields.container'),
   // PDF/文档相关
-  version: '版本',
-  page_count: '页数',
-  title: '标题',
-  author: '作者',
-  subject: '主题',
-  keywords: '关键词',
-  creator: '创建工具',
-  producer: '生成器',
-  is_encrypted: '加密',
-  has_forms: '包含表单',
-
+  version: t('extractedMetadata.fields.version'),
+  page_count: t('extractedMetadata.fields.page_count'),
+  title: t('extractedMetadata.fields.title'),
+  author: t('extractedMetadata.fields.author'),
+  subject: t('extractedMetadata.fields.subject'),
+  keywords: t('extractedMetadata.fields.keywords'),
+  creator: t('extractedMetadata.fields.creator'),
+  producer: t('extractedMetadata.fields.producer'),
+  is_encrypted: t('extractedMetadata.fields.is_encrypted'),
+  has_forms: t('extractedMetadata.fields.has_forms'),
   // GeoJSON/空间相关
-  type: '类型',
-  feature_count: '要素数量',
-  geometry_types: '几何类型',
-  bbox: '边界框',
-  crs: '坐标系统',
-  properties_sample: '属性示例',
-
+  type: t('extractedMetadata.fields.type'),
+  feature_count: t('extractedMetadata.fields.feature_count'),
+  geometry_types: t('extractedMetadata.fields.geometry_types'),
+  bbox: t('extractedMetadata.fields.bbox'),
+  crs: t('extractedMetadata.fields.crs'),
+  properties_sample: t('extractedMetadata.fields.properties_sample'),
   // CSV/表格相关
-  row_count: '行数',
-  column_count: '列数',
-  columns: '列名',
-  has_header: '包含表头',
-  delimiter: '分隔符',
-  sheet_count: '工作表数量',
-  sheets: '工作表',
-  default_sheet: '默认工作表',
-  column_types: '列类型',
-  rows_truncated: '示例截断',
-
+  row_count: t('extractedMetadata.fields.row_count'),
+  column_count: t('extractedMetadata.fields.column_count'),
+  columns: t('extractedMetadata.fields.columns'),
+  has_header: t('extractedMetadata.fields.has_header'),
+  delimiter: t('extractedMetadata.fields.delimiter'),
+  sheet_count: t('extractedMetadata.fields.sheet_count'),
+  sheets: t('extractedMetadata.fields.sheets'),
+  default_sheet: t('extractedMetadata.fields.default_sheet'),
+  column_types: t('extractedMetadata.fields.column_types'),
+  rows_truncated: t('extractedMetadata.fields.rows_truncated'),
   // SQLite相关
-  table_count: '表数量',
-  tables: '表列表',
-  total_rows: '总行数',
-  file_size: '文件大小',
-  file_size_human: '文件大小',
-
+  table_count: t('extractedMetadata.fields.table_count'),
+  tables: t('extractedMetadata.fields.tables'),
+  total_rows: t('extractedMetadata.fields.total_rows'),
+  file_size: t('extractedMetadata.fields.file_size'),
+  file_size_human: t('extractedMetadata.fields.file_size_human'),
   // 通用
-  file_extension: '文件扩展名',
-  is_streaming_ready: '支持流式传输',
-  extractor_available: '元数据提取器'
-}
+  file_extension: t('extractedMetadata.fields.file_extension'),
+  is_streaming_ready: t('extractedMetadata.fields.is_streaming_ready'),
+  extractor_available: t('extractedMetadata.fields.extractor_available')
+}))
 
 const normalizeKey = (key) => {
-  // 优先使用预定义的标签
-  if (fieldLabelMap[key]) {
-    return fieldLabelMap[key]
-  }
-
+  const labels = fieldLabelMap.value
+  if (labels[key]) return labels[key]
   if (!key) return ''
   return key
     .replace(/[_\-]+/g, ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
-const formatBoolean = (value) => (value ? '是' : '否')
+const formatBoolean = (value) => (value ? t('extractedMetadata.values.yes') : t('extractedMetadata.values.no'))
 
 // 格式化时长(秒 -> 时:分:秒)
 const formatDuration = (seconds) => {
@@ -189,7 +185,6 @@ const formatValue = (key, value) => {
     return formatBoolean(value)
   }
 
-  // 特殊字段格式化
   if (key === 'duration' && typeof value === 'number') {
     return formatDuration(value)
   }
@@ -207,22 +202,31 @@ const formatValue = (key, value) => {
   }
 
   if (key === 'audio_channels' && typeof value === 'number') {
-    const channelMap = { 1: '单声道', 2: '立体声', 6: '5.1环绕声', 8: '7.1环绕声' }
-    return channelMap[value] || `${value} 声道`
+    const channelMap = {
+      1: t('extractedMetadata.values.mono'),
+      2: t('extractedMetadata.values.stereo'),
+      6: t('extractedMetadata.values.surround51'),
+      8: t('extractedMetadata.values.surround71')
+    }
+    return channelMap[value] || t('extractedMetadata.values.channelN', { n: value })
   }
 
   if (key === 'orientation') {
-    const orientationMap = { landscape: '横向', portrait: '纵向', square: '正方形' }
+    const orientationMap = {
+      landscape: t('extractedMetadata.values.landscape'),
+      portrait: t('extractedMetadata.values.portrait'),
+      square: t('extractedMetadata.values.square')
+    }
     return orientationMap[value] || value
   }
 
   if (key === 'size_category') {
     const sizeMap = {
-      thumbnail: '缩略图',
-      small: '小图',
-      medium: '中图',
-      large: '大图',
-      very_large: '超大图'
+      thumbnail: t('extractedMetadata.values.thumbnail'),
+      small: t('extractedMetadata.values.small'),
+      medium: t('extractedMetadata.values.medium'),
+      large: t('extractedMetadata.values.large'),
+      very_large: t('extractedMetadata.values.very_large')
     }
     return sizeMap[value] || value
   }
@@ -263,6 +267,8 @@ const buildSections = (metadata) => {
 
   const sections = []
   const usedKeys = new Set()
+  const sectionTitles = sectionTitleMap.value
+  const customAttrTitles = customAttrTitleMap.value
 
   const pushSection = (key, titleOrConfig, data) => {
     if (!data || typeof data !== 'object') return
@@ -275,7 +281,7 @@ const buildSections = (metadata) => {
 
     sections.push({
       key,
-      title: config.title || sectionTitleMap[key] || normalizeKey(key),
+      title: config.title || sectionTitles[key] || normalizeKey(key),
       icon: config.icon,
       className: config.className,
       entries
@@ -283,11 +289,11 @@ const buildSections = (metadata) => {
     usedKeys.add(key)
   }
 
-  pushSection('basic_info', sectionTitleMap.basic_info, metadata.basic_info)
-  pushSection('technical', sectionTitleMap.technical, metadata.technical)
-  pushSection('stats', sectionTitleMap.stats, metadata.stats)
-  pushSection('schema_info', sectionTitleMap.schema_info, metadata.schema_info)
-  pushSection('quality', sectionTitleMap.quality, metadata.quality)
+  pushSection('basic_info', sectionTitles.basic_info, metadata.basic_info)
+  pushSection('technical', sectionTitles.technical, metadata.technical)
+  pushSection('stats', sectionTitles.stats, metadata.stats)
+  pushSection('schema_info', sectionTitles.schema_info, metadata.schema_info)
+  pushSection('quality', sectionTitles.quality, metadata.quality)
 
   const customAttrs = metadata.custom_attrs
   if (customAttrs && typeof customAttrs === 'object') {
@@ -298,7 +304,7 @@ const buildSections = (metadata) => {
         return
       }
 
-      const config = customAttrTitleMap[key] || { title: normalizeKey(key) }
+      const config = customAttrTitles[key] || { title: normalizeKey(key) }
       sections.push({
         key: `custom_${key}`,
         title: config.title || normalizeKey(key),
@@ -316,7 +322,7 @@ const buildSections = (metadata) => {
     const entries = toEntries(value)
     if (!entries.length) return
 
-    const config = customAttrTitleMap[key] || sectionTitleMap[key]
+    const config = customAttrTitles[key] || sectionTitles[key]
     if (typeof config === 'object') {
       sections.push({
         key,

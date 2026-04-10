@@ -9,20 +9,20 @@
     <el-header class="header">
       <div class="header-left">
         <span class="logo-icon">🕸</span>
-        <h1>知识图谱</h1>
+        <h1>{{ t('graph.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('graph.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('graph.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -35,15 +35,15 @@
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
           <el-menu-item index="/ontologies">
             <el-icon><Document /></el-icon>
-            <span>本体建模</span>
+            <span>{{ t('graph.layout.ontologyModeling') }}</span>
           </el-menu-item>
           <el-menu-item index="/graphs">
             <el-icon><Connection /></el-icon>
-            <span>知识图谱</span>
+            <span>{{ t('graph.layout.knowledgeGraph') }}</span>
           </el-menu-item>
           <el-menu-item index="/knowledge-service">
             <el-icon><Share /></el-icon>
-            <span>知识服务</span>
+            <span>{{ t('graph.layout.knowledgeService') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -60,6 +60,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { User, ArrowDown, SwitchButton, Document, Connection, Share } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()

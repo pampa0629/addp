@@ -3,14 +3,14 @@
     <div class="login-card">
       <div class="logo">
         <el-icon size="40"><ChatDotRound /></el-icon>
-        <h2>ADDP 智能体</h2>
+        <h2>{{ t('agent.login.title') }}</h2>
       </div>
       <el-form @submit.prevent="handleLogin" label-position="top">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" placeholder="请输入用户名" size="large" />
+        <el-form-item :label="t('agent.login.username')">
+          <el-input v-model="form.username" :placeholder="t('agent.login.usernamePlaceholder')" size="large" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" />
+        <el-form-item :label="t('agent.login.password')">
+          <el-input v-model="form.password" type="password" :placeholder="t('agent.login.passwordPlaceholder')" size="large" />
         </el-form-item>
         <el-button
           type="primary"
@@ -19,7 +19,7 @@
           :loading="loading"
           @click="handleLogin"
         >
-          登录
+          {{ t('agent.login.submit') }}
         </el-button>
       </el-form>
     </div>
@@ -31,8 +31,10 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -41,7 +43,7 @@ const loading = ref(false)
 
 async function handleLogin() {
   if (!form.value.username || !form.value.password) {
-    ElMessage.warning('请输入用户名和密码')
+    ElMessage.warning(t('agent.login.emptyWarning'))
     return
   }
   loading.value = true
@@ -49,7 +51,7 @@ async function handleLogin() {
     await authStore.login(form.value.username, form.value.password)
     router.push('/agent')
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '登录失败，请检查用户名和密码')
+    ElMessage.error(e?.response?.data?.message || t('agent.login.failed'))
   } finally {
     loading.value = false
   }

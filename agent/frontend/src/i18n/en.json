@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "login": {
+      "title": "ADDP AI Agent",
+      "username": "Username",
+      "password": "Password",
+      "usernamePlaceholder": "Enter username",
+      "passwordPlaceholder": "Enter password",
+      "submit": "Login",
+      "emptyWarning": "Please enter username and password",
+      "failed": "Login failed, please check your credentials"
+    },
+    "chat": {
+      "newSession": "New Chat",
+      "noSessions": "No conversations",
+      "welcome": "Hello! I'm the ADDP AI Assistant. I can help you with data management, analysis, and publishing.",
+      "inputPlaceholder": "Type a message, Ctrl+Enter to send...",
+      "send": "Send",
+      "createFailed": "Failed to create session",
+      "deleteFailed": "Delete failed",
+      "sendFailed": "Send failed: {msg}",
+      "errorReply": "Sorry, an error occurred. Please try again.",
+      "workflowGenerated": "Workflow generated"
+    },
+    "quickHints": {
+      "viewCatalog": "View my data catalog",
+      "listSources": "What data sources are available?",
+      "importShapefile": "How do I import a Shapefile?",
+      "runSQL": "Help me run a SQL query"
+    }
+  }
+}

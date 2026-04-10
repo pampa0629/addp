@@ -1,0 +1,41 @@
+[system.auth.token_gen_failed]
+other = "生成令牌失败"
+
+[system.auth.register_disabled]
+other = "注册功能已关闭"
+
+[system.auth.missing_auth_header]
+other = "缺少 Authorization 头"
+
+[system.auth.invalid_auth_format]
+other = "无效的 Authorization 格式"
+
+[system.auth.invalid_token]
+other = "无效的 token"
+
+[system.auth.token_refresh_failed]
+other = "生成新 token 失败"
+
+[system.log.not_found]
+other = "日志不存在"
+
+[system.log.export_failed]
+other = "导出失败"
+
+[system.log.audit_create_failed]
+other = "创建审计日志失败"
+
+[system.log.audit_created]
+other = "审计日志已创建"
+
+[system.module.not_found]
+other = "模块不存在"
+
+[system.module.registered]
+other = "模块注册成功"
+
+[system.module.heartbeat]
+other = "心跳更新成功"
+
+[system.module.deleted]
+other = "模块注销成功"

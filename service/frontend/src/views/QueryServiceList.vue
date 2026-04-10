@@ -1,6 +1,6 @@
 <template>
   <div class="query-service-list">
-    <h1>查询服务</h1>
+    <h1>{{ $t('service.query.listTitle') }}</h1>
 
     <!-- 操作栏 -->
     <div class="toolbar">
@@ -8,33 +8,33 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="搜索查询服务..."
+          :placeholder="$t('service.query.searchPlaceholder')"
           @keyup.enter="handleSearch"
         />
-        <button @click="handleSearch" class="btn btn-primary">搜索</button>
+        <button @click="handleSearch" class="btn btn-primary">{{ $t('service.common.search') }}</button>
       </div>
-      <button @click="goToCreate" class="btn btn-success">+ 创建查询服务</button>
+      <button @click="goToCreate" class="btn btn-success">{{ $t('service.query.createBtn') }}</button>
     </div>
 
     <!-- 服务列表 -->
     <div class="services-container">
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
       <div v-else-if="services.length === 0" class="empty-state">
-        <p>暂无查询服务</p>
-        <p class="tip">点击"创建查询服务"按钮开始创建</p>
+        <p>{{ $t('service.query.emptyText') }}</p>
+        <p class="tip">{{ $t('service.query.emptyTip') }}</p>
       </div>
       <table v-else class="services-table">
         <thead>
           <tr>
-            <th>服务名称</th>
-            <th>标题</th>
-            <th>配置方式</th>
-            <th>数据源</th>
-            <th>协议支持</th>
-            <th>访问控制</th>
-            <th>状态</th>
-            <th>创建时间</th>
-            <th>操作</th>
+            <th>{{ $t('service.query.colServiceName') }}</th>
+            <th>{{ $t('service.query.colTitle') }}</th>
+            <th>{{ $t('service.query.colConfigType') }}</th>
+            <th>{{ $t('service.query.colDataSource') }}</th>
+            <th>{{ $t('service.query.colProtocols') }}</th>
+            <th>{{ $t('service.query.colAccess') }}</th>
+            <th>{{ $t('service.query.colStatus') }}</th>
+            <th>{{ $t('service.query.colCreatedAt') }}</th>
+            <th>{{ $t('service.query.colActions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -51,7 +51,7 @@
                 <span v-if="service.config_type === 'table'">
                   {{ service.schema_name }}.{{ service.table_name }}
                 </span>
-                <span v-else class="sql-indicator">SQL 查询</span>
+                <span v-else class="sql-indicator">{{ $t('service.query.sqlQuery') }}</span>
               </div>
             </td>
             <td>
@@ -66,7 +66,7 @@
             </td>
             <td>
               <span class="badge" :class="service.public_access ? 'badge-success' : 'badge-warning'">
-                {{ service.public_access ? '公开' : '私有' }}
+                {{ service.public_access ? $t('service.common.public') : $t('service.common.private') }}
               </span>
             </td>
             <td>
@@ -76,9 +76,9 @@
             </td>
             <td>{{ formatDate(service.created_at) }}</td>
             <td class="actions">
-              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">详情</button>
-              <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">编辑</button>
-              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">删除</button>
+              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">{{ $t('service.common.detail') }}</button>
+              <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">{{ $t('service.common.edit') }}</button>
+              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -92,15 +92,15 @@
         :disabled="page === 1"
         class="btn btn-sm"
       >
-        上一页
+        {{ $t('service.common.prevPage') }}
       </button>
-      <span class="page-info">第 {{ page }} 页，共 {{ totalPages }} 页（共 {{ total }} 项）</span>
+      <span class="page-info">{{ $t('service.common.pageInfo', { page, total: totalPages, count: total }) }}</span>
       <button
         @click="nextPage"
         :disabled="page >= totalPages"
         class="btn btn-sm"
       >
-        下一页
+        {{ $t('service.common.nextPage') }}
       </button>
     </div>
   </div>
@@ -147,7 +147,7 @@ export default {
         this.services = response.data || []
         this.total = response.total || 0
       } catch (error) {
-        this.error = '加载查询服务列表失败: ' + (error.message || '未知错误')
+        this.error = this.$t('service.query.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError'))
         console.error('Failed to load query services:', error)
         alert(this.error)
       } finally {
@@ -161,16 +161,16 @@ export default {
     },
 
     async confirmDelete(id) {
-      if (!confirm('确定要删除此查询服务吗？删除后无法恢复。')) {
+      if (!confirm(this.$t('service.query.deleteConfirm'))) {
         return
       }
 
       try {
         await queryServiceAPI.deleteService(id)
-        alert('查询服务已删除')
+        alert(this.$t('service.query.deleteSuccess'))
         this.loadServices()
       } catch (error) {
-        alert('删除失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.query.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete query service:', error)
       }
     },
@@ -185,17 +185,17 @@ export default {
 
     configTypeText(configType) {
       const typeMap = {
-        table: '表配置',
-        sql: 'SQL配置'
+        table: this.$t('service.query.configTypeTable'),
+        sql: this.$t('service.query.configTypeSql')
       }
       return typeMap[configType] || configType
     },
 
     statusText(status) {
       const statusMap = {
-        active: '活跃',
-        inactive: '非活跃',
-        error: '错误'
+        active: this.$t('service.query.statusActive'),
+        inactive: this.$t('service.query.statusInactive'),
+        error: this.$t('service.query.statusError')
       }
       return statusMap[status] || status
     },

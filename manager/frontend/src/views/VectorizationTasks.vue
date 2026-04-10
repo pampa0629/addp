@@ -3,15 +3,15 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>向量化任务历史</span>
+          <span>{{ t('manager.vectorization.title') }}</span>
           <el-button type="primary" @click="refreshTasks" :icon="Refresh" circle />
         </div>
       </template>
 
       <!-- 筛选条件 -->
       <el-form :inline="true" class="filter-form">
-        <el-form-item label="引擎">
-          <el-select v-model="filterEngineId" placeholder="全部引擎" clearable style="width: 200px" @change="handleFilterChange">
+        <el-form-item :label="t('manager.vectorization.filterEngine')">
+          <el-select v-model="filterEngineId" :placeholder="t('manager.vectorization.allEngines')" clearable style="width: 200px" @change="handleFilterChange">
             <el-option v-for="engine in engines" :key="engine.id" :label="engine.name" :value="engine.id" />
           </el-select>
         </el-form-item>
@@ -19,44 +19,44 @@
 
       <!-- 任务列表 -->
       <el-table :data="tasks" v-loading="loading" stripe>
-        <el-table-column prop="task_id" label="任务ID" width="250" show-overflow-tooltip />
-        <el-table-column prop="task_type" label="类型" width="100">
+        <el-table-column prop="task_id" :label="t('manager.vectorization.taskId')" width="250" show-overflow-tooltip />
+        <el-table-column prop="task_type" :label="t('manager.vectorization.type')" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.task_type === 'object'" type="info">单文件</el-tag>
-            <el-tag v-else type="primary">目录</el-tag>
+            <el-tag v-if="row.task_type === 'object'" type="info">{{ t('manager.vectorization.typeSingle') }}</el-tag>
+            <el-tag v-else type="primary">{{ t('manager.vectorization.typeDirectory') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="engine_id" label="引擎" width="100" />
-        <el-table-column prop="bucket" label="存储桶" width="150" show-overflow-tooltip />
-        <el-table-column label="路径" width="200" show-overflow-tooltip>
+        <el-table-column prop="engine_id" :label="t('manager.vectorization.engine')" width="100" />
+        <el-table-column prop="bucket" :label="t('manager.vectorization.bucket')" width="150" show-overflow-tooltip />
+        <el-table-column :label="t('manager.vectorization.path')" width="200" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.object_key || row.prefix || '/' }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" :label="t('manager.vectorization.status')" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'completed'" type="success">完成</el-tag>
-            <el-tag v-else-if="row.status === 'failed'" type="danger">失败</el-tag>
-            <el-tag v-else-if="row.status === 'running'" type="warning">运行中</el-tag>
+            <el-tag v-if="row.status === 'completed'" type="success">{{ t('manager.vectorization.statusCompleted') }}</el-tag>
+            <el-tag v-else-if="row.status === 'failed'" type="danger">{{ t('manager.vectorization.statusFailed') }}</el-tag>
+            <el-tag v-else-if="row.status === 'running'" type="warning">{{ t('manager.vectorization.statusRunning') }}</el-tag>
             <el-tag v-else type="info">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="统计" width="200">
+        <el-table-column :label="t('manager.vectorization.stats')" width="200">
           <template #default="{ row }">
             <div style="font-size: 12px">
-              总计: {{ row.total }} | 成功: {{ row.vectorized }} | 跳过: {{ row.skipped }} | 失败: {{ row.failed }}
+              {{ t('manager.vectorization.statsFormat', { total: row.total, vectorized: row.vectorized, skipped: row.skipped, failed: row.failed }) }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="执行时长" width="100">
+        <el-table-column :label="t('manager.vectorization.duration')" width="100">
           <template #default="{ row }">
             {{ formatDuration(row.duration) }}
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180" />
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column prop="created_at" :label="t('manager.vectorization.createdAt')" width="180" />
+        <el-table-column :label="t('manager.vectorization.actions')" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="showTaskDetail(row)">详情</el-button>
+            <el-button type="primary" size="small" @click="showTaskDetail(row)">{{ t('manager.vectorization.detail') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -75,35 +75,35 @@
     </el-card>
 
     <!-- 任务详情对话框 -->
-    <el-dialog v-model="detailDialogVisible" title="任务详情" width="800px">
+    <el-dialog v-model="detailDialogVisible" :title="t('manager.vectorization.dialogTitle')" width="800px">
       <el-descriptions v-if="selectedTask" :column="2" border>
-        <el-descriptions-item label="任务ID">{{ selectedTask.task_id }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ selectedTask.task_type === 'object' ? '单文件' : '目录' }}</el-descriptions-item>
-        <el-descriptions-item label="引擎ID">{{ selectedTask.engine_id }}</el-descriptions-item>
-        <el-descriptions-item label="存储桶">{{ selectedTask.bucket }}</el-descriptions-item>
-        <el-descriptions-item label="路径" :span="2">
+        <el-descriptions-item :label="t('manager.vectorization.taskId')">{{ selectedTask.task_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.type')">{{ selectedTask.task_type === 'object' ? t('manager.vectorization.typeSingle') : t('manager.vectorization.typeDirectory') }}</el-descriptions-item>
+        <el-descriptions-item label="Engine ID">{{ selectedTask.engine_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.bucket')">{{ selectedTask.bucket }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.path')" :span="2">
           {{ selectedTask.object_key || selectedTask.prefix || '/' }}
         </el-descriptions-item>
-        <el-descriptions-item label="递归">{{ selectedTask.recursive ? '是' : '否' }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          <el-tag v-if="selectedTask.status === 'completed'" type="success">完成</el-tag>
-          <el-tag v-else-if="selectedTask.status === 'failed'" type="danger">失败</el-tag>
-          <el-tag v-else-if="selectedTask.status === 'running'" type="warning">运行中</el-tag>
+        <el-descriptions-item :label="t('manager.vectorization.recursive')">{{ selectedTask.recursive ? t('common.yes') : t('common.no') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.status')">
+          <el-tag v-if="selectedTask.status === 'completed'" type="success">{{ t('manager.vectorization.statusCompleted') }}</el-tag>
+          <el-tag v-else-if="selectedTask.status === 'failed'" type="danger">{{ t('manager.vectorization.statusFailed') }}</el-tag>
+          <el-tag v-else-if="selectedTask.status === 'running'" type="warning">{{ t('manager.vectorization.statusRunning') }}</el-tag>
           <el-tag v-else type="info">{{ selectedTask.status }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="总文件数">{{ selectedTask.total }}</el-descriptions-item>
-        <el-descriptions-item label="成功">{{ selectedTask.vectorized }}</el-descriptions-item>
-        <el-descriptions-item label="跳过">{{ selectedTask.skipped }}</el-descriptions-item>
-        <el-descriptions-item label="失败">{{ selectedTask.failed }}</el-descriptions-item>
-        <el-descriptions-item label="执行时长">{{ formatDuration(selectedTask.duration) }}</el-descriptions-item>
-        <el-descriptions-item label="开始时间">{{ selectedTask.started_at || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="完成时间">{{ selectedTask.completed_at || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ selectedTask.created_at }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.totalFiles')">{{ selectedTask.total }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.succeeded')">{{ selectedTask.vectorized }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.skipped')">{{ selectedTask.skipped }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.failed')">{{ selectedTask.failed }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.duration')">{{ formatDuration(selectedTask.duration) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.startTime')">{{ selectedTask.started_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.endTime')">{{ selectedTask.completed_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.createdAt')">{{ selectedTask.created_at }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 错误详情 -->
       <div v-if="selectedTask && selectedTask.errors && selectedTask.errors.length > 0" style="margin-top: 20px">
-        <el-divider content-position="left">错误详情</el-divider>
+        <el-divider content-position="left">{{ t('manager.vectorization.errorDetail') }}</el-divider>
         <el-alert
           v-for="(error, index) in selectedTask.errors"
           :key="index"
@@ -121,7 +121,10 @@
 import { ref, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import client from '../api/client'
+
+const { t } = useI18n()
 
 // 数据
 const tasks = ref([])
@@ -159,12 +162,11 @@ const loadTasks = async () => {
     }
 
     const response = await client.get('/manager/embedding_tasks', { params })
-    // response 已经是后端返回的完整 JSON 对象（因为 extractData = true）
     tasks.value = response.data || []
     total.value = response.total || 0
   } catch (error) {
     console.error('加载任务列表失败:', error)
-    ElMessage.error('加载任务列表失败')
+    ElMessage.error(t('manager.vectorization.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -201,10 +203,10 @@ const showTaskDetail = (task) => {
 const formatDuration = (milliseconds) => {
   if (!milliseconds) return '-'
   const seconds = Math.floor(milliseconds / 1000)
-  if (seconds < 60) return `${seconds}秒`
+  if (seconds < 60) return t('manager.vectorization.durationSeconds', { n: seconds })
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
-  return `${minutes}分${remainingSeconds}秒`
+  return t('manager.vectorization.durationMinutes', { m: minutes, s: remainingSeconds })
 }
 
 // 初始化

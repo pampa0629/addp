@@ -1,75 +1,75 @@
 <template>
   <div class="registered-service-form">
     <div class="page-header">
-      <button @click="goBack" class="btn btn-back">← 返回</button>
-      <h2>{{ isEdit ? '编辑注册服务' : '注册外部服务' }}</h2>
+      <button @click="goBack" class="btn btn-back">← {{ $t('service.common.back') }}</button>
+      <h2>{{ isEdit ? $t('service.registered.formEditTitle') : $t('service.registered.formCreateTitle') }}</h2>
     </div>
 
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
     <form v-else @submit.prevent="handleSubmit" class="form-container">
       <!-- 基本信息 -->
       <div class="form-section">
-        <h3>基本信息</h3>
+        <h3>{{ $t('service.registered.sectionBasicInfo') }}</h3>
 
         <div class="form-group">
-          <label for="service_name" class="required">服务名称</label>
+          <label for="service_name" class="required">{{ $t('service.registered.serviceNameLabel') }}</label>
           <input
             id="service_name"
             v-model="form.service_name"
             type="text"
-            placeholder="唯一标识，例如: geoserver_wms"
+            :placeholder="$t('service.registered.serviceNamePlaceholder')"
             required
             :disabled="isEdit"
           />
-          <div class="help-text">用于 URL 路径，创建后不可修改</div>
+          <div class="help-text">{{ $t('service.registered.serviceNameHelp') }}</div>
         </div>
 
         <div class="form-group">
-          <label for="title" class="required">标题</label>
+          <label for="title" class="required">{{ $t('service.registered.titleLabel') }}</label>
           <input
             id="title"
             v-model="form.title"
             type="text"
-            placeholder="服务的显示名称"
+            :placeholder="$t('service.registered.titlePlaceholder')"
             required
           />
         </div>
 
         <div class="form-group">
-          <label for="description">描述</label>
+          <label for="description">{{ $t('service.registered.descriptionLabel') }}</label>
           <textarea
             id="description"
             v-model="form.description"
             rows="3"
-            placeholder="服务的详细描述"
+            :placeholder="$t('service.registered.descriptionPlaceholder')"
           />
         </div>
 
         <div class="form-group">
-          <label for="keywords">关键词</label>
+          <label for="keywords">{{ $t('service.registered.keywordsLabel') }}</label>
           <input
             id="keywords"
             v-model="keywordsInput"
             type="text"
-            placeholder="用逗号分隔，例如: 地图,矢量,WMS"
+            :placeholder="$t('service.registered.keywordsPlaceholder')"
           />
-          <div class="help-text">便于搜索和分类</div>
+          <div class="help-text">{{ $t('service.registered.keywordsHelp') }}</div>
         </div>
       </div>
 
       <!-- 服务配置 -->
       <div class="form-section">
-        <h3>服务配置</h3>
+        <h3>{{ $t('service.registered.sectionServiceConfig') }}</h3>
 
         <div class="form-group">
-          <label for="service_type" class="required">服务类型</label>
+          <label for="service_type" class="required">{{ $t('service.registered.serviceTypeLabel') }}</label>
           <select
             id="service_type"
             v-model="form.service_type"
             required
             :disabled="isEdit"
           >
-            <option value="">请选择服务类型</option>
+            <option value="">{{ $t('service.registered.serviceTypePlaceholder') }}</option>
             <option value="wms">WMS - Web Map Service</option>
             <option value="wfs">WFS - Web Feature Service</option>
             <option value="wmts">WMTS - Web Map Tile Service</option>
@@ -77,31 +77,31 @@
             <option value="xyz">XYZ Tiles</option>
             <option value="rest">REST API</option>
           </select>
-          <div class="help-text">创建后不可修改</div>
+          <div class="help-text">{{ $t('service.registered.serviceTypeHelp') }}</div>
         </div>
 
         <div class="form-group">
-          <label for="endpoint_url" class="required">服务端点 URL</label>
+          <label for="endpoint_url" class="required">{{ $t('service.registered.endpointUrlLabel') }}</label>
           <input
             id="endpoint_url"
             v-model="form.endpoint_url"
             type="url"
-            placeholder="https://example.com/geoserver/wms"
+            :placeholder="$t('service.registered.endpointUrlPlaceholder')"
             required
             :disabled="isEdit"
           />
-          <div class="help-text">外部服务的完整访问地址，创建后不可修改</div>
+          <div class="help-text">{{ $t('service.registered.endpointUrlHelp') }}</div>
         </div>
 
         <div class="form-group">
-          <label for="health_check_url">健康检查 URL</label>
+          <label for="health_check_url">{{ $t('service.registered.healthCheckUrlLabel') }}</label>
           <input
             id="health_check_url"
             v-model="form.health_check_url"
             type="url"
-            placeholder="留空则使用服务端点 URL"
+            :placeholder="$t('service.registered.healthCheckUrlPlaceholder')"
           />
-          <div class="help-text">用于定期健康检查的端点</div>
+          <div class="help-text">{{ $t('service.registered.healthCheckUrlHelp') }}</div>
         </div>
 
         <div v-if="isOGCService" class="form-group">
@@ -111,21 +111,21 @@
               v-model="form.auto_refresh_metadata"
               :disabled="isEdit"
             />
-            自动刷新元数据（GetCapabilities）
+            {{ $t('service.registered.autoRefreshMetadata') }}
           </label>
-          <div class="help-text">创建时自动获取服务元数据和图层信息</div>
+          <div class="help-text">{{ $t('service.registered.autoRefreshMetadataHelp') }}</div>
         </div>
       </div>
 
       <!-- 认证配置 -->
       <div class="form-section">
-        <h3>认证配置</h3>
+        <h3>{{ $t('service.registered.sectionAuthConfig') }}</h3>
 
         <div class="form-group">
-          <label for="auth_type" class="required">认证方式</label>
+          <label for="auth_type" class="required">{{ $t('service.registered.authTypeLabel') }}</label>
           <select id="auth_type" v-model="form.auth_type" required>
-            <option value="none">无需认证</option>
-            <option value="basic">Basic 认证</option>
+            <option value="none">{{ $t('service.registered.authNone') }}</option>
+            <option value="basic">Basic {{ $t('service.registered.authBasic') }}</option>
             <option value="bearer">Bearer Token</option>
             <option value="api_key">API Key</option>
           </select>
@@ -134,22 +134,22 @@
         <!-- Basic 认证配置 -->
         <div v-if="form.auth_type === 'basic'" class="auth-config">
           <div class="form-group">
-            <label for="username" class="required">用户名</label>
+            <label for="username" class="required">{{ $t('service.registered.usernameLabel') }}</label>
             <input
               id="username"
               v-model="authConfig.username"
               type="text"
-              placeholder="Basic 认证用户名"
+              :placeholder="$t('service.registered.usernamePlaceholder')"
               required
             />
           </div>
           <div class="form-group">
-            <label for="password" class="required">密码</label>
+            <label for="password" class="required">{{ $t('service.registered.passwordLabel') }}</label>
             <input
               id="password"
               v-model="authConfig.password"
               type="password"
-              placeholder="Basic 认证密码"
+              :placeholder="$t('service.registered.passwordPlaceholder')"
               required
             />
           </div>
@@ -177,22 +177,22 @@
               id="api_key"
               v-model="authConfig.key"
               type="password"
-              placeholder="API Key 值"
+              :placeholder="$t('service.registered.apiKeyPlaceholder')"
               required
             />
           </div>
           <div class="form-group">
-            <label for="api_key_name" class="required">参数名</label>
+            <label for="api_key_name" class="required">{{ $t('service.registered.apiKeyNameLabel') }}</label>
             <input
               id="api_key_name"
               v-model="authConfig.name"
               type="text"
-              placeholder="例如: apiKey, api_key, token"
+              :placeholder="$t('service.registered.apiKeyNamePlaceholder')"
               required
             />
           </div>
           <div class="form-group">
-            <label for="api_key_location" class="required">位置</label>
+            <label for="api_key_location" class="required">{{ $t('service.registered.apiKeyLocationLabel') }}</label>
             <select id="api_key_location" v-model="authConfig.location" required>
               <option value="header">HTTP Header</option>
               <option value="query">Query Parameter</option>
@@ -203,9 +203,9 @@
 
       <!-- 操作按钮 -->
       <div class="form-actions">
-        <button type="button" @click="goBack" class="btn btn-secondary">取消</button>
+        <button type="button" @click="goBack" class="btn btn-secondary">{{ $t('service.common.cancel') }}</button>
         <button type="submit" class="btn btn-primary" :disabled="submitting">
-          {{ submitting ? '保存中...' : (isEdit ? '保存修改' : '创建服务') }}
+          {{ submitting ? $t('service.registered.saving') : (isEdit ? $t('service.registered.saveChanges') : $t('service.registered.createService')) }}
         </button>
       </div>
     </form>
@@ -285,7 +285,7 @@ export default {
         // 注意：不从服务器加载实际的认证凭据（安全考虑）
         // 如果需要更新认证信息，用户需要重新输入
       } catch (error) {
-        alert('加载服务失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to load service:', error)
         this.goBack()
       } finally {
@@ -338,16 +338,16 @@ export default {
             health_check_url: data.health_check_url || null
           }
           await registeredServiceAPI.updateService(this.serviceId, updateData)
-          alert('服务已更新')
+          alert(this.$t('service.registered.updateSuccess'))
         } else {
           // 创建模式
           await registeredServiceAPI.createService(data)
-          alert('服务已创建')
+          alert(this.$t('service.registered.createSuccess'))
         }
 
         this.goBack()
       } catch (error) {
-        alert('保存失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.saveFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to save service:', error)
       } finally {
         this.submitting = false

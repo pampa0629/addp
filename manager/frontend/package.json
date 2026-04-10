@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",
+    "@antv/g6": "^4.8.24",
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@element-plus/icons-vue": "2.3.2",
     "axios": "1.7.9",
@@ -20,6 +21,7 @@
     "ol": "9.2.4",
     "pinia": "2.3.0",
     "vue": "3.5.13",
+    "vue-i18n": "^9.14.4",
     "vue-router": "4.5.0"
   },
   "overrides": {

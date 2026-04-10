@@ -6,6 +6,9 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 // 导入统一主题 CSS
 import '../../../common-frontend/basic/src/styles/theme.css'
+import { createAddpI18n } from '../../../common-frontend/basic/src/composables/useAddpI18n'
+import zhCnMessages from './i18n/zh-cn.json'
+import enMessages from './i18n/en.json'
 // 按需引入实际使用的图标
 import {
   ArrowLeft, CircleCloseFilled, Close, Connection, CopyDocument, Delete,
@@ -32,8 +35,14 @@ for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 
+const { i18n, init: initI18n } = createAddpI18n({
+  moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
+  listenToConsole: true,
+})
+
 app.use(pinia)
 app.use(router)
+app.use(i18n)
 app.use(ElementPlus)
 
 // 初始化主题系统
@@ -43,5 +52,6 @@ const { init: initTheme } = useTheme({
 })
 
 initTheme()
+initI18n()
 
 app.mount('#app')

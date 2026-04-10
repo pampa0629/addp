@@ -1,30 +1,30 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="从 Model 模块导入本体"
+    :title="t('graph.importFromModel.title')"
     width="800px"
     :close-on-click-modal="false"
     @open="handleOpen"
   >
     <div v-if="loading" class="dialog-loading">
       <el-icon class="is-loading"><Loading /></el-icon>
-      <span>加载 Model 数据中...</span>
+      <span>{{ t('graph.importFromModel.loading') }}</span>
     </div>
 
     <template v-else>
       <!-- 步骤指示 -->
       <el-steps :active="step" simple style="margin-bottom: 20px">
-        <el-step title="选择实体" />
-        <el-step title="选择关系" />
+        <el-step :title="t('graph.importFromModel.selectEntities')" />
+        <el-step :title="t('graph.importFromModel.selectRelations')" />
       </el-steps>
 
       <!-- 步骤 1：选择实体 -->
       <div v-if="step === 0">
         <div class="step-header">
-          <span>共 {{ preview.entities?.length || 0 }} 个实体，选择要导入的实体类型</span>
+          <span>{{ t('graph.importFromModel.entityCount', { count: preview.entities?.length || 0 }) }}</span>
           <div>
-            <el-button size="small" @click="selectAllEntities">全选</el-button>
-            <el-button size="small" @click="selectedEntityIds = []">清空</el-button>
+            <el-button size="small" @click="selectAllEntities">{{ t('graph.common.selectAll') }}</el-button>
+            <el-button size="small" @click="selectedEntityIds = []">{{ t('graph.common.clearAll') }}</el-button>
           </div>
         </div>
         <el-table
@@ -35,15 +35,15 @@
           row-key="model_id"
         >
           <el-table-column type="selection" width="50" />
-          <el-table-column label="实体名 (name)" prop="name" min-width="120" />
-          <el-table-column label="显示名 (label)" prop="label" min-width="120" />
-          <el-table-column label="属性数" min-width="80">
+          <el-table-column :label="t('graph.importFromModel.entityName')" prop="name" min-width="120" />
+          <el-table-column :label="t('graph.importFromModel.displayName')" prop="label" min-width="120" />
+          <el-table-column :label="t('graph.importFromModel.propCount')" min-width="80">
             <template #default="{ row }">{{ row.properties?.length || 0 }}</template>
           </el-table-column>
-          <el-table-column label="状态" min-width="100">
+          <el-table-column :label="t('graph.importFromModel.status')" min-width="100">
             <template #default="{ row }">
-              <el-tag v-if="row.exists" type="warning" size="small">已存在</el-tag>
-              <el-tag v-else type="success" size="small">新增</el-tag>
+              <el-tag v-if="row.exists" type="warning" size="small">{{ t('graph.common.alreadyExists') }}</el-tag>
+              <el-tag v-else type="success" size="small">{{ t('graph.common.new') }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -52,10 +52,10 @@
       <!-- 步骤 2：选择关系 -->
       <div v-if="step === 1">
         <div class="step-header">
-          <span>共 {{ filteredRelations.length }} 个关系（仅显示两端实体均已选中的关系）</span>
+          <span>{{ t('graph.importFromModel.relationCount', { count: filteredRelations.length }) }}</span>
           <div>
-            <el-button size="small" @click="selectAllRelations">全选</el-button>
-            <el-button size="small" @click="selectedRelationIds = []">清空</el-button>
+            <el-button size="small" @click="selectAllRelations">{{ t('graph.common.selectAll') }}</el-button>
+            <el-button size="small" @click="selectedRelationIds = []">{{ t('graph.common.clearAll') }}</el-button>
           </div>
         </div>
         <el-table
@@ -66,18 +66,18 @@
           row-key="model_id"
         >
           <el-table-column type="selection" width="50" />
-          <el-table-column label="关系名" prop="name" min-width="120" />
-          <el-table-column label="来源" prop="source_name" min-width="100" />
-          <el-table-column label="目标" prop="target_name" min-width="100" />
-          <el-table-column label="有向" min-width="70">
+          <el-table-column :label="t('graph.importFromModel.relationName')" prop="name" min-width="120" />
+          <el-table-column :label="t('graph.importFromModel.source')" prop="source_name" min-width="100" />
+          <el-table-column :label="t('graph.importFromModel.target')" prop="target_name" min-width="100" />
+          <el-table-column :label="t('graph.importFromModel.directed')" min-width="70">
             <template #default="{ row }">
               <el-icon v-if="row.directed" color="#67c23a"><Check /></el-icon>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="100">
+          <el-table-column :label="t('graph.importFromModel.status')" min-width="100">
             <template #default="{ row }">
-              <el-tag v-if="row.exists" type="warning" size="small">已存在</el-tag>
-              <el-tag v-else type="success" size="small">新增</el-tag>
+              <el-tag v-if="row.exists" type="warning" size="small">{{ t('graph.common.alreadyExists') }}</el-tag>
+              <el-tag v-else type="success" size="small">{{ t('graph.common.new') }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -85,30 +85,30 @@
 
       <!-- 冲突策略 -->
       <div class="conflict-row">
-        <span class="conflict-label">已存在时：</span>
+        <span class="conflict-label">{{ t('graph.common.exists') }}</span>
         <el-radio-group v-model="conflict" size="small">
-          <el-radio-button value="skip">跳过</el-radio-button>
-          <el-radio-button value="overwrite">覆盖</el-radio-button>
+          <el-radio-button value="skip">{{ t('graph.common.skip') }}</el-radio-button>
+          <el-radio-button value="overwrite">{{ t('graph.common.overwrite') }}</el-radio-button>
         </el-radio-group>
       </div>
     </template>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button v-if="step === 1" @click="step = 0">上一步</el-button>
+      <el-button @click="visible = false">{{ t('graph.common.cancel') }}</el-button>
+      <el-button v-if="step === 1" @click="step = 0">{{ t('graph.common.prevStep') }}</el-button>
       <el-button
         v-if="step === 0"
         type="primary"
         :disabled="selectedEntityIds.length === 0"
         @click="step = 1"
-      >下一步</el-button>
+      >{{ t('graph.common.nextStep') }}</el-button>
       <el-button
         v-if="step === 1"
         type="primary"
         :loading="importing"
         @click="handleImport"
       >
-        导入 ({{ selectedEntityIds.length }} 实体 + {{ selectedRelationIds.length }} 关系)
+        {{ t('graph.importFromModel.importBtn', { entities: selectedEntityIds.length, relations: selectedRelationIds.length }) }}
       </el-button>
     </template>
   </el-dialog>
@@ -119,6 +119,9 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Check } from '@element-plus/icons-vue'
 import { ontologyAPI } from '../api/ontology'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   ontologyId: { type: Number, required: true }
@@ -157,7 +160,7 @@ async function handleOpen() {
   try {
     preview.value = await ontologyAPI.getImportPreviewFromModel()
   } catch (e) {
-    ElMessage.error('获取 Model 数据失败：' + (e.message || e))
+    ElMessage.error(t('graph.importFromModel.loadFailed', { msg: e.message || e }))
     visible.value = false
   } finally {
     loading.value = false
@@ -188,16 +191,16 @@ async function handleImport() {
       relation_ids: selectedRelationIds.value,
       conflict: conflict.value
     })
-    const msg = `导入完成：新增 ${result.created}，更新 ${result.updated}，跳过 ${result.skipped}`
+    const msg = t('graph.importFromModel.importSuccess', { created: result.created, updated: result.updated, skipped: result.skipped })
     if (result.errors?.length) {
-      ElMessage.warning(msg + `，${result.errors.length} 个失败`)
+      ElMessage.warning(msg + t('graph.importFromModel.importWarning', { count: result.errors.length }))
     } else {
       ElMessage.success(msg)
     }
     visible.value = false
     emit('imported')
   } catch (e) {
-    ElMessage.error('导入失败：' + (e.message || e))
+    ElMessage.error(t('graph.importFromModel.importFailed', { msg: e.message || e }))
   } finally {
     importing.value = false
   }

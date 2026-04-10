@@ -1,11 +1,19 @@
 <template>
-  <StandaloneLayout v-if="isStandalone" />
-  <router-view v-else />
+  <el-config-provider :locale="elementLocale">
+    <StandaloneLayout v-if="isStandalone" />
+    <router-view v-else />
+  </el-config-provider>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import enLocale from 'element-plus/es/locale/lang/en'
 import StandaloneLayout from '@/components/StandaloneLayout.vue'
+
+const { locale } = useI18n()
+const elementLocale = computed(() => locale.value === 'zh-cn' ? zhCn : enLocale)
 
 const isStandalone = ref(false)
 

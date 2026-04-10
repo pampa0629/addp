@@ -1,37 +1,37 @@
 <template>
   <div class="review-queue">
     <div class="page-header">
-      <el-button text @click="$router.back()">← 返回</el-button>
-      <h2>审核队列</h2>
+      <el-button text @click="$router.back()">← {{ t('graph.common.back') }}</el-button>
+      <h2>{{ t('graph.review.title') }}</h2>
       <div class="header-stats">
-        <el-tag type="warning">待审核 {{ total }}</el-tag>
+        <el-tag type="warning">{{ t('graph.review.pending') }} {{ total }}</el-tag>
       </div>
     </div>
 
     <!-- 过滤栏 -->
     <div class="filter-bar">
       <el-tabs v-model="activeTab" @tab-change="loadItems">
-        <el-tab-pane label="待审核实体" name="entity" />
-        <el-tab-pane label="待审核关系" name="relation" />
-        <el-tab-pane label="全部" name="" />
+        <el-tab-pane :label="t('graph.review.pendingEntities')" name="entity" />
+        <el-tab-pane :label="t('graph.review.pendingRelations')" name="relation" />
+        <el-tab-pane :label="t('graph.review.all')" name="" />
       </el-tabs>
       <div class="filter-actions">
         <el-select v-model="filterStatus" @change="loadItems" placeholder="状态" style="width:120px" clearable>
-          <el-option label="待审核" value="pending" />
-          <el-option label="已通过" value="approved" />
-          <el-option label="已拒绝" value="rejected" />
-          <el-option label="已修改" value="modified" />
+          <el-option :label="t('graph.review.statusPending')" value="pending" />
+          <el-option :label="t('graph.review.statusApproved')" value="approved" />
+          <el-option :label="t('graph.review.statusRejected')" value="rejected" />
+          <el-option :label="t('graph.review.statusModified')" value="modified" />
         </el-select>
         <el-button
           v-if="selectedIds.length > 0"
           type="success"
           @click="handleBatchApprove"
-        >批量通过 ({{ selectedIds.length }})</el-button>
+        >{{ t('graph.review.batchApprove') }} ({{ selectedIds.length }})</el-button>
         <el-button
           v-if="selectedIds.length > 0"
           type="danger"
           @click="handleBatchReject"
-        >批量拒绝 ({{ selectedIds.length }})</el-button>
+        >{{ t('graph.review.batchReject') }} ({{ selectedIds.length }})</el-button>
       </div>
     </div>
 
@@ -42,21 +42,21 @@
       row-key="id"
     >
       <el-table-column type="selection" width="40" :selectable="row => row.status === 'pending'" />
-      <el-table-column label="类型" width="80">
+      <el-table-column :label="t('graph.review.itemType')" width="80">
         <template #default="{ row }">
           <el-tag :type="row.item_type === 'entity' ? 'primary' : 'success'" size="small">
-            {{ row.item_type === 'entity' ? '实体' : '关系' }}
+            {{ row.item_type === 'entity' ? t('graph.review.entity') : t('graph.review.relation') }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="内容摘要" min-width="200">
+      <el-table-column :label="t('graph.review.contentSummary')" min-width="200">
         <template #default="{ row }">
           <div class="content-summary">
             <strong>{{ getContentSummary(row) }}</strong>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="置信度" width="120">
+      <el-table-column :label="t('graph.review.confidence')" width="120">
         <template #default="{ row }">
           <el-progress
             :percentage="Math.round(row.confidence * 100)"
@@ -65,24 +65,24 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="来源文本" min-width="200">
+      <el-table-column :label="t('graph.review.sourceText')" min-width="200">
         <template #default="{ row }">
           <el-text size="small" class="source-text" :title="row.source_text">{{ truncate(row.source_text, 80) }}</el-text>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80">
+      <el-table-column :label="t('graph.common.status')" width="80">
         <template #default="{ row }">
           <el-tag :type="reviewStatusType(row.status)" size="small">{{ reviewStatusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column :label="t('graph.common.actions')" width="200" fixed="right">
         <template #default="{ row }">
           <template v-if="row.status === 'pending'">
-            <el-button size="small" type="success" @click="handleApprove(row.id)">通过</el-button>
-            <el-button size="small" type="danger" @click="handleReject(row.id)">拒绝</el-button>
-            <el-button size="small" @click="openModifyDialog(row)">修改</el-button>
+            <el-button size="small" type="success" @click="handleApprove(row.id)">{{ t('graph.review.approve') }}</el-button>
+            <el-button size="small" type="danger" @click="handleReject(row.id)">{{ t('graph.review.reject') }}</el-button>
+            <el-button size="small" @click="openModifyDialog(row)">{{ t('graph.review.modify') }}</el-button>
           </template>
-          <el-text v-else size="small" type="info">已处理</el-text>
+          <el-text v-else size="small" type="info">{{ t('graph.review.processed') }}</el-text>
         </template>
       </el-table-column>
     </el-table>
@@ -98,16 +98,16 @@
     </div>
 
     <!-- 修改弹窗 -->
-    <el-dialog v-model="showModifyDialog" title="修改内容后确认" width="520px">
+    <el-dialog v-model="showModifyDialog" :title="t('graph.review.modifyDialogTitle')" width="520px">
       <el-form v-if="modifyItem" label-width="130px">
         <template v-if="modifyItem.item_type === 'entity'">
-          <el-form-item label="实体类型">
+          <el-form-item :label="t('graph.review.entityType')">
             <el-input v-model="modifyContent.type" />
           </el-form-item>
-          <el-form-item label="唯一键字段">
+          <el-form-item :label="t('graph.review.uniqueKeyField')">
             <el-input v-model="modifyContent.unique_key_field" />
           </el-form-item>
-          <el-form-item label="唯一键值">
+          <el-form-item :label="t('graph.review.uniqueKeyValue')">
             <el-input v-model="modifyContent.unique_key_value" />
           </el-form-item>
           <el-form-item v-for="(val, key) in modifyContent.properties" :key="key" :label="key">
@@ -115,16 +115,16 @@
           </el-form-item>
         </template>
         <template v-else>
-          <el-form-item label="关系类型"><el-input v-model="modifyContent.type" /></el-form-item>
-          <el-form-item label="来源类型"><el-input v-model="modifyContent.source_type" /></el-form-item>
-          <el-form-item label="来源唯一值"><el-input v-model="modifyContent.source_unique_value" /></el-form-item>
-          <el-form-item label="目标类型"><el-input v-model="modifyContent.target_type" /></el-form-item>
-          <el-form-item label="目标唯一值"><el-input v-model="modifyContent.target_unique_value" /></el-form-item>
+          <el-form-item :label="t('graph.review.relationType')"><el-input v-model="modifyContent.type" /></el-form-item>
+          <el-form-item :label="t('graph.review.sourceType')"><el-input v-model="modifyContent.source_type" /></el-form-item>
+          <el-form-item :label="t('graph.review.sourceUniqueValue')"><el-input v-model="modifyContent.source_unique_value" /></el-form-item>
+          <el-form-item :label="t('graph.review.targetType')"><el-input v-model="modifyContent.target_type" /></el-form-item>
+          <el-form-item :label="t('graph.review.targetUniqueValue')"><el-input v-model="modifyContent.target_unique_value" /></el-form-item>
         </template>
       </el-form>
       <template #footer>
-        <el-button @click="showModifyDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleModify">确认写入</el-button>
+        <el-button @click="showModifyDialog = false">{{ t('graph.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleModify">{{ t('graph.review.confirmWrite') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -135,6 +135,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { buildAPI } from '../api/graphBuild'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const graphId = route.params.id
@@ -166,7 +169,7 @@ async function loadItems() {
     items.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('graph.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -179,42 +182,42 @@ function handleSelectionChange(rows) {
 async function handleApprove(itemId) {
   try {
     await buildAPI.approveItem(graphId, itemId)
-    ElMessage.success('已写入 Neo4j')
+    ElMessage.success(t('graph.review.writtenToNeo4j'))
     await loadItems()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('graph.review.operationFailed'))
   }
 }
 
 async function handleReject(itemId) {
   try {
     await buildAPI.rejectItem(graphId, itemId)
-    ElMessage.success('已拒绝')
+    ElMessage.success(t('graph.review.rejected'))
     await loadItems()
   } catch (e) {
-    ElMessage.error('操作失败')
+    ElMessage.error(t('graph.review.operationFailed'))
   }
 }
 
 async function handleBatchApprove() {
   try {
     await buildAPI.batchReview(graphId, selectedIds.value, 'approve')
-    ElMessage.success(`已批量通过 ${selectedIds.value.length} 条`)
+    ElMessage.success(t('graph.review.batchApproved', { count: selectedIds.value.length }))
     selectedIds.value = []
     await loadItems()
   } catch (e) {
-    ElMessage.error('批量操作失败')
+    ElMessage.error(t('graph.review.batchFailed'))
   }
 }
 
 async function handleBatchReject() {
   try {
     await buildAPI.batchReview(graphId, selectedIds.value, 'reject')
-    ElMessage.success(`已批量拒绝 ${selectedIds.value.length} 条`)
+    ElMessage.success(t('graph.review.batchRejected', { count: selectedIds.value.length }))
     selectedIds.value = []
     await loadItems()
   } catch (e) {
-    ElMessage.error('批量操作失败')
+    ElMessage.error(t('graph.review.batchFailed'))
   }
 }
 
@@ -228,11 +231,11 @@ async function handleModify() {
   saving.value = true
   try {
     await buildAPI.modifyItem(graphId, modifyItem.value.id, modifyContent.value)
-    ElMessage.success('已修改并写入 Neo4j')
+    ElMessage.success(t('graph.review.modifiedAndWritten'))
     showModifyDialog.value = false
     await loadItems()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('graph.review.operationFailed'))
   } finally {
     saving.value = false
   }
@@ -256,7 +259,12 @@ function reviewStatusType(s) {
   return { pending: 'warning', approved: 'success', rejected: 'danger', modified: 'primary' }[s] || 'info'
 }
 function reviewStatusLabel(s) {
-  return { pending: '待审核', approved: '已通过', rejected: '已拒绝', modified: '已修改' }[s] || s
+  return {
+    pending: t('graph.review.statusPending'),
+    approved: t('graph.review.statusApproved'),
+    rejected: t('graph.review.statusRejected'),
+    modified: t('graph.review.statusModified')
+  }[s] || s
 }
 
 onMounted(loadItems)

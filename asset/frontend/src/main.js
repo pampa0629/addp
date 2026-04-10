@@ -5,10 +5,12 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import '@common-ui/styles/theme.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import App from './App.vue'
 import router from './router'
 import { useTheme } from '@common-ui'
+import { createAddpI18n } from '@common-ui/composables/useAddpI18n'
+import zhCnMessages from './i18n/zh-cn.json'
+import enMessages from './i18n/en.json'
 
 const app = createApp(App)
 
@@ -16,14 +18,22 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+app.use(ElementPlus)
+
+const { i18n, init: initI18n } = createAddpI18n({
+  moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
+  listenToConsole: true,
+})
+app.use(i18n)
 
 const { init: initTheme } = useTheme({
   listenToConsole: true,
   storageKey: 'theme-mode'
 })
 initTheme()
+initI18n()
 
 app.mount('#app')

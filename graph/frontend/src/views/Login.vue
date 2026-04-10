@@ -3,21 +3,21 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>知识图谱</h2>
-          <p class="subtitle">Graph Module</p>
+          <h2>{{ t('graph.login.title') }}</h2>
+          <p class="subtitle">{{ t('graph.login.subtitle') }}</p>
         </div>
       </template>
       <el-form ref="formRef" :model="loginForm" :rules="rules" @submit.prevent="handleLogin">
         <el-form-item prop="username">
-          <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" size="large" />
+          <el-input v-model="loginForm.username" :placeholder="t('graph.login.username')" :prefix-icon="User" size="large" />
         </el-form-item>
         <el-form-item prop="password">
-          <el-input v-model="loginForm.password" type="password" placeholder="密码"
+          <el-input v-model="loginForm.password" type="password" :placeholder="t('graph.login.password')"
             :prefix-icon="Lock" size="large" show-password />
         </el-form-item>
         <el-form-item>
           <el-button native-type="submit" type="primary" size="large" style="width:100%" :loading="loading">
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('graph.login.loggingIn') : t('graph.login.loginBtn') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -26,21 +26,23 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
 const loginForm = ref({ username: '', password: '' })
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  username: [{ required: true, message: t('graph.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('graph.login.passwordRequired'), trigger: 'blur' }]
+}))
 
 const handleLogin = async () => {
   try {
@@ -49,7 +51,7 @@ const handleLogin = async () => {
     await authStore.login(loginForm.value.username, loginForm.value.password)
     router.push('/')
   } catch (err) {
-    ElMessage.error(err.message || '登录失败')
+    ElMessage.error(err.message || t('graph.login.loginFailed'))
   } finally {
     loading.value = false
   }

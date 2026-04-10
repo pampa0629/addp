@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	moni18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -63,7 +65,7 @@ func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
 	}
 
 	if moduleInfo == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "module not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgModuleNotFound)})
 		return
 	}
 

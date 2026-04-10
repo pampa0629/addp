@@ -3,47 +3,47 @@
     <!-- 顶部操作栏 -->
     <div class="page-header">
       <div class="header-left">
-        <button @click="goBack" class="btn btn-back">← 返回</button>
-        <h2>{{ service?.title || '加载中...' }}</h2>
+        <button @click="goBack" class="btn btn-back">← {{ $t('service.common.back') }}</button>
+        <h2>{{ service?.title || $t('service.common.loading') }}</h2>
         <span v-if="service" class="badge" :class="statusClass(service.status)">
           {{ statusText(service.status) }}
         </span>
       </div>
       <div class="header-right">
         <button @click="refreshMetadata" class="btn btn-primary" :disabled="loading || refreshing">
-          {{ refreshing ? '刷新中...' : '刷新元数据' }}
+          {{ refreshing ? $t('service.registered.refreshing') : $t('service.registered.refreshMetadata') }}
         </button>
         <button @click="healthCheck" class="btn btn-success" :disabled="loading || checking">
-          {{ checking ? '检查中...' : '健康检查' }}
+          {{ checking ? $t('service.registered.checking') : $t('service.registered.healthCheck') }}
         </button>
-        <button @click="goToEdit" class="btn btn-warning" :disabled="loading">编辑</button>
-        <button @click="handleDelete" class="btn btn-danger" :disabled="loading">删除</button>
+        <button @click="goToEdit" class="btn btn-warning" :disabled="loading">{{ $t('service.common.edit') }}</button>
+        <button @click="handleDelete" class="btn btn-danger" :disabled="loading">{{ $t('service.common.delete') }}</button>
       </div>
     </div>
 
     <!-- 加载状态 -->
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
 
     <!-- 服务详情 -->
     <div v-else-if="service" class="detail-container">
       <!-- 基本信息卡片 -->
       <div class="card">
-        <h3>基本信息</h3>
+        <h3>{{ $t('service.registered.sectionBasicInfo') }}</h3>
         <table class="detail-table">
           <tr>
-            <td class="label">服务名称</td>
+            <td class="label">{{ $t('service.registered.serviceNameLabel') }}</td>
             <td><code>{{ service.service_name }}</code></td>
           </tr>
           <tr>
-            <td class="label">标题</td>
+            <td class="label">{{ $t('service.registered.titleLabel') }}</td>
             <td>{{ service.title }}</td>
           </tr>
           <tr>
-            <td class="label">描述</td>
+            <td class="label">{{ $t('service.registered.descriptionLabel') }}</td>
             <td>{{ service.description || '-' }}</td>
           </tr>
           <tr>
-            <td class="label">关键词</td>
+            <td class="label">{{ $t('service.registered.keywordsLabel') }}</td>
             <td>
               <span v-if="service.keywords && service.keywords.length > 0">
                 <span v-for="kw in service.keywords" :key="kw" class="badge badge-info">
@@ -54,7 +54,7 @@
             </td>
           </tr>
           <tr>
-            <td class="label">服务类型</td>
+            <td class="label">{{ $t('service.registered.serviceTypeLabel') }}</td>
             <td>
               <span class="badge badge-primary">
                 {{ serviceTypeText(service.service_type) }}
@@ -62,11 +62,11 @@
             </td>
           </tr>
           <tr>
-            <td class="label">创建时间</td>
+            <td class="label">{{ $t('service.registered.colCreatedAt') }}</td>
             <td>{{ formatDate(service.created_at) }}</td>
           </tr>
           <tr>
-            <td class="label">更新时间</td>
+            <td class="label">{{ $t('service.registered.updatedAt') }}</td>
             <td>{{ formatDate(service.updated_at) }}</td>
           </tr>
         </table>
@@ -74,33 +74,33 @@
 
       <!-- 服务端点卡片 -->
       <div class="card">
-        <h3>服务端点</h3>
+        <h3>{{ $t('service.registered.colEndpoint') }}</h3>
         <table class="detail-table">
           <tr>
-            <td class="label">原始端点</td>
+            <td class="label">{{ $t('service.registered.originalEndpoint') }}</td>
             <td>
               <div class="endpoint-box">
                 <code>{{ service.endpoint_url }}</code>
                 <button @click="copyToClipboard(service.endpoint_url)" class="btn btn-sm btn-secondary">
-                  复制
+                  {{ $t('service.common.copy') }}
                 </button>
               </div>
             </td>
           </tr>
           <tr v-if="service.endpoints?.proxy">
-            <td class="label">代理端点</td>
+            <td class="label">{{ $t('service.registered.proxyEndpoint') }}</td>
             <td>
               <div class="endpoint-box">
                 <code>{{ service.endpoints.proxy }}</code>
                 <button @click="copyToClipboard(service.endpoints.proxy)" class="btn btn-sm btn-secondary">
-                  复制
+                  {{ $t('service.common.copy') }}
                 </button>
               </div>
-              <div class="help-text">通过 ADDP 代理访问，支持认证和审计</div>
+              <div class="help-text">{{ $t('service.registered.proxyHelp') }}</div>
             </td>
           </tr>
           <tr v-if="service.health_check_url">
-            <td class="label">健康检查 URL</td>
+            <td class="label">{{ $t('service.registered.healthCheckUrlLabel') }}</td>
             <td><code>{{ service.health_check_url }}</code></td>
           </tr>
         </table>
@@ -108,10 +108,10 @@
 
       <!-- 认证配置卡片 -->
       <div class="card">
-        <h3>认证配置</h3>
+        <h3>{{ $t('service.registered.sectionAuthConfig') }}</h3>
         <table class="detail-table">
           <tr>
-            <td class="label">认证方式</td>
+            <td class="label">{{ $t('service.registered.authTypeLabel') }}</td>
             <td>
               <span class="badge badge-secondary">
                 {{ authTypeText(service.auth_type) }}
@@ -119,10 +119,10 @@
             </td>
           </tr>
           <tr>
-            <td class="label">认证凭据</td>
+            <td class="label">{{ $t('service.registered.authCredentials') }}</td>
             <td>
-              <span v-if="service.has_auth_config" class="badge badge-success">已配置</span>
-              <span v-else class="badge badge-secondary">未配置</span>
+              <span v-if="service.has_auth_config" class="badge badge-success">{{ $t('service.registered.configured') }}</span>
+              <span v-else class="badge badge-secondary">{{ $t('service.common.notConfigured') }}</span>
             </td>
           </tr>
         </table>
@@ -130,10 +130,10 @@
 
       <!-- 健康状态卡片 -->
       <div class="card">
-        <h3>健康状态</h3>
+        <h3>{{ $t('service.registered.healthStatusTitle') }}</h3>
         <table class="detail-table">
           <tr>
-            <td class="label">当前状态</td>
+            <td class="label">{{ $t('service.registered.currentStatus') }}</td>
             <td>
               <span class="badge" :class="statusClass(service.status)">
                 {{ statusText(service.status) }}
@@ -141,11 +141,11 @@
             </td>
           </tr>
           <tr v-if="service.error_message">
-            <td class="label">错误信息</td>
+            <td class="label">{{ $t('service.registered.errorMessage') }}</td>
             <td class="error-message">{{ service.error_message }}</td>
           </tr>
           <tr>
-            <td class="label">最后检查时间</td>
+            <td class="label">{{ $t('service.registered.colLastChecked') }}</td>
             <td>{{ formatDate(service.last_checked_at) }}</td>
           </tr>
         </table>
@@ -153,7 +153,7 @@
 
       <!-- 元数据信息卡片 -->
       <div v-if="service.metadata && Object.keys(service.metadata).length > 0" class="card">
-        <h3>元数据信息</h3>
+        <h3>{{ $t('service.registered.metadataTitle') }}</h3>
         <div class="metadata-box">
           <pre>{{ JSON.stringify(service.metadata, null, 2) }}</pre>
         </div>
@@ -161,15 +161,15 @@
 
       <!-- 图层列表卡片 -->
       <div v-if="service.layers && service.layers.length > 0" class="card">
-        <h3>图层列表</h3>
+        <h3>{{ $t('service.registered.layersTitle') }}</h3>
         <table class="layers-table">
           <thead>
             <tr>
-              <th>图层名称</th>
-              <th>显示名称</th>
-              <th>几何类型</th>
-              <th>坐标系</th>
-              <th>状态</th>
+              <th>{{ $t('service.registered.layerName') }}</th>
+              <th>{{ $t('service.registered.layerDisplayName') }}</th>
+              <th>{{ $t('service.registered.layerGeomType') }}</th>
+              <th>{{ $t('service.registered.layerCrs') }}</th>
+              <th>{{ $t('service.registered.layerStatus') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -180,7 +180,7 @@
               <td>{{ layer.crs || '-' }}</td>
               <td>
                 <span class="badge" :class="layer.enabled ? 'badge-success' : 'badge-secondary'">
-                  {{ layer.enabled ? '启用' : '禁用' }}
+                  {{ layer.enabled ? $t('service.registered.layerEnabled') : $t('service.registered.layerDisabled') }}
                 </span>
               </td>
             </tr>
@@ -191,7 +191,7 @@
 
     <!-- 错误状态 -->
     <div v-else class="error-state">
-      <p>无法加载服务详情</p>
+      <p>{{ $t('service.registered.loadDetailFailed') }}</p>
     </div>
   </div>
 </template>
@@ -221,7 +221,7 @@ export default {
         const response = await registeredServiceAPI.getService(id)
         this.service = response
       } catch (error) {
-        alert('加载服务失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.loadFailed2') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to load service:', error)
         this.goBack()
       } finally {
@@ -230,20 +230,20 @@ export default {
     },
 
     async refreshMetadata() {
-      if (!confirm('确定要刷新此服务的元数据吗？')) {
+      if (!confirm(this.$t('service.registered.refreshConfirm'))) {
         return
       }
 
       this.refreshing = true
       try {
         await registeredServiceAPI.refreshMetadata(this.service.id, { force: true })
-        alert('元数据刷新已触发，请稍后刷新页面查看结果')
+        alert(this.$t('service.registered.refreshSuccess'))
         // 等待一段时间后重新加载
         setTimeout(() => {
           this.loadService()
         }, 2000)
       } catch (error) {
-        alert('刷新失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.refreshFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to refresh metadata:', error)
       } finally {
         this.refreshing = false
@@ -255,11 +255,11 @@ export default {
       try {
         const response = await registeredServiceAPI.healthCheck(this.service.id)
         const result = response
-        alert(`健康检查完成\n\n状态: ${result.status}\n消息: ${result.message}\nHTTP 状态码: ${result.status_code || 'N/A'}\n响应时间: ${result.response_time}ms`)
+        alert(this.$t('service.registered.healthCheckResult', { status: result.status, message: result.message, time: result.response_time }))
         // 重新加载服务以更新健康状态
         this.loadService()
       } catch (error) {
-        alert('健康检查失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.healthCheckFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to perform health check:', error)
       } finally {
         this.checking = false
@@ -267,16 +267,16 @@ export default {
     },
 
     async handleDelete() {
-      if (!confirm('确定要删除此注册服务吗？删除后无法恢复，包括所有相关的图层信息。')) {
+      if (!confirm(this.$t('service.registered.deleteConfirm'))) {
         return
       }
 
       try {
         await registeredServiceAPI.deleteService(this.service.id)
-        alert('服务已删除')
+        alert(this.$t('service.registered.deleteSuccess'))
         this.goBack()
       } catch (error) {
-        alert('删除失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete service:', error)
       }
     },
@@ -284,9 +284,9 @@ export default {
     async copyToClipboard(text) {
       const success = await copyTextToClipboard(text)
       if (success) {
-        alert('已复制到剪贴板')
+        alert(this.$t('service.common.copied'))
       } else {
-        alert('复制失败，请手动复制')
+        alert(this.$t('service.common.copyFailed'))
       }
     },
 
@@ -304,8 +304,8 @@ export default {
 
     authTypeText(authType) {
       const typeMap = {
-        none: '无需认证',
-        basic: 'Basic 认证',
+        none: this.$t('service.registered.authNone'),
+        basic: 'Basic Auth',
         bearer: 'Bearer Token',
         api_key: 'API Key'
       }
@@ -314,9 +314,9 @@ export default {
 
     statusText(status) {
       const statusMap = {
-        active: '正常',
-        inactive: '非活跃',
-        error: '错误'
+        active: this.$t('service.registered.statusActive'),
+        inactive: this.$t('service.registered.statusInactive'),
+        error: this.$t('service.registered.statusError')
       }
       return statusMap[status] || status
     },

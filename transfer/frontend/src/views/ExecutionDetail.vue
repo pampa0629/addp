@@ -1,29 +1,29 @@
 <template>
   <div class="execution-detail">
-    <el-button @click="$router.back()" style="margin-bottom: 20px;">返回</el-button>
+    <el-button @click="$router.back()" style="margin-bottom: 20px;">{{ t('transfer.executionDetail.back') }}</el-button>
     <el-card v-loading="loading">
-      <template #header>执行详情 #{{ execution.id }}</template>
+      <template #header>{{ t('transfer.executionDetail.executionDetailTitle', { id: execution.id }) }}</template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="执行ID">{{ execution.id }}</el-descriptions-item>
-        <el-descriptions-item label="任务ID">{{ execution.task_id }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('transfer.executionDetail.executionId')">{{ execution.id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.taskId')">{{ execution.task_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.status')">
           <el-tag :type="getStatusType(execution.status)">{{ execution.status }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="触发方式">{{ execution.trigger_type }}</el-descriptions-item>
-        <el-descriptions-item label="已读取记录">{{ execution.records_read }}</el-descriptions-item>
-        <el-descriptions-item label="已写入记录">{{ execution.records_written }}</el-descriptions-item>
-        <el-descriptions-item label="开始时间">{{ execution.start_time }}</el-descriptions-item>
-        <el-descriptions-item label="结束时间">{{ execution.end_time || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.triggerType')">{{ execution.trigger_type }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.recordsRead')">{{ execution.records_read }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.recordsWritten')">{{ execution.records_written }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.startTime')">{{ execution.start_time }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.endTime')">{{ execution.end_time || '-' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- ✅ 新增：后处理摘要卡片 -->
-      <el-divider v-if="execution.status === 'success'">后处理执行摘要</el-divider>
+      <el-divider v-if="execution.status === 'success'">{{ t('transfer.executionDetail.postProcessSummary') }}</el-divider>
       <div v-if="execution.status === 'success'" class="post-process-summary">
         <el-space wrap :size="15">
           <!-- 主键创建 -->
           <el-statistic
             v-if="postProcessSummary.primary_key_created"
-            title="主键创建"
+            :title="t('transfer.executionDetail.primaryKeyCreated')"
             :value="'✓'"
           >
             <template #prefix>
@@ -41,7 +41,7 @@
           <!-- 空间索引 -->
           <el-statistic
             v-if="postProcessSummary.spatial_indexes_created > 0"
-            title="空间索引"
+            :title="t('transfer.executionDetail.spatialIndexes')"
             :value="postProcessSummary.spatial_indexes_created"
           >
             <template #prefix>
@@ -50,14 +50,14 @@
               </el-icon>
             </template>
             <template #suffix>
-              <el-text size="small" type="primary">个</el-text>
+              <el-text size="small" type="primary">{{ t('transfer.executionDetail.count', { count: '' }).trim() || '' }}</el-text>
             </template>
           </el-statistic>
 
           <!-- 统计更新 -->
           <el-statistic
             v-if="postProcessSummary.statistics_updated"
-            title="统计更新"
+            :title="t('transfer.executionDetail.statisticsUpdated')"
             :value="'✓'"
           >
             <template #prefix>
@@ -69,14 +69,14 @@
         </el-space>
       </div>
 
-      <el-divider>执行日志</el-divider>
+      <el-divider>{{ t('transfer.executionDetail.executionLogs') }}</el-divider>
 
       <!-- 日志控制栏 -->
       <div class="log-controls">
         <el-radio-group v-model="logLevel" size="small">
-          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="all">{{ t('transfer.executionDetail.filterAll') }}</el-radio-button>
           <el-radio-button value="info">INFO</el-radio-button>
-          <el-radio-button value="post-process">后处理</el-radio-button>
+          <el-radio-button value="post-process">{{ t('transfer.executionDetail.filterPostProcess') }}</el-radio-button>
           <el-radio-button value="error">ERROR</el-radio-button>
         </el-radio-group>
 
@@ -86,14 +86,14 @@
             @click="refreshLogs"
             :loading="refreshing"
             :disabled="!execution.id">
-            刷新日志
+            {{ t('transfer.executionDetail.refreshLogs') }}
           </el-button>
 
           <el-button
             size="small"
             @click="downloadLogs"
             :disabled="!logs">
-            下载日志
+            {{ t('transfer.executionDetail.downloadLogs') }}
           </el-button>
         </div>
       </div>
@@ -111,7 +111,7 @@
             <span class="log-text">{{ line }}</span>
           </div>
         </div>
-        <div v-else class="empty-logs">暂无日志</div>
+        <div v-else class="empty-logs">{{ t('transfer.executionDetail.noLogs') }}</div>
       </div>
     </el-card>
   </div>
@@ -122,6 +122,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAPI } from '@/api/tasks'
 import { ElMessage, ElIcon } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const loading = ref(false)
@@ -155,7 +158,7 @@ const loadExecution = async () => {
       autoRefreshInterval.value = setInterval(refreshLogs, 5000)
     }
   } catch (error) {
-    ElMessage.error('加载执行详情失败: ' + (error.message || error))
+    ElMessage.error(t('transfer.executionDetail.loadFailed', { error: error.message || error }))
   } finally {
     loading.value = false
   }
@@ -188,7 +191,7 @@ const refreshLogs = async () => {
       autoRefreshInterval.value = null
     }
   } catch (error) {
-    ElMessage.error('刷新日志失败: ' + (error.message || error))
+    ElMessage.error(t('transfer.executionDetail.refreshFailed', { error: error.message || error }))
   } finally {
     refreshing.value = false
   }
@@ -196,7 +199,7 @@ const refreshLogs = async () => {
 
 const downloadLogs = () => {
   if (!logs.value) {
-    ElMessage.warning('没有日志可下载')
+    ElMessage.warning(t('transfer.executionDetail.noLogsToDownload'))
     return
   }
 
@@ -210,7 +213,7 @@ const downloadLogs = () => {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 
-  ElMessage.success('日志下载成功')
+  ElMessage.success(t('transfer.executionDetail.downloadSuccess'))
 }
 
 // ✅ 新增：后处理摘要信息提取

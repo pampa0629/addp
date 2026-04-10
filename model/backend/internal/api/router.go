@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -97,6 +98,9 @@ func SetupRouter(
 	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// i18n 中间件（解析 Accept-Language 请求头）
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

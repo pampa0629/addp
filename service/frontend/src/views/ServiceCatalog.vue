@@ -1,15 +1,15 @@
 <template>
   <div class="service-catalog">
     <div class="header">
-      <h2>服务目录</h2>
+      <h2>{{ t('service.catalog.title') }}</h2>
       <div class="header-actions">
-        <el-button type="success" @click="$router.push('/query-services')">查询服务管理</el-button>
-        <el-button type="primary" @click="$router.push('/registered-services')">注册服务管理</el-button>
+        <el-button type="success" @click="$router.push('/query-services')">{{ t('service.catalog.manageQuery') }}</el-button>
+        <el-button type="primary" @click="$router.push('/registered-services')">{{ t('service.catalog.manageRegistered') }}</el-button>
       </div>
     </div>
 
     <el-tabs v-model="activeTab" v-loading="loading">
-      <el-tab-pane label="全部服务" name="all">
+      <el-tab-pane :label="t('service.catalog.tabAll')" name="all">
         <div class="service-grid">
           <ServiceCard
             v-for="service in allServices"
@@ -19,10 +19,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && allServices.length === 0" description="暂无服务" />
+        <el-empty v-if="!loading && allServices.length === 0" :description="t('service.catalog.emptyAll')" />
       </el-tab-pane>
 
-      <el-tab-pane label="WMS 服务" name="wms">
+      <el-tab-pane :label="t('service.catalog.tabWms')" name="wms">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('wms')"
@@ -32,10 +32,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('wms').length === 0" description="暂无 WMS 服务" />
+        <el-empty v-if="!loading && getServicesByType('wms').length === 0" :description="t('service.catalog.emptyWms')" />
       </el-tab-pane>
 
-      <el-tab-pane label="WFS 服务" name="wfs">
+      <el-tab-pane :label="t('service.catalog.tabWfs')" name="wfs">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('wfs')"
@@ -45,10 +45,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('wfs').length === 0" description="暂无 WFS 服务" />
+        <el-empty v-if="!loading && getServicesByType('wfs').length === 0" :description="t('service.catalog.emptyWfs')" />
       </el-tab-pane>
 
-      <el-tab-pane label="WMTS 服务" name="wmts">
+      <el-tab-pane :label="t('service.catalog.tabWmts')" name="wmts">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('wmts')"
@@ -58,10 +58,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('wmts').length === 0" description="暂无 WMTS 服务" />
+        <el-empty v-if="!loading && getServicesByType('wmts').length === 0" :description="t('service.catalog.emptyWmts')" />
       </el-tab-pane>
 
-      <el-tab-pane label="OGC API" name="ogc_api">
+      <el-tab-pane :label="t('service.catalog.tabOgcApi')" name="ogc_api">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('ogc_api')"
@@ -71,10 +71,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('ogc_api').length === 0" description="暂无 OGC API 服务" />
+        <el-empty v-if="!loading && getServicesByType('ogc_api').length === 0" :description="t('service.catalog.emptyOgcApi')" />
       </el-tab-pane>
 
-      <el-tab-pane label="XYZ Tiles" name="xyz">
+      <el-tab-pane :label="t('service.catalog.tabXyz')" name="xyz">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('xyz')"
@@ -84,10 +84,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('xyz').length === 0" description="暂无 XYZ Tiles 服务" />
+        <el-empty v-if="!loading && getServicesByType('xyz').length === 0" :description="t('service.catalog.emptyXyz')" />
       </el-tab-pane>
 
-      <el-tab-pane label="REST API" name="rest">
+      <el-tab-pane :label="t('service.catalog.tabRest')" name="rest">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('rest')"
@@ -97,10 +97,10 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('rest').length === 0" description="暂无 REST API 服务" />
+        <el-empty v-if="!loading && getServicesByType('rest').length === 0" :description="t('service.catalog.emptyRest')" />
       </el-tab-pane>
 
-      <el-tab-pane label="图查询" name="graph">
+      <el-tab-pane :label="t('service.catalog.tabGraph')" name="graph">
         <div class="service-grid">
           <ServiceCard
             v-for="service in getServicesByType('graph')"
@@ -110,7 +110,7 @@
             @click="handleServiceClick(service)"
           />
         </div>
-        <el-empty v-if="!loading && getServicesByType('graph').length === 0" description="暂无图查询服务" />
+        <el-empty v-if="!loading && getServicesByType('graph').length === 0" :description="t('service.catalog.emptyGraph')" />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -120,6 +120,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import serviceAPI from '../api/service'
 import queryServiceAPI from '../api/queryService'
 import registeredServiceAPI from '../api/registeredService'
@@ -128,6 +129,7 @@ import graphQueryServiceAPI from '../api/graphQueryService'
 import ServiceCard from '../components/ServiceCard.vue'
 import { getEnabledProtocols } from '../utils/serviceHelper'
 
+const { t } = useI18n()
 const router = useRouter()
 const loading = ref(false)
 const activeTab = ref('all')
@@ -209,7 +211,7 @@ const loadCatalog = async () => {
     tileServices.value = tileData
     graphQueryServices.value = graphData
   } catch (error) {
-    ElMessage.error('加载服务目录失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('service.catalog.loadFailed') + ': ' + (error.response?.data?.message || error.message))
   } finally {
     loading.value = false
   }

@@ -13,9 +13,10 @@ export default defineConfig({
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
-      'element-plus': resolve(__dirname, 'node_modules/element-plus')
+      'element-plus': resolve(__dirname, 'node_modules/element-plus'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
   },
   optimizeDeps: {
     include: ['@antv/g6']

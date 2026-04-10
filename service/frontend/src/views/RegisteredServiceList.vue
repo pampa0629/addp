@@ -1,6 +1,6 @@
 <template>
   <div class="registered-service-list">
-    <h1>注册服务</h1>
+    <h1>{{ $t('service.registered.listTitle') }}</h1>
 
     <!-- 操作栏 -->
     <div class="toolbar">
@@ -8,33 +8,33 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="搜索注册服务..."
+          :placeholder="$t('service.registered.searchPlaceholder')"
           @keyup.enter="handleSearch"
         />
-        <button @click="handleSearch" class="btn btn-primary">搜索</button>
+        <button @click="handleSearch" class="btn btn-primary">{{ $t('service.common.search') }}</button>
       </div>
-      <button @click="goToCreate" class="btn btn-success">+ 注册外部服务</button>
+      <button @click="goToCreate" class="btn btn-success">{{ $t('service.registered.createBtn') }}</button>
     </div>
 
     <!-- 服务列表 -->
     <div class="services-container">
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
       <div v-else-if="services.length === 0" class="empty-state">
-        <p>暂无注册服务</p>
-        <p class="tip">点击"注册外部服务"按钮开始注册</p>
+        <p>{{ $t('service.registered.emptyText') }}</p>
+        <p class="tip">{{ $t('service.registered.emptyTip') }}</p>
       </div>
       <table v-else class="services-table">
         <thead>
           <tr>
-            <th>服务名称</th>
-            <th>标题</th>
-            <th>服务类型</th>
-            <th>服务端点</th>
-            <th>认证方式</th>
-            <th>健康状态</th>
-            <th>最后检查</th>
-            <th>创建时间</th>
-            <th>操作</th>
+            <th>{{ $t('service.registered.colServiceName') }}</th>
+            <th>{{ $t('service.registered.colTitle') }}</th>
+            <th>{{ $t('service.registered.colServiceType') }}</th>
+            <th>{{ $t('service.registered.colEndpoint') }}</th>
+            <th>{{ $t('service.registered.colAuthType') }}</th>
+            <th>{{ $t('service.registered.colHealthStatus') }}</th>
+            <th>{{ $t('service.registered.colLastChecked') }}</th>
+            <th>{{ $t('service.registered.colCreatedAt') }}</th>
+            <th>{{ $t('service.registered.colActions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -64,11 +64,11 @@
             <td>{{ formatDate(service.last_checked_at) }}</td>
             <td>{{ formatDate(service.created_at) }}</td>
             <td class="actions">
-              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">详情</button>
-              <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">编辑</button>
-              <button @click="refreshMetadata(service.id)" class="btn btn-sm btn-primary">刷新</button>
-              <button @click="healthCheck(service.id)" class="btn btn-sm btn-success">检查</button>
-              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">删除</button>
+              <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">{{ $t('service.common.detail') }}</button>
+              <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">{{ $t('service.common.edit') }}</button>
+              <button @click="refreshMetadata(service.id)" class="btn btn-sm btn-primary">{{ $t('service.common.refresh') }}</button>
+              <button @click="healthCheck(service.id)" class="btn btn-sm btn-success">{{ $t('service.common.check') }}</button>
+              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -82,15 +82,15 @@
         :disabled="page === 1"
         class="btn btn-sm"
       >
-        上一页
+        {{ $t('service.common.prevPage') }}
       </button>
-      <span class="page-info">第 {{ page }} 页，共 {{ totalPages }} 页（共 {{ total }} 项）</span>
+      <span class="page-info">{{ $t('service.common.pageInfo', { page, total: totalPages, count: total }) }}</span>
       <button
         @click="nextPage"
         :disabled="page >= totalPages"
         class="btn btn-sm"
       >
-        下一页
+        {{ $t('service.common.nextPage') }}
       </button>
     </div>
   </div>
@@ -137,7 +137,7 @@ export default {
         this.services = response.data || []
         this.total = response.total || 0
       } catch (error) {
-        this.error = '加载注册服务列表失败: ' + (error.message || '未知错误')
+        this.error = this.$t('service.registered.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError'))
         console.error('Failed to load registered services:', error)
         alert(this.error)
       } finally {
@@ -151,16 +151,16 @@ export default {
     },
 
     async confirmDelete(id) {
-      if (!confirm('确定要删除此注册服务吗？删除后无法恢复。')) {
+      if (!confirm(this.$t('service.registered.deleteConfirm'))) {
         return
       }
 
       try {
         await registeredServiceAPI.deleteService(id)
-        alert('注册服务已删除')
+        alert(this.$t('service.registered.deleteSuccess'))
         this.loadServices()
       } catch (error) {
-        alert('删除失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete registered service:', error)
       }
     },
@@ -168,10 +168,10 @@ export default {
     async refreshMetadata(id) {
       try {
         await registeredServiceAPI.refreshMetadata(id, { force: false })
-        alert('元数据刷新已触发')
+        alert(this.$t('service.registered.refreshSuccess'))
         this.loadServices()
       } catch (error) {
-        alert('刷新失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.refreshFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to refresh metadata:', error)
       }
     },
@@ -180,10 +180,10 @@ export default {
       try {
         const response = await registeredServiceAPI.healthCheck(id)
         const result = response
-        alert(`健康检查完成\n状态: ${result.status}\n消息: ${result.message}\n响应时间: ${result.response_time}ms`)
+        alert(this.$t('service.registered.healthCheckResult', { status: result.status, message: result.message, time: result.response_time }))
         this.loadServices()
       } catch (error) {
-        alert('健康检查失败: ' + (error.message || '未知错误'))
+        alert(this.$t('service.registered.healthCheckFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to perform health check:', error)
       }
     },
@@ -202,7 +202,7 @@ export default {
 
     authTypeText(authType) {
       const typeMap = {
-        none: '无需认证',
+        none: this.$t('service.registered.authNone'),
         basic: 'Basic',
         bearer: 'Bearer',
         api_key: 'API Key'
@@ -212,9 +212,9 @@ export default {
 
     statusText(status) {
       const statusMap = {
-        active: '正常',
-        inactive: '非活跃',
-        error: '错误'
+        active: this.$t('service.registered.statusActive'),
+        inactive: this.$t('service.registered.statusInactive'),
+        error: this.$t('service.registered.statusError')
       }
       return statusMap[status] || status
     },

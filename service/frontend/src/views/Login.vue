@@ -3,7 +3,7 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>数据服务登录</h2>
+          <h2>{{ t('service.login.title') }}</h2>
           <p class="subtitle">Data Service</p>
         </div>
       </template>
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('service.login.usernamePlaceholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('service.login.passwordPlaceholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             style="width: 100%"
             :loading="loading"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('service.login.loggingIn') : t('service.login.loginBtn') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -51,12 +51,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref(null)
@@ -67,10 +69,10 @@ const loginForm = ref({
   password: ''
 })
 
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  username: [{ required: true, message: t('service.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('service.login.passwordRequired'), trigger: 'blur' }]
+}))
 
 const handleLogin = async () => {
   try {
@@ -79,11 +81,11 @@ const handleLogin = async () => {
 
     await authStore.login(loginForm.value.username, loginForm.value.password)
 
-    ElMessage.success('登录成功')
+    ElMessage.success(t('service.login.success'))
     router.push('/')
   } catch (error) {
     if (error && error.response) {
-      ElMessage.error(error.response?.data?.message || '登录失败')
+      ElMessage.error(error.response?.data?.message || t('service.login.failed'))
     }
   } finally {
     loading.value = false

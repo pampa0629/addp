@@ -1,13 +1,13 @@
 <template>
   <div class="graph-result-view">
     <div v-if="isEmpty" class="empty-state">
-      <el-empty description="无图形数据" :image-size="60" />
+      <el-empty :description="t('graph.noData')" :image-size="60" />
     </div>
     <div v-else ref="wrapperRef" class="graph-wrapper">
       <div class="graph-toolbar">
-        <span class="stat">节点: {{ graphData.nodes.length }}</span>
-        <span class="stat">关系: {{ graphData.relationships.length }}</span>
-        <el-button text size="small" @click="fitView">适应窗口</el-button>
+        <span class="stat">{{ t('graph.nodes') }}: {{ graphData.nodes.length }}</span>
+        <span class="stat">{{ t('graph.relationships') }}: {{ graphData.relationships.length }}</span>
+        <el-button text size="small" @click="fitView">{{ t('graph.fitView') }}</el-button>
       </div>
       <div ref="containerRef" class="graph-canvas" />
       <!-- 点击节点展示属性 -->
@@ -33,7 +33,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+
+const { t } = useI18n()
 
 const props = defineProps({
   /** { nodes: [{element_id, labels, properties}], relationships: [{element_id, type, start_node_id, end_node_id, properties}] } */

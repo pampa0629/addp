@@ -1,65 +1,65 @@
 <template>
   <div class="tile-service-form">
-    <h1>{{ isEditing ? '编辑瓦片服务' : '创建瓦片服务' }}</h1>
+    <h1>{{ isEditing ? $t('service.tile.formEditTitle') : $t('service.tile.formCreateTitle') }}</h1>
 
     <!-- 步骤指示器 -->
     <div class="steps">
       <div class="step" :class="{ active: currentStep === 0, completed: currentStep > 0 }">
         <div class="step-number">1</div>
-        <div class="step-title">添加第一个图层</div>
+        <div class="step-title">{{ $t('service.tile.step1Title') }}</div>
       </div>
       <div class="step-line" :class="{ active: currentStep > 0 }"></div>
       <div class="step" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
         <div class="step-number">2</div>
-        <div class="step-title">配置服务信息</div>
+        <div class="step-title">{{ $t('service.tile.step2Title') }}</div>
       </div>
       <div class="step-line" :class="{ active: currentStep > 1 }"></div>
       <div class="step" :class="{ active: currentStep === 2, completed: currentStep > 2 }">
         <div class="step-number">3</div>
-        <div class="step-title">完成</div>
+        <div class="step-title">{{ $t('service.tile.step3Title') }}</div>
       </div>
     </div>
 
     <!-- Step 0: 添加第一个图层 -->
     <div v-if="currentStep === 0" class="form-step">
-      <h2>选择图层类型</h2>
+      <h2>{{ $t('service.tile.selectLayerType') }}</h2>
       <div class="layer-type-selector">
         <div
           class="layer-type-card"
           :class="{ selected: layerType === 'dynamic' }"
           @click="layerType = 'dynamic'"
         >
-          <h3>动态图层</h3>
-          <p>实时从数据库生成瓦片，支持最新数据</p>
+          <h3>{{ $t('service.tile.dynamicLayer') }}</h3>
+          <p>{{ $t('service.tile.dynamicLayerDesc') }}</p>
         </div>
         <div
           class="layer-type-card"
           :class="{ selected: layerType === 'static' }"
           @click="layerType = 'static'"
         >
-          <h3>静态图层</h3>
-          <p>使用预生成的静态瓦片文件</p>
+          <h3>{{ $t('service.tile.staticLayer') }}</h3>
+          <p>{{ $t('service.tile.staticLayerDesc') }}</p>
         </div>
       </div>
 
       <!-- 动态图层配置 -->
       <div v-if="layerType === 'dynamic'" class="layer-config">
-        <h3>动态图层配置</h3>
+        <h3>{{ $t('service.tile.dynamicLayerConfig') }}</h3>
         <div class="form-group">
-          <label>图层名称 *</label>
-          <input v-model="form.layerName" type="text" placeholder="例如: roads" />
+          <label>{{ $t('service.tile.layerNameLabel') }} *</label>
+          <input v-model="form.layerName" type="text" :placeholder="$t('service.tile.layerNamePlaceholder')" />
         </div>
         <div class="form-group">
-          <label>图层标题 *</label>
-          <input v-model="form.layerTitle" type="text" placeholder="例如: 道路图层" />
+          <label>{{ $t('service.tile.layerTitleLabel') }} *</label>
+          <input v-model="form.layerTitle" type="text" :placeholder="$t('service.tile.layerTitlePlaceholder')" />
         </div>
         <div class="form-group">
-          <label>图层描述</label>
-          <textarea v-model="form.layerDescription" placeholder="图层描述（可选）" rows="2"></textarea>
+          <label>{{ $t('service.tile.layerDescLabel') }}</label>
+          <textarea v-model="form.layerDescription" :placeholder="$t('service.tile.layerDescPlaceholder')" rows="2"></textarea>
         </div>
 
         <div class="form-group">
-          <label>选择数据表 *</label>
+          <label>{{ $t('service.tile.selectTableLabel') }} *</label>
           <DataSourceCascader
             :api-base-url="metaApiBaseUrl"
             :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
@@ -73,37 +73,37 @@
 
         <!-- 显示检测到的空间字段信息 -->
         <div v-if="spatialMetadata && spatialMetadata.hasGeometry" class="geometry-info">
-          <p>✅ 已自动检测到空间字段：</p>
+          <p>✅ {{ $t('service.tile.spatialDetected') }}</p>
           <ul>
-            <li><strong>几何列：</strong>{{ spatialMetadata.geometryColumn }}</li>
+            <li><strong>{{ $t('service.tile.geomColumnLabel') }}：</strong>{{ spatialMetadata.geometryColumn }}</li>
             <li><strong>SRID：</strong>{{ spatialMetadata.srid }}</li>
-            <li v-if="spatialMetadata.geometryTypes && spatialMetadata.geometryTypes.length"><strong>几何类型：</strong>{{ spatialMetadata.geometryTypes.join(', ') }}</li>
+            <li v-if="spatialMetadata.geometryTypes && spatialMetadata.geometryTypes.length"><strong>{{ $t('service.tile.geomTypeLabel') }}：</strong>{{ spatialMetadata.geometryTypes.join(', ') }}</li>
           </ul>
         </div>
       </div>
 
       <!-- 静态图层配置 -->
       <div v-else-if="layerType === 'static'" class="layer-config">
-        <h3>静态图层配置</h3>
+        <h3>{{ $t('service.tile.staticLayerConfig') }}</h3>
         <div class="form-group">
-          <label>图层名称 *</label>
-          <input v-model="form.layerName" type="text" placeholder="例如: basemap" />
+          <label>{{ $t('service.tile.layerNameLabel') }} *</label>
+          <input v-model="form.layerName" type="text" :placeholder="$t('service.tile.staticLayerNamePlaceholder')" />
         </div>
         <div class="form-group">
-          <label>图层标题 *</label>
-          <input v-model="form.layerTitle" type="text" placeholder="例如: 底图" />
+          <label>{{ $t('service.tile.layerTitleLabel') }} *</label>
+          <input v-model="form.layerTitle" type="text" :placeholder="$t('service.tile.staticLayerTitlePlaceholder')" />
         </div>
         <div class="form-group">
-          <label>图层描述</label>
-          <textarea v-model="form.layerDescription" placeholder="图层描述（可选）" rows="2"></textarea>
+          <label>{{ $t('service.tile.layerDescLabel') }}</label>
+          <textarea v-model="form.layerDescription" :placeholder="$t('service.tile.layerDescPlaceholder')" rows="2"></textarea>
         </div>
         <div class="form-group">
-          <label>瓦片路径 *</label>
-          <input v-model="form.tilePath" type="text" placeholder="例如: s3://bucket/tiles或 tiles/osm" />
-          <p class="help-text">MinIO/S3 路径或相对路径</p>
+          <label>{{ $t('service.tile.tilePathLabel') }} *</label>
+          <input v-model="form.tilePath" type="text" :placeholder="$t('service.tile.tilePathPlaceholder')" />
+          <p class="help-text">{{ $t('service.tile.tilePathHelp') }}</p>
         </div>
         <div class="form-group">
-          <label>瓦片格式 *</label>
+          <label>{{ $t('service.tile.tileFormatLabel') }} *</label>
           <select v-model="form.format">
             <option value="mvt">MVT (Mapbox Vector Tile)</option>
             <option value="png">PNG</option>
@@ -112,47 +112,47 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>最小缩放级别 *</label>
+            <label>{{ $t('service.tile.minZoomLabel') }} *</label>
             <input v-model.number="form.minZoom" type="number" min="0" max="22" />
           </div>
           <div class="form-group">
-            <label>最大缩放级别 *</label>
+            <label>{{ $t('service.tile.maxZoomLabel') }} *</label>
             <input v-model.number="form.maxZoom" type="number" min="0" max="22" />
           </div>
         </div>
       </div>
 
       <div class="form-actions">
-        <button @click="$router.back()" class="btn btn-secondary">取消</button>
-        <button @click="nextStep" class="btn btn-primary" :disabled="!validateStep0()">下一步</button>
+        <button @click="$router.back()" class="btn btn-secondary">{{ $t('service.common.cancel') }}</button>
+        <button @click="nextStep" class="btn btn-primary" :disabled="!validateStep0()">{{ $t('service.tile.nextStep') }}</button>
       </div>
     </div>
 
     <!-- Step 1: 配置服务信息 -->
     <div v-if="currentStep === 1" class="form-step">
-      <h2>服务信息配置</h2>
+      <h2>{{ $t('service.tile.serviceInfoTitle') }}</h2>
       <div class="form-group">
-        <label>服务名称 * <span class="help-text">（URL 中使用，建议使用小写字母和下划线）</span></label>
-        <input v-model="form.serviceName" type="text" placeholder="例如: beijing_tiles" />
+        <label>{{ $t('service.tile.serviceNameLabel') }} * <span class="help-text">{{ $t('service.tile.serviceNameHelp') }}</span></label>
+        <input v-model="form.serviceName" type="text" :placeholder="$t('service.tile.serviceNamePlaceholder')" />
       </div>
       <div class="form-group">
-        <label>服务标题 *</label>
-        <input v-model="form.title" type="text" placeholder="例如: 北京市瓦片服务" />
+        <label>{{ $t('service.tile.serviceTitleLabel') }} *</label>
+        <input v-model="form.title" type="text" :placeholder="$t('service.tile.serviceTitlePlaceholder')" />
       </div>
       <div class="form-group">
-        <label>服务描述</label>
-        <textarea v-model="form.description" placeholder="服务描述（可选）" rows="3"></textarea>
+        <label>{{ $t('service.tile.serviceDescLabel') }}</label>
+        <textarea v-model="form.description" :placeholder="$t('service.tile.serviceDescPlaceholder')" rows="3"></textarea>
       </div>
       <div class="form-group">
-        <label>关键词</label>
-        <input v-model="form.keywords" type="text" placeholder="多个关键词用逗号分隔" />
+        <label>{{ $t('service.tile.keywordsLabel') }}</label>
+        <input v-model="form.keywords" type="text" :placeholder="$t('service.tile.keywordsPlaceholder')" />
       </div>
 
-      <h3>协议配置</h3>
+      <h3>{{ $t('service.tile.protocolConfigTitle') }}</h3>
       <div class="protocols-config">
         <label class="checkbox-label">
           <input type="checkbox" v-model="protocols.xyz.enabled" />
-          XYZ Tiles（推荐）
+          {{ $t('service.tile.xyzProtocol') }}
         </label>
         <label class="checkbox-label">
           <input type="checkbox" v-model="protocols.ogc_tiles.enabled" />
@@ -164,18 +164,18 @@
         </label>
       </div>
 
-      <h3>访问控制</h3>
+      <h3>{{ $t('service.tile.accessControlTitle') }}</h3>
       <div class="form-group">
         <label class="checkbox-label">
           <input type="checkbox" v-model="form.publicAccess" />
-          公开访问（无需认证）
+          {{ $t('service.tile.publicAccessLabel') }}
         </label>
       </div>
 
       <div class="form-actions">
-        <button @click="previousStep" class="btn btn-secondary">上一步</button>
+        <button @click="previousStep" class="btn btn-secondary">{{ $t('service.tile.prevStep') }}</button>
         <button @click="submitForm" class="btn btn-primary" :disabled="!validateStep1() || submitting">
-          {{ submitting ? '创建中...' : '创建服务' }}
+          {{ submitting ? $t('service.tile.creating') : $t('service.tile.createBtn') }}
         </button>
       </div>
     </div>
@@ -183,35 +183,35 @@
     <!-- Step 2: 完成 -->
     <div v-if="currentStep === 2" class="form-step completion-step">
       <div class="success-icon">✓</div>
-      <h2>瓦片服务创建成功！</h2>
+      <h2>{{ $t('service.tile.createSuccess') }}</h2>
       <div v-if="createdService" class="service-info">
-        <p><strong>服务名称:</strong> {{ createdService.service_name }}</p>
-        <p><strong>服务标题:</strong> {{ createdService.title }}</p>
+        <p><strong>{{ $t('service.tile.colServiceName') }}:</strong> {{ createdService.service_name }}</p>
+        <p><strong>{{ $t('service.tile.colTitle') }}:</strong> {{ createdService.title }}</p>
         <div v-if="createdService.endpoints" class="endpoints">
-          <h3>服务端点:</h3>
+          <h3>{{ $t('service.tile.endpointsTitle') }}:</h3>
           <div v-if="createdService.endpoints.xyz_tiles" class="endpoint">
             <strong>XYZ Tiles:</strong>
             <code>{{ createdService.endpoints.xyz_tiles }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.xyz_tiles)" class="btn btn-sm btn-secondary">复制</button>
+            <button @click="copyToClipboard(createdService.endpoints.xyz_tiles)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
           </div>
           <div v-if="createdService.endpoints.wmts" class="endpoint">
             <strong>WMTS:</strong>
             <code>{{ createdService.endpoints.wmts }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.wmts)" class="btn btn-sm btn-secondary">复制</button>
+            <button @click="copyToClipboard(createdService.endpoints.wmts)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
           </div>
           <div v-if="createdService.endpoints.ogc_tiles" class="endpoint">
             <strong>OGC Tiles API:</strong>
             <code>{{ createdService.endpoints.ogc_tiles }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.ogc_tiles)" class="btn btn-sm btn-secondary">复制</button>
+            <button @click="copyToClipboard(createdService.endpoints.ogc_tiles)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
           </div>
         </div>
       </div>
       <div v-else class="service-info">
-        <p>正在加载服务信息...</p>
+        <p>{{ $t('service.common.loading') }}</p>
       </div>
       <div class="form-actions">
-        <button @click="viewDetail" class="btn btn-primary">查看详情</button>
-        <button @click="createAnother" class="btn btn-secondary">创建另一个服务</button>
+        <button @click="viewDetail" class="btn btn-primary">{{ $t('service.common.detail') }}</button>
+        <button @click="createAnother" class="btn btn-secondary">{{ $t('service.tile.createAnother') }}</button>
       </div>
     </div>
   </div>
@@ -308,10 +308,10 @@ export default {
           extent: selection.extent
         }
 
-        ElMessage.success(`检测到空间字段: ${selection.geometryColumn}`)
+        ElMessage.success(this.$t('service.tile.spatialDetectedMsg', { column: selection.geometryColumn }))
       } else {
         this.spatialMetadata = { hasGeometry: false }
-        ElMessage.warning('未检测到空间字段，请确认数据表是否包含空间数据')
+        ElMessage.warning(this.$t('service.tile.noSpatialWarning'))
       }
     },
 
@@ -400,14 +400,14 @@ export default {
         // 所以 response 本身就是服务对象
         if (!response || !response.id) {
           console.error('[TileServiceForm] 响应数据无效:', response)
-          throw new Error('服务数据无效或缺少 ID')
+          throw new Error(this.$t('service.tile.invalidServiceData'))
         }
 
         this.createdService = response
         this.currentStep = 2
       } catch (error) {
         console.error('创建瓦片服务失败:', error)
-        alert('创建失败: ' + (error.response?.data?.error || error.message))
+        alert(this.$t('service.tile.createFailed') + ': ' + (error.response?.data?.error || error.message))
       } finally {
         this.submitting = false
       }
@@ -451,7 +451,7 @@ export default {
 
     copyToClipboard(text) {
       navigator.clipboard.writeText(text).then(() => {
-        alert('已复制到剪贴板')
+        alert(this.$t('service.common.copied'))
       }).catch(err => {
         console.error('复制失败:', err)
       })

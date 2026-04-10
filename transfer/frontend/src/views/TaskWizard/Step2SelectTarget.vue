@@ -1,23 +1,23 @@
 <template>
   <div class="step2-select-target">
-    <h3>选择目标数据库</h3>
-    <p class="step-description">请选择目标数据库和表（数据将写入此处）</p>
+    <h3>{{ t('transfer.taskWizard.selectTargetPage') }}</h3>
+    <p class="step-description">{{ t('transfer.taskWizard.selectTargetPageDesc') }}</p>
 
     <el-form :model="formData" label-width="120px">
       <!-- 目标类型 -->
-      <el-form-item label="目标类型">
+      <el-form-item :label="t('transfer.taskWizard.targetTypeLabel')">
         <el-radio-group v-model="targetType" @change="handleTargetTypeChange">
           <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
           <el-radio-button value="mysql">MySQL</el-radio-button>
-          <el-radio-button value="s3">对象存储</el-radio-button>
+          <el-radio-button value="s3">{{ t('transfer.taskWizard.objectStorageOption') }}</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
       <!-- 目标引擎 -->
-      <el-form-item label="目标引擎">
+      <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
           v-model="formData.engineID"
-          placeholder="请选择目标引擎"
+          :placeholder="t('transfer.taskWizard.targetEnginePlaceholder')"
           filterable
           @change="handleEngineChange"
         >
@@ -33,8 +33,8 @@
       <!-- 对象存储配置 -->
       <template v-if="targetType === 's3'">
         <!-- 输出格式 -->
-        <el-form-item label="输出格式">
-          <el-select v-model="outputFormat" placeholder="请选择输出格式">
+        <el-form-item :label="t('transfer.taskWizard.outputFormatLabel')">
+          <el-select v-model="outputFormat" :placeholder="t('transfer.taskWizard.outputFormatLabel')">
             <el-option label="CSV" value="csv" />
             <el-option label="JSON Lines" value="jsonl" />
             <el-option label="Parquet" value="parquet" />
@@ -44,7 +44,7 @@
               :disabled="!hasSpatialFields"
             >
               <span>GeoJSON</span>
-              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">（无空间字段）</span>
+              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">{{ t('transfer.taskWizard.noSpatialFields') }}</span>
             </el-option>
             <el-option
               label="Shapefile"
@@ -52,29 +52,29 @@
               :disabled="!hasSpatialFields"
             >
               <span>Shapefile</span>
-              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">（无空间字段）</span>
+              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">{{ t('transfer.taskWizard.noSpatialFields') }}</span>
             </el-option>
           </el-select>
         </el-form-item>
 
         <!-- 输出路径 -->
-        <el-form-item label="输出路径">
+        <el-form-item :label="t('transfer.taskWizard.outputPathLabel')">
           <el-input
             v-model="outputPath"
             placeholder="例如：exports/data.csv 或 exports/output.geojson"
           />
           <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-            <p>文件将保存到对象存储的指定路径（相对于 bucket 根目录）</p>
+            <p>{{ t('transfer.taskWizard.outputPathHint') }}</p>
           </div>
         </el-form-item>
 
         <!-- CSV 专用选项 -->
         <template v-if="outputFormat === 'csv'">
-          <el-form-item label="CSV 选项">
+          <el-form-item :label="t('transfer.taskWizard.csvOptionsLabel')">
             <div style="display: flex; align-items: center; gap: 20px;">
-              <el-checkbox v-model="csvHeaders">包含表头</el-checkbox>
+              <el-checkbox v-model="csvHeaders">{{ t('transfer.taskWizard.csvHeadersLabel') }}</el-checkbox>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="color: var(--addp-text-secondary);">分隔符：</span>
+                <span style="color: var(--addp-text-secondary);">{{ t('transfer.taskWizard.csvDelimiterLabel') }}：</span>
                 <el-input
                   v-model="csvDelimiter"
                   placeholder=","
@@ -88,9 +88,9 @@
         <!-- 几何字段选择器（针对空间格式） -->
         <el-form-item
           v-if="['geojson', 'shapefile'].includes(outputFormat) && hasSpatialFields"
-          label="几何字段"
+          :label="t('transfer.taskWizard.geometryFieldLabel')"
         >
-          <el-select v-model="geometryField" placeholder="请选择几何字段">
+          <el-select v-model="geometryField" :placeholder="t('transfer.taskWizard.geometryFieldLabel')">
             <el-option
               v-for="field in props.wizardState.sourceFields.filter(f => {
                 const standardType = (f.standard_type || '').toLowerCase()
@@ -107,7 +107,7 @@
             />
           </el-select>
           <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-            <p>选择用于空间数据导出的几何字段</p>
+            <p>{{ t('transfer.taskWizard.geometryFieldSelectHint') }}</p>
           </div>
         </el-form-item>
       </template>
@@ -115,10 +115,10 @@
       <!-- 数据库配置（仅非对象存储） -->
       <template v-else>
       <!-- Schema（仅 PostgreSQL/MySQL 需要） -->
-      <el-form-item v-if="needsSchema" label="Schema">
+      <el-form-item v-if="needsSchema" :label="t('transfer.taskWizard.schemaLabel')">
         <el-select
           v-model="formData.schema"
-          placeholder="请选择 Schema"
+          :placeholder="t('transfer.taskWizard.schemaPlaceholder')"
           filterable
           :loading="loadingSchemas"
           :disabled="!formData.engineID"
@@ -134,10 +134,10 @@
       </el-form-item>
 
       <!-- 目标表（智能输入框：可选择已有表或手动输入新表名） -->
-      <el-form-item label="目标表">
+      <el-form-item :label="t('transfer.taskWizard.targetTableLabel')">
         <el-select
           v-model="formData.table"
-          placeholder="请选择目标表或输入新表名"
+          :placeholder="t('transfer.taskWizard.targetTablePlaceholder')"
           filterable
           allow-create
           default-first-option
@@ -154,7 +154,7 @@
         </el-select>
         <el-alert type="info" :closable="false" style="margin-top: 12px;" show-icon>
           <template #title>
-            数据写入采用覆盖模式：先清空目标表，再插入新数据。目标表不存在时将自动创建。
+            {{ t('transfer.taskWizard.dataWriteOverwriteHint2') }}
           </template>
         </el-alert>
       </el-form-item>
@@ -165,9 +165,12 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getTables, getTableFields, getSchemas } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
+
+const { t } = useI18n()
 
 const props = defineProps({
   wizardState: {
@@ -305,7 +308,7 @@ async function loadTargetEngines() {
     const data = await systemEnginesAPI.list()
     targetEngines.value = data || []
   } catch (error) {
-    ElMessage.error('加载目标引擎失败')
+    ElMessage.error(t('transfer.taskWizard.loadTargetEngineFailedMsg'))
   }
 }
 
@@ -326,7 +329,7 @@ async function handleEngineChange() {
       const schemaList = Array.isArray(response?.data) ? response.data : (response || [])
       schemas.value = schemaList
     } catch (error) {
-      ElMessage.error('加载 Schema 列表失败')
+      ElMessage.error(t('transfer.taskWizard.loadSchemaFailedMsg'))
     } finally {
       loadingSchemas.value = false
     }
@@ -358,7 +361,7 @@ async function loadTables() {
       name: item.name || item
     }))
   } catch (error) {
-    ElMessage.error('加载表列表失败')
+    ElMessage.error(t('transfer.taskWizard.loadTargetTableFailedMsg'))
   } finally {
     loadingTables.value = false
   }
@@ -373,7 +376,7 @@ async function handleTableChange() {
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     props.wizardState.loadTargetFields(fieldList)
   } catch (error) {
-    ElMessage.error('加载表字段失败')
+    ElMessage.error(t('transfer.taskWizard.loadTableFieldsFailed'))
   }
 }
 
@@ -414,7 +417,7 @@ async function restoreState() {
         schemas.value = schemaList
         formData.schema = state.targetSchema.value
       } catch (error) {
-        ElMessage.error('恢复 Schema 失败')
+        ElMessage.error(t('transfer.taskWizard.restoreSchemaFailedMsg'))
       } finally {
         loadingSchemas.value = false
       }

@@ -2,15 +2,18 @@
   <div class="schedule-display">
     <el-icon v-if="cron" class="schedule-icon"><Clock /></el-icon>
     <span v-if="cron" class="schedule-text">
-      {{ describeCron(cron) }}
+      {{ describeCron(cron, t) }}
     </span>
-    <el-tag v-else type="info" size="small">{{ emptyText }}</el-tag>
+    <el-tag v-else type="info" size="small">{{ emptyText || t('schedule.manualTrigger') }}</el-tag>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { Clock } from '@element-plus/icons-vue'
 import { describeCron } from '../utils/schedule'
+
+const { t } = useI18n()
 
 defineProps({
   cron: {
@@ -19,7 +22,7 @@ defineProps({
   },
   emptyText: {
     type: String,
-    default: '手动触发'
+    default: ''
   }
 })
 </script>

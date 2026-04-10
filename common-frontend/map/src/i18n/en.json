@@ -1,0 +1,21 @@
+{
+  "map": {
+    "preview": "Map Preview",
+    "truncated": "Content is large, showing partial data",
+    "shapefileTruncated": "Showing partial features only",
+    "geometryType": "Geometry Type",
+    "featureCount": "Feature Count",
+    "previewCount": "Preview Count",
+    "encoding": "Encoding",
+    "bboxTitle": "Bounding Box",
+    "fieldsTitle": "Field Info",
+    "fieldName": "Field Name",
+    "fieldType": "Type",
+    "fieldLength": "Length",
+    "fieldPrecision": "Precision",
+    "maxRows": "Showing first 50 rows maximum",
+    "unknown": "Unknown",
+    "noData": "No data",
+    "noFieldData": "No fields to display"
+  }
+}

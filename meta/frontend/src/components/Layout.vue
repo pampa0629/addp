@@ -11,7 +11,7 @@
         <el-icon :size="22" class="header-icon">
           <DataAnalysis />
         </el-icon>
-        <h1>元数据管理模块</h1>
+        <h1>{{ t('meta.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown trigger="click">
@@ -24,11 +24,11 @@
             <el-dropdown-menu>
               <el-dropdown-item @click="handleShowProfile">
                 <el-icon><Avatar /></el-icon>
-                账号信息
+                {{ t('meta.layout.accountInfo') }}
               </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('meta.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -45,11 +45,11 @@
         >
           <el-menu-item index="/scan">
             <el-icon><Search /></el-icon>
-            <span>元数据扫描</span>
+            <span>{{ t('meta.layout.metadataScan') }}</span>
           </el-menu-item>
           <el-menu-item index="/tasks">
             <el-icon><Timer /></el-icon>
-            <span>任务监控</span>
+            <span>{{ t('meta.layout.taskMonitor') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -65,6 +65,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   DataAnalysis,
   Search,
@@ -76,6 +77,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../store/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -86,7 +88,7 @@ onMounted(() => {
   isInIframe.value = window.self !== window.top
 })
 
-const userDisplayName = computed(() => authStore.user?.username || '未登录')
+const userDisplayName = computed(() => authStore.user?.username || t('meta.layout.notLoggedIn'))
 
 const activeMenu = computed(() => {
   return route.path.startsWith('/tasks') ? '/tasks' : '/scan'
@@ -94,23 +96,23 @@ const activeMenu = computed(() => {
 
 const handleShowProfile = () => {
   ElMessageBox.alert(
-    `当前用户：${authStore.user?.username || '未登录'}`,
-    '账号信息',
+    t('meta.layout.currentUser', { name: authStore.user?.username || t('meta.layout.notLoggedIn') }),
+    t('meta.layout.accountInfo'),
     {
-      confirmButtonText: '知道了'
+      confirmButtonText: t('meta.layout.gotIt')
     }
   )
 }
 
 const handleLogout = () => {
-  ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-    confirmButtonText: '退出',
-    cancelButtonText: '取消',
+  ElMessageBox.confirm(t('meta.layout.logoutConfirm'), t('meta.layout.hint'), {
+    confirmButtonText: t('meta.layout.logoutBtn'),
+    cancelButtonText: t('meta.layout.cancel'),
     type: 'warning'
   })
     .then(() => {
       authStore.logout()
-      ElMessage.success('已退出登录')
+      ElMessage.success(t('meta.layout.logoutSuccess'))
       router.push({ name: 'Login' })
     })
     .catch(() => {})

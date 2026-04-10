@@ -2,36 +2,36 @@
   <div class="graph-service-form" v-loading="loading">
     <div class="page-header">
       <el-button @click="goBack" :icon="ArrowLeft" circle />
-      <h2>{{ isEdit ? '编辑图查询服务' : '创建图查询服务' }}</h2>
+      <h2>{{ isEdit ? t('service.graph.formEditTitle') : t('service.graph.formCreateTitle') }}</h2>
     </div>
 
     <!-- 步骤条（仅新建） -->
     <el-steps v-if="!isEdit" :active="step" finish-status="success" align-center style="margin-bottom: 30px">
-      <el-step title="选择配置类型" />
-      <el-step title="配置数据源" />
-      <el-step title="服务信息" />
+      <el-step :title="t('service.graph.step1Title')" />
+      <el-step :title="t('service.graph.step2Title')" />
+      <el-step :title="t('service.graph.step3Title')" />
     </el-steps>
 
     <!-- ===== Step 0: 选择配置类型 ===== -->
     <div v-if="!isEdit && step === 0">
       <el-card>
-        <template #header><span>选择配置类型</span></template>
+        <template #header><span>{{ t('service.graph.selectConfigType') }}</span></template>
         <el-radio-group v-model="form.config_type" class="config-radio-group">
           <div class="config-card" :class="{ selected: form.config_type === 'label' }" @click="form.config_type = 'label'">
             <el-radio value="label">
               <div class="config-content">
-                <h3>标签模式（推荐入门）</h3>
-                <p>选择一个节点标签（如 Person、Company），系统自动生成查询 API，支持属性过滤和分页</p>
-                <p class="tips">✅ 简单易用 &nbsp;✅ 支持过滤和分页 &nbsp;✅ 自动统计总数</p>
+                <h3>{{ t('service.graph.labelModeTitle') }}</h3>
+                <p>{{ t('service.graph.labelModeDesc') }}</p>
+                <p class="tips">{{ t('service.graph.labelModeTips') }}</p>
               </div>
             </el-radio>
           </div>
           <div class="config-card" :class="{ selected: form.config_type === 'cypher' }" @click="form.config_type = 'cypher'">
             <el-radio value="cypher">
               <div class="config-content">
-                <h3>Cypher 模式（高级）</h3>
-                <p>手写参数化 Cypher 查询，支持多标签联合、关系遍历，返回格式可选表格或图结构</p>
-                <p class="tips">✅ 完全灵活 &nbsp;✅ 支持图结构返回 &nbsp;⚠️ 仅支持读操作</p>
+                <h3>{{ t('service.graph.cypherModeTitle') }}</h3>
+                <p>{{ t('service.graph.cypherModeDesc') }}</p>
+                <p class="tips">{{ t('service.graph.cypherModeTips') }}</p>
               </div>
             </el-radio>
           </div>
@@ -42,27 +42,27 @@
     <!-- ===== Step 1: 配置数据源 ===== -->
     <div v-if="!isEdit && step === 1">
       <el-card>
-        <template #header><span>配置 Neo4j 数据源</span></template>
+        <template #header><span>{{ t('service.graph.configDataSource') }}</span></template>
         <el-form :model="form" label-width="130px">
           <!-- 公共：引擎选择 -->
-          <el-form-item label="Neo4j 引擎" required>
-            <el-select v-model="form.engine_id" placeholder="选择 Neo4j 引擎" style="width: 300px" :loading="enginesLoading">
+          <el-form-item :label="t('service.graph.neo4jEngineLabel')" required>
+            <el-select v-model="form.engine_id" :placeholder="t('service.graph.neo4jEnginePlaceholder')" style="width: 300px" :loading="enginesLoading">
               <el-option v-for="e in neo4jEngines" :key="e.id" :label="`${e.name} (${e.host || e.connection_info?.host || ''})`" :value="e.id" />
             </el-select>
-            <el-button link @click="loadEngines" style="margin-left: 8px">刷新</el-button>
+            <el-button link @click="loadEngines" style="margin-left: 8px">{{ t('service.common.refresh') }}</el-button>
           </el-form-item>
 
-          <el-form-item label="数据库名">
-            <el-input v-model="form.database_name" placeholder="默认 neo4j" style="width: 200px" />
+          <el-form-item :label="t('service.graph.databaseNameLabel')">
+            <el-input v-model="form.database_name" :placeholder="t('service.graph.databaseNamePlaceholder')" style="width: 200px" />
           </el-form-item>
 
           <!-- Label 模式 -->
           <template v-if="form.config_type === 'label'">
-            <el-divider content-position="left">节点配置</el-divider>
-            <el-form-item label="节点标签" required>
+            <el-divider content-position="left">{{ t('service.graph.nodeConfigTitle') }}</el-divider>
+            <el-form-item :label="t('service.graph.nodeLabelLabel')" required>
               <el-select
                 v-model="form.node_label"
-                placeholder="选择节点标签"
+                :placeholder="t('service.graph.nodeLabelPlaceholder')"
                 style="width: 240px"
                 :loading="labelsLoading"
                 :disabled="!form.engine_id"
@@ -71,23 +71,23 @@
               >
                 <el-option v-for="label in nodeLabels" :key="label" :label="label" :value="label" />
               </el-select>
-              <el-button link @click="loadNodeLabels" :disabled="!form.engine_id" style="margin-left: 8px">刷新</el-button>
-              <span class="form-hint" style="display:block;margin-top:4px">区分大小写，与 Neo4j 中的标签名一致。可手动输入</span>
+              <el-button link @click="loadNodeLabels" :disabled="!form.engine_id" style="margin-left: 8px">{{ t('service.common.refresh') }}</el-button>
+              <span class="form-hint" style="display:block;margin-top:4px">{{ t('service.graph.nodeLabelHelp') }}</span>
             </el-form-item>
-            <el-form-item label="返回属性">
-              <el-input v-model="labelPropertiesInput" placeholder="留空返回整个节点，或填逗号分隔的属性列表" style="width: 100%" />
-              <span class="form-hint">示例：id,name,age,city（留空则 RETURN n）</span>
+            <el-form-item :label="t('service.graph.returnPropertiesLabel')">
+              <el-input v-model="labelPropertiesInput" :placeholder="t('service.graph.returnPropertiesPlaceholder')" style="width: 100%" />
+              <span class="form-hint">{{ t('service.graph.returnPropertiesHelp') }}</span>
             </el-form-item>
-            <el-form-item label="可过滤属性">
-              <el-input v-model="filterablePropertiesInput" placeholder="允许客户端过滤的属性，逗号分隔" style="width: 100%" />
-              <span class="form-hint">示例：name,city（留空则不支持过滤）</span>
+            <el-form-item :label="t('service.graph.filterablePropertiesLabel')">
+              <el-input v-model="filterablePropertiesInput" :placeholder="t('service.graph.filterablePropertiesPlaceholder')" style="width: 100%" />
+              <span class="form-hint">{{ t('service.graph.filterablePropertiesHelp') }}</span>
             </el-form-item>
           </template>
 
           <!-- Cypher 模式 -->
           <template v-if="form.config_type === 'cypher'">
-            <el-divider content-position="left">Cypher 查询</el-divider>
-            <el-form-item label="Cypher 查询" required>
+            <el-divider content-position="left">{{ t('service.graph.cypherQueryTitle') }}</el-divider>
+            <el-form-item :label="t('service.graph.cypherQueryLabel')" required>
               <el-input
                 v-model="form.cypher_query"
                 type="textarea"
@@ -96,21 +96,21 @@
                 style="font-family: monospace; width: 100%"
               />
               <div class="form-hint">
-                使用 <code>$paramName</code> 声明参数，系统自动绑定。内置分页参数：<code>$offset</code>、<code>$limit</code>（无需手动声明）。
-                <br>⚠️ 禁止写操作：CREATE、MERGE、DELETE、SET 等关键字将被拒绝。
+                {{ t('service.graph.cypherQueryHelp1') }}
+                <br>{{ t('service.graph.cypherQueryHelp2') }}
               </div>
             </el-form-item>
-            <el-form-item label="结果类型">
+            <el-form-item :label="t('service.graph.resultTypeLabel')">
               <el-radio-group v-model="cypherResultType">
-                <el-radio value="table">表格（Rows）</el-radio>
-                <el-radio value="graph">图结构（Nodes + Relationships）</el-radio>
-                <el-radio value="both">两者都要</el-radio>
+                <el-radio value="table">{{ t('service.graph.resultTypeTable') }}</el-radio>
+                <el-radio value="graph">{{ t('service.graph.resultTypeGraph') }}</el-radio>
+                <el-radio value="both">{{ t('service.graph.resultTypeBoth') }}</el-radio>
               </el-radio-group>
             </el-form-item>
             <!-- 自动提取的参数预览 -->
-            <el-form-item v-if="extractedParams.length > 0" label="自动提取参数">
+            <el-form-item v-if="extractedParams.length > 0" :label="t('service.graph.extractedParamsLabel')">
               <el-tag v-for="p in extractedParams" :key="p" style="margin-right: 6px">${{ p }}</el-tag>
-              <span class="form-hint" style="display:block;margin-top:4px">以上参数将作为必填参数发布到 API</span>
+              <span class="form-hint" style="display:block;margin-top:4px">{{ t('service.graph.extractedParamsHelp') }}</span>
             </el-form-item>
           </template>
         </el-form>
@@ -120,42 +120,42 @@
     <!-- ===== Step 2 / 编辑模式：服务信息 ===== -->
     <div v-if="isEdit || step === 2">
       <el-card>
-        <template #header><span>服务信息</span></template>
+        <template #header><span>{{ t('service.graph.serviceInfoTitle') }}</span></template>
         <el-form :model="form" :rules="rules" ref="formRef" label-width="130px">
-          <el-form-item v-if="!isEdit" label="服务名称" prop="service_name">
-            <el-input v-model="form.service_name" placeholder="英文、数字、下划线，全局唯一" style="width: 300px" />
-            <span class="form-hint">发布后不可修改，用于构成访问 URL</span>
+          <el-form-item v-if="!isEdit" :label="t('service.graph.serviceNameLabel')" prop="service_name">
+            <el-input v-model="form.service_name" :placeholder="t('service.graph.serviceNamePlaceholder')" style="width: 300px" />
+            <span class="form-hint">{{ t('service.graph.serviceNameHelp') }}</span>
           </el-form-item>
-          <el-form-item v-else label="服务名称">
+          <el-form-item v-else :label="t('service.graph.serviceNameLabel')">
             <span class="readonly-text">{{ form.service_name }}</span>
           </el-form-item>
 
-          <el-form-item label="标题" prop="title">
-            <el-input v-model="form.title" placeholder="服务的显示标题" style="width: 400px" />
+          <el-form-item :label="t('service.graph.titleLabel')" prop="title">
+            <el-input v-model="form.title" :placeholder="t('service.graph.titlePlaceholder')" style="width: 400px" />
           </el-form-item>
 
-          <el-form-item label="描述">
-            <el-input v-model="form.description" type="textarea" :rows="3" placeholder="服务的详细描述" style="width: 100%" />
+          <el-form-item :label="t('service.graph.descriptionLabel')">
+            <el-input v-model="form.description" type="textarea" :rows="3" :placeholder="t('service.graph.descriptionPlaceholder')" style="width: 100%" />
           </el-form-item>
 
-          <el-form-item label="关键词">
-            <el-input v-model="keywordsInput" placeholder="用逗号分隔，如：知识图谱,人员关系" style="width: 400px" />
+          <el-form-item :label="t('service.graph.keywordsLabel')">
+            <el-input v-model="keywordsInput" :placeholder="t('service.graph.keywordsPlaceholder')" style="width: 400px" />
           </el-form-item>
 
-          <el-form-item label="最大返回记录数">
+          <el-form-item :label="t('service.graph.maxRecordsLabel')">
             <el-input-number v-model="form.max_records" :min="1" :max="5000" />
-            <span class="form-hint" style="margin-left:8px">单次请求最多返回的记录数，默认 500</span>
+            <span class="form-hint" style="margin-left:8px">{{ t('service.graph.maxRecordsHelp') }}</span>
           </el-form-item>
 
-          <el-form-item label="公开访问">
+          <el-form-item :label="t('service.graph.publicAccessLabel')">
             <el-switch v-model="form.public_access" />
-            <span class="form-hint" style="margin-left:8px">开启后无需 JWT Token 即可访问</span>
+            <span class="form-hint" style="margin-left:8px">{{ t('service.graph.publicAccessHelp') }}</span>
           </el-form-item>
 
-          <el-form-item v-if="isEdit" label="状态">
+          <el-form-item v-if="isEdit" :label="t('service.graph.statusLabel')">
             <el-select v-model="form.status" style="width: 120px">
-              <el-option value="active" label="运行中" />
-              <el-option value="inactive" label="已停用" />
+              <el-option value="active" :label="t('service.graph.statusRunning')" />
+              <el-option value="inactive" :label="t('service.graph.statusInactive')" />
             </el-select>
           </el-form-item>
         </el-form>
@@ -164,12 +164,12 @@
 
     <!-- 按钮区域 -->
     <div class="form-actions">
-      <el-button v-if="!isEdit && step > 0" @click="step--">上一步</el-button>
-      <el-button v-if="!isEdit && step < 2" type="primary" @click="nextStep">下一步</el-button>
+      <el-button v-if="!isEdit && step > 0" @click="step--">{{ t('service.graph.prevStep') }}</el-button>
+      <el-button v-if="!isEdit && step < 2" type="primary" @click="nextStep">{{ t('service.graph.nextStep') }}</el-button>
       <el-button v-if="isEdit || step === 2" type="primary" :loading="saving" @click="submit">
-        {{ isEdit ? '保存' : '创建服务' }}
+        {{ isEdit ? t('service.common.save') : t('service.graph.createBtn2') }}
       </el-button>
-      <el-button @click="goBack">取消</el-button>
+      <el-button @click="goBack">{{ t('service.common.cancel') }}</el-button>
     </div>
   </div>
 </template>
@@ -177,12 +177,14 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import graphApi from '../api/graphQueryService'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const id = route.params.id
 const isEdit = computed(() => !!id)
 
@@ -232,9 +234,9 @@ const extractedParams = computed(() => {
 })
 
 const rules = {
-  service_name: [{ required: true, message: '请输入服务名称', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_-]+$/, message: '只允许英文、数字、下划线、连字符', trigger: 'blur' }],
-  title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
+  service_name: [{ required: true, message: t('service.graph.serviceNameRequired'), trigger: 'blur' },
+    { pattern: /^[a-zA-Z0-9_-]+$/, message: t('service.graph.serviceNamePattern'), trigger: 'blur' }],
+  title: [{ required: true, message: t('service.graph.titleRequired'), trigger: 'blur' }]
 }
 
 const loadEngines = async () => {
@@ -274,9 +276,9 @@ const nextStep = async () => {
     return
   }
   if (step.value === 1) {
-    if (!form.value.engine_id) { ElMessage.warning('请选择 Neo4j 引擎'); return }
-    if (form.value.config_type === 'label' && !form.value.node_label) { ElMessage.warning('请填写节点标签'); return }
-    if (form.value.config_type === 'cypher' && !form.value.cypher_query) { ElMessage.warning('请填写 Cypher 查询'); return }
+    if (!form.value.engine_id) { ElMessage.warning(t('service.graph.selectEngineWarning')); return }
+    if (form.value.config_type === 'label' && !form.value.node_label) { ElMessage.warning(t('service.graph.selectNodeLabelWarning')); return }
+    if (form.value.config_type === 'cypher' && !form.value.cypher_query) { ElMessage.warning(t('service.graph.enterCypherWarning')); return }
     step.value = 2
   }
 }
@@ -319,17 +321,17 @@ const submit = async () => {
         payload.cypher_query = form.value.cypher_query
       }
       await graphApi.updateService(id, payload)
-      ElMessage.success('保存成功')
+      ElMessage.success(t('service.graph.saveSuccess'))
     } else {
       const payload = buildPayload()
       const result = await graphApi.createService(payload)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('service.graph.createSuccess'))
       router.push(`/graph-services/${result.id}`)
       return
     }
     router.push(`/graph-services/${id}`)
   } catch (e) {
-    ElMessage.error('操作失败：' + (e.response?.data?.error || e.message))
+    ElMessage.error(t('service.graph.operationFailed') + '：' + (e.response?.data?.error || e.message))
   } finally {
     saving.value = false
   }
@@ -353,7 +355,7 @@ onMounted(async () => {
       }
       await loadEngines()
     } catch (e) {
-      ElMessage.error('加载失败：' + (e.response?.data?.error || e.message))
+      ElMessage.error(t('service.graph.loadFailed') + '：' + (e.response?.data?.error || e.message))
     } finally {
       loading.value = false
     }

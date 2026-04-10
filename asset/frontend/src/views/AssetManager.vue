@@ -11,14 +11,14 @@
             @click="selectCategory(null)"
           >
             <el-icon><FolderOpened /></el-icon>
-            <span>未编目</span>
+            <span>{{ t('asset.assetManager.uncategorized') }}</span>
             <span class="count">{{ uncategorizedCount }}</span>
           </div>
 
           <!-- 分隔线 + 目录标题 -->
           <div class="catalog-section-header">
-            <span>目录</span>
-            <el-button link type="primary" size="small" @click="openAddRootCategory">+ 新建</el-button>
+            <span>{{ t('asset.assetManager.catalog') }}</span>
+            <el-button link type="primary" size="small" @click="openAddRootCategory">{{ t('asset.assetManager.newButton') }}</el-button>
           </div>
 
           <!-- 分类树 -->
@@ -55,39 +55,39 @@
         <div class="filter-bar">
           <el-input
             v-model="filters.keyword"
-            placeholder="搜索资产名称..."
+            :placeholder="t('asset.assetManager.searchPlaceholder')"
             clearable
             style="width: 220px"
             @change="loadAssets"
           />
-          <el-select v-model="filters.typeId" placeholder="资产类型" clearable style="width: 130px" @change="loadAssets">
+          <el-select v-model="filters.typeId" :placeholder="t('asset.assetManager.assetType')" clearable style="width: 130px" @change="loadAssets">
             <el-option v-for="t in typeOptions" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
-          <el-select v-model="filters.status" placeholder="状态" clearable style="width: 110px" @change="loadAssets">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已上架" value="published" />
-            <el-option label="已下架" value="offline" />
+          <el-select v-model="filters.status" :placeholder="t('asset.assetManager.status')" clearable style="width: 110px" @change="loadAssets">
+            <el-option :label="t('asset.assetManager.draft')" value="draft" />
+            <el-option :label="t('asset.assetManager.published')" value="published" />
+            <el-option :label="t('asset.assetManager.offline')" value="offline" />
           </el-select>
-          <span class="total-label">共 {{ total }} 条</span>
+          <span class="total-label">{{ t('asset.assetManager.total', { count: total }) }}</span>
           <el-button
             type="primary"
             :loading="syncing"
             @click="handleSync"
           >
-            资产同步
+            {{ t('asset.assetManager.syncButton') }}
           </el-button>
         </div>
 
         <!-- 批量操作栏 -->
         <div v-if="selectedIds.length > 0" class="batch-bar">
-          <span class="selected-label">已选 {{ selectedIds.length }} 条</span>
-          <el-button size="small" type="success" @click="batchPublish">批量上架</el-button>
-          <el-button size="small" @click="batchOffline">批量下架</el-button>
+          <span class="selected-label">{{ t('asset.assetManager.selectedCount', { count: selectedIds.length }) }}</span>
+          <el-button size="small" type="success" @click="batchPublish">{{ t('asset.assetManager.batchPublish') }}</el-button>
+          <el-button size="small" @click="batchOffline">{{ t('asset.assetManager.batchOffline') }}</el-button>
           <el-dropdown @command="batchCategorize">
-            <el-button size="small">分配目录 <el-icon><ArrowDown /></el-icon></el-button>
+            <el-button size="small">{{ t('asset.assetManager.assignCatalog') }} <el-icon><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item :command="null">清除目录</el-dropdown-item>
+                <el-dropdown-item :command="null">{{ t('asset.assetManager.clearCatalog') }}</el-dropdown-item>
                 <el-dropdown-item v-for="cat in flatCategories" :key="cat.id" :command="cat.id">
                   {{ cat.name }}
                 </el-dropdown-item>
@@ -105,23 +105,23 @@
           style="width: 100%"
         >
           <el-table-column type="selection" width="44" />
-          <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="type_name" label="类型" width="90" />
-          <el-table-column prop="source_module" label="来源" width="90" />
-          <el-table-column prop="catalog_name" label="目录" width="120" show-overflow-tooltip>
+          <el-table-column prop="name" :label="t('asset.assetManager.name')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="type_name" :label="t('asset.assetManager.type')" width="90" />
+          <el-table-column prop="source_module" :label="t('asset.assetManager.source')" width="90" />
+          <el-table-column prop="catalog_name" :label="t('asset.assetManager.catalog')" width="120" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="category-text">{{ row.catalog_name || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="90">
+          <el-table-column prop="status" :label="t('asset.assetManager.status')" width="90">
             <template #default="{ row }">
-              <el-tag v-if="!row.source_available" type="danger" size="small">来源不可用</el-tag>
-              <el-tag v-else-if="row.status === 'draft'" type="info" size="small">草稿</el-tag>
-              <el-tag v-else-if="row.status === 'published'" type="success" size="small">已上架</el-tag>
-              <el-tag v-else-if="row.status === 'offline'" type="warning" size="small">已下架</el-tag>
+              <el-tag v-if="!row.source_available" type="danger" size="small">{{ t('asset.assetManager.sourceUnavailable') }}</el-tag>
+              <el-tag v-else-if="row.status === 'draft'" type="info" size="small">{{ t('asset.assetManager.draft') }}</el-tag>
+              <el-tag v-else-if="row.status === 'published'" type="success" size="small">{{ t('asset.assetManager.published') }}</el-tag>
+              <el-tag v-else-if="row.status === 'offline'" type="warning" size="small">{{ t('asset.assetManager.offline') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" fixed="right">
+          <el-table-column :label="t('asset.assetManager.actions')" width="100" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-if="row.status !== 'published'"
@@ -129,14 +129,14 @@
                 type="primary"
                 size="small"
                 @click="publishOne(row)"
-              >上架</el-button>
+              >{{ t('asset.assetManager.publish') }}</el-button>
               <el-button
                 v-if="row.status === 'published'"
                 link
                 type="warning"
                 size="small"
                 @click="offlineOne(row)"
-              >下架</el-button>
+              >{{ t('asset.assetManager.takeOffline') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -158,13 +158,13 @@
     <!-- 新建/重命名分类弹窗 -->
     <el-dialog v-model="categoryDialogVisible" :title="categoryDialogTitle" width="400px">
       <el-form>
-        <el-form-item label="目录名称">
-          <el-input v-model="categoryForm.name" placeholder="请输入目录名称" />
+        <el-form-item :label="t('asset.assetManager.catalogName')">
+          <el-input v-model="categoryForm.name" :placeholder="t('asset.assetManager.catalogNamePlaceholder')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="categoryDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitCategory">确定</el-button>
+        <el-button @click="categoryDialogVisible = false">{{ t('asset.assetManager.cancel') }}</el-button>
+        <el-button type="primary" @click="submitCategory">{{ t('asset.assetManager.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -175,6 +175,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, ArrowDown } from '@element-plus/icons-vue'
 import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 // ===== 状态 =====
 const syncing = ref(false)
@@ -198,7 +201,7 @@ const filters = reactive({
 
 // 分类弹窗
 const categoryDialogVisible = ref(false)
-const categoryDialogTitle = ref('新建根目录')
+const categoryDialogTitle = ref('')
 const categoryForm = reactive({ name: '', parentId: null, editId: null })
 
 // ===== 计算属性 =====
@@ -229,10 +232,10 @@ async function handleSync() {
     const res = await assetAPI.sync()
     const created = res.created ?? 0
     if (created > 0) {
-      ElMessage.success(`同步完成，新发现 ${created} 条资产`)
+      ElMessage.success(t('asset.assetManager.syncSuccess', { count: created }))
     }
   } catch (e) {
-    ElMessage.warning('同步资源时发生错误，请检查各模块状态')
+    ElMessage.warning(t('asset.assetManager.syncError'))
   } finally {
     syncing.value = false
     await loadAssets()
@@ -263,7 +266,7 @@ async function loadAssets() {
     assets.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error('加载资产列表失败')
+    ElMessage.error(t('asset.assetManager.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -282,20 +285,20 @@ async function loadUncategorizedCount() {
 async function publishOne(row) {
   try {
     await assetAPI.publish(row.id)
-    ElMessage.success('上架成功')
+    ElMessage.success(t('asset.assetManager.publishSuccess'))
     await loadAssets()
   } catch (e) {
-    ElMessage.error('操作失败: ' + (e.response?.data?.error || e.message))
+    ElMessage.error(t('asset.assetManager.operationFailed') + ': ' + (e.response?.data?.error || e.message))
   }
 }
 
 async function offlineOne(row) {
   try {
     await assetAPI.offline(row.id)
-    ElMessage.success('下架成功')
+    ElMessage.success(t('asset.assetManager.offlineSuccess'))
     await loadAssets()
   } catch (e) {
-    ElMessage.error('操作失败: ' + (e.response?.data?.error || e.message))
+    ElMessage.error(t('asset.assetManager.operationFailed') + ': ' + (e.response?.data?.error || e.message))
   }
 }
 
@@ -308,11 +311,11 @@ async function batchPublish() {
   if (!selectedIds.value.length) return
   try {
     await assetAPI.batchPublish(selectedIds.value)
-    ElMessage.success('批量上架成功')
+    ElMessage.success(t('asset.assetManager.batchPublishSuccess'))
     selectedIds.value = []
     await loadAssets()
   } catch (e) {
-    ElMessage.error('操作失败')
+    ElMessage.error(t('asset.assetManager.operationFailed'))
   }
 }
 
@@ -320,11 +323,11 @@ async function batchOffline() {
   if (!selectedIds.value.length) return
   try {
     await assetAPI.batchOffline(selectedIds.value)
-    ElMessage.success('批量下架成功')
+    ElMessage.success(t('asset.assetManager.batchOfflineSuccess'))
     selectedIds.value = []
     await loadAssets()
   } catch (e) {
-    ElMessage.error('操作失败')
+    ElMessage.error(t('asset.assetManager.operationFailed'))
   }
 }
 
@@ -332,11 +335,11 @@ async function batchCategorize(categoryId) {
   if (!selectedIds.value.length) return
   try {
     await assetAPI.batchCatalog(selectedIds.value, categoryId)
-    ElMessage.success('目录分配成功')
+    ElMessage.success(t('asset.assetManager.catalogAssignSuccess'))
     selectedIds.value = []
     await Promise.all([loadAssets(), loadCategories(), loadUncategorizedCount()])
   } catch (e) {
-    ElMessage.error('操作失败')
+    ElMessage.error(t('asset.assetManager.operationFailed'))
   }
 }
 
@@ -375,7 +378,7 @@ function openAddRootCategory() {
   categoryForm.name = ''
   categoryForm.parentId = null
   categoryForm.editId = null
-  categoryDialogTitle.value = '新建根目录'
+  categoryDialogTitle.value = t('asset.assetManager.newRootCatalog')
   categoryDialogVisible.value = true
 }
 
@@ -383,7 +386,7 @@ function openAddSubCategory(parent) {
   categoryForm.name = ''
   categoryForm.parentId = parent.id
   categoryForm.editId = null
-  categoryDialogTitle.value = `新建子目录（${parent.name}）`
+  categoryDialogTitle.value = t('asset.assetManager.newRootCatalog') + `（${parent.name}）`
   categoryDialogVisible.value = true
 }
 
@@ -391,13 +394,13 @@ function openRenameCategory(data) {
   categoryForm.name = data.name
   categoryForm.parentId = data.parent_id || null
   categoryForm.editId = data.id
-  categoryDialogTitle.value = '重命名目录'
+  categoryDialogTitle.value = t('asset.assetManager.renameCatalog')
   categoryDialogVisible.value = true
 }
 
 async function submitCategory() {
   if (!categoryForm.name.trim()) {
-    ElMessage.warning('请输入目录名称')
+    ElMessage.warning(t('asset.assetManager.catalogNameRequired'))
     return
   }
   try {
@@ -409,17 +412,17 @@ async function submitCategory() {
     categoryDialogVisible.value = false
     await loadCategories()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetManager.operationFailed'))
   }
 }
 
 async function deleteCategory(data) {
   try {
-    await ElMessageBox.confirm(`确认删除分类"${data.name}"？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(`${t('asset.assetManager.deleteCategoryConfirm', { name: data.name })}`, t('asset.assetManager.hint'), { type: 'warning' })
     await catalogAPI.delete(data.id)
     await loadCategories()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('asset.assetManager.deleteFailed'))
   }
 }
 

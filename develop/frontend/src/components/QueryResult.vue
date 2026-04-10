@@ -4,21 +4,21 @@
     <div class="result-info" v-if="result">
       <el-tag v-if="result.success" type="success">
         <el-icon><SuccessFilled /></el-icon>
-        执行成功
+        {{ t('develop.queryResult.success') }}
       </el-tag>
       <el-tag v-else type="danger">
         <el-icon><CircleCloseFilled /></el-icon>
-        执行失败
+        {{ t('develop.queryResult.failed') }}
       </el-tag>
 
       <span class="info-item" v-if="result.rows_count !== undefined">
-        返回行数: <strong>{{ result.rows_count }}</strong>
+        {{ t('develop.queryResult.rowsCount') }}: <strong>{{ result.rows_count }}</strong>
       </span>
       <span class="info-item" v-if="result.rows_affected !== undefined">
-        影响行数: <strong>{{ result.rows_affected }}</strong>
+        {{ t('develop.queryResult.rowsAffected') }}: <strong>{{ result.rows_affected }}</strong>
       </span>
       <span class="info-item" v-if="result.execution_time_ms">
-        执行时间: <strong>{{ result.execution_time_ms }}ms</strong>
+        {{ t('develop.queryResult.executionTime') }}: <strong>{{ result.execution_time_ms }}ms</strong>
       </span>
 
       <el-button
@@ -29,7 +29,7 @@
         style="margin-left: auto;"
       >
         <el-icon><Download /></el-icon>
-        导出 CSV
+        {{ t('develop.queryResult.exportCsv') }}
       </el-button>
     </div>
 
@@ -72,13 +72,13 @@
     <!-- 空状态 -->
     <el-empty
       v-if="!result"
-      description="执行 查询后结果将显示在这里"
+      :description="t('develop.queryResult.emptyHint')"
       :image-size="120"
     />
 
     <el-empty
       v-else-if="result.success && (!result.rows || result.rows.length === 0)"
-      description="查询成功，但没有返回数据"
+      :description="t('develop.queryResult.noData')"
       :image-size="100"
     />
   </div>
@@ -86,8 +86,11 @@
 
 <script setup>
 import { defineProps } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { SuccessFilled, CircleCloseFilled, Download } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   result: {
@@ -115,7 +118,7 @@ const getValueClass = (value) => {
 // 导出为 CSV
 const exportCSV = () => {
   if (!props.result?.rows || !props.result?.columns) {
-    ElMessage.warning('没有可导出的数据')
+    ElMessage.warning(t('develop.queryResult.noExportData'))
     return
   }
 
@@ -142,9 +145,9 @@ const exportCSV = () => {
     link.click()
     URL.revokeObjectURL(link.href)
 
-    ElMessage.success('导出成功')
+    ElMessage.success(t('develop.queryResult.exportSuccess'))
   } catch (error) {
-    ElMessage.error('导出失败: ' + error.message)
+    ElMessage.error(t('develop.queryResult.exportFailed') + error.message)
   }
 }
 </script>

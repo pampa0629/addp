@@ -1,0 +1,11 @@
+[manager.cache.cleared_all]
+other = "已清除所有资源缓存"
+
+[manager.cache.cleared]
+other = "已清除资源缓存"
+
+[manager.cache.refreshed]
+other = "资源缓存已刷新"
+
+[manager.cache.failed]
+other = "刷新缓存失败"

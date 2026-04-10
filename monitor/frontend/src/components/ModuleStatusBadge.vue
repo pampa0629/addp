@@ -12,7 +12,7 @@
     </div>
     <div class="module-info">
       <span class="latency" v-if="module.latency">
-        延迟: {{ module.latency }}ms
+        {{ t('monitor.module_status.latency', { ms: module.latency }) }}
       </span>
       <span class="message" v-if="module.message">
         {{ module.message }}
@@ -23,6 +23,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   module: {
@@ -45,11 +48,11 @@ const statusType = computed(() => {
 const statusText = computed(() => {
   switch (props.module.status) {
     case 'up':
-      return '正常'
+      return t('monitor.module_status.up')
     case 'down':
-      return '离线'
+      return t('monitor.module_status.down')
     default:
-      return '未知'
+      return t('monitor.module_status.unknown')
   }
 })
 </script>

@@ -1,9 +1,9 @@
 <template>
   <div class="source-config-step">
     <div class="step-section">
-      <h3 class="step-section__title">选择源数据源</h3>
+      <h3 class="step-section__title">{{ t('transfer.taskWizard.selectSourceDataSource') }}</h3>
       <el-form label-width="120px">
-        <el-form-item label="数据源类型">
+        <el-form-item :label="t('transfer.taskWizard.sourceDataType')">
           <el-radio-group v-model="connectorType" @change="handleTypeChange">
             <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
             <el-radio-button value="mysql">MySQL</el-radio-button>
@@ -12,10 +12,10 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="选择数据源">
+        <el-form-item :label="t('transfer.taskWizard.selectSourceEngine')">
           <el-select
             v-model="selectedValue"
-            placeholder="选择数据源"
+            :placeholder="t('transfer.taskWizard.selectSourceEngine')"
             style="width: 100%"
             filterable
             :loading="loading"
@@ -29,12 +29,12 @@
           </el-select>
           <div class="hint">
             <p>
-              从系统管理 — 存储引擎中配置(全局可用)
-              <el-link type="primary" @click="$emit('open-system-engines')">去配置</el-link>
+              {{ t('transfer.taskWizard.systemEngineGlobal') }}
+              <el-link type="primary" @click="$emit('open-system-engines')">{{ t('transfer.taskWizard.browse') }}</el-link>
             </p>
             <p>
-              在数据传输模块配置(只有数据传输可用)
-              <el-link type="primary" @click="$emit('open-local-resource')">去配置</el-link>
+              {{ t('transfer.taskWizard.localEngineTransfer') }}
+              <el-link type="primary" @click="$emit('open-local-resource')">{{ t('transfer.taskWizard.browse') }}</el-link>
             </p>
           </div>
         </el-form-item>
@@ -46,17 +46,17 @@
           style="margin-top: 20px"
         >
           <template #title>
-            已选择数据源:{{ selectedResource.name }}
+            {{ t('transfer.taskWizard.selectSourceDataSource') }}:{{ selectedResource.name }}
           </template>
           <div style="margin-top: 10px; font-size: 13px;">
             <p v-if="selectedResource.connection_info?.host">
-              主机:{{ selectedResource.connection_info.host }}:{{ selectedResource.connection_info.port }}
+              {{ t('transfer.taskForm.host') }}:{{ selectedResource.connection_info.host }}:{{ selectedResource.connection_info.port }}
             </p>
             <p v-if="selectedResource.connection_info?.database">
-              数据库:{{ selectedResource.connection_info.database }}
+              {{ t('transfer.taskForm.database') }}:{{ selectedResource.connection_info.database }}
             </p>
             <p v-if="selectedResource.connection_info?.bucket">
-              存储桶:{{ selectedResource.connection_info.bucket }}
+              {{ t('transfer.taskDetail.bucket') }}:{{ selectedResource.connection_info.bucket }}
             </p>
           </div>
         </el-alert>
@@ -64,9 +64,9 @@
     </div>
 
     <div class="step-section">
-      <h3 class="step-section__title">配置读取参数</h3>
+      <h3 class="step-section__title">{{ t('transfer.taskWizard.configReadParams') }}</h3>
       <el-alert type="info" :closable="false" style="margin-bottom: 20px">
-        根据源类型配置读取参数
+        {{ t('transfer.taskWizard.readParamsHint') }}
       </el-alert>
 
       <slot name="config-form"></slot>
@@ -76,6 +76,9 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   connectorType: {

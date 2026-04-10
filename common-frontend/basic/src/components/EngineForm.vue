@@ -1,29 +1,29 @@
 <template>
-  <el-form ref="formRef" :model="formData" :rules="rules" label-width="120px">
-    <el-form-item label="名称" prop="name">
-      <el-input v-model="formData.name" placeholder="引擎显示名称（中文或英文）" />
+  <el-form ref="formRef" :model="formData" :rules="computedRules" label-width="120px">
+    <el-form-item :label="t('engineForm.name')" prop="name">
+      <el-input v-model="formData.name" :placeholder="t('engineForm.namePlaceholder')" />
     </el-form-item>
 
-    <el-form-item label="描述" prop="description">
+    <el-form-item :label="t('engineForm.description')" prop="description">
       <el-input
         v-model="formData.description"
         type="textarea"
         :rows="2"
-        placeholder="资源用途说明"
+        :placeholder="t('engineForm.descPlaceholder')"
       />
     </el-form-item>
 
-    <el-form-item label="资源类型" prop="resource_type">
-      <el-select v-model="formData.resource_type" placeholder="请选择资源类型" :disabled="isEdit">
-        <el-option label="计算引擎" value="compute_engine" />
-        <el-option label="数据库" value="database" />
-        <el-option label="对象存储" value="object_storage" />
+    <el-form-item :label="t('engineForm.resourceType')" prop="resource_type">
+      <el-select v-model="formData.resource_type" :placeholder="t('engineForm.resourceTypePlaceholder')" :disabled="isEdit">
+        <el-option :label="t('engineForm.computeEngine')" value="compute_engine" />
+        <el-option :label="t('engineForm.database')" value="database" />
+        <el-option :label="t('engineForm.objectStorage')" value="object_storage" />
       </el-select>
     </el-form-item>
 
-    <el-form-item label="能力声明" prop="capabilities">
+    <el-form-item :label="t('engineForm.capabilities')" prop="capabilities">
       <el-tabs v-model="capabilitiesTab">
-        <el-tab-pane label="JSON 编辑" name="json">
+        <el-tab-pane :label="t('engineForm.capabilityTabJson')" name="json">
           <el-input
             v-model="formData.capabilities"
             type="textarea"
@@ -31,13 +31,13 @@
             placeholder='{"compute": [{"type": "spatial", "category": "gis", "description": "空间计算"}]}'
           />
           <div class="form-hint">
-            必须是有效的 JSON，且包含 storage 或 compute 字段
+            {{ t('engineForm.jsonHint') }}
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="可视化配置" name="visual">
+        <el-tab-pane :label="t('engineForm.capabilityTabVisual')" name="visual">
           <el-alert
-            title="可视化配置功能即将推出"
+            :title="t('engineForm.comingSoon')"
             type="info"
             :closable="false"
             show-icon
@@ -45,27 +45,30 @@
           />
           <div class="visual-config-placeholder">
             <el-icon :size="48" color="#909399"><InfoFilled /></el-icon>
-            <p>暂时请使用 JSON 编辑模式配置能力声明</p>
+            <p>{{ t('engineForm.useJsonMode') }}</p>
           </div>
         </el-tab-pane>
       </el-tabs>
 
       <div class="json-actions">
-        <el-button size="small" @click="formatJSON">格式化</el-button>
-        <el-button size="small" @click="validateJSONManually">校验</el-button>
+        <el-button size="small" @click="formatJSON">{{ t('engineForm.format') }}</el-button>
+        <el-button size="small" @click="validateJSONManually">{{ t('engineForm.validate') }}</el-button>
       </div>
     </el-form-item>
 
-    <el-form-item label="启用状态">
+    <el-form-item :label="t('engineForm.enabledStatus')">
       <el-switch v-model="formData.is_active" />
     </el-form-item>
   </el-form>
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
@@ -91,62 +94,43 @@ const formData = reactive({
   is_active: true
 })
 
-// 表单校验规则
-const rules = {
-  name: [
-    { required: true, message: '请输入名称', trigger: 'blur' }
-  ],
-  resource_type: [
-    { required: true, message: '请选择资源类型', trigger: 'change' }
-  ],
-  capabilities: [
-    { required: true, message: '请输入能力声明', trigger: 'blur' },
-    { validator: validateCapabilities, trigger: 'blur' }
-  ]
-}
-
 // 校验能力声明 JSON
 function validateCapabilities(rule, value, callback) {
   if (!value) {
-    callback(new Error('请输入能力声明'))
+    callback(new Error(t('engineForm.valid.capabilities')))
     return
   }
 
   try {
     const parsed = JSON.parse(value)
     if (!parsed.storage && !parsed.compute) {
-      callback(new Error('必须声明至少一种能力（storage 或 compute）'))
+      callback(new Error(t('engineForm.valid.capabilitiesField')))
     } else {
       callback()
     }
   } catch (e) {
-    callback(new Error('JSON 格式错误'))
+    callback(new Error(t('engineForm.valid.jsonFormat')))
   }
 }
 
-// 校验通用 JSON
-function validateJSON(rule, value, callback) {
-  if (!value) {
-    callback()
-    return
-  }
-
-  try {
-    JSON.parse(value)
-    callback()
-  } catch (e) {
-    callback(new Error('JSON 格式错误'))
-  }
-}
+// 表单验证规则（响应式，支持语言切换）
+const computedRules = computed(() => ({
+  name: [{ required: true, message: t('engineForm.valid.name'), trigger: 'blur' }],
+  resource_type: [{ required: true, message: t('engineForm.valid.resourceType'), trigger: 'change' }],
+  capabilities: [
+    { required: true, message: t('engineForm.valid.capabilities'), trigger: 'blur' },
+    { validator: validateCapabilities, trigger: 'blur' }
+  ]
+}))
 
 // 格式化 JSON
 const formatJSON = () => {
   try {
     const parsed = JSON.parse(formData.capabilities)
     formData.capabilities = JSON.stringify(parsed, null, 2)
-    ElMessage.success('格式化成功')
+    ElMessage.success(t('engineForm.valid.formatSuccess'))
   } catch (e) {
-    ElMessage.error('JSON 格式错误，无法格式化')
+    ElMessage.error(t('engineForm.valid.jsonFormat'))
   }
 }
 
@@ -155,12 +139,12 @@ const validateJSONManually = () => {
   try {
     const parsed = JSON.parse(formData.capabilities)
     if (!parsed.storage && !parsed.compute) {
-      ElMessage.warning('能力声明必须包含 storage 或 compute 字段')
+      ElMessage.warning(t('engineForm.valid.capabilitiesFieldWarning'))
       return
     }
-    ElMessage.success('JSON 格式正确')
+    ElMessage.success(t('engineForm.valid.jsonFormatSuccess'))
   } catch (e) {
-    ElMessage.error('JSON 格式错误: ' + e.message)
+    ElMessage.error(t('engineForm.valid.jsonFormat') + ': ' + e.message)
   }
 }
 

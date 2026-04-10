@@ -36,6 +36,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { parseLocator } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
@@ -43,6 +44,8 @@ import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
+
+const { t } = useI18n()
 
 // 树形面板宽度
 const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
@@ -68,7 +71,7 @@ const selectedNodeLegacy = computed(() => {
     locator: store.selectedLocator,
     engineId: loc.engineId,
     engineType: store.selectedNode.engineType || engine?.engine_type || '',
-    engineName: engine?.name || `引擎 ${loc.engineId}`,
+      engineName: engine?.name || t('manager.explorer.engineNotFound', { engineId: loc.engineId }),
     schema: loc.path[0] || '',
     table: loc.path[1] || '',
     path: loc.path.join('/'),
@@ -90,8 +93,7 @@ const handleNodeSelect = async ({ node, locator }) => {
       // 提取后端返回的错误信息（优先使用 response.data.error，否则使用 error.message）
       const errorMessage = error.response?.data?.error || error.message
       ElMessage.error(errorMessage)
-    }
-  }
+    }  }
 }
 
 // 事件处理：搜索结果选择
@@ -115,10 +117,10 @@ const handleSearchResultSelect = async (result) => {
   // 3. 加载预览
   try {
     await store.loadPreview(locator, 1)
-    ElMessage.success('已定位到搜索结果')
+    ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
     console.error('加载预览失败:', error)
-    ElMessage.error('加载预览失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }
 
@@ -129,7 +131,7 @@ const handlePageChange = async (page) => {
   try {
     await store.loadPreview(store.selectedLocator, page)
   } catch (error) {
-    ElMessage.error('加载预览失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }
 
@@ -163,7 +165,7 @@ onMounted(async () => {
       store.expandedLocators = new Set(engineLocators)
     }
   } catch (error) {
-    ElMessage.error('初始化失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
   }
 })
 
@@ -190,7 +192,7 @@ watch(() => route.query, async (query) => {
     const engine = store.engines.find(e => e.id === engineId)
     if (!engine) {
       console.warn('[DataExplorer] 引擎未找到:', engineId)
-      ElMessage.warning(`引擎 ${engineId} 未找到`)
+      ElMessage.warning(t('manager.explorer.engineNotFound', { engineId }))
       return
     }
 
@@ -278,10 +280,10 @@ watch(() => route.query, async (query) => {
 
     await nextTick()
     console.log('[DataExplorer] 成功定位到对象')
-    ElMessage.success('已定位到目标对象')
+    ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
     console.error('[DataExplorer] 定位失败:', error)
-    ElMessage.error('定位失败: ' + error.message)
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }, { immediate: true })
 </script>

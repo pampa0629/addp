@@ -8,20 +8,20 @@
   <div v-else class="layout">
     <el-header class="header">
       <div class="header-left">
-        <h1>Develop 数据开发</h1>
+        <h1>{{ t('develop.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('develop.layout.user') }}
             <el-icon class="el-icon--right"><arrow-down /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('develop.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -38,32 +38,32 @@
         >
           <el-menu-item index="/query">
             <el-icon><Document /></el-icon>
-            <span>查询编辑器</span>
+            <span>{{ t('develop.nav.queryEditor') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/notebook">
             <el-icon><Notebook /></el-icon>
-            <span>Notebook 开发</span>
+            <span>{{ t('develop.nav.notebook') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/sql-tasks">
             <el-icon><FolderOpened /></el-icon>
-            <span>查询任务</span>
+            <span>{{ t('develop.nav.queryTasks') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/workflow">
             <el-icon><Connection /></el-icon>
-            <span>工作流编辑器</span>
+            <span>{{ t('develop.nav.workflow') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/tasks">
             <el-icon><List /></el-icon>
-            <span>任务管理</span>
+            <span>{{ t('develop.nav.tasks') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/executions">
             <el-icon><Monitor /></el-icon>
-            <span>执行监控</span>
+            <span>{{ t('develop.nav.executions') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -79,6 +79,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { useI18n } from 'vue-i18n'
 import {
   User,
   ArrowDown,
@@ -93,6 +94,7 @@ import {
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 const isInIframe = ref(false)
 
 onMounted(() => {

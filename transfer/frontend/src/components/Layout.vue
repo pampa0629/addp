@@ -8,20 +8,20 @@
   <div v-else class="layout">
     <el-header class="header">
       <div class="header-left">
-        <h1>Transfer 数据传输</h1>
+        <h1>{{ t('transfer.layout.title') }}</h1>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('transfer.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('transfer.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -38,22 +38,22 @@
         >
           <el-menu-item index="/tasks">
             <el-icon><List /></el-icon>
-            <span>任务列表</span>
+            <span>{{ t('transfer.layout.taskList') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/executions">
             <el-icon><DocumentCopy /></el-icon>
-            <span>执行记录</span>
+            <span>{{ t('transfer.layout.executionList') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/dashboard">
             <el-icon><Monitor /></el-icon>
-            <span>监控面板</span>
+            <span>{{ t('transfer.layout.dashboard') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/local-engines">
             <el-icon><Cpu /></el-icon>
-            <span>本地引擎</span>
+            <span>{{ t('transfer.layout.localEngines') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -68,6 +68,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import {
   User,
@@ -81,6 +82,7 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const authStore = useAuthStore()
 const isInIframe = ref(false)
 

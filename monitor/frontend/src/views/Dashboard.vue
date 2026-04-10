@@ -4,7 +4,7 @@
     <el-row :gutter="20" style="margin-bottom: 20px;">
       <el-col :span="6">
         <statistics-card
-          title="总执行次数"
+          :title="t('monitor.dashboard.total_executions')"
           :value="stats.total || 0"
           icon="Document"
           type="primary"
@@ -12,16 +12,16 @@
       </el-col>
       <el-col :span="6">
         <statistics-card
-          title="成功率"
+          :title="t('monitor.dashboard.success_rate')"
           :value="`${(stats.success_rate || 0).toFixed(1)}%`"
-          :subtitle="`成功: ${stats.success_count || 0}`"
+          :subtitle="`${t('monitor.dashboard.success_count')}: ${stats.success_count || 0}`"
           icon="SuccessFilled"
           type="success"
         />
       </el-col>
       <el-col :span="6">
         <statistics-card
-          title="运行中"
+          :title="t('monitor.dashboard.running')"
           :value="stats.running_count || 0"
           icon="Loading"
           type="warning"
@@ -29,7 +29,7 @@
       </el-col>
       <el-col :span="6">
         <statistics-card
-          title="失败次数"
+          :title="t('monitor.dashboard.failed_count')"
           :value="stats.failed_count || 0"
           icon="CircleClose"
           type="danger"
@@ -43,10 +43,10 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>模块健康状态</span>
+              <span>{{ t('monitor.dashboard.module_health') }}</span>
               <el-button text @click="refreshModulesHealth">
                 <el-icon><Refresh /></el-icon>
-                刷新
+                {{ t('monitor.dashboard.refresh') }}
               </el-button>
             </div>
           </template>
@@ -56,7 +56,7 @@
               :key="module.module"
               :module="module"
             />
-            <el-empty v-if="modules.length === 0" description="暂无模块信息" />
+            <el-empty v-if="modules.length === 0" :description="t('monitor.dashboard.no_modules')" />
           </div>
         </el-card>
       </el-col>
@@ -66,11 +66,11 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>执行趋势（最近7天）</span>
+              <span>{{ t('monitor.dashboard.trend_title') }}</span>
               <el-select v-model="trendDays" @change="loadTrendData" style="width: 100px;">
-                <el-option label="7天" :value="7" />
-                <el-option label="14天" :value="14" />
-                <el-option label="30天" :value="30" />
+                <el-option :label="t('monitor.dashboard.trend_days.7')" :value="7" />
+                <el-option :label="t('monitor.dashboard.trend_days.14')" :value="14" />
+                <el-option :label="t('monitor.dashboard.trend_days.30')" :value="30" />
               </el-select>
             </div>
           </template>
@@ -83,9 +83,9 @@
     <el-card shadow="hover" style="margin-top: 20px;">
       <template #header>
         <div class="card-header">
-          <span>最近执行记录</span>
+          <span>{{ t('monitor.dashboard.recent_executions') }}</span>
           <el-button text @click="gotoExecutionList">
-            查看全部
+            {{ t('monitor.dashboard.view_all') }}
             <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
@@ -101,6 +101,7 @@
 <script setup>
 import { ref, onMounted, nextTick, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import {
@@ -115,6 +116,7 @@ import ExecutionTable from '@/components/ExecutionTable.vue'
 import { useTheme } from '@common-ui'
 
 const router = useRouter()
+const { t } = useI18n()
 const { mode } = useTheme()
 
 // 数据
@@ -143,7 +145,7 @@ async function loadStatistics() {
     const data = await getStatistics({ duration: '24h' })
     stats.value = data
   } catch (error) {
-    ElMessage.error('加载统计数据失败')
+    ElMessage.error(t('monitor.dashboard.stats_failed'))
     console.error(error)
   }
 }
@@ -155,7 +157,7 @@ async function loadModulesHealth() {
     const data = await checkAllModules()
     modules.value = data || []
   } catch (error) {
-    ElMessage.error('加载模块健康状态失败')
+    ElMessage.error(t('monitor.dashboard.modules_failed'))
     console.error(error)
   } finally {
     loadingModules.value = false
@@ -165,7 +167,7 @@ async function loadModulesHealth() {
 // 刷新模块健康状态
 async function refreshModulesHealth() {
   await loadModulesHealth()
-  ElMessage.success('刷新成功')
+  ElMessage.success(t('monitor.dashboard.refresh_success'))
 }
 
 // 加载趋势数据
@@ -177,7 +179,7 @@ async function loadTrendData() {
     await nextTick()
     renderTrendChart()
   } catch (error) {
-    ElMessage.error('加载趋势数据失败')
+    ElMessage.error(t('monitor.dashboard.trend_failed'))
     console.error(error)
   } finally {
     loadingTrend.value = false
@@ -225,7 +227,7 @@ function renderTrendChart() {
       }
     },
     legend: {
-      data: ['成功', '失败', '总数'],
+      data: [t('monitor.dashboard.chart.success'), t('monitor.dashboard.chart.failed'), t('monitor.dashboard.chart.total')],
       textStyle: {
         color: textColor
       }
@@ -260,21 +262,21 @@ function renderTrendChart() {
     },
     series: [
       {
-        name: '成功',
+        name: t('monitor.dashboard.chart.success'),
         type: 'line',
         data: trendData.value.map(d => d.success_count),
         smooth: true,
         itemStyle: { color: successColor }
       },
       {
-        name: '失败',
+        name: t('monitor.dashboard.chart.failed'),
         type: 'line',
         data: trendData.value.map(d => d.failed_count),
         smooth: true,
         itemStyle: { color: dangerColor }
       },
       {
-        name: '总数',
+        name: t('monitor.dashboard.chart.total'),
         type: 'line',
         data: trendData.value.map(d => d.total),
         smooth: true,
@@ -292,14 +294,14 @@ async function loadRecentExecutions() {
     const data = await listExecutions({ page: 1, page_size: 10 })
     recentExecutions.value = data.executions || []
   } catch (error) {
-    ElMessage.error('加载执行记录失败')
+    ElMessage.error(t('monitor.dashboard.executions_failed'))
     console.error(error)
   }
 }
 
 // 查看执行详情
 function handleViewExecution(row) {
-  ElMessage.info(`查看执行记录 #${row.id}`)
+  ElMessage.info(t('monitor.dashboard.view_execution', { id: row.id }))
   // TODO: 实现详情弹窗或跳转
 }
 

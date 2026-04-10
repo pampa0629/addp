@@ -1,9 +1,9 @@
 <template>
   <div class="graph-service-list">
     <div class="page-header">
-      <h2>图查询服务</h2>
+      <h2>{{ t('service.graph.listTitle') }}</h2>
       <el-button type="primary" @click="$router.push('/graph-services/create')">
-        + 创建图查询服务
+        {{ t('service.graph.createBtn') }}
       </el-button>
     </div>
 
@@ -11,7 +11,7 @@
     <div class="toolbar">
       <el-input
         v-model="searchQuery"
-        placeholder="搜索服务名称、标题..."
+        :placeholder="t('service.graph.searchPlaceholder')"
         clearable
         style="width: 300px"
         @keyup.enter="loadServices"
@@ -24,22 +24,22 @@
     </div>
 
     <!-- 列表 -->
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="loading-state">{{ t('service.common.loading') }}</div>
     <div v-else-if="services.length === 0" class="empty-state">
-      <p>暂无图查询服务</p>
-      <p class="tip">点击"创建图查询服务"开始发布 Neo4j 数据服务</p>
+      <p>{{ t('service.graph.emptyText') }}</p>
+      <p class="tip">{{ t('service.graph.emptyTip') }}</p>
     </div>
     <table v-else class="services-table">
       <thead>
         <tr>
-          <th>服务名称</th>
-          <th>标题</th>
-          <th>配置类型</th>
-          <th>节点标签/查询</th>
-          <th>访问控制</th>
-          <th>状态</th>
-          <th>创建时间</th>
-          <th>操作</th>
+          <th>{{ t('service.graph.colServiceName') }}</th>
+          <th>{{ t('service.graph.colTitle') }}</th>
+          <th>{{ t('service.graph.colConfigType') }}</th>
+          <th>{{ t('service.graph.colNodeLabel') }}</th>
+          <th>{{ t('service.graph.colAccess') }}</th>
+          <th>{{ t('service.graph.colStatus') }}</th>
+          <th>{{ t('service.graph.colCreatedAt') }}</th>
+          <th>{{ t('service.graph.colActions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -48,7 +48,7 @@
           <td>{{ svc.title }}</td>
           <td>
             <el-tag :type="svc.config_type === 'label' ? 'success' : 'warning'" size="small">
-              {{ svc.config_type === 'label' ? '标签模式' : 'Cypher 模式' }}
+              {{ svc.config_type === 'label' ? t('service.graph.labelMode') : t('service.graph.cypherMode') }}
             </el-tag>
           </td>
           <td class="ellipsis">
@@ -57,7 +57,7 @@
           </td>
           <td>
             <el-tag :type="svc.public_access ? 'primary' : 'info'" size="small">
-              {{ svc.public_access ? '公开' : '需认证' }}
+              {{ svc.public_access ? t('service.graph.publicAccess') : t('service.graph.authRequired') }}
             </el-tag>
           </td>
           <td>
@@ -67,9 +67,9 @@
           </td>
           <td>{{ formatDate(svc.created_at) }}</td>
           <td class="actions">
-            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}`)">详情</el-button>
-            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}/edit`)">编辑</el-button>
-            <el-button size="small" type="danger" @click="confirmDelete(svc)">删除</el-button>
+            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}`)">{{ t('service.common.detail') }}</el-button>
+            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}/edit`)">{{ t('service.common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="confirmDelete(svc)">{{ t('service.common.delete') }}</el-button>
           </td>
         </tr>
       </tbody>
@@ -93,7 +93,10 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import graphApi from '../api/graphQueryService'
+
+const { t } = useI18n()
 
 const services = ref([])
 const loading = ref(false)
@@ -111,7 +114,7 @@ const loadServices = async () => {
     services.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error('加载失败：' + (e.response?.data?.error || e.message))
+    ElMessage.error(t('service.graph.loadFailed') + '：' + (e.response?.data?.error || e.message))
   } finally {
     loading.value = false
   }
@@ -119,17 +122,21 @@ const loadServices = async () => {
 
 const confirmDelete = async (svc) => {
   try {
-    await ElMessageBox.confirm(`确认删除服务 "${svc.service_name}"？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('service.graph.deleteConfirm', { name: svc.service_name }), t('service.graph.deleteConfirmTitle'), { type: 'warning' })
     await graphApi.deleteService(svc.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('service.graph.deleteSuccess'))
     loadServices()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败：' + (e.response?.data?.error || e.message))
+    if (e !== 'cancel') ElMessage.error(t('service.graph.deleteFailed') + '：' + (e.response?.data?.error || e.message))
   }
 }
 
 const statusType = (s) => ({ active: 'success', inactive: 'info', error: 'danger' }[s] || '')
-const statusText = (s) => ({ active: '运行中', inactive: '已停用', error: '错误' }[s] || s)
+const statusText = (s) => ({
+  active: t('service.graph.statusRunning'),
+  inactive: t('service.graph.statusInactive'),
+  error: t('service.graph.statusError')
+}[s] || s)
 const formatDate = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : '-'
 
 onMounted(loadServices)

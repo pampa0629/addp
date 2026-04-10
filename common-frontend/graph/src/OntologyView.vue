@@ -1,7 +1,7 @@
 <template>
   <div ref="containerRef" class="ontology-view">
     <div v-if="isEmpty" class="empty-hint">
-      <el-empty description="暂无实体类型，请先添加实体类型" :image-size="60" />
+      <el-empty :description="t('graph.noEntities')" :image-size="60" />
     </div>
     <!-- 右侧属性面板 -->
     <div v-if="selectedNode" class="node-detail">
@@ -11,13 +11,13 @@
         <el-button text size="small" style="margin-left:auto" @click="selectedNode = null">×</el-button>
       </div>
       <div class="node-detail-body">
-        <div class="detail-row"><span class="detail-key">标识符</span><span>{{ selectedNode.name }}</span></div>
-        <div class="detail-row"><span class="detail-key">显示名</span><span>{{ selectedNode.label }}</span></div>
+        <div class="detail-row"><span class="detail-key">{{ t('graph.identifier') }}</span><span>{{ selectedNode.name }}</span></div>
+        <div class="detail-row"><span class="detail-key">{{ t('graph.displayName') }}</span><span>{{ selectedNode.label }}</span></div>
         <div v-if="selectedNode._props && selectedNode._props.length" class="detail-section">
-          <div class="detail-section-title">属性列表</div>
+          <div class="detail-section-title">{{ t('graph.propList') }}</div>
           <div v-for="p in selectedNode._props" :key="p.name" class="detail-row">
             <span class="detail-key">{{ p.label || p.name }}</span>
-            <span class="detail-val">{{ p.data_type }}{{ p.required ? ' *' : '' }}{{ p.unique ? ' 唯一' : '' }}</span>
+            <span class="detail-val">{{ p.data_type }}{{ p.required ? ' *' : '' }}{{ p.unique ? ` ${t('graph.unique')}` : '' }}</span>
           </div>
         </div>
       </div>
@@ -27,7 +27,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+
+const { t } = useI18n()
 
 const props = defineProps({
   entityTypes: { type: Array, default: () => [] },

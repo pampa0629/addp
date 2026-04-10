@@ -2,22 +2,22 @@
   <div class="step5-review">
     <div class="review-header">
       <div>
-        <h3>确认创建</h3>
-        <p class="step-description">请确认以下任务配置，确认无误后点击"创建任务"</p>
+        <h3>{{ t('transfer.taskWizard.reviewPage') }}</h3>
+        <p class="step-description">{{ t('transfer.taskWizard.reviewPageDesc') }}</p>
       </div>
       <div class="action-buttons">
         <el-button @click="$emit('prev')">
-          上一步
+          {{ t('transfer.taskWizard.previousStep') }}
         </el-button>
         <el-button
           type="success"
           @click="$emit('submit')"
           :loading="submitting"
         >
-          {{ isEditMode ? '更新任务' : '创建任务' }}
+          {{ isEditMode ? t('transfer.taskWizard.updateTask') : t('transfer.taskWizard.createTask2') }}
         </el-button>
         <el-button @click="$emit('cancel')">
-          取消
+          {{ t('transfer.taskWizard.cancel') }}
         </el-button>
       </div>
     </div>
@@ -26,18 +26,18 @@
     <el-card class="config-card">
       <template #header>
         <div class="card-header">
-          <span>任务基本信息</span>
+          <span>{{ t('transfer.taskWizard.reviewTaskBasicInfo') }}</span>
         </div>
       </template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="任务名称">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskName')">
           {{ wizardState.taskName.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="调度计划">
-          {{ wizardState.schedule.value || '立即执行一次' }}
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewSchedule')">
+          {{ wizardState.schedule.value || t('transfer.taskWizard.reviewScheduleOnce') }}
         </el-descriptions-item>
-        <el-descriptions-item label="任务描述" :span="2">
-          {{ wizardState.taskDescription.value || '无' }}
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskDesc')" :span="2">
+          {{ wizardState.taskDescription.value || t('transfer.taskWizard.reviewNone') }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -46,17 +46,17 @@
     <el-card class="config-card">
       <template #header>
         <div class="card-header">
-          <span>数据源配置</span>
+          <span>{{ t('transfer.taskWizard.reviewSourceConfig') }}</span>
         </div>
       </template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="引擎ID">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.sourceEngineID.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="Schema">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewSchema')">
           {{ wizardState.sourceSchema.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="表名" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewTable')" :span="2">
           {{ wizardState.sourceTable.value }}
         </el-descriptions-item>
       </el-descriptions>
@@ -66,17 +66,17 @@
     <el-card class="config-card">
       <template #header>
         <div class="card-header">
-          <span>目标配置</span>
+          <span>{{ t('transfer.taskWizard.reviewTargetConfig') }}</span>
         </div>
       </template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="引擎ID">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.targetEngineID.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="Schema">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewSchema')">
           {{ wizardState.targetSchema.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="表名" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewTable')" :span="2">
           {{ wizardState.targetTable.value }}
         </el-descriptions-item>
       </el-descriptions>
@@ -86,7 +86,7 @@
     <el-card class="config-card">
       <template #header>
         <div class="card-header">
-          <span>字段映射 ({{ wizardState.fieldMappings.value.length }} 个)</span>
+          <span>{{ t('transfer.taskWizard.reviewFieldMapping', { count: wizardState.fieldMappings.value.length }) }}</span>
         </div>
       </template>
       <el-table
@@ -95,10 +95,10 @@
         size="small"
         max-height="300"
       >
-        <el-table-column prop="source_field" label="源字段" width="200" />
-        <el-table-column prop="target_field" label="目标字段" width="200" />
-        <el-table-column prop="field_type" label="类型" width="120" />
-        <el-table-column label="格式/默认值">
+        <el-table-column prop="source_field" :label="t('transfer.taskWizard.reviewSourceFieldCol')" width="200" />
+        <el-table-column prop="target_field" :label="t('transfer.taskWizard.reviewTargetFieldCol')" width="200" />
+        <el-table-column prop="field_type" :label="t('transfer.taskWizard.reviewTypeCol')" width="120" />
+        <el-table-column :label="t('transfer.taskWizard.reviewFormatDefaultCol')">
           <template #default="{ row }">
             {{ row.format || row.default_value || '-' }}
           </template>
@@ -110,7 +110,7 @@
     <el-card v-if="wizardState.transforms.value.length > 0" class="config-card">
       <template #header>
         <div class="card-header">
-          <span>数据转换 ({{ wizardState.transforms.value.length }} 个)</span>
+          <span>{{ t('transfer.taskWizard.reviewDataTransforms', { count: wizardState.transforms.value.length }) }}</span>
         </div>
       </template>
       <el-tag
@@ -126,8 +126,8 @@
     <el-card class="config-card">
       <template #header>
         <div class="card-header">
-          <span>完整配置（JSON）</span>
-          <el-button size="small" @click="copyConfig">复制配置</el-button>
+          <span>{{ t('transfer.taskWizard.reviewFullConfig') }}</span>
+          <el-button size="small" @click="copyConfig">{{ t('transfer.taskWizard.reviewCopyConfig') }}</el-button>
         </div>
       </template>
       <pre class="json-preview">{{ JSON.stringify(wizardState.taskConfig.value, null, 2) }}</pre>
@@ -136,7 +136,7 @@
     <!-- 警告提示 -->
     <el-alert
       v-if="hasWarnings"
-      title="注意事项"
+      :title="t('transfer.taskWizard.reviewWarnings')"
       type="warning"
       :closable="false"
       style="margin-top: 20px"
@@ -150,7 +150,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   wizardState: {
@@ -172,18 +175,13 @@ defineEmits(['prev', 'submit', 'cancel'])
 const warnings = computed(() => {
   const warns = []
 
-  // 检查是否有字段映射
   if (props.wizardState.fieldMappings.value.length === 0) {
-    warns.push('未配置字段映射，将尝试自动映射同名字段')
+    warns.push(t('transfer.taskWizard.warningNoMapping'))
   }
 
-  // 检查调度计划
   if (!props.wizardState.schedule.value) {
-    warns.push('未配置调度计划，任务将立即执行一次')
+    warns.push(t('transfer.taskWizard.warningNoSchedule'))
   }
-
-  // 检查目标表是否存在
-  // 这里可以添加更多验证逻辑
 
   return warns
 })
@@ -193,21 +191,17 @@ const hasWarnings = computed(() => warnings.value.length > 0)
 function copyConfig() {
   const config = JSON.stringify(props.wizardState.taskConfig.value, null, 2)
 
-  // 尝试使用现代 Clipboard API
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(config).then(() => {
-      ElMessage.success('配置已复制到剪贴板')
+      ElMessage.success(t('transfer.taskWizard.reviewConfigCopied'))
     }).catch(() => {
-      // Clipboard API 失败，使用 fallback
       fallbackCopyToClipboard(config)
     })
   } else {
-    // 浏览器不支持 Clipboard API，使用 fallback
     fallbackCopyToClipboard(config)
   }
 }
 
-// 兼容旧浏览器的复制方法
 function fallbackCopyToClipboard(text) {
   const textArea = document.createElement('textarea')
   textArea.value = text
@@ -228,13 +222,13 @@ function fallbackCopyToClipboard(text) {
   try {
     const successful = document.execCommand('copy')
     if (successful) {
-      ElMessage.success('配置已复制到剪贴板')
+      ElMessage.success(t('transfer.taskWizard.reviewConfigCopied'))
     } else {
-      ElMessage.error('复制失败，请手动复制')
+      ElMessage.error(t('transfer.taskWizard.reviewCopyFailed'))
     }
   } catch (err) {
     console.error('复制失败:', err)
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('transfer.taskWizard.reviewCopyFailed'))
   }
 
   document.body.removeChild(textArea)

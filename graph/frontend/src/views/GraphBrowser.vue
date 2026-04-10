@@ -5,17 +5,17 @@
       <div class="toolbar-left">
         <span class="graph-name">{{ graphName }}</span>
         <el-tag v-if="stats" size="small" type="info">
-          {{ stats.node_count }} 节点 / {{ stats.edge_count }} 关系
+          {{ stats.node_count }} {{ t('graph.browser.nodes') }} / {{ stats.edge_count }} {{ t('graph.browser.relations') }}
         </el-tag>
         <!-- 着色状态标签 -->
         <el-tag v-if="analysisActive" size="small" type="warning" closable @close="handleClearScores">
-          已着色：{{ analysisAlgoName }}
+          {{ t('graph.browser.colored') }}：{{ analysisAlgoName }}
         </el-tag>
       </div>
       <div class="toolbar-center">
         <el-input
           v-model="searchQuery"
-          placeholder="搜索节点..."
+          :placeholder="t('graph.browser.searchPlaceholder')"
           clearable
           style="width: 280px"
           @keyup.enter="handleSearch"
@@ -28,17 +28,17 @@
       </div>
       <div class="toolbar-right">
         <el-select v-model="currentLayout" style="width: 110px" @change="onLayoutChange">
-          <el-option label="力导向" value="force" />
-          <el-option label="分层" value="dagre" />
-          <el-option label="环形" value="circular" />
-          <el-option label="辐射" value="radial" />
+          <el-option :label="t('graph.browser.layoutForce')" value="force" />
+          <el-option :label="t('graph.browser.layoutDagre')" value="dagre" />
+          <el-option :label="t('graph.browser.layoutCircular')" value="circular" />
+          <el-option :label="t('graph.browser.layoutRadial')" value="radial" />
         </el-select>
-        <el-button :icon="Refresh" @click="loadOverview" title="重置视图" />
+        <el-button :icon="Refresh" @click="loadOverview" :title="t('graph.browser.resetView')" />
         <!-- 图分析切换按钮 -->
         <el-button
           :type="activeRightPanel === 'analysis' ? 'primary' : ''"
           :icon="DataAnalysis"
-          title="图分析"
+          :title="t('graph.browser.graphAnalysis')"
           @click="toggleAnalysisPanel"
         />
         <el-button
@@ -47,7 +47,7 @@
           size="small"
           @click="cancelPathMode"
         >
-          取消路径查找 ({{ pathNodes.length }}/2)
+          {{ t('graph.browser.cancelPath') }} ({{ pathNodes.length }}/2)
         </el-button>
       </div>
     </div>
@@ -57,7 +57,7 @@
       <!-- 左侧过滤面板 -->
       <div class="filter-panel">
         <div class="filter-section">
-          <div class="filter-title">实体类型</div>
+          <div class="filter-title">{{ t('graph.browser.entityTypes') }}</div>
           <div v-if="schema.labels.length === 0" class="filter-empty">—</div>
           <el-checkbox-group v-else v-model="visibleLabels" @change="applyFilter">
             <div v-for="label in schema.labels" :key="label" class="filter-item">
@@ -70,7 +70,7 @@
         </div>
         <el-divider />
         <div class="filter-section">
-          <div class="filter-title">关系类型</div>
+          <div class="filter-title">{{ t('graph.browser.relationTypes') }}</div>
           <div v-if="schema.rel_types.length === 0" class="filter-empty">—</div>
           <el-checkbox-group v-else v-model="visibleRelTypes" @change="applyFilter">
             <div v-for="rt in schema.rel_types" :key="rt" class="filter-item">
@@ -135,6 +135,9 @@ import { knowledgeGraphAPI } from '../api/ontology'
 import GraphCanvas from '../components/GraphCanvas.vue'
 import NodePanel from '../components/NodePanel.vue'
 import AnalysisPanel from '../components/AnalysisPanel.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const graphId = computed(() => route.params.id)
@@ -238,7 +241,7 @@ async function loadOverview() {
     visibleLabels.value = [...schema.value.labels]
     visibleRelTypes.value = [...schema.value.rel_types]
   } catch (e) {
-    ElMessage.error('加载图谱概览失败: ' + e.message)
+    ElMessage.error(t('graph.browser.loadOverviewFailed') + ': ' + e.message)
   } finally {
     loading.value = false
   }
@@ -267,9 +270,9 @@ async function loadStats() {
 async function loadGraphMeta() {
   try {
     const res = await knowledgeGraphAPI.get(graphId.value)
-    graphName.value = res?.name || `图谱 #${graphId.value}`
+    graphName.value = res?.name || `${t('graph.browser.graphPrefix')} #${graphId.value}`
   } catch (e) {
-    graphName.value = `图谱 #${graphId.value}`
+    graphName.value = `${t('graph.browser.graphPrefix')} #${graphId.value}`
   }
 }
 
@@ -290,9 +293,9 @@ async function handleSearch() {
     const result = res
     mergeSubgraph(result)
     if (!result?.nodes?.length) {
-      ElMessage.info('未找到匹配节点')
+      ElMessage.info(t('graph.browser.noNodesFound'))
     } else {
-      ElMessage.success(`找到 ${result.nodes.length} 个节点`)
+      ElMessage.success(t('graph.browser.foundNodes', { count: result.nodes.length }))
       // 等待 Vue 响应式更新后触发定位（afterlayout 中执行高亮+居中）
       await nextTick()
       const foundIds = result.nodes.map(n => n.id)
@@ -303,7 +306,7 @@ async function handleSearch() {
       }
     }
   } catch (e) {
-    ElMessage.error('搜索失败: ' + e.message)
+    ElMessage.error(t('graph.browser.searchFailed') + ': ' + e.message)
   } finally {
     searching.value = false
   }
@@ -346,7 +349,7 @@ async function handleExpand(nodeId) {
     const res = await browseAPI.expandNode(graphId.value, nodeId)
     mergeSubgraph(res)
   } catch (e) {
-    ElMessage.error('展开失败: ' + e.message)
+    ElMessage.error(t('graph.browser.expandFailed') + ': ' + e.message)
   } finally {
     loading.value = false
   }
@@ -369,9 +372,9 @@ async function findPath() {
   try {
     const res = await browseAPI.findPath(graphId.value, src, dst)
     mergeSubgraph(res)
-    ElMessage.success('路径已展示在画布上')
+    ElMessage.success(t('graph.browser.pathShown'))
   } catch (e) {
-    ElMessage.error('路径查找失败: ' + e.message)
+    ElMessage.error(t('graph.browser.pathFailed') + ': ' + e.message)
   } finally {
     loading.value = false
     cancelPathMode()
@@ -400,7 +403,7 @@ function handleApplyScores(nodeScores, mode, algoName) {
   if (!nodeScores?.length) return
   canvasRef.value?.applyScoreColors(nodeScores, mode)
   analysisActive.value = true
-  analysisAlgoName.value = algoName || '算法分析'
+  analysisAlgoName.value = algoName || t('graph.browser.algoAnalysis')
 }
 
 function handleClearScores() {
@@ -415,7 +418,7 @@ function handleFocusNode(nodeId) {
 
 function handleLoadSubgraph(subgraph) {
   mergeSubgraph(subgraph)
-  ElMessage.success(`已加载 ${subgraph.nodes?.length || 0} 个节点到画布`)
+  ElMessage.success(t('graph.browser.subgraphLoaded', { count: subgraph.nodes?.length || 0 }))
 }
 
 onMounted(async () => {

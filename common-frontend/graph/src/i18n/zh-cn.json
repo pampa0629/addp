@@ -1,0 +1,18 @@
+{
+  "graph": {
+    "noData": "无图形数据",
+    "nodes": "节点",
+    "relationships": "关系",
+    "fitView": "适应窗口",
+    "noSchema": "暂无图 Schema 数据，请先扫描元数据",
+    "nodeLegend": "节点标签",
+    "relationLegend": "关系类型",
+    "nodeCount": "节点数量",
+    "properties": "属性",
+    "noEntities": "暂无实体类型，请先添加实体类型",
+    "identifier": "标识符",
+    "displayName": "显示名",
+    "propList": "属性列表",
+    "unique": "唯一"
+  }
+}

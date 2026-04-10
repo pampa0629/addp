@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "login": {
+      "title": "ADDP 智能体",
+      "username": "用户名",
+      "password": "密码",
+      "usernamePlaceholder": "请输入用户名",
+      "passwordPlaceholder": "请输入密码",
+      "submit": "登录",
+      "emptyWarning": "请输入用户名和密码",
+      "failed": "登录失败，请检查用户名和密码"
+    },
+    "chat": {
+      "newSession": "新对话",
+      "noSessions": "暂无对话",
+      "welcome": "你好！我是 ADDP AI 助手，可以帮你完成数据管理、分析、发布等操作。",
+      "inputPlaceholder": "输入消息，Ctrl+Enter 发送...",
+      "send": "发送",
+      "createFailed": "创建会话失败",
+      "deleteFailed": "删除失败",
+      "sendFailed": "发送失败: {msg}",
+      "errorReply": "抱歉，发生了错误，请重试。",
+      "workflowGenerated": "已生成工作流"
+    },
+    "quickHints": {
+      "viewCatalog": "查看我的数据目录",
+      "listSources": "有哪些数据源可以使用？",
+      "importShapefile": "如何导入一个 Shapefile？",
+      "runSQL": "帮我执行一个 SQL 查询"
+    }
+  }
+}

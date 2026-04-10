@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
@@ -58,7 +60,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	if entityIDStr != "" {
 		entityID, parseErr := strconv.ParseInt(entityIDStr, 10, 64)
 		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid entity_id"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidEntityIDQuery)})
 			return
 		}
 		relations, err = h.svc.GetByEntityID(tenantID, entityID)
@@ -84,14 +86,14 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.GetByID(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "relation not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgRelationNotFound)})
 		return
 	}
 
@@ -108,7 +110,7 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -138,7 +140,7 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 

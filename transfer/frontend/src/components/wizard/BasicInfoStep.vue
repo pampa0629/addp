@@ -1,39 +1,39 @@
 <template>
   <div class="basic-info-step">
     <el-form :model="form" ref="formRef" label-width="120px">
-      <el-form-item label="任务名称" prop="name" :rules="[{ required: true, message: '请输入任务名称' }]">
-        <el-input v-model="form.name" placeholder="例如:用户数据每日同步" />
+      <el-form-item :label="t('transfer.taskWizard.taskName')" prop="name" :rules="[{ required: true, message: t('transfer.taskWizard.taskNameRequired') }]">
+        <el-input v-model="form.name" :placeholder="t('transfer.taskWizard.taskNamePlaceholder')" />
       </el-form-item>
 
-      <el-form-item label="任务描述">
+      <el-form-item :label="t('transfer.taskWizard.taskDescription')">
         <el-input v-model="form.description" type="textarea" :rows="3"
-          placeholder="描述任务的用途和注意事项" />
+          :placeholder="t('transfer.taskWizard.taskDescriptionPlaceholder')" />
       </el-form-item>
 
-      <el-form-item label="执行模式">
+      <el-form-item :label="t('transfer.taskWizard.executionMode')">
         <el-radio-group v-model="form.mode">
-          <el-radio-button value="batch">批处理</el-radio-button>
-          <el-radio-button value="stream">流式</el-radio-button>
-          <el-radio-button value="micro-batch">微批</el-radio-button>
+          <el-radio-button value="batch">{{ t('transfer.taskWizard.batchMode') }}</el-radio-button>
+          <el-radio-button value="stream">{{ t('transfer.taskWizard.streamMode') }}</el-radio-button>
+          <el-radio-button value="micro-batch">{{ t('transfer.taskWizard.microBatchMode') }}</el-radio-button>
         </el-radio-group>
         <div class="hint">
-          <p>• 批处理:适合定期大批量数据传输(推荐)</p>
-          <p>• 流式:适合实时数据传输</p>
-          <p>• 微批:小批量实时传输</p>
+          <p>• {{ t('transfer.taskWizard.batchModeHint') }}</p>
+          <p>• {{ t('transfer.taskWizard.streamModeHint') }}</p>
+          <p>• {{ t('transfer.taskWizard.microBatchModeHint') }}</p>
         </div>
       </el-form-item>
 
-      <el-form-item label="批量大小">
+      <el-form-item :label="t('transfer.taskWizard.batchSize')">
         <el-input-number v-model="form.batch_size" :min="100" :max="10000" :step="100" />
-        <div class="hint">每批处理的记录数,推荐 1000-5000</div>
+        <div class="hint">{{ t('transfer.taskWizard.batchSizeHint') }}</div>
       </el-form-item>
 
-      <el-form-item label="最大并行度">
+      <el-form-item :label="t('transfer.taskWizard.maxParallelism')">
         <el-input-number v-model="form.max_parallelism" :min="1" :max="32" />
-        <div class="hint">同时运行的 Worker 数量,推荐 2-8</div>
+        <div class="hint">{{ t('transfer.taskWizard.maxParallelismHint') }}</div>
       </el-form-item>
 
-      <el-form-item label="定时调度">
+      <el-form-item :label="t('transfer.taskWizard.schedule')">
         <slot name="schedule"></slot>
       </el-form-item>
     </el-form>
@@ -42,6 +42,9 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {

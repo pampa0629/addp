@@ -4,18 +4,18 @@
     <div class="ai-assistant-panel">
       <div class="ai-header">
         <span class="ai-icon">🤖</span>
-        <span class="ai-title">AI 工作流助手</span>
+        <span class="ai-title">{{ t('develop.workflow.aiTitle') }}</span>
       </div>
       <div class="ai-input-group">
         <el-input
           v-model="aiQuery"
           type="textarea"
           :rows="2"
-          placeholder="描述你的 GIS 工作流需求，例如：读取 Shapefile 后进行 100 米缓冲区分析，然后导出为 GeoJSON"
+          :placeholder="t('develop.workflow.aiPlaceholder')"
           :disabled="generating"
         />
         <el-button type="primary" @click="generateWorkflow" :loading="generating" size="small">
-          生成工作流
+          {{ t('develop.workflow.generateWorkflow') }}
         </el-button>
       </div>
     </div>
@@ -23,16 +23,16 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <h2>工作流编辑器</h2>
+        <h2>{{ t('develop.workflow.title') }}</h2>
 
         <!-- 引擎选择区域 -->
         <div class="engine-selector">
           <!-- 1️⃣ 工作流引擎选择（必选） -->
           <div class="engine-select-group">
-            <label>工作流引擎:</label>
+            <label>{{ t('develop.workflow.workflowEngine') }}:</label>
             <el-select
               v-model="workflowEngineId"
-              placeholder="选择工作流引擎"
+              :placeholder="t('develop.workflow.selectEngine')"
               style="width: 280px"
               @change="handleEngineChange"
             >
@@ -54,10 +54,10 @@
 
           <!-- 2️⃣ Spark 运行时选择（仅 Spark 工作流引擎需要） -->
           <div v-if="needsSparkRuntime()" class="spark-runtime-select-group">
-            <label>Spark 运行时:</label>
+            <label>{{ t('develop.workflow.sparkRuntime') }}:</label>
             <el-select
               v-model="sparkRuntimeId"
-              placeholder="选择 Spark 集群"
+              :placeholder="t('develop.workflow.selectSparkCluster')"
               style="width: 280px"
               :disabled="sparkRuntimes.length === 0"
             >
@@ -70,7 +70,7 @@
                 <div>
                   <div>{{ runtime.name }}</div>
                   <div style="font-size: 12px; color: #8492a6">
-                    {{ runtime.connection_info?.spark_master || '未配置' }}
+                    {{ runtime.connection_info?.spark_master || t('develop.workflow.notConfigured') }}
                   </div>
                 </div>
               </el-option>
@@ -83,7 +83,7 @@
               :closable="false"
               style="margin-top: 8px"
             >
-              未找到可用的 Spark 运行时，请先在系统模块注册 Spark 集群
+              {{ t('develop.workflow.noSparkRuntime') }}
             </el-alert>
           </div>
         </div>
@@ -92,31 +92,31 @@
       <div class="toolbar-right">
         <el-button type="primary" @click="handleSave" :disabled="!canSave()">
           <el-icon><DocumentAdd /></el-icon>
-          保存
+          {{ t('develop.workflow.save') }}
         </el-button>
         <el-button type="success" @click="handleExecute" :disabled="!canExecute()">
           <el-icon><VideoPlay /></el-icon>
-          执行
+          {{ t('develop.workflow.execute') }}
         </el-button>
         <el-button @click="handleSaveAs">
           <el-icon><CopyDocument /></el-icon>
-          另存为
+          {{ t('develop.workflow.saveAs') }}
         </el-button>
         <el-button type="info" @click="handleViewJSON">
           <el-icon><Document /></el-icon>
-          查看 JSON
+          {{ t('develop.workflow.viewJson') }}
         </el-button>
         <el-button type="warning" @click="handleClear">
           <el-icon><Delete /></el-icon>
-          清空
+          {{ t('develop.workflow.clear') }}
         </el-button>
         <el-button @click="handleExport">
           <el-icon><Download /></el-icon>
-          导出
+          {{ t('develop.workflow.export') }}
         </el-button>
         <el-button @click="handleImport">
           <el-icon><Upload /></el-icon>
-          导入
+          {{ t('develop.workflow.import') }}
         </el-button>
       </div>
     </div>
@@ -126,7 +126,7 @@
       <!-- 左侧: 算子面板 -->
       <div class="left-panel">
         <div class="panel-header">
-          <span class="panel-title">算子面板</span>
+          <span class="panel-title">{{ t('develop.workflow.operatorPanel') }}</span>
         </div>
         <div class="panel-body">
           <OperatorPalette
@@ -150,7 +150,7 @@
       <!-- 右侧: 参数配置面板 -->
       <div class="right-panel">
         <div class="panel-header">
-          <span class="panel-title">参数配置</span>
+          <span class="panel-title">{{ t('develop.workflow.paramsPanel') }}</span>
         </div>
         <div class="panel-body">
           <div v-if="selectedNode" class="params-container">
@@ -163,7 +163,7 @@
               @save="handleParamsSave"
             />
           </div>
-          <el-empty v-else description="选择节点以配置参数" />
+          <el-empty v-else :description="t('develop.workflow.selectNodeHint')" />
         </div>
       </div>
     </div>
@@ -171,42 +171,42 @@
     <!-- 保存对话框 -->
     <el-dialog
       v-model="saveDialogVisible"
-      title="保存工作流"
+      :title="t('develop.workflow.saveDialogTitle')"
       width="500px"
     >
       <el-form :model="saveForm" label-width="100px">
-        <el-form-item label="工作流名称" required>
-          <el-input v-model="saveForm.name" placeholder="请输入工作流名称" />
+        <el-form-item :label="t('develop.workflow.workflowName')" required>
+          <el-input v-model="saveForm.name" :placeholder="t('develop.workflow.workflowNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="显示名称">
-          <el-input v-model="saveForm.display_name" placeholder="可选" />
+        <el-form-item :label="t('develop.workflow.displayName')">
+          <el-input v-model="saveForm.display_name" :placeholder="t('develop.workflow.optional')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('develop.workflow.description')">
           <el-input
             v-model="saveForm.description"
             type="textarea"
             :rows="3"
-            placeholder="工作流描述"
+            :placeholder="t('develop.workflow.descriptionPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="saveDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSave">保存</el-button>
+        <el-button @click="saveDialogVisible = false">{{ t('develop.workflow.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmSave">{{ t('develop.workflow.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 执行对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
-      title="执行工作流"
+      :title="t('develop.workflow.executeDialogTitle')"
       width="500px"
     >
       <el-form label-width="100px">
-        <el-form-item label="工作流任务数">
+        <el-form-item :label="t('develop.workflow.taskCount')">
           <el-input :value="workflowData?.tasks?.length || 0" disabled />
         </el-form-item>
-        <el-form-item label="执行参数">
+        <el-form-item :label="t('develop.workflow.execParams')">
           <el-input
             v-model="executeInputs"
             type="textarea"
@@ -216,13 +216,13 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="executeDialogVisible = false">取消</el-button>
+        <el-button @click="executeDialogVisible = false">{{ t('develop.workflow.cancel') }}</el-button>
         <el-button
           type="primary"
           @click="confirmExecute"
           :loading="executing"
         >
-          执行
+          {{ t('develop.workflow.execute') }}
         </el-button>
       </template>
     </el-dialog>
@@ -230,15 +230,15 @@
     <!-- JSON 查看对话框 -->
     <el-dialog
       v-model="jsonDialogVisible"
-      title="工作流 JSON"
+      :title="t('develop.workflow.jsonDialogTitle')"
       width="60%"
     >
       <div class="json-viewer">
         <pre>{{ workflowJSON }}</pre>
       </div>
       <template #footer>
-        <el-button @click="jsonDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="copyJSON">复制到剪贴板</el-button>
+        <el-button @click="jsonDialogVisible = false">{{ t('develop.workflow.close') }}</el-button>
+        <el-button type="primary" @click="copyJSON">{{ t('develop.workflow.copyToClipboard') }}</el-button>
       </template>
     </el-dialog>
 
@@ -256,6 +256,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   DocumentAdd,
@@ -276,6 +277,7 @@ import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 // 引擎选择状态
 const workflowEngines = ref([])       // 工作流引擎列表
@@ -393,7 +395,7 @@ const handleNodeClick = async (node) => {
     console.log('[WorkflowEditor] 加载节点参数:', node.id, node.params)
   } catch (error) {
     console.error('加载算子详情失败:', error)
-    ElMessage.error('加载算子参数定义失败')
+    ElMessage.error(t('develop.workflow.loadOperatorFailed'))
   }
 }
 
@@ -423,11 +425,11 @@ const loadWorkflowEngines = async () => {
     workflowEngines.value = response.data || response
 
     if (workflowEngines.value.length === 0) {
-      ElMessage.warning('暂无可用的工作流引擎')
+      ElMessage.warning(t('develop.workflow.noEngineAvailable'))
     }
   } catch (error) {
     console.error('加载工作流引擎失败:', error)
-    ElMessage.error('加载工作流引擎失败')
+    ElMessage.error(t('develop.workflow.loadEngineFailed'))
   }
 }
 
@@ -438,7 +440,7 @@ const loadSparkRuntimes = async () => {
     sparkRuntimes.value = response.data || response
   } catch (error) {
     console.error('加载 Spark 运行时失败:', error)
-    ElMessage.error('加载 Spark 运行时失败')
+    ElMessage.error(t('develop.workflow.loadSparkRuntimeFailed'))
   }
 }
 
@@ -485,9 +487,9 @@ const needsSparkRuntime = () => {
 // 获取引擎标签
 const getEngineTag = (engine) => {
   if (engine.engine_type === 'python_workflow') {
-    return 'Python 工作流'
+    return t('develop.workflow.pythonWorkflow')
   } else if (engine.engine_type === 'spark_workflow') {
-    return 'Spark 工作流引擎'
+    return t('develop.workflow.sparkWorkflow')
   }
   return engine.engine_type
 }
@@ -495,7 +497,7 @@ const getEngineTag = (engine) => {
 // 格式化运行时标签
 const formatRuntimeLabel = (runtime) => {
   // 根据资源类型显示不同的连接信息
-  let connInfo = '未配置'
+  let connInfo = t('develop.workflow.notConfigured')
 
   if (runtime.connection_info) {
     if (runtime.engine_type === 'spark') {
@@ -536,11 +538,11 @@ const canExecute = () => {
 const handleSave = () => {
   if (!canSave()) {
     if (!workflowEngineId.value) {
-      ElMessage.warning('请选择工作流引擎')
+      ElMessage.warning(t('develop.workflow.selectEngineFirst'))
     } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
-      ElMessage.warning('请选择 Spark 运行时')
+      ElMessage.warning(t('develop.workflow.selectSparkRuntimeFirst'))
     } else if (!hasValidWorkflow.value) {
-      ElMessage.warning('工作流为空，请先添加任务节点')
+      ElMessage.warning(t('develop.workflow.emptyWorkflow'))
     }
     return
   }
@@ -549,7 +551,7 @@ const handleSave = () => {
 
 const confirmSave = async () => {
   if (!saveForm.name) {
-    ElMessage.warning('请输入工作流名称')
+    ElMessage.warning(t('develop.workflow.workflowNameRequired'))
     return
   }
 
@@ -588,7 +590,7 @@ const confirmSave = async () => {
       }
     })
 
-    ElMessage.success('保存成功')
+    ElMessage.success(t('develop.workflow.saveSuccess'))
     saveDialogVisible.value = false
 
     // 重置表单
@@ -599,7 +601,7 @@ const confirmSave = async () => {
     })
   } catch (error) {
     console.error('保存工作流失败:', error)
-    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
   }
 }
 
@@ -612,11 +614,11 @@ const handleSaveAs = () => {
 const handleExecute = () => {
   if (!canExecute()) {
     if (!workflowEngineId.value) {
-      ElMessage.warning('请选择工作流引擎')
+      ElMessage.warning(t('develop.workflow.selectEngineFirst'))
     } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
-      ElMessage.warning('请选择 Spark 运行时')
+      ElMessage.warning(t('develop.workflow.selectSparkRuntimeFirst'))
     } else if (!hasValidWorkflow.value) {
-      ElMessage.warning('工作流为空，无法执行')
+      ElMessage.warning(t('develop.workflow.emptyWorkflowExecute'))
     }
     return
   }
@@ -632,7 +634,7 @@ const confirmExecute = async () => {
     try {
       inputs = JSON.parse(executeInputs.value)
     } catch {
-      ElMessage.warning('执行参数必须是有效的 JSON')
+      ElMessage.warning(t('develop.workflow.invalidJson'))
       return
     }
 
@@ -661,7 +663,7 @@ const confirmExecute = async () => {
 
     // 创建临时任务并执行
     const tempTask = await createDevItem({
-      name: `临时工作流_${Date.now()}`,
+      name: `${t('develop.workflow.tempWorkflowPrefix')}_${Date.now()}`,
       dev_type: 'workflow',
       execution_config: executionConfig,  // 直接传递对象，不需要序列化
       content: {
@@ -672,14 +674,14 @@ const confirmExecute = async () => {
 
     await executeDevItem(tempTask.id, inputs)
 
-    ElMessage.success('工作流已提交执行')
+    ElMessage.success(t('develop.workflow.executeSubmitted'))
     executeDialogVisible.value = false
 
     // 跳转到执行监控页面
     router.push('/executions')
   } catch (error) {
     console.error('执行工作流失败:', error)
-    ElMessage.error('执行失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.workflow.executeFailed') + (error.response?.data?.error || error.message))
   } finally {
     executing.value = false
   }
@@ -688,7 +690,7 @@ const confirmExecute = async () => {
 // 清空画布
 const handleClear = async () => {
   try {
-    await ElMessageBox.confirm('确定要清空画布吗？', '确认清空', {
+    await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), {
       type: 'warning'
     })
 
@@ -698,7 +700,7 @@ const handleClear = async () => {
 
     workflowData.value = { tasks: [] }
     selectedNode.value = null
-    ElMessage.success('画布已清空')
+    ElMessage.success(t('develop.workflow.clearSuccess'))
   } catch (error) {
     // 用户取消
   }
@@ -707,7 +709,7 @@ const handleClear = async () => {
 // 查看 JSON
 const handleViewJSON = () => {
   if (!hasValidWorkflow.value) {
-    ElMessage.warning('工作流为空')
+    ElMessage.warning(t('develop.workflow.emptyWorkflow'))
     return
   }
 
@@ -741,16 +743,16 @@ const handleViewJSON = () => {
 const copyJSON = async () => {
   try {
     await navigator.clipboard.writeText(workflowJSON.value)
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success(t('develop.workflow.copiedToClipboard'))
   } catch (error) {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('develop.workflow.copyFailed'))
   }
 }
 
 // 导出工作流
 const handleExport = () => {
   if (!hasValidWorkflow.value) {
-    ElMessage.warning('工作流为空，无法导出')
+    ElMessage.warning(t('develop.workflow.emptyWorkflowExport'))
     return
   }
 
@@ -766,10 +768,10 @@ const handleExport = () => {
     link.click()
     URL.revokeObjectURL(url)
 
-    ElMessage.success('导出成功')
+    ElMessage.success(t('develop.workflow.exportSuccess'))
   } catch (error) {
     console.error('导出工作流失败:', error)
-    ElMessage.error('导出失败: ' + error.message)
+    ElMessage.error(t('develop.workflow.exportFailed') + error.message)
   }
 }
 
@@ -781,13 +783,13 @@ const handleImport = () => {
 // AI 工作流生成
 const generateWorkflow = async () => {
   if (!aiQuery.value.trim()) {
-    ElMessage.warning('请描述你的工作流需求')
+    ElMessage.warning(t('develop.workflow.describeWorkflow'))
     return
   }
 
   // 检查是否选择了工作流引擎
   if (!workflowEngineId.value) {
-    ElMessage.warning('请先选择工作流引擎')
+    ElMessage.warning(t('develop.workflow.selectEngineFirst'))
     return
   }
 
@@ -806,7 +808,7 @@ const generateWorkflow = async () => {
 
     // 直接加载到画布
     workflowData.value = result.workflow
-    ElMessage.success(`工作流生成成功，包含 ${result.workflow.tasks.length} 个步骤`)
+    ElMessage.success(t('develop.workflow.generateSuccess', { count: result.workflow.tasks.length }))
   } catch (error) {
     console.error('工作流生成失败:', error)
 
@@ -832,7 +834,7 @@ const loadToCanvas = () => {
   if (generatedWorkflow.value) {
     workflowData.value = generatedWorkflow.value
     generatedWorkflow.value = null
-    ElMessage.success('已加载到画布')
+    ElMessage.success(t('develop.workflow.loadedToCanvas'))
   }
 }
 
@@ -846,14 +848,14 @@ const handleFileChange = async (event) => {
 
     // 验证格式
     if (!workflow.tasks || !Array.isArray(workflow.tasks)) {
-      throw new Error('工作流格式不正确')
+      throw new Error(t('develop.workflow.invalidWorkflowFormat'))
     }
 
     workflowData.value = workflow
-    ElMessage.success('导入成功')
+    ElMessage.success(t('develop.workflow.importSuccess'))
   } catch (error) {
     console.error('导入工作流失败:', error)
-    ElMessage.error('导入失败: ' + error.message)
+    ElMessage.error(t('develop.workflow.importFailed') + error.message)
   } finally {
     // 清空文件输入
     event.target.value = ''
@@ -890,7 +892,7 @@ const loadTask = async (taskId) => {
         }
       } catch (error) {
         console.error('解析执行配置失败:', error)
-        ElMessage.warning('工作流配置已损坏，请重新配置')
+        ElMessage.warning(t('develop.workflow.corruptedConfig'))
       }
     }
 
@@ -903,16 +905,16 @@ const loadTask = async (taskId) => {
         // 旧格式（向后兼容）
         workflowData.value = task.content
       } else {
-        ElMessage.warning('该任务没有工作流内容')
+        ElMessage.warning(t('develop.workflow.noWorkflowContent'))
         return
       }
-      ElMessage.success(`已加载工作流: ${task.name}`)
+      ElMessage.success(t('develop.workflow.workflowLoaded', { name: task.name }))
     } else {
-      ElMessage.warning('该任务没有工作流内容')
+      ElMessage.warning(t('develop.workflow.noWorkflowContent'))
     }
   } catch (error) {
     console.error('加载任务失败:', error)
-    ElMessage.error('加载任务失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
   }
 }
 

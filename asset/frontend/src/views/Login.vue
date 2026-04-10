@@ -3,7 +3,7 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>数据资产管理</h2>
+          <h2>{{ t('asset.login.title') }}</h2>
           <p class="subtitle">Asset</p>
         </div>
       </template>
@@ -17,7 +17,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            :placeholder="t('asset.login.usernamePlaceholder')"
             :prefix-icon="User"
             size="large"
           />
@@ -27,7 +27,7 @@
           <el-input
             v-model="loginForm.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="t('asset.login.passwordPlaceholder')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -42,7 +42,7 @@
             style="width: 100%"
             :loading="loading"
           >
-            {{ loading ? '登录中...' : '登录' }}
+            {{ loading ? t('asset.login.loggingIn') : t('asset.login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -51,15 +51,17 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 const formRef = ref(null)
 
 const loginForm = reactive({
@@ -67,10 +69,10 @@ const loginForm = reactive({
   password: ''
 })
 
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  username: [{ required: true, message: t('asset.login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('asset.login.passwordRequired'), trigger: 'blur' }]
+}))
 
 const loading = ref(false)
 
@@ -81,11 +83,11 @@ const handleLogin = async () => {
     loading.value = true
     try {
       await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success('登录成功')
+      ElMessage.success(t('asset.login.success'))
       const redirect = route.query.redirect || '/asset/assets'
       router.push(redirect)
     } catch (error) {
-      ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+      ElMessage.error(error.message || t('asset.login.failed'))
     } finally {
       loading.value = false
     }

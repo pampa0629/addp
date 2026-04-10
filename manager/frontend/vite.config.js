@@ -10,9 +10,12 @@ export default defineConfig({
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
       '@addp/common-frontend/graph': resolve(__dirname, '../../common-frontend/graph/src'),
-      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6')
+      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n'),
+      '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
+      'element-plus': resolve(__dirname, 'node_modules/element-plus')
     },
-    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
+    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [

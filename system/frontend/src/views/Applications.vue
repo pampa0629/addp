@@ -3,19 +3,19 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>应用管理</span>
+          <span>{{ t('system.app.title') }}</span>
           <el-button type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
-            创建应用
+            {{ t('system.app.create') }}
           </el-button>
         </div>
       </template>
 
       <el-table :data="applications" v-loading="loading" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="应用名称" min-width="150" />
-        <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-        <el-table-column label="允许服务" min-width="200">
+        <el-table-column prop="id" :label="t('system.app.columns.id')" width="80" />
+        <el-table-column prop="name" :label="t('system.app.columns.name')" min-width="150" />
+        <el-table-column prop="description" :label="t('system.app.columns.description')" min-width="200" show-overflow-tooltip />
+        <el-table-column :label="t('system.app.columns.allowedServices')" min-width="200">
           <template #default="{ row }">
             <el-tag
               v-for="service in row.allowed_services"
@@ -26,40 +26,40 @@
               {{ service }}
             </el-tag>
             <span v-if="!row.allowed_services || row.allowed_services.length === 0" class="text-secondary">
-              全部服务
+              {{ t('system.app.allServices') }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="速率限制" width="120">
+        <el-table-column :label="t('system.app.columns.rateLimit')" width="120">
           <template #default="{ row }">
-            {{ row.rate_limit_per_minute }} 次/分钟
+            {{ t('system.app.ratePerMin', { rate: row.rate_limit_per_minute }) }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('system.app.columns.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'danger'">
-              {{ row.status === 'active' ? '激活' : '暂停' }}
+              {{ row.status === 'active' ? t('system.app.status.active') : t('system.app.status.suspended') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+        <el-table-column :label="t('system.app.columns.createdAt')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column :label="t('system.app.columns.actions')" width="300" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="openKeysDialog(row)">
               <el-icon><Key /></el-icon>
-              API Keys
+              {{ t('system.app.actions.apiKeys') }}
             </el-button>
             <el-button size="small" @click="openEditDialog(row)">
               <el-icon><Edit /></el-icon>
-              编辑
+              {{ t('system.app.actions.edit') }}
             </el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
-              删除
+              {{ t('system.app.actions.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -69,98 +69,97 @@
     <!-- 创建/编辑应用对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑应用' : '创建应用'"
+      :title="isEdit ? t('system.app.dialog.edit') : t('system.app.dialog.create')"
       width="600px"
     >
       <el-form :model="formData" :rules="rules" ref="formRef" label-width="120px">
-        <el-form-item label="应用名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入应用名称" />
+        <el-form-item :label="t('system.app.form.name')" prop="name">
+          <el-input v-model="formData.name" :placeholder="t('system.app.form.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('system.app.form.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="请输入应用描述"
+            :placeholder="t('system.app.form.descPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="允许服务">
+        <el-form-item :label="t('system.app.form.allowedServices')">
           <el-select
             v-model="formData.allowed_services"
             multiple
-            placeholder="选择允许访问的服务（留空表示全部）"
+            :placeholder="t('system.app.form.allowedServicesPlaceholder')"
             style="width: 100%"
           >
-            <el-option label="POI 服务" value="poi_service" />
-            <el-option label="地址服务" value="address_service" />
-            <el-option label="地图服务" value="map_service" />
-            <el-option label="数据服务" value="data_service" />
+            <el-option :label="t('system.app.services.poi')" value="poi_service" />
+            <el-option :label="t('system.app.services.address')" value="address_service" />
+            <el-option :label="t('system.app.services.map')" value="map_service" />
+            <el-option :label="t('system.app.services.data')" value="data_service" />
           </el-select>
         </el-form-item>
-        <el-form-item label="速率限制" prop="rate_limit_per_minute">
+        <el-form-item :label="t('system.app.form.rateLimit')" prop="rate_limit_per_minute">
           <el-input-number
             v-model="formData.rate_limit_per_minute"
             :min="10"
             :max="10000"
             :step="10"
-            placeholder="每分钟请求次数"
             style="width: 100%"
           />
-          <div class="form-tip">每分钟允许的最大请求次数</div>
+          <div class="form-tip">{{ t('system.app.form.rateLimitTip') }}</div>
         </el-form-item>
-        <el-form-item label="状态" prop="status">
+        <el-form-item :label="t('system.app.form.status')" prop="status">
           <el-radio-group v-model="formData.status">
-            <el-radio value="active">激活</el-radio>
-            <el-radio value="suspended">暂停</el-radio>
+            <el-radio value="active">{{ t('system.app.form.active') }}</el-radio>
+            <el-radio value="suspended">{{ t('system.app.form.suspended') }}</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button @click="dialogVisible = false">{{ t('system.app.dialog.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSubmit">{{ t('system.app.dialog.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- API Keys 管理对话框 -->
     <el-dialog
       v-model="keysDialogVisible"
-      :title="`API Keys - ${currentApp?.name}`"
+      :title="t('system.app.keys.title', { name: currentApp?.name })"
       width="800px"
     >
       <div style="margin-bottom: 16px">
         <el-button type="primary" @click="openGenerateKeyDialog">
           <el-icon><Plus /></el-icon>
-          生成新 Key
+          {{ t('system.app.keys.generate') }}
         </el-button>
       </div>
 
       <el-table :data="apiKeys" v-loading="keysLoading" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column label="Key 前缀" width="150">
+        <el-table-column prop="id" :label="t('system.app.keys.columns.id')" width="80" />
+        <el-table-column :label="t('system.app.keys.columns.prefix')" width="150">
           <template #default="{ row }">
             <code>{{ row.key_prefix }}***</code>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column label="最后使用" width="180">
+        <el-table-column prop="name" :label="t('system.app.keys.columns.name')" min-width="120" />
+        <el-table-column :label="t('system.app.keys.columns.lastUsed')" width="180">
           <template #default="{ row }">
             <span v-if="row.last_used_at">{{ formatDate(row.last_used_at) }}</span>
-            <span v-else class="text-secondary">从未使用</span>
+            <span v-else class="text-secondary">{{ t('system.app.keys.neverUsed') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('system.app.keys.columns.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'danger'">
-              {{ row.status === 'active' ? '激活' : '已撤销' }}
+              {{ row.status === 'active' ? t('system.app.keys.status.active') : t('system.app.keys.status.revoked') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+        <el-table-column :label="t('system.app.keys.columns.createdAt')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column :label="t('system.app.keys.columns.actions')" width="100" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'active'"
@@ -168,7 +167,7 @@
               type="danger"
               @click="handleRevokeKey(row)"
             >
-              撤销
+              {{ t('system.app.keys.revoke') }}
             </el-button>
           </template>
         </el-table-column>
@@ -178,44 +177,44 @@
     <!-- 生成 API Key 对话框 -->
     <el-dialog
       v-model="generateKeyDialogVisible"
-      title="生成 API Key"
+      :title="t('system.app.keys.generateDialog.title')"
       width="500px"
     >
       <el-form :model="keyFormData" :rules="keyRules" ref="keyFormRef" label-width="100px">
-        <el-form-item label="Key 名称" prop="name">
-          <el-input v-model="keyFormData.name" placeholder="请输入 Key 名称（便于识别）" />
+        <el-form-item :label="t('system.app.keys.generateDialog.name')" prop="name">
+          <el-input v-model="keyFormData.name" :placeholder="t('system.app.keys.generateDialog.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="过期时间">
+        <el-form-item :label="t('system.app.keys.generateDialog.expiresAt')">
           <el-date-picker
             v-model="keyFormData.expires_at"
             type="datetime"
-            placeholder="选择过期时间（可选）"
+            :placeholder="t('system.app.keys.generateDialog.expiresAtPlaceholder')"
             style="width: 100%"
           />
-          <div class="form-tip">留空表示永不过期</div>
+          <div class="form-tip">{{ t('system.app.keys.generateDialog.expiresAtTip') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="generateKeyDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleGenerateKey">生成</el-button>
+        <el-button @click="generateKeyDialogVisible = false">{{ t('system.app.keys.generateDialog.cancel') }}</el-button>
+        <el-button type="primary" @click="handleGenerateKey">{{ t('system.app.keys.generateDialog.generate') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 显示生成的 API Key -->
     <el-dialog
       v-model="showKeyDialogVisible"
-      title="API Key 已生成"
+      :title="t('system.app.keys.showDialog.title')"
       width="600px"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
     >
       <el-alert
-        title="重要提示"
+        :title="t('system.app.keys.showDialog.warning')"
         type="warning"
         :closable="false"
         style="margin-bottom: 16px"
       >
-        请立即复制并保存 API Key，关闭窗口后将无法再次查看！
+        {{ t('system.app.keys.showDialog.warningMsg') }}
       </el-alert>
 
       <div class="api-key-display">
@@ -227,7 +226,7 @@
           <template #append>
             <el-button @click="copyApiKey">
               <el-icon><DocumentCopy /></el-icon>
-              复制
+              {{ t('system.app.keys.showDialog.copy') }}
             </el-button>
           </template>
         </el-input>
@@ -235,7 +234,7 @@
 
       <template #footer>
         <el-button type="primary" @click="showKeyDialogVisible = false">
-          我已保存，关闭
+          {{ t('system.app.keys.showDialog.close') }}
         </el-button>
       </template>
     </el-dialog>
@@ -244,9 +243,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Key, DocumentCopy } from '@element-plus/icons-vue'
 import { applicationsAPI } from '@/api/applications'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const applications = ref([])
@@ -262,8 +264,8 @@ const formData = ref({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入应用名称', trigger: 'blur' }],
-  rate_limit_per_minute: [{ required: true, message: '请设置速率限制', trigger: 'blur' }]
+  name: [{ required: true, message: () => t('system.app.rules.nameRequired'), trigger: 'blur' }],
+  rate_limit_per_minute: [{ required: true, message: () => t('system.app.rules.rateLimitRequired'), trigger: 'blur' }]
 }
 
 // API Keys 管理
@@ -280,7 +282,7 @@ const keyFormData = ref({
   expires_at: null
 })
 const keyRules = {
-  name: [{ required: true, message: '请输入 Key 名称', trigger: 'blur' }]
+  name: [{ required: true, message: () => t('system.app.keys.generateDialog.rules.nameRequired'), trigger: 'blur' }]
 }
 
 // 显示生成的 Key
@@ -295,7 +297,7 @@ const loadApplications = async () => {
     const response = await applicationsAPI.list()
     applications.value = response.applications || []
   } catch (error) {
-    ElMessage.error('加载应用列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('system.app.msg.loadFailed') + ': ' + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
@@ -336,15 +338,15 @@ const handleSubmit = async () => {
       try {
         if (isEdit.value) {
           await applicationsAPI.update(formData.value.id, formData.value)
-          ElMessage.success('更新成功')
+          ElMessage.success(t('system.app.msg.updateSuccess'))
         } else {
           await applicationsAPI.create(formData.value)
-          ElMessage.success('创建成功')
+          ElMessage.success(t('system.app.msg.createSuccess'))
         }
         dialogVisible.value = false
         loadApplications()
       } catch (error) {
-        ElMessage.error('操作失败: ' + (error.response?.data?.error || error.message))
+        ElMessage.error(t('system.app.msg.opFailed') + ': ' + (error.response?.data?.error || error.message))
       }
     }
   })
@@ -353,20 +355,20 @@ const handleSubmit = async () => {
 // 删除应用
 const handleDelete = (app) => {
   ElMessageBox.confirm(
-    `确定要删除应用 "${app.name}" 吗？这将同时删除该应用的所有 API Keys。`,
-    '确认删除',
+    t('system.app.msg.deleteConfirm', { name: app.name }),
+    t('system.app.msg.deleteTitle'),
     {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+      confirmButtonText: t('system.app.dialog.confirm'),
+      cancelButtonText: t('system.app.dialog.cancel'),
       type: 'warning'
     }
   ).then(async () => {
     try {
       await applicationsAPI.delete(app.id)
-      ElMessage.success('删除成功')
+      ElMessage.success(t('system.app.msg.deleteSuccess'))
       loadApplications()
     } catch (error) {
-      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('system.app.msg.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   })
 }
@@ -385,7 +387,7 @@ const loadApiKeys = async (appId) => {
     const response = await applicationsAPI.listKeys(appId)
     apiKeys.value = response.keys || []
   } catch (error) {
-    ElMessage.error('加载 API Keys 失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('system.app.msg.keysLoadFailed') + ': ' + (error.response?.data?.error || error.message))
   } finally {
     keysLoading.value = false
   }
@@ -412,7 +414,7 @@ const handleGenerateKey = async () => {
         showKeyDialogVisible.value = true
         await loadApiKeys(currentApp.value.id)
       } catch (error) {
-        ElMessage.error('生成 Key 失败: ' + (error.response?.data?.error || error.message))
+        ElMessage.error(t('system.app.msg.keyGenFailed') + ': ' + (error.response?.data?.error || error.message))
       }
     }
   })
@@ -424,7 +426,7 @@ const copyApiKey = async () => {
     // 优先使用 Clipboard API
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(generatedApiKey.value)
-      ElMessage.success('已复制到剪贴板')
+      ElMessage.success(t('system.app.msg.keyCopied'))
     } else {
       // 回退方案：使用传统的选择和复制方法
       const input = apiKeyInput.value?.input || apiKeyInput.value?.$el?.querySelector('input')
@@ -433,12 +435,12 @@ const copyApiKey = async () => {
         input.setSelectionRange(0, input.value.length)
         const successful = document.execCommand('copy')
         if (successful) {
-          ElMessage.success('已复制到剪贴板')
+          ElMessage.success(t('system.app.msg.keyCopied'))
         } else {
-          ElMessage.error('复制失败，请手动复制')
+          ElMessage.error(t('system.app.msg.keyCopyFailed'))
         }
       } else {
-        ElMessage.error('复制失败，请手动复制')
+        ElMessage.error(t('system.app.msg.keyCopyFailed'))
       }
     }
   } catch (error) {
@@ -449,12 +451,12 @@ const copyApiKey = async () => {
       if (input) {
         input.select()
         document.execCommand('copy')
-        ElMessage.success('已复制到剪贴板')
+        ElMessage.success(t('system.app.msg.keyCopied'))
       } else {
-        ElMessage.error('复制失败，请手动复制')
+        ElMessage.error(t('system.app.msg.keyCopyFailed'))
       }
     } catch (e) {
-      ElMessage.error('复制失败，请手动复制')
+      ElMessage.error(t('system.app.msg.keyCopyFailed'))
     }
   }
 }
@@ -462,20 +464,20 @@ const copyApiKey = async () => {
 // 撤销 API Key
 const handleRevokeKey = (key) => {
   ElMessageBox.confirm(
-    `确定要撤销 API Key "${key.name}" 吗？撤销后该 Key 将立即失效。`,
-    '确认撤销',
+    t('system.app.msg.revokeConfirm', { name: key.name }),
+    t('system.app.msg.revokeTitle'),
     {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+      confirmButtonText: t('system.app.dialog.confirm'),
+      cancelButtonText: t('system.app.dialog.cancel'),
       type: 'warning'
     }
   ).then(async () => {
     try {
       await applicationsAPI.revokeKey(currentApp.value.id, key.id)
-      ElMessage.success('撤销成功')
+      ElMessage.success(t('system.app.msg.keyRevoked'))
       await loadApiKeys(currentApp.value.id)
     } catch (error) {
-      ElMessage.error('撤销失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error(t('system.app.msg.keyRevokeFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   })
 }

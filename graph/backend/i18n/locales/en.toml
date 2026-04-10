@@ -1,0 +1,62 @@
+[graph.err.load_failed]
+other = "Load failed"
+
+[graph.err.save_failed]
+other = "Save failed"
+
+[graph.err.delete_failed]
+other = "Delete failed"
+
+[graph.err.not_found]
+other = "Resource not found"
+
+[graph.err.unauthorized]
+other = "Unauthorized"
+
+[graph.ontology.created]
+other = "Ontology created successfully"
+
+[graph.ontology.updated]
+other = "Ontology updated successfully"
+
+[graph.ontology.deleted]
+other = "Ontology deleted successfully"
+
+[graph.kg.created]
+other = "Knowledge graph created successfully"
+
+[graph.kg.updated]
+other = "Knowledge graph updated successfully"
+
+[graph.kg.deleted]
+other = "Knowledge graph deleted successfully"
+
+[graph.build.task_started]
+other = "Task started"
+
+[graph.build.task_cancelled]
+other = "Task cancelled"
+
+[graph.build.task_restarted]
+other = "Task restarted"
+
+[graph.review.approved]
+other = "Written to Neo4j"
+
+[graph.review.rejected]
+other = "Rejected"
+
+[graph.review.modified]
+other = "Modified and written to Neo4j"
+
+[graph.review.batch_approved]
+other = "Batch approved successfully"
+
+[graph.review.batch_rejected]
+other = "Batch rejected successfully"
+
+[graph.analysis.algo_failed]
+other = "Algorithm execution failed"
+
+[graph.service.not_public]
+other = "This graph is not publicly accessible"

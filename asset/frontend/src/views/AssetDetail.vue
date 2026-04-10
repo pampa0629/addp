@@ -4,24 +4,23 @@
     <div class="page-header">
       <div class="breadcrumb">
         <el-button link @click="$router.push('/asset/assets')">
-          <el-icon><ArrowLeft /></el-icon> 返回列表
+          <el-icon><ArrowLeft /></el-icon> {{ t('asset.assetDetail.backToList') }}
         </el-button>
         <span class="separator">/</span>
-        <span>{{ isCreate ? '新建资产' : (editMode ? '编辑资产' : '资产详情') }}</span>
+        <span>{{ isCreate ? t('asset.assetDetail.createAsset') : (editMode ? t('asset.assetDetail.editAsset') : t('asset.assetDetail.assetDetail')) }}</span>
       </div>
       <div class="header-actions" v-if="!isCreate && !editMode && asset">
-        <!-- 详情模式下的操作按钮 -->
-        <el-button v-if="canEdit" @click="editMode = true">编辑</el-button>
+        <el-button v-if="canEdit" @click="editMode = true">{{ t('asset.assetDetail.edit') }}</el-button>
         <el-button v-if="asset.status === 'draft' || asset.status === 'rejected'" type="success" @click="handleSubmit">
-          提交上架
+          {{ t('asset.assetDetail.submitPublish') }}
         </el-button>
-        <el-button v-if="asset.status === 'pending'" type="success" @click="handleApprove">审批通过</el-button>
-        <el-button v-if="asset.status === 'pending'" type="danger" plain @click="openReject">驳回</el-button>
-        <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">下架</el-button>
-        <el-button v-if="asset.status === 'offline'" type="primary" @click="handleRepublish">重新上架</el-button>
-        <el-popconfirm v-if="asset.status === 'draft'" title="确定删除该资产？" @confirm="handleDelete">
+        <el-button v-if="asset.status === 'pending'" type="success" @click="handleApprove">{{ t('asset.assetDetail.approve') }}</el-button>
+        <el-button v-if="asset.status === 'pending'" type="danger" plain @click="openReject">{{ t('asset.assetDetail.reject') }}</el-button>
+        <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
+        <el-button v-if="asset.status === 'offline'" type="primary" @click="handleRepublish">{{ t('asset.assetDetail.republish') }}</el-button>
+        <el-popconfirm v-if="asset.status === 'draft'" :title="t('asset.assetDetail.deleteConfirm')" @confirm="handleDelete">
           <template #reference>
-            <el-button type="danger" plain>删除</el-button>
+            <el-button type="danger" plain>{{ t('asset.assetDetail.delete') }}</el-button>
           </template>
         </el-popconfirm>
       </div>
@@ -35,9 +34,9 @@
       style="margin-bottom: 20px"
     >
       <template #title>
-        <span>状态：{{ statusLabel(asset.status) }}</span>
+        <span>{{ t('asset.assetDetail.statusPrefix') }}{{ statusLabel(asset.status) }}</span>
         <span v-if="asset.status === 'published' && asset.published_at" style="margin-left: 12px; font-size: 13px">
-          上架时间：{{ formatDate(asset.published_at) }}
+          {{ t('asset.assetDetail.publishedAtPrefix') }}{{ formatDate(asset.published_at) }}
         </span>
       </template>
     </el-alert>
@@ -46,7 +45,7 @@
     <el-alert
       v-if="rejectNote && !isCreate && !editMode"
       type="error"
-      :title="`驳回原因：${rejectNote}`"
+      :title="`${t('asset.assetDetail.rejectReasonPrefix')}${rejectNote}`"
       :closable="false"
       style="margin-bottom: 20px"
     />
@@ -55,25 +54,24 @@
       <!-- 详情展示模式 -->
       <template v-if="!isCreate && !editMode && asset">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="资产名称">{{ asset.name }}</el-descriptions-item>
-          <el-descriptions-item label="资产类型">
+          <el-descriptions-item :label="t('asset.assetDetail.assetName')">{{ asset.name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.assetType')">
             <el-tag size="small">{{ asset.type_name || '-' }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="主题分类">{{ asset.category?.name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="来源模块">{{ asset.source_module || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="来源引用" :span="2">{{ asset.source_reference || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="标签" :span="2">
+          <el-descriptions-item :label="t('asset.assetDetail.category')">{{ asset.category?.name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.sourceModule')">{{ asset.source_module || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.sourceReference')" :span="2">{{ asset.source_reference || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.tags')" :span="2">
             <el-tag v-for="tag in (asset.tags || [])" :key="tag" size="small" style="margin-right: 4px">{{ tag }}</el-tag>
             <span v-if="!asset.tags?.length">-</span>
           </el-descriptions-item>
-          <el-descriptions-item label="说明" :span="2">{{ asset.description || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatDate(asset.created_at) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ formatDate(asset.updated_at) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.description')" :span="2">{{ asset.description || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.createdAt')">{{ formatDate(asset.created_at) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('asset.assetDetail.updatedAt')">{{ formatDate(asset.updated_at) }}</el-descriptions-item>
         </el-descriptions>
 
-        <!-- 扩展字段展示 -->
         <template v-if="asset.ext_fields?.length">
-          <h3 class="section-title">扩展字段</h3>
+          <h3 class="section-title">{{ t('asset.assetDetail.extFields') }}</h3>
           <el-descriptions :column="2" border>
             <el-descriptions-item
               v-for="ef in asset.ext_fields.filter(f => !f.field_key.startsWith('_'))"
@@ -95,17 +93,16 @@
         label-width="100px"
         class="asset-form"
       >
-        <!-- 基础信息 -->
-        <h3 class="section-title">基础信息</h3>
+        <h3 class="section-title">{{ t('asset.assetDetail.basicInfo') }}</h3>
 
-        <el-form-item label="资产名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入资产中文名称" maxlength="500" />
+        <el-form-item :label="t('asset.assetDetail.assetName')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('asset.assetDetail.assetNamePlaceholder')" maxlength="500" />
         </el-form-item>
 
-        <el-form-item label="资产类型" prop="type_id">
+        <el-form-item :label="t('asset.assetDetail.assetType')" prop="type_id">
           <el-select
             v-model="form.type_id"
-            placeholder="请选择资产类型"
+            :placeholder="t('asset.assetDetail.assetTypePlaceholder')"
             style="width: 100%"
             :disabled="!isCreate"
             @change="onTypeChange"
@@ -115,26 +112,26 @@
               <span style="float: right; color: #999; font-size: 12px">{{ t.description }}</span>
             </el-option>
           </el-select>
-          <div v-if="!isCreate" class="form-hint">资产类型创建后不可更改</div>
+          <div v-if="!isCreate" class="form-hint">{{ t('asset.assetDetail.assetTypeHint') }}</div>
         </el-form-item>
 
-        <el-form-item label="主题分类">
+        <el-form-item :label="t('asset.assetDetail.category')">
           <el-cascader
             v-model="form.category_id_path"
             :options="categoryOptions"
             :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children', emitPath: false }"
-            placeholder="选择主题分类（选填）"
+            :placeholder="t('asset.assetDetail.categoryPlaceholder')"
             clearable
             style="width: 100%"
             @change="onCategoryChange"
           />
         </el-form-item>
 
-        <el-form-item label="说明">
-          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="资产业务描述" maxlength="2000" />
+        <el-form-item :label="t('asset.assetDetail.description')">
+          <el-input v-model="form.description" type="textarea" :rows="3" :placeholder="t('asset.assetDetail.descriptionPlaceholder')" maxlength="2000" />
         </el-form-item>
 
-        <el-form-item label="标签">
+        <el-form-item :label="t('asset.assetDetail.tags')">
           <div class="tag-input">
             <el-tag
               v-for="tag in form.tags"
@@ -154,40 +151,38 @@
               @keyup.enter="addTag"
               @blur="addTag"
             />
-            <el-button v-else size="small" @click="showTagInput">+ 添加标签</el-button>
+            <el-button v-else size="small" @click="showTagInput">{{ t('asset.assetDetail.addTag') }}</el-button>
           </div>
         </el-form-item>
 
-        <!-- 来源关联 -->
-        <h3 class="section-title">来源关联</h3>
+        <h3 class="section-title">{{ t('asset.assetDetail.sourceAssociation') }}</h3>
 
-        <el-form-item label="来源模块">
-          <el-select v-model="form.source_module" placeholder="选择来源模块（选填）" clearable style="width: 200px">
-            <el-option label="Meta 模块" value="meta" />
-            <el-option label="Service 模块" value="service" />
-            <el-option label="Standard 模块" value="standard" />
-            <el-option label="Develop 模块" value="develop" />
-            <el-option label="手动录入" value="manual" />
+        <el-form-item :label="t('asset.assetDetail.sourceModule')">
+          <el-select v-model="form.source_module" :placeholder="t('asset.assetDetail.sourceModulePlaceholder')" clearable style="width: 200px">
+            <el-option :label="t('asset.assetDetail.sourceModuleMeta')" value="meta" />
+            <el-option :label="t('asset.assetDetail.sourceModuleService')" value="service" />
+            <el-option :label="t('asset.assetDetail.sourceModuleStandard')" value="standard" />
+            <el-option :label="t('asset.assetDetail.sourceModuleDevelop')" value="develop" />
+            <el-option :label="t('asset.assetDetail.sourceModuleManual')" value="manual" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="来源引用">
+        <el-form-item :label="t('asset.assetDetail.sourceReference')">
           <el-input
             v-model="form.source_reference"
-            placeholder="来源数据的唯一标识或路径（选填）"
+            :placeholder="t('asset.assetDetail.sourceReferencePlaceholder')"
             maxlength="500"
           />
-          <div class="form-hint">如：数据库表路径、服务ID、指标编码等</div>
+          <div class="form-hint">{{ t('asset.assetDetail.sourceReferenceHint') }}</div>
         </el-form-item>
 
-        <!-- 扩展字段（按类型动态渲染）-->
         <template v-if="typeFieldSchemas.length > 0">
-          <h3 class="section-title">扩展字段</h3>
+          <h3 class="section-title">{{ t('asset.assetDetail.extFields') }}</h3>
           <el-form-item v-for="schema in typeFieldSchemas" :key="schema.field_key" :label="schema.field_name">
             <el-input
               v-if="schema.field_type === 'string'"
               v-model="form.ext_fields[schema.field_key]"
-              :placeholder="`请输入${schema.field_name}`"
+              :placeholder="`${t('asset.assetDetail.assetNamePlaceholder').split('请输入')[0]}${schema.field_name}`"
             />
             <el-input-number
               v-else-if="schema.field_type === 'number'"
@@ -208,26 +203,26 @@
               v-model="form.ext_fields[schema.field_key]"
               type="textarea"
               :rows="2"
-              :placeholder="`请输入${schema.field_name}（JSON格式）`"
+              :placeholder="`${schema.field_name} (JSON)`"
             />
-            <div v-if="schema.required" class="form-hint form-hint--required">必填</div>
+            <div v-if="schema.required" class="form-hint form-hint--required">{{ t('asset.assetDetail.required') }}</div>
           </el-form-item>
         </template>
 
         <el-form-item>
-          <el-button type="primary" :loading="submitting" @click="save('draft')">保存草稿</el-button>
-          <el-button type="success" :loading="submitting" @click="save('submit')">保存并提交上架</el-button>
-          <el-button @click="cancelEdit">取消</el-button>
+          <el-button type="primary" :loading="submitting" @click="save('draft')">{{ t('asset.assetDetail.saveDraft') }}</el-button>
+          <el-button type="success" :loading="submitting" @click="save('submit')">{{ t('asset.assetDetail.saveAndSubmit') }}</el-button>
+          <el-button @click="cancelEdit">{{ t('asset.assetDetail.backToList') }}</el-button>
         </el-form-item>
       </el-form>
     </div>
 
     <!-- 驳回对话框 -->
-    <el-dialog v-model="rejectVisible" title="驳回原因" width="400px" :close-on-click-modal="false">
-      <el-input v-model="rejectNoteInput" type="textarea" :rows="3" placeholder="请填写驳回原因（必填）" maxlength="500" />
+    <el-dialog v-model="rejectVisible" :title="t('asset.assetDetail.rejectDialogTitle')" width="400px" :close-on-click-modal="false">
+      <el-input v-model="rejectNoteInput" type="textarea" :rows="3" :placeholder="t('asset.assetDetail.rejectReasonPlaceholder')" maxlength="500" />
       <template #footer>
-        <el-button @click="rejectVisible = false">取消</el-button>
-        <el-button type="danger" :loading="actionLoading" @click="submitReject">确认驳回</el-button>
+        <el-button @click="rejectVisible = false">{{ t('asset.assetDetail.backToList') }}</el-button>
+        <el-button type="danger" :loading="actionLoading" @click="submitReject">{{ t('asset.assetDetail.confirmReject') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -239,6 +234,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { assetAPI, typeDefinitionAPI, categoryAPI } from '../api/asset'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -275,10 +273,10 @@ const form = reactive({
   ext_fields: {}
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入资产名称', trigger: 'blur' }],
-  type_id: [{ required: true, message: '请选择资产类型', trigger: 'change' }]
-}
+const rules = computed(() => ({
+  name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }],
+  type_id: [{ required: true, message: t('asset.assetDetail.assetTypeRequired'), trigger: 'change' }]
+}))
 
 const canEdit = computed(() => asset.value && (asset.value.status === 'draft' || asset.value.status === 'rejected'))
 
@@ -299,7 +297,7 @@ async function loadData() {
       await loadAsset()
     }
   } catch (e) {
-    ElMessage.error('加载数据失败')
+    ElMessage.error(t('asset.assetDetail.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -381,17 +379,17 @@ async function save(mode) {
     if (isCreate.value) {
       const res = await assetAPI.create(payload)
       savedId = res.data.id
-      ElMessage.success('资产已创建')
+      ElMessage.success(t('asset.assetDetail.assetCreated'))
     } else {
       await assetAPI.update(assetId.value, payload)
       savedId = assetId.value
       editMode.value = false
-      ElMessage.success('已保存')
+      ElMessage.success(t('asset.assetDetail.saved'))
     }
 
     if (mode === 'submit') {
       await assetAPI.submit(savedId)
-      ElMessage.success('已提交上架申请')
+      ElMessage.success(t('asset.assetDetail.submitSuccess'))
     }
 
     if (isCreate.value) {
@@ -400,7 +398,7 @@ async function save(mode) {
       await loadAsset()
     }
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '保存失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.saveFailed'))
   } finally {
     submitting.value = false
   }
@@ -417,20 +415,20 @@ function cancelEdit() {
 async function handleSubmit() {
   try {
     await assetAPI.submit(assetId.value)
-    ElMessage.success('已提交上架申请')
+    ElMessage.success(t('asset.assetDetail.submitSuccess'))
     await loadAsset()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
   }
 }
 
 async function handleApprove() {
   try {
     await assetAPI.approve(assetId.value)
-    ElMessage.success('资产已上架')
+    ElMessage.success(t('asset.assetDetail.assetPublished'))
     await loadAsset()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
   }
 }
 
@@ -441,17 +439,17 @@ function openReject() {
 
 async function submitReject() {
   if (!rejectNoteInput.value.trim()) {
-    ElMessage.warning('请填写驳回原因')
+    ElMessage.warning(t('asset.assetDetail.rejectReasonRequired'))
     return
   }
   actionLoading.value = true
   try {
     await assetAPI.reject(assetId.value, { note: rejectNoteInput.value })
-    ElMessage.success('已驳回')
+    ElMessage.success(t('asset.assetDetail.rejected'))
     rejectVisible.value = false
     await loadAsset()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
   } finally {
     actionLoading.value = false
   }
@@ -460,30 +458,30 @@ async function submitReject() {
 async function handleOffline() {
   try {
     await assetAPI.offline(assetId.value)
-    ElMessage.success('资产已下架')
+    ElMessage.success(t('asset.assetDetail.assetOfflined'))
     await loadAsset()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
   }
 }
 
 async function handleRepublish() {
   try {
     await assetAPI.republish(assetId.value)
-    ElMessage.success('已重新提交上架申请')
+    ElMessage.success(t('asset.assetDetail.republishSuccess'))
     await loadAsset()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '操作失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
   }
 }
 
 async function handleDelete() {
   try {
     await assetAPI.delete(assetId.value)
-    ElMessage.success('已删除')
+    ElMessage.success(t('asset.assetDetail.deleted'))
     router.push('/asset/assets')
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || '删除失败')
+    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.deleteFailed'))
   }
 }
 
@@ -507,7 +505,13 @@ function removeTag(tag) {
 }
 
 function statusLabel(status) {
-  const map = { draft: '草稿', pending: '待审核', published: '已上架', rejected: '已驳回', offline: '已下架' }
+  const map = {
+    draft: t('asset.assetDetail.statusDraft'),
+    pending: t('asset.assetDetail.statusPending'),
+    published: t('asset.assetDetail.statusPublished'),
+    rejected: t('asset.assetDetail.statusRejected'),
+    offline: t('asset.assetDetail.statusOffline')
+  }
   return map[status] || status
 }
 

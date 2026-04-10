@@ -1,20 +1,20 @@
 <template>
   <div class="execution-list">
     <el-card>
-      <template #header>执行记录</template>
+      <template #header>{{ t('transfer.executionList.title') }}</template>
       <el-table :data="executions" v-loading="loading">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="task_id" label="任务ID" width="100" />
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="id" :label="t('transfer.executionList.id')" width="80" />
+        <el-table-column prop="task_id" :label="t('transfer.executionList.taskId')" width="100" />
+        <el-table-column prop="status" :label="t('transfer.executionList.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="records_written" label="已处理" width="120" />
-        <el-table-column prop="start_time" label="开始时间" width="180" />
-        <el-table-column label="操作" width="150">
+        <el-table-column prop="records_written" :label="t('transfer.executionList.processed')" width="120" />
+        <el-table-column prop="start_time" :label="t('transfer.executionList.startTime')" width="180" />
+        <el-table-column :label="t('transfer.executionList.actions')" width="150">
           <template #default="{ row }">
-            <el-button size="small" @click="viewDetail(row.id)">详情</el-button>
+            <el-button size="small" @click="viewDetail(row.id)">{{ t('transfer.executionList.detail') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -25,9 +25,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { executionAPI } from '@/api/tasks'
 
 const router = useRouter()
+const { t } = useI18n()
 const loading = ref(false)
 const executions = ref([])
 

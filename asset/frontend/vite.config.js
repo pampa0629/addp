@@ -12,7 +12,8 @@ export default defineConfig({
       '@addp/common-frontend/basic': resolve(__dirname, '../../common-frontend/basic/src'),
       '@addp/common-frontend': resolve(__dirname, '../../common-frontend'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
-      'element-plus': resolve(__dirname, 'node_modules/element-plus')
+      'element-plus': resolve(__dirname, 'node_modules/element-plus'),
+      'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     }
   },
   server: {

@@ -1,16 +1,16 @@
 <template>
   <div class="published-service-test" v-loading="loading">
     <div class="page-header">
-      <h2>服务测试 - {{ service?.title }}</h2>
-      <el-button @click="$router.back()">返回</el-button>
+      <h2>{{ t('service.published.testTitle') }} - {{ service?.title }}</h2>
+      <el-button @click="$router.back()">{{ t('service.common.back') }}</el-button>
     </div>
 
     <el-row :gutter="20">
       <!-- 左侧：测试配置 -->
       <el-col :span="10">
-        <el-card header="测试配置">
+        <el-card :header="t('service.published.testConfig')">
           <el-form label-width="100px">
-            <el-form-item label="协议类型">
+            <el-form-item :label="t('service.published.protocolType')">
               <el-select v-model="protocol" @change="handleProtocolChange" style="width: 100%;">
                 <el-option
                   v-if="service?.enabled_ogc_api"
@@ -32,16 +32,16 @@
 
             <!-- OGC API Features 参数 -->
             <template v-if="protocol === 'ogc_api'">
-              <el-form-item label="端点">
+              <el-form-item :label="t('service.published.endpointLabel')">
                 <el-select v-model="ogcApiEndpoint" style="width: 100%;">
                   <el-option value="landing" label="Landing Page" />
                   <el-option value="conformance" label="Conformance" />
                   <el-option value="collections" label="Collections" />
-                  <el-option value="items" label="Items (需选择图层)" />
+                  <el-option value="items" :label="t('service.published.itemsNeedLayer')" />
                 </el-select>
               </el-form-item>
 
-              <el-form-item v-if="ogcApiEndpoint === 'items'" label="选择图层">
+              <el-form-item v-if="ogcApiEndpoint === 'items'" :label="t('service.published.selectLayerLabel')">
                 <el-select v-model="selectedLayer" style="width: 100%;">
                   <el-option
                     v-for="layer in service?.layers"
@@ -71,7 +71,7 @@
 
             <!-- WFS 参数 -->
             <template v-if="protocol === 'wfs'">
-              <el-form-item label="请求类型">
+              <el-form-item :label="t('service.published.requestType')">
                 <el-select v-model="wfsRequest" style="width: 100%;">
                   <el-option value="GetCapabilities" label="GetCapabilities" />
                   <el-option value="DescribeFeatureType" label="DescribeFeatureType" />
@@ -97,14 +97,14 @@
 
             <!-- WMTS 参数 -->
             <template v-if="protocol === 'wmts'">
-              <el-form-item label="请求类型">
+              <el-form-item :label="t('service.published.requestType')">
                 <el-select v-model="wmtsRequest" style="width: 100%;">
                   <el-option value="GetCapabilities" label="GetCapabilities" />
                   <el-option value="GetTile" label="GetTile" />
                 </el-select>
               </el-form-item>
 
-              <el-form-item v-if="wmtsRequest === 'GetTile'" label="选择图层">
+              <el-form-item v-if="wmtsRequest === 'GetTile'" :label="t('service.published.selectLayerLabel')">
                 <el-select v-model="selectedLayer" style="width: 100%;">
                   <el-option
                     v-for="layer in service?.layers"
@@ -115,19 +115,19 @@
                 </el-select>
               </el-form-item>
 
-              <el-form-item v-if="wmtsRequest === 'GetTile'" label="瓦片坐标">
+              <el-form-item v-if="wmtsRequest === 'GetTile'" :label="t('service.published.tileCoords')">
                 <div style="display: flex; gap: 10px;">
                   <el-input v-model="params.z" placeholder="Z" />
                   <el-input v-model="params.x" placeholder="X" />
                   <el-input v-model="params.y" placeholder="Y" />
                 </div>
-                <div class="help-text">例如: Z=10, X=512, Y=384</div>
+                <div class="help-text">{{ t('service.published.tileCoordsExample') }}</div>
               </el-form-item>
             </template>
 
             <el-form-item>
               <el-button type="primary" @click="executeRequest" :loading="executing" style="width: 100%;">
-                执行请求
+                {{ t('service.published.executeRequest') }}
               </el-button>
             </el-form-item>
           </el-form>
@@ -135,7 +135,7 @@
           <!-- 请求 URL 预览 -->
           <el-divider />
           <div>
-            <strong>请求 URL:</strong>
+            <strong>{{ t('service.published.requestUrl') }}</strong>
             <el-input
               :value="requestURL"
               readonly
@@ -152,20 +152,20 @@
         <el-card>
           <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span>响应结果</span>
+              <span>{{ t('service.published.responseResult') }}</span>
               <div v-if="response">
                 <el-tag :type="response.status === 200 ? 'success' : 'danger'">
                   HTTP {{ response.status }}
                 </el-tag>
                 <span style="margin-left: 10px; color: var(--addp-text-tertiary);">
-                  耗时: {{ response.duration }}ms
+                  {{ t('service.published.duration') }}: {{ response.duration }}ms
                 </span>
               </div>
             </div>
           </template>
 
           <div v-if="!response" class="empty-state">
-            <el-empty description="请配置参数并执行请求" />
+            <el-empty :description="t('service.published.configAndExecute')" />
           </div>
 
           <div v-else>
@@ -183,11 +183,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import publishedServiceAPI from "../api/publishedService"
 
 const route = useRoute()
+const { t } = useI18n()
 
 const service = ref(null)
 const loading = ref(true)
@@ -267,7 +269,7 @@ const loadService = async () => {
       selectedLayer.value = service.value.layers[0].layer_name
     }
   } catch (error) {
-    ElMessage.error('加载失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.published.loadFailed') + ': ' + (error.message || t('service.common.unknownError')))
   } finally {
     loading.value = false
   }
@@ -288,7 +290,7 @@ const handleProtocolChange = () => {
 // 执行请求
 const executeRequest = async () => {
   if (!requestURL.value) {
-    ElMessage.warning('请配置完整的请求参数')
+    ElMessage.warning(t('service.published.configComplete'))
     return
   }
 
@@ -308,7 +310,7 @@ const executeRequest = async () => {
       duration
     }
 
-    ElMessage.success('请求成功')
+    ElMessage.success(t('service.published.requestSuccess'))
   } catch (error) {
     const duration = Date.now() - startTime
     response.value = {
@@ -316,7 +318,7 @@ const executeRequest = async () => {
       data: error.response?.data || { error: error.message },
       duration
     }
-    ElMessage.error('请求失败: ' + (error.message || '未知错误'))
+    ElMessage.error(t('service.published.requestFailed') + ': ' + (error.message || t('service.common.unknownError')))
   } finally {
     executing.value = false
   }

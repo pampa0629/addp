@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
@@ -104,14 +106,14 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 func (h *EntityHandler) GetEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	entity, err := h.svc.GetEntity(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "entity not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgEntityNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -127,7 +129,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -158,7 +160,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -180,7 +182,7 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -204,7 +206,7 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -227,7 +229,7 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -256,12 +258,12 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid attribute id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidAttributeID)})
 		return
 	}
 
@@ -290,12 +292,12 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid attribute id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidAttributeID)})
 		return
 	}
 

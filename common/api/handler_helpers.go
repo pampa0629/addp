@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 )
 
 // BindIDParam 解析并绑定 ID 参数
@@ -12,7 +13,7 @@ import (
 func BindIDParam(c *gin.Context, paramName string) (uint, error) {
 	id, err := strconv.ParseUint(c.Param(paramName), 10, 32)
 	if err != nil {
-		RespondError(c, http.StatusBadRequest, "无效的ID参数")
+		RespondError(c, http.StatusBadRequest, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidID))
 		return 0, err
 	}
 	return uint(id), nil
@@ -32,7 +33,7 @@ func GetCurrentUserID(c *gin.Context) (uint, bool) {
 func MustGetCurrentUserID(c *gin.Context) (uint, error) {
 	userID, exists := GetCurrentUserID(c)
 	if !exists {
-		RespondError(c, http.StatusUnauthorized, "未授权")
+		RespondError(c, http.StatusUnauthorized, i18nmiddleware.T(c, i18nmiddleware.MsgUnauthorized))
 		return 0, ErrUnauthorized
 	}
 	return userID, nil

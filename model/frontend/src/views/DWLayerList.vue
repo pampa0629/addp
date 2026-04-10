@@ -2,42 +2,42 @@
   <div class="dw-layer-list">
     <div class="page-header">
       <div class="header-left">
-        <h3 class="page-title">数仓分层配置</h3>
-        <el-tag type="info" size="small">{{ layers.length }} 个分层</el-tag>
+        <h3 class="page-title">{{ t('model.dw_layer.title') }}</h3>
+        <el-tag type="info" size="small">{{ layers.length }} {{ t('model.dw_layer.layer_code') }}</el-tag>
       </div>
       <div class="header-actions">
         <el-button @click="handleInitDefault" :loading="initializing">
-          初始化默认分层
+          {{ t('model.dw_layer.init_default') }}
         </el-button>
         <el-button type="primary" @click="openDialog()">
           <el-icon><Plus /></el-icon>
-          新建分层
+          {{ t('model.dw_layer.new') }}
         </el-button>
       </div>
     </div>
 
     <el-card shadow="never">
       <el-table :data="layers" v-loading="loading" stripe>
-        <el-table-column label="层级代码" prop="layer_code" width="120">
+        <el-table-column :label="t('model.dw_layer.layer_code')" prop="layer_code" width="120">
           <template #default="{ row }">
             <el-tag :type="layerTagType(row.layer_code)" size="small">
               {{ row.layer_code.toUpperCase() }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="层级名称" prop="layer_name" width="140" />
-        <el-table-column label="命名规范" prop="naming_rule" show-overflow-tooltip />
-        <el-table-column label="描述" prop="description" show-overflow-tooltip />
-        <el-table-column label="排序" prop="sort_order" width="80" />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column :label="t('model.dw_layer.layer_name')" prop="layer_name" width="140" />
+        <el-table-column :label="t('model.dw_layer.naming_rule')" prop="naming_rule" show-overflow-tooltip />
+        <el-table-column :label="t('model.dw_layer.description')" prop="description" show-overflow-tooltip />
+        <el-table-column :label="t('model.dw_layer.sort_order')" prop="sort_order" width="80" />
+        <el-table-column :label="t('model.dw_layer.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button link type="primary" @click="openDialog(row)">{{ t('model.common.edit') }}</el-button>
             <el-popconfirm
-              title="确定删除该分层吗？"
+              :title="t('model.dw_layer.delete_confirm')"
               @confirm="handleDelete(row.id)"
             >
               <template #reference>
-                <el-button link type="danger">删除</el-button>
+                <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -48,37 +48,37 @@
     <!-- 新建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editingLayer ? '编辑数仓分层' : '新建数仓分层'"
+      :title="editingLayer ? t('model.dw_layer.edit') : t('model.dw_layer.new')"
       width="520px"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="层级代码" prop="layer_code">
+        <el-form-item :label="t('model.dw_layer.layer_code')" prop="layer_code">
           <el-input
             v-model="form.layer_code"
             :disabled="!!editingLayer"
-            placeholder="如：ods / dwd / dws / ads"
+            :placeholder="t('model.dw_layer.code_placeholder')"
           />
         </el-form-item>
-        <el-form-item label="层级名称" prop="layer_name">
-          <el-input v-model="form.layer_name" placeholder="如：贴源层 / 明细层" />
+        <el-form-item :label="t('model.dw_layer.layer_name')" prop="layer_name">
+          <el-input v-model="form.layer_name" :placeholder="t('model.dw_layer.name_placeholder')" />
         </el-form-item>
-        <el-form-item label="命名规范">
+        <el-form-item :label="t('model.dw_layer.naming_rule')">
           <el-input
             v-model="form.naming_rule"
-            placeholder="如：dwd_{domain}_{entity}_d"
+            :placeholder="t('model.dw_layer.naming_placeholder')"
           />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('model.dw_layer.description')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('model.dw_layer.sort_order')">
           <el-input-number v-model="form.sort_order" :min="0" :max="999" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ editingLayer ? '保存' : '创建' }}
+          {{ editingLayer ? t('model.common.save') : t('model.common.create') }}
         </el-button>
       </template>
     </el-dialog>
@@ -90,6 +90,9 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { dwLayerAPI } from '../api/model'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -110,8 +113,8 @@ const defaultForm = () => ({
 const form = ref(defaultForm())
 
 const rules = {
-  layer_code: [{ required: true, message: '请输入层级代码', trigger: 'blur' }],
-  layer_name: [{ required: true, message: '请输入层级名称', trigger: 'blur' }]
+  layer_code: [{ required: true, message: t('model.dw_layer.code_required'), trigger: 'blur' }],
+  layer_name: [{ required: true, message: t('model.dw_layer.name_required'), trigger: 'blur' }]
 }
 
 const layerTagType = (code) => {
@@ -151,15 +154,15 @@ const handleSubmit = async () => {
   try {
     if (editingLayer.value) {
       await dwLayerAPI.update(editingLayer.value.id, form.value)
-      ElMessage.success('更新成功')
+      ElMessage.success(t('model.common.update_success'))
     } else {
       await dwLayerAPI.create(form.value)
-      ElMessage.success('创建成功')
+      ElMessage.success(t('model.common.create_success'))
     }
     dialogVisible.value = false
     loadLayers()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || '操作失败')
+    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
   } finally {
     submitting.value = false
   }
@@ -168,10 +171,10 @@ const handleSubmit = async () => {
 const handleDelete = async (id) => {
   try {
     await dwLayerAPI.delete(id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('model.common.delete_success'))
     loadLayers()
   } catch {
-    ElMessage.error('删除失败')
+    ElMessage.error(t('model.common.delete_failed'))
   }
 }
 
@@ -188,7 +191,7 @@ const handleInitDefault = async () => {
     for (const d of defaults) {
       await dwLayerAPI.create(d).catch(() => {})
     }
-    ElMessage.success('默认分层初始化完成')
+    ElMessage.success(t('model.dw_layer.init_success'))
     loadLayers()
   } finally {
     initializing.value = false

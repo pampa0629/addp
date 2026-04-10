@@ -1,0 +1,107 @@
+{
+  "monitor": {
+    "login": {
+      "title": "Execution Monitor Login",
+      "username_placeholder": "Enter username",
+      "password_placeholder": "Enter password",
+      "username_required": "Please enter username",
+      "password_required": "Please enter password",
+      "submit": "Login",
+      "submitting": "Logging in...",
+      "success": "Login successful",
+      "failed": "Login failed, please check your credentials"
+    },
+    "execution": {
+      "title": "Execution Records",
+      "filter": {
+        "module": "Module",
+        "module_placeholder": "All Modules",
+        "status": "Status",
+        "status_placeholder": "All Statuses",
+        "trigger_type": "Trigger",
+        "trigger_placeholder": "All Triggers",
+        "search": "Search",
+        "reset": "Reset"
+      },
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timeout",
+        "cancelled": "Cancelled"
+      },
+      "trigger": {
+        "manual": "Manual",
+        "schedule": "Schedule",
+        "api": "API",
+        "orchestrator": "Orchestrator"
+      },
+      "detail": {
+        "title": "Execution Detail",
+        "id": "Execution ID",
+        "uuid": "Execution UUID",
+        "module": "Module",
+        "type": "Execution Type",
+        "status": "Status",
+        "progress": "Progress",
+        "trigger_type": "Trigger Type",
+        "duration": "Duration",
+        "created_at": "Created At",
+        "started_at": "Started At",
+        "completed_at": "Completed At",
+        "result": "Execution Result",
+        "error": "Error Details"
+      },
+      "load_failed": "Failed to load execution records",
+      "detail_failed": "Failed to load execution detail"
+    },
+    "table": {
+      "id": "ID",
+      "module": "Module",
+      "execution_type": "Execution Type",
+      "status": "Status",
+      "trigger_type": "Trigger",
+      "progress": "Progress",
+      "created_at": "Created At",
+      "duration": "Duration",
+      "actions": "Actions",
+      "view_detail": "View Detail"
+    },
+    "dashboard": {
+      "total_executions": "Total Executions",
+      "success_rate": "Success Rate",
+      "success_count": "Success",
+      "running": "Running",
+      "failed_count": "Failed",
+      "module_health": "Module Health",
+      "refresh": "Refresh",
+      "no_modules": "No modules available",
+      "trend_title": "Execution Trend (Last 7 Days)",
+      "trend_days": {
+        "7": "7 Days",
+        "14": "14 Days",
+        "30": "30 Days"
+      },
+      "recent_executions": "Recent Executions",
+      "view_all": "View All",
+      "chart": {
+        "success": "Success",
+        "failed": "Failed",
+        "total": "Total"
+      },
+      "stats_failed": "Failed to load statistics",
+      "modules_failed": "Failed to load module health status",
+      "refresh_success": "Refreshed successfully",
+      "trend_failed": "Failed to load trend data",
+      "executions_failed": "Failed to load execution records",
+      "view_execution": "View execution record #{id}"
+    },
+    "module_status": {
+      "up": "Online",
+      "down": "Offline",
+      "unknown": "Unknown",
+      "latency": "Latency: {ms}ms"
+    }
+  }
+}

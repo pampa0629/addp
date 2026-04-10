@@ -2,16 +2,16 @@
   <el-dialog
     :model-value="visible"
     width="640px"
-    title="选择对象存储目录"
+    :title="t('transfer.objectStorage.dialogTitle')"
     @close="handleClose"
   >
     <div class="picker-container">
       <div class="picker-header">
-        <div class="bucket-info">存储桶：{{ bucketName || '未知' }}</div>
+        <div class="bucket-info">{{ t('transfer.objectStorage.bucketLabel', { name: bucketName || t('transfer.objectStorage.bucketUnknown') }) }}</div>
         <el-breadcrumb class="picker-breadcrumb" separator="/">
           <el-breadcrumb-item>
             <el-link type="primary" @click="handleBreadcrumbClick('')">
-              {{ bucketName || '根目录' }}
+              {{ bucketName || t('transfer.objectStorage.rootDir') }}
             </el-link>
           </el-breadcrumb-item>
           <el-breadcrumb-item
@@ -19,21 +19,21 @@
             :key="item.path"
           >
             <el-link type="primary" @click="handleBreadcrumbClick(item.path)">
-              {{ item.label || '未命名' }}
+              {{ item.label || t('transfer.objectStorage.unnamed') }}
             </el-link>
           </el-breadcrumb-item>
         </el-breadcrumb>
       </div>
 
       <div class="current-prefix">
-        当前目录：{{ displayPath(currentPrefix) }}
+        {{ t('transfer.objectStorage.currentDir', { path: displayPath(currentPrefix) }) }}
       </div>
 
       <el-skeleton v-if="loading" :rows="4" animated />
 
       <el-empty
         v-else-if="directories.length === 0"
-        description="暂无子目录"
+        :description="t('transfer.objectStorage.noSubdirs')"
       />
 
       <el-table
@@ -46,7 +46,7 @@
         :current-row-key="selectedPath"
         row-key="path"
       >
-        <el-table-column label="目录" min-width="300">
+        <el-table-column :label="t('transfer.objectStorage.dirColumn')" min-width="300">
           <template #default="{ row }">
             <span class="directory-cell">
               <el-icon :size="16" class="directory-icon"><Folder /></el-icon>
@@ -54,13 +54,13 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="right">
+        <el-table-column :label="t('transfer.objectStorage.actionsColumn')" width="180" align="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click.stop="enterDirectory(row)">
-              打开
+              {{ t('transfer.objectStorage.open') }}
             </el-button>
             <el-button link size="small" @click.stop="selectDirectory(row.path)">
-              选择
+              {{ t('transfer.objectStorage.select') }}
             </el-button>
           </template>
         </el-table-column>
@@ -70,16 +70,16 @@
     <template #footer>
       <div class="picker-footer">
         <div class="selected-info">
-          已选择：{{ displayPath(selectedPath || currentPrefix) }}
+          {{ t('transfer.objectStorage.selectedLabel', { path: displayPath(selectedPath || currentPrefix) }) }}
         </div>
         <div class="footer-actions">
-          <el-button @click="handleClose">取消</el-button>
+          <el-button @click="handleClose">{{ t('transfer.objectStorage.cancel') }}</el-button>
           <el-button
             type="primary"
             :disabled="!canConfirm"
             @click="selectDirectory(selectedPath || currentPrefix)"
           >
-            使用当前目录
+            {{ t('transfer.objectStorage.useCurrentDir') }}
           </el-button>
         </div>
       </div>
@@ -90,9 +90,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Folder } from '@element-plus/icons-vue'
 
 import { objectStorageAPI } from '@/api/objectStorage'
+
+const { t } = useI18n()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -168,7 +171,7 @@ const loadDirectories = async (prefix = '') => {
     }
   } catch (error) {
     console.error('浏览对象存储目录失败:', error)
-    ElMessage.error(error.response?.data?.error || '加载目录失败')
+    ElMessage.error(t('transfer.objectStorage.loadFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     loading.value = false
   }
@@ -192,7 +195,7 @@ const handleRowClick = (row) => {
 
 const selectDirectory = (path) => {
   if (!canConfirm.value) {
-    ElMessage.warning('请先选择对象存储资源')
+    ElMessage.warning(t('transfer.objectStorage.selectResourceFirst'))
     return
   }
   const normalized = normalizeDirectory(path)

@@ -5,7 +5,7 @@
         <el-icon :size="24" class="header-icon">
           <Upload />
         </el-icon>
-        <h1>数据传输模块</h1>
+        <h1>{{ t('transfer.layout.moduleTitle') }}</h1>
       </div>
       <div class="header-right" v-if="authStore.isAuthenticated && userDisplayName">
         <el-dropdown @command="handleCommand">
@@ -18,7 +18,7 @@
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('transfer.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -61,8 +61,10 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
+import { useI18n } from 'vue-i18n'
 import { ArrowDown, UserFilled, Connection, List, Timer, Upload, SwitchButton } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -72,32 +74,32 @@ if (typeof window !== 'undefined') {
   isInIframe.value = window.self !== window.top
 }
 
-const menuItems = [
-  { index: '/tasks', label: '传输任务', icon: List },
-  { index: '/executions', label: '执行记录', icon: Timer },
-  { index: '/local-engines', label: '本地存储引擎', icon: Connection }
-]
+const menuItems = computed(() => [
+  { index: '/tasks', label: t('transfer.layout.transferTasks'), icon: List },
+  { index: '/executions', label: t('transfer.layout.executionRecords'), icon: Timer },
+  { index: '/local-engines', label: t('transfer.layout.localStorageEngines'), icon: Connection }
+])
 
 const activeMenu = computed(() => {
   const { path } = route
-  const match = menuItems.find(item => path === item.index || path.startsWith(item.index + '/'))
+  const match = menuItems.value.find(item => path === item.index || path.startsWith(item.index + '/'))
   return match ? match.index : '/tasks'
 })
 
 const currentPageTitle = computed(() => {
-  const match = menuItems.find(item => activeMenu.value === item.index)
+  const match = menuItems.value.find(item => activeMenu.value === item.index)
   if (!match) {
-    return '数据传输'
+    return t('transfer.layout.dataTransfer')
   }
   if (match.index === '/tasks') {
-    if (route.name === 'TaskCreate') return '创建任务'
-    if (route.name === 'TaskCreateSimple') return '快速创建'
-    if (route.name === 'TaskEdit') return '编辑任务'
-    if (route.name === 'TaskDetail') return '任务详情'
-    return '传输任务'
+    if (route.name === 'TaskCreate') return t('transfer.layout.createTask')
+    if (route.name === 'TaskCreateSimple') return t('transfer.layout.quickCreate')
+    if (route.name === 'TaskEdit') return t('transfer.layout.editTask')
+    if (route.name === 'TaskDetail') return t('transfer.layout.taskDetail')
+    return t('transfer.layout.transferTasks')
   }
   if (match.index === '/executions') {
-    return route.name === 'ExecutionDetail' ? '执行详情' : '执行记录'
+    return route.name === 'ExecutionDetail' ? t('transfer.layout.executionDetail') : t('transfer.layout.executionRecords')
   }
   return match.label
 })

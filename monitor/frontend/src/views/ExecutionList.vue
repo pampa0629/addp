@@ -3,45 +3,45 @@
     <el-card shadow="hover">
       <template #header>
         <div class="card-header">
-          <span>执行记录查询</span>
+          <span>{{ t('monitor.execution.title') }}</span>
         </div>
       </template>
 
       <!-- 过滤器 -->
       <el-form :inline="true" :model="filters" class="filter-form">
-        <el-form-item label="模块">
-          <el-select v-model="filters.module" placeholder="全部模块" clearable style="width: 150px;">
+        <el-form-item :label="t('monitor.execution.filter.module')">
+          <el-select v-model="filters.module" :placeholder="t('monitor.execution.filter.module_placeholder')" clearable style="width: 150px;">
             <el-option label="Transfer" value="transfer" />
             <el-option label="Develop" value="develop" />
             <el-option label="Orchestrator" value="orchestrator" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 150px;">
-            <el-option label="等待中" value="pending" />
-            <el-option label="运行中" value="running" />
-            <el-option label="成功" value="success" />
-            <el-option label="失败" value="failed" />
-            <el-option label="超时" value="timeout" />
-            <el-option label="已取消" value="cancelled" />
+        <el-form-item :label="t('monitor.execution.filter.status')">
+          <el-select v-model="filters.status" :placeholder="t('monitor.execution.filter.status_placeholder')" clearable style="width: 150px;">
+            <el-option :label="t('monitor.execution.status.pending')" value="pending" />
+            <el-option :label="t('monitor.execution.status.running')" value="running" />
+            <el-option :label="t('monitor.execution.status.success')" value="success" />
+            <el-option :label="t('monitor.execution.status.failed')" value="failed" />
+            <el-option :label="t('monitor.execution.status.timeout')" value="timeout" />
+            <el-option :label="t('monitor.execution.status.cancelled')" value="cancelled" />
           </el-select>
         </el-form-item>
-        <el-form-item label="触发方式">
-          <el-select v-model="filters.trigger_type" placeholder="全部方式" clearable style="width: 150px;">
-            <el-option label="手动" value="manual" />
-            <el-option label="定时" value="schedule" />
+        <el-form-item :label="t('monitor.execution.filter.trigger_type')">
+          <el-select v-model="filters.trigger_type" :placeholder="t('monitor.execution.filter.trigger_placeholder')" clearable style="width: 150px;">
+            <el-option :label="t('monitor.execution.trigger.manual')" value="manual" />
+            <el-option :label="t('monitor.execution.trigger.schedule')" value="schedule" />
             <el-option label="API" value="api" />
-            <el-option label="编排" value="orchestrator" />
+            <el-option :label="t('monitor.execution.trigger.orchestrator')" value="orchestrator" />
           </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">
             <el-icon><Search /></el-icon>
-            查询
+            {{ t('monitor.execution.filter.search') }}
           </el-button>
           <el-button @click="handleReset">
             <el-icon><RefreshLeft /></el-icon>
-            重置
+            {{ t('monitor.execution.filter.reset') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -70,52 +70,52 @@
     <!-- 执行详情对话框 -->
     <el-dialog
       v-model="detailDialogVisible"
-      title="执行详情"
+      :title="t('monitor.execution.detail.title')"
       width="60%"
       :close-on-click-modal="false"
     >
       <div v-if="currentExecution">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="执行ID">
+          <el-descriptions-item :label="t('monitor.execution.detail.id')">
             {{ currentExecution.id }}
           </el-descriptions-item>
-          <el-descriptions-item label="执行UUID">
+          <el-descriptions-item :label="t('monitor.execution.detail.uuid')">
             {{ currentExecution.execution_id }}
           </el-descriptions-item>
-          <el-descriptions-item label="模块">
+          <el-descriptions-item :label="t('monitor.execution.detail.module')">
             <el-tag size="small">{{ currentExecution.module }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="执行类型">
+          <el-descriptions-item :label="t('monitor.execution.detail.type')">
             {{ currentExecution.execution_type }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="t('monitor.execution.detail.status')">
             <el-tag :type="getStatusType(currentExecution.status)">
               {{ getStatusText(currentExecution.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="进度">
+          <el-descriptions-item :label="t('monitor.execution.detail.progress')">
             {{ currentExecution.progress }}%
           </el-descriptions-item>
-          <el-descriptions-item label="触发方式">
+          <el-descriptions-item :label="t('monitor.execution.detail.trigger_type')">
             {{ currentExecution.trigger_type }}
           </el-descriptions-item>
-          <el-descriptions-item label="执行时长">
+          <el-descriptions-item :label="t('monitor.execution.detail.duration')">
             {{ formatDuration(currentExecution.execution_time_ms) }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间">
+          <el-descriptions-item :label="t('monitor.execution.detail.created_at')">
             {{ formatDate(currentExecution.created_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="开始时间">
+          <el-descriptions-item :label="t('monitor.execution.detail.started_at')">
             {{ formatDate(currentExecution.started_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="完成时间">
+          <el-descriptions-item :label="t('monitor.execution.detail.completed_at')">
             {{ formatDate(currentExecution.completed_at) }}
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- 执行结果 -->
         <div v-if="currentExecution.result" style="margin-top: 20px;">
-          <h4>执行结果</h4>
+          <h4>{{ t('monitor.execution.detail.result') }}</h4>
           <el-input
             type="textarea"
             :value="JSON.stringify(currentExecution.result, null, 2)"
@@ -126,7 +126,7 @@
 
         <!-- 错误详情 -->
         <div v-if="currentExecution.error_details" style="margin-top: 20px;">
-          <h4>错误详情</h4>
+          <h4>{{ t('monitor.execution.detail.error') }}</h4>
           <el-alert
             type="error"
             :closable="false"
@@ -140,9 +140,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { listExecutions, getExecution } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
+
+const { t } = useI18n()
 
 // 过滤条件
 const filters = ref({
@@ -177,7 +180,7 @@ async function loadExecutions() {
     executions.value = data.executions || []
     pagination.value.total = data.total || 0
   } catch (error) {
-    ElMessage.error('加载执行记录失败')
+    ElMessage.error(t('monitor.execution.load_failed'))
     console.error(error)
   } finally {
     loading.value = false
@@ -220,7 +223,7 @@ async function handleViewExecution(row) {
     currentExecution.value = data
     detailDialogVisible.value = true
   } catch (error) {
-    ElMessage.error('加载执行详情失败')
+    ElMessage.error(t('monitor.execution.detail_failed'))
     console.error(error)
   }
 }
@@ -240,12 +243,12 @@ function getStatusType(status) {
 
 function getStatusText(status) {
   const textMap = {
-    pending: '等待中',
-    running: '运行中',
-    success: '成功',
-    failed: '失败',
-    timeout: '超时',
-    cancelled: '已取消'
+    pending: t('monitor.execution.status.pending'),
+    running: t('monitor.execution.status.running'),
+    success: t('monitor.execution.status.success'),
+    failed: t('monitor.execution.status.failed'),
+    timeout: t('monitor.execution.status.timeout'),
+    cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
 }

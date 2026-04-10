@@ -1,48 +1,48 @@
 <template>
   <div class="type-definition-list">
     <div class="page-header">
-      <h2>资产类型</h2>
-      <p class="page-desc">系统内置6种资产类型，配置驱动，不硬编码</p>
+      <h2>{{ t('asset.typeDefinition.title') }}</h2>
+      <p class="page-desc">{{ t('asset.typeDefinition.desc') }}</p>
     </div>
 
     <el-table v-loading="loading" :data="types" border stripe>
-      <el-table-column label="类型名称" prop="name" width="140">
+      <el-table-column :label="t('asset.typeDefinition.typeName')" prop="name" width="140">
         <template #default="{ row }">
           <el-tag :type="typeTagMap[row.code] || 'info'" size="small">{{ row.name }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="类型代码" prop="code" width="120">
+      <el-table-column :label="t('asset.typeDefinition.typeCode')" prop="code" width="120">
         <template #default="{ row }">
           <code>{{ row.code }}</code>
         </template>
       </el-table-column>
-      <el-table-column label="元数据来源" prop="source_module" width="130">
+      <el-table-column :label="t('asset.typeDefinition.sourceModule')" prop="source_module" width="130">
         <template #default="{ row }">
-          {{ sourceModuleMap[row.source_module] || row.source_module }}
+          {{ sourceModuleLabel(row.source_module) }}
         </template>
       </el-table-column>
-      <el-table-column label="授权方式" prop="auth_handler" width="110">
+      <el-table-column :label="t('asset.typeDefinition.authHandler')" prop="auth_handler" width="110">
         <template #default="{ row }">
-          <el-tag v-if="row.auth_handler === 'token'" type="warning" size="small">Token 授权</el-tag>
-          <el-tag v-else type="success" size="small">软性授权</el-tag>
+          <el-tag v-if="row.auth_handler === 'token'" type="warning" size="small">{{ t('asset.typeDefinition.tokenAuth') }}</el-tag>
+          <el-tag v-else type="success" size="small">{{ t('asset.typeDefinition.softAuth') }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="使用入口" prop="entry_type" width="100">
+      <el-table-column :label="t('asset.typeDefinition.entryType')" prop="entry_type" width="100">
         <template #default="{ row }">
-          {{ entryTypeMap[row.entry_type] || row.entry_type }}
+          {{ entryTypeLabel(row.entry_type) }}
         </template>
       </el-table-column>
-      <el-table-column label="说明" prop="description" />
-      <el-table-column label="状态" prop="enabled" width="80">
+      <el-table-column :label="t('asset.typeDefinition.description')" prop="description" />
+      <el-table-column :label="t('asset.typeDefinition.status')" prop="enabled" width="80">
         <template #default="{ row }">
           <el-tag :type="row.enabled ? 'success' : 'danger'" size="small">
-            {{ row.enabled ? '启用' : '禁用' }}
+            {{ row.enabled ? t('asset.typeDefinition.enabled') : t('asset.typeDefinition.disabled') }}
           </el-tag>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-empty v-if="!loading && types.length === 0" description="暂无资产类型" />
+    <el-empty v-if="!loading && types.length === 0" :description="t('asset.typeDefinition.empty')" />
   </div>
 </template>
 
@@ -50,7 +50,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { typeDefinitionAPI } from '../api/asset'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const loading = ref(false)
 const types = ref([])
 
@@ -63,19 +65,25 @@ const typeTagMap = {
   application: ''
 }
 
-const sourceModuleMap = {
-  meta: 'Meta 模块',
-  service: 'Service 模块',
-  standard: 'Standard 模块',
-  develop: 'Develop 模块',
-  manual: '手动录入'
+function sourceModuleLabel(module) {
+  const map = {
+    meta: t('asset.typeDefinition.sourceMeta'),
+    service: t('asset.typeDefinition.sourceService'),
+    standard: t('asset.typeDefinition.sourceStandard'),
+    develop: t('asset.typeDefinition.sourceDevelop'),
+    manual: t('asset.typeDefinition.sourceManual'),
+  }
+  return map[module] || module
 }
 
-const entryTypeMap = {
-  preview: '在线预览',
-  token: 'API Token',
-  link: '跳转链接',
-  iframe: '嵌入展示'
+function entryTypeLabel(entry) {
+  const map = {
+    preview: t('asset.typeDefinition.entryPreview'),
+    token: t('asset.typeDefinition.entryToken'),
+    link: t('asset.typeDefinition.entryLink'),
+    iframe: t('asset.typeDefinition.entryIframe'),
+  }
+  return map[entry] || entry
 }
 
 async function loadTypes() {
@@ -84,7 +92,7 @@ async function loadTypes() {
     const res = await typeDefinitionAPI.list()
     types.value = res || []
   } catch (e) {
-    ElMessage.error('加载资产类型失败')
+    ElMessage.error(t('asset.typeDefinition.loadFailed'))
   } finally {
     loading.value = false
   }

@@ -1,20 +1,20 @@
 <template>
   <div class="step3-field-mapping">
-    <h3>字段映射</h3>
-    <p class="step-description">配置源字段到目标字段的映射关系</p>
+    <h3>{{ t('transfer.taskWizard.fieldMappingPage') }}</h3>
+    <p class="step-description">{{ t('transfer.taskWizard.fieldMappingPageDesc') }}</p>
 
     <div class="mapping-controls">
-      <el-button type="primary" @click="autoMap">自动映射（同名）</el-button>
-      <el-button @click="addMapping">添加映射</el-button>
-      <el-button @click="clearMappings">清空全部</el-button>
+      <el-button type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
+      <el-button @click="addMapping">{{ t('transfer.taskWizard.addMapping') }}</el-button>
+      <el-button @click="clearMappings">{{ t('transfer.taskWizard.clearAll') }}</el-button>
     </div>
 
     <el-table :data="wizardState.fieldMappings.value" border style="margin-top: 20px">
-      <el-table-column label="源字段" width="200">
+      <el-table-column :label="t('transfer.taskWizard.sourceFieldCol')" width="200">
         <template #default="{ row, $index }">
           <el-select
             v-model="row.source_field"
-            placeholder="选择源字段"
+            :placeholder="t('transfer.taskWizard.selectSourceField')"
             filterable
             @change="handleMappingChange($index)"
           >
@@ -28,11 +28,11 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="目标字段" width="200">
+      <el-table-column :label="t('transfer.taskWizard.targetFieldCol')" width="200">
         <template #default="{ row, $index }">
           <el-select
             v-model="row.target_field"
-            placeholder="选择目标字段"
+            :placeholder="t('transfer.taskWizard.selectTargetField')"
             filterable
             allow-create
             @change="handleMappingChange($index)"
@@ -47,46 +47,46 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="数据类型" width="140">
+      <el-table-column :label="t('transfer.taskWizard.dataTypeCol')" width="140">
         <template #default="{ row, $index }">
           <el-select
             v-model="row.field_type"
             placeholder="类型"
             @change="handleMappingChange($index)"
           >
-            <el-option label="字符串" value="string" />
-            <el-option label="整数" value="integer" />
-            <el-option label="单精度浮点" value="float" />
-            <el-option label="双精度浮点" value="double" />
-            <el-option label="布尔" value="boolean" />
-            <el-option label="日期" value="date" />
-            <el-option label="时间戳" value="timestamp" />
-            <el-option label="几何" value="geometry" />
+            <el-option :label="t('transfer.taskWizard.typeString')" value="string" />
+            <el-option :label="t('transfer.taskWizard.typeInteger')" value="integer" />
+            <el-option :label="t('transfer.taskWizard.typeFloat')" value="float" />
+            <el-option :label="t('transfer.taskWizard.typeDouble')" value="double" />
+            <el-option :label="t('transfer.taskWizard.typeBoolean')" value="boolean" />
+            <el-option :label="t('transfer.taskWizard.typeDate')" value="date" />
+            <el-option :label="t('transfer.taskWizard.typeTimestamp')" value="timestamp" />
+            <el-option :label="t('transfer.taskWizard.typeGeometry')" value="geometry" />
           </el-select>
         </template>
       </el-table-column>
 
-      <el-table-column label="默认值" width="150">
+      <el-table-column :label="t('transfer.taskWizard.defaultValueCol')" width="150">
         <template #default="{ row, $index }">
           <el-input
             v-model="row.default_value"
-            placeholder="默认值"
+            :placeholder="t('transfer.taskWizard.defaultValuePlaceholder')"
             @input="handleMappingChange($index)"
           />
         </template>
       </el-table-column>
 
-      <el-table-column label="格式" width="140">
+      <el-table-column :label="t('transfer.taskWizard.formatCol')" width="140">
         <template #default="{ row, $index }">
           <el-input
             v-model="row.format"
-            placeholder="如: 2006-01-02"
+            :placeholder="t('transfer.taskWizard.formatPlaceholder')"
             @input="handleMappingChange($index)"
           />
         </template>
       </el-table-column>
 
-      <el-table-column label="可为空" width="90" align="center">
+      <el-table-column :label="t('transfer.taskWizard.nullableCol')" width="90" align="center">
         <template #default="{ row, $index }">
           <el-switch
             v-model="row.nullable"
@@ -95,27 +95,30 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column :label="t('transfer.taskWizard.actionsCol')" width="100" fixed="right">
         <template #default="{ $index }">
           <el-button
             type="danger"
             size="small"
             @click="removeMapping($index)"
           >
-            删除
+            {{ t('transfer.taskWizard.deleteMappingBtn') }}
           </el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <div v-if="wizardState.fieldMappings.value.length === 0" class="empty-hint">
-      <el-empty description="暂无字段映射，请点击上方按钮添加映射或自动映射" />
+      <el-empty :description="t('transfer.taskWizard.emptyMappingHint')" />
     </div>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   wizardState: {
@@ -126,7 +129,7 @@ const props = defineProps({
 
 function autoMap() {
   props.wizardState.autoGenerateFieldMappings()
-  ElMessage.success('已自动生成字段映射')
+  ElMessage.success(t('transfer.taskWizard.autoMapSuccess'))
 }
 
 function addMapping() {
@@ -140,11 +143,11 @@ function removeMapping(index) {
 async function clearMappings() {
   try {
     await ElMessageBox.confirm(
-      '确定要清空所有字段映射吗？',
-      '警告',
+      t('transfer.taskWizard.clearMappingsConfirm'),
+      t('transfer.taskWizard.clearMappingsConfirmTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('transfer.taskWizard.confirmOk'),
+        cancelButtonText: t('transfer.taskWizard.cancel'),
         type: 'warning'
       }
     )
@@ -152,7 +155,7 @@ async function clearMappings() {
     while (props.wizardState.fieldMappings.value.length > 0) {
       props.wizardState.removeFieldMapping(0)
     }
-    ElMessage.success('已清空字段映射')
+    ElMessage.success(t('transfer.taskWizard.clearMappingsSuccess'))
   } catch (error) {
     // 用户取消
   }

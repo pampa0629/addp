@@ -1,0 +1,32 @@
+[model.common.invalid_id]
+other = "Invalid ID"
+
+[model.entity.not_found]
+other = "Entity not found"
+
+[model.entity.invalid_id]
+other = "Invalid entity ID"
+
+[model.entity.invalid_attribute_id]
+other = "Invalid attribute ID"
+
+[model.entity.invalid_entity_id_query]
+other = "Invalid entity_id parameter"
+
+[model.entity_relation.not_found]
+other = "Entity relation not found"
+
+[model.logical_table.not_found]
+other = "Logical table not found"
+
+[model.logical_table.invalid_field_id]
+other = "Invalid field ID"
+
+[model.dw_layer.not_found]
+other = "DW layer not found"
+
+[model.fact_metric.invalid_mapping_id]
+other = "Invalid metric mapping ID"
+
+[model.table_relation.invalid_relation_id]
+other = "Invalid relation ID"

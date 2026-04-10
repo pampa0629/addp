@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
@@ -27,7 +29,7 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -50,7 +52,7 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 
@@ -81,12 +83,12 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
 		return
 	}
 	mappingID, err := strconv.ParseInt(c.Param("mid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mapping id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidMappingID)})
 		return
 	}
 

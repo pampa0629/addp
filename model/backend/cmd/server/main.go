@@ -10,6 +10,7 @@ import (
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
+	_ "github.com/addp/model/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

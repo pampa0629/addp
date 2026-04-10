@@ -8,8 +8,10 @@ import (
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/service"
+	_ "github.com/addp/develop/backend/i18n"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
@@ -78,6 +80,7 @@ func SetupRouter(
 
 	// 全局中间件
 	router.Use(commonCors.CORS())
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// 健康检查（无需认证）
 	router.GET("/health", func(c *gin.Context) {
