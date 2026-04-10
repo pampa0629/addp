@@ -140,13 +140,13 @@ const statusStats = computed(() => [
 
 async function fetchStatus() {
   statusLoading.value = true
-  const get = (url) => client.get(url).then(r => r.data?.data?.total ?? r.data?.total ?? 0).catch(() => null)
+  const get = (url) => client.get(url).then(r => r?.data?.total ?? r?.total ?? 0).catch(() => null)
 
   const [engines, datasets, services, tasks] = await Promise.allSettled([
-    get('/api/v1/system/engines?page_size=1'),
-    get('/api/v1/meta/items?page_size=1'),
-    get('/api/v1/service/services?page_size=1'),
-    get('/api/v1/monitor/executions?status=running&page_size=1'),
+    get('/system/engines?page_size=1'),
+    get('/meta/stats'),
+    get('/service/query?page_size=1'),
+    get('/monitor/executions?status=running&page_size=1'),
   ])
 
   statusData.value = {

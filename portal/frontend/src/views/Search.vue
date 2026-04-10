@@ -4,28 +4,28 @@
     <div class="search-bar">
       <el-input
         v-model="keyword"
-        placeholder="输入关键词搜索数据资产..."
+        :placeholder="t('portal.search.placeholder')"
         size="large"
         clearable
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       >
         <template #append>
-          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">{{ t('portal.search.searchBtn') }}</el-button>
         </template>
       </el-input>
     </div>
 
     <!-- 结果区 -->
     <div class="result-header" v-if="!loading">
-      <span class="result-count">找到 <strong>{{ total }}</strong> 个资产</span>
+      <span class="result-count">{{ t('portal.search.resultCount', { count: total }) }}</span>
       <span class="keyword-hint" v-if="keyword">
-        — 关键词 "{{ keyword }}"
+        {{ t('portal.search.keywordHint', { keyword }) }}
       </span>
     </div>
 
     <div v-loading="loading">
-      <el-empty v-if="!loading && assets.length === 0" description="未找到匹配的数据资产，请尝试其他关键词" />
+      <el-empty v-if="!loading && assets.length === 0" :description="t('portal.search.noResults')" />
       <div v-else class="result-list">
         <div
           v-for="asset in assets"
@@ -34,14 +34,14 @@
           @click="$router.push(`/portal/assets/${asset.id}`)"
         >
           <div class="result-item-header">
-            <el-tag size="small" class="type-tag">{{ asset.type_name || '未知类型' }}</el-tag>
+            <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
             <span class="asset-name">{{ asset.name }}</span>
             <span class="catalog-path" v-if="asset.catalog_name">
               <el-icon><FolderOpened /></el-icon>
               {{ asset.catalog_name }}
             </span>
           </div>
-          <p class="asset-description">{{ asset.description || '暂无描述' }}</p>
+          <p class="asset-description">{{ asset.description || t('portal.common.noDescription') }}</p>
           <div class="result-item-footer">
             <div class="tags" v-if="asset.tags?.length">
               <el-tag
@@ -73,10 +73,14 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Search, FolderOpened } from '@element-plus/icons-vue'
 import { formatDate } from '@common-ui'
 import { searchAPI } from '../api/portal'
+import { useAssetType } from '../composables/useAssetType'
 
+const { t } = useI18n()
+const { getTypeName } = useAssetType()
 const route = useRoute()
 const router = useRouter()
 

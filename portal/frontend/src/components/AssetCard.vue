@@ -1,14 +1,14 @@
 <template>
   <el-card class="asset-card" shadow="hover" @click="$router.push(`/portal/assets/${asset.id}`)">
     <div class="card-header">
-      <el-tag size="small" class="type-tag">{{ asset.type_name || '未知类型' }}</el-tag>
+      <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
     </div>
     <div class="asset-name">{{ asset.name }}</div>
     <div class="catalog-path" v-if="asset.catalog_name">
       <el-icon><FolderOpened /></el-icon>
       <span>{{ asset.catalog_name }}</span>
     </div>
-    <p class="description">{{ asset.description || '暂无描述' }}</p>
+    <p class="description">{{ asset.description || t('portal.common.noDescription') }}</p>
     <div class="tags" v-if="asset.tags?.length">
       <el-tag
         v-for="tag in asset.tags.slice(0, 3)"
@@ -27,8 +27,13 @@
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { formatDate } from '@common-ui'
 import { FolderOpened } from '@element-plus/icons-vue'
+import { useAssetType } from '../composables/useAssetType'
+
+const { t } = useI18n()
+const { getTypeName } = useAssetType()
 
 defineProps({
   asset: {

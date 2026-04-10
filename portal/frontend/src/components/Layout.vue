@@ -4,13 +4,13 @@
     <el-header class="header">
       <div class="header-left" style="cursor:pointer" @click="$router.push('/portal/home')">
         <el-icon class="logo-icon"><DataBoard /></el-icon>
-        <span class="title">资产门户</span>
+        <span class="title">{{ t('portal.layout.title') }}</span>
       </div>
 
       <div class="header-center">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索数据资产..."
+          :placeholder="t('portal.layout.searchPlaceholder')"
           :prefix-icon="Search"
           class="search-input"
           @keyup.enter="handleSearch"
@@ -21,20 +21,21 @@
       <div class="header-right">
         <el-button text @click="$router.push('/portal/my/applications')">
           <el-icon><Tickets /></el-icon>
-          我的申请与授权
+          {{ t('portal.layout.myApplications') }}
         </el-button>
+        <LangSwitcher style="margin-right: 4px;" />
         <ThemeSwitcher style="margin-right: 8px;" />
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || '用户' }}
+            {{ authStore.user?.username || t('portal.layout.user') }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="logout">
                 <el-icon><SwitchButton /></el-icon>
-                退出登录
+                {{ t('portal.layout.logout') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -52,13 +53,15 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
-import { ThemeSwitcher } from '@common-ui'
+import { ThemeSwitcher, LangSwitcher } from '@common-ui'
 import {
   DataBoard, Search, Tickets,
   User, ArrowDown, SwitchButton
 } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const searchKeyword = ref('')

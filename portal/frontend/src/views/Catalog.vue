@@ -3,7 +3,7 @@
     <!-- 左侧目录树 -->
     <div class="sidebar" v-loading="catalogLoading">
       <div class="sidebar-header">
-        <h4>资产目录</h4>
+        <h4>{{ t('portal.catalog.title') }}</h4>
       </div>
       <el-scrollbar class="catalog-scroll">
         <el-tree
@@ -30,11 +30,11 @@
     <div class="main-content">
       <div class="content-header">
         <h3 class="catalog-name">{{ currentCatalogName }}</h3>
-        <span class="total-count" v-if="!assetLoading">共 {{ total }} 个资产</span>
+        <span class="total-count" v-if="!assetLoading">{{ t('portal.catalog.totalAssets', { count: total }) }}</span>
       </div>
 
       <div v-loading="assetLoading">
-        <el-empty v-if="!assetLoading && assets.length === 0" description="此目录下暂无已上架资产" />
+        <el-empty v-if="!assetLoading && assets.length === 0" :description="t('portal.catalog.noAssets')" />
         <el-row :gutter="16" v-else>
           <el-col
             v-for="asset in assets"
@@ -63,10 +63,12 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Folder, FolderOpened } from '@element-plus/icons-vue'
 import { catalogAPI } from '../api/portal'
 import AssetCard from '../components/AssetCard.vue'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -80,7 +82,7 @@ const pageSize = ref(12)
 
 const currentCatalogId = computed(() => Number(route.params.id))
 const currentCatalogName = computed(() => {
-  return findCatalogName(catalogTree.value, currentCatalogId.value) || '目录浏览'
+  return findCatalogName(catalogTree.value, currentCatalogId.value) || t('portal.catalog.browse')
 })
 
 const treeProps = {

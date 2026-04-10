@@ -2,7 +2,7 @@
   <div class="asset-detail" v-loading="loading">
     <!-- 返回按钮 -->
     <div class="back-bar">
-      <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
+      <el-button text :icon="ArrowLeft" @click="$router.back()">{{ t('portal.common.back') }}</el-button>
     </div>
 
     <template v-if="asset">
@@ -11,11 +11,11 @@
         <div class="header-main">
           <div class="header-title-row">
             <h2 class="asset-title">{{ asset.name }}</h2>
-            <el-tag class="type-badge">{{ asset.type_name || '未知类型' }}</el-tag>
+            <el-tag class="type-badge">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
           </div>
           <div class="catalog-path">
             <el-icon><FolderOpened /></el-icon>
-            <span>{{ asset.catalog_name || '未编目' }}</span>
+            <span>{{ asset.catalog_name || t('portal.assetDetail.uncategorized') }}</span>
           </div>
           <div class="tags" v-if="asset.tags?.length">
             <el-tag
@@ -29,12 +29,12 @@
 
         <!-- 状态按钮 -->
         <div class="header-actions">
-          <el-tooltip v-if="applyStatus === 'pending'" content="已提交申请，等待审批" placement="top">
-            <el-button type="info" disabled size="large">审批中</el-button>
+          <el-tooltip v-if="applyStatus === 'pending'" :content="t('portal.assetDetail.pendingTooltip')" placement="top">
+            <el-button type="info" disabled size="large">{{ t('portal.assetDetail.reviewing') }}</el-button>
           </el-tooltip>
-          <el-button v-else-if="applyStatus === 'approved'" type="success" disabled size="large">已授权</el-button>
+          <el-button v-else-if="applyStatus === 'approved'" type="success" disabled size="large">{{ t('portal.assetDetail.authorized') }}</el-button>
           <el-button v-else type="primary" size="large" @click="applyDialogVisible = true">
-            申请使用
+            {{ t('portal.assetDetail.applyUsage') }}
           </el-button>
         </div>
       </div>
@@ -42,7 +42,7 @@
       <!-- 描述 -->
       <el-card class="detail-section" shadow="never" v-if="asset.description">
         <template #header>
-          <span class="section-title">描述</span>
+          <span class="section-title">{{ t('portal.assetDetail.description') }}</span>
         </template>
         <p class="description-text">{{ asset.description }}</p>
       </el-card>
@@ -50,25 +50,25 @@
       <!-- 基本信息 -->
       <el-card class="detail-section" shadow="never">
         <template #header>
-          <span class="section-title">基本信息</span>
+          <span class="section-title">{{ t('portal.assetDetail.basicInfo') }}</span>
         </template>
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="资产类型">
-            {{ asset.type_name || '-' }}
+          <el-descriptions-item :label="t('portal.assetDetail.assetType')">
+            {{ getTypeName(asset.type_code, asset.type_name) }}
           </el-descriptions-item>
-          <el-descriptions-item label="来源模块">
+          <el-descriptions-item :label="t('portal.assetDetail.sourceModule')">
             {{ sourceModuleName(asset.source_module) }}
           </el-descriptions-item>
-          <el-descriptions-item label="所属目录">
-            {{ asset.catalog_name || '未编目' }}
+          <el-descriptions-item :label="t('portal.assetDetail.catalog')">
+            {{ asset.catalog_name || t('portal.assetDetail.uncategorized') }}
           </el-descriptions-item>
-          <el-descriptions-item label="负责人">
+          <el-descriptions-item :label="t('portal.assetDetail.owner')">
             {{ asset.owner_name || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="上架时间">
+          <el-descriptions-item :label="t('portal.assetDetail.publishedAt')">
             {{ formatDate(asset.updated_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="资产 ID">
+          <el-descriptions-item :label="t('portal.assetDetail.assetId')">
             {{ asset.id }}
           </el-descriptions-item>
         </el-descriptions>
@@ -77,7 +77,7 @@
       <!-- 扩展字段（如有） -->
       <el-card class="detail-section" shadow="never" v-if="hasExtFields">
         <template #header>
-          <span class="section-title">扩展信息</span>
+          <span class="section-title">{{ t('portal.assetDetail.extInfo') }}</span>
         </template>
         <el-descriptions :column="2" border>
           <el-descriptions-item
@@ -93,7 +93,7 @@
       <!-- 服务地址（已授权时展示） -->
       <el-card class="detail-section" shadow="never" v-if="applyStatus === 'approved'" v-loading="endpointsLoading">
         <template #header>
-          <span class="section-title">服务地址</span>
+          <span class="section-title">{{ t('portal.assetDetail.serviceAddress') }}</span>
         </template>
         <template v-if="serviceEndpoints">
           <div
@@ -104,26 +104,26 @@
             <div class="endpoint-label">{{ protocolLabel(protocol) }}</div>
             <div class="endpoint-url-row">
               <el-input :value="url" readonly class="endpoint-url-input" />
-              <el-button size="small" @click="copyUrl(url)">复制</el-button>
+              <el-button size="small" @click="copyUrl(url)">{{ t('portal.common.copied') }}</el-button>
             </div>
           </div>
           <el-empty
             v-if="!serviceEndpoints.endpoints || Object.keys(serviceEndpoints.endpoints).length === 0"
-            description="暂无可用地址"
+            :description="t('portal.assetDetail.noEndpoints')"
             :image-size="60"
           />
         </template>
       </el-card>
 
-      <!-- 评价区（Phase 6） -->
+      <!-- 评价区 -->
       <el-card class="detail-section" shadow="never" v-loading="ratingsLoading">
         <template #header>
           <div class="section-header-with-action">
             <span class="section-title">
-              用户评价
+              {{ t('portal.assetDetail.userRatings') }}
               <span v-if="ratingStats.count > 0" class="rating-summary">
                 <el-rate :model-value="ratingStats.avg_score" disabled allow-half show-score text-color="#ff9900" />
-                <span class="rating-count">（{{ ratingStats.count }} 条评价）</span>
+                <span class="rating-count">（{{ ratingStats.count }} {{ t('portal.assetDetail.ratingCount') }}）</span>
               </span>
             </span>
             <el-button
@@ -132,11 +132,11 @@
               size="small"
               plain
               @click="openRatingDialog"
-            >{{ myRating ? '修改评价' : '提交评价' }}</el-button>
+            >{{ myRating ? t('portal.assetDetail.editRating') : t('portal.assetDetail.submitRating') }}</el-button>
           </div>
         </template>
 
-        <el-empty v-if="ratings.length === 0" description="暂无评价" :image-size="60" />
+        <el-empty v-if="ratings.length === 0" :description="t('portal.assetDetail.noRatings')" :image-size="60" />
 
         <div v-else class="rating-list">
           <div v-for="r in ratings" :key="r.id" class="rating-item">
@@ -154,71 +154,71 @@
       </el-card>
     </template>
 
-    <el-empty v-else-if="!loading" description="资产不存在或已下架" />
+    <el-empty v-else-if="!loading" :description="t('portal.assetDetail.notFound')" />
 
     <!-- 申请使用对话框 -->
     <el-dialog
       v-model="applyDialogVisible"
-      title="申请使用"
+      :title="t('portal.assetDetail.applyUsage')"
       width="480px"
       :close-on-click-modal="false"
     >
       <el-form ref="applyFormRef" :model="applyForm" :rules="applyRules" label-width="90px">
-        <el-form-item label="申请理由" prop="reason">
+        <el-form-item :label="t('portal.assetDetail.applyReason')" prop="reason">
           <el-input
             v-model="applyForm.reason"
             type="textarea"
             :rows="4"
-            placeholder="请描述申请理由和使用目的..."
+            :placeholder="t('portal.assetDetail.applyReasonPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="使用时长" prop="duration_day">
+        <el-form-item :label="t('portal.assetDetail.duration')" prop="duration_day">
           <el-select v-model="applyForm.duration_day" style="width: 100%">
-            <el-option label="7 天" :value="7" />
-            <el-option label="30 天" :value="30" />
-            <el-option label="90 天" :value="90" />
-            <el-option label="180 天" :value="180" />
-            <el-option label="365 天" :value="365" />
+            <el-option :label="t('portal.assetDetail.days7')" :value="7" />
+            <el-option :label="t('portal.assetDetail.days30')" :value="30" />
+            <el-option :label="t('portal.assetDetail.days90')" :value="90" />
+            <el-option :label="t('portal.assetDetail.days180')" :value="180" />
+            <el-option :label="t('portal.assetDetail.days365')" :value="365" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="applyDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitApply">提交申请</el-button>
+        <el-button @click="applyDialogVisible = false">{{ t('portal.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitApply">{{ t('portal.assetDetail.submitApply') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 评价对话框 -->
     <el-dialog
       v-model="ratingDialogVisible"
-      :title="myRating ? '修改评价' : '提交评价'"
+      :title="myRating ? t('portal.assetDetail.editRating') : t('portal.assetDetail.submitRating')"
       width="480px"
       destroy-on-close
     >
       <el-form :model="ratingForm" label-width="90px">
-        <el-form-item label="评分" required>
+        <el-form-item :label="t('portal.assetDetail.score')" required>
           <el-rate v-model="ratingForm.score" allow-half show-text />
         </el-form-item>
-        <el-form-item label="评价内容">
+        <el-form-item :label="t('portal.assetDetail.ratingContent')">
           <el-input
             v-model="ratingForm.comment"
             type="textarea"
             :rows="4"
-            placeholder="分享您的使用体验（可选）..."
+            :placeholder="t('portal.assetDetail.ratingPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="问题反馈">
+        <el-form-item :label="t('portal.assetDetail.issueFeedback')">
           <el-checkbox-group v-model="ratingForm.tags">
-            <el-checkbox value="数据质量问题" />
-            <el-checkbox value="文档不清晰" />
-            <el-checkbox value="访问异常" />
-            <el-checkbox value="其他问题" />
+            <el-checkbox :value="t('portal.assetDetail.issueDataQuality')" />
+            <el-checkbox :value="t('portal.assetDetail.issueDocUnclear')" />
+            <el-checkbox :value="t('portal.assetDetail.issueAccessError')" />
+            <el-checkbox :value="t('portal.assetDetail.issueOther')" />
           </el-checkbox-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="ratingDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submittingRating" @click="submitRating">提交</el-button>
+        <el-button @click="ratingDialogVisible = false">{{ t('portal.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="submittingRating" @click="submitRating">{{ t('portal.common.submit') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -227,30 +227,33 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, FolderOpened } from '@element-plus/icons-vue'
 import { formatDate } from '@common-ui'
 import { assetAPI } from '../api/portal'
+import { useAssetType } from '../composables/useAssetType'
 
+const { t } = useI18n()
+const { getTypeName } = useAssetType()
 const route = useRoute()
 
 const loading = ref(false)
 const asset = ref(null)
-const applyStatus = ref('none') // none | pending | approved
+const applyStatus = ref('none')
 
 const applyDialogVisible = ref(false)
 const submitting = ref(false)
 const applyFormRef = ref(null)
 const applyForm = ref({ reason: '', duration_day: 30 })
-const applyRules = {
-  reason: [{ required: true, message: '请填写申请理由', trigger: 'blur' }],
-  duration_day: [{ required: true, message: '请选择使用时长', trigger: 'change' }]
-}
+const applyRules = computed(() => ({
+  reason: [{ required: true, message: t('portal.assetDetail.applyReasonRequired'), trigger: 'blur' }],
+  duration_day: [{ required: true, message: t('portal.assetDetail.durationRequired'), trigger: 'change' }]
+}))
 
 const endpointsLoading = ref(false)
 const serviceEndpoints = ref(null)
 
-// 评价相关状态
 const ratingsLoading = ref(false)
 const ratings = ref([])
 const myRating = ref(null)
@@ -263,30 +266,31 @@ const hasExtFields = computed(() => {
   return asset.value?.ext_fields && Object.keys(asset.value.ext_fields).length > 0
 })
 
-const moduleNameMap = {
-  meta: '元数据管理',
-  service: '数据服务',
-  standard: '数据标准',
-  develop: '开发工作台',
-  manager: '数据管理'
-}
+const moduleNameMap = computed(() => ({
+  meta: t('portal.assetDetail.moduleMeta'),
+  service: t('portal.assetDetail.moduleService'),
+  standard: t('portal.assetDetail.moduleStandard'),
+  develop: t('portal.assetDetail.moduleDevelop'),
+  manager: t('portal.assetDetail.moduleManager'),
+}))
 
 const protocolLabelMap = {
   rest_api: 'REST API',
   wfs: 'WFS',
   ogc_features: 'OGC API Features',
-  proxy: '代理地址',
-  original: '原始地址',
-  xyz: 'XYZ 瓦片',
+  xyz: 'XYZ',
   wmts: 'WMTS',
   ogc_tiles: 'OGC Tiles'
 }
 
 function sourceModuleName(code) {
-  return moduleNameMap[code] || code || '-'
+  return moduleNameMap.value[code] || code || '-'
 }
 
 function protocolLabel(key) {
+  if (key === 'proxy') return t('portal.assetDetail.protocolProxy')
+  if (key === 'original') return t('portal.assetDetail.protocolOriginal')
+  if (key === 'xyz') return t('portal.assetDetail.protocolXyz')
   return protocolLabelMap[key] || key
 }
 
@@ -299,9 +303,9 @@ function formatExtValue(value) {
 async function copyUrl(url) {
   try {
     await navigator.clipboard.writeText(url)
-    ElMessage.success('已复制')
+    ElMessage.success(t('portal.common.copied'))
   } catch {
-    ElMessage.error('复制失败，请手动选择复制')
+    ElMessage.error(t('portal.common.copyFailed'))
   }
 }
 
@@ -348,17 +352,17 @@ function openRatingDialog() {
 
 async function submitRating() {
   if (!ratingForm.value.score) {
-    ElMessage.warning('请选择评分')
+    ElMessage.warning(t('portal.assetDetail.scoreRequired'))
     return
   }
   submittingRating.value = true
   try {
     await assetAPI.addRating(route.params.id, ratingForm.value)
-    ElMessage.success('评价已提交')
+    ElMessage.success(t('portal.assetDetail.ratingSubmitted'))
     ratingDialogVisible.value = false
     await fetchRatings()
   } catch (err) {
-    ElMessage.error(err.message || '提交评价失败')
+    ElMessage.error(err.message || t('portal.assetDetail.ratingFailed'))
   } finally {
     submittingRating.value = false
   }
@@ -396,12 +400,12 @@ async function submitApply() {
     submitting.value = true
     try {
       await assetAPI.apply(route.params.id, applyForm.value)
-      ElMessage.success('申请已提交，等待审批')
+      ElMessage.success(t('portal.assetDetail.applySubmitted'))
       applyDialogVisible.value = false
       applyStatus.value = 'pending'
       applyForm.value = { reason: '', duration_day: 30 }
     } catch (err) {
-      ElMessage.error(err.message || '提交申请失败')
+      ElMessage.error(err.message || t('portal.assetDetail.applyFailed'))
     } finally {
       submitting.value = false
     }
@@ -549,7 +553,6 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-/* 评价列表 */
 .rating-list {
   display: flex;
   flex-direction: column;

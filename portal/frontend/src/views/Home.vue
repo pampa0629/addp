@@ -3,16 +3,16 @@
     <!-- 欢迎横幅 -->
     <div class="welcome-banner">
       <div class="banner-text">
-        <h2 class="banner-title">资产门户</h2>
+        <h2 class="banner-title">{{ t('portal.home.title') }}</h2>
         <p class="banner-subtitle">
-          共有 <strong>{{ totalPublished }}</strong> 个已上架数据资产，欢迎探索和使用
+          {{ t('portal.home.subtitle', { count: totalPublished }) }}
         </p>
       </div>
     </div>
 
     <!-- 资产类型快捷入口 -->
     <section class="section" v-if="typeStats.length">
-      <h3 class="section-title">资产类型</h3>
+      <h3 class="section-title">{{ t('portal.home.assetTypes') }}</h3>
       <div class="type-grid">
         <div
           v-for="stat in typeStats"
@@ -21,8 +21,8 @@
           @click="$router.push({ path: '/portal/search', query: { type_id: stat.type_id } })"
         >
           <el-icon class="type-icon"><component :is="getTypeIcon(stat.type_code)" /></el-icon>
-          <div class="type-name">{{ stat.type_name }}</div>
-          <div class="type-count">{{ stat.count }} 个</div>
+          <div class="type-name">{{ getTypeName(stat.type_code, stat.type_name) }}</div>
+          <div class="type-count">{{ t('portal.home.countUnit', { count: stat.count }) }}</div>
         </div>
       </div>
     </section>
@@ -30,12 +30,12 @@
     <!-- 最新上架 -->
     <section class="section">
       <div class="section-header">
-        <h3 class="section-title">最新上架</h3>
+        <h3 class="section-title">{{ t('portal.home.latestAssets') }}</h3>
         <el-button text type="primary" @click="$router.push('/portal/search')">
-          查看全部 →
+          {{ t('portal.home.viewAll') }}
         </el-button>
       </div>
-      <el-empty v-if="!loading && latestAssets.length === 0" description="暂无已上架资产" />
+      <el-empty v-if="!loading && latestAssets.length === 0" :description="t('portal.home.noAssets')" />
       <el-row :gutter="16" v-else>
         <el-col
           v-for="asset in latestAssets"
@@ -52,18 +52,21 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   DataLine, Connection, TrendCharts, Document, Tools, Grid
 } from '@element-plus/icons-vue'
 import { homeAPI } from '../api/portal'
 import AssetCard from '../components/AssetCard.vue'
+import { useAssetType } from '../composables/useAssetType'
 
+const { t } = useI18n()
+const { getTypeName } = useAssetType()
 const loading = ref(false)
 const latestAssets = ref([])
 const typeStats = ref([])
 const totalPublished = ref(0)
 
-// 类型图标映射
 const typeIconMap = {
   dataset: Grid,
   table: Grid,

@@ -1,22 +1,22 @@
 <template>
   <div class="my-applications" v-loading="loading">
     <div class="page-header">
-      <h2 class="page-title">我的申请与授权</h2>
+      <h2 class="page-title">{{ t('portal.myApplications.title') }}</h2>
     </div>
 
     <!-- 状态筛选 -->
     <div class="filter-bar">
       <el-radio-group v-model="displayStatus" @change="applyFilter">
-        <el-radio-button value="">全部</el-radio-button>
-        <el-radio-button value="pending">待审批</el-radio-button>
-        <el-radio-button value="authorized">已授权</el-radio-button>
-        <el-radio-button value="expired">已过期</el-radio-button>
-        <el-radio-button value="revoked">已撤销</el-radio-button>
-        <el-radio-button value="rejected">已驳回</el-radio-button>
+        <el-radio-button value="">{{ t('portal.myApplications.all') }}</el-radio-button>
+        <el-radio-button value="pending">{{ t('portal.myApplications.pending') }}</el-radio-button>
+        <el-radio-button value="authorized">{{ t('portal.myApplications.authorized') }}</el-radio-button>
+        <el-radio-button value="expired">{{ t('portal.myApplications.expired') }}</el-radio-button>
+        <el-radio-button value="revoked">{{ t('portal.myApplications.revoked') }}</el-radio-button>
+        <el-radio-button value="rejected">{{ t('portal.myApplications.rejected') }}</el-radio-button>
       </el-radio-group>
     </div>
 
-    <el-empty v-if="!loading && filteredApplications.length === 0" description="暂无申请记录" />
+    <el-empty v-if="!loading && filteredApplications.length === 0" :description="t('portal.myApplications.noRecords')" />
 
     <div v-else class="application-list">
       <el-card
@@ -31,29 +31,29 @@
               <router-link
                 :to="`/portal/assets/${app.asset_id}`"
                 class="asset-link"
-              >{{ app.asset_name || `资产 #${app.asset_id}` }}</router-link>
+              >{{ app.asset_name || t('portal.myApplications.assetFallback', { id: app.asset_id }) }}</router-link>
               <el-tag :type="DISPLAY_STATUS_CONFIG[deriveDisplayStatus(app)]?.type" size="small">
                 {{ DISPLAY_STATUS_CONFIG[deriveDisplayStatus(app)]?.label }}
               </el-tag>
             </div>
             <div class="reason-row" v-if="app.reason">
-              <span class="label">申请理由：</span>
+              <span class="label">{{ t('portal.myApplications.reasonLabel') }}</span>
               <span class="value">{{ app.reason }}</span>
             </div>
             <div class="reject-reason" v-if="deriveDisplayStatus(app) === 'rejected' && app.review_note">
               <el-icon color="var(--el-color-danger)"><WarningFilled /></el-icon>
-              <span>驳回原因：{{ app.review_note }}</span>
+              <span>{{ t('portal.myApplications.rejectReasonLabel') }}{{ app.review_note }}</span>
             </div>
             <div class="revoked-tip" v-if="deriveDisplayStatus(app) === 'revoked'">
               <el-icon color="var(--el-text-color-placeholder)"><InfoFilled /></el-icon>
-              <span>授权已被撤销</span>
+              <span>{{ t('portal.myApplications.revokedTip') }}</span>
             </div>
           </div>
           <div class="card-footer">
             <div class="card-meta">
-              <span>申请时长：{{ app.duration_day }} 天</span>
+              <span>{{ t('portal.myApplications.durationDays', { count: app.duration_day }) }}</span>
               <span v-if="app.auth_expires_at" :class="{ 'expired-text': isExpired(app.auth_expires_at) }">
-                到期：{{ formatDate(app.auth_expires_at) }}
+                {{ t('portal.myApplications.expiresLabel') }}{{ formatDate(app.auth_expires_at) }}
               </span>
               <span>{{ formatDate(app.created_at) }}</span>
             </div>
@@ -64,13 +64,13 @@
               size="small"
               plain
               @click="openUsageDialog(app)"
-            >查看使用方式</el-button>
+            >{{ t('portal.myApplications.viewUsage') }}</el-button>
             <!-- 已过期：重新申请 -->
             <router-link
               v-else-if="deriveDisplayStatus(app) === 'expired'"
               :to="`/portal/assets/${app.asset_id}`"
             >
-              <el-button type="warning" size="small" plain>重新申请</el-button>
+              <el-button type="warning" size="small" plain>{{ t('portal.myApplications.reapply') }}</el-button>
             </router-link>
           </div>
         </div>
@@ -80,7 +80,7 @@
     <!-- 使用方式弹窗 -->
     <el-dialog
       v-model="usageDialogVisible"
-      :title="`使用方式 — ${currentApp?.asset_name}`"
+      :title="t('portal.myApplications.usageDialogTitle', { name: currentApp?.asset_name })"
       width="600px"
       destroy-on-close
     >
@@ -89,7 +89,7 @@
           <!-- 有效期提示 -->
           <el-alert
             v-if="currentApp?.auth_expires_at"
-            :title="`授权有效期至 ${formatDate(currentApp.auth_expires_at)}`"
+            :title="t('portal.myApplications.authValidUntil', { date: formatDate(currentApp.auth_expires_at) })"
             type="success"
             :closable="false"
             style="margin-bottom: 16px"
@@ -98,7 +98,7 @@
           <!-- 数据服务类型：显示端点 -->
           <template v-if="currentEndpoints && Object.keys(currentEndpoints.endpoints || {}).length > 0">
             <div class="endpoints-section">
-              <div class="section-title">{{ currentEndpoints.title || '服务端点' }}</div>
+              <div class="section-title">{{ currentEndpoints.title || t('portal.myApplications.serviceEndpoints') }}</div>
               <div
                 v-for="(url, proto) in currentEndpoints.endpoints"
                 :key="proto"
@@ -123,12 +123,12 @@
           <template v-else>
             <el-result
               icon="success"
-              title="授权已生效"
-              sub-title="您已获得该资产的访问权限，请前往资产详情页了解更多信息"
+              :title="t('portal.myApplications.authActive')"
+              :sub-title="t('portal.myApplications.authActiveDesc')"
             >
               <template #extra>
                 <router-link :to="`/portal/assets/${currentApp?.asset_id}`" @click="usageDialogVisible = false">
-                  <el-button type="primary">前往资产详情</el-button>
+                  <el-button type="primary">{{ t('portal.myApplications.goToDetail') }}</el-button>
                 </router-link>
               </template>
             </el-result>
@@ -141,28 +141,29 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { WarningFilled, InfoFilled, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatDate } from '@common-ui'
 import { myApplicationAPI, assetAPI } from '../api/portal'
 
+const { t } = useI18n()
 const loading = ref(false)
 const displayStatus = ref('')
 const applications = ref([])
 
-// 使用方式弹窗
 const usageDialogVisible = ref(false)
 const endpointsLoading = ref(false)
 const currentApp = ref(null)
 const currentEndpoints = ref(null)
 
-const DISPLAY_STATUS_CONFIG = {
-  pending:    { label: '待审批', type: 'warning' },
-  authorized: { label: '已授权', type: 'success' },
-  expired:    { label: '已过期', type: 'info' },
-  revoked:    { label: '已撤销', type: 'info' },
-  rejected:   { label: '已驳回', type: 'danger' },
-}
+const DISPLAY_STATUS_CONFIG = computed(() => ({
+  pending:    { label: t('portal.myApplications.pending'), type: 'warning' },
+  authorized: { label: t('portal.myApplications.authorized'), type: 'success' },
+  expired:    { label: t('portal.myApplications.expired'), type: 'info' },
+  revoked:    { label: t('portal.myApplications.revoked'), type: 'info' },
+  rejected:   { label: t('portal.myApplications.rejected'), type: 'danger' },
+}))
 
 function deriveDisplayStatus(app) {
   if (app.status === 'pending') return 'pending'
@@ -184,9 +185,7 @@ const filteredApplications = computed(() => {
   return applications.value.filter(a => deriveDisplayStatus(a) === displayStatus.value)
 })
 
-function applyFilter() {
-  // 客户端过滤，无需重新请求
-}
+function applyFilter() {}
 
 async function openUsageDialog(app) {
   currentApp.value = app
@@ -197,7 +196,6 @@ async function openUsageDialog(app) {
     const data = await assetAPI.getEndpoints(app.asset_id)
     currentEndpoints.value = data
   } catch (err) {
-    // 非数据服务类型可能返回 403/404，忽略并显示通用说明
     currentEndpoints.value = { endpoints: {} }
   } finally {
     endpointsLoading.value = false
@@ -207,9 +205,9 @@ async function openUsageDialog(app) {
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制')
+    ElMessage.success(t('portal.common.copied'))
   } catch {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('portal.common.copyFailed'))
   }
 }
 
@@ -338,7 +336,6 @@ onMounted(fetchApplications)
   color: var(--el-color-danger);
 }
 
-/* 使用方式弹窗 */
 .usage-dialog-body {
   min-height: 120px;
 }
