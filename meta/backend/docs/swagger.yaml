@@ -7,77 +7,174 @@ info:
 paths:
   /engines:
     get:
+      description: 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for
+        the current tenant
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 引擎列表 | Engine list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 获取引擎列表
+      summary: 获取引擎列表 | Get engine list
       tags:
       - Meta
   /metadata/object:
     get:
+      description: 获取指定对象存储文件的元数据信息 | Get metadata information for a specific object
+        storage file
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 对象存储路径 | Object storage path
+        in: query
+        name: object_key
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 对象元数据 | Object metadata
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 对象不存在 | Object not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 获取对象元数据
+      summary: 获取对象元数据 | Get object metadata
       tags:
       - Meta
   /object-storage/{engine_id}/nodes:
     get:
+      description: 分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes
+        (Bucket/directory/file)
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 路径前缀 | Path prefix
+        in: query
+        name: path
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 节点列表 | Node list
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 列出对象存储节点
+      summary: 列出对象存储节点 | List object storage nodes
       tags:
       - Meta
   /schemas/{engine_id}:
     get:
+      description: 获取指定存储引擎已扫描的Schema列表 | Get scanned schema list for a specific engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Schema列表 | Schema list
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 获取Schema列表
+      summary: 获取Schema列表 | Get schema list
       tags:
       - Meta
   /schemas/{engine_id}/available:
     get:
+      description: 从数据库实时查询可用的Schema列表（非缓存）| Query available schemas from database
+        in real-time (non-cached)
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 可用Schema列表 | Available schema list
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 列出可用Schema
+      summary: 列出可用Schema | List available schemas
       tags:
       - Meta
 securityDefinitions:

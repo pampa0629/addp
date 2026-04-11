@@ -24,13 +24,13 @@ func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandl
 }
 
 // ExecuteDevItem 执行开发项（支持参数化）
-// @Summary 执行开发项
+// @Summary 执行开发项 | Execute development item
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID"
-// @Param body body map[string]interface{} false "执行参数（可选）"
-// @Success 200 {object} map[string]string
+// @Param id path int true "开发项ID | Development item ID"
+// @Param body body map[string]interface{} false "执行参数（可选）| Execution parameters (optional)"
+// @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /items/{id}/execute [post]
 func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -73,12 +73,12 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 }
 
 // ExecuteContent 执行临时内容（不创建开发项）
-// @Summary 执行临时内容
+// @Summary 执行临时内容 | Execute temporary content
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param body body models.CreateExecutionRequest true "执行请求"
-// @Success 200 {object} map[string]string
+// @Param body body models.CreateExecutionRequest true "执行请求 | Execution request"
+// @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /executions [post]
 func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
@@ -113,11 +113,11 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 }
 
 // GetExecution 获取执行详情
-// @Summary 获取执行详情
+// @Summary 获取执行详情 | Get execution details
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID（UUID）"
-// @Success 200 {object} models.ExecutionWithDevItem
+// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} models.ExecutionWithDevItem "执行详情 | Execution details"
 // @Router /executions/{id} [get]
 func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("id")
@@ -133,18 +133,18 @@ func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 }
 
 // ListExecutions 查询执行列表
-// @Summary 查询执行列表
+// @Summary 查询执行列表 | List executions
 // @Tags Execution
 // @Produce json
-// @Param page query int false "页码"
-// @Param page_size query int false "每页数量"
-// @Param dev_item_id query int false "开发项ID过滤"
-// @Param dev_type query string false "类型过滤"
-// @Param status query string false "状态过滤"
-// @Param trigger_type query string false "触发类型过滤"
-// @Param start_date query string false "开始日期 YYYY-MM-DD"
-// @Param end_date query string false "结束日期 YYYY-MM-DD"
-// @Success 200 {object} models.ListExecutionsResponse
+// @Param page query int false "页码 | Page number"
+// @Param page_size query int false "每页数量 | Page size"
+// @Param dev_item_id query int false "开发项ID过滤 | Filter by development item ID"
+// @Param dev_type query string false "类型过滤 | Filter by type"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param trigger_type query string false "触发类型过滤 | Filter by trigger type"
+// @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
+// @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
+// @Success 200 {object} models.ListExecutionsResponse "执行列表 | Execution list"
 // @Router /executions [get]
 func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 	var req models.ListExecutionsRequest
@@ -178,10 +178,10 @@ func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 }
 
 // CancelExecution 取消执行
-// @Summary 取消执行
+// @Summary 取消执行 | Cancel execution
 // @Tags Execution
-// @Param id path string true "执行ID（UUID）"
-// @Success 200 {object} map[string]string
+// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} map[string]string "取消成功 | Cancelled successfully"
 // @Router /executions/{id}/cancel [post]
 func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
 	executionID := c.Param("id")
@@ -196,10 +196,10 @@ func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
 }
 
 // RetryExecution 重试执行
-// @Summary 重试执行
+// @Summary 重试执行 | Retry execution
 // @Tags Execution
-// @Param id path string true "执行ID（UUID）"
-// @Success 200 {object} map[string]string
+// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} map[string]string "重试已启动 | Retry started"
 // @Router /executions/{id}/retry [post]
 func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("id")
@@ -219,13 +219,13 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 }
 
 // GetExecutionStatistics 获取执行统计
-// @Summary 获取执行统计
+// @Summary 获取执行统计 | Get execution statistics
 // @Tags Execution
 // @Produce json
-// @Param dev_item_id query int false "开发项ID"
-// @Param start_date query string false "开始日期 YYYY-MM-DD"
-// @Param end_date query string false "结束日期 YYYY-MM-DD"
-// @Success 200 {object} models.ExecutionStatistics
+// @Param dev_item_id query int false "开发项ID | Development item ID"
+// @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
+// @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
+// @Success 200 {object} models.ExecutionStatistics "执行统计 | Execution statistics"
 // @Router /executions/statistics [get]
 func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -253,11 +253,11 @@ func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 }
 
 // GetExecutionLogs 获取执行日志（占位）
-// @Summary 获取执行日志
+// @Summary 获取执行日志 | Get execution logs
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID（UUID）"
-// @Success 200 {object} map[string]interface{}
+// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} map[string]interface{} "执行日志 | Execution logs"
 // @Router /executions/{id}/logs [get]
 func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("id")
@@ -270,13 +270,13 @@ func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 }
 
 // ExecuteWithParams 参数化执行开发项（供 Orchestrator 调用）
-// @Summary 参数化执行开发项
+// @Summary 参数化执行开发项 | Execute development item with parameters
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID"
-// @Param body body map[string]interface{} true "执行参数"
-// @Success 200 {object} map[string]string
+// @Param id path int true "开发项ID | Development item ID"
+// @Param body body map[string]interface{} true "执行参数 | Execution parameters"
+// @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /items/{id}/execute-with-params [post]
 func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)

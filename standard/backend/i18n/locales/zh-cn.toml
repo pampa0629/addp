@@ -1,0 +1,62 @@
+[standard.common.invalid_id]
+other = "无效的ID参数"
+
+[standard.common.invalid_params]
+other = "无效的请求参数"
+
+[standard.common.delete_success]
+other = "删除成功"
+
+[standard.common.update_success]
+other = "更新成功"
+
+[standard.common.approve_success]
+other = "审批成功"
+
+[standard.common.deprecate_success]
+other = "已废弃"
+
+[standard.common.link_success]
+other = "关联成功"
+
+[standard.common.unlink_success]
+other = "已解除关联"
+
+[standard.common.upload_success]
+other = "上传成功"
+
+[standard.common.doc_id_required]
+other = "doc_id 必填"
+
+[standard.common.file_required]
+other = "请上传文件（field: file）"
+
+[standard.common.file_open_failed]
+other = "无法打开文件"
+
+[standard.common.file_read_failed]
+other = "无法读取文件"
+
+[standard.domain.not_found]
+other = "业务域不存在"
+
+[standard.glossary.not_found]
+other = "业务术语不存在"
+
+[standard.element.not_found]
+other = "数据元不存在"
+
+[standard.document.not_found]
+other = "文档不存在"
+
+[standard.unit.not_found]
+other = "计量单位不存在"
+
+[standard.metric.not_found]
+other = "指标不存在"
+
+[standard.dim_hierarchy.not_found]
+other = "维度层级不存在"
+
+[standard.dim_hierarchy.invalid_level_id]
+other = "无效的层级ID"

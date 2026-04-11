@@ -20,12 +20,12 @@ func NewAnalysisHandler(analysisSvc *service.AnalysisService) *AnalysisHandler {
 }
 
 // GetCapabilities godoc
-// @Summary      算法能力探测
-// @Description  探测知识图谱支持的图算法能力（GDS/Cypher）
-// @Tags         图算法分析
+// @Summary      算法能力探测 | Detect algorithm capabilities
+// @Description  探测知识图谱支持的图算法能力（GDS/Cypher）| Detect supported graph algorithm capabilities (GDS/Cypher)
+// @Tags         图算法分析 | Graph Algorithm Analysis
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.AlgorithmCapabilities
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/analysis/capabilities [get]
@@ -45,12 +45,12 @@ func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 }
 
 // SyncSpatialLayers godoc
-// @Summary      同步空间图层
-// @Description  将本体中所有有效空间类型（含从父类型继承）的图层同步到 Neo4j，并注册已有节点（幂等）
-// @Tags         图算法分析
+// @Summary      同步空间图层 | Sync spatial layers
+// @Description  将本体中所有有效空间类型（含从父类型继承）的图层同步到 Neo4j，并注册已有节点（幂等）| Sync all valid spatial type layers from ontology to Neo4j and register existing nodes (idempotent)
+// @Tags         图算法分析 | Graph Algorithm Analysis
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/analysis/sync-spatial [post]
@@ -72,14 +72,15 @@ func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 		"message":       "空间图层同步成功",
 	})
 }
-// @Summary      执行图算法
-// @Description  执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）
-// @Tags         图算法分析
+// RunAlgorithm godoc
+// @Summary      执行图算法 | Run graph algorithm
+// @Description  执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）| Run specified graph algorithm (degree centrality/K-hop/shortest path/PageRank/Louvain/WCC/betweenness centrality)
+// @Tags         图算法分析 | Graph Algorithm Analysis
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                         true "知识图谱 ID"
-// @Param        request body models.AlgorithmRunRequest  true "算法执行请求"
+// @Param        id      path int                         true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.AlgorithmRunRequest  true "算法执行请求 | Algorithm run request"
 // @Success      200 {object} models.AlgorithmResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse

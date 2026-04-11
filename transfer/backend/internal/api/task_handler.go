@@ -23,16 +23,16 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 }
 
 // CreateTask 创建任务
-// @Summary 创建数据传输任务
-// @Description 创建一个新的数据导入/导出/同步任务
-// @Tags 任务管理
+// @Summary 创建数据传输任务 | Create data transfer task
+// @Description 创建一个新的数据导入/导出/同步任务 | Create a new data import/export/sync task
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param request body models.CreateTaskRequest true "任务创建请求"
-// @Success 201 {object} models.TransferTask "任务创建成功"
-// @Failure 400 {object} map[string]string "请求参数错误"
-// @Failure 401 {object} map[string]string "未授权"
-// @Failure 500 {object} map[string]string "服务器内部错误"
+// @Param request body models.CreateTaskRequest true "任务创建请求 | Task creation request"
+// @Success 201 {object} models.TransferTask "任务创建成功 | Task created successfully"
+// @Failure 400 {object} map[string]string "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]string "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
 // @Router /tasks [post]
 // @Security BearerAuth
 func (h *TaskHandler) CreateTask(c *gin.Context) {
@@ -55,16 +55,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 }
 
 // GetTask 获取任务详情
-// @Summary 获取任务详情
-// @Description 根据任务ID获取任务的详细信息
-// @Tags 任务管理
+// @Summary 获取任务详情 | Get task detail
+// @Description 根据任务ID获取任务的详细信息 | Get detailed task information by task ID
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Success 200 {object} models.TransferTask "获取成功"
-// @Failure 400 {object} map[string]string "参数错误"
-// @Failure 404 {object} map[string]string "任务不存在"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.TransferTask "获取成功 | Retrieved successfully"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 404 {object} map[string]string "任务不存在 | Task not found"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTask(c *gin.Context) {
@@ -85,17 +85,17 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 }
 
 // ListTasks 获取任务列表
-// @Summary 获取任务列表
-// @Description 分页获取任务列表，支持按类型、状态过滤
-// @Tags 任务管理
+// @Summary 获取任务列表 | List tasks
+// @Description 分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param page query int false "页码" default(1)
-// @Param page_size query int false "每页大小" default(20)
-// @Param type query string false "任务类型: import, export, sync"
-// @Param status query string false "任务状态: pending, running, completed, failed"
-// @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.TransferTask} "获取成功"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param page query int false "页码 | Page number" default(1)
+// @Param page_size query int false "每页大小 | Page size" default(20)
+// @Param type query string false "任务类型: import, export, sync | Task type: import, export, sync"
+// @Param status query string false "任务状态: pending, running, completed, failed | Task status"
+// @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.TransferTask} "获取成功 | Retrieved successfully"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListTasks(c *gin.Context) {
@@ -127,16 +127,16 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 }
 
 // UpdateTask 更新任务
-// @Summary 更新任务
-// @Description 更新任务的配置信息
-// @Tags 任务管理
+// @Summary 更新任务 | Update task
+// @Description 更新任务的配置信息 | Update task configuration
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Param request body models.UpdateTaskRequest true "任务更新请求"
-// @Success 200 {object} models.TransferTask "更新成功"
-// @Failure 400 {object} map[string]string "参数错误"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param id path int true "任务ID | Task ID"
+// @Param request body models.UpdateTaskRequest true "任务更新请求 | Task update request"
+// @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
@@ -163,15 +163,15 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 }
 
 // DeleteTask 删除任务
-// @Summary 删除任务
-// @Description 删除指定的任务及相关执行记录
-// @Tags 任务管理
+// @Summary 删除任务 | Delete task
+// @Description 删除指定的任务及相关执行记录 | Delete a specific task and its execution records
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Success 200 {object} map[string]string "删除成功"
-// @Failure 400 {object} map[string]string "参数错误"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
@@ -191,15 +191,15 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 }
 
 // StartTask 启动任务
-// @Summary 启动任务
-// @Description 启动任务执行，创建新的执行记录
-// @Tags 任务管理
+// @Summary 启动任务 | Start task
+// @Description 启动任务执行，创建新的执行记录 | Start task execution and create a new execution record
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Success 200 {object} models.TaskExecution "启动成功，返回执行记录"
-// @Failure 400 {object} map[string]string "参数错误或任务已在运行"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.TaskExecution "启动成功，返回执行记录 | Started successfully, returns execution record"
+// @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
@@ -221,15 +221,15 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 }
 
 // StopTask 停止任务
-// @Summary 停止任务
-// @Description 停止正在执行的任务
-// @Tags 任务管理
+// @Summary 停止任务 | Stop task
+// @Description 停止正在执行的任务 | Stop a running task
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Success 200 {object} map[string]string "停止成功"
-// @Failure 400 {object} map[string]string "参数错误"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string "停止成功 | Stopped successfully"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{id}/stop [post]
 // @Security BearerAuth
 func (h *TaskHandler) StopTask(c *gin.Context) {
@@ -285,13 +285,13 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 }
 
 // GetTaskStatistics 获取任务统计
-// @Summary 获取任务统计信息
-// @Description 获取当前租户的任务统计数据（各状态任务数量等）
-// @Tags 任务管理
+// @Summary 获取任务统计信息 | Get task statistics
+// @Description 获取当前租户的任务统计数据（各状态任务数量等）| Get task statistics for the current tenant (task counts by status, etc.)
+// @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Success 200 {object} models.TaskStatistics "统计信息"
-// @Failure 500 {object} map[string]string "服务器错误"
+// @Success 200 {object} models.TaskStatistics "统计信息 | Statistics"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/statistics [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {

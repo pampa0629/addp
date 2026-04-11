@@ -13,7 +13,7 @@ import (
 // 门户首页
 // ============================================================
 
-// @Summary 获取门户首页数据
+// @Summary 获取门户首页数据 | Get portal home data
 // @Tags Portal
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -78,7 +78,7 @@ func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 目录浏览
 // ============================================================
 
-// @Summary 获取目录树
+// @Summary 获取目录树 | Get catalog tree
 // @Tags Portal
 // @Produce json
 // @Success 200 {array} map[string]interface{}
@@ -98,10 +98,10 @@ func handleCatalogs(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 获取目录下的资产列表
+// @Summary 获取目录下的资产列表 | Get assets in catalog
 // @Tags Portal
 // @Produce json
-// @Param id path int true "目录ID"
+// @Param id path int true "目录ID | Catalog ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /catalogs/{id}/assets [get]
 // @Security BearerAuth
@@ -134,12 +134,12 @@ func handleCatalogAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc 
 // 资产列表与搜索
 // ============================================================
 
-// @Summary 获取资产列表
+// @Summary 获取资产列表 | Get asset list
 // @Tags Portal
 // @Produce json
-// @Param keyword query string false "搜索关键词"
-// @Param type_id query int false "类型ID"
-// @Param catalog_id query int false "目录ID"
+// @Param keyword query string false "搜索关键词 | Search keyword"
+// @Param type_id query int false "类型ID | Type ID"
+// @Param catalog_id query int false "目录ID | Catalog ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets [get]
 // @Security BearerAuth
@@ -176,10 +176,10 @@ func handleAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 搜索资产
+// @Summary 搜索资产 | Search assets
 // @Tags Portal
 // @Produce json
-// @Param keyword query string false "搜索关键词"
+// @Param keyword query string false "搜索关键词 | Search keyword"
 // @Success 200 {object} map[string]interface{}
 // @Router /search [get]
 // @Security BearerAuth
@@ -196,12 +196,12 @@ func handleSearch(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 资产申请（Phase 4）
 // ============================================================
 
-// @Summary 申请使用资产
+// @Summary 申请使用资产 | Apply for asset access
 // @Tags Portal
 // @Accept json
 // @Produce json
-// @Param id path int true "资产ID"
-// @Param body body map[string]interface{} true "申请信息"
+// @Param id path int true "资产ID | Asset ID"
+// @Param body body map[string]interface{} true "申请信息 | Application info"
 // @Success 201 {object} map[string]interface{}
 // @Router /assets/{id}/apply [post]
 // @Security BearerAuth
@@ -245,7 +245,7 @@ func handleApply(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 获取我的申请列表
+// @Summary 获取我的申请列表 | Get my applications
 // @Tags Portal
 // @Produce json
 // @Success 200 {array} map[string]interface{}
@@ -267,10 +267,10 @@ func handleMyApplications(assetClient *commonClient.AssetClient) gin.HandlerFunc
 	}
 }
 
-// @Summary 获取资产申请状态
+// @Summary 获取资产申请状态 | Get asset apply status
 // @Tags Portal
 // @Produce json
-// @Param id path int true "资产ID"
+// @Param id path int true "资产ID | Asset ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets/{id}/apply-status [get]
 // @Security BearerAuth
@@ -295,10 +295,10 @@ func handleApplyStatus(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 		commonAPI.SuccessResponse(c, gin.H{"status": status})
 	}
 }
-// @Summary 获取资产详情
+// @Summary 获取资产详情 | Get asset detail
 // @Tags Portal
 // @Produce json
-// @Param id path int true "资产ID"
+// @Param id path int true "资产ID | Asset ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets/{id} [get]
 // @Security BearerAuth
@@ -326,10 +326,10 @@ func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 获取资产服务端点
+// @Summary 获取资产服务端点 | Get asset service endpoints
 // @Tags Portal
 // @Produce json
-// @Param id path int true "资产ID"
+// @Param id path int true "资产ID | Asset ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets/{id}/endpoints [get]
 // @Security BearerAuth
@@ -379,10 +379,10 @@ func handleAssetEndpoints(assetClient *commonClient.AssetClient, serviceClient *
 // 资产评价（Phase 6）
 // ============================================================
 
-// @Summary 获取资产评价列表
+// @Summary 获取资产评价列表 | Get asset ratings
 // @Tags Portal
 // @Produce json
-// @Param id path int true "资产ID"
+// @Param id path int true "资产ID | Asset ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets/{id}/ratings [get]
 // @Security BearerAuth
@@ -430,12 +430,12 @@ func handleGetRatings(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 提交资产评价
+// @Summary 提交资产评价 | Submit asset rating
 // @Tags Portal
 // @Accept json
 // @Produce json
-// @Param id path int true "资产ID"
-// @Param body body map[string]interface{} true "评价信息"
+// @Param id path int true "资产ID | Asset ID"
+// @Param body body map[string]interface{} true "评价信息 | Rating info"
 // @Success 200 {object} map[string]interface{}
 // @Router /assets/{id}/ratings [post]
 // @Security BearerAuth

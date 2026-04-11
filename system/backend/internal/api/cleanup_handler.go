@@ -33,17 +33,17 @@ type CreateScanTaskResponse struct {
 }
 
 // CreateScanTask 创建扫描任务
-// @Summary 创建垃圾数据扫描任务
-// @Description 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）
+// @Summary 创建垃圾数据扫描任务 | Create garbage data scan task
+// @Description 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）| Scan garbage data for current tenant (invalid engines, orphan data, soft-deleted data, etc.)
 // @Tags Cleanup
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body CreateScanTaskRequest true "扫描请求"
+// @Param request body CreateScanTaskRequest true "扫描请求 | Scan request"
 // @Success 200 {object} CreateScanTaskResponse
-// @Failure 400 {string} string "错误信息"
-// @Failure 401 {string} string "错误信息"
-// @Failure 500 {string} string "错误信息"
+// @Failure 400 {string} string "错误信息 | Error message"
+// @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 500 {string} string "错误信息 | Error message"
 // @Router /admin/cleanup/scan [post]
 func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 获取当前用户信息
@@ -93,17 +93,17 @@ type GetTaskStatusResponse struct {
 }
 
 // GetTaskStatus 查询任务状态
-// @Summary 查询清理任务状态
-// @Description 查询指定任务的执行状态和结果
+// @Summary 查询清理任务状态 | Get cleanup task status
+// @Description 查询指定任务的执行状态和结果 | Query execution status and results of a specified task
 // @Tags Cleanup
 // @Produce json
 // @Security BearerAuth
-// @Param task_id path string true "任务ID"
+// @Param task_id path string true "任务ID | Task ID"
 // @Success 200 {object} GetTaskStatusResponse
-// @Failure 400 {string} string "错误信息"
-// @Failure 401 {string} string "错误信息"
-// @Failure 404 {string} string "错误信息"
-// @Failure 500 {string} string "错误信息"
+// @Failure 400 {string} string "错误信息 | Error message"
+// @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 404 {string} string "错误信息 | Error message"
+// @Failure 500 {string} string "错误信息 | Error message"
 // @Router /admin/cleanup/tasks/{task_id} [get]
 func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
@@ -158,17 +158,17 @@ type CreateExecuteTaskResponse struct {
 }
 
 // CreateExecuteTask 创建执行清理任务
-// @Summary 创建执行清理任务
-// @Description 基于扫描结果，执行垃圾数据清理（软删除或物理删除）
+// @Summary 创建执行清理任务 | Create cleanup execution task
+// @Description 基于扫描结果，执行垃圾数据清理（软删除或物理删除）| Execute garbage data cleanup based on scan results (soft delete or hard delete)
 // @Tags Cleanup
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body CreateExecuteTaskRequest true "执行请求"
+// @Param request body CreateExecuteTaskRequest true "执行请求 | Execute request"
 // @Success 200 {object} CreateExecuteTaskResponse
-// @Failure 400 {string} string "错误信息"
-// @Failure 401 {string} string "错误信息"
-// @Failure 500 {string} string "错误信息"
+// @Failure 400 {string} string "错误信息 | Error message"
+// @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 500 {string} string "错误信息 | Error message"
 // @Router /admin/cleanup/execute [post]
 func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 获取当前用户信息
@@ -213,16 +213,16 @@ type GetTaskHistoryResponse struct {
 }
 
 // GetTaskHistory 获取任务历史
-// @Summary 获取清理任务历史
-// @Description 获取当前租户的清理任务历史记录
+// @Summary 获取清理任务历史 | Get cleanup task history
+// @Description 获取当前租户的清理任务历史记录 | Get cleanup task history for current tenant
 // @Tags Cleanup
 // @Produce json
 // @Security BearerAuth
-// @Param limit query int false "返回记录数" default(20)
+// @Param limit query int false "返回记录数 | Limit" default(20)
 // @Success 200 {object} GetTaskHistoryResponse
-// @Failure 400 {string} string "错误信息"
-// @Failure 401 {string} string "错误信息"
-// @Failure 500 {string} string "错误信息"
+// @Failure 400 {string} string "错误信息 | Error message"
+// @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 500 {string} string "错误信息 | Error message"
 // @Router /admin/cleanup/history [get]
 func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 	// 获取租户信息

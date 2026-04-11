@@ -16,12 +16,12 @@ func NewRuleApplicationHandler(svc *service.RuleEngineService) *RuleApplicationH
 	return &RuleApplicationHandler{svc: svc}
 }
 
-// @Summary 获取规则应用列表
+// @Summary 获取规则应用列表 | List rule applications
 // @Tags RuleApplication
 // @Produce json
-// @Param engine_id query int false "引擎ID"
-// @Param schema_name query string false "Schema名称"
-// @Param table_name query string false "表名"
+// @Param engine_id query int false "引擎ID | Engine ID"
+// @Param schema_name query string false "Schema名称 | Schema name"
+// @Param table_name query string false "表名 | Table name"
 // @Success 200 {array} map[string]interface{}
 // @Router /rule-applications [get]
 // @Security BearerAuth
@@ -39,10 +39,10 @@ func (h *RuleApplicationHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// @Summary 获取规则应用详情
+// @Summary 获取规则应用详情 | Get rule application detail
 // @Tags RuleApplication
 // @Produce json
-// @Param id path int true "规则应用ID"
+// @Param id path int true "规则应用ID | Rule application ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /rule-applications/{id} [get]
 // @Security BearerAuth
@@ -61,11 +61,11 @@ func (h *RuleApplicationHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 创建规则应用
+// @Summary 创建规则应用 | Create rule application
 // @Tags RuleApplication
 // @Accept json
 // @Produce json
-// @Param body body map[string]interface{} true "规则应用信息"
+// @Param body body map[string]interface{} true "规则应用信息 | Rule application info"
 // @Success 201 {object} map[string]interface{}
 // @Router /rule-applications [post]
 // @Security BearerAuth
@@ -85,12 +85,12 @@ func (h *RuleApplicationHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, item)
 }
 
-// @Summary 更新规则应用
+// @Summary 更新规则应用 | Update rule application
 // @Tags RuleApplication
 // @Accept json
 // @Produce json
-// @Param id path int true "规则应用ID"
-// @Param body body map[string]interface{} true "更新信息"
+// @Param id path int true "规则应用ID | Rule application ID"
+// @Param body body map[string]interface{} true "更新信息 | Update info"
 // @Success 200 {object} map[string]interface{}
 // @Router /rule-applications/{id} [put]
 // @Security BearerAuth
@@ -114,10 +114,10 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 删除规则应用
+// @Summary 删除规则应用 | Delete rule application
 // @Tags RuleApplication
 // @Produce json
-// @Param id path int true "规则应用ID"
+// @Param id path int true "规则应用ID | Rule application ID"
 // @Success 200 {object} map[string]string
 // @Router /rule-applications/{id} [delete]
 // @Security BearerAuth

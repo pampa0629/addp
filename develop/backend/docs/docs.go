@@ -23,10 +23,10 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取可用于 SQL 查询的数据源列表",
+                "summary": "获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "引擎列表 | Engine list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -43,11 +43,11 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取数据库 schema 列表",
+                "summary": "获取数据库 schema 列表 | List database schemas",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "引擎ID",
+                        "description": "引擎ID | Engine ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -55,7 +55,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Schema列表 | Schema list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -72,25 +72,25 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取数据库表列表",
+                "summary": "获取数据库表列表 | List database tables",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "引擎ID",
+                        "description": "引擎ID | Engine ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Schema名称",
+                        "description": "Schema名称 | Schema name",
                         "name": "schema",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "表列表 | Table list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -110,10 +110,10 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "执行 查询语句",
+                "summary": "执行查询语句 | Execute query statement",
                 "parameters": [
                     {
-                        "description": "查询请求",
+                        "description": "查询请求 | Query request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -124,7 +124,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "查询结果 | Query result",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ExecuteQueryResponse"
                         }
@@ -140,60 +140,60 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "查询执行列表",
+                "summary": "查询执行列表 | List executions",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "开发项ID过滤",
+                        "description": "开发项ID过滤 | Filter by development item ID",
                         "name": "dev_item_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "类型过滤",
+                        "description": "类型过滤 | Filter by type",
                         "name": "dev_type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "状态过滤",
+                        "description": "状态过滤 | Filter by status",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "触发类型过滤",
+                        "description": "触发类型过滤 | Filter by trigger type",
                         "name": "trigger_type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "开始日期 YYYY-MM-DD",
+                        "description": "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD",
                         "name": "start_date",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "结束日期 YYYY-MM-DD",
+                        "description": "结束日期 YYYY-MM-DD | End date YYYY-MM-DD",
                         "name": "end_date",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行列表 | Execution list",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsResponse"
                         }
@@ -210,10 +210,10 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "执行临时内容",
+                "summary": "执行临时内容 | Execute temporary content",
                 "parameters": [
                     {
-                        "description": "执行请求",
+                        "description": "执行请求 | Execution request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -224,7 +224,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行已启动 | Execution started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -243,30 +243,30 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取执行统计",
+                "summary": "获取执行统计 | Get execution statistics",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "dev_item_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "开始日期 YYYY-MM-DD",
+                        "description": "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD",
                         "name": "start_date",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "结束日期 YYYY-MM-DD",
+                        "description": "结束日期 YYYY-MM-DD | End date YYYY-MM-DD",
                         "name": "end_date",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行统计 | Execution statistics",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStatistics"
                         }
@@ -282,11 +282,11 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取执行详情",
+                "summary": "获取执行详情 | Get execution details",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "执行ID（UUID）",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -294,7 +294,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行详情 | Execution details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem"
                         }
@@ -307,11 +307,11 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "取消执行",
+                "summary": "取消执行 | Cancel execution",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "执行ID（UUID）",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -319,7 +319,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "取消成功 | Cancelled successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -338,11 +338,11 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取执行日志",
+                "summary": "获取执行日志 | Get execution logs",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "执行ID（UUID）",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -350,7 +350,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行日志 | Execution logs",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -364,11 +364,11 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "重试执行",
+                "summary": "重试执行 | Retry execution",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "执行ID（UUID）",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -376,7 +376,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "重试已启动 | Retry started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -395,54 +395,54 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "查询开发项列表",
+                "summary": "查询开发项列表 | List development items",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "类型过滤",
+                        "description": "类型过滤 | Filter by type",
                         "name": "dev_type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "状态过滤",
+                        "description": "状态过滤 | Filter by status",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "资源ID过滤",
+                        "description": "资源ID过滤 | Filter by engine ID",
                         "name": "engine_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "标签过滤",
+                        "description": "标签过滤 | Filter by tag",
                         "name": "tag",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "关键词搜索",
+                        "description": "关键词搜索 | Keyword search",
                         "name": "keyword",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "开发项列表 | Development item list",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
                         }
@@ -459,10 +459,10 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "创建开发项",
+                "summary": "创建开发项 | Create development item",
                 "parameters": [
                     {
-                        "description": "创建请求",
+                        "description": "创建请求 | Create request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -473,7 +473,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已创建的开发项 | Created development item",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -489,10 +489,10 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "获取开发项统计",
+                "summary": "获取开发项统计 | Get development item statistics",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "统计数据 | Statistics",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -512,11 +512,11 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "获取开发项详情",
+                "summary": "获取开发项详情 | Get development item details",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -524,7 +524,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "开发项详情 | Development item details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -541,17 +541,17 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "更新开发项",
+                "summary": "更新开发项 | Update development item",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求",
+                        "description": "更新请求 | Update request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -562,7 +562,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已更新的开发项 | Updated development item",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -573,11 +573,11 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "删除开发项",
+                "summary": "删除开发项 | Delete development item",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -585,7 +585,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -607,17 +607,17 @@ const docTemplate = `{
                 "tags": [
                     "DevItem"
                 ],
-                "summary": "执行开发项",
+                "summary": "执行开发项 | Execute development item",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "执行参数",
+                        "description": "执行参数 | Execution parameters",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -628,7 +628,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行已启动 | Execution started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -650,17 +650,17 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "参数化执行开发项",
+                "summary": "参数化执行开发项 | Execute development item with parameters",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发项ID",
+                        "description": "开发项ID | Development item ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "执行参数",
+                        "description": "执行参数 | Execution parameters",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -672,7 +672,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行已启动 | Execution started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -691,10 +691,10 @@ const docTemplate = `{
                 "tags": [
                     "Jupyter Instance"
                 ],
-                "summary": "启动 Jupyter 实例",
+                "summary": "启动 Jupyter 实例 | Start Jupyter instance",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "实例信息 | Instance information",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
                         }
@@ -710,10 +710,10 @@ const docTemplate = `{
                 "tags": [
                     "Jupyter Instance"
                 ],
-                "summary": "获取 Jupyter 实例状态",
+                "summary": "获取 Jupyter 实例状态 | Get Jupyter instance status",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "实例状态 | Instance status",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
                         }
@@ -729,10 +729,10 @@ const docTemplate = `{
                 "tags": [
                     "Jupyter Instance"
                 ],
-                "summary": "停止 Jupyter 实例",
+                "summary": "停止 Jupyter 实例 | Stop Jupyter instance",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "停止成功 | Stopped successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -751,10 +751,10 @@ const docTemplate = `{
                 "tags": [
                     "Jupyter Instance"
                 ],
-                "summary": "列出所有 Jupyter 实例",
+                "summary": "列出所有 Jupyter 实例 | List all Jupyter instances",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "实例列表 | Instance list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -773,26 +773,26 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "列出 Notebooks",
+                "summary": "列出 Notebooks | List Notebooks",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码",
+                        "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "每页数量",
+                        "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Notebook列表 | Notebook list",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
                         }
@@ -805,11 +805,11 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "删除 Notebook",
+                "summary": "删除 Notebook | Delete Notebook",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "DevItem ID",
+                        "description": "DevItem ID | DevItem ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -817,7 +817,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -836,11 +836,11 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "下载 Notebook",
+                "summary": "下载 Notebook | Download Notebook",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "DevItem ID",
+                        "description": "DevItem ID | DevItem ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -848,7 +848,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Notebook文件 | Notebook file",
                         "schema": {
                             "type": "file"
                         }
@@ -867,10 +867,10 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "执行 Notebook",
+                "summary": "执行 Notebook | Execute Notebook",
                 "parameters": [
                     {
-                        "description": "执行请求",
+                        "description": "执行请求 | Execution request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -881,7 +881,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行结果 | Execution result",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ExecuteNotebookResponse"
                         }
@@ -897,10 +897,10 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "检查 Jupyter Engine 健康状态",
+                "summary": "检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "健康状态 | Health status",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -922,10 +922,10 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "获取 Jupyter Lab 访问 URL",
+                "summary": "获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL",
                 "parameters": [
                     {
-                        "description": "请求",
+                        "description": "请求 | Request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -936,7 +936,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Jupyter URL | Jupyter URL",
                         "schema": {
                             "$ref": "#/definitions/internal_api.GetJupyterURLResponse"
                         }
@@ -952,10 +952,10 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "列出可用的 Kernel",
+                "summary": "列出可用的 Kernel | List available kernels",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Kernel列表 | Kernel list",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ListKernelsResponse"
                         }
@@ -974,44 +974,44 @@ const docTemplate = `{
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "上传 Notebook",
+                "summary": "上传 Notebook | Upload Notebook",
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "Notebook 文件 (.ipynb)",
+                        "description": "Notebook 文件 (.ipynb) | Notebook file (.ipynb)",
                         "name": "file",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Notebook 名称",
+                        "description": "Notebook 名称 | Notebook name",
                         "name": "name",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "描述",
+                        "description": "描述 | Description",
                         "name": "description",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "数据源 IDs (JSON 数组)",
+                        "description": "数据源 IDs (JSON 数组) | Data source IDs (JSON array)",
                         "name": "data_sources",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "参数 (JSON 对象)",
+                        "description": "参数 (JSON 对象) | Parameters (JSON object)",
                         "name": "parameters",
                         "in": "formData"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已上传的Notebook | Uploaded Notebook",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -1027,10 +1027,10 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "获取所有模块的算子列表",
+                "summary": "获取所有模块的算子列表 | List all operators from all modules",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "算子列表 | Operator list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1047,10 +1047,10 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "获取缓存信息",
+                "summary": "获取缓存信息 | Get cache information",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "缓存信息 | Cache information",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1067,11 +1067,11 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "根据引擎类型获取算子列表",
+                "summary": "根据引擎类型获取算子列表 | List operators by engine type",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "工作流引擎类型（动态从 system 获取）",
+                        "description": "工作流引擎类型（动态从 system 获取）| Workflow engine type (fetched dynamically from system)",
                         "name": "engineType",
                         "in": "path",
                         "required": true
@@ -1079,7 +1079,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "算子列表 | Operator list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1096,11 +1096,11 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "获取指定模块的算子列表",
+                "summary": "获取指定模块的算子列表 | List operators by module",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "模块名称（任务提供者或工作流引擎）",
+                        "description": "模块名称（任务提供者或工作流引擎）| Module name (task provider or workflow engine)",
                         "name": "module",
                         "in": "path",
                         "required": true
@@ -1108,7 +1108,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "算子列表 | Operator list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1125,10 +1125,10 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "刷新算子缓存",
+                "summary": "刷新算子缓存 | Refresh operator cache",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "缓存已刷新 | Cache refreshed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1145,11 +1145,11 @@ const docTemplate = `{
                 "tags": [
                     "Operator"
                 ],
-                "summary": "获取算子详情",
+                "summary": "获取算子详情 | Get operator details",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "算子名称",
+                        "description": "算子名称 | Operator name",
                         "name": "name",
                         "in": "path",
                         "required": true
@@ -1157,7 +1157,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "算子详情 | Operator details",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1174,10 +1174,10 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取所有 Apache Spark 运行时列表",
+                "summary": "获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Spark运行时列表 | Spark runtime list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -1196,36 +1196,36 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "获取 查询任务列表",
+                "summary": "获取查询任务列表 | List query tasks",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "页码",
+                        "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量",
+                        "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "状态过滤",
+                        "description": "状态过滤 | Filter by status",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "关键词搜索",
+                        "description": "关键词搜索 | Keyword search",
                         "name": "keyword",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务列表 | Task list",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
                         }
@@ -1242,10 +1242,10 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "保存 SQL 为任务",
+                "summary": "保存 SQL 为任务 | Save SQL as task",
                 "parameters": [
                     {
-                        "description": "保存请求",
+                        "description": "保存请求 | Save request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1256,7 +1256,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已保存的任务 | Saved task",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -1272,11 +1272,11 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "获取 查询任务详情",
+                "summary": "获取查询任务详情 | Get query task details",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1284,7 +1284,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务详情 | Task details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -1301,17 +1301,17 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "更新 查询任务",
+                "summary": "更新查询任务 | Update query task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求",
+                        "description": "更新请求 | Update request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1322,7 +1322,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已更新的任务 | Updated task",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                         }
@@ -1333,11 +1333,11 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "删除 查询任务",
+                "summary": "删除查询任务 | Delete query task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1345,7 +1345,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1367,11 +1367,11 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "测试数据源连接",
+                "summary": "测试数据源连接 | Test data source connection",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资源ID",
+                        "description": "资源ID | Resource ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1379,7 +1379,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "连接测试成功 | Connection test successful",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1398,10 +1398,10 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取支持 workflow 的计算引擎列表",
+                "summary": "获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "工作流引擎列表 | Workflow engine list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -1964,6 +1964,14 @@ const docTemplate = `{
                 "execution_time_ms": {
                     "type": "integer"
                 },
+                "graph_data": {
+                    "description": "图数据（仅图数据库引擎）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/plugin.GraphData"
+                        }
+                    ]
+                },
                 "rows": {
                     "type": "array",
                     "items": {
@@ -2232,6 +2240,62 @@ const docTemplate = `{
                 "scheduled_scan": {
                     "description": "启用定时扫描（深度固定为 deep）",
                     "type": "boolean"
+                }
+            }
+        },
+        "plugin.GraphData": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.GraphNode"
+                    }
+                },
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.GraphRelationship"
+                    }
+                }
+            }
+        },
+        "plugin.GraphNode": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "plugin.GraphRelationship": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "end_node_id": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "start_node_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         }

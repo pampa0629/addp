@@ -17,9 +17,9 @@ func NewKnowledgeGraphHandler(svc *service.KnowledgeGraphService) *KnowledgeGrap
 }
 
 // List godoc
-// @Summary      知识图谱列表
-// @Description  获取当前租户的所有知识图谱实例
-// @Tags         知识图谱
+// @Summary      知识图谱列表 | List knowledge graphs
+// @Description  获取当前租户的所有知识图谱实例 | Get all knowledge graph instances for current tenant
+// @Tags         知识图谱 | Knowledge Graph
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200 {array}  models.KnowledgeGraph
@@ -36,12 +36,12 @@ func (h *KnowledgeGraphHandler) List(c *gin.Context) {
 }
 
 // Get godoc
-// @Summary      知识图谱详情
-// @Description  获取知识图谱实例详情
-// @Tags         知识图谱
+// @Summary      知识图谱详情 | Get knowledge graph detail
+// @Description  获取知识图谱实例详情 | Get knowledge graph instance detail
+// @Tags         知识图谱 | Knowledge Graph
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.KnowledgeGraph
 // @Failure      404 {object} models.ErrorResponse
 // @Router       /graphs/{id} [get]
@@ -57,13 +57,13 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 }
 
 // Create godoc
-// @Summary      创建知识图谱
-// @Description  创建新的知识图谱实例，绑定本体和 Neo4j 引擎
-// @Tags         知识图谱
+// @Summary      创建知识图谱 | Create knowledge graph
+// @Description  创建新的知识图谱实例，绑定本体和 Neo4j 引擎 | Create a new knowledge graph instance, binding ontology and Neo4j engine
+// @Tags         知识图谱 | Knowledge Graph
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.CreateKnowledgeGraphRequest true "创建知识图谱请求"
+// @Param        request body models.CreateKnowledgeGraphRequest true "创建知识图谱请求 | Create knowledge graph request"
 // @Success      201 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -84,14 +84,14 @@ func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 }
 
 // Update godoc
-// @Summary      更新知识图谱
-// @Description  更新知识图谱的名称、描述或状态
-// @Tags         知识图谱
+// @Summary      更新知识图谱 | Update knowledge graph
+// @Description  更新知识图谱的名称、描述或状态 | Update knowledge graph name, description or status
+// @Tags         知识图谱 | Knowledge Graph
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                                   true "知识图谱 ID"
-// @Param        request body models.UpdateKnowledgeGraphRequest   true "更新知识图谱请求"
+// @Param        id      path int                                   true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.UpdateKnowledgeGraphRequest   true "更新知识图谱请求 | Update knowledge graph request"
 // @Success      200 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -113,12 +113,12 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 }
 
 // Delete godoc
-// @Summary      删除知识图谱
-// @Description  删除知识图谱实例
-// @Tags         知识图谱
+// @Summary      删除知识图谱 | Delete knowledge graph
+// @Description  删除知识图谱实例 | Delete a knowledge graph instance
+// @Tags         知识图谱 | Knowledge Graph
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id} [delete]

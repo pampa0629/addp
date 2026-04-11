@@ -1,4 +1,275 @@
 basePath: /api/v1/manager
+definitions:
+  github_com_addp_manager_internal_models.EmbeddingTask:
+    properties:
+      bucket:
+        type: string
+      created_at:
+        description: 时间戳
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        description: EmbeddingTask 特有字段
+        type: integer
+      file_types:
+        description: 文件扩展名过滤（逗号分隔，如 "jpg,png,pdf"）
+        type: string
+      id:
+        type: integer
+      last_execution_id:
+        description: 最近一次执行信息（回写）
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      modality:
+        description: 向量化配置
+        type: string
+      name:
+        description: 任务基本信息
+        type: string
+      prefix:
+        type: string
+      recursive:
+        type: boolean
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_manager_internal_models.MetaManualScanRequest:
+    properties:
+      object_paths:
+        items:
+          type: string
+        type: array
+      scan_depth:
+        type: string
+      scan_type:
+        type: string
+      schema_names:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_manager_internal_models.MetaScanTaskRequest:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      name:
+        type: string
+      object_paths:
+        items:
+          type: string
+        type: array
+      scan_depth:
+        type: string
+      schedule:
+        type: string
+      schedule_time:
+        type: string
+      schedule_type:
+        type: string
+      schedule_value:
+        items:
+          type: integer
+        type: array
+      schema_names:
+        items:
+          type: string
+        type: array
+    required:
+    - name
+    - schedule_type
+    type: object
+  github_com_addp_manager_internal_models.MvtTask:
+    properties:
+      created_at:
+        description: 时间戳
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        description: MvtTask 特有字段
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        description: 最近一次执行信息（回写）
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      max_zoom:
+        type: integer
+      min_zoom:
+        type: integer
+      name:
+        description: 任务基本信息
+        type: string
+      optimization_config:
+        description: 优化配置（JSONB）
+        items:
+          type: integer
+        type: array
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.CreateEmbeddingRequest:
+    properties:
+      bucket:
+        type: string
+      engine_id:
+        type: integer
+      object_key:
+        description: scope=object 时必填
+        type: string
+      prefix:
+        description: scope=directory 时使用
+        type: string
+      recursive:
+        description: 是否递归，默认 true
+        type: boolean
+      scope:
+        description: object|directory|bucket，默认 object
+        type: string
+      task_name:
+        description: 任务名称（可选）
+        type: string
+    required:
+    - bucket
+    - engine_id
+    type: object
+  internal_api.TaskExecuteRequest:
+    properties:
+      parent_execution_id:
+        description: 父执行ID（Orchestrator 调用时传入）
+        type: string
+      trigger_type:
+        description: manual|schedule|api|orchestrator，默认 manual
+        type: string
+    type: object
+  internal_api.TileConfigResponse:
+    properties:
+      avg_records_per_tile:
+        description: maxZoom 层级的平均记录数/瓦片
+        type: number
+      estimated_tiles:
+        description: 预估瓦片总数（minZoom-maxZoom）
+        type: integer
+      extent:
+        description: 地理范围（可选）
+        items:
+          type: number
+        type: array
+      max_zoom:
+        description: 最大 zoom 层级
+        type: integer
+      min_zoom:
+        description: 最小 zoom 层级
+        type: integer
+      record_count:
+        description: 表记录数
+        type: integer
+      srid:
+        description: 坐标系（可选）
+        type: integer
+    type: object
+  internal_api.TriggerQuickViewRequest:
+    properties:
+      concurrency:
+        description: 默认10
+        type: integer
+      max_zoom:
+        description: 默认18
+        type: integer
+      min_zoom:
+        description: 可选
+        type: integer
+      optimization_config:
+        allOf:
+        - $ref: '#/definitions/models.OptimizationConfig'
+        description: v2.0 优化配置
+      priority:
+        description: '"critical", "default", "low"'
+        type: string
+    type: object
+  internal_api.UpdatePreferredModeRequest:
+    properties:
+      preferred_mode:
+        enum:
+        - geojson
+        - mvt
+        type: string
+    required:
+    - preferred_mode
+    type: object
+  models.AttributePruningConfig:
+    properties:
+      enabled:
+        description: 是否启用
+        type: boolean
+      zoom_threshold:
+        description: zoom 分界线，<= threshold 只返回主键
+        type: integer
+    type: object
+  models.ExtentOptimizationConfig:
+    properties:
+      base_extent:
+        description: 其他层的基础 Extent（默认 512）
+        type: integer
+      max_zoom_extent:
+        description: Max zoom 层的 Extent（默认 1024）
+        type: integer
+      min_extent:
+        description: 动态减半的最小 Extent（固定 256）
+        type: integer
+    type: object
+  models.OptimizationConfig:
+    properties:
+      attribute_pruning:
+        allOf:
+        - $ref: '#/definitions/models.AttributePruningConfig'
+        description: 属性优化
+      extent_optimization:
+        allOf:
+        - $ref: '#/definitions/models.ExtentOptimizationConfig'
+        description: Extent 优化（分层策略 + 动态减半）
+      tile_size_thresholds:
+        allOf:
+        - $ref: '#/definitions/models.TileSizeThresholdsConfig'
+        description: 瓦片大小阈值
+      version:
+        description: 配置版本
+        type: string
+    type: object
+  models.TileSizeThresholdsConfig:
+    properties:
+      max_size_mb:
+        description: 瓦片大小限制（MB）- 用户可配置，默认 5MB
+        type: number
+    type: object
 host: localhost:8081
 info:
   contact: {}
@@ -6,753 +277,1919 @@ info:
   version: "1.0"
 paths:
   /cancelquickview:
-    get:
+    post:
+      description: 取消正在进行的快显缓存生成任务 | Cancel an ongoing quick view cache generation
+        task
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 取消成功 | Cancelled successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CancelQuickView
+      summary: 取消快显生成任务 | Cancel quick view generation task
       tags:
       - Manager
   /checkpreparation:
     get:
+      description: 检查空间数据表的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick
+        view, auto-create record if passed
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 准备状态信息 | Preparation status
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CheckPreparation
+      summary: 检查快显准备状态 | Check quick view preparation status
       tags:
       - Manager
   /clearhistory:
-    get:
+    delete:
+      description: 清空当前用户的所有搜索历史记录 | Clear all search history for the current user
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "204":
+          description: 清空成功 | Cleared successfully
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 服务不可用 | Service unavailable
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ClearHistory
+      summary: 清空搜索历史 | Clear search history
       tags:
       - Manager
   /clearquickview:
-    get:
+    delete:
+      description: 清除指定空间数据表的快显缓存数据 | Clear quick view cache data for a spatial table
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 清除成功 | Cleared successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ClearQuickView
+      summary: 清除快显缓存 | Clear quick view cache
       tags:
       - Manager
   /createembedding:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 创建对象存储文件的向量化任务，支持单文件、目录和整个Bucket | Create vectorization task for
+        object storage files, supports single file, directory, and entire bucket
+      parameters:
+      - description: 向量化任务配置 | Embedding task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateEmbeddingRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务已创建 | Task created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CreateEmbedding
+      summary: 创建向量化任务 | Create embedding task
       tags:
       - Manager
   /createembeddingtask:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 创建新的向量化任务配置（定时或手动触发）| Create a new embedding task configuration
+        (scheduled or manual)
+      parameters:
+      - description: 向量化任务配置 | Embedding task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.EmbeddingTask'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: 创建的任务配置 | Created task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CreateEmbeddingTask
+      summary: 创建向量化任务配置 | Create embedding task configuration
       tags:
       - Manager
   /createmanualscanrun:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 立即发起一次元数据扫描，不依赖定时任务 | Immediately initiate a metadata scan without
+        relying on scheduled tasks
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描配置（可选）| Scan configuration (optional)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.MetaManualScanRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 扫描运行记录 | Scan run record
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CreateManualScanRun
+      summary: 发起即时扫描 | Create manual scan run
       tags:
       - Manager
   /createmvttask:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 创建新的MVT瓦片生成任务配置 | Create a new MVT tile generation task configuration
+      parameters:
+      - description: MVT任务配置 | MVT task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.MvtTask'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: 创建的任务配置 | Created task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CreateMvtTask
+      summary: 创建MVT生成任务配置 | Create MVT generation task configuration
       tags:
       - Manager
   /createscantask:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 为指定存储引擎创建新的元数据扫描任务 | Create a new metadata scan task for a specific
+        engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描任务配置 | Scan task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 创建的扫描任务 | Created scan task
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: CreateScanTask
+      summary: 创建扫描任务 | Create scan task
       tags:
       - Manager
   /deleteembeddingtask:
-    get:
+    delete:
+      description: 删除指定的向量化任务配置 | Delete a specific embedding task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: DeleteEmbeddingTask
+      summary: 删除向量化任务配置 | Delete embedding task configuration
       tags:
       - Manager
   /deletehistoryitem:
-    get:
+    delete:
+      description: 删除指定的搜索历史记录 | Delete a specific search history item
+      parameters:
+      - description: 历史记录ID | History item ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "204":
+          description: 删除成功 | Deleted successfully
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: DeleteHistoryItem
+      summary: 删除搜索历史记录 | Delete search history item
       tags:
       - Manager
   /deletemvttask:
-    get:
+    delete:
+      description: 删除指定的MVT瓦片生成任务配置 | Delete a specific MVT tile generation task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: DeleteMvtTask
+      summary: 删除MVT生成任务配置 | Delete MVT generation task configuration
       tags:
       - Manager
   /deletescantask:
-    get:
+    delete:
+      description: 删除指定的元数据扫描任务 | Delete a specific metadata scan task
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描任务ID | Scan task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: DeleteScanTask
+      summary: 删除扫描任务 | Delete scan task
       tags:
       - Manager
   /executioncancel:
-    get:
+    post:
+      description: 取消正在运行的任务执行 | Cancel a running task execution
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 取消成功 | Cancelled successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 取消失败 | Cancel failed
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ExecutionCancel
+      summary: 取消执行 | Cancel execution
       tags:
       - Manager
   /executionstatus:
     get:
+      description: 获取任务执行记录的状态信息 | Get status information of a task execution record
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行状态 | Execution status
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 执行记录不存在 | Execution not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ExecutionStatus
+      summary: 获取执行状态 | Get execution status
       tags:
       - Manager
   /getembeddingtaskstatus:
     get:
+      description: 查询向量化任务的实时状态（仅内存中的运行中任务）| Query real-time status of an embedding
+        task (in-memory running tasks only)
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: task_id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务状态信息 | Task status
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在或已过期 | Task not found or expired
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetEmbeddingTaskStatus
+      summary: 获取向量化任务状态 | Get embedding task status
       tags:
       - Manager
   /getfeaturecentroid:
     get:
+      description: 获取指定要素的几何中心点坐标，用于表格行定位到地图 | Get the centroid coordinates of a feature
+        for map positioning
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 要素ID | Feature ID
+        in: path
+        name: feature_id
+        required: true
+        type: string
+      - description: 数据库Schema | Database schema
+        in: query
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: query
+        name: table
+        required: true
+        type: string
+      - description: 几何字段名，默认geom | Geometry column name, default geom
+        in: query
+        name: geom
+        type: string
+      - description: 主键字段名，默认id | Primary key column, default id
+        in: query
+        name: primary_key
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 中心点坐标 | Centroid coordinates
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 要素不存在 | Feature not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetFeatureCentroid
+      summary: 获取要素几何中心点 | Get feature centroid
       tags:
       - Manager
   /getfeaturegeometry:
     get:
+      description: 获取指定要素的完整几何数据（GeoJSON格式），用于地图高亮显示 | Get full geometry of a feature
+        in GeoJSON format for map highlighting
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 要素ID | Feature ID
+        in: path
+        name: feature_id
+        required: true
+        type: string
+      - description: 数据库Schema | Database schema
+        in: query
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: query
+        name: table
+        required: true
+        type: string
+      - description: 几何字段名，默认geom | Geometry column name, default geom
+        in: query
+        name: geom
+        type: string
+      - description: 主键字段名，默认id | Primary key column, default id
+        in: query
+        name: primary_key
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 几何数据及边界框 | Geometry data and bounding box
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 要素不存在 | Feature not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetFeatureGeometry
+      summary: 获取要素完整几何 | Get feature geometry
       tags:
       - Manager
   /getgeojson:
     get:
+      description: 获取空间数据表的GeoJSON格式数据，支持分页 | Get spatial table data in GeoJSON format
+        with pagination support
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认1000，最大5000 | Page size, default 1000, max 5000
+        in: query
+        name: page_size
+        type: integer
+      - description: 几何列名，默认geom | Geometry column, default geom
+        in: query
+        name: geom_column
+        type: string
       produces:
-      - application/json
+      - application/geo+json
       responses:
         "200":
-          description: OK
+          description: GeoJSON FeatureCollection
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetGeoJSON
+      summary: 获取GeoJSON数据 | Get GeoJSON data
       tags:
       - Manager
   /getgeojsonmetadata:
     get:
+      description: 获取空间数据表的元数据信息（记录数、地理范围、坐标系等）| Get spatial table metadata (record
+        count, extent, SRID, etc.)
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
+      - description: 几何列名，默认geom | Geometry column, default geom
+        in: query
+        name: geom_column
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 元数据信息 | Metadata
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetGeoJSONMetadata
+      summary: 获取GeoJSON元数据 | Get GeoJSON metadata
       tags:
       - Manager
   /getmapconfig:
     get:
+      description: 返回地图服务相关的配置信息（高德地图Key、天地图Key等）| Return map service configuration
+        (AMap key, TDT key, etc.)
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 地图配置信息 | Map configuration
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetMapConfig
+      summary: 获取地图服务配置 | Get map service configuration
       tags:
       - Manager
   /getnodechildren:
     get:
+      description: 增量加载指定节点的子节点，避免全量重载 | Incrementally load children of a specific
+        node to avoid full reload
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      - description: 展开深度，默认1 | Expand depth, default 1
+        in: query
+        name: expand_depth
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 子节点列表 | Children list
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetNodeChildren
+      summary: 获取节点子节点 | Get node children
       tags:
       - Manager
   /getquickviewstatus:
     get:
+      description: 获取指定空间数据表的快显缓存状态及实时生成进度 | Get quick view cache status and real-time
+        generation progress
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 快显状态信息 | Quick view status
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetQuickViewStatus
+      summary: 获取快显状态 | Get quick view status
       tags:
       - Manager
   /getscanrun:
     get:
+      description: 获取指定扫描运行记录的详细信息 | Get detailed information of a specific scan run
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描运行ID | Scan run ID
+        in: path
+        name: run_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 扫描运行详情 | Scan run detail
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetScanRun
+      summary: 获取扫描运行详情 | Get scan run detail
       tags:
       - Manager
   /getstatistics:
     get:
+      description: 获取快显缓存的整体统计信息（任务数量、缓存大小等）| Get overall quick view cache statistics
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 统计信息 | Statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetStatistics
+      summary: 获取快显统计信息 | Get quick view statistics
       tags:
       - Manager
   /gettile:
     get:
+      description: 获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT)
+        for a spatial table with three-layer cache
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
+      - description: 缩放级别(0-22) | Zoom level (0-22)
+        in: path
+        name: z
+        required: true
+        type: integer
+      - description: 瓦片X坐标 | Tile X coordinate
+        in: path
+        name: x
+        required: true
+        type: integer
+      - description: 瓦片Y坐标 | Tile Y coordinate
+        in: path
+        name: "y"
+        required: true
+        type: integer
+      - description: 几何列名，默认geom | Geometry column, default geom
+        in: query
+        name: geom
+        type: string
+      - description: 空间参考系，默认4326 | Spatial reference, default 4326
+        in: query
+        name: srid
+        type: integer
+      - description: 返回列，逗号分隔 | Return columns, comma-separated
+        in: query
+        name: cols
+        type: string
       produces:
-      - application/json
+      - application/vnd.mapbox-vector-tile
       responses:
         "200":
-          description: OK
+          description: MVT瓦片数据 | MVT tile data
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetTile
+      summary: 获取MVT矢量瓦片 | Get MVT vector tile
       tags:
       - Manager
   /gettileconfig:
     get:
+      description: 根据空间数据范围和记录数智能计算瓦片的最小/最大缩放级别 | Intelligently calculate min/max
+        zoom levels based on spatial extent and record count
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片配置信息 | Tile configuration
+          schema:
+            $ref: '#/definitions/internal_api.TileConfigResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetTileConfig
+      summary: 获取瓦片配置 | Get tile configuration
       tags:
       - Manager
   /gettree:
     get:
+      description: 获取指定存储引擎的完整资源树结构 | Get the complete resource tree structure for
+        a specific engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 展开深度，默认2 | Expand depth, default 2
+        in: query
+        name: expand_depth
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 资源树 | Resource tree
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: GetTree
+      summary: 获取资源树 | Get resource tree
       tags:
       - Manager
   /importdata:
-    get:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传并导入数据文件（如Shapefile ZIP包）到目标数据库 | Upload and import data files
+        (e.g. Shapefile ZIP) to target database
+      parameters:
+      - description: 数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 目标数据库引擎ID | Target database engine ID
+        in: formData
+        name: target_engine_id
+        required: true
+        type: integer
+      - description: 目标Schema，默认public | Target schema, default public
+        in: formData
+        name: target_schema
+        type: string
+      - description: 目标表名，默认使用文件名 | Target table name, default from filename
+        in: formData
+        name: target_table
+        type: string
+      - description: DBF编码，默认UTF-8 | DBF encoding, default UTF-8
+        in: formData
+        name: encoding
+        type: string
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: 导入任务已创建 | Import task created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ImportData
+      summary: 导入数据文件 | Import data file
       tags:
       - Manager
   /listengines:
     get:
+      description: 获取当前租户可用的存储引擎列表 | Get available storage engine list for the current
+        tenant
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 引擎列表 | Engine list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListEngines
+      summary: 获取引擎列表 | List engines
       tags:
       - Manager
   /listhistory:
     get:
+      description: 获取当前用户的搜索历史记录 | Get search history for the current user
+      parameters:
+      - description: 返回数量限制，默认10 | Result limit, default 10
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 搜索历史列表 | Search history list
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 服务不可用 | Service unavailable
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListHistory
+      summary: 列出搜索历史 | List search history
       tags:
       - Manager
   /listquickviewtasks:
     get:
+      description: 列出所有快显缓存生成任务，支持按状态和引擎过滤 | List all quick view cache generation
+        tasks with optional filtering
+      parameters:
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认10 | Page size, default 10
+        in: query
+        name: page_size
+        type: integer
+      - description: 状态过滤 | Filter by status
+        in: query
+        name: status
+        type: string
+      - description: 存储引擎ID过滤 | Filter by engine ID
+        in: query
+        name: engine_id
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 快显任务列表 | Quick view task list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListQuickViewTasks
+      summary: 列出快显任务 | List quick view tasks
       tags:
       - Manager
   /listscanruns:
     get:
+      description: 列出指定存储引擎的元数据扫描运行历史记录 | List metadata scan run history for a specific
+        engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描任务ID过滤 | Filter by scan task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 状态过滤 | Filter by status
+        in: query
+        name: status
+        type: string
+      - description: 存储类型过滤 | Filter by storage type
+        in: query
+        name: storage_type
+        type: string
+      - description: 返回数量限制，默认20 | Result limit, default 20
+        in: query
+        name: limit
+        type: integer
+      - description: 偏移量，默认0 | Offset, default 0
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 扫描运行记录列表 | Scan run list
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListScanRuns
+      summary: 列出扫描运行记录 | List scan runs
       tags:
       - Manager
   /listscantasks:
     get:
+      description: 列出指定存储引擎下的所有元数据扫描任务 | List all metadata scan tasks for a specific
+        engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 扫描任务列表 | Scan task list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListScanTasks
+      summary: 列出扫描任务 | List scan tasks
       tags:
       - Manager
   /listtasks:
     get:
+      description: 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation
+        and embedding tasks)
+      parameters:
+      - description: '任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding'
+        in: query
+        name: task_type
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务列表 | Task list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ListTasks
+      summary: 列出任务 | List tasks
       tags:
       - Manager
   /prepareforcreatemvt:
-    get:
+    post:
+      description: 启动空间数据表的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation
+        work (e.g. creating spatial indexes)
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 准备工作已启动 | Preparation started
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: PrepareForCreateMVT
+      summary: 启动MVT准备工作 | Start MVT preparation
       tags:
       - Manager
   /preview:
     get:
+      description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
+        supports tables, files, and more
+      parameters:
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 预览数据 | Preview data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: Preview
+      summary: 数据预览 | Data preview
       tags:
       - Manager
   /refreshnode:
-    get:
+    post:
+      description: 刷新指定资源节点的元数据信息 | Refresh metadata for a specific resource node
+      parameters:
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 刷新后的节点信息 | Refreshed node info
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: RefreshNode
+      summary: 刷新资源节点 | Refresh resource node
       tags:
       - Manager
   /resumequickview:
-    get:
+    post:
+      description: 恢复已暂停或中断的快显缓存生成任务 | Resume a paused or interrupted quick view cache
+        generation task
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 恢复成功 | Resumed successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: ResumeQuickView
+      summary: 恢复快显生成任务 | Resume quick view generation task
       tags:
       - Manager
   /search:
     get:
+      description: 执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text
+        and vector semantic search
+      parameters:
+      - description: 搜索关键词 | Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认10 | Page size, default 10
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 搜索结果 | Search results
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 搜索服务不可用 | Search service unavailable
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: Search
+      summary: 执行混合检索 | Execute hybrid search
       tags:
       - Manager
   /searchnodes:
     get:
+      description: 在资源树中搜索匹配关键词的节点 | Search for nodes matching a keyword in the resource
+        tree
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 搜索关键词（至少2个字符）| Search keyword (at least 2 characters)
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 节点类型过滤，逗号分隔 | Node type filter, comma-separated
+        in: query
+        name: node_types
+        type: string
+      - description: 返回数量限制，默认50 | Result limit, default 50
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 搜索结果 | Search results
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: SearchNodes
+      summary: 搜索资源节点 | Search resource nodes
       tags:
       - Manager
   /taskdetail:
     get:
+      description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
+        ID
+      parameters:
+      - description: '任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务详情 | Task detail
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: TaskDetail
+      summary: 获取任务详情 | Get task detail
       tags:
       - Manager
   /taskexecute:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 触发指定任务立即执行 | Trigger immediate execution of a specific task
+      parameters:
+      - description: '任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行配置 | Execution configuration
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.TaskExecuteRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行ID | Execution ID
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: TaskExecute
+      summary: 执行任务 | Execute task
       tags:
       - Manager
   /triggerquickview:
-    get:
+    post:
+      consumes:
+      - application/json
+      description: 触发指定空间数据表的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation
+        for a spatial table
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
+      - description: 快显生成配置 | Quick view generation configuration
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.TriggerQuickViewRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务已加入队列 | Task enqueued
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: TriggerQuickView
+      summary: 触发快显缓存生成 | Trigger quick view cache generation
       tags:
       - Manager
   /triggerscantask:
-    get:
+    post:
+      description: 立即触发指定的元数据扫描任务执行 | Immediately trigger a specific metadata scan
+        task
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描任务ID | Scan task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 触发的扫描运行记录 | Triggered scan run
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: TriggerScanTask
+      summary: 触发扫描任务 | Trigger scan task
       tags:
       - Manager
   /updateembeddingtask:
-    get:
+    put:
+      consumes:
+      - application/json
+      description: 更新指定的向量化任务配置 | Update a specific embedding task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 向量化任务配置 | Embedding task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.EmbeddingTask'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 更新后的任务配置 | Updated task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: UpdateEmbeddingTask
+      summary: 更新向量化任务配置 | Update embedding task configuration
       tags:
       - Manager
   /updatemvttask:
-    get:
+    put:
+      consumes:
+      - application/json
+      description: 更新指定的MVT瓦片生成任务配置 | Update a specific MVT tile generation task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: MVT任务配置 | MVT task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.MvtTask'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 更新后的任务配置 | Updated task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: UpdateMvtTask
+      summary: 更新MVT生成任务配置 | Update MVT generation task configuration
       tags:
       - Manager
   /updatepreferredmode:
-    get:
+    patch:
+      consumes:
+      - application/json
+      description: 更新指定空间数据表的用户偏好显示模式（geojson或mvt）| Update preferred display mode
+        for a spatial table (geojson or mvt)
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 数据库Schema | Database schema
+        in: path
+        name: schema
+        required: true
+        type: string
+      - description: 数据表名 | Table name
+        in: path
+        name: table
+        required: true
+        type: string
+      - description: 显示模式配置 | Display mode configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdatePreferredModeRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 更新成功 | Updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 记录不存在 | Record not found
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: UpdatePreferredMode
+      summary: 更新显示模式偏好 | Update preferred display mode
       tags:
       - Manager
   /updatescantask:
-    get:
+    put:
+      consumes:
+      - application/json
+      description: 更新指定存储引擎的元数据扫描任务配置 | Update metadata scan task configuration for
+        a specific engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 扫描任务ID | Scan task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 扫描任务配置 | Scan task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 更新后的扫描任务 | Updated scan task
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: UpdateScanTask
+      summary: 更新扫描任务 | Update scan task
       tags:
       - Manager
   /videostream:
     get:
+      description: 支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support
+        for online playback
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 对象存储路径 | Object storage path
+        in: query
+        name: object_key
+        required: true
+        type: string
       produces:
-      - application/json
+      - application/octet-stream
       responses:
         "200":
-          description: OK
+          description: 视频流数据 | Video stream data
+        "206":
+          description: 部分视频流数据 | Partial video stream data
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: VideoStream
+      summary: 视频流式传输 | Video streaming
       tags:
       - Manager
 securityDefinitions:

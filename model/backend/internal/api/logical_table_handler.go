@@ -21,10 +21,17 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 }
 
 // ListLogicalTables GET /api/model/logical-tables
-// @Summary ListLogicalTables
+// @Summary 查询逻辑表列表 | List logical tables
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param layer query string false "数仓分层 | DW layer"
+// @Param table_type query string false "表类型 | Table type"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param keyword query string false "关键词搜索 | Keyword search"
+// @Param domain_id query int false "业务域ID | Domain ID"
+// @Param page query int false "页码 | Page number"
+// @Param page_size query int false "每页数量 | Page size"
+// @Success 200 {object} map[string]interface{} "逻辑表列表 | Logical table list"
 // @Router /listlogicaltables [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
@@ -74,10 +81,12 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 }
 
 // CreateLogicalTable POST /api/model/logical-tables
-// @Summary CreateLogicalTable
+// @Summary 创建逻辑表 | Create logical table
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param body body models.CreateLogicalTableRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的逻辑表 | Created logical table"
 // @Router /createlogicaltable [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
@@ -99,10 +108,11 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 }
 
 // GetLogicalTable GET /api/model/logical-tables/:id
-// @Summary GetLogicalTable
+// @Summary 获取逻辑表详情 | Get logical table details
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} map[string]interface{} "逻辑表详情 | Logical table details"
 // @Router /getlogicaltable [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
@@ -122,10 +132,13 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 }
 
 // UpdateLogicalTable PUT /api/model/logical-tables/:id
-// @Summary UpdateLogicalTable
+// @Summary 更新逻辑表 | Update logical table
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Param body body models.UpdateLogicalTableRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的逻辑表 | Updated logical table"
 // @Router /updatelogicaltable [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
@@ -153,10 +166,11 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 }
 
 // DeleteLogicalTable DELETE /api/model/logical-tables/:id
-// @Summary DeleteLogicalTable
+// @Summary 删除逻辑表 | Delete logical table
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deletelogicaltable [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
@@ -175,10 +189,11 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 }
 
 // GetFields GET /api/model/logical-tables/:id/fields
-// @Summary GetFields
+// @Summary 获取逻辑表字段列表 | Get logical table fields
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} map[string]interface{} "字段列表 | Field list"
 // @Router /getfields [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) GetFields(c *gin.Context) {
@@ -198,10 +213,13 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 }
 
 // CreateField POST /api/model/logical-tables/:id/fields
-// @Summary CreateField
+// @Summary 创建逻辑表字段 | Create logical table field
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Param body body models.CreateLogicalFieldRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的字段 | Created field"
 // @Router /createfield [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) CreateField(c *gin.Context) {
@@ -227,10 +245,14 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 }
 
 // UpdateField PUT /api/model/logical-tables/:id/fields/:fid
-// @Summary UpdateField
+// @Summary 更新逻辑表字段 | Update logical table field
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Param fid path int true "字段ID | Field ID"
+// @Param body body models.UpdateLogicalFieldRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的字段 | Updated field"
 // @Router /updatefield [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
@@ -261,10 +283,12 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 }
 
 // DeleteField DELETE /api/model/logical-tables/:id/fields/:fid
-// @Summary DeleteField
+// @Summary 删除逻辑表字段 | Delete logical table field
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Param fid path int true "字段ID | Field ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deletefield [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
@@ -288,10 +312,11 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 }
 
 // PreviewDDL POST /api/model/logical-tables/:id/preview-ddl
-// @Summary PreviewDDL
+// @Summary 预览 DDL | Preview DDL
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} map[string]interface{} "DDL 预览 | DDL preview"
 // @Router /previewddl [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) PreviewDDL(c *gin.Context) {

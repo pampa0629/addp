@@ -21,10 +21,15 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 }
 
 // ListEntities GET /api/model/entities
-// @Summary ListEntities
+// @Summary 查询实体列表 | List entities
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param domain_id query int false "业务域ID | Domain ID"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param keyword query string false "关键词搜索 | Keyword search"
+// @Param page query int false "页码 | Page number"
+// @Param page_size query int false "每页数量 | Page size"
+// @Success 200 {object} map[string]interface{} "实体列表 | Entity list"
 // @Router /listentities [get]
 // @Security BearerAuth
 func (h *EntityHandler) ListEntities(c *gin.Context) {
@@ -72,10 +77,12 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 }
 
 // CreateEntity POST /api/model/entities
-// @Summary CreateEntity
+// @Summary 创建实体 | Create entity
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param body body models.CreateEntityRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
 // @Router /createentity [get]
 // @Security BearerAuth
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
@@ -97,10 +104,11 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 }
 
 // GetEntity GET /api/model/entities/:id
-// @Summary GetEntity
+// @Summary 获取实体详情 | Get entity details
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Success 200 {object} map[string]interface{} "实体详情 | Entity details"
 // @Router /getentity [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetEntity(c *gin.Context) {
@@ -120,10 +128,13 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 }
 
 // UpdateEntity PUT /api/model/entities/:id
-// @Summary UpdateEntity
+// @Summary 更新实体 | Update entity
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
 // @Router /updateentity [get]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
@@ -151,10 +162,11 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 }
 
 // DeleteEntity DELETE /api/model/entities/:id
-// @Summary DeleteEntity
+// @Summary 删除实体 | Delete entity
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deleteentity [get]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
@@ -173,10 +185,11 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 }
 
 // ApproveEntity POST /api/model/entities/:id/approve
-// @Summary ApproveEntity
+// @Summary 审批通过实体 | Approve entity
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
 // @Router /approveentity [get]
 // @Security BearerAuth
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
@@ -197,10 +210,11 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 }
 
 // GetAttributes GET /api/model/entities/:id/attributes
-// @Summary GetAttributes
+// @Summary 获取实体属性列表 | Get entity attributes
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Success 200 {object} map[string]interface{} "属性列表 | Attribute list"
 // @Router /getattributes [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
@@ -220,10 +234,13 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 }
 
 // CreateAttribute POST /api/model/entities/:id/attributes
-// @Summary CreateAttribute
+// @Summary 创建实体属性 | Create entity attribute
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
 // @Router /createattribute [get]
 // @Security BearerAuth
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
@@ -249,10 +266,14 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 }
 
 // UpdateAttribute PUT /api/model/entities/:id/attributes/:aid
-// @Summary UpdateAttribute
+// @Summary 更新实体属性 | Update entity attribute
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Param aid path int true "属性ID | Attribute ID"
+// @Param body body models.UpdateEntityAttributeRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的属性 | Updated attribute"
 // @Router /updateattribute [get]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
@@ -283,10 +304,12 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 }
 
 // DeleteAttribute DELETE /api/model/entities/:id/attributes/:aid
-// @Summary DeleteAttribute
+// @Summary 删除实体属性 | Delete entity attribute
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "实体ID | Entity ID"
+// @Param aid path int true "属性ID | Attribute ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deleteattribute [get]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
@@ -310,10 +333,12 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 }
 
 // ImportMermaid POST /api/model/entities/import-mermaid
-// @Summary ImportMermaid
+// @Summary 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param body body models.MermaidImportRequest true "导入请求 | Import request"
+// @Success 200 {object} map[string]interface{} "导入结果 | Import result"
 // @Router /importmermaid [get]
 // @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
@@ -336,10 +361,10 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 }
 
 // ExportMermaid GET /api/model/entities/export-mermaid
-// @Summary ExportMermaid
+// @Summary 导出 Mermaid ER 图 | Export Mermaid ER diagram
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "Mermaid ER 图代码 | Mermaid ER diagram code"
 // @Router /exportmermaid [get]
 // @Security BearerAuth
 func (h *EntityHandler) ExportMermaid(c *gin.Context) {

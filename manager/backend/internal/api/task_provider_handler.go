@@ -50,10 +50,15 @@ type TaskListItem struct {
 
 // ListTasks GET /api/manager/tasks
 // 查询参数：?task_type=mvt_generation|embedding
-// @Summary ListTasks
+// @Summary 列出任务 | List tasks
+// @Description 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation and embedding tasks)
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param task_type query string false "任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /listtasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
@@ -144,10 +149,15 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 }
 
 // TaskDetail GET /api/manager/tasks/:task_type/:id
-// @Summary TaskDetail
+// @Summary 获取任务详情 | Get task detail
+// @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param task_type path string true "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "任务详情 | Task detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Router /taskdetail [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
@@ -195,11 +205,18 @@ type TaskExecuteRequest struct {
 }
 
 // TaskExecute POST /api/manager/tasks/:task_type/:id/execute
-// @Summary TaskExecute
+// @Summary 执行任务 | Execute task
+// @Description 触发指定任务立即执行 | Trigger immediate execution of a specific task
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /taskexecute [get]
+// @Param task_type path string true "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding"
+// @Param id path int true "任务ID | Task ID"
+// @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
+// @Success 200 {object} map[string]interface{} "执行ID | Execution ID"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /taskexecute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -250,10 +267,13 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 }
 
 // ExecutionStatus GET /api/manager/executions/:execution_id
-// @Summary ExecutionStatus
+// @Summary 获取执行状态 | Get execution status
+// @Description 获取任务执行记录的状态信息 | Get status information of a task execution record
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{} "执行状态 | Execution status"
+// @Failure 404 {object} map[string]interface{} "执行记录不存在 | Execution not found"
 // @Router /executionstatus [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
@@ -274,11 +294,14 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 }
 
 // ExecutionCancel POST /api/manager/executions/:execution_id/cancel
-// @Summary ExecutionCancel
+// @Summary 取消执行 | Cancel execution
+// @Description 取消正在运行的任务执行 | Cancel a running task execution
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /executioncancel [get]
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
+// @Failure 400 {object} map[string]interface{} "取消失败 | Cancel failed"
+// @Router /executioncancel [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -298,11 +321,15 @@ func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 // ===== EmbeddingTask CRUD =====
 
 // CreateEmbeddingTask POST /api/manager/embedding-tasks
-// @Summary CreateEmbeddingTask
+// @Summary 创建向量化任务配置 | Create embedding task configuration
+// @Description 创建新的向量化任务配置（定时或手动触发）| Create a new embedding task configuration (scheduled or manual)
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /createembeddingtask [get]
+// @Param body body models.EmbeddingTask true "向量化任务配置 | Embedding task configuration"
+// @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /createembeddingtask [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -324,11 +351,17 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 }
 
 // UpdateEmbeddingTask PUT /api/manager/embedding-tasks/:id
-// @Summary UpdateEmbeddingTask
+// @Summary 更新向量化任务配置 | Update embedding task configuration
+// @Description 更新指定的向量化任务配置 | Update a specific embedding task configuration
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /updateembeddingtask [get]
+// @Param id path int true "任务ID | Task ID"
+// @Param body body models.EmbeddingTask true "向量化任务配置 | Embedding task configuration"
+// @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /updateembeddingtask [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -363,11 +396,14 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 }
 
 // DeleteEmbeddingTask DELETE /api/manager/embedding-tasks/:id
-// @Summary DeleteEmbeddingTask
+// @Summary 删除向量化任务配置 | Delete embedding task configuration
+// @Description 删除指定的向量化任务配置 | Delete a specific embedding task configuration
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /deleteembeddingtask [get]
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /deleteembeddingtask [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -387,11 +423,15 @@ func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 // ===== MvtTask CRUD =====
 
 // CreateMvtTask POST /api/manager/mvt-tasks
-// @Summary CreateMvtTask
+// @Summary 创建MVT生成任务配置 | Create MVT generation task configuration
+// @Description 创建新的MVT瓦片生成任务配置 | Create a new MVT tile generation task configuration
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /createmvttask [get]
+// @Param body body models.MvtTask true "MVT任务配置 | MVT task configuration"
+// @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /createmvttask [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -413,11 +453,17 @@ func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 }
 
 // UpdateMvtTask PUT /api/manager/mvt-tasks/:id
-// @Summary UpdateMvtTask
+// @Summary 更新MVT生成任务配置 | Update MVT generation task configuration
+// @Description 更新指定的MVT瓦片生成任务配置 | Update a specific MVT tile generation task configuration
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /updatemvttask [get]
+// @Param id path int true "任务ID | Task ID"
+// @Param body body models.MvtTask true "MVT任务配置 | MVT task configuration"
+// @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /updatemvttask [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -452,11 +498,14 @@ func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 }
 
 // DeleteMvtTask DELETE /api/manager/mvt-tasks/:id
-// @Summary DeleteMvtTask
+// @Summary 删除MVT生成任务配置 | Delete MVT generation task configuration
+// @Description 删除指定的MVT瓦片生成任务配置 | Delete a specific MVT tile generation task configuration
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /deletemvttask [get]
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /deletemvttask [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

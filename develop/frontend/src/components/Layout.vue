@@ -76,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from 'vue-i18n'
@@ -95,12 +95,8 @@ import {
 const router = useRouter()
 const authStore = useAuthStore()
 const { t } = useI18n()
-const isInIframe = ref(false)
-
-onMounted(() => {
-  // 检测是否在 iframe 中
-  isInIframe.value = window.self !== window.top
-})
+// 同步初始化，避免 iframe 模式下先渲染完整布局再切换导致子组件重挂载
+const isInIframe = ref(window.self !== window.top)
 
 const handleCommand = (command) => {
   if (command === 'logout') {

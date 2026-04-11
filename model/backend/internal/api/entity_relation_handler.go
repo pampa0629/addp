@@ -20,10 +20,12 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 }
 
 // CreateRelation POST /api/model/entity-relations
-// @Summary CreateRelation
+// @Summary 创建实体关系 | Create entity relation
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param body body models.CreateEntityRelationRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的关系 | Created relation"
 // @Router /createrelation [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
@@ -44,10 +46,11 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 }
 
 // ListRelations GET /api/model/entity-relations?entity_id=123
-// @Summary ListRelations
+// @Summary 查询实体关系列表 | List entity relations
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param entity_id query int false "实体ID过滤 | Filter by entity ID"
+// @Success 200 {object} map[string]interface{} "关系列表 | Relation list"
 // @Router /listrelations [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
@@ -77,10 +80,11 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 }
 
 // GetRelation GET /api/model/entity-relations/:id
-// @Summary GetRelation
+// @Summary 获取实体关系详情 | Get entity relation details
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "关系ID | Relation ID"
+// @Success 200 {object} map[string]interface{} "关系详情 | Relation details"
 // @Router /getrelation [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
@@ -101,10 +105,13 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 }
 
 // UpdateRelation PUT /api/model/entity-relations/:id
-// @Summary UpdateRelation
+// @Summary 更新实体关系 | Update entity relation
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "关系ID | Relation ID"
+// @Param body body models.UpdateEntityRelationRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的关系 | Updated relation"
 // @Router /updaterelation [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
@@ -131,10 +138,11 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 }
 
 // DeleteRelation DELETE /api/model/entity-relations/:id
-// @Summary DeleteRelation
+// @Summary 删除实体关系 | Delete entity relation
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "关系ID | Relation ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deleterelation [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {

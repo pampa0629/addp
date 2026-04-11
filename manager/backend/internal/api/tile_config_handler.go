@@ -51,10 +51,16 @@ type TileConfigResponse struct {
 // - max_zoom: 根据记录数智能计算的最大 zoom 层级
 // - extent: 数据的地理范围（用于调试）
 // - srid: 数据的坐标系
-// @Summary GetTileConfig
+// @Summary 获取瓦片配置 | Get tile configuration
+// @Description 根据空间数据范围和记录数智能计算瓦片的最小/最大缩放级别 | Intelligently calculate min/max zoom levels based on spatial extent and record count
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} TileConfigResponse "瓦片配置信息 | Tile configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /gettileconfig [get]
 // @Security BearerAuth
 func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {

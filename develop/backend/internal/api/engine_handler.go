@@ -21,10 +21,10 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 }
 
 // ListEngines 获取数据源列表（供 SQL 编辑器使用）
-// @Summary 获取可用于 SQL 查询的数据源列表
+// @Summary 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
 // @Tags Engines
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
 // @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -44,11 +44,11 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 }
 
 // ListSchemas 获取指定引擎的 schema 列表
-// @Summary 获取数据库 schema 列表
+// @Summary 获取数据库 schema 列表 | List database schemas
 // @Tags Engines
 // @Produce json
-// @Param id path int true "引擎ID"
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{} "Schema列表 | Schema list"
 // @Router /engines/:id/schemas [get]
 func (h *EngineHandler) ListSchemas(c *gin.Context) {
 	engineIDStr := c.Param("id")
@@ -75,12 +75,12 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 }
 
 // ListTables 获取指定引擎的表列表
-// @Summary 获取数据库表列表
+// @Summary 获取数据库表列表 | List database tables
 // @Tags Engines
 // @Produce json
-// @Param id path int true "引擎ID"
-// @Param schema query string false "Schema名称"
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "引擎ID | Engine ID"
+// @Param schema query string false "Schema名称 | Schema name"
+// @Success 200 {object} map[string]interface{} "表列表 | Table list"
 // @Router /engines/:id/tables [get]
 func (h *EngineHandler) ListTables(c *gin.Context) {
 	engineIDStr := c.Param("id")
@@ -112,10 +112,10 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 }
 
 // ListWorkflowEngines 获取工作流引擎列表
-// @Summary 获取支持 workflow 的计算引擎列表
+// @Summary 获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines
 // @Tags Engines
 // @Produce json
-// @Success 200 {array} models.Engine
+// @Success 200 {array} models.Engine "工作流引擎列表 | Workflow engine list"
 // @Router /workflow-engines [get]
 func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -134,10 +134,10 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 }
 
 // ListSparkRuntimes 获取 Apache Spark 运行时列表
-// @Summary 获取所有 Apache Spark 运行时列表
+// @Summary 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
 // @Tags Engines
 // @Produce json
-// @Success 200 {array} models.Engine
+// @Success 200 {array} models.Engine "Spark运行时列表 | Spark runtime list"
 // @Router /spark-runtimes [get]
 func (h *EngineHandler) ListSparkRuntimes(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

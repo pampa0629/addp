@@ -20,10 +20,10 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 }
 
 // ListAllOperators 获取所有算子
-// @Summary 获取所有模块的算子列表
+// @Summary 获取所有模块的算子列表 | List all operators from all modules
 // @Tags Operator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
 // @Router /operators [get]
 func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
 	operators, err := h.operatorDiscovery.DiscoverAllOperators(c.Request.Context())
@@ -40,11 +40,11 @@ func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
 }
 
 // ListOperatorsByModule 获取指定模块的算子
-// @Summary 获取指定模块的算子列表
+// @Summary 获取指定模块的算子列表 | List operators by module
 // @Tags Operator
 // @Produce json
-// @Param module path string true "模块名称（任务提供者或工作流引擎）"
-// @Success 200 {object} map[string]interface{}
+// @Param module path string true "模块名称（任务提供者或工作流引擎）| Module name (task provider or workflow engine)"
+// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
 // @Router /operators/modules/{module} [get]
 func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 	module := c.Param("module")
@@ -64,11 +64,11 @@ func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 }
 
 // ListOperatorsByEngineType 获取指定引擎类型的算子
-// @Summary 根据引擎类型获取算子列表
+// @Summary 根据引擎类型获取算子列表 | List operators by engine type
 // @Tags Operator
 // @Produce json
-// @Param engineType path string true "工作流引擎类型（动态从 system 获取）"
-// @Success 200 {object} map[string]interface{}
+// @Param engineType path string true "工作流引擎类型（动态从 system 获取）| Workflow engine type (fetched dynamically from system)"
+// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
 // @Router /operators/engine-types/{engineType} [get]
 func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
 	engineType := c.Param("engineType")
@@ -88,11 +88,11 @@ func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
 }
 
 // GetOperatorDetail 获取算子详情
-// @Summary 获取算子详情
+// @Summary 获取算子详情 | Get operator details
 // @Tags Operator
 // @Produce json
-// @Param name path string true "算子名称"
-// @Success 200 {object} map[string]interface{}
+// @Param name path string true "算子名称 | Operator name"
+// @Success 200 {object} map[string]interface{} "算子详情 | Operator details"
 // @Router /operators/{name} [get]
 func (h *OperatorHandler) GetOperatorDetail(c *gin.Context) {
 	name := c.Param("name")
@@ -110,10 +110,10 @@ func (h *OperatorHandler) GetOperatorDetail(c *gin.Context) {
 }
 
 // RefreshCache 刷新算子缓存
-// @Summary 刷新算子缓存
+// @Summary 刷新算子缓存 | Refresh operator cache
 // @Tags Operator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "缓存已刷新 | Cache refreshed"
 // @Router /operators/refresh [post]
 func (h *OperatorHandler) RefreshCache(c *gin.Context) {
 	if err := h.operatorDiscovery.RefreshCache(c.Request.Context()); err != nil {
@@ -128,10 +128,10 @@ func (h *OperatorHandler) RefreshCache(c *gin.Context) {
 }
 
 // GetCacheInfo 获取缓存信息
-// @Summary 获取缓存信息
+// @Summary 获取缓存信息 | Get cache information
 // @Tags Operator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "缓存信息 | Cache information"
 // @Router /operators/cache/info [get]
 func (h *OperatorHandler) GetCacheInfo(c *gin.Context) {
 	info := h.operatorDiscovery.GetCacheInfo()

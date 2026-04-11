@@ -22,9 +22,9 @@ func NewOntologyHandler(svc *service.OntologyService, neo4jSvc *service.Neo4jSer
 }
 
 // List godoc
-// @Summary      本体列表
-// @Description  获取当前租户的所有本体模型
-// @Tags         本体管理
+// @Summary      本体列表 | List ontologies
+// @Description  获取当前租户的所有本体模型 | Get all ontology models for current tenant
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200 {array}  models.Ontology
@@ -41,12 +41,12 @@ func (h *OntologyHandler) List(c *gin.Context) {
 }
 
 // Get godoc
-// @Summary      本体详情
-// @Description  获取本体详情，含实体类型和关系类型
-// @Tags         本体管理
+// @Summary      本体详情 | Get ontology detail
+// @Description  获取本体详情，含实体类型和关系类型 | Get ontology detail including entity types and relation types
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "本体 ID"
+// @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {object} models.OntologyDetail
 // @Failure      404 {object} models.ErrorResponse
 // @Router       /ontologies/{id} [get]
@@ -62,13 +62,13 @@ func (h *OntologyHandler) Get(c *gin.Context) {
 }
 
 // Create godoc
-// @Summary      创建本体
-// @Description  创建新的本体模型
-// @Tags         本体管理
+// @Summary      创建本体 | Create ontology
+// @Description  创建新的本体模型 | Create a new ontology model
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.CreateOntologyRequest true "创建本体请求"
+// @Param        request body models.CreateOntologyRequest true "创建本体请求 | Create ontology request"
 // @Success      201 {object} models.Ontology
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -89,14 +89,14 @@ func (h *OntologyHandler) Create(c *gin.Context) {
 }
 
 // Update godoc
-// @Summary      更新本体
-// @Description  更新本体模型的名称、描述或状态
-// @Tags         本体管理
+// @Summary      更新本体 | Update ontology
+// @Description  更新本体模型的名称、描述或状态 | Update ontology model name, description or status
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                          true "本体 ID"
-// @Param        request body models.UpdateOntologyRequest true "更新本体请求"
+// @Param        id      path int                          true "本体 ID | Ontology ID"
+// @Param        request body models.UpdateOntologyRequest true "更新本体请求 | Update ontology request"
 // @Success      200 {object} models.Ontology
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -118,12 +118,12 @@ func (h *OntologyHandler) Update(c *gin.Context) {
 }
 
 // Delete godoc
-// @Summary      删除本体
-// @Description  删除本体及其所有实体类型和关系类型
-// @Tags         本体管理
+// @Summary      删除本体 | Delete ontology
+// @Description  删除本体及其所有实体类型和关系类型 | Delete ontology and all its entity types and relation types
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "本体 ID"
+// @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /ontologies/{id} [delete]
@@ -140,12 +140,12 @@ func (h *OntologyHandler) Delete(c *gin.Context) {
 // --- EntityType handlers ---
 
 // ListEntityTypes godoc
-// @Summary      实体类型列表
-// @Description  获取本体下的所有实体类型
-// @Tags         本体管理
+// @Summary      实体类型列表 | List entity types
+// @Description  获取本体下的所有实体类型 | Get all entity types under an ontology
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "本体 ID"
+// @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.EntityType
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /ontologies/{id}/entity-types [get]
@@ -161,14 +161,14 @@ func (h *OntologyHandler) ListEntityTypes(c *gin.Context) {
 }
 
 // CreateEntityType godoc
-// @Summary      创建实体类型
-// @Description  在本体下创建新的实体类型
-// @Tags         本体管理
+// @Summary      创建实体类型 | Create entity type
+// @Description  在本体下创建新的实体类型 | Create a new entity type under an ontology
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                               true "本体 ID"
-// @Param        request body models.CreateEntityTypeRequest   true "创建实体类型请求"
+// @Param        id      path int                               true "本体 ID | Ontology ID"
+// @Param        request body models.CreateEntityTypeRequest   true "创建实体类型请求 | Create entity type request"
 // @Success      201 {object} models.EntityType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -220,12 +220,12 @@ func (h *OntologyHandler) DeleteEntityType(c *gin.Context) {
 // --- RelationType handlers ---
 
 // ListRelationTypes godoc
-// @Summary      关系类型列表
-// @Description  获取本体下的所有关系类型
-// @Tags         本体管理
+// @Summary      关系类型列表 | List relation types
+// @Description  获取本体下的所有关系类型 | Get all relation types under an ontology
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "本体 ID"
+// @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.RelationType
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /ontologies/{id}/relation-types [get]
@@ -241,14 +241,14 @@ func (h *OntologyHandler) ListRelationTypes(c *gin.Context) {
 }
 
 // CreateRelationType godoc
-// @Summary      创建关系类型
-// @Description  在本体下创建新的关系类型
-// @Tags         本体管理
+// @Summary      创建关系类型 | Create relation type
+// @Description  在本体下创建新的关系类型 | Create a new relation type under an ontology
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                                 true "本体 ID"
-// @Param        request body models.CreateRelationTypeRequest   true "创建关系类型请求"
+// @Param        id      path int                                 true "本体 ID | Ontology ID"
+// @Param        request body models.CreateRelationTypeRequest   true "创建关系类型请求 | Create relation type request"
 // @Success      201 {object} models.RelationType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -300,12 +300,12 @@ func (h *OntologyHandler) DeleteRelationType(c *gin.Context) {
 // --- Version handlers ---
 
 // ListVersions godoc
-// @Summary      版本列表
-// @Description  获取本体的所有版本快照
-// @Tags         本体管理
+// @Summary      版本列表 | List ontology versions
+// @Description  获取本体的所有版本快照 | Get all version snapshots of an ontology
+// @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "本体 ID"
+// @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.OntologyVersion
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /ontologies/{id}/versions [get]
@@ -321,14 +321,14 @@ func (h *OntologyHandler) ListVersions(c *gin.Context) {
 }
 
 // CreateVersion godoc
-// @Summary      创建版本快照
-// @Description  为本体创建版本快照
-// @Tags         本体管理
+// @Summary      创建版本快照 | Create version snapshot
+// @Description  为本体创建版本快照 | Create a version snapshot for an ontology
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                                   true "本体 ID"
-// @Param        request body models.CreateOntologyVersionRequest   true "创建版本请求"
+// @Param        id      path int                                   true "本体 ID | Ontology ID"
+// @Param        request body models.CreateOntologyVersionRequest   true "创建版本请求 | Create version request"
 // @Success      201 {object} models.OntologyVersion
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -384,15 +384,15 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 }
 
 // SyncEntityTypeSpatialLayer godoc
-// @Summary      同步空间图层
-// @Description  将实体类型的空间图层同步到指定的 Neo4j 图谱实例（仅 is_spatial_layer=true 的类型可操作）
-// @Tags         本体管理
+// @Summary      同步空间图层 | Sync spatial layer
+// @Description  将实体类型的空间图层同步到指定的 Neo4j 图谱实例（仅 is_spatial_layer=true 的类型可操作）| Sync entity type spatial layer to specified Neo4j graph instance (only for types with is_spatial_layer=true)
+// @Tags         本体管理 | Ontology Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                              true "本体 ID"
-// @Param        eid     path int                              true "实体类型 ID"
-// @Param        request body models.SyncSpatialLayersRequest true "同步请求"
+// @Param        id      path int                              true "本体 ID | Ontology ID"
+// @Param        eid     path int                              true "实体类型 ID | Entity type ID"
+// @Param        request body models.SyncSpatialLayersRequest true "同步请求 | Sync request"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse

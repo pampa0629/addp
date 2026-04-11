@@ -30,10 +30,23 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 //   - geom: 几何列名（默认 "geom"）
 //   - srid: 空间参考系（默认 4326）
 //   - cols: 返回列，逗号分隔（最多 8 列）
-// @Summary GetTile
+// @Summary 获取MVT矢量瓦片 | Get MVT vector tile
+// @Description 获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial table with three-layer cache
 // @Tags Manager
-// @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Produce application/vnd.mapbox-vector-tile
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Param z path int true "缩放级别(0-22) | Zoom level (0-22)"
+// @Param x path int true "瓦片X坐标 | Tile X coordinate"
+// @Param y path int true "瓦片Y坐标 | Tile Y coordinate"
+// @Param geom query string false "几何列名，默认geom | Geometry column, default geom"
+// @Param srid query int false "空间参考系，默认4326 | Spatial reference, default 4326"
+// @Param cols query string false "返回列，逗号分隔 | Return columns, comma-separated"
+// @Success 200 "MVT瓦片数据 | MVT tile data"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /gettile [get]
 // @Security BearerAuth
 func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {

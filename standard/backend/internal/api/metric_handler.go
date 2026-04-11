@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -21,7 +23,7 @@ func NewMetricHandler(svc *service.MetricService) *MetricHandler {
 
 // --- 指标目录 ---
 
-// @Summary ListCategories
+// @Summary 获取指标分类列表 | List metric categories
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -37,7 +39,7 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, cats)
 }
 
-// @Summary CreateCategory
+// @Summary 创建指标分类 | Create metric category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -59,7 +61,7 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	c.JSON(http.StatusCreated, cat)
 }
 
-// @Summary UpdateCategory
+// @Summary 更新指标分类 | Update metric category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -68,7 +70,7 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateMetricCategoryRequest
@@ -86,7 +88,7 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	c.JSON(http.StatusOK, cat)
 }
 
-// @Summary DeleteCategory
+// @Summary 删除指标分类 | Delete metric category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -95,7 +97,7 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -103,12 +105,12 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // --- 指标定义 ---
 
-// @Summary ListMetrics
+// @Summary 获取指标列表 | List metrics
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -156,7 +158,7 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": metrics, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
-// @Summary GetMetric
+// @Summary 获取指标详情 | Get metric detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -165,17 +167,16 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 func (h *MetricHandler) GetMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
 	metric, err := h.svc.GetMetric(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "metric not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgMetricNotFound)})
 		return
 	}
 
-	// 附带关联信息，合并到同一个响应对象
 	elements, _ := h.svc.GetElementMappings(id)
 	deps, _ := h.svc.GetDependencies(id)
 
@@ -191,7 +192,7 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 	})
 }
 
-// @Summary CreateMetric
+// @Summary 创建指标 | Create metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -213,7 +214,7 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	c.JSON(http.StatusCreated, metric)
 }
 
-// @Summary UpdateMetric
+// @Summary 更新指标 | Update metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -222,7 +223,7 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateMetricRequest
@@ -240,7 +241,7 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	c.JSON(http.StatusOK, metric)
 }
 
-// @Summary DeleteMetric
+// @Summary 删除指标 | Delete metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -249,7 +250,7 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -257,10 +258,10 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
-// @Summary ApproveMetric
+// @Summary 审批指标 | Approve metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -269,7 +270,7 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -278,10 +279,10 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
 }
 
-// @Summary DeprecateMetric
+// @Summary 废弃指标 | Deprecate metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -290,7 +291,7 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -299,7 +300,7 @@ func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已废弃"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeprecateSuccess)})
 }
 
 // 辅助函数

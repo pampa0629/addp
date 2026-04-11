@@ -28,23 +28,23 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取资产列表",
+                "summary": "获取资产列表 | Get asset list",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索关键词",
+                        "description": "搜索关键词 | Search keyword",
                         "name": "keyword",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "类型ID",
+                        "description": "类型ID | Type ID",
                         "name": "type_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "目录ID",
+                        "description": "目录ID | Catalog ID",
                         "name": "catalog_id",
                         "in": "query"
                     }
@@ -73,11 +73,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取资产详情",
+                "summary": "获取资产详情 | Get asset detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -110,17 +110,17 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "申请使用资产",
+                "summary": "申请使用资产 | Apply for asset access",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "申请信息",
+                        "description": "申请信息 | Application info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -154,11 +154,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取资产申请状态",
+                "summary": "获取资产申请状态 | Get asset apply status",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -188,11 +188,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取资产服务端点",
+                "summary": "获取资产服务端点 | Get asset service endpoints",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -222,11 +222,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取资产评价列表",
+                "summary": "获取资产评价列表 | Get asset ratings",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -257,17 +257,17 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "提交资产评价",
+                "summary": "提交资产评价 | Submit asset rating",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产ID",
+                        "description": "资产ID | Asset ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "评价信息",
+                        "description": "评价信息 | Rating info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -301,7 +301,7 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取目录树",
+                "summary": "获取目录树 | Get catalog tree",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -329,11 +329,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取目录下的资产列表",
+                "summary": "获取目录下的资产列表 | Get assets in catalog",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "目录ID",
+                        "description": "目录ID | Catalog ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -363,7 +363,7 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取门户首页数据",
+                "summary": "获取门户首页数据 | Get portal home data",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -388,7 +388,7 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取我的申请列表",
+                "summary": "获取我的申请列表 | Get my applications",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -416,11 +416,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "搜索资产",
+                "summary": "搜索资产 | Search assets",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索关键词",
+                        "description": "搜索关键词 | Search keyword",
                         "name": "keyword",
                         "in": "query"
                     }
@@ -453,7 +453,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1/portal",
 	Schemes:          []string{},
 	Title:            "ADDP Portal API",
-	Description:      "全域数据平台 - 资产门户 API",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

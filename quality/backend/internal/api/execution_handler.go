@@ -16,7 +16,7 @@ func NewExecutionHandler(db *gorm.DB) *ExecutionHandler {
 	return &ExecutionHandler{db: db}
 }
 
-// @Summary 获取执行记录列表
+// @Summary 获取执行记录列表 | List execution records
 // @Tags Execution
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -53,10 +53,10 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 	})
 }
 
-// @Summary 获取执行记录详情
+// @Summary 获取执行记录详情 | Get execution record detail
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID"
+// @Param id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /executions/{id} [get]
 // @Security BearerAuth

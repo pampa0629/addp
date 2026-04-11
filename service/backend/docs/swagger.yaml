@@ -454,7 +454,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 聚合请求
+      - description: 聚合请求 | Aggregation request
         in: body
         name: request
         required: true
@@ -464,10 +464,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 聚合结果 | Aggregation result
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.AggregationResponse'
-      summary: 聚合查询
+      summary: 聚合查询 | Aggregate query
       tags:
       - DataService
   /data/query:
@@ -475,7 +475,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 查询请求
+      - description: 查询请求 | Query request
         in: body
         name: request
         required: true
@@ -485,10 +485,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 查询结果 | Query result
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.DataQueryResponse'
-      summary: 查询数据表
+      summary: 查询数据表 | Query data table
       tags:
       - DataService
   /data/structure:
@@ -496,17 +496,17 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 引擎ID
+      - description: 引擎ID | Engine ID
         in: query
         name: engine_id
         required: true
         type: integer
-      - description: Schema名称
+      - description: Schema名称 | Schema name
         in: query
         name: schema
         required: true
         type: string
-      - description: 表名
+      - description: 表名 | Table name
         in: query
         name: table
         required: true
@@ -515,12 +515,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 表结构 | Table structure
           schema:
             items:
               $ref: '#/definitions/github_com_addp_service_internal_models.ColumnInfo'
             type: array
-      summary: 获取表结构
+      summary: 获取表结构 | Get table structure
       tags:
       - DataService
   /engines:
@@ -529,19 +529,20 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 引擎列表 | Engine list
           schema:
             items:
               additionalProperties: true
               type: object
             type: array
-      summary: 获取可用于数据服务的 PostgreSQL 引擎列表
+      summary: 获取可用于数据服务的 PostgreSQL 引擎列表 | List PostgreSQL engines available for
+        data services
       tags:
       - Engines
   /ogc/tiles/{serviceName}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
@@ -550,17 +551,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Landing Page | Landing Page
           schema:
             additionalProperties: true
             type: object
-      summary: OGC Tiles API Landing Page
+      summary: OGC Tiles API Landing Page | OGC Tiles API Landing Page
       tags:
       - OGC Tiles
   /ogc/tiles/{serviceName}/conformance:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
@@ -569,17 +570,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 符合性声明 | Conformance declaration
           schema:
             additionalProperties: true
             type: object
-      summary: OGC API Conformance
+      summary: OGC API Conformance | OGC API Conformance
       tags:
       - OGC Tiles
   /ogc/tiles/{serviceName}/tileMatrixSets:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
@@ -588,22 +589,22 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片矩阵集列表 | Tile Matrix Set list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取 Tile Matrix Sets
+      summary: 获取 Tile Matrix Sets | Get Tile Matrix Sets
       tags:
       - OGC Tiles
   /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
         type: string
-      - description: 瓦片矩阵集 ID
+      - description: 瓦片矩阵集 ID | Tile Matrix Set ID
         in: path
         name: tileMatrixSetId
         required: true
@@ -612,17 +613,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片矩阵集详情 | Tile Matrix Set details
           schema:
             additionalProperties: true
             type: object
-      summary: 获取单个 Tile Matrix Set
+      summary: 获取单个 Tile Matrix Set | Get single Tile Matrix Set
       tags:
       - OGC Tiles
   /ogc/tiles/{serviceName}/tiles:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
@@ -631,42 +632,42 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片集列表 | Tileset list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取 Tilesets
+      summary: 获取 Tilesets | Get Tilesets
       tags:
       - OGC Tiles
   /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
         type: string
-      - description: 图层名称
+      - description: 图层名称 | Layer name
         in: path
         name: layer
         required: true
         type: string
-      - description: 瓦片矩阵集 ID
+      - description: 瓦片矩阵集 ID | Tile Matrix Set ID
         in: path
         name: tileMatrixSetId
         required: true
         type: string
-      - description: 瓦片矩阵（缩放级别）
+      - description: 瓦片矩阵（缩放级别）| Tile matrix (zoom level)
         in: path
         name: tileMatrix
         required: true
         type: string
-      - description: 瓦片行
+      - description: 瓦片行 | Tile row
         in: path
         name: tileRow
         required: true
         type: string
-      - description: 瓦片列
+      - description: 瓦片列 | Tile column
         in: path
         name: tileCol
         required: true
@@ -678,19 +679,19 @@ paths:
           description: OK
           schema:
             type: file
-      summary: 获取单个瓦片
+      summary: 获取单个瓦片 | Get single tile
       tags:
       - OGC Tiles
   /tile:
     get:
       parameters:
       - default: 0
-        description: 偏移量
+        description: 偏移量 | Offset
         in: query
         name: offset
         type: integer
       - default: 20
-        description: 限制数量
+        description: 限制数量 | Limit
         in: query
         name: limit
         type: integer
@@ -698,18 +699,18 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片服务列表 | Tile service list
           schema:
             additionalProperties: true
             type: object
-      summary: 列出瓦片服务
+      summary: 列出瓦片服务 | List tile services
       tags:
       - TileService
     post:
       consumes:
       - application/json
       parameters:
-      - description: 创建瓦片服务请求
+      - description: 创建瓦片服务请求 | Create tile service request
         in: body
         name: body
         required: true
@@ -719,16 +720,16 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: 已创建的瓦片服务 | Created tile service
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 创建瓦片服务
+      summary: 创建瓦片服务 | Create tile service
       tags:
       - TileService
   /tile/{id}:
     delete:
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: id
         required: true
@@ -737,13 +738,13 @@ paths:
       - application/json
       responses:
         "204":
-          description: No Content
-      summary: 删除瓦片服务
+          description: 删除成功 | Deleted successfully
+      summary: 删除瓦片服务 | Delete tile service
       tags:
       - TileService
     get:
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: id
         required: true
@@ -752,22 +753,22 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片服务详情 | Tile service details
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 获取瓦片服务详情
+      summary: 获取瓦片服务详情 | Get tile service details
       tags:
       - TileService
     put:
       consumes:
       - application/json
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新瓦片服务请求
+      - description: 更新瓦片服务请求 | Update tile service request
         in: body
         name: body
         required: true
@@ -777,16 +778,16 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已更新的瓦片服务 | Updated tile service
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 更新瓦片服务
+      summary: 更新瓦片服务 | Update tile service
       tags:
       - TileService
   /tile/{serviceId}/layers:
     get:
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: serviceId
         required: true
@@ -795,24 +796,24 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 图层列表 | Layer list
           schema:
             items:
               $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
             type: array
-      summary: 列出图层
+      summary: 列出图层 | List layers
       tags:
       - TileService
     post:
       consumes:
       - application/json
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: serviceId
         required: true
         type: integer
-      - description: 创建图层请求
+      - description: 创建图层请求 | Create layer request
         in: body
         name: body
         required: true
@@ -822,21 +823,21 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: 已创建的图层 | Created layer
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
-      summary: 添加图层
+      summary: 添加图层 | Add layer
       tags:
       - TileService
   /tile/{serviceId}/layers/{layerId}:
     delete:
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: serviceId
         required: true
         type: integer
-      - description: 图层 ID
+      - description: 图层 ID | Layer ID
         in: path
         name: layerId
         required: true
@@ -845,18 +846,18 @@ paths:
       - application/json
       responses:
         "204":
-          description: No Content
-      summary: 删除图层
+          description: 删除成功 | Deleted successfully
+      summary: 删除图层 | Delete layer
       tags:
       - TileService
     get:
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: serviceId
         required: true
         type: integer
-      - description: 图层 ID
+      - description: 图层 ID | Layer ID
         in: path
         name: layerId
         required: true
@@ -865,27 +866,27 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 图层详情 | Layer details
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
-      summary: 获取图层详情
+      summary: 获取图层详情 | Get layer details
       tags:
       - TileService
     put:
       consumes:
       - application/json
       parameters:
-      - description: 服务 ID
+      - description: 服务 ID | Service ID
         in: path
         name: serviceId
         required: true
         type: integer
-      - description: 图层 ID
+      - description: 图层 ID | Layer ID
         in: path
         name: layerId
         required: true
         type: integer
-      - description: 更新图层请求
+      - description: 更新图层请求 | Update layer request
         in: body
         name: body
         required: true
@@ -895,16 +896,16 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已更新的图层 | Updated layer
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
-      summary: 更新图层
+      summary: 更新图层 | Update layer
       tags:
       - TileService
   /tile/by-name/{serviceName}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
@@ -913,27 +914,27 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 瓦片服务详情 | Tile service details
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 根据名称获取瓦片服务
+      summary: 根据名称获取瓦片服务 | Get tile service by name
       tags:
       - TileService
   /tile/search:
     get:
       parameters:
-      - description: 搜索关键词
+      - description: 搜索关键词 | Search keyword
         in: query
         name: keyword
         required: true
         type: string
       - default: 0
-        description: 偏移量
+        description: 偏移量 | Offset
         in: query
         name: offset
         type: integer
       - default: 20
-        description: 限制数量
+        description: 限制数量 | Limit
         in: query
         name: limit
         type: integer
@@ -941,42 +942,42 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 搜索结果 | Search results
           schema:
             additionalProperties: true
             type: object
-      summary: 搜索瓦片服务
+      summary: 搜索瓦片服务 | Search tile services
       tags:
       - TileService
   /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
         type: string
-      - description: 图层名称
+      - description: 图层名称 | Layer name
         in: path
         name: layerName
         required: true
         type: string
-      - description: 缩放级别
+      - description: 缩放级别 | Zoom level
         in: path
         name: z
         required: true
         type: integer
-      - description: 瓦片 X 坐标
+      - description: 瓦片 X 坐标 | Tile X coordinate
         in: path
         name: x
         required: true
         type: integer
-      - description: 瓦片 Y 坐标
+      - description: 瓦片 Y 坐标 | Tile Y coordinate
         in: path
         name: "y"
         required: true
         type: integer
-      - description: 瓦片格式 (mvt, png, jpg)
+      - description: 瓦片格式 (mvt, png, jpg) | Tile format (mvt, png, jpg)
         in: path
         name: format
         required: true
@@ -987,21 +988,21 @@ paths:
       - image/jpeg
       responses:
         "200":
-          description: OK
+          description: 瓦片数据 | Tile data
           schema:
             type: file
-      summary: 获取 XYZ 瓦片
+      summary: 获取 XYZ 瓦片 | Get XYZ tile
       tags:
       - Tiles
   /wmts/{serviceName}:
     get:
       parameters:
-      - description: 服务名称
+      - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
         type: string
-      - description: 请求类型 (GetCapabilities)
+      - description: 请求类型 (GetCapabilities) | Request type (GetCapabilities)
         in: query
         name: request
         type: string
@@ -1009,10 +1010,10 @@ paths:
       - text/xml
       responses:
         "200":
-          description: OK
+          description: WMTS Capabilities XML | WMTS Capabilities XML
           schema:
             $ref: '#/definitions/internal_api.Capabilities'
-      summary: 获取 WMTS Capabilities
+      summary: 获取 WMTS Capabilities | Get WMTS Capabilities
       tags:
       - WMTS
 securityDefinitions:

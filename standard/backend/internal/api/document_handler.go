@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -21,7 +23,7 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 	return &DocumentHandler{svc: svc}
 }
 
-// @Summary ListDocuments
+// @Summary 获取标准文档列表 | List standard documents
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -63,7 +65,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": docs, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
-// @Summary GetDocument
+// @Summary 获取标准文档详情 | Get standard document detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -72,19 +74,19 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 func (h *DocumentHandler) GetDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
 	doc, err := h.svc.GetDocument(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocumentNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, doc)
 }
 
-// @Summary CreateDocument
+// @Summary 创建标准文档 | Create standard document
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -106,7 +108,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
-// @Summary UpdateDocument
+// @Summary 更新标准文档 | Update standard document
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -115,7 +117,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateDocumentRequest
@@ -133,7 +135,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
-// @Summary DeleteDocument
+// @Summary 删除标准文档 | Delete standard document
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -142,7 +144,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -150,11 +152,11 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // UploadFile 上传文档文件（multipart/form-data, field: "file"）
-// @Summary UploadFile
+// @Summary 上传文档文件 | Upload document file
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -163,27 +165,27 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
 
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请上传文件（field: file）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgFileRequired)})
 		return
 	}
 
 	f, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法打开文件"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgFileOpenFailed)})
 		return
 	}
 	defer f.Close()
 
 	content, err := io.ReadAll(f)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法读取文件"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgFileReadFailed)})
 		return
 	}
 
@@ -193,14 +195,14 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "上传成功",
+		"message":   commoni18n.T(c, sysi18n.MsgUploadSuccess),
 		"file_name": file.Filename,
 		"file_size": len(content),
 	})
 }
 
 // DownloadFile 下载文档文件（通过后端代理流式传输）
-// @Summary DownloadFile
+// @Summary 下载文档文件 | Download document file
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -209,7 +211,7 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -230,7 +232,7 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	io.Copy(c.Writer, reader)
 }
 
-// @Summary GetMappings
+// @Summary 获取文档关联映射 | Get document mappings
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -239,7 +241,7 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 func (h *DocumentHandler) GetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	mappings, err := h.svc.GetMappings(id)
@@ -250,7 +252,7 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 	c.JSON(http.StatusOK, mappings)
 }
 
-// @Summary SetMappings
+// @Summary 设置文档关联映射 | Set document mappings
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -259,7 +261,7 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 func (h *DocumentHandler) SetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.SetDocumentMappingsRequest
@@ -271,12 +273,12 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
 }
 
 // ===== 反向查询：从标准项维度列出关联文档 =====
 
-// @Summary ListDocsByElement
+// @Summary 查询数据元关联的文档 | List documents by element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -285,7 +287,7 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docs, err := h.svc.ListByElement(getTenantID(c), entityID)
@@ -296,7 +298,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	c.JSON(http.StatusOK, docs)
 }
 
-// @Summary ListDocsByGlossary
+// @Summary 查询术语关联的文档 | List documents by glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -305,7 +307,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docs, err := h.svc.ListByGlossary(getTenantID(c), entityID)
@@ -316,7 +318,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	c.JSON(http.StatusOK, docs)
 }
 
-// @Summary ListDocsByMetric
+// @Summary 查询指标关联的文档 | List documents by metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -325,7 +327,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docs, err := h.svc.ListByMetric(getTenantID(c), entityID)
@@ -338,7 +340,7 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 
 // ===== 创建文档并关联到标准项 =====
 
-// @Summary CreateAndLinkElement
+// @Summary 创建文档并关联到数据元 | Create and link document to element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -347,7 +349,7 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.CreateDocumentRequest
@@ -363,7 +365,7 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
-// @Summary CreateAndLinkGlossary
+// @Summary 创建文档并关联到术语 | Create and link document to glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -372,7 +374,7 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.CreateDocumentRequest
@@ -388,7 +390,7 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
-// @Summary CreateAndLinkMetric
+// @Summary 创建文档并关联到指标 | Create and link document to metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -397,7 +399,7 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.CreateDocumentRequest
@@ -415,7 +417,7 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 
 // ===== 关联已有文档到标准项 =====
 
-// @Summary LinkDocToElement
+// @Summary 关联已有文档到数据元 | Link document to element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -424,24 +426,24 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var body struct {
 		DocID int64 `json:"doc_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "doc_id 必填"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
 	if err := h.svc.LinkDocToElement(body.DocID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "关联成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
 }
 
-// @Summary LinkDocToGlossary
+// @Summary 关联已有文档到术语 | Link document to glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -450,24 +452,24 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var body struct {
 		DocID int64 `json:"doc_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "doc_id 必填"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
 	if err := h.svc.LinkDocToGlossary(body.DocID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "关联成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
 }
 
-// @Summary LinkDocToMetric
+// @Summary 关联已有文档到指标 | Link document to metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -476,26 +478,26 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var body struct {
 		DocID int64 `json:"doc_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "doc_id 必填"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
 	if err := h.svc.LinkDocToMetric(body.DocID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "关联成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
 }
 
 // ===== 解除关联 =====
 
-// @Summary UnlinkDocFromElement
+// @Summary 解除文档与数据元的关联 | Unlink document from element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -504,22 +506,22 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docID, err := strconv.ParseInt(c.Param("doc_id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doc_id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	if err := h.svc.UnlinkDocFromElement(docID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已解除关联"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
 }
 
-// @Summary UnlinkDocFromGlossary
+// @Summary 解除文档与术语的关联 | Unlink document from glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -528,22 +530,22 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docID, err := strconv.ParseInt(c.Param("doc_id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doc_id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	if err := h.svc.UnlinkDocFromGlossary(docID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已解除关联"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
 }
 
-// @Summary UnlinkDocFromMetric
+// @Summary 解除文档与指标的关联 | Unlink document from metric
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -552,17 +554,17 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	docID, err := strconv.ParseInt(c.Param("doc_id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doc_id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	if err := h.svc.UnlinkDocFromMetric(docID, getTenantID(c), entityID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已解除关联"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
 }

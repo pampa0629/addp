@@ -41,7 +41,7 @@ class SQLGenerationResponse(BaseModel):
     conversation_id: int
 
 
-@router.post("/sql/generate", response_model=SQLGenerationResponse)
+@router.post("/sql/generate", response_model=SQLGenerationResponse, summary="生成 SQL | Generate SQL")
 async def generate_sql(request: SQLGenerationRequest):
     """
     生成 SQL 语句

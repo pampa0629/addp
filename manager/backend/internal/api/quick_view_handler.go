@@ -44,11 +44,19 @@ type UpdatePreferredModeRequest struct {
 
 // TriggerQuickView 触发快显缓存生成
 // POST /api/engines/:id/spatial/:schema/:table/quick-view
-// @Summary TriggerQuickView
+// @Summary 触发快显缓存生成 | Trigger quick view cache generation
+// @Description 触发指定空间数据表的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation for a spatial table
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /triggerquickview [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Param body body TriggerQuickViewRequest false "快显生成配置 | Quick view generation configuration"
+// @Success 200 {object} map[string]interface{} "任务已加入队列 | Task enqueued"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /triggerquickview [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -116,10 +124,16 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 
 // GetQuickViewStatus 获取快显状态（包含实时进度）
 // GET /api/engines/:id/spatial/:schema/:table/quick-view/status
-// @Summary GetQuickViewStatus
+// @Summary 获取快显状态 | Get quick view status
+// @Description 获取指定空间数据表的快显缓存状态及实时生成进度 | Get quick view cache status and real-time generation progress
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "快显状态信息 | Quick view status"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /getquickviewstatus [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
@@ -190,11 +204,17 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 
 // ClearQuickView 清除快显缓存
 // DELETE /api/engines/:id/spatial/:schema/:table/quick-view
-// @Summary ClearQuickView
+// @Summary 清除快显缓存 | Clear quick view cache
+// @Description 清除指定空间数据表的快显缓存数据 | Clear quick view cache data for a spatial table
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /clearquickview [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "清除成功 | Cleared successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /clearquickview [delete]
 // @Security BearerAuth
 func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -229,11 +249,16 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 
 // CancelQuickView 取消快显生成任务
 // POST /api/engines/:id/spatial/:schema/:table/pre-cache/cancel
-// @Summary CancelQuickView
+// @Summary 取消快显生成任务 | Cancel quick view generation task
+// @Description 取消正在进行的快显缓存生成任务 | Cancel an ongoing quick view cache generation task
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /cancelquickview [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /cancelquickview [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -268,11 +293,16 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 
 // ResumeQuickView 恢复快显生成任务
 // POST /api/engines/:id/spatial/:schema/:table/pre-cache/resume
-// @Summary ResumeQuickView
+// @Summary 恢复快显生成任务 | Resume quick view generation task
+// @Description 恢复已暂停或中断的快显缓存生成任务 | Resume a paused or interrupted quick view cache generation task
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /resumequickview [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "恢复成功 | Resumed successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /resumequickview [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -307,10 +337,16 @@ func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 
 // ListQuickViewTasks 列出所有快显任务
 // GET /api/quick-view/tasks
-// @Summary ListQuickViewTasks
+// @Summary 列出快显任务 | List quick view tasks
+// @Description 列出所有快显缓存生成任务，支持按状态和引擎过滤 | List all quick view cache generation tasks with optional filtering
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认10 | Page size, default 10"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param engine_id query int false "存储引擎ID过滤 | Filter by engine ID"
+// @Success 200 {object} map[string]interface{} "快显任务列表 | Quick view task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /listquickviewtasks [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
@@ -361,10 +397,12 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 
 // GetStatistics 获取快显统计信息
 // GET /api/quick-view/statistics
-// @Summary GetStatistics
+// @Summary 获取快显统计信息 | Get quick view statistics
+// @Description 获取快显缓存的整体统计信息（任务数量、缓存大小等）| Get overall quick view cache statistics
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "统计信息 | Statistics"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /getstatistics [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
@@ -389,11 +427,19 @@ func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 
 // UpdatePreferredMode 更新用户偏好的显示模式
 // PATCH /api/manager/engines/:id/spatial/:schema/:table/pre-cache/mode
-// @Summary UpdatePreferredMode
+// @Summary 更新显示模式偏好 | Update preferred display mode
+// @Description 更新指定空间数据表的用户偏好显示模式（geojson或mvt）| Update preferred display mode for a spatial table (geojson or mvt)
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /updatepreferredmode [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Param body body UpdatePreferredModeRequest true "显示模式配置 | Display mode configuration"
+// @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "记录不存在 | Record not found"
+// @Router /updatepreferredmode [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	// 1. 解析路径参数
@@ -454,10 +500,16 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 
 // CheckPreparation 检查准备状态（诊断，如果通过则创建快显表记录）
 // GET /api/manager/engines/:id/spatial/:schema/:table/pre-cache/check
-// @Summary CheckPreparation
+// @Summary 检查快显准备状态 | Check quick view preparation status
+// @Description 检查空间数据表的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick view, auto-create record if passed
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "准备状态信息 | Preparation status"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /checkpreparation [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
@@ -504,11 +556,17 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 
 // PrepareForCreateMVT 启动准备工作任务
 // POST /api/manager/engines/:id/spatial/:schema/:table/pre-cache/prepare
-// @Summary PrepareForCreateMVT
+// @Summary 启动MVT准备工作 | Start MVT preparation
+// @Description 启动空间数据表的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation work (e.g. creating spatial indexes)
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /prepareforcreatemvt [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Success 200 {object} map[string]interface{} "准备工作已启动 | Preparation started"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /prepareforcreatemvt [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	// 1. 解析路径参数

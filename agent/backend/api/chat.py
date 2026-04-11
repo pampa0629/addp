@@ -16,7 +16,7 @@ from agents.main_agent import stream_agent_response, MSG_TYPE_PROGRESS, MSG_TYPE
 from graph.factory import MSG_TYPE_DAG
 from utils.summary import maybe_update_summary
 
-router = APIRouter(prefix="", tags=["chat"])
+router = APIRouter(prefix="", tags=["对话 | Chat"])
 
 # 每次请求加载的历史轮数上限（10 轮 = 20 条消息）
 _HISTORY_LIMIT = 20
@@ -27,7 +27,7 @@ class ChatRequest(BaseModel):
     message: str  # 只发当前一条消息，历史由后端从 DB 加载
 
 
-@router.post("/chat")
+@router.post("/chat", summary="发送消息 | Send Message")
 async def chat(request: Request, body: ChatRequest, db: AsyncSession = Depends(get_db)):
     """
     发送消息并获取流式回复 (OpenAI 兼容格式)
@@ -121,7 +121,7 @@ async def chat(request: Request, body: ChatRequest, db: AsyncSession = Depends(g
     )
 
 
-@router.get("/sessions/{session_id}/messages")
+@router.get("/sessions/{session_id}/messages", summary="获取消息历史 | Get Messages")
 async def get_messages(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """获取会话消息历史"""
     result = await db.execute(

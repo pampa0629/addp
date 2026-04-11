@@ -22,10 +22,10 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 }
 
 // ListEngines 获取 PostgreSQL 数据源列表（供内部服务创建使用）
-// @Summary 获取可用于数据服务的 PostgreSQL 引擎列表
+// @Summary 获取可用于数据服务的 PostgreSQL 引擎列表 | List PostgreSQL engines available for data services
 // @Tags Engines
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {array} map[string]interface{} "引擎列表 | Engine list"
 // @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

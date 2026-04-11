@@ -28,7 +28,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ApproveElement",
+                "summary": "审批数据元 | Approve data element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -53,7 +53,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ApproveGlossary",
+                "summary": "审批业务术语 | Approve glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -78,7 +78,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ApproveMetric",
+                "summary": "审批指标 | Approve metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -103,7 +103,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "Create",
+                "summary": "创建维度层级 | Create dimension hierarchy",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -128,7 +128,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateAndLinkElement",
+                "summary": "创建文档并关联到数据元 | Create and link document to element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -153,7 +153,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateAndLinkGlossary",
+                "summary": "创建文档并关联到术语 | Create and link document to glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -178,7 +178,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateAndLinkMetric",
+                "summary": "创建文档并关联到指标 | Create and link document to metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -203,7 +203,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateCategory",
+                "summary": "创建度量类别 | Create measurement category",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -228,7 +228,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateClassification",
+                "summary": "创建数据分类 | Create data classification",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -253,7 +253,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateCodeItem",
+                "summary": "创建码值项 | Create code item",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -278,7 +278,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateCodeSet",
+                "summary": "创建码值集 | Create code set",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -303,7 +303,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateDocument",
+                "summary": "创建标准文档 | Create standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -328,7 +328,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateDomain",
+                "summary": "创建业务域 | Create business domain",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -353,7 +353,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateElement",
+                "summary": "创建数据元 | Create data element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -378,7 +378,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateGlossary",
+                "summary": "创建业务术语 | Create glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -403,7 +403,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateLevel",
+                "summary": "创建层次 | Create hierarchy level",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -428,7 +428,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateMetric",
+                "summary": "创建指标 | Create metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -453,7 +453,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "CreateUnit",
+                "summary": "创建计量单位 | Create unit",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -478,7 +478,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "Delete",
+                "summary": "删除维度层级 | Delete dimension hierarchy",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -503,7 +503,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteCategory",
+                "summary": "删除度量类别 | Delete measurement category",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -528,7 +528,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteClassification",
+                "summary": "删除数据分类 | Delete data classification",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -553,7 +553,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteCodeItem",
+                "summary": "删除码值项 | Delete code item",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -578,7 +578,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteCodeSet",
+                "summary": "删除码值集 | Delete code set",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -603,7 +603,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteDocument",
+                "summary": "删除标准文档 | Delete standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -628,7 +628,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteDomain",
+                "summary": "删除业务域 | Delete business domain",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -653,7 +653,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteElement",
+                "summary": "删除数据元 | Delete data element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -678,7 +678,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteGlossary",
+                "summary": "删除业务术语 | Delete glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -703,7 +703,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteLevel",
+                "summary": "删除层次 | Delete hierarchy level",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -728,7 +728,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteMetric",
+                "summary": "删除指标 | Delete metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -753,7 +753,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeleteUnit",
+                "summary": "删除计量单位 | Delete unit",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -778,7 +778,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeprecateGlossary",
+                "summary": "废弃业务术语 | Deprecate glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -803,7 +803,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DeprecateMetric",
+                "summary": "废弃指标 | Deprecate metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -828,7 +828,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "DownloadFile",
+                "summary": "下载文档文件 | Download document file",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -853,7 +853,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "Get",
+                "summary": "获取维度层级详情 | Get dimension hierarchy detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -878,7 +878,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetCodeItems",
+                "summary": "获取码值项列表 | List code items",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -903,7 +903,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetCodeSet",
+                "summary": "获取码值集详情 | Get code set detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -928,7 +928,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetDocument",
+                "summary": "获取标准文档详情 | Get standard document detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -953,7 +953,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetDomain",
+                "summary": "获取业务域详情 | Get business domain detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -978,7 +978,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetElement",
+                "summary": "获取数据元详情 | Get data element detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1003,7 +1003,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetElementMappings",
+                "summary": "获取术语关联的数据元 | Get element mappings of glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1028,7 +1028,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetElementQualityRules",
+                "summary": "获取数据元质量规则 | Get data element quality rules",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1053,7 +1053,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetGlossary",
+                "summary": "获取业务术语详情 | Get glossary detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1078,7 +1078,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetMappings",
+                "summary": "获取文档关联映射 | Get document mappings",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1103,7 +1103,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetMetric",
+                "summary": "获取指标详情 | Get metric detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1128,7 +1128,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "GetUnit",
+                "summary": "获取计量单位详情 | Get unit detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1153,7 +1153,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "LinkDocToElement",
+                "summary": "关联已有文档到数据元 | Link document to element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1178,7 +1178,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "LinkDocToGlossary",
+                "summary": "关联已有文档到术语 | Link document to glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1203,7 +1203,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "LinkDocToMetric",
+                "summary": "关联已有文档到指标 | Link document to metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1228,7 +1228,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "List",
+                "summary": "获取维度层级列表 | List dimension hierarchies",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1253,7 +1253,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListCategories",
+                "summary": "获取度量类别列表 | List measurement categories",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1278,7 +1278,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListClassifications",
+                "summary": "获取数据分类列表 | List data classifications",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1303,7 +1303,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListCodeSets",
+                "summary": "获取码值集列表 | List code sets",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1328,7 +1328,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListDocsByElement",
+                "summary": "查询数据元关联的文档 | List documents by element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1353,7 +1353,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListDocsByGlossary",
+                "summary": "查询术语关联的文档 | List documents by glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1378,7 +1378,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListDocsByMetric",
+                "summary": "查询指标关联的文档 | List documents by metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1403,7 +1403,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListDocuments",
+                "summary": "获取标准文档列表 | List standard documents",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1428,7 +1428,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListDomains",
+                "summary": "获取业务域列表 | List business domains",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1453,7 +1453,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListElements",
+                "summary": "获取数据元列表 | List data elements",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1478,7 +1478,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListGlossaries",
+                "summary": "获取业务术语列表 | List glossaries",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1503,7 +1503,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListGradingLevels",
+                "summary": "获取数据分级列表 | List data grading levels",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1528,7 +1528,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListLevels",
+                "summary": "获取维度层级的层次列表 | List hierarchy levels",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1553,7 +1553,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListMetrics",
+                "summary": "获取指标列表 | List metrics",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1578,7 +1578,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "ListUnits",
+                "summary": "获取计量单位列表 | List units",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1603,7 +1603,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "SetElementMappings",
+                "summary": "设置术语关联的数据元 | Set element mappings of glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1628,7 +1628,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "SetMappings",
+                "summary": "设置文档关联映射 | Set document mappings",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1653,7 +1653,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UnlinkDocFromElement",
+                "summary": "解除文档与数据元的关联 | Unlink document from element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1678,7 +1678,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UnlinkDocFromGlossary",
+                "summary": "解除文档与术语的关联 | Unlink document from glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1703,7 +1703,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UnlinkDocFromMetric",
+                "summary": "解除文档与指标的关联 | Unlink document from metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1728,7 +1728,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "Update",
+                "summary": "更新维度层级 | Update dimension hierarchy",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1753,7 +1753,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateCategory",
+                "summary": "更新度量类别 | Update measurement category",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1778,7 +1778,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateClassification",
+                "summary": "更新数据分类 | Update data classification",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1803,7 +1803,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateCodeItem",
+                "summary": "更新码值项 | Update code item",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1828,7 +1828,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateCodeSet",
+                "summary": "更新码值集 | Update code set",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1853,7 +1853,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateDocument",
+                "summary": "更新标准文档 | Update standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1878,7 +1878,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateDomain",
+                "summary": "更新业务域 | Update business domain",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1903,7 +1903,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateElement",
+                "summary": "更新数据元 | Update data element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1928,7 +1928,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateGlossary",
+                "summary": "更新业务术语 | Update glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1953,7 +1953,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateGradingLevel",
+                "summary": "更新数据分级 | Update data grading level",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1978,7 +1978,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateLevel",
+                "summary": "更新层次 | Update hierarchy level",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2003,7 +2003,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateMetric",
+                "summary": "更新指标 | Update metric",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2028,7 +2028,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UpdateUnit",
+                "summary": "更新计量单位 | Update unit",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2053,7 +2053,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "UploadFile",
+                "summary": "上传文档文件 | Upload document file",
                 "responses": {
                     "200": {
                         "description": "OK",

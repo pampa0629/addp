@@ -39,10 +39,15 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 // GetObjectMetadata 获取对象的元数据
 // GET /api/meta/metadata/object
 // Query params: engine_id, object_key
-// @Summary 获取对象元数据
+// @Summary 获取对象元数据 | Get object metadata
+// @Description 获取指定对象存储文件的元数据信息 | Get metadata information for a specific object storage file
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param object_key query string true "对象存储路径 | Object storage path"
+// @Success 200 {object} map[string]interface{} "对象元数据 | Object metadata"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "对象不存在 | Object not found"
 // @Router /metadata/object [get]
 // @Security BearerAuth
 func (h *Handler) GetObjectMetadata(c *gin.Context) {
@@ -72,10 +77,12 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 
 // GetResources 获取资源列表及统计
 // GET /api/meta/engines
-// @Summary 获取引擎列表
+// @Summary 获取引擎列表 | Get engine list
+// @Description 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /engines [get]
 // @Security BearerAuth
 func (h *Handler) GetEngines(c *gin.Context) {
@@ -92,10 +99,14 @@ func (h *Handler) GetEngines(c *gin.Context) {
 
 // GetSchemas 获取资源的Schema列表
 // GET /api/meta/schemas/:engine_id
-// @Summary 获取Schema列表
+// @Summary 获取Schema列表 | Get schema list
+// @Description 获取指定存储引擎已扫描的Schema列表 | Get scanned schema list for a specific engine
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{} "Schema列表 | Schema list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /schemas/{engine_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetSchemas(c *gin.Context) {
@@ -119,10 +130,15 @@ func (h *Handler) GetSchemas(c *gin.Context) {
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
 // GET /api/meta/schemas/:engine_id/available
-// @Summary 列出可用Schema
+// @Summary 列出可用Schema | List available schemas
+// @Description 从数据库实时查询可用的Schema列表（非缓存）| Query available schemas from database in real-time (non-cached)
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{} "可用Schema列表 | Available schema list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /schemas/{engine_id}/available [get]
 // @Security BearerAuth
 func (h *Handler) ListAvailableSchemas(c *gin.Context) {
@@ -156,10 +172,16 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 }
 
 // ListObjectStorageNodes 分级列出对象存储节点
-// @Summary 列出对象存储节点
+// @Summary 列出对象存储节点 | List object storage nodes
+// @Description 分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes (Bucket/directory/file)
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param path query string false "路径前缀 | Path prefix"
+// @Success 200 {object} map[string]interface{} "节点列表 | Node list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /object-storage/{engine_id}/nodes [get]
 // @Security BearerAuth
 func (h *Handler) ListObjectStorageNodes(c *gin.Context) {

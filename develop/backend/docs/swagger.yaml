@@ -374,6 +374,10 @@ definitions:
         type: array
       execution_time_ms:
         type: integer
+      graph_data:
+        allOf:
+        - $ref: '#/definitions/plugin.GraphData'
+        description: 图数据（仅图数据库引擎）
       rows:
         items:
           additionalProperties: true
@@ -560,6 +564,43 @@ definitions:
         description: 启用定时扫描（深度固定为 deep）
         type: boolean
     type: object
+  plugin.GraphData:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/plugin.GraphNode'
+        type: array
+      relationships:
+        items:
+          $ref: '#/definitions/plugin.GraphRelationship'
+        type: array
+    type: object
+  plugin.GraphNode:
+    properties:
+      element_id:
+        type: string
+      labels:
+        items:
+          type: string
+        type: array
+      properties:
+        additionalProperties: true
+        type: object
+    type: object
+  plugin.GraphRelationship:
+    properties:
+      element_id:
+        type: string
+      end_node_id:
+        type: string
+      properties:
+        additionalProperties: true
+        type: object
+      start_node_id:
+        type: string
+      type:
+        type: string
+    type: object
 host: localhost:8085
 info:
   contact: {}
@@ -572,17 +613,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 引擎列表 | Engine list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取可用于 SQL 查询的数据源列表
+      summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
       tags:
       - Engines
   /engines/:id/schemas:
     get:
       parameters:
-      - description: 引擎ID
+      - description: 引擎ID | Engine ID
         in: path
         name: id
         required: true
@@ -591,22 +632,22 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Schema列表 | Schema list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取数据库 schema 列表
+      summary: 获取数据库 schema 列表 | List database schemas
       tags:
       - Engines
   /engines/:id/tables:
     get:
       parameters:
-      - description: 引擎ID
+      - description: 引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: Schema名称
+      - description: Schema名称 | Schema name
         in: query
         name: schema
         type: string
@@ -614,11 +655,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 表列表 | Table list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取数据库表列表
+      summary: 获取数据库表列表 | List database tables
       tags:
       - Engines
   /execute:
@@ -626,7 +667,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 查询请求
+      - description: 查询请求 | Query request
         in: body
         name: body
         required: true
@@ -636,44 +677,44 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 查询结果 | Query result
           schema:
             $ref: '#/definitions/internal_api.ExecuteQueryResponse'
-      summary: 执行 查询语句
+      summary: 执行查询语句 | Execute query statement
       tags:
       - Query
   /executions:
     get:
       parameters:
-      - description: 页码
+      - description: 页码 | Page number
         in: query
         name: page
         type: integer
-      - description: 每页数量
+      - description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
-      - description: 开发项ID过滤
+      - description: 开发项ID过滤 | Filter by development item ID
         in: query
         name: dev_item_id
         type: integer
-      - description: 类型过滤
+      - description: 类型过滤 | Filter by type
         in: query
         name: dev_type
         type: string
-      - description: 状态过滤
+      - description: 状态过滤 | Filter by status
         in: query
         name: status
         type: string
-      - description: 触发类型过滤
+      - description: 触发类型过滤 | Filter by trigger type
         in: query
         name: trigger_type
         type: string
-      - description: 开始日期 YYYY-MM-DD
+      - description: 开始日期 YYYY-MM-DD | Start date YYYY-MM-DD
         in: query
         name: start_date
         type: string
-      - description: 结束日期 YYYY-MM-DD
+      - description: 结束日期 YYYY-MM-DD | End date YYYY-MM-DD
         in: query
         name: end_date
         type: string
@@ -681,17 +722,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行列表 | Execution list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsResponse'
-      summary: 查询执行列表
+      summary: 查询执行列表 | List executions
       tags:
       - Execution
     post:
       consumes:
       - application/json
       parameters:
-      - description: 执行请求
+      - description: 执行请求 | Execution request
         in: body
         name: body
         required: true
@@ -701,18 +742,18 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行已启动 | Execution started
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 执行临时内容
+      summary: 执行临时内容 | Execute temporary content
       tags:
       - Execution
   /executions/{id}:
     get:
       parameters:
-      - description: 执行ID（UUID）
+      - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
         name: id
         required: true
@@ -721,34 +762,34 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行详情 | Execution details
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem'
-      summary: 获取执行详情
+      summary: 获取执行详情 | Get execution details
       tags:
       - Execution
   /executions/{id}/cancel:
     post:
       parameters:
-      - description: 执行ID（UUID）
+      - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
         name: id
         required: true
         type: string
       responses:
         "200":
-          description: OK
+          description: 取消成功 | Cancelled successfully
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 取消执行
+      summary: 取消执行 | Cancel execution
       tags:
       - Execution
   /executions/{id}/logs:
     get:
       parameters:
-      - description: 执行ID（UUID）
+      - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
         name: id
         required: true
@@ -757,43 +798,43 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行日志 | Execution logs
           schema:
             additionalProperties: true
             type: object
-      summary: 获取执行日志
+      summary: 获取执行日志 | Get execution logs
       tags:
       - Execution
   /executions/{id}/retry:
     post:
       parameters:
-      - description: 执行ID（UUID）
+      - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
         name: id
         required: true
         type: string
       responses:
         "200":
-          description: OK
+          description: 重试已启动 | Retry started
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 重试执行
+      summary: 重试执行 | Retry execution
       tags:
       - Execution
   /executions/statistics:
     get:
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: query
         name: dev_item_id
         type: integer
-      - description: 开始日期 YYYY-MM-DD
+      - description: 开始日期 YYYY-MM-DD | Start date YYYY-MM-DD
         in: query
         name: start_date
         type: string
-      - description: 结束日期 YYYY-MM-DD
+      - description: 结束日期 YYYY-MM-DD | End date YYYY-MM-DD
         in: query
         name: end_date
         type: string
@@ -801,40 +842,40 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行统计 | Execution statistics
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStatistics'
-      summary: 获取执行统计
+      summary: 获取执行统计 | Get execution statistics
       tags:
       - Execution
   /items:
     get:
       parameters:
-      - description: 页码
+      - description: 页码 | Page number
         in: query
         name: page
         type: integer
-      - description: 每页数量
+      - description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
-      - description: 类型过滤
+      - description: 类型过滤 | Filter by type
         in: query
         name: dev_type
         type: string
-      - description: 状态过滤
+      - description: 状态过滤 | Filter by status
         in: query
         name: status
         type: string
-      - description: 资源ID过滤
+      - description: 资源ID过滤 | Filter by engine ID
         in: query
         name: engine_id
         type: integer
-      - description: 标签过滤
+      - description: 标签过滤 | Filter by tag
         in: query
         name: tag
         type: string
-      - description: 关键词搜索
+      - description: 关键词搜索 | Keyword search
         in: query
         name: keyword
         type: string
@@ -842,17 +883,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 开发项列表 | Development item list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
-      summary: 查询开发项列表
+      summary: 查询开发项列表 | List development items
       tags:
       - DevItem
     post:
       consumes:
       - application/json
       parameters:
-      - description: 创建请求
+      - description: 创建请求 | Create request
         in: body
         name: body
         required: true
@@ -862,33 +903,33 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已创建的开发项 | Created development item
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 创建开发项
+      summary: 创建开发项 | Create development item
       tags:
       - DevItem
   /items/{id}:
     delete:
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: path
         name: id
         required: true
         type: integer
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 删除开发项
+      summary: 删除开发项 | Delete development item
       tags:
       - DevItem
     get:
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: path
         name: id
         required: true
@@ -897,22 +938,22 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 开发项详情 | Development item details
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 获取开发项详情
+      summary: 获取开发项详情 | Get development item details
       tags:
       - DevItem
     put:
       consumes:
       - application/json
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新请求
+      - description: 更新请求 | Update request
         in: body
         name: body
         required: true
@@ -922,10 +963,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已更新的开发项 | Updated development item
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 更新开发项
+      summary: 更新开发项 | Update development item
       tags:
       - DevItem
   /items/{id}/execute:
@@ -933,12 +974,12 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 执行参数
+      - description: 执行参数 | Execution parameters
         in: body
         name: body
         schema:
@@ -948,12 +989,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行已启动 | Execution started
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 执行开发项
+      summary: 执行开发项 | Execute development item
       tags:
       - DevItem
   /items/{id}/execute-with-params:
@@ -961,12 +1002,12 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 开发项ID
+      - description: 开发项ID | Development item ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 执行参数
+      - description: 执行参数 | Execution parameters
         in: body
         name: body
         required: true
@@ -977,12 +1018,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行已启动 | Execution started
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 参数化执行开发项
+      summary: 参数化执行开发项 | Execute development item with parameters
       tags:
       - Execution
   /items/statistics:
@@ -991,13 +1032,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 统计数据 | Statistics
           schema:
             additionalProperties:
               format: int64
               type: integer
             type: object
-      summary: 获取开发项统计
+      summary: 获取开发项统计 | Get development item statistics
       tags:
       - DevItem
   /jupyter/instance/start:
@@ -1006,10 +1047,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 实例信息 | Instance information
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
-      summary: 启动 Jupyter 实例
+      summary: 启动 Jupyter 实例 | Start Jupyter instance
       tags:
       - Jupyter Instance
   /jupyter/instance/status:
@@ -1018,10 +1059,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 实例状态 | Instance status
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
-      summary: 获取 Jupyter 实例状态
+      summary: 获取 Jupyter 实例状态 | Get Jupyter instance status
       tags:
       - Jupyter Instance
   /jupyter/instance/stop:
@@ -1030,12 +1071,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 停止成功 | Stopped successfully
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 停止 Jupyter 实例
+      summary: 停止 Jupyter 实例 | Stop Jupyter instance
       tags:
       - Jupyter Instance
   /jupyter/instances:
@@ -1044,24 +1085,24 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 实例列表 | Instance list
           schema:
             items:
               $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
             type: array
-      summary: 列出所有 Jupyter 实例
+      summary: 列出所有 Jupyter 实例 | List all Jupyter instances
       tags:
       - Jupyter Instance
   /notebooks:
     get:
       parameters:
       - default: 1
-        description: 页码
+        description: 页码 | Page number
         in: query
         name: page
         type: integer
       - default: 20
-        description: 每页数量
+        description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
@@ -1069,34 +1110,34 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Notebook列表 | Notebook list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
-      summary: 列出 Notebooks
+      summary: 列出 Notebooks | List Notebooks
       tags:
       - Notebook
   /notebooks/:id:
     delete:
       parameters:
-      - description: DevItem ID
+      - description: DevItem ID | DevItem ID
         in: path
         name: id
         required: true
         type: integer
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 删除 Notebook
+      summary: 删除 Notebook | Delete Notebook
       tags:
       - Notebook
   /notebooks/:id/download:
     get:
       parameters:
-      - description: DevItem ID
+      - description: DevItem ID | DevItem ID
         in: path
         name: id
         required: true
@@ -1105,10 +1146,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Notebook文件 | Notebook file
           schema:
             type: file
-      summary: 下载 Notebook
+      summary: 下载 Notebook | Download Notebook
       tags:
       - Notebook
   /notebooks/execute:
@@ -1116,7 +1157,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 执行请求
+      - description: 执行请求 | Execution request
         in: body
         name: body
         required: true
@@ -1126,10 +1167,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 执行结果 | Execution result
           schema:
             $ref: '#/definitions/internal_api.ExecuteNotebookResponse'
-      summary: 执行 Notebook
+      summary: 执行 Notebook | Execute Notebook
       tags:
       - Notebook
   /notebooks/health:
@@ -1138,12 +1179,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 健康状态 | Health status
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 检查 Jupyter Engine 健康状态
+      summary: 检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status
       tags:
       - Notebook
   /notebooks/jupyter-url:
@@ -1151,7 +1192,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 请求
+      - description: 请求 | Request
         in: body
         name: body
         required: true
@@ -1161,10 +1202,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Jupyter URL | Jupyter URL
           schema:
             $ref: '#/definitions/internal_api.GetJupyterURLResponse'
-      summary: 获取 Jupyter Lab 访问 URL
+      summary: 获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL
       tags:
       - Notebook
   /notebooks/kernels:
@@ -1173,10 +1214,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Kernel列表 | Kernel list
           schema:
             $ref: '#/definitions/internal_api.ListKernelsResponse'
-      summary: 列出可用的 Kernel
+      summary: 列出可用的 Kernel | List available kernels
       tags:
       - Notebook
   /notebooks/upload:
@@ -1184,25 +1225,25 @@ paths:
       consumes:
       - multipart/form-data
       parameters:
-      - description: Notebook 文件 (.ipynb)
+      - description: Notebook 文件 (.ipynb) | Notebook file (.ipynb)
         in: formData
         name: file
         required: true
         type: file
-      - description: Notebook 名称
+      - description: Notebook 名称 | Notebook name
         in: formData
         name: name
         required: true
         type: string
-      - description: 描述
+      - description: 描述 | Description
         in: formData
         name: description
         type: string
-      - description: 数据源 IDs (JSON 数组)
+      - description: 数据源 IDs (JSON 数组) | Data source IDs (JSON array)
         in: formData
         name: data_sources
         type: string
-      - description: 参数 (JSON 对象)
+      - description: 参数 (JSON 对象) | Parameters (JSON object)
         in: formData
         name: parameters
         type: string
@@ -1210,10 +1251,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已上传的Notebook | Uploaded Notebook
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 上传 Notebook
+      summary: 上传 Notebook | Upload Notebook
       tags:
       - Notebook
   /operators:
@@ -1222,17 +1263,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 算子列表 | Operator list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取所有模块的算子列表
+      summary: 获取所有模块的算子列表 | List all operators from all modules
       tags:
       - Operator
   /operators/{name}:
     get:
       parameters:
-      - description: 算子名称
+      - description: 算子名称 | Operator name
         in: path
         name: name
         required: true
@@ -1241,11 +1282,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 算子详情 | Operator details
           schema:
             additionalProperties: true
             type: object
-      summary: 获取算子详情
+      summary: 获取算子详情 | Get operator details
       tags:
       - Operator
   /operators/cache/info:
@@ -1254,17 +1295,18 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 缓存信息 | Cache information
           schema:
             additionalProperties: true
             type: object
-      summary: 获取缓存信息
+      summary: 获取缓存信息 | Get cache information
       tags:
       - Operator
   /operators/engine-types/{engineType}:
     get:
       parameters:
-      - description: 工作流引擎类型（动态从 system 获取）
+      - description: 工作流引擎类型（动态从 system 获取）| Workflow engine type (fetched dynamically
+          from system)
         in: path
         name: engineType
         required: true
@@ -1273,17 +1315,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 算子列表 | Operator list
           schema:
             additionalProperties: true
             type: object
-      summary: 根据引擎类型获取算子列表
+      summary: 根据引擎类型获取算子列表 | List operators by engine type
       tags:
       - Operator
   /operators/modules/{module}:
     get:
       parameters:
-      - description: 模块名称（任务提供者或工作流引擎）
+      - description: 模块名称（任务提供者或工作流引擎）| Module name (task provider or workflow engine)
         in: path
         name: module
         required: true
@@ -1292,11 +1334,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 算子列表 | Operator list
           schema:
             additionalProperties: true
             type: object
-      summary: 获取指定模块的算子列表
+      summary: 获取指定模块的算子列表 | List operators by module
       tags:
       - Operator
   /operators/refresh:
@@ -1305,11 +1347,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 缓存已刷新 | Cache refreshed
           schema:
             additionalProperties: true
             type: object
-      summary: 刷新算子缓存
+      summary: 刷新算子缓存 | Refresh operator cache
       tags:
       - Operator
   /spark-runtimes:
@@ -1318,30 +1360,30 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Spark运行时列表 | Spark runtime list
           schema:
             items:
               $ref: '#/definitions/models.Engine'
             type: array
-      summary: 获取所有 Apache Spark 运行时列表
+      summary: 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
       tags:
       - Engines
   /sql/tasks:
     get:
       parameters:
-      - description: 页码
+      - description: 页码 | Page number
         in: query
         name: page
         type: integer
-      - description: 每页数量
+      - description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
-      - description: 状态过滤
+      - description: 状态过滤 | Filter by status
         in: query
         name: status
         type: string
-      - description: 关键词搜索
+      - description: 关键词搜索 | Keyword search
         in: query
         name: keyword
         type: string
@@ -1349,17 +1391,17 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务列表 | Task list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
-      summary: 获取 查询任务列表
+      summary: 获取查询任务列表 | List query tasks
       tags:
       - Query
     post:
       consumes:
       - application/json
       parameters:
-      - description: 保存请求
+      - description: 保存请求 | Save request
         in: body
         name: body
         required: true
@@ -1369,33 +1411,33 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已保存的任务 | Saved task
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 保存 SQL 为任务
+      summary: 保存 SQL 为任务 | Save SQL as task
       tags:
       - Query
   /sql/tasks/{id}:
     delete:
       parameters:
-      - description: 任务ID
+      - description: 任务ID | Task ID
         in: path
         name: id
         required: true
         type: integer
       responses:
         "200":
-          description: OK
+          description: 删除成功 | Deleted successfully
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 删除 查询任务
+      summary: 删除查询任务 | Delete query task
       tags:
       - Query
     get:
       parameters:
-      - description: 任务ID
+      - description: 任务ID | Task ID
         in: path
         name: id
         required: true
@@ -1404,22 +1446,22 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 任务详情 | Task details
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 获取 查询任务详情
+      summary: 获取查询任务详情 | Get query task details
       tags:
       - Query
     put:
       consumes:
       - application/json
       parameters:
-      - description: 任务ID
+      - description: 任务ID | Task ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新请求
+      - description: 更新请求 | Update request
         in: body
         name: body
         required: true
@@ -1429,10 +1471,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 已更新的任务 | Updated task
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 更新 查询任务
+      summary: 更新查询任务 | Update query task
       tags:
       - Query
   /test/{id}:
@@ -1440,7 +1482,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 资源ID
+      - description: 资源ID | Resource ID
         in: path
         name: id
         required: true
@@ -1449,12 +1491,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 连接测试成功 | Connection test successful
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: 测试数据源连接
+      summary: 测试数据源连接 | Test data source connection
       tags:
       - Query
   /workflow-engines:
@@ -1463,12 +1505,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 工作流引擎列表 | Workflow engine list
           schema:
             items:
               $ref: '#/definitions/models.Engine'
             type: array
-      summary: 获取支持 workflow 的计算引擎列表
+      summary: 获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines
       tags:
       - Engines
 securityDefinitions:

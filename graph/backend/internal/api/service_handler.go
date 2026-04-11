@@ -54,12 +54,12 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 	return graphID, kg.TenantID, true
 }
 
-// @Summary 按类型列出实体（分页）
-// @Tags 知识服务
-// @Param graphId path int true "图谱 ID"
-// @Param type path string true "本体实体类型名称"
-// @Param page query int false "页码（默认 1）"
-// @Param page_size query int false "每页大小（默认 20）"
+// @Summary 按类型列出实体（分页）| List entities by type (paginated)
+// @Tags         知识服务 | Knowledge Service
+// @Param graphId path int true "图谱 ID | Graph ID"
+// @Param type path string true "本体实体类型名称 | Ontology entity type name"
+// @Param page query int false "页码（默认 1）| Page number (default 1)"
+// @Param page_size query int false "每页大小（默认 20）| Page size (default 20)"
 // @Router /kg/{graphId}/entities/{type} [get]
 func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -92,8 +92,8 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	})
 }
 
-// @Summary 获取实体详情
-// @Tags 知识服务
+// @Summary 获取实体详情 | Get entity detail
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/entities/{type}/{nodeId} [get]
 func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -109,8 +109,8 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, entity)
 }
 
-// @Summary 获取节点邻居
-// @Tags 知识服务
+// @Summary 获取节点邻居 | Get node neighbors
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/nodes/{nodeId}/neighbors [get]
 func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -128,8 +128,8 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary 路径查找
-// @Tags 知识服务
+// @Summary 路径查找 | Find paths
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/paths [post]
 func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -149,8 +149,8 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary 获取实体中心子图
-// @Tags 知识服务
+// @Summary 获取实体中心子图 | Get entity-centric subgraph
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/subgraph [post]
 func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -170,8 +170,8 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary 全文搜索实体
-// @Tags 知识服务
+// @Summary 全文搜索实体 | Full-text search entities
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -209,8 +209,8 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	})
 }
 
-// @Summary 获取图谱本体描述
-// @Tags 知识服务
+// @Summary 获取图谱本体描述 | Get graph ontology description
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/ontology [get]
 func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -225,8 +225,8 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary 图谱统计信息
-// @Tags 知识服务
+// @Summary 图谱统计信息 | Graph statistics
+// @Tags         知识服务 | Knowledge Service
 // @Router /kg/{graphId}/stats [get]
 func (h *ServiceHandler) GetStats(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))

@@ -28,12 +28,12 @@ func NewWMTSHandler(tileServiceService *service.TileServiceService) *WMTSHandler
 }
 
 // GetCapabilities 返回 WMTS 1.0.0 Capabilities XML
-// @Summary 获取 WMTS Capabilities
+// @Summary 获取 WMTS Capabilities | Get WMTS Capabilities
 // @Tags WMTS
 // @Produce xml
-// @Param serviceName path string true "服务名称"
-// @Param request query string false "请求类型 (GetCapabilities)"
-// @Success 200 {object} Capabilities
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param request query string false "请求类型 (GetCapabilities) | Request type (GetCapabilities)"
+// @Success 200 {object} Capabilities "WMTS Capabilities XML | WMTS Capabilities XML"
 // @Router /wmts/{serviceName} [get]
 func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 	serviceName := c.Param("serviceName")

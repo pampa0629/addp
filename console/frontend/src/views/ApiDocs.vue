@@ -2,22 +2,22 @@
   <div class="api-docs-container">
     <!-- 头部 -->
     <div class="api-docs-header">
-      <span class="title">API 文档</span>
+      <span class="title">{{ t('console.apiDocs.title') }}</span>
       <div class="header-actions">
         <el-popover placement="bottom-end" :width="400" trigger="click">
           <template #reference>
             <el-button :icon="QuestionFilled" circle size="small" />
           </template>
           <div class="help-content">
-            <h4>ADDP 平台 API 文档</h4>
-            <p><strong>Base URL:</strong> http://localhost:8000 (Gateway 统一入口)</p>
-            <p><strong>版本前缀:</strong> /api/v1/</p>
-            <p><strong>认证方式:</strong> Bearer Token (JWT)</p>
-            <p><strong>Content-Type:</strong> application/json</p>
-            <p><strong>说明:</strong> 基于 Swagger/OpenAPI 自动生成，各模块独立提供</p>
+            <h4>{{ t('console.apiDocs.helpTitle') }}</h4>
+            <p>{{ t('console.apiDocs.helpBaseUrl') }}</p>
+            <p>{{ t('console.apiDocs.helpVersionPrefix') }}</p>
+            <p>{{ t('console.apiDocs.helpAuth') }}</p>
+            <p>{{ t('console.apiDocs.helpContentType') }}</p>
+            <p>{{ t('console.apiDocs.helpNote') }}</p>
           </div>
         </el-popover>
-        <el-tag type="info" size="small">平台级文档中心</el-tag>
+        <el-tag type="info" size="small">{{ t('console.apiDocs.platformCenter') }}</el-tag>
       </div>
     </div>
 
@@ -54,37 +54,37 @@
                 v-if="moduleStatus[selectedModule.name] === 'online'"
                 type="success"
                 size="small"
-              >在线</el-tag>
+              >{{ t('console.apiDocs.online') }}</el-tag>
               <el-tag
                 v-else-if="moduleStatus[selectedModule.name] === 'offline'"
                 type="danger"
                 size="small"
-              >离线</el-tag>
-              <el-tag v-else size="small">检测中</el-tag>
+              >{{ t('console.apiDocs.offline') }}</el-tag>
+              <el-tag v-else size="small">{{ t('console.apiDocs.checking') }}</el-tag>
               <el-button
                 type="primary"
                 size="small"
                 link
                 @click="openInNewTab(selectedModule.swaggerUrl)"
               >
-                在新标签页打开
+                {{ t('console.apiDocs.openInNewTab') }}
               </el-button>
             </div>
           </div>
           <template v-if="moduleStatus[selectedModule.name] === 'offline'">
             <div class="error-state">
-              <el-result icon="warning" title="模块离线" sub-title="该模块服务未运行，无法加载 API 文档">
+              <el-result icon="warning" :title="t('console.apiDocs.moduleOfflineTitle')" :sub-title="t('console.apiDocs.moduleOfflineDesc')">
                 <template #extra>
-                  <el-button size="small" @click="checkModuleStatus(selectedModule)">重新检测</el-button>
+                  <el-button size="small" @click="checkModuleStatus(selectedModule)">{{ t('console.apiDocs.recheck') }}</el-button>
                 </template>
               </el-result>
             </div>
           </template>
           <template v-else-if="iframeError">
             <div class="error-state">
-              <el-result icon="info" title="暂无 Swagger 文档" sub-title="该模块尚未配置 Swagger，服务在线但文档不可用">
+              <el-result icon="info" :title="t('console.apiDocs.noSwaggerTitle')" :sub-title="t('console.apiDocs.noSwaggerDesc')">
                 <template #extra>
-                  <el-button size="small" @click="openInNewTab(selectedModule.swaggerUrl)">尝试直接访问</el-button>
+                  <el-button size="small" @click="openInNewTab(selectedModule.swaggerUrl)">{{ t('console.apiDocs.tryDirectAccess') }}</el-button>
                 </template>
               </el-result>
             </div>
@@ -101,7 +101,7 @@
         </template>
         <template v-else>
           <div class="welcome">
-            <el-empty description="请在左侧选择一个模块查看 API 文档">
+            <el-empty :description="t('console.apiDocs.selectModule')">
               <template #image>
                 <div class="welcome-icon">📖</div>
               </template>
@@ -114,8 +114,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const isDev = import.meta.env.DEV
 const protocol = window.location.protocol
@@ -126,113 +129,113 @@ const hostname = window.location.hostname
 // healthUrl: 开发环境通过 Vite proxy 避免 CORS，生产环境不检测
 const viewer = (specUrl) => `/swagger-viewer.html?url=${encodeURIComponent(specUrl)}`
 
-const modules = [
+const modules = computed(() => [
   {
     name: 'agent',
-    label: 'Agent - AI智能体',
+    label: t('console.apiDocs.modules.agent'),
     port: ':8190',
     swaggerUrl: isDev ? viewer('/swagger-spec/agent') : viewer('/agent/openapi.json'),
     healthUrl: isDev ? '/module-health/agent' : null,
   },
   {
     name: 'copilot',
-    label: 'Copilot - AI助手',
+    label: t('console.apiDocs.modules.copilot'),
     port: ':8087',
     swaggerUrl: isDev ? viewer('/swagger-spec/copilot') : viewer('/copilot/openapi.json'),
     healthUrl: isDev ? '/module-health/copilot' : null,
   },
   {
     name: 'graph',
-    label: 'Graph - 知识图谱',
+    label: t('console.apiDocs.modules.graph'),
     port: ':8186',
     swaggerUrl: isDev ? viewer('/swagger-spec/graph') : viewer('/graph/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/graph' : null,
   },
   {
     name: 'develop',
-    label: 'Develop - 数据开发',
+    label: t('console.apiDocs.modules.develop'),
     port: ':8085',
     swaggerUrl: isDev ? viewer('/swagger-spec/develop') : viewer('/develop/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/develop' : null,
   },
   {
     name: 'manager',
-    label: 'Manager - 数据管理',
+    label: t('console.apiDocs.modules.manager'),
     port: ':8081',
     swaggerUrl: isDev ? viewer('/swagger-spec/manager') : viewer('/manager/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/manager' : null,
   },
   {
     name: 'meta',
-    label: 'Meta - 元数据',
+    label: t('console.apiDocs.modules.meta'),
     port: ':8082',
     swaggerUrl: isDev ? viewer('/swagger-spec/meta') : viewer('/meta/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/meta' : null,
   },
   {
     name: 'model',
-    label: 'Model - 数据建模',
+    label: t('console.apiDocs.modules.model'),
     port: ':8181',
     swaggerUrl: isDev ? viewer('/swagger-spec/model') : viewer('/model/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/model' : null,
   },
   {
     name: 'monitor',
-    label: 'Monitor - 执行监控',
+    label: t('console.apiDocs.modules.monitor'),
     port: ':8100',
     swaggerUrl: isDev ? viewer('/swagger-spec/monitor') : viewer('/monitor/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/monitor' : null,
   },
   {
     name: 'orchestrator',
-    label: 'Orchestrator - 工作流编排',
+    label: t('console.apiDocs.modules.orchestrator'),
     port: ':8084',
     swaggerUrl: isDev ? viewer('/swagger-spec/orchestrator') : viewer('/orchestrator/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/orchestrator' : null,
   },
   {
     name: 'portal',
-    label: 'Portal - 资产门户',
+    label: t('console.apiDocs.modules.portal'),
     port: ':8184',
     swaggerUrl: isDev ? viewer('/swagger-spec/portal') : viewer('/portal/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/portal' : null,
   },
   {
     name: 'quality',
-    label: 'Quality - 数据质量',
+    label: t('console.apiDocs.modules.quality'),
     port: ':8182',
     swaggerUrl: isDev ? viewer('/swagger-spec/quality') : viewer('/quality/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/quality' : null,
   },
   {
     name: 'service',
-    label: 'Service - 数据服务',
+    label: t('console.apiDocs.modules.service'),
     port: ':8086',
     swaggerUrl: isDev ? viewer('/swagger-spec/service') : viewer('/service/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/service' : null,
   },
   {
     name: 'standard',
-    label: 'Standard - 数据标准',
+    label: t('console.apiDocs.modules.standard'),
     port: ':8110',
     swaggerUrl: isDev ? viewer('/swagger-spec/standard') : viewer('/standard/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/standard' : null,
   },
   {
     name: 'system',
-    label: 'System - 系统模块',
+    label: t('console.apiDocs.modules.system'),
     port: ':8180',
     swaggerUrl: isDev ? viewer('/swagger-spec/system') : viewer('/system/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/system' : null,
   },
   {
     name: 'transfer',
-    label: 'Transfer - 数据传输',
+    label: t('console.apiDocs.modules.transfer'),
     port: ':8083',
     swaggerUrl: isDev ? viewer('/swagger-spec/transfer') : viewer('/transfer/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/transfer' : null,
   },
-]
+])
 
 const selectedModule = ref(null)
 const moduleStatus = ref({})
@@ -253,7 +256,7 @@ const checkModuleStatus = async (mod) => {
 }
 
 const checkAllModules = () => {
-  modules.forEach(mod => checkModuleStatus(mod))
+  modules.value.forEach(mod => checkModuleStatus(mod))
 }
 
 onMounted(() => {

@@ -18,7 +18,7 @@ func NewCheckTaskHandler(svc *service.CheckTaskService, executor *service.CheckE
 	return &CheckTaskHandler{svc: svc, executor: executor}
 }
 
-// @Summary 获取检查任务列表
+// @Summary 获取检查任务列表 | List check tasks
 // @Tags CheckTask
 // @Produce json
 // @Success 200 {array} map[string]interface{}
@@ -34,10 +34,10 @@ func (h *CheckTaskHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// @Summary 获取检查任务详情
+// @Summary 获取检查任务详情 | Get check task detail
 // @Tags CheckTask
 // @Produce json
-// @Param id path int true "任务ID"
+// @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /check-tasks/{id} [get]
 // @Security BearerAuth
@@ -56,11 +56,11 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 创建检查任务
+// @Summary 创建检查任务 | Create check task
 // @Tags CheckTask
 // @Accept json
 // @Produce json
-// @Param body body map[string]interface{} true "任务信息"
+// @Param body body map[string]interface{} true "任务信息 | Task info"
 // @Success 201 {object} map[string]interface{}
 // @Router /check-tasks [post]
 // @Security BearerAuth
@@ -80,12 +80,12 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, item)
 }
 
-// @Summary 更新检查任务
+// @Summary 更新检查任务 | Update check task
 // @Tags CheckTask
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Param body body map[string]interface{} true "更新信息"
+// @Param id path int true "任务ID | Task ID"
+// @Param body body map[string]interface{} true "更新信息 | Update info"
 // @Success 200 {object} map[string]interface{}
 // @Router /check-tasks/{id} [put]
 // @Security BearerAuth
@@ -109,10 +109,10 @@ func (h *CheckTaskHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 删除检查任务
+// @Summary 删除检查任务 | Delete check task
 // @Tags CheckTask
 // @Produce json
-// @Param id path int true "任务ID"
+// @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
 // @Router /check-tasks/{id} [delete]
 // @Security BearerAuth
@@ -130,10 +130,10 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// @Summary 执行检查任务
+// @Summary 执行检查任务 | Run check task
 // @Tags CheckTask
 // @Produce json
-// @Param id path int true "任务ID"
+// @Param id path int true "任务ID | Task ID"
 // @Success 202 {object} map[string]string
 // @Router /check-tasks/{id}/run [post]
 // @Security BearerAuth

@@ -15,16 +15,24 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "获取引擎列表",
+                "summary": "获取引擎列表 | Get engine list",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "引擎列表 | Engine list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -40,16 +48,47 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定对象存储文件的元数据信息 | Get metadata information for a specific object storage file",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "获取对象元数据",
+                "summary": "获取对象元数据 | Get object metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "对象存储路径 | Object storage path",
+                        "name": "object_key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "对象元数据 | Object metadata",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "对象不存在 | Object not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -65,16 +104,53 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes (Bucket/directory/file)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "列出对象存储节点",
+                "summary": "列出对象存储节点 | List object storage nodes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "路径前缀 | Path prefix",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "节点列表 | Node list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -90,16 +166,40 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定存储引擎已扫描的Schema列表 | Get scanned schema list for a specific engine",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "获取Schema列表",
+                "summary": "获取Schema列表 | Get schema list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Schema列表 | Schema list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -115,16 +215,47 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "从数据库实时查询可用的Schema列表（非缓存）| Query available schemas from database in real-time (non-cached)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "列出可用Schema",
+                "summary": "列出可用Schema | List available schemas",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "可用Schema列表 | Available schema list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

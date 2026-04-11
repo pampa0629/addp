@@ -28,10 +28,19 @@ func NewGeoJSONHandler(systemClient *commonClient.SystemClient) *GeoJSONHandler 
 
 // GetGeoJSON 获取表的 GeoJSON 数据（轻量级，支持分页）
 // GET /api/engines/:id/spatial/:schema/:table/geojson
-// @Summary GetGeoJSON
+// @Summary 获取GeoJSON数据 | Get GeoJSON data
+// @Description 获取空间数据表的GeoJSON格式数据，支持分页 | Get spatial table data in GeoJSON format with pagination support
 // @Tags Manager
-// @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Produce application/geo+json
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认1000，最大5000 | Page size, default 1000, max 5000"
+// @Param geom_column query string false "几何列名，默认geom | Geometry column, default geom"
+// @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /getgeojson [get]
 // @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
@@ -152,10 +161,17 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 
 // GetGeoJSONMetadata 获取 GeoJSON 元数据（范围、记录数等）
 // GET /api/engines/:id/spatial/:schema/:table/geojson/metadata
-// @Summary GetGeoJSONMetadata
+// @Summary 获取GeoJSON元数据 | Get GeoJSON metadata
+// @Description 获取空间数据表的元数据信息（记录数、地理范围、坐标系等）| Get spatial table metadata (record count, extent, SRID, etc.)
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param schema path string true "数据库Schema | Database schema"
+// @Param table path string true "数据表名 | Table name"
+// @Param geom_column query string false "几何列名，默认geom | Geometry column, default geom"
+// @Success 200 {object} map[string]interface{} "元数据信息 | Metadata"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /getgeojsonmetadata [get]
 // @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {

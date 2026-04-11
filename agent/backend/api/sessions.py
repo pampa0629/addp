@@ -9,7 +9,7 @@ from typing import Optional, List
 from database import get_db
 from models.session import Session
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(prefix="/sessions", tags=["会话管理 | Sessions"])
 
 
 class SessionCreate(BaseModel):
@@ -26,7 +26,7 @@ class SessionResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("")
+@router.get("", summary="获取会话列表 | List Sessions")
 async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     """获取当前用户的会话列表"""
     user_id = request.state.user_id
@@ -47,7 +47,7 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, summary="创建会话 | Create Session")
 async def create_session(request: Request, body: SessionCreate, db: AsyncSession = Depends(get_db)):
     """创建新会话"""
     session = Session(
@@ -65,7 +65,7 @@ async def create_session(request: Request, body: SessionCreate, db: AsyncSession
     }
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", summary="获取会话详情 | Get Session")
 async def get_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """获取会话详情"""
     result = await db.execute(
@@ -85,7 +85,7 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
     }
 
 
-@router.delete("/{session_id}")
+@router.delete("/{session_id}", summary="删除会话 | Delete Session")
 async def delete_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """删除会话"""
     result = await db.execute(

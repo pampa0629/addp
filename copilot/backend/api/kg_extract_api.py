@@ -10,7 +10,7 @@ from pipelines.kg_build_pipeline import KGBuildPipeline
 router = APIRouter()
 
 
-@router.post("/kg-build/extract", response_model=KGExtractResponse)
+@router.post("/kg-build/extract", response_model=KGExtractResponse, summary="抽取实体关系 | Extract From Chunk")
 async def extract_from_chunk(request: KGExtractRequest):
     """
     从单个文本 chunk 抽取实体和关系

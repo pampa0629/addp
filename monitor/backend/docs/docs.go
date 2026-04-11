@@ -28,7 +28,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "CheckAllModules",
+                "summary": "检查所有模块健康状态 | Check all modules health",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -53,7 +53,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "CheckModuleHealth",
+                "summary": "检查模块健康状态 | Check module health",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -78,7 +78,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "GetExecution",
+                "summary": "获取执行记录详情 | Get execution record detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -103,7 +103,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "GetModules",
+                "summary": "获取模块列表 | Get module list",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -128,7 +128,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "GetStatistics",
+                "summary": "获取统计数据 | Get statistics",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -153,7 +153,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "GetTrendData",
+                "summary": "获取趋势数据 | Get trend data",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -178,7 +178,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "ListExecutions",
+                "summary": "查询执行记录列表 | List execution records",
                 "responses": {
                     "200": {
                         "description": "OK",

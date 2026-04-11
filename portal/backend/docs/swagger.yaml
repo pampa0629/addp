@@ -2,22 +2,21 @@ basePath: /api/v1/portal
 host: localhost:8184
 info:
   contact: {}
-  description: 全域数据平台 - 资产门户 API
   title: ADDP Portal API
   version: "1.0"
 paths:
   /assets:
     get:
       parameters:
-      - description: 搜索关键词
+      - description: 搜索关键词 | Search keyword
         in: query
         name: keyword
         type: string
-      - description: 类型ID
+      - description: 类型ID | Type ID
         in: query
         name: type_id
         type: integer
-      - description: 目录ID
+      - description: 目录ID | Catalog ID
         in: query
         name: catalog_id
         type: integer
@@ -31,13 +30,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产列表
+      summary: 获取资产列表 | Get asset list
       tags:
       - Portal
   /assets/{id}:
     get:
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
@@ -52,7 +51,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产详情
+      summary: 获取资产详情 | Get asset detail
       tags:
       - Portal
   /assets/{id}/apply:
@@ -60,12 +59,12 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 申请信息
+      - description: 申请信息 | Application info
         in: body
         name: body
         required: true
@@ -82,13 +81,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 申请使用资产
+      summary: 申请使用资产 | Apply for asset access
       tags:
       - Portal
   /assets/{id}/apply-status:
     get:
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
@@ -103,13 +102,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产申请状态
+      summary: 获取资产申请状态 | Get asset apply status
       tags:
       - Portal
   /assets/{id}/endpoints:
     get:
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
@@ -124,13 +123,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产服务端点
+      summary: 获取资产服务端点 | Get asset service endpoints
       tags:
       - Portal
   /assets/{id}/ratings:
     get:
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
@@ -145,19 +144,19 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产评价列表
+      summary: 获取资产评价列表 | Get asset ratings
       tags:
       - Portal
     post:
       consumes:
       - application/json
       parameters:
-      - description: 资产ID
+      - description: 资产ID | Asset ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 评价信息
+      - description: 评价信息 | Rating info
         in: body
         name: body
         required: true
@@ -174,7 +173,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 提交资产评价
+      summary: 提交资产评价 | Submit asset rating
       tags:
       - Portal
   /catalogs:
@@ -191,13 +190,13 @@ paths:
             type: array
       security:
       - BearerAuth: []
-      summary: 获取目录树
+      summary: 获取目录树 | Get catalog tree
       tags:
       - Portal
   /catalogs/{id}/assets:
     get:
       parameters:
-      - description: 目录ID
+      - description: 目录ID | Catalog ID
         in: path
         name: id
         required: true
@@ -212,7 +211,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取目录下的资产列表
+      summary: 获取目录下的资产列表 | Get assets in catalog
       tags:
       - Portal
   /home:
@@ -227,7 +226,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取门户首页数据
+      summary: 获取门户首页数据 | Get portal home data
       tags:
       - Portal
   /my/applications:
@@ -244,13 +243,13 @@ paths:
             type: array
       security:
       - BearerAuth: []
-      summary: 获取我的申请列表
+      summary: 获取我的申请列表 | Get my applications
       tags:
       - Portal
   /search:
     get:
       parameters:
-      - description: 搜索关键词
+      - description: 搜索关键词 | Search keyword
         in: query
         name: keyword
         type: string
@@ -264,7 +263,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 搜索资产
+      summary: 搜索资产 | Search assets
       tags:
       - Portal
 securityDefinitions:

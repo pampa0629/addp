@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -18,7 +20,7 @@ func NewDomainHandler(svc *service.DomainService) *DomainHandler {
 }
 
 // ListDomains GET /api/model/domains
-// @Summary ListDomains
+// @Summary 获取业务域列表 | List business domains
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -35,7 +37,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 }
 
 // CreateDomain POST /api/model/domains
-// @Summary CreateDomain
+// @Summary 创建业务域 | Create business domain
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -60,7 +62,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 }
 
 // GetDomain GET /api/model/domains/:id
-// @Summary GetDomain
+// @Summary 获取业务域详情 | Get business domain detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -69,21 +71,21 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 func (h *DomainHandler) GetDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	domain, err := h.svc.GetDomain(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgDomainNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, domain)
 }
 
 // UpdateDomain PUT /api/model/domains/:id
-// @Summary UpdateDomain
+// @Summary 更新业务域 | Update business domain
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -92,7 +94,7 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -114,7 +116,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 }
 
 // DeleteDomain DELETE /api/model/domains/:id
-// @Summary DeleteDomain
+// @Summary 删除业务域 | Delete business domain
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -123,7 +125,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -132,5 +134,5 @@ func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }

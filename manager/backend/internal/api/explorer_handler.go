@@ -36,10 +36,15 @@ func NewExplorerHandler(
 
 // GetTree 获取引擎的资源树
 // GET /api/explorer/tree/:engine_id?expand_depth=2
-// @Summary GetTree
+// @Summary 获取资源树 | Get resource tree
+// @Description 获取指定存储引擎的完整资源树结构 | Get the complete resource tree structure for a specific engine
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param expand_depth query int false "展开深度，默认2 | Expand depth, default 2"
+// @Success 200 {object} map[string]interface{} "资源树 | Resource tree"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Router /gettree [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) GetTree(c *gin.Context) {
@@ -85,11 +90,15 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 
 // RefreshNode 刷新指定节点
 // POST /api/explorer/tree/:engine_id/refresh?locator=addp://engine/1/path/public?type=schema
-// @Summary RefreshNode
+// @Summary 刷新资源节点 | Refresh resource node
+// @Description 刷新指定资源节点的元数据信息 | Refresh metadata for a specific resource node
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /refreshnode [get]
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Success 200 {object} map[string]interface{} "刷新后的节点信息 | Refreshed node info"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Router /refreshnode [post]
 // @Security BearerAuth
 func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -127,10 +136,17 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 
 // Preview 数据预览
 // GET /api/explorer/preview?locator=addp://engine/1/path/public/users?type=table&page=1&page_size=20
-// @Summary Preview
+// @Summary 数据预览 | Data preview
+// @Description 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator, supports tables, files, and more
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "预览数据 | Preview data"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Router /preview [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) Preview(c *gin.Context) {
@@ -190,10 +206,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 
 // ListEngines 获取可用引擎列表
 // GET /api/explorer/engines
-// @Summary ListEngines
+// @Summary 获取引擎列表 | List engines
+// @Description 获取当前租户可用的存储引擎列表 | Get available storage engine list for the current tenant
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /listengines [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) ListEngines(c *gin.Context) {
@@ -218,10 +236,16 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 
 // GetNodeChildren 获取节点的子节点（增量加载）
 // GET /api/manager/tree/:engine_id/node?locator=addp://engine/1/path/bucket1?type=bucket&expand_depth=1
-// @Summary GetNodeChildren
+// @Summary 获取节点子节点 | Get node children
+// @Description 增量加载指定节点的子节点，避免全量重载 | Incrementally load children of a specific node to avoid full reload
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param expand_depth query int false "展开深度，默认1 | Expand depth, default 1"
+// @Success 200 {object} map[string]interface{} "子节点列表 | Children list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Router /getnodechildren [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
@@ -277,10 +301,17 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 
 // SearchNodes 搜索资源树节点
 // GET /api/manager/tree/:engine_id/search?q=data&node_types=table,schema&limit=50
-// @Summary SearchNodes
+// @Summary 搜索资源节点 | Search resource nodes
+// @Description 在资源树中搜索匹配关键词的节点 | Search for nodes matching a keyword in the resource tree
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param q query string true "搜索关键词（至少2个字符）| Search keyword (at least 2 characters)"
+// @Param node_types query string false "节点类型过滤，逗号分隔 | Node type filter, comma-separated"
+// @Param limit query int false "返回数量限制，默认50 | Result limit, default 50"
+// @Success 200 {object} map[string]interface{} "搜索结果 | Search results"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Router /searchnodes [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
@@ -371,10 +402,16 @@ func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
 
 // VideoStream 视频流式传输（支持 Range 请求）
 // GET /api/explorer/video-stream?engine_id=1&object_key=bucket/path/to/video.mp4
-// @Summary VideoStream
+// @Summary 视频流式传输 | Video streaming
+// @Description 支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support for online playback
 // @Tags Manager
-// @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Produce octet-stream
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param object_key query string true "对象存储路径 | Object storage path"
+// @Success 200 "视频流数据 | Video stream data"
+// @Success 206 "部分视频流数据 | Partial video stream data"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Router /videostream [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) VideoStream(c *gin.Context) {

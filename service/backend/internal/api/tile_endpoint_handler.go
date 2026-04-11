@@ -41,16 +41,16 @@ func NewTileEndpointHandler(
 }
 
 // GetXYZTile 处理 XYZ Tiles 请求
-// @Summary 获取 XYZ 瓦片
+// @Summary 获取 XYZ 瓦片 | Get XYZ tile
 // @Tags Tiles
 // @Produce application/vnd.mapbox-vector-tile,image/png,image/jpeg
-// @Param serviceName path string true "服务名称"
-// @Param layerName path string true "图层名称"
-// @Param z path int true "缩放级别"
-// @Param x path int true "瓦片 X 坐标"
-// @Param y path int true "瓦片 Y 坐标"
-// @Param format path string true "瓦片格式 (mvt, png, jpg)"
-// @Success 200 {file} binary
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param layerName path string true "图层名称 | Layer name"
+// @Param z path int true "缩放级别 | Zoom level"
+// @Param x path int true "瓦片 X 坐标 | Tile X coordinate"
+// @Param y path int true "瓦片 Y 坐标 | Tile Y coordinate"
+// @Param format path string true "瓦片格式 (mvt, png, jpg) | Tile format (mvt, png, jpg)"
+// @Success 200 {file} binary "瓦片数据 | Tile data"
 // @Router /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format} [get]
 func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	ctx := c.Request.Context()

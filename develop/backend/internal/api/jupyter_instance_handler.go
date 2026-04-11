@@ -20,10 +20,10 @@ func NewJupyterInstanceHandler(instanceService *service.JupyterInstanceService) 
 }
 
 // StartInstance 启动 Jupyter 实例
-// @Summary 启动 Jupyter 实例
+// @Summary 启动 Jupyter 实例 | Start Jupyter instance
 // @Tags Jupyter Instance
 // @Produce json
-// @Success 200 {object} service.JupyterInstance
+// @Success 200 {object} service.JupyterInstance "实例信息 | Instance information"
 // @Router /jupyter/instance/start [post]
 func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
@@ -41,10 +41,10 @@ func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
 }
 
 // StopInstance 停止 Jupyter 实例
-// @Summary 停止 Jupyter 实例
+// @Summary 停止 Jupyter 实例 | Stop Jupyter instance
 // @Tags Jupyter Instance
 // @Produce json
-// @Success 200 {object} map[string]string
+// @Success 200 {object} map[string]string "停止成功 | Stopped successfully"
 // @Router /jupyter/instance/stop [post]
 func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
@@ -63,10 +63,10 @@ func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
 }
 
 // GetInstanceStatus 获取 Jupyter 实例状态
-// @Summary 获取 Jupyter 实例状态
+// @Summary 获取 Jupyter 实例状态 | Get Jupyter instance status
 // @Tags Jupyter Instance
 // @Produce json
-// @Success 200 {object} service.JupyterInstance
+// @Success 200 {object} service.JupyterInstance "实例状态 | Instance status"
 // @Router /jupyter/instance/status [get]
 func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
@@ -92,10 +92,10 @@ func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 }
 
 // ListInstances 列出所有 Jupyter 实例（管理员）
-// @Summary 列出所有 Jupyter 实例
+// @Summary 列出所有 Jupyter 实例 | List all Jupyter instances
 // @Tags Jupyter Instance
 // @Produce json
-// @Success 200 {array} service.JupyterInstance
+// @Success 200 {array} service.JupyterInstance "实例列表 | Instance list"
 // @Router /jupyter/instances [get]
 func (h *JupyterInstanceHandler) ListInstances(c *gin.Context) {
 	instances, err := h.instanceService.ListInstances(c.Request.Context())

@@ -20,10 +20,11 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 }
 
 // ListMetrics GET /api/model/logical-tables/:id/metrics
-// @Summary ListMetrics
+// @Summary 查询事实表关联指标列表 | List fact table metric mappings
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Success 200 {object} map[string]interface{} "指标关联列表 | Metric mapping list"
 // @Router /listmetrics [get]
 // @Security BearerAuth
 func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
@@ -43,10 +44,13 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 }
 
 // AddMetric POST /api/model/logical-tables/:id/metrics
-// @Summary AddMetric
+// @Summary 添加事实表指标关联 | Add fact table metric mapping
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Param body body models.CreateFactMetricMappingRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的关联 | Created mapping"
 // @Router /addmetric [get]
 // @Security BearerAuth
 func (h *FactMetricHandler) AddMetric(c *gin.Context) {
@@ -74,10 +78,12 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 }
 
 // RemoveMetric DELETE /api/model/logical-tables/:id/metrics/:mid
-// @Summary RemoveMetric
+// @Summary 删除事实表指标关联 | Remove fact table metric mapping
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Param mid path int true "关联ID | Mapping ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
 // @Router /removemetric [get]
 // @Security BearerAuth
 func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {

@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 # 创建 FastAPI 应用
 app = FastAPI(
     title=settings.app_name,
-    description="AI 辅助 SQL 和工作流生成",
+    description="AI 辅助 SQL 和工作流生成 | AI-assisted SQL and workflow generation",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -63,11 +63,12 @@ app.add_middleware(
 )
 
 # 注册路由
-from api import workflow_router, sql_router  # noqa: E402
+from api import workflow_router, sql_router, navigate_router  # noqa: E402
 from api.kg_extract_api import router as kg_extract_router  # noqa: E402
-app.include_router(workflow_router, prefix=_API_PREFIX, tags=["Workflow Agent"])
-app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL Agent"])
-app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["KG Build"])
+app.include_router(workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"])
+app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL 智能体 | SQL Agent"])
+app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"])
+app.include_router(navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"])
 
 
 def custom_openapi():
@@ -98,7 +99,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-@app.get("/health")
+@app.get("/health", summary="健康检查 | Health Check")
 async def health_check():
     """健康检查"""
     return {
@@ -108,7 +109,7 @@ async def health_check():
     }
 
 
-@app.get("/")
+@app.get("/", summary="根路径 | Root")
 async def root():
     """根路径"""
     return {

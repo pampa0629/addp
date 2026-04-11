@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,7 +22,7 @@ func NewClassificationHandler(svc *service.ClassificationService) *Classificatio
 
 // --- 数据分类 ---
 
-// @Summary ListClassifications
+// @Summary 获取数据分类列表 | List data classifications
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -36,7 +38,7 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
-// @Summary CreateClassification
+// @Summary 创建数据分类 | Create data classification
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -58,7 +60,7 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 	c.JSON(http.StatusCreated, item)
 }
 
-// @Summary UpdateClassification
+// @Summary 更新数据分类 | Update data classification
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -67,7 +69,7 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateClassificationRequest
@@ -85,7 +87,7 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary DeleteClassification
+// @Summary 删除数据分类 | Delete data classification
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -94,7 +96,7 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -102,12 +104,12 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // --- 数据分级 ---
 
-// @Summary ListGradingLevels
+// @Summary 获取数据分级列表 | List data grading levels
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -123,7 +125,7 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 	c.JSON(http.StatusOK, levels)
 }
 
-// @Summary UpdateGradingLevel
+// @Summary 更新数据分级 | Update data grading level
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -132,7 +134,7 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateGradingLevelRequest
@@ -145,5 +147,5 @@ func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
 }

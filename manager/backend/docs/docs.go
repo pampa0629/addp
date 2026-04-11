@@ -16,22 +16,53 @@ const docTemplate = `{
     "basePath": "{{.BasePath}}",
     "paths": {
         "/cancelquickview": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "取消正在进行的快显缓存生成任务 | Cancel an ongoing quick view cache generation task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CancelQuickView",
+                "summary": "取消快显生成任务 | Cancel quick view generation task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "取消成功 | Cancelled successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -47,16 +78,54 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "检查空间数据表的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick view, auto-create record if passed",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CheckPreparation",
+                "summary": "检查快显准备状态 | Check quick view preparation status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "准备状态信息 | Preparation status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -66,22 +135,33 @@ const docTemplate = `{
             }
         },
         "/clearhistory": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "清空当前用户的所有搜索历史记录 | Clear all search history for the current user",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ClearHistory",
+                "summary": "清空搜索历史 | Clear search history",
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "204": {
+                        "description": "清空成功 | Cleared successfully"
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用 | Service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -91,22 +171,60 @@ const docTemplate = `{
             }
         },
         "/clearquickview": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "清除指定空间数据表的快显缓存数据 | Clear quick view cache data for a spatial table",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ClearQuickView",
+                "summary": "清除快显缓存 | Clear quick view cache",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "清除成功 | Cleared successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -116,11 +234,15 @@ const docTemplate = `{
             }
         },
         "/createembedding": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "创建对象存储文件的向量化任务，支持单文件、目录和整个Bucket | Create vectorization task for object storage files, supports single file, directory, and entire bucket",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -128,10 +250,28 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CreateEmbedding",
+                "summary": "创建向量化任务 | Create embedding task",
+                "parameters": [
+                    {
+                        "description": "向量化任务配置 | Embedding task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateEmbeddingRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务已创建 | Task created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -141,11 +281,15 @@ const docTemplate = `{
             }
         },
         "/createembeddingtask": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "创建新的向量化任务配置（定时或手动触发）| Create a new embedding task configuration (scheduled or manual)",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -153,10 +297,28 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CreateEmbeddingTask",
+                "summary": "创建向量化任务配置 | Create embedding task configuration",
+                "parameters": [
+                    {
+                        "description": "向量化任务配置 | Embedding task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.EmbeddingTask"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -166,11 +328,15 @@ const docTemplate = `{
             }
         },
         "/createmanualscanrun": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "立即发起一次元数据扫描，不依赖定时任务 | Immediately initiate a metadata scan without relying on scheduled tasks",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -178,10 +344,41 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CreateManualScanRun",
+                "summary": "发起即时扫描 | Create manual scan run",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "扫描配置（可选）| Scan configuration (optional)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaManualScanRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "扫描运行记录 | Scan run record",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -191,11 +388,15 @@ const docTemplate = `{
             }
         },
         "/createmvttask": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "创建新的MVT瓦片生成任务配置 | Create a new MVT tile generation task configuration",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -203,10 +404,28 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CreateMvtTask",
+                "summary": "创建MVT生成任务配置 | Create MVT generation task configuration",
+                "parameters": [
+                    {
+                        "description": "MVT任务配置 | MVT task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MvtTask"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -216,11 +435,15 @@ const docTemplate = `{
             }
         },
         "/createscantask": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "为指定存储引擎创建新的元数据扫描任务 | Create a new metadata scan task for a specific engine",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -228,10 +451,42 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "CreateScanTask",
+                "summary": "创建扫描任务 | Create scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "扫描任务配置 | Scan task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "创建的扫描任务 | Created scan task",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -241,22 +496,39 @@ const docTemplate = `{
             }
         },
         "/deleteembeddingtask": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "删除指定的向量化任务配置 | Delete a specific embedding task configuration",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "DeleteEmbeddingTask",
+                "summary": "删除向量化任务配置 | Delete embedding task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -266,22 +538,42 @@ const docTemplate = `{
             }
         },
         "/deletehistoryitem": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "删除指定的搜索历史记录 | Delete a specific search history item",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "DeleteHistoryItem",
+                "summary": "删除搜索历史记录 | Delete search history item",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "历史记录ID | History item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "204": {
+                        "description": "删除成功 | Deleted successfully"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -291,22 +583,39 @@ const docTemplate = `{
             }
         },
         "/deletemvttask": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "删除指定的MVT瓦片生成任务配置 | Delete a specific MVT tile generation task configuration",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "DeleteMvtTask",
+                "summary": "删除MVT生成任务配置 | Delete MVT generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -316,22 +625,46 @@ const docTemplate = `{
             }
         },
         "/deletescantask": {
-            "get": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "删除指定的元数据扫描任务 | Delete a specific metadata scan task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "DeleteScanTask",
+                "summary": "删除扫描任务 | Delete scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID | Scan task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -341,22 +674,39 @@ const docTemplate = `{
             }
         },
         "/executioncancel": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "取消正在运行的任务执行 | Cancel a running task execution",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ExecutionCancel",
+                "summary": "取消执行 | Cancel execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "取消成功 | Cancelled successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "取消失败 | Cancel failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -372,16 +722,33 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取任务执行记录的状态信息 | Get status information of a task execution record",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ExecutionStatus",
+                "summary": "获取执行状态 | Get execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行状态 | Execution status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "执行记录不存在 | Execution not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -397,16 +764,33 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "查询向量化任务的实时状态（仅内存中的运行中任务）| Query real-time status of an embedding task (in-memory running tasks only)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetEmbeddingTaskStatus",
+                "summary": "获取向量化任务状态 | Get embedding task status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务状态信息 | Task status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在或已过期 | Task not found or expired",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -422,16 +806,73 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定要素的几何中心点坐标，用于表格行定位到地图 | Get the centroid coordinates of a feature for map positioning",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetFeatureCentroid",
+                "summary": "获取要素几何中心点 | Get feature centroid",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "要素ID | Feature ID",
+                        "name": "feature_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何字段名，默认geom | Geometry column name, default geom",
+                        "name": "geom",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主键字段名，默认id | Primary key column, default id",
+                        "name": "primary_key",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "中心点坐标 | Centroid coordinates",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "要素不存在 | Feature not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -447,16 +888,73 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定要素的完整几何数据（GeoJSON格式），用于地图高亮显示 | Get full geometry of a feature in GeoJSON format for map highlighting",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetFeatureGeometry",
+                "summary": "获取要素完整几何 | Get feature geometry",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "要素ID | Feature ID",
+                        "name": "feature_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何字段名，默认geom | Geometry column name, default geom",
+                        "name": "geom",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主键字段名，默认id | Primary key column, default id",
+                        "name": "primary_key",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "几何数据及边界框 | Geometry data and bounding box",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "要素不存在 | Feature not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -472,16 +970,72 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取空间数据表的GeoJSON格式数据，支持分页 | Get spatial table data in GeoJSON format with pagination support",
                 "produces": [
-                    "application/json"
+                    "application/geo+json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetGeoJSON",
+                "summary": "获取GeoJSON数据 | Get GeoJSON data",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认1000，最大5000 | Page size, default 1000, max 5000",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何列名，默认geom | Geometry column, default geom",
+                        "name": "geom_column",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "GeoJSON FeatureCollection",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -497,16 +1051,60 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取空间数据表的元数据信息（记录数、地理范围、坐标系等）| Get spatial table metadata (record count, extent, SRID, etc.)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetGeoJSONMetadata",
+                "summary": "获取GeoJSON元数据 | Get GeoJSON metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何列名，默认geom | Geometry column, default geom",
+                        "name": "geom_column",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "元数据信息 | Metadata",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -522,16 +1120,17 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回地图服务相关的配置信息（高德地图Key、天地图Key等）| Return map service configuration (AMap key, TDT key, etc.)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetMapConfig",
+                "summary": "获取地图服务配置 | Get map service configuration",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "地图配置信息 | Map configuration",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -547,16 +1146,53 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "增量加载指定节点的子节点，避免全量重载 | Incrementally load children of a specific node to avoid full reload",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetNodeChildren",
+                "summary": "获取节点子节点 | Get node children",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源定位符URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "展开深度，默认1 | Expand depth, default 1",
+                        "name": "expand_depth",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "子节点列表 | Children list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -572,16 +1208,54 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定空间数据表的快显缓存状态及实时生成进度 | Get quick view cache status and real-time generation progress",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetQuickViewStatus",
+                "summary": "获取快显状态 | Get quick view status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "快显状态信息 | Quick view status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -597,16 +1271,40 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定扫描运行记录的详细信息 | Get detailed information of a specific scan run",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetScanRun",
+                "summary": "获取扫描运行详情 | Get scan run detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描运行ID | Scan run ID",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "扫描运行详情 | Scan run detail",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -622,16 +1320,24 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取快显缓存的整体统计信息（任务数量、缓存大小等）| Get overall quick view cache statistics",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetStatistics",
+                "summary": "获取快显统计信息 | Get quick view statistics",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "统计信息 | Statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -647,16 +1353,96 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial table with three-layer cache",
                 "produces": [
-                    "application/json"
+                    "application/vnd.mapbox-vector-tile"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetTile",
+                "summary": "获取MVT矢量瓦片 | Get MVT vector tile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "缩放级别(0-22) | Zoom level (0-22)",
+                        "name": "z",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "瓦片X坐标 | Tile X coordinate",
+                        "name": "x",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "瓦片Y坐标 | Tile Y coordinate",
+                        "name": "y",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何列名，默认geom | Geometry column, default geom",
+                        "name": "geom",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "空间参考系，默认4326 | Spatial reference, default 4326",
+                        "name": "srid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回列，逗号分隔 | Return columns, comma-separated",
+                        "name": "cols",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "MVT瓦片数据 | MVT tile data"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -672,16 +1458,53 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "根据空间数据范围和记录数智能计算瓦片的最小/最大缩放级别 | Intelligently calculate min/max zoom levels based on spatial extent and record count",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetTileConfig",
+                "summary": "获取瓦片配置 | Get tile configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片配置信息 | Tile configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TileConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -697,16 +1520,46 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定存储引擎的完整资源树结构 | Get the complete resource tree structure for a specific engine",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "GetTree",
+                "summary": "获取资源树 | Get resource tree",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "展开深度，默认2 | Expand depth, default 2",
+                        "name": "expand_depth",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "资源树 | Resource tree",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -716,11 +1569,15 @@ const docTemplate = `{
             }
         },
         "/importdata": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "上传并导入数据文件（如Shapefile ZIP包）到目标数据库 | Upload and import data files (e.g. Shapefile ZIP) to target database",
+                "consumes": [
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
@@ -728,10 +1585,51 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ImportData",
+                "summary": "导入数据文件 | Import data file",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "目标数据库引擎ID | Target database engine ID",
+                        "name": "target_engine_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标Schema，默认public | Target schema, default public",
+                        "name": "target_schema",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标表名，默认使用文件名 | Target table name, default from filename",
+                        "name": "target_table",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "DBF编码，默认UTF-8 | DBF encoding, default UTF-8",
+                        "name": "encoding",
+                        "in": "formData"
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "导入任务已创建 | Import task created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -747,16 +1645,24 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取当前租户可用的存储引擎列表 | Get available storage engine list for the current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListEngines",
+                "summary": "获取引擎列表 | List engines",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "引擎列表 | Engine list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -772,16 +1678,39 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取当前用户的搜索历史记录 | Get search history for the current user",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListHistory",
+                "summary": "列出搜索历史 | List search history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "返回数量限制，默认10 | Result limit, default 10",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "搜索历史列表 | Search history list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用 | Service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -797,16 +1726,50 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "列出所有快显缓存生成任务，支持按状态和引擎过滤 | List all quick view cache generation tasks with optional filtering",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListQuickViewTasks",
+                "summary": "列出快显任务 | List quick view tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认10 | Page size, default 10",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态过滤 | Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID过滤 | Filter by engine ID",
+                        "name": "engine_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "快显任务列表 | Quick view task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -822,16 +1785,70 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "列出指定存储引擎的元数据扫描运行历史记录 | List metadata scan run history for a specific engine",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListScanRuns",
+                "summary": "列出扫描运行记录 | List scan runs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID过滤 | Filter by scan task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态过滤 | Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "存储类型过滤 | Filter by storage type",
+                        "name": "storage_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量限制，默认20 | Result limit, default 20",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "偏移量，默认0 | Offset, default 0",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "扫描运行记录列表 | Scan run list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -847,16 +1864,33 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "列出指定存储引擎下的所有元数据扫描任务 | List all metadata scan tasks for a specific engine",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListScanTasks",
+                "summary": "列出扫描任务 | List scan tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "扫描任务列表 | Scan task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -872,16 +1906,44 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation and embedding tasks)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ListTasks",
+                "summary": "列出任务 | List tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -891,22 +1953,60 @@ const docTemplate = `{
             }
         },
         "/prepareforcreatemvt": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "启动空间数据表的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation work (e.g. creating spatial indexes)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "PrepareForCreateMVT",
+                "summary": "启动MVT准备工作 | Start MVT preparation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "准备工作已启动 | Preparation started",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -922,16 +2022,59 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator, supports tables, files, and more",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "Preview",
+                "summary": "数据预览 | Data preview",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "预览数据 | Preview data",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -941,22 +2084,46 @@ const docTemplate = `{
             }
         },
         "/refreshnode": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "刷新指定资源节点的元数据信息 | Refresh metadata for a specific resource node",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "RefreshNode",
+                "summary": "刷新资源节点 | Refresh resource node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "刷新后的节点信息 | Refreshed node info",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -966,22 +2133,53 @@ const docTemplate = `{
             }
         },
         "/resumequickview": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "恢复已暂停或中断的快显缓存生成任务 | Resume a paused or interrupted quick view cache generation task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "ResumeQuickView",
+                "summary": "恢复快显生成任务 | Resume quick view generation task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "恢复成功 | Resumed successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -997,16 +2195,52 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text and vector semantic search",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "Search",
+                "summary": "执行混合检索 | Execute hybrid search",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索关键词 | Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认10 | Page size, default 10",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "搜索结果 | Search results",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "搜索服务不可用 | Search service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1022,16 +2256,59 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "在资源树中搜索匹配关键词的节点 | Search for nodes matching a keyword in the resource tree",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "SearchNodes",
+                "summary": "搜索资源节点 | Search resource nodes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词（至少2个字符）| Search keyword (at least 2 characters)",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "节点类型过滤，逗号分隔 | Node type filter, comma-separated",
+                        "name": "node_types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量限制，默认50 | Result limit, default 50",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "搜索结果 | Search results",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1047,16 +2324,47 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "TaskDetail",
+                "summary": "获取任务详情 | Get task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务详情 | Task detail",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1066,11 +2374,15 @@ const docTemplate = `{
             }
         },
         "/taskexecute": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "触发指定任务立即执行 | Trigger immediate execution of a specific task",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1078,10 +2390,48 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "TaskExecute",
+                "summary": "执行任务 | Execute task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "执行配置 | Execution configuration",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TaskExecuteRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "执行ID | Execution ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1091,11 +2441,15 @@ const docTemplate = `{
             }
         },
         "/triggerquickview": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "触发指定空间数据表的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation for a spatial table",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1103,10 +2457,55 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "TriggerQuickView",
+                "summary": "触发快显缓存生成 | Trigger quick view cache generation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "快显生成配置 | Quick view generation configuration",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TriggerQuickViewRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "任务已加入队列 | Task enqueued",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1116,22 +2515,46 @@ const docTemplate = `{
             }
         },
         "/triggerscantask": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "立即触发指定的元数据扫描任务执行 | Immediately trigger a specific metadata scan task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "TriggerScanTask",
+                "summary": "触发扫描任务 | Trigger scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID | Scan task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "触发的扫描运行记录 | Triggered scan run",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1141,11 +2564,15 @@ const docTemplate = `{
             }
         },
         "/updateembeddingtask": {
-            "get": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "更新指定的向量化任务配置 | Update a specific embedding task configuration",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1153,10 +2580,42 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "UpdateEmbeddingTask",
+                "summary": "更新向量化任务配置 | Update embedding task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "向量化任务配置 | Embedding task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.EmbeddingTask"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1166,11 +2625,15 @@ const docTemplate = `{
             }
         },
         "/updatemvttask": {
-            "get": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "更新指定的MVT瓦片生成任务配置 | Update a specific MVT tile generation task configuration",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1178,10 +2641,42 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "UpdateMvtTask",
+                "summary": "更新MVT生成任务配置 | Update MVT generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "MVT任务配置 | MVT task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MvtTask"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1191,11 +2686,15 @@ const docTemplate = `{
             }
         },
         "/updatepreferredmode": {
-            "get": {
+            "patch": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "更新指定空间数据表的用户偏好显示模式（geojson或mvt）| Update preferred display mode for a spatial table (geojson or mvt)",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1203,10 +2702,56 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "UpdatePreferredMode",
+                "summary": "更新显示模式偏好 | Update preferred display mode",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库Schema | Database schema",
+                        "name": "schema",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据表名 | Table name",
+                        "name": "table",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "显示模式配置 | Display mode configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdatePreferredModeRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "更新成功 | Updated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "记录不存在 | Record not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1216,11 +2761,15 @@ const docTemplate = `{
             }
         },
         "/updatescantask": {
-            "get": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "description": "更新指定存储引擎的元数据扫描任务配置 | Update metadata scan task configuration for a specific engine",
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1228,10 +2777,49 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "UpdateScanTask",
+                "summary": "更新扫描任务 | Update scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID | Scan task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "扫描任务配置 | Scan task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "更新后的扫描任务 | Updated scan task",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1247,21 +2835,453 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support for online playback",
                 "produces": [
-                    "application/json"
+                    "application/octet-stream"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "VideoStream",
+                "summary": "视频流式传输 | Video streaming",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "对象存储路径 | Object storage path",
+                        "name": "object_key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "视频流数据 | Video stream data"
+                    },
+                    "206": {
+                        "description": "部分视频流数据 | Partial video stream data"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_addp_manager_internal_models.EmbeddingTask": {
+            "type": "object",
+            "properties": {
+                "bucket": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "description": "EmbeddingTask 特有字段",
+                    "type": "integer"
+                },
+                "file_types": {
+                    "description": "文件扩展名过滤（逗号分隔，如 \"jpg,png,pdf\"）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "description": "最近一次执行信息（回写）",
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "modality": {
+                    "description": "向量化配置",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "任务基本信息",
+                    "type": "string"
+                },
+                "prefix": {
+                    "type": "string"
+                },
+                "recursive": {
+                    "type": "boolean"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MetaManualScanRequest": {
+            "type": "object",
+            "properties": {
+                "object_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scan_depth": {
+                    "type": "string"
+                },
+                "scan_type": {
+                    "type": "string"
+                },
+                "schema_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MetaScanTaskRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "schedule_type"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "object_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scan_depth": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "schedule_time": {
+                    "type": "string"
+                },
+                "schedule_type": {
+                    "type": "string"
+                },
+                "schedule_value": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schema_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MvtTask": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "description": "MvtTask 特有字段",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "description": "最近一次执行信息（回写）",
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "max_zoom": {
+                    "type": "integer"
+                },
+                "min_zoom": {
+                    "type": "integer"
+                },
+                "name": {
+                    "description": "任务基本信息",
+                    "type": "string"
+                },
+                "optimization_config": {
+                    "description": "优化配置（JSONB）",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schema_name": {
+                    "type": "string"
+                },
+                "table_name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.CreateEmbeddingRequest": {
+            "type": "object",
+            "required": [
+                "bucket",
+                "engine_id"
+            ],
+            "properties": {
+                "bucket": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "object_key": {
+                    "description": "scope=object 时必填",
+                    "type": "string"
+                },
+                "prefix": {
+                    "description": "scope=directory 时使用",
+                    "type": "string"
+                },
+                "recursive": {
+                    "description": "是否递归，默认 true",
+                    "type": "boolean"
+                },
+                "scope": {
+                    "description": "object|directory|bucket，默认 object",
+                    "type": "string"
+                },
+                "task_name": {
+                    "description": "任务名称（可选）",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TaskExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "parent_execution_id": {
+                    "description": "父执行ID（Orchestrator 调用时传入）",
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "description": "manual|schedule|api|orchestrator，默认 manual",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TileConfigResponse": {
+            "type": "object",
+            "properties": {
+                "avg_records_per_tile": {
+                    "description": "maxZoom 层级的平均记录数/瓦片",
+                    "type": "number"
+                },
+                "estimated_tiles": {
+                    "description": "预估瓦片总数（minZoom-maxZoom）",
+                    "type": "integer"
+                },
+                "extent": {
+                    "description": "地理范围（可选）",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "max_zoom": {
+                    "description": "最大 zoom 层级",
+                    "type": "integer"
+                },
+                "min_zoom": {
+                    "description": "最小 zoom 层级",
+                    "type": "integer"
+                },
+                "record_count": {
+                    "description": "表记录数",
+                    "type": "integer"
+                },
+                "srid": {
+                    "description": "坐标系（可选）",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.TriggerQuickViewRequest": {
+            "type": "object",
+            "properties": {
+                "concurrency": {
+                    "description": "默认10",
+                    "type": "integer"
+                },
+                "max_zoom": {
+                    "description": "默认18",
+                    "type": "integer"
+                },
+                "min_zoom": {
+                    "description": "可选",
+                    "type": "integer"
+                },
+                "optimization_config": {
+                    "description": "v2.0 优化配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.OptimizationConfig"
+                        }
+                    ]
+                },
+                "priority": {
+                    "description": "\"critical\", \"default\", \"low\"",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.UpdatePreferredModeRequest": {
+            "type": "object",
+            "required": [
+                "preferred_mode"
+            ],
+            "properties": {
+                "preferred_mode": {
+                    "type": "string",
+                    "enum": [
+                        "geojson",
+                        "mvt"
+                    ]
+                }
+            }
+        },
+        "models.AttributePruningConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "是否启用",
+                    "type": "boolean"
+                },
+                "zoom_threshold": {
+                    "description": "zoom 分界线，\u003c= threshold 只返回主键",
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ExtentOptimizationConfig": {
+            "type": "object",
+            "properties": {
+                "base_extent": {
+                    "description": "其他层的基础 Extent（默认 512）",
+                    "type": "integer"
+                },
+                "max_zoom_extent": {
+                    "description": "Max zoom 层的 Extent（默认 1024）",
+                    "type": "integer"
+                },
+                "min_extent": {
+                    "description": "动态减半的最小 Extent（固定 256）",
+                    "type": "integer"
+                }
+            }
+        },
+        "models.OptimizationConfig": {
+            "type": "object",
+            "properties": {
+                "attribute_pruning": {
+                    "description": "属性优化",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AttributePruningConfig"
+                        }
+                    ]
+                },
+                "extent_optimization": {
+                    "description": "Extent 优化（分层策略 + 动态减半）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.ExtentOptimizationConfig"
+                        }
+                    ]
+                },
+                "tile_size_thresholds": {
+                    "description": "瓦片大小阈值",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.TileSizeThresholdsConfig"
+                        }
+                    ]
+                },
+                "version": {
+                    "description": "配置版本",
+                    "type": "string"
+                }
+            }
+        },
+        "models.TileSizeThresholdsConfig": {
+            "type": "object",
+            "properties": {
+                "max_size_mb": {
+                    "description": "瓦片大小限制（MB）- 用户可配置，默认 5MB",
+                    "type": "number"
                 }
             }
         }

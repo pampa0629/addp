@@ -1,25 +1,5 @@
 <template>
   <div class="workflow-editor-page">
-    <!-- AI 助手面板 -->
-    <div class="ai-assistant-panel">
-      <div class="ai-header">
-        <span class="ai-icon">🤖</span>
-        <span class="ai-title">{{ t('develop.workflow.aiTitle') }}</span>
-      </div>
-      <div class="ai-input-group">
-        <el-input
-          v-model="aiQuery"
-          type="textarea"
-          :rows="2"
-          :placeholder="t('develop.workflow.aiPlaceholder')"
-          :disabled="generating"
-        />
-        <el-button type="primary" @click="generateWorkflow" :loading="generating" size="small">
-          {{ t('develop.workflow.generateWorkflow') }}
-        </el-button>
-      </div>
-    </div>
-
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -250,6 +230,50 @@
       style="display: none;"
       @change="handleFileChange"
     />
+
+    <!-- AI 工作流生成：魔法棒 + 向左滑出的输入面板 -->
+    <div class="ai-fab-wrapper">
+      <!-- 滑出的输入面板 -->
+      <transition name="ai-slide">
+        <div v-if="aiDialogOpen" class="ai-inline-panel">
+          <div class="ai-panel-header">
+            <span class="ai-panel-title">{{ t('develop.workflow.aiTitle') }}</span>
+            <el-icon class="ai-panel-close" @click="aiDialogOpen = false"><Close /></el-icon>
+          </div>
+          <el-input
+            ref="aiInputRef"
+            v-model="aiQuery"
+            type="textarea"
+            :rows="4"
+            :placeholder="t('develop.workflow.aiPlaceholder')"
+            :disabled="generating"
+            @keydown.ctrl.enter="generateWorkflow"
+            class="ai-panel-input"
+          />
+          <div class="ai-panel-footer">
+            <span class="ai-panel-hint">Ctrl+Enter {{ t('develop.workflow.generateWorkflow') }}</span>
+            <el-button
+              type="primary"
+              :loading="generating"
+              size="small"
+              @click="generateWorkflow"
+            >
+              {{ t('develop.workflow.generateWorkflow') }}
+            </el-button>
+          </div>
+        </div>
+      </transition>
+
+      <!-- 魔法棒 FAB 按钮 -->
+      <div
+        class="ai-fab"
+        :class="{ 'ai-fab--active': aiDialogOpen }"
+        @click="toggleAiPanel"
+        :title="t('develop.workflow.aiTitle')"
+      >
+        <el-icon :size="20"><MagicStick /></el-icon>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -265,7 +289,9 @@ import {
   Delete,
   Download,
   Upload,
-  Document
+  Document,
+  MagicStick,
+  Close
 } from '@element-plus/icons-vue'
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
@@ -288,9 +314,18 @@ const sparkRuntimes = ref([])         // Spark 运行时列表
 const sparkRuntimeId = ref(null)      // 选中的 Spark 运行时 ID
 
 // AI 助手状态
+const aiDialogOpen = ref(false)
 const aiQuery = ref('')
 const generating = ref(false)
 const generatedWorkflow = ref(null)
+const aiInputRef = ref(null)
+
+const toggleAiPanel = () => {
+  aiDialogOpen.value = !aiDialogOpen.value
+  if (aiDialogOpen.value) {
+    setTimeout(() => aiInputRef.value?.focus(), 300)
+  }
+}
 
 // 画布引用
 const canvasRef = ref(null)
@@ -808,6 +843,7 @@ const generateWorkflow = async () => {
 
     // 直接加载到画布
     workflowData.value = result.workflow
+    aiDialogOpen.value = false
     ElMessage.success(t('develop.workflow.generateSuccess', { count: result.workflow.tasks.length }))
   } catch (error) {
     console.error('工作流生成失败:', error)
@@ -942,61 +978,112 @@ onMounted(async () => {
   background: var(--addp-bg-secondary);
 }
 
-.ai-assistant-panel {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  flex-shrink: 0;
+/* AI 助手顶部面板已移除 */
+
+.ai-fab-wrapper {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 1000;
 }
 
-.ai-header {
+.ai-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
-  font-weight: 600;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.ai-icon {
-  font-size: 18px;
-  margin-right: 8px;
+.ai-fab:hover {
+  background: var(--el-color-primary-dark-2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
-.ai-input-group {
+.ai-fab--active {
+  background: var(--el-color-primary-dark-2);
+  transform: rotate(15deg);
+}
+
+.ai-inline-panel {
+  width: 320px;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: 14px;
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
+  transform-origin: right bottom;
 }
 
-.ai-input-group :deep(.el-textarea__inner) {
-  background: rgba(255, 255, 255, 0.95);
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.workflow-preview {
-  margin-top: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-}
-
-.preview-header {
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.preview-tasks {
-  max-height: 100px;
-  overflow-y: auto;
-  margin-bottom: 8px;
-}
-
-.task-item {
-  padding: 4px 0;
+.ai-panel-title {
   font-size: 13px;
-  opacity: 0.9;
+  font-weight: 600;
+  color: var(--addp-text-primary);
 }
 
-.preview-actions {
+.ai-panel-close {
+  cursor: pointer;
+  color: var(--addp-text-secondary);
+  font-size: 14px;
+  transition: color 0.15s;
+}
+
+.ai-panel-close:hover {
+  color: var(--addp-text-primary);
+}
+
+.ai-panel-input :deep(.el-textarea__inner) {
+  font-size: 13px;
+  resize: none;
+}
+
+.ai-panel-footer {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-panel-hint {
+  font-size: 11px;
+  color: var(--addp-text-secondary);
+}
+
+/* 滑动动画 */
+.ai-slide-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ai-slide-leave-active {
+  transition: all 0.18s ease-in;
+}
+
+.ai-slide-enter-from {
+  opacity: 0;
+  transform: translateX(20px) scale(0.95);
+}
+
+.ai-slide-leave-to {
+  opacity: 0;
+  transform: translateX(20px) scale(0.95);
 }
 
 .toolbar {

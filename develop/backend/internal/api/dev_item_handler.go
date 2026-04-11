@@ -24,12 +24,12 @@ func NewDevItemHandler(devTaskService *service.DevTaskService) *DevItemHandler {
 }
 
 // CreateDevItem 创建开发项
-// @Summary 创建开发项
+// @Summary 创建开发项 | Create development item
 // @Tags DevItem
 // @Accept json
 // @Produce json
-// @Param body body models.CreateDevTaskRequest true "创建请求"
-// @Success 200 {object} models.DevTask
+// @Param body body models.CreateDevTaskRequest true "创建请求 | Create request"
+// @Success 200 {object} models.DevTask "已创建的开发项 | Created development item"
 // @Router /items [post]
 func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 	var req models.CreateDevTaskRequest
@@ -51,13 +51,13 @@ func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 }
 
 // UpdateDevItem 更新开发项
-// @Summary 更新开发项
+// @Summary 更新开发项 | Update development item
 // @Tags DevItem
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID"
-// @Param body body models.UpdateDevTaskRequest true "更新请求"
-// @Success 200 {object} models.DevTask
+// @Param id path int true "开发项ID | Development item ID"
+// @Param body body models.UpdateDevTaskRequest true "更新请求 | Update request"
+// @Success 200 {object} models.DevTask "已更新的开发项 | Updated development item"
 // @Router /items/{id} [put]
 func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -85,11 +85,11 @@ func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 }
 
 // GetDevItem 获取开发项详情
-// @Summary 获取开发项详情
+// @Summary 获取开发项详情 | Get development item details
 // @Tags DevItem
 // @Produce json
-// @Param id path int true "开发项ID"
-// @Success 200 {object} models.DevTask
+// @Param id path int true "开发项ID | Development item ID"
+// @Success 200 {object} models.DevTask "开发项详情 | Development item details"
 // @Router /items/{id} [get]
 func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -110,17 +110,17 @@ func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 }
 
 // ListDevItems 查询开发项列表
-// @Summary 查询开发项列表
+// @Summary 查询开发项列表 | List development items
 // @Tags DevItem
 // @Produce json
-// @Param page query int false "页码"
-// @Param page_size query int false "每页数量"
-// @Param dev_type query string false "类型过滤"
-// @Param status query string false "状态过滤"
-// @Param engine_id query int false "资源ID过滤"
-// @Param tag query string false "标签过滤"
-// @Param keyword query string false "关键词搜索"
-// @Success 200 {object} models.ListDevTasksResponse
+// @Param page query int false "页码 | Page number"
+// @Param page_size query int false "每页数量 | Page size"
+// @Param dev_type query string false "类型过滤 | Filter by type"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param engine_id query int false "资源ID过滤 | Filter by engine ID"
+// @Param tag query string false "标签过滤 | Filter by tag"
+// @Param keyword query string false "关键词搜索 | Keyword search"
+// @Success 200 {object} models.ListDevTasksResponse "开发项列表 | Development item list"
 // @Router /items [get]
 func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 	var req models.ListDevTasksRequest
@@ -154,10 +154,10 @@ func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 }
 
 // DeleteDevItem 删除开发项
-// @Summary 删除开发项
+// @Summary 删除开发项 | Delete development item
 // @Tags DevItem
-// @Param id path int true "开发项ID"
-// @Success 200 {object} map[string]string
+// @Param id path int true "开发项ID | Development item ID"
+// @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
 // @Router /items/{id} [delete]
 func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -177,13 +177,13 @@ func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 }
 
 // ExecuteDevItem 执行开发项
-// @Summary 执行开发项
+// @Summary 执行开发项 | Execute development item
 // @Tags DevItem
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID"
-// @Param body body map[string]interface{} false "执行参数"
-// @Success 200 {object} map[string]string
+// @Param id path int true "开发项ID | Development item ID"
+// @Param body body map[string]interface{} false "执行参数 | Execution parameters"
+// @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /items/{id}/execute [post]
 func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -201,10 +201,10 @@ func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 }
 
 // GetDevItemStatistics 获取开发项统计
-// @Summary 获取开发项统计
+// @Summary 获取开发项统计 | Get development item statistics
 // @Tags DevItem
 // @Produce json
-// @Success 200 {object} map[string]int64
+// @Success 200 {object} map[string]int64 "统计数据 | Statistics"
 // @Router /items/statistics [get]
 func (h *DevItemHandler) GetDevItemStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

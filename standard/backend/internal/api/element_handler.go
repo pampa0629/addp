@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -19,7 +21,7 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 }
 
 // ListElements GET /api/model/elements
-// @Summary ListElements
+// @Summary 获取数据元列表 | List data elements
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -69,7 +71,7 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 }
 
 // CreateElement POST /api/model/elements
-// @Summary CreateElement
+// @Summary 创建数据元 | Create data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -94,7 +96,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 }
 
 // GetElement GET /api/model/elements/:id
-// @Summary GetElement
+// @Summary 获取数据元详情 | Get data element detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -103,21 +105,21 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 func (h *ElementHandler) GetElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	element, err := h.svc.GetElement(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "element not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgElementNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, element)
 }
 
 // UpdateElement PUT /api/model/elements/:id
-// @Summary UpdateElement
+// @Summary 更新数据元 | Update data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -126,7 +128,7 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 func (h *ElementHandler) UpdateElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -148,7 +150,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 }
 
 // DeleteElement DELETE /api/model/elements/:id
-// @Summary DeleteElement
+// @Summary 删除数据元 | Delete data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -157,7 +159,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 func (h *ElementHandler) DeleteElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -166,11 +168,11 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // ApproveElement POST /api/model/elements/:id/approve
-// @Summary ApproveElement
+// @Summary 审批数据元 | Approve data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -179,7 +181,7 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 func (h *ElementHandler) ApproveElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -190,11 +192,11 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
 }
 
 // GetElementQualityRules GET /api/model/elements/:id/quality-rules
-// @Summary GetElementQualityRules
+// @Summary 获取数据元质量规则 | Get data element quality rules
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -203,14 +205,14 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	rules, err := h.svc.GetQualityRules(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "element not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgElementNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, rules)

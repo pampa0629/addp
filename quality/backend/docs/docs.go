@@ -28,7 +28,7 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "获取检查任务列表",
+                "summary": "获取检查任务列表 | List check tasks",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -57,10 +57,10 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "创建检查任务",
+                "summary": "创建检查任务 | Create check task",
                 "parameters": [
                     {
-                        "description": "任务信息",
+                        "description": "任务信息 | Task info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -94,11 +94,11 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "获取检查任务详情",
+                "summary": "获取检查任务详情 | Get check task detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -129,17 +129,17 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "更新检查任务",
+                "summary": "更新检查任务 | Update check task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新信息",
+                        "description": "更新信息 | Update info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -171,11 +171,11 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "删除检查任务",
+                "summary": "删除检查任务 | Delete check task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -207,11 +207,11 @@ const docTemplate = `{
                 "tags": [
                     "CheckTask"
                 ],
-                "summary": "执行检查任务",
+                "summary": "执行检查任务 | Run check task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -243,7 +243,7 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取执行记录列表",
+                "summary": "获取执行记录列表 | List execution records",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -268,11 +268,11 @@ const docTemplate = `{
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取执行记录详情",
+                "summary": "获取执行记录详情 | Get execution record detail",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "执行ID",
+                        "description": "执行ID | Execution ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -302,17 +302,17 @@ const docTemplate = `{
                 "tags": [
                     "Issue"
                 ],
-                "summary": "获取问题工单列表",
+                "summary": "获取问题工单列表 | List quality issues",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "状态",
+                        "description": "状态 | Status",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "引擎ID",
+                        "description": "引擎ID | Engine ID",
                         "name": "engine_id",
                         "in": "query"
                     }
@@ -344,11 +344,11 @@ const docTemplate = `{
                 "tags": [
                     "Issue"
                 ],
-                "summary": "获取问题工单详情",
+                "summary": "获取问题工单详情 | Get issue detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "工单ID",
+                        "description": "工单ID | Issue ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -381,17 +381,17 @@ const docTemplate = `{
                 "tags": [
                     "Issue"
                 ],
-                "summary": "更新问题工单状态",
+                "summary": "更新问题工单状态 | Update issue status",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "工单ID",
+                        "description": "工单ID | Issue ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "状态信息",
+                        "description": "状态信息 | Status info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -429,23 +429,23 @@ const docTemplate = `{
                 "tags": [
                     "RuleApplication"
                 ],
-                "summary": "获取规则应用列表",
+                "summary": "获取规则应用列表 | List rule applications",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "引擎ID",
+                        "description": "引擎ID | Engine ID",
                         "name": "engine_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Schema名称",
+                        "description": "Schema名称 | Schema name",
                         "name": "schema_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "表名",
+                        "description": "表名 | Table name",
                         "name": "table_name",
                         "in": "query"
                     }
@@ -478,10 +478,10 @@ const docTemplate = `{
                 "tags": [
                     "RuleApplication"
                 ],
-                "summary": "创建规则应用",
+                "summary": "创建规则应用 | Create rule application",
                 "parameters": [
                     {
-                        "description": "规则应用信息",
+                        "description": "规则应用信息 | Rule application info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -515,11 +515,11 @@ const docTemplate = `{
                 "tags": [
                     "RuleApplication"
                 ],
-                "summary": "获取规则应用详情",
+                "summary": "获取规则应用详情 | Get rule application detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID",
+                        "description": "规则应用ID | Rule application ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -550,17 +550,17 @@ const docTemplate = `{
                 "tags": [
                     "RuleApplication"
                 ],
-                "summary": "更新规则应用",
+                "summary": "更新规则应用 | Update rule application",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID",
+                        "description": "规则应用ID | Rule application ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新信息",
+                        "description": "更新信息 | Update info",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -592,11 +592,11 @@ const docTemplate = `{
                 "tags": [
                     "RuleApplication"
                 ],
-                "summary": "删除规则应用",
+                "summary": "删除规则应用 | Delete rule application",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID",
+                        "description": "规则应用ID | Rule application ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -632,7 +632,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1/quality",
 	Schemes:          []string{},
 	Title:            "ADDP Quality API",
-	Description:      "全域数据平台 - 数据质量管理 API",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

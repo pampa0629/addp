@@ -2,7 +2,7 @@ package main
 
 // @title           ADDP Graph API
 // @version         1.0
-// @description     全域数据平台 - 知识图谱模块 API
+// @description     全域数据平台 - 知识图谱模块 API | All Domain Data Platform - Knowledge Graph Module API
 
 // @host      localhost:8186
 // @BasePath  /api/v1/graph

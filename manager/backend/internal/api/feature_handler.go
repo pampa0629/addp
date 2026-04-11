@@ -29,10 +29,19 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
-// @Summary GetFeatureCentroid
+// @Summary 获取要素几何中心点 | Get feature centroid
+// @Description 获取指定要素的几何中心点坐标，用于表格行定位到地图 | Get the centroid coordinates of a feature for map positioning
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param feature_id path string true "要素ID | Feature ID"
+// @Param schema query string true "数据库Schema | Database schema"
+// @Param table query string true "数据表名 | Table name"
+// @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
+// @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
+// @Success 200 {object} map[string]interface{} "中心点坐标 | Centroid coordinates"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
 // @Router /getfeaturecentroid [get]
 // @Security BearerAuth
 func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
@@ -135,10 +144,19 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 
 // GetFeatureGeometry 获取要素的完整几何（用于地图高亮显示）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geom
-// @Summary GetFeatureGeometry
+// @Summary 获取要素完整几何 | Get feature geometry
+// @Description 获取指定要素的完整几何数据（GeoJSON格式），用于地图高亮显示 | Get full geometry of a feature in GeoJSON format for map highlighting
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param feature_id path string true "要素ID | Feature ID"
+// @Param schema query string true "数据库Schema | Database schema"
+// @Param table query string true "数据表名 | Table name"
+// @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
+// @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
+// @Success 200 {object} map[string]interface{} "几何数据及边界框 | Geometry data and bounding box"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
 // @Router /getfeaturegeometry [get]
 // @Security BearerAuth
 func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -18,7 +20,7 @@ func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
 }
 
 // ListCodeSets 获取码值集列表
-// @Summary ListCodeSets
+// @Summary 获取码值集列表 | List code sets
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -52,7 +54,7 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 }
 
 // CreateCodeSet 创建码值集
-// @Summary CreateCodeSet
+// @Summary 创建码值集 | Create code set
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -77,7 +79,7 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 }
 
 // GetCodeSet 获取码值集详情
-// @Summary GetCodeSet
+// @Summary 获取码值集详情 | Get code set detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -97,7 +99,7 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 }
 
 // UpdateCodeSet 更新码值集
-// @Summary UpdateCodeSet
+// @Summary 更新码值集 | Update code set
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -123,7 +125,7 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 }
 
 // DeleteCodeSet 删除码值集
-// @Summary DeleteCodeSet
+// @Summary 删除码值集 | Delete code set
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -138,11 +140,11 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // GetCodeItems 获取码值项列表
-// @Summary GetCodeItems
+// @Summary 获取码值项列表 | List code items
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -162,7 +164,7 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 }
 
 // CreateCodeItem 创建码值项
-// @Summary CreateCodeItem
+// @Summary 创建码值项 | Create code item
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -188,7 +190,7 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 }
 
 // UpdateCodeItem 更新码值项
-// @Summary UpdateCodeItem
+// @Summary 更新码值项 | Update code item
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -215,7 +217,7 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 }
 
 // DeleteCodeItem 删除码值项
-// @Summary DeleteCodeItem
+// @Summary 删除码值项 | Delete code item
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -231,5 +233,5 @@ func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }

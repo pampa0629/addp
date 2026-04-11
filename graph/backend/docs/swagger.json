@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "全域数据平台 - 知识图谱模块 API",
+        "description": "全域数据平台 - 知识图谱模块 API | All Domain Data Platform - Knowledge Graph Module API",
         "title": "ADDP Graph API",
         "contact": {},
         "version": "1.0"
@@ -16,14 +16,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的所有知识图谱实例",
+                "description": "获取当前租户的所有知识图谱实例 | Get all knowledge graph instances for current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识图谱"
+                    "知识图谱 | Knowledge Graph"
                 ],
-                "summary": "知识图谱列表",
+                "summary": "知识图谱列表 | List knowledge graphs",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -48,7 +48,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的知识图谱实例，绑定本体和 Neo4j 引擎",
+                "description": "创建新的知识图谱实例，绑定本体和 Neo4j 引擎 | Create a new knowledge graph instance, binding ontology and Neo4j engine",
                 "consumes": [
                     "application/json"
                 ],
@@ -56,12 +56,12 @@
                     "application/json"
                 ],
                 "tags": [
-                    "知识图谱"
+                    "知识图谱 | Knowledge Graph"
                 ],
-                "summary": "创建知识图谱",
+                "summary": "创建知识图谱 | Create knowledge graph",
                 "parameters": [
                     {
-                        "description": "创建知识图谱请求",
+                        "description": "创建知识图谱请求 | Create knowledge graph request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -99,18 +99,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取知识图谱实例详情",
+                "description": "获取知识图谱实例详情 | Get knowledge graph instance detail",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识图谱"
+                    "知识图谱 | Knowledge Graph"
                 ],
-                "summary": "知识图谱详情",
+                "summary": "知识图谱详情 | Get knowledge graph detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -137,7 +137,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新知识图谱的名称、描述或状态",
+                "description": "更新知识图谱的名称、描述或状态 | Update knowledge graph name, description or status",
                 "consumes": [
                     "application/json"
                 ],
@@ -145,19 +145,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "知识图谱"
+                    "知识图谱 | Knowledge Graph"
                 ],
-                "summary": "更新知识图谱",
+                "summary": "更新知识图谱 | Update knowledge graph",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新知识图谱请求",
+                        "description": "更新知识图谱请求 | Update knowledge graph request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -193,18 +193,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "删除知识图谱实例",
+                "description": "删除知识图谱实例 | Delete a knowledge graph instance",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "知识图谱"
+                    "知识图谱 | Knowledge Graph"
                 ],
-                "summary": "删除知识图谱",
+                "summary": "删除知识图谱 | Delete knowledge graph",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -233,18 +233,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "探测知识图谱支持的图算法能力（GDS/Cypher）",
+                "description": "探测知识图谱支持的图算法能力（GDS/Cypher）| Detect supported graph algorithm capabilities (GDS/Cypher)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图算法分析"
+                    "图算法分析 | Graph Algorithm Analysis"
                 ],
-                "summary": "算法能力探测",
+                "summary": "算法能力探测 | Detect algorithm capabilities",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -273,7 +273,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）",
+                "description": "执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）| Run specified graph algorithm (degree centrality/K-hop/shortest path/PageRank/Louvain/WCC/betweenness centrality)",
                 "consumes": [
                     "application/json"
                 ],
@@ -281,19 +281,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "图算法分析"
+                    "图算法分析 | Graph Algorithm Analysis"
                 ],
-                "summary": "执行图算法",
+                "summary": "执行图算法 | Run graph algorithm",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "算法执行请求",
+                        "description": "算法执行请求 | Algorithm run request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -324,6 +324,47 @@
                 }
             }
         },
+        "/graphs/{id}/analysis/sync-spatial": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将本体中所有有效空间类型（含从父类型继承）的图层同步到 Neo4j，并注册已有节点（幂等）| Sync all valid spatial type layers from ontology to Neo4j and register existing nodes (idempotent)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图算法分析 | Graph Algorithm Analysis"
+                ],
+                "summary": "同步空间图层 | Sync spatial layers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/graphs/{id}/build/tasks": {
             "get": {
                 "security": [
@@ -331,18 +372,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取知识图谱的所有构建任务",
+                "description": "获取知识图谱的所有构建任务 | Get all build tasks for a knowledge graph",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图谱构建"
+                    "图谱构建 | Graph Build"
                 ],
-                "summary": "构建任务列表",
+                "summary": "构建任务列表 | List build tasks",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -372,7 +413,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的知识图谱构建任务",
+                "description": "创建新的知识图谱构建任务 | Create a new knowledge graph build task",
                 "consumes": [
                     "application/json"
                 ],
@@ -380,13 +421,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "图谱构建"
+                    "图谱构建 | Graph Build"
                 ],
-                "summary": "创建构建任务",
+                "summary": "创建构建任务 | Create build task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -421,25 +462,25 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动知识图谱构建任务",
+                "description": "启动知识图谱构建任务 | Start a knowledge graph build task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图谱构建"
+                    "图谱构建 | Graph Build"
                 ],
-                "summary": "执行构建任务",
+                "summary": "执行构建任务 | Run build task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "任务 ID",
+                        "description": "任务 ID | Task ID",
                         "name": "tid",
                         "in": "path",
                         "required": true
@@ -468,7 +509,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定节点的邻居节点和关系",
+                "description": "获取指定节点的邻居节点和关系 | Get neighbor nodes and relations of a specified node",
                 "consumes": [
                     "application/json"
                 ],
@@ -476,19 +517,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "展开节点邻居",
+                "summary": "展开节点邻居 | Expand node neighbors",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "展开请求",
+                        "description": "展开请求 | Expand request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -526,18 +567,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取图谱概览子图（采样约100条关系）",
+                "description": "获取图谱概览子图（采样约100条关系）| Get graph overview subgraph (sampling ~100 relations)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "图谱概览",
+                "summary": "图谱概览 | Get graph overview",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -566,7 +607,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "查询两个节点之间的最短路径",
+                "description": "查询两个节点之间的最短路径 | Find the shortest path between two nodes",
                 "consumes": [
                     "application/json"
                 ],
@@ -574,19 +615,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "最短路径查询",
+                "summary": "最短路径查询 | Find shortest path",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "路径查询请求",
+                        "description": "路径查询请求 | Path query request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -624,18 +665,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取知识图谱的节点标签和关系类型 Schema",
+                "description": "获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema of a knowledge graph",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "图谱 Schema",
+                "summary": "图谱 Schema | Get graph schema",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -664,7 +705,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "在知识图谱中全文搜索实体节点",
+                "description": "在知识图谱中全文搜索实体节点 | Full-text search entity nodes in a knowledge graph",
                 "consumes": [
                     "application/json"
                 ],
@@ -672,19 +713,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "全文搜索节点",
+                "summary": "全文搜索节点 | Full-text search nodes",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "搜索请求",
+                        "description": "搜索请求 | Search request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -722,18 +763,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取知识图谱的节点数、关系数、按标签分组统计",
+                "description": "获取知识图谱的节点数、关系数、按标签分组统计 | Get node count, relation count and label-grouped statistics of a knowledge graph",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "图谱浏览"
+                    "图谱浏览 | Graph Browse"
                 ],
-                "summary": "图谱统计",
+                "summary": "图谱统计 | Get graph statistics",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "知识图谱 ID",
+                        "description": "知识图谱 ID | Knowledge graph ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -758,33 +799,33 @@
         "/kg/{graphId}/entities/{type}": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "按类型列出实体（分页）",
+                "summary": "按类型列出实体（分页）| List entities by type (paginated)",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "图谱 ID",
+                        "description": "图谱 ID | Graph ID",
                         "name": "graphId",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "本体实体类型名称",
+                        "description": "本体实体类型名称 | Ontology entity type name",
                         "name": "type",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "页码（默认 1）",
+                        "description": "页码（默认 1）| Page number (default 1)",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "每页大小（默认 20）",
+                        "description": "每页大小（默认 20）| Page size (default 20)",
                         "name": "page_size",
                         "in": "query"
                     }
@@ -795,63 +836,63 @@
         "/kg/{graphId}/entities/{type}/{nodeId}": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "获取实体详情",
+                "summary": "获取实体详情 | Get entity detail",
                 "responses": {}
             }
         },
         "/kg/{graphId}/nodes/{nodeId}/neighbors": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "获取节点邻居",
+                "summary": "获取节点邻居 | Get node neighbors",
                 "responses": {}
             }
         },
         "/kg/{graphId}/ontology": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "获取图谱本体描述",
+                "summary": "获取图谱本体描述 | Get graph ontology description",
                 "responses": {}
             }
         },
         "/kg/{graphId}/paths": {
             "post": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "路径查找",
+                "summary": "路径查找 | Find paths",
                 "responses": {}
             }
         },
         "/kg/{graphId}/search": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "全文搜索实体",
+                "summary": "全文搜索实体 | Full-text search entities",
                 "responses": {}
             }
         },
         "/kg/{graphId}/stats": {
             "get": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "图谱统计信息",
+                "summary": "图谱统计信息 | Graph statistics",
                 "responses": {}
             }
         },
         "/kg/{graphId}/subgraph": {
             "post": {
                 "tags": [
-                    "知识服务"
+                    "知识服务 | Knowledge Service"
                 ],
-                "summary": "获取实体中心子图",
+                "summary": "获取实体中心子图 | Get entity-centric subgraph",
                 "responses": {}
             }
         },
@@ -862,14 +903,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的所有本体模型",
+                "description": "获取当前租户的所有本体模型 | Get all ontology models for current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "本体列表",
+                "summary": "本体列表 | List ontologies",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -894,7 +935,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的本体模型",
+                "description": "创建新的本体模型 | Create a new ontology model",
                 "consumes": [
                     "application/json"
                 ],
@@ -902,12 +943,12 @@
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "创建本体",
+                "summary": "创建本体 | Create ontology",
                 "parameters": [
                     {
-                        "description": "创建本体请求",
+                        "description": "创建本体请求 | Create ontology request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -945,18 +986,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取本体详情，含实体类型和关系类型",
+                "description": "获取本体详情，含实体类型和关系类型 | Get ontology detail including entity types and relation types",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "本体详情",
+                "summary": "本体详情 | Get ontology detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -983,7 +1024,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新本体模型的名称、描述或状态",
+                "description": "更新本体模型的名称、描述或状态 | Update ontology model name, description or status",
                 "consumes": [
                     "application/json"
                 ],
@@ -991,19 +1032,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "更新本体",
+                "summary": "更新本体 | Update ontology",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新本体请求",
+                        "description": "更新本体请求 | Update ontology request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1039,18 +1080,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "删除本体及其所有实体类型和关系类型",
+                "description": "删除本体及其所有实体类型和关系类型 | Delete ontology and all its entity types and relation types",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "删除本体",
+                "summary": "删除本体 | Delete ontology",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1079,18 +1120,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取本体下的所有实体类型",
+                "description": "获取本体下的所有实体类型 | Get all entity types under an ontology",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "实体类型列表",
+                "summary": "实体类型列表 | List entity types",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1120,7 +1161,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "在本体下创建新的实体类型",
+                "description": "在本体下创建新的实体类型 | Create a new entity type under an ontology",
                 "consumes": [
                     "application/json"
                 ],
@@ -1128,19 +1169,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "创建实体类型",
+                "summary": "创建实体类型 | Create entity type",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "创建实体类型请求",
+                        "description": "创建实体类型请求 | Create entity type request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1171,6 +1212,78 @@
                 }
             }
         },
+        "/ontologies/{id}/entity-types/{eid}/sync-spatial-layer": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将实体类型的空间图层同步到指定的 Neo4j 图谱实例（仅 is_spatial_layer=true 的类型可操作）| Sync entity type spatial layer to specified Neo4j graph instance (only for types with is_spatial_layer=true)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "同步空间图层 | Sync spatial layer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "实体类型 ID | Entity type ID",
+                        "name": "eid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "同步请求 | Sync request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SyncSpatialLayersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/ontologies/{id}/relation-types": {
             "get": {
                 "security": [
@@ -1178,18 +1291,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取本体下的所有关系类型",
+                "description": "获取本体下的所有关系类型 | Get all relation types under an ontology",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "关系类型列表",
+                "summary": "关系类型列表 | List relation types",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1219,7 +1332,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "在本体下创建新的关系类型",
+                "description": "在本体下创建新的关系类型 | Create a new relation type under an ontology",
                 "consumes": [
                     "application/json"
                 ],
@@ -1227,19 +1340,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "创建关系类型",
+                "summary": "创建关系类型 | Create relation type",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "创建关系类型请求",
+                        "description": "创建关系类型请求 | Create relation type request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1277,18 +1390,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取本体的所有版本快照",
+                "description": "获取本体的所有版本快照 | Get all version snapshots of an ontology",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "版本列表",
+                "summary": "版本列表 | List ontology versions",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1318,7 +1431,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为本体创建版本快照",
+                "description": "为本体创建版本快照 | Create a version snapshot for an ontology",
                 "consumes": [
                     "application/json"
                 ],
@@ -1326,19 +1439,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "本体管理"
+                    "本体管理 | Ontology Management"
                 ],
-                "summary": "创建版本快照",
+                "summary": "创建版本快照 | Create version snapshot",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "本体 ID",
+                        "description": "本体 ID | Ontology ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "创建版本请求",
+                        "description": "创建版本请求 | Create version request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1393,6 +1506,30 @@
                 },
                 "gds_version": {
                     "type": "string"
+                },
+                "pending_layers": {
+                    "description": "本体中已定义（含继承）但尚未同步到 Neo4j 的空间图层",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "spatial_algos": {
+                    "description": "不可用时返回空列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "spatial_available": {
+                    "type": "boolean"
+                },
+                "spatial_layers": {
+                    "description": "已在 Neo4j 中创建的空间图层",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.SpatialLayerInfo"
+                    }
                 }
             }
         },
@@ -1467,6 +1604,13 @@
         "github_com_addp_graph_internal_models.BrowseSchema": {
             "type": "object",
             "properties": {
+                "connections": {
+                    "description": "关系类型的端点连通信息",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.RelTypeConnection"
+                    }
+                },
                 "labels": {
                     "description": "所有节点标签",
                     "type": "array",
@@ -1675,6 +1819,9 @@
                 "icon": {
                     "type": "string"
                 },
+                "is_spatial_layer": {
+                    "type": "boolean"
+                },
                 "label": {
                     "type": "string"
                 },
@@ -1692,6 +1839,9 @@
                 },
                 "sort_order": {
                     "type": "integer"
+                },
+                "spatial_layer_config": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.SpatialLayerConfig"
                 }
             }
         },
@@ -1829,6 +1979,10 @@
                 "id": {
                     "type": "integer"
                 },
+                "is_spatial_layer": {
+                    "description": "是否为空间图层类型",
+                    "type": "boolean"
+                },
                 "label": {
                     "description": "显示名称 (中文)",
                     "type": "string"
@@ -1856,6 +2010,13 @@
                 },
                 "sort_order": {
                     "type": "integer"
+                },
+                "spatial_layer_config": {
+                    "description": "空间图层配置",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -2184,7 +2345,7 @@
             "type": "object",
             "properties": {
                 "data_type": {
-                    "description": "string, integer, float, boolean, date, datetime",
+                    "description": "string, integer, float, boolean, date, datetime, wkt",
                     "type": "string"
                 },
                 "default_val": {},
@@ -2202,6 +2363,23 @@
                 },
                 "unique": {
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.RelTypeConnection": {
+            "type": "object",
+            "properties": {
+                "rel_type": {
+                    "description": "关系类型名称",
+                    "type": "string"
+                },
+                "source_label": {
+                    "description": "起点节点标签",
+                    "type": "string"
+                },
+                "target_label": {
+                    "description": "终点节点标签",
+                    "type": "string"
                 }
             }
         },
@@ -2286,6 +2464,48 @@
                 }
             }
         },
+        "github_com_addp_graph_internal_models.SpatialLayerConfig": {
+            "type": "object",
+            "properties": {
+                "geom_field": {
+                    "description": "WKT 属性名，默认 \"wkt\"（wkt 类型）",
+                    "type": "string"
+                },
+                "geometry_type": {
+                    "description": "\"point\" | \"wkt\"",
+                    "type": "string"
+                },
+                "lat_field": {
+                    "description": "纬度字段名，默认 \"lat\"（point 类型）",
+                    "type": "string"
+                },
+                "layer_name": {
+                    "description": "Neo4j layer name，默认 = EntityType.Name",
+                    "type": "string"
+                },
+                "lon_field": {
+                    "description": "经度字段名，默认 \"lon\"（point 类型）",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.SpatialLayerInfo": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "description": "含 geometry_type / lon_field / lat_field / geom_field",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SpatialLayerConfig"
+                        }
+                    ]
+                },
+                "name": {
+                    "description": "Neo4j layer name",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.SubgraphResult": {
             "type": "object",
             "properties": {
@@ -2309,6 +2529,17 @@
                 "message": {
                     "type": "string",
                     "example": "操作成功"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.SyncSpatialLayersRequest": {
+            "type": "object",
+            "required": [
+                "graph_id"
+            ],
+            "properties": {
+                "graph_id": {
+                    "type": "integer"
                 }
             }
         },

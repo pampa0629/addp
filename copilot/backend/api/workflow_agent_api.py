@@ -67,7 +67,7 @@ class WorkflowGenerationResponse(BaseModel):
     validation_result: Optional[Dict] = None
 
 
-@router.post("/workflow/generate", response_model=WorkflowGenerationResponse)
+@router.post("/workflow/generate", response_model=WorkflowGenerationResponse, summary="生成工作流 | Generate Workflow")
 async def generate_workflow(request: WorkflowGenerationRequest):
     """
     生成工作流（基于 WorkflowPipeline）

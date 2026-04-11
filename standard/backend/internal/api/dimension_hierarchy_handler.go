@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -19,7 +21,7 @@ func NewDimensionHierarchyHandler(svc *service.DimensionHierarchyService) *Dimen
 }
 
 // List GET /api/standard/dimension-hierarchies
-// @Summary List
+// @Summary 获取维度层级列表 | List dimension hierarchies
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -36,7 +38,7 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 }
 
 // Get GET /api/standard/dimension-hierarchies/:id
-// @Summary Get
+// @Summary 获取维度层级详情 | Get dimension hierarchy detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -45,20 +47,20 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
 	item, err := h.svc.GetByID(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "dimension hierarchy not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgDimHierarchyNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, item)
 }
 
 // Create POST /api/standard/dimension-hierarchies
-// @Summary Create
+// @Summary 创建维度层级 | Create dimension hierarchy
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -81,7 +83,7 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 }
 
 // Update PUT /api/standard/dimension-hierarchies/:id
-// @Summary Update
+// @Summary 更新维度层级 | Update dimension hierarchy
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -90,7 +92,7 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateDimensionHierarchyRequest
@@ -109,7 +111,7 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 }
 
 // Delete DELETE /api/standard/dimension-hierarchies/:id
-// @Summary Delete
+// @Summary 删除维度层级 | Delete dimension hierarchy
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -118,7 +120,7 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -126,13 +128,13 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // --- 层级管理 ---
 
 // ListLevels GET /api/standard/dimension-hierarchies/:id/levels
-// @Summary ListLevels
+// @Summary 获取维度层级的层次列表 | List hierarchy levels
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -141,7 +143,7 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	levels, err := h.svc.GetLevels(id)
@@ -153,7 +155,7 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 }
 
 // CreateLevel POST /api/standard/dimension-hierarchies/:id/levels
-// @Summary CreateLevel
+// @Summary 创建层次 | Create hierarchy level
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -162,7 +164,7 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpsertHierarchyLevelRequest
@@ -179,7 +181,7 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 }
 
 // UpdateLevel PUT /api/standard/dimension-hierarchies/:id/levels/:lid
-// @Summary UpdateLevel
+// @Summary 更新层次 | Update hierarchy level
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -188,12 +190,12 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	lid, err := strconv.ParseInt(c.Param("lid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid level id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidLevelID)})
 		return
 	}
 	var req models.UpsertHierarchyLevelRequest
@@ -210,7 +212,7 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 }
 
 // DeleteLevel DELETE /api/standard/dimension-hierarchies/:id/levels/:lid
-// @Summary DeleteLevel
+// @Summary 删除层次 | Delete hierarchy level
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -219,17 +221,17 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	lid, err := strconv.ParseInt(c.Param("lid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid level id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidLevelID)})
 		return
 	}
 	if err := h.svc.DeleteLevel(lid, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }

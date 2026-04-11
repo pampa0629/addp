@@ -206,6 +206,10 @@ if [ "$FORCE_BUILD_ALL" = true ]; then
   # 清理构建缓存
   go clean -cache 2>/dev/null || true
 
+  # 重新生成所有模块的 Swagger 文档
+  echo "📄 重新生成所有模块 Swagger 文档..."
+  bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" all || echo "⚠️ 部分模块 Swagger 文档生成失败，继续"
+
   echo "✅ 已标记所有模块需要重新编译"
 
 elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
@@ -215,14 +219,10 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
   for module in "${FORCE_BUILD_MODULES[@]}"; do
     echo "  处理 $module 模块..."
 
-    # 生成 Swagger 文档（如果 swag 可用）
-    if [ "$module" = "system" ]; then
-      if command -v swag &>/dev/null || [ -f ~/go/bin/swag ]; then
-        SWAG_BIN="${HOME}/go/bin/swag"
-        command -v swag &>/dev/null && SWAG_BIN="swag"
-        echo "  生成 System Swagger 文档..."
-        (cd system/backend && ${SWAG_BIN} init -g cmd/server/main.go -o docs --parseDependency --parseInternal -q 2>/dev/null) || echo "  ⚠️ Swagger 文档生成失败，跳过"
-      fi
+    # 生成 Swagger 文档（所有 Go 后端模块，跳过 Python 服务和 gateway）
+    SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
+    if [[ " ${SWAGGER_MODULES[*]} " == *" $module "* ]]; then
+      bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" "$module" || echo "  ⚠️ [$module] Swagger 文档生成失败，跳过"
     fi
 
     # Touch 指定模块的源文件

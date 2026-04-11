@@ -4,13 +4,15 @@ import (
 	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/standard/docs"
+	_ "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
-	_ "github.com/addp/standard/docs"
 )
 
 // getTenantID 从 context 获取租户 ID
@@ -53,6 +55,7 @@ func SetupRouter(
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
+	router.Use(commoni18n.I18nMiddleware())
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

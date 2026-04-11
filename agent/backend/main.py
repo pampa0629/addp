@@ -21,7 +21,7 @@ _API_PREFIX = "/api/v1/agent"
 
 app = FastAPI(
     title="ADDP Agent Service",
-    description="ADDP 平台智能体服务",
+    description="ADDP 平台智能体服务 | ADDP Platform Agent Service",
     version="1.0.0",
 )
 
@@ -70,7 +70,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-@app.get("/health")
+@app.get("/health", summary="健康检查 | Health Check")
 async def health():
     return {"status": "ok", "module": "agent"}
 

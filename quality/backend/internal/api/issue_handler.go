@@ -16,11 +16,11 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 	return &IssueHandler{svc: svc}
 }
 
-// @Summary 获取问题工单列表
+// @Summary 获取问题工单列表 | List quality issues
 // @Tags Issue
 // @Produce json
-// @Param status query string false "状态"
-// @Param engine_id query int false "引擎ID"
+// @Param status query string false "状态 | Status"
+// @Param engine_id query int false "引擎ID | Engine ID"
 // @Success 200 {array} map[string]interface{}
 // @Router /issues [get]
 // @Security BearerAuth
@@ -37,10 +37,10 @@ func (h *IssueHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// @Summary 获取问题工单详情
+// @Summary 获取问题工单详情 | Get issue detail
 // @Tags Issue
 // @Produce json
-// @Param id path int true "工单ID"
+// @Param id path int true "工单ID | Issue ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /issues/{id} [get]
 // @Security BearerAuth
@@ -59,12 +59,12 @@ func (h *IssueHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 更新问题工单状态
+// @Summary 更新问题工单状态 | Update issue status
 // @Tags Issue
 // @Accept json
 // @Produce json
-// @Param id path int true "工单ID"
-// @Param body body map[string]string true "状态信息"
+// @Param id path int true "工单ID | Issue ID"
+// @Param body body map[string]string true "状态信息 | Status info"
 // @Success 200 {object} map[string]string
 // @Router /issues/{id}/status [put]
 // @Security BearerAuth

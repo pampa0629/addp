@@ -23,7 +23,7 @@
         @toggle-collapse="toggleSidebar"
       />
 
-      <el-main class="main-content" :class="{ 'with-agent': agentOpen }">
+      <el-main class="main-content">
         <div v-if="currentModule === 'api-docs'" class="api-docs-view">
           <ApiDocs />
         </div>
@@ -45,28 +45,68 @@
         />
       </el-main>
 
-      <!-- AI 助手侧边抽屉 -->
-      <transition name="agent-slide">
-        <div v-if="agentOpen" class="agent-panel">
-          <div class="agent-panel-header">
-            <span>{{ t('console.agent.title') }}</span>
-            <el-icon class="agent-close" @click="agentOpen = false"><Close /></el-icon>
-          </div>
-          <iframe
-            class="agent-iframe"
-            :src="agentIframeUrl"
-            frameborder="0"
-            allow="microphone"
-          />
-        </div>
-      </transition>
     </el-container>
 
-    <!-- 右下角浮动按钮 -->
-    <div class="agent-fab" :class="{ 'is-open': agentOpen }" @click="toggleAgent">
-      <el-icon :size="22"><component :is="agentOpen ? Close : ChatDotRound" /></el-icon>
-      <span v-if="!agentOpen" class="fab-label">{{ t('console.agent.fab') }}</span>
-    </div>
+    <!-- 右下角魔法棒 + 向左滑出面板（仅首页显示） -->
+    <transition name="fab-fade">
+      <div v-if="currentModule === 'home'" class="copilot-fab-wrapper">
+        <!-- 滑出的输入面板 -->
+        <transition name="copilot-slide">
+          <div v-if="copilotOpen" class="copilot-inline-panel">
+            <div class="copilot-panel-header">
+              <span class="copilot-panel-title">{{ t('console.copilot.title') }}</span>
+              <el-icon class="copilot-panel-close" @click="copilotOpen = false"><Close /></el-icon>
+            </div>
+            <el-input
+              ref="copilotInputRef"
+              v-model="copilotQuery"
+              type="textarea"
+              :rows="3"
+              :placeholder="t('console.copilot.placeholder')"
+              :disabled="copilotLoading"
+              @keydown.ctrl.enter="askCopilot"
+            />
+            <!-- 结果区域 -->
+            <div v-if="copilotResult" class="copilot-result">
+              <p class="copilot-text">{{ copilotResult.text }}</p>
+              <div class="copilot-actions">
+                <el-button
+                  v-for="action in copilotResult.actions"
+                  :key="action.route"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="handleCopilotAction(action.route)"
+                >
+                  {{ action.label }}
+                </el-button>
+              </div>
+            </div>
+            <div class="copilot-panel-footer">
+              <span class="copilot-panel-hint">Ctrl+Enter {{ t('console.copilot.ask') }}</span>
+              <el-button
+                type="primary"
+                :loading="copilotLoading"
+                size="small"
+                @click="askCopilot"
+              >
+                {{ t('console.copilot.ask') }}
+              </el-button>
+            </div>
+          </div>
+        </transition>
+
+        <!-- 魔法棒 FAB 按钮 -->
+        <div
+          class="copilot-fab"
+          :class="{ 'copilot-fab--active': copilotOpen }"
+          @click="toggleCopilot"
+        >
+          <el-icon :size="20"><MagicStick /></el-icon>
+          <span class="fab-label">{{ t('console.copilot.fab') }}</span>
+        </div>
+      </div>
+    </transition>
   </el-container>
 </template>
 
@@ -77,14 +117,15 @@ import { useAuthStore } from '../store/auth'
 import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { ChatDotRound, Close } from '@element-plus/icons-vue'
+import { MagicStick, Close } from '@element-plus/icons-vue'
 import {
   MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS, DEFAULT_ROUTES,
-  PORTAL_URL, buildModuleUrl, MODULE_URLS,
+  PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
+import { navigateGuide } from '../api/copilot'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 
@@ -271,18 +312,38 @@ const toggleSidebar = () => {
 
 // ─── AI 助手 ─────────────────────────────────────────────────────────────────
 
-const AGENT_OPEN_KEY = 'addp_agent_panel_open'
-const agentOpen = ref(localStorage.getItem(AGENT_OPEN_KEY) === 'true')
+// Copilot 状态
+const copilotOpen = ref(false)
+const copilotQuery = ref('')
+const copilotLoading = ref(false)
+const copilotResult = ref(null)
+const copilotInputRef = ref(null)
 
-const agentIframeUrl = computed(() => {
-  const base = MODULE_URLS.agent
-  const token = authStore.token
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base
-})
+function toggleCopilot() {
+  copilotOpen.value = !copilotOpen.value
+  if (copilotOpen.value) {
+    copilotResult.value = null
+    setTimeout(() => copilotInputRef.value?.focus(), 300)
+  }
+}
 
-function toggleAgent() {
-  agentOpen.value = !agentOpen.value
-  localStorage.setItem(AGENT_OPEN_KEY, String(agentOpen.value))
+async function askCopilot() {
+  if (!copilotQuery.value.trim()) return
+  copilotLoading.value = true
+  copilotResult.value = null
+  try {
+    const res = await navigateGuide({ query: copilotQuery.value, tenant_id: 1, user_id: 1 })
+    copilotResult.value = res
+  } catch (e) {
+    ElMessage.error('导航助手暂时不可用')
+  } finally {
+    copilotLoading.value = false
+  }
+}
+
+function handleCopilotAction(route) {
+  copilotOpen.value = false
+  handleMenuSelect(route)
 }
 </script>
 
@@ -318,69 +379,20 @@ function toggleAgent() {
   overflow: hidden;
 }
 
-/* AI 助手侧边面板 */
-.agent-panel {
-  width: 380px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--addp-bg-primary);
-  border-left: 1px solid var(--addp-border-color);
-  height: 100%;
-}
+/* AI 助手侧边面板 - 已移除 */
 
-.agent-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--addp-border-color);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-  flex-shrink: 0;
-}
-
-.agent-close {
-  cursor: pointer;
-  color: var(--addp-text-tertiary);
-  transition: color 0.15s;
-}
-
-.agent-close:hover {
-  color: var(--addp-text-primary);
-}
-
-.agent-iframe {
-  flex: 1;
-  width: 100%;
-  border: none;
-}
-
-/* 滑入动画 */
-.agent-slide-enter-active,
-.agent-slide-leave-active {
-  transition: width 0.3s ease, opacity 0.3s ease;
-  overflow: hidden;
-}
-
-.agent-slide-enter-from,
-.agent-slide-leave-to {
-  width: 0;
-  opacity: 0;
-}
-
-.agent-slide-enter-to,
-.agent-slide-leave-from {
-  width: 380px;
-  opacity: 1;
-}
-
-/* 右下角浮动按钮 */
-.agent-fab {
+/* 右下角魔法棒浮动按钮组 */
+.copilot-fab-wrapper {
   position: fixed;
   bottom: 28px;
   right: 28px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 1000;
+}
+
+.copilot-fab {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -390,24 +402,123 @@ function toggleAgent() {
   padding: 10px 16px;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1000;
-  transition: background 0.2s, box-shadow 0.2s, padding 0.2s;
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
   user-select: none;
 }
 
-.agent-fab:hover {
+.copilot-fab:hover {
   background: var(--el-color-primary-dark-2);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
-.agent-fab.is-open {
-  padding: 10px;
-  border-radius: 50%;
+.copilot-fab--active {
+  background: var(--el-color-primary-dark-2);
+  transform: scale(0.96);
 }
 
 .fab-label {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* FAB 淡入淡出 */
+.fab-fade-enter-active,
+.fab-fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+.fab-fade-enter-from,
+.fab-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+/* Copilot 内联面板 */
+.copilot-inline-panel {
+  width: 320px;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform-origin: right bottom;
+}
+
+.copilot-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.copilot-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.copilot-panel-close {
+  cursor: pointer;
+  color: var(--addp-text-secondary);
+  font-size: 14px;
+  transition: color 0.15s;
+}
+
+.copilot-panel-close:hover {
+  color: var(--addp-text-primary);
+}
+
+.copilot-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.copilot-panel-hint {
+  font-size: 11px;
+  color: var(--addp-text-secondary);
+}
+
+/* 滑动动画 */
+.copilot-slide-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.copilot-slide-leave-active {
+  transition: all 0.18s ease-in;
+}
+
+.copilot-slide-enter-from {
+  opacity: 0;
+  transform: translateX(20px) scale(0.95);
+}
+
+.copilot-slide-leave-to {
+  opacity: 0;
+  transform: translateX(20px) scale(0.95);
+}
+
+/* Copilot 结果区域 */
+.copilot-result {
+  margin-top: 0;
+  padding: 10px;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+}
+
+.copilot-text {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+  line-height: 1.6;
+}
+
+.copilot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

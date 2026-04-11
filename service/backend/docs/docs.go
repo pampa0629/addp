@@ -26,10 +26,10 @@ const docTemplate = `{
                 "tags": [
                     "DataService"
                 ],
-                "summary": "聚合查询",
+                "summary": "聚合查询 | Aggregate query",
                 "parameters": [
                     {
-                        "description": "聚合请求",
+                        "description": "聚合请求 | Aggregation request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -40,7 +40,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "聚合结果 | Aggregation result",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.AggregationResponse"
                         }
@@ -59,10 +59,10 @@ const docTemplate = `{
                 "tags": [
                     "DataService"
                 ],
-                "summary": "查询数据表",
+                "summary": "查询数据表 | Query data table",
                 "parameters": [
                     {
-                        "description": "查询请求",
+                        "description": "查询请求 | Query request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -73,7 +73,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "查询结果 | Query result",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.DataQueryResponse"
                         }
@@ -92,25 +92,25 @@ const docTemplate = `{
                 "tags": [
                     "DataService"
                 ],
-                "summary": "获取表结构",
+                "summary": "获取表结构 | Get table structure",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "引擎ID",
+                        "description": "引擎ID | Engine ID",
                         "name": "engine_id",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Schema名称",
+                        "description": "Schema名称 | Schema name",
                         "name": "schema",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "表名",
+                        "description": "表名 | Table name",
                         "name": "table",
                         "in": "query",
                         "required": true
@@ -118,7 +118,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "表结构 | Table structure",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -137,10 +137,10 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取可用于数据服务的 PostgreSQL 引擎列表",
+                "summary": "获取可用于数据服务的 PostgreSQL 引擎列表 | List PostgreSQL engines available for data services",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "引擎列表 | Engine list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -160,11 +160,11 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "OGC Tiles API Landing Page",
+                "summary": "OGC Tiles API Landing Page | OGC Tiles API Landing Page",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
@@ -172,7 +172,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Landing Page | Landing Page",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -189,11 +189,11 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "OGC API Conformance",
+                "summary": "OGC API Conformance | OGC API Conformance",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
@@ -201,7 +201,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "符合性声明 | Conformance declaration",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -218,11 +218,11 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "获取 Tile Matrix Sets",
+                "summary": "获取 Tile Matrix Sets | Get Tile Matrix Sets",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
@@ -230,7 +230,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片矩阵集列表 | Tile Matrix Set list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -247,18 +247,18 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "获取单个 Tile Matrix Set",
+                "summary": "获取单个 Tile Matrix Set | Get single Tile Matrix Set",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片矩阵集 ID",
+                        "description": "瓦片矩阵集 ID | Tile Matrix Set ID",
                         "name": "tileMatrixSetId",
                         "in": "path",
                         "required": true
@@ -266,7 +266,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片矩阵集详情 | Tile Matrix Set details",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -283,11 +283,11 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "获取 Tilesets",
+                "summary": "获取 Tilesets | Get Tilesets",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
@@ -295,7 +295,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片集列表 | Tileset list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -312,46 +312,46 @@ const docTemplate = `{
                 "tags": [
                     "OGC Tiles"
                 ],
-                "summary": "获取单个瓦片",
+                "summary": "获取单个瓦片 | Get single tile",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "图层名称",
+                        "description": "图层名称 | Layer name",
                         "name": "layer",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片矩阵集 ID",
+                        "description": "瓦片矩阵集 ID | Tile Matrix Set ID",
                         "name": "tileMatrixSetId",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片矩阵（缩放级别）",
+                        "description": "瓦片矩阵（缩放级别）| Tile matrix (zoom level)",
                         "name": "tileMatrix",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片行",
+                        "description": "瓦片行 | Tile row",
                         "name": "tileRow",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片列",
+                        "description": "瓦片列 | Tile column",
                         "name": "tileCol",
                         "in": "path",
                         "required": true
@@ -375,26 +375,26 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "列出瓦片服务",
+                "summary": "列出瓦片服务 | List tile services",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "偏移量",
+                        "description": "偏移量 | Offset",
                         "name": "offset",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "限制数量",
+                        "description": "限制数量 | Limit",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片服务列表 | Tile service list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -412,10 +412,10 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "创建瓦片服务",
+                "summary": "创建瓦片服务 | Create tile service",
                 "parameters": [
                     {
-                        "description": "创建瓦片服务请求",
+                        "description": "创建瓦片服务请求 | Create tile service request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -426,7 +426,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "已创建的瓦片服务 | Created tile service",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
@@ -442,11 +442,11 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "根据名称获取瓦片服务",
+                "summary": "根据名称获取瓦片服务 | Get tile service by name",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
@@ -454,7 +454,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片服务详情 | Tile service details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
@@ -470,11 +470,11 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "搜索瓦片服务",
+                "summary": "搜索瓦片服务 | Search tile services",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索关键词",
+                        "description": "搜索关键词 | Search keyword",
                         "name": "keyword",
                         "in": "query",
                         "required": true
@@ -482,21 +482,21 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "偏移量",
+                        "description": "偏移量 | Offset",
                         "name": "offset",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "限制数量",
+                        "description": "限制数量 | Limit",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "搜索结果 | Search results",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -513,11 +513,11 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "获取瓦片服务详情",
+                "summary": "获取瓦片服务详情 | Get tile service details",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -525,7 +525,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片服务详情 | Tile service details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
@@ -542,17 +542,17 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "更新瓦片服务",
+                "summary": "更新瓦片服务 | Update tile service",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新瓦片服务请求",
+                        "description": "更新瓦片服务请求 | Update tile service request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -563,7 +563,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已更新的瓦片服务 | Updated tile service",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
@@ -577,11 +577,11 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "删除瓦片服务",
+                "summary": "删除瓦片服务 | Delete tile service",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -589,7 +589,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": "No Content"
+                        "description": "删除成功 | Deleted successfully"
                     }
                 }
             }
@@ -602,11 +602,11 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "列出图层",
+                "summary": "列出图层 | List layers",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "serviceId",
                         "in": "path",
                         "required": true
@@ -614,7 +614,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "图层列表 | Layer list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -634,17 +634,17 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "添加图层",
+                "summary": "添加图层 | Add layer",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "serviceId",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "创建图层请求",
+                        "description": "创建图层请求 | Create layer request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -655,7 +655,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "已创建的图层 | Created layer",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
@@ -671,18 +671,18 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "获取图层详情",
+                "summary": "获取图层详情 | Get layer details",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "serviceId",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "图层 ID",
+                        "description": "图层 ID | Layer ID",
                         "name": "layerId",
                         "in": "path",
                         "required": true
@@ -690,7 +690,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "图层详情 | Layer details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
@@ -707,24 +707,24 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "更新图层",
+                "summary": "更新图层 | Update layer",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "serviceId",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "图层 ID",
+                        "description": "图层 ID | Layer ID",
                         "name": "layerId",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新图层请求",
+                        "description": "更新图层请求 | Update layer request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -735,7 +735,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "已更新的图层 | Updated layer",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
@@ -749,18 +749,18 @@ const docTemplate = `{
                 "tags": [
                     "TileService"
                 ],
-                "summary": "删除图层",
+                "summary": "删除图层 | Delete layer",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "服务 ID",
+                        "description": "服务 ID | Service ID",
                         "name": "serviceId",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "图层 ID",
+                        "description": "图层 ID | Layer ID",
                         "name": "layerId",
                         "in": "path",
                         "required": true
@@ -768,7 +768,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": "No Content"
+                        "description": "删除成功 | Deleted successfully"
                     }
                 }
             }
@@ -783,46 +783,46 @@ const docTemplate = `{
                 "tags": [
                     "Tiles"
                 ],
-                "summary": "获取 XYZ 瓦片",
+                "summary": "获取 XYZ 瓦片 | Get XYZ tile",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "图层名称",
+                        "description": "图层名称 | Layer name",
                         "name": "layerName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "缩放级别",
+                        "description": "缩放级别 | Zoom level",
                         "name": "z",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "瓦片 X 坐标",
+                        "description": "瓦片 X 坐标 | Tile X coordinate",
                         "name": "x",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "瓦片 Y 坐标",
+                        "description": "瓦片 Y 坐标 | Tile Y coordinate",
                         "name": "y",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "瓦片格式 (mvt, png, jpg)",
+                        "description": "瓦片格式 (mvt, png, jpg) | Tile format (mvt, png, jpg)",
                         "name": "format",
                         "in": "path",
                         "required": true
@@ -830,7 +830,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "瓦片数据 | Tile data",
                         "schema": {
                             "type": "file"
                         }
@@ -846,25 +846,25 @@ const docTemplate = `{
                 "tags": [
                     "WMTS"
                 ],
-                "summary": "获取 WMTS Capabilities",
+                "summary": "获取 WMTS Capabilities | Get WMTS Capabilities",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "服务名称",
+                        "description": "服务名称 | Service name",
                         "name": "serviceName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "请求类型 (GetCapabilities)",
+                        "description": "请求类型 (GetCapabilities) | Request type (GetCapabilities)",
                         "name": "request",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "WMTS Capabilities XML | WMTS Capabilities XML",
                         "schema": {
                             "$ref": "#/definitions/internal_api.Capabilities"
                         }

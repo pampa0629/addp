@@ -23,12 +23,12 @@ func NewBuildHandler(buildSvc *service.BuildService) *BuildHandler {
 // ——— 任务管理 ———
 
 // ListTasks godoc
-// @Summary      构建任务列表
-// @Description  获取知识图谱的所有构建任务
-// @Tags         图谱构建
+// @Summary      构建任务列表 | List build tasks
+// @Description  获取知识图谱的所有构建任务 | Get all build tasks for a knowledge graph
+// @Tags         图谱构建 | Graph Build
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {array}  models.BuildTask
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/build/tasks [get]
@@ -45,13 +45,13 @@ func (h *BuildHandler) ListTasks(c *gin.Context) {
 }
 
 // CreateTask godoc
-// @Summary      创建构建任务
-// @Description  创建新的知识图谱构建任务
-// @Tags         图谱构建
+// @Summary      创建构建任务 | Create build task
+// @Description  创建新的知识图谱构建任务 | Create a new knowledge graph build task
+// @Tags         图谱构建 | Graph Build
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      201 {object} models.BuildTask
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -130,13 +130,13 @@ func (h *BuildHandler) DeleteTask(c *gin.Context) {
 }
 
 // RunTask godoc
-// @Summary      执行构建任务
-// @Description  启动知识图谱构建任务
-// @Tags         图谱构建
+// @Summary      执行构建任务 | Run build task
+// @Description  启动知识图谱构建任务 | Start a knowledge graph build task
+// @Tags         图谱构建 | Graph Build
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id  path int true "知识图谱 ID"
-// @Param        tid path int true "任务 ID"
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Router       /graphs/{id}/build/tasks/{tid}/run [post]

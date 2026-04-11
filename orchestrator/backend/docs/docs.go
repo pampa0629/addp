@@ -28,7 +28,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "获取执行列表",
+                "summary": "获取执行列表 | List executions",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -53,7 +53,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "获取执行详情",
+                "summary": "获取执行详情 | Get execution detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -78,7 +78,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "获取编排列表",
+                "summary": "获取编排列表 | List orchestrations",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -101,7 +101,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "创建编排",
+                "summary": "创建编排 | Create orchestration",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -126,7 +126,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "获取编排详情",
+                "summary": "获取编排详情 | Get orchestration detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -149,7 +149,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "更新编排",
+                "summary": "更新编排 | Update orchestration",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -172,7 +172,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "删除编排",
+                "summary": "删除编排 | Delete orchestration",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -197,7 +197,7 @@ const docTemplate = `{
                 "tags": [
                     "Orchestrator"
                 ],
-                "summary": "执行编排",
+                "summary": "执行编排 | Execute orchestration",
                 "responses": {
                     "200": {
                         "description": "OK",

@@ -27,13 +27,13 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 }
 
 // Create godoc
-// @Summary      创建引擎
-// @Description  创建新的存储引擎连接
-// @Tags         引擎管理
+// @Summary      创建引擎 | Create engine
+// @Description  创建新的存储引擎连接 | Create a new storage engine connection
+// @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.EngineCreateRequest true "引擎信息"
+// @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
 // @Success      201 {object} models.Engine
 // @Failure      400 {object} models.ErrorResponse
 // @Router       /engines [post]
@@ -55,15 +55,15 @@ func (h *EngineHandler) Create(c *gin.Context) {
 }
 
 // List godoc
-// @Summary      获取引擎列表
-// @Description  分页获取引擎列表（支持按类型过滤）
-// @Tags         引擎管理
+// @Summary      获取引擎列表 | List engines
+// @Description  分页获取引擎列表（支持按类型过滤）| Get paginated engine list with type filtering
+// @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page query int false "页码" default(1)
-// @Param        page_size query int false "每页数量" default(10)
-// @Param        engine_type query string false "引擎类型"
+// @Param        page query int false "页码 | Page number" default(1)
+// @Param        page_size query int false "每页数量 | Page size" default(10)
+// @Param        engine_type query string false "引擎类型 | Engine type"
 // @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /engines [get]
@@ -322,10 +322,10 @@ func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
 }
 
 // ListSchemas 列出指定资源的所有Schema/Database
-// @Summary 列出Schema列表
+// @Summary 列出 Schema 列表 | List schemas
 // @Tags Resources
 // @Produce json
-// @Param id path int true "资源ID"
+// @Param id path int true "资源ID | Engine ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /engines/:id/schemas [get]
 func (h *EngineHandler) ListSchemas(c *gin.Context) {
@@ -357,11 +357,11 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 }
 
 // ListTables 列出指定资源和Schema下的所有表
-// @Summary 列出表列表
+// @Summary 列出表列表 | List tables
 // @Tags Resources
 // @Produce json
-// @Param id path int true "资源ID"
-// @Param schema query string false "Schema名称(默认public)"
+// @Param id path int true "资源ID | Engine ID"
+// @Param schema query string false "Schema名称(默认public) | Schema name (default: public)"
 // @Success 200 {object} map[string]interface{}
 // @Router /engines/:id/tables [get]
 func (h *EngineHandler) ListTables(c *gin.Context) {

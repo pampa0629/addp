@@ -1,0 +1,62 @@
+[standard.common.invalid_id]
+other = "Invalid ID parameter"
+
+[standard.common.invalid_params]
+other = "Invalid request parameters"
+
+[standard.common.delete_success]
+other = "Deleted successfully"
+
+[standard.common.update_success]
+other = "Updated successfully"
+
+[standard.common.approve_success]
+other = "Approved successfully"
+
+[standard.common.deprecate_success]
+other = "Deprecated successfully"
+
+[standard.common.link_success]
+other = "Linked successfully"
+
+[standard.common.unlink_success]
+other = "Unlinked successfully"
+
+[standard.common.upload_success]
+other = "Uploaded successfully"
+
+[standard.common.doc_id_required]
+other = "doc_id is required"
+
+[standard.common.file_required]
+other = "Please upload a file (field: file)"
+
+[standard.common.file_open_failed]
+other = "Failed to open file"
+
+[standard.common.file_read_failed]
+other = "Failed to read file"
+
+[standard.domain.not_found]
+other = "Domain not found"
+
+[standard.glossary.not_found]
+other = "Glossary not found"
+
+[standard.element.not_found]
+other = "Element not found"
+
+[standard.document.not_found]
+other = "Document not found"
+
+[standard.unit.not_found]
+other = "Unit not found"
+
+[standard.metric.not_found]
+other = "Metric not found"
+
+[standard.dim_hierarchy.not_found]
+other = "Dimension hierarchy not found"
+
+[standard.dim_hierarchy.invalid_level_id]
+other = "Invalid level ID"

@@ -38,11 +38,15 @@ type CreateEmbeddingRequest struct {
 
 // CreateEmbedding POST /api/embedding
 // 创建向量化任务（统一入口）
-// @Summary CreateEmbedding
+// @Summary 创建向量化任务 | Create embedding task
+// @Description 创建对象存储文件的向量化任务，支持单文件、目录和整个Bucket | Create vectorization task for object storage files, supports single file, directory, and entire bucket
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /createembedding [get]
+// @Param body body CreateEmbeddingRequest true "向量化任务配置 | Embedding task configuration"
+// @Success 200 {object} map[string]interface{} "任务已创建 | Task created"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /createembedding [post]
 // @Security BearerAuth
 func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -147,10 +151,13 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 
 // GetEmbeddingTaskStatus GET /api/embedding/tasks/:task_id
 // 查询向量化任务状态（仅查内存中的实时状态）
-// @Summary GetEmbeddingTaskStatus
+// @Summary 获取向量化任务状态 | Get embedding task status
+// @Description 查询向量化任务的实时状态（仅内存中的运行中任务）| Query real-time status of an embedding task (in-memory running tasks only)
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param task_id path string true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "任务状态信息 | Task status"
+// @Failure 404 {object} map[string]interface{} "任务不存在或已过期 | Task not found or expired"
 // @Router /getembeddingtaskstatus [get]
 // @Security BearerAuth
 func (h *EmbeddingHandler) GetEmbeddingTaskStatus(c *gin.Context) {

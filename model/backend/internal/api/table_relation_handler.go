@@ -20,10 +20,11 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 }
 
 // ListDimensionRelations GET /api/model/logical-tables/:id/dimension-relations
-// @Summary ListDimensionRelations
+// @Summary 查询维度关联列表 | List dimension relations
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Success 200 {object} map[string]interface{} "维度关联列表 | Dimension relation list"
 // @Router /listdimensionrelations [get]
 // @Security BearerAuth
 func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
@@ -42,10 +43,13 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 }
 
 // AddDimensionRelation POST /api/model/logical-tables/:id/dimension-relations
-// @Summary AddDimensionRelation
+// @Summary 添加维度关联 | Add dimension relation
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Param body body models.CreateTableRelationRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的关联 | Created relation"
 // @Router /adddimensionrelation [get]
 // @Security BearerAuth
 func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
@@ -69,10 +73,12 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 }
 
 // RemoveDimensionRelation DELETE /api/model/logical-tables/:id/dimension-relations/:rid
-// @Summary RemoveDimensionRelation
+// @Summary 删除维度关联 | Remove dimension relation
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "事实表ID | Fact table ID"
+// @Param rid path int true "关联ID | Relation ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
 // @Router /removedimensionrelation [get]
 // @Security BearerAuth
 func (h *TableRelationHandler) RemoveDimensionRelation(c *gin.Context) {

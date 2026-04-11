@@ -23,10 +23,13 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 }
 
 // ListScanTasks 列出指定资源下的扫描任务
-// @Summary ListScanTasks
+// @Summary 列出扫描任务 | List scan tasks
+// @Description 列出指定存储引擎下的所有元数据扫描任务 | List all metadata scan tasks for a specific engine
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{} "扫描任务列表 | Scan task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /listscantasks [get]
 // @Security BearerAuth
 func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
@@ -50,11 +53,17 @@ func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 }
 
 // CreateScanTask 创建新的扫描任务
-// @Summary CreateScanTask
+// @Summary 创建扫描任务 | Create scan task
+// @Description 为指定存储引擎创建新的元数据扫描任务 | Create a new metadata scan task for a specific engine
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /createscantask [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param body body models.MetaScanTaskRequest true "扫描任务配置 | Scan task configuration"
+// @Success 200 {object} map[string]interface{} "创建的扫描任务 | Created scan task"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /createscantask [post]
 // @Security BearerAuth
 func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
@@ -83,11 +92,18 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 }
 
 // UpdateScanTask 更新扫描任务
-// @Summary UpdateScanTask
+// @Summary 更新扫描任务 | Update scan task
+// @Description 更新指定存储引擎的元数据扫描任务配置 | Update metadata scan task configuration for a specific engine
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /updatescantask [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param task_id path int true "扫描任务ID | Scan task ID"
+// @Param body body models.MetaScanTaskRequest true "扫描任务配置 | Scan task configuration"
+// @Success 200 {object} map[string]interface{} "更新后的扫描任务 | Updated scan task"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /updatescantask [put]
 // @Security BearerAuth
 func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
@@ -121,11 +137,15 @@ func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 }
 
 // DeleteScanTask 删除扫描任务
-// @Summary DeleteScanTask
+// @Summary 删除扫描任务 | Delete scan task
+// @Description 删除指定的元数据扫描任务 | Delete a specific metadata scan task
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /deletescantask [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param task_id path int true "扫描任务ID | Scan task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /deletescantask [delete]
 // @Security BearerAuth
 func (h *MetadataHandler) DeleteScanTask(c *gin.Context) {
 	_, ok := parseUintParam(c, "id")
@@ -152,11 +172,15 @@ func (h *MetadataHandler) DeleteScanTask(c *gin.Context) {
 }
 
 // TriggerScanTask 立即触发扫描任务
-// @Summary TriggerScanTask
+// @Summary 触发扫描任务 | Trigger scan task
+// @Description 立即触发指定的元数据扫描任务执行 | Immediately trigger a specific metadata scan task
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /triggerscantask [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param task_id path int true "扫描任务ID | Scan task ID"
+// @Success 200 {object} map[string]interface{} "触发的扫描运行记录 | Triggered scan run"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /triggerscantask [post]
 // @Security BearerAuth
 func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 	_, ok := parseUintParam(c, "id")
@@ -184,10 +208,19 @@ func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 }
 
 // ListScanRuns 列出资源的扫描运行记录
-// @Summary ListScanRuns
+// @Summary 列出扫描运行记录 | List scan runs
+// @Description 列出指定存储引擎的元数据扫描运行历史记录 | List metadata scan run history for a specific engine
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param task_id query int false "扫描任务ID过滤 | Filter by scan task ID"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param storage_type query string false "存储类型过滤 | Filter by storage type"
+// @Param limit query int false "返回数量限制，默认20 | Result limit, default 20"
+// @Param offset query int false "偏移量，默认0 | Offset, default 0"
+// @Success 200 {object} map[string]interface{} "扫描运行记录列表 | Scan run list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /listscanruns [get]
 // @Security BearerAuth
 func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
@@ -251,10 +284,14 @@ func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 }
 
 // GetScanRun 获取单个运行详情
-// @Summary GetScanRun
+// @Summary 获取扫描运行详情 | Get scan run detail
+// @Description 获取指定扫描运行记录的详细信息 | Get detailed information of a specific scan run
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param run_id path int true "扫描运行ID | Scan run ID"
+// @Success 200 {object} map[string]interface{} "扫描运行详情 | Scan run detail"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /getscanrun [get]
 // @Security BearerAuth
 func (h *MetadataHandler) GetScanRun(c *gin.Context) {
@@ -283,11 +320,17 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 }
 
 // CreateManualScanRun 发起一次即时扫描
-// @Summary CreateManualScanRun
+// @Summary 发起即时扫描 | Create manual scan run
+// @Description 立即发起一次元数据扫描，不依赖定时任务 | Immediately initiate a metadata scan without relying on scheduled tasks
 // @Tags Manager
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /createmanualscanrun [get]
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param body body models.MetaManualScanRequest false "扫描配置（可选）| Scan configuration (optional)"
+// @Success 200 {object} map[string]interface{} "扫描运行记录 | Scan run record"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /createmanualscanrun [post]
 // @Security BearerAuth
 func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")

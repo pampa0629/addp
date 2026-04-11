@@ -22,12 +22,12 @@ func NewDataServiceHandler(queryService *data.QueryService) *DataServiceHandler 
 }
 
 // Query 执行数据查询
-// @Summary 查询数据表
+// @Summary 查询数据表 | Query data table
 // @Tags DataService
 // @Accept json
 // @Produce json
-// @Param request body models.DataQueryRequest true "查询请求"
-// @Success 200 {object} models.DataQueryResponse
+// @Param request body models.DataQueryRequest true "查询请求 | Query request"
+// @Success 200 {object} models.DataQueryResponse "查询结果 | Query result"
 // @Router /data/query [post]
 func (h *DataServiceHandler) Query(c *gin.Context) {
 	var req models.DataQueryRequest
@@ -46,12 +46,12 @@ func (h *DataServiceHandler) Query(c *gin.Context) {
 }
 
 // Aggregate 执行聚合查询
-// @Summary 聚合查询
+// @Summary 聚合查询 | Aggregate query
 // @Tags DataService
 // @Accept json
 // @Produce json
-// @Param request body models.AggregationRequest true "聚合请求"
-// @Success 200 {object} models.AggregationResponse
+// @Param request body models.AggregationRequest true "聚合请求 | Aggregation request"
+// @Success 200 {object} models.AggregationResponse "聚合结果 | Aggregation result"
 // @Router /data/aggregate [post]
 func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 	var req models.AggregationRequest
@@ -70,14 +70,14 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 }
 
 // GetTableStructure 获取表结构
-// @Summary 获取表结构
+// @Summary 获取表结构 | Get table structure
 // @Tags DataService
 // @Accept json
 // @Produce json
-// @Param engine_id query int true "引擎ID"
-// @Param schema query string true "Schema名称"
-// @Param table query string true "表名"
-// @Success 200 {object} []models.ColumnInfo
+// @Param engine_id query int true "引擎ID | Engine ID"
+// @Param schema query string true "Schema名称 | Schema name"
+// @Param table query string true "表名 | Table name"
+// @Success 200 {object} []models.ColumnInfo "表结构 | Table structure"
 // @Router /data/structure [get]
 func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
 	engineID := c.Query("engine_id")

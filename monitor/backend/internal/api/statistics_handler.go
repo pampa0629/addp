@@ -23,7 +23,7 @@ func NewStatisticsHandler(statisticsService *service.StatisticsService) *Statist
 }
 
 // GetStatistics 获取统计数据
-// @Summary GetStatistics
+// @Summary 获取统计数据 | Get statistics
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -57,7 +57,7 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 }
 
 // GetTrendData 获取趋势数据
-// @Summary GetTrendData
+// @Summary 获取趋势数据 | Get trend data
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}

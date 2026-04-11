@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页获取任务列表，支持按类型、状态过滤",
+                "description": "分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering",
                 "consumes": [
                     "application/json"
                 ],
@@ -30,40 +30,40 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "获取任务列表",
+                "summary": "获取任务列表 | List tasks",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 1,
-                        "description": "页码",
+                        "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 20,
-                        "description": "每页大小",
+                        "description": "每页大小 | Page size",
                         "name": "page_size",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "任务类型: import, export, sync",
+                        "description": "任务类型: import, export, sync | Task type: import, export, sync",
                         "name": "type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "任务状态: pending, running, completed, failed",
+                        "description": "任务状态: pending, running, completed, failed | Task status",
                         "name": "status",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "获取成功",
+                        "description": "获取成功 | Retrieved successfully",
                         "schema": {
                             "allOf": [
                                 {
@@ -84,7 +84,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -100,7 +100,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的数据导入/导出/同步任务",
+                "description": "创建一个新的数据导入/导出/同步任务 | Create a new data import/export/sync task",
                 "consumes": [
                     "application/json"
                 ],
@@ -108,12 +108,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "创建数据传输任务",
+                "summary": "创建数据传输任务 | Create data transfer task",
                 "parameters": [
                     {
-                        "description": "任务创建请求",
+                        "description": "任务创建请求 | Task creation request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -124,13 +124,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "任务创建成功",
+                        "description": "任务创建成功 | Task created successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误",
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -139,7 +139,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "未授权",
+                        "description": "未授权 | Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -148,7 +148,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器内部错误",
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -166,7 +166,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的任务统计数据（各状态任务数量等）",
+                "description": "获取当前租户的任务统计数据（各状态任务数量等）| Get task statistics for the current tenant (task counts by status, etc.)",
                 "consumes": [
                     "application/json"
                 ],
@@ -174,18 +174,18 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "获取任务统计信息",
+                "summary": "获取任务统计信息 | Get task statistics",
                 "responses": {
                     "200": {
-                        "description": "统计信息",
+                        "description": "统计信息 | Statistics",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskStatistics"
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -203,7 +203,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据任务ID获取任务的详细信息",
+                "description": "根据任务ID获取任务的详细信息 | Get detailed task information by task ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -211,13 +211,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "获取任务详情",
+                "summary": "获取任务详情 | Get task detail",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -225,13 +225,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "获取成功",
+                        "description": "获取成功 | Retrieved successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
                         }
                     },
                     "400": {
-                        "description": "参数错误",
+                        "description": "参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -240,7 +240,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "任务不存在",
+                        "description": "任务不存在 | Task not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -249,7 +249,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -265,7 +265,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新任务的配置信息",
+                "description": "更新任务的配置信息 | Update task configuration",
                 "consumes": [
                     "application/json"
                 ],
@@ -273,19 +273,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "更新任务",
+                "summary": "更新任务 | Update task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "任务更新请求",
+                        "description": "任务更新请求 | Task update request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -296,13 +296,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新成功",
+                        "description": "更新成功 | Updated successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
                         }
                     },
                     "400": {
-                        "description": "参数错误",
+                        "description": "参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -311,7 +311,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -327,7 +327,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "删除指定的任务及相关执行记录",
+                "description": "删除指定的任务及相关执行记录 | Delete a specific task and its execution records",
                 "consumes": [
                     "application/json"
                 ],
@@ -335,13 +335,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "删除任务",
+                "summary": "删除任务 | Delete task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -349,7 +349,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -358,7 +358,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "参数错误",
+                        "description": "参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -367,7 +367,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -385,7 +385,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动任务执行，创建新的执行记录",
+                "description": "启动任务执行，创建新的执行记录 | Start task execution and create a new execution record",
                 "consumes": [
                     "application/json"
                 ],
@@ -393,13 +393,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "启动任务",
+                "summary": "启动任务 | Start task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -407,13 +407,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "启动成功，返回执行记录",
+                        "description": "启动成功，返回执行记录 | Started successfully, returns execution record",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
                         }
                     },
                     "400": {
-                        "description": "参数错误或任务已在运行",
+                        "description": "参数错误或任务已在运行 | Bad request or task already running",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -422,7 +422,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -440,7 +440,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "停止正在执行的任务",
+                "description": "停止正在执行的任务 | Stop a running task",
                 "consumes": [
                     "application/json"
                 ],
@@ -448,13 +448,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理"
+                    "任务管理 | Task Management"
                 ],
-                "summary": "停止任务",
+                "summary": "停止任务 | Stop task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "任务ID",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -462,7 +462,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "停止成功",
+                        "description": "停止成功 | Stopped successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -471,7 +471,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "参数错误",
+                        "description": "参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -480,7 +480,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

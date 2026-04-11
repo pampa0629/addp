@@ -20,10 +20,10 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 }
 
 // ListDWLayers GET /api/model/dw-layers
-// @Summary ListDWLayers
+// @Summary 查询数仓分层列表 | List DW layers
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "数仓分层列表 | DW layer list"
 // @Router /listdwlayers [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
@@ -38,10 +38,12 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 }
 
 // CreateDWLayer POST /api/model/dw-layers
-// @Summary CreateDWLayer
+// @Summary 创建数仓分层 | Create DW layer
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param body body models.CreateDWLayerRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{} "已创建的分层 | Created DW layer"
 // @Router /createdwlayer [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
@@ -61,10 +63,11 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 }
 
 // GetDWLayer GET /api/model/dw-layers/:id
-// @Summary GetDWLayer
+// @Summary 获取数仓分层详情 | Get DW layer details
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "分层ID | DW layer ID"
+// @Success 200 {object} map[string]interface{} "分层详情 | DW layer details"
 // @Router /getdwlayer [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
@@ -84,10 +87,13 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 }
 
 // UpdateDWLayer PUT /api/model/dw-layers/:id
-// @Summary UpdateDWLayer
+// @Summary 更新数仓分层 | Update DW layer
 // @Tags Model
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "分层ID | DW layer ID"
+// @Param body body models.UpdateDWLayerRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{} "已更新的分层 | Updated DW layer"
 // @Router /updatedwlayer [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
@@ -113,10 +119,11 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 }
 
 // DeleteDWLayer DELETE /api/model/dw-layers/:id
-// @Summary DeleteDWLayer
+// @Summary 删除数仓分层 | Delete DW layer
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param id path int true "分层ID | DW layer ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Router /deletedwlayer [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {

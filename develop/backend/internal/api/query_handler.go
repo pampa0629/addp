@@ -85,12 +85,12 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 }
 
 // TestConnection 测试数据源连接
-// @Summary 测试数据源连接
+// @Summary 测试数据源连接 | Test data source connection
 // @Tags Query
 // @Accept json
 // @Produce json
-// @Param id path int true "资源ID"
-// @Success 200 {object} map[string]string
+// @Param id path int true "资源ID | Resource ID"
+// @Success 200 {object} map[string]string "连接测试成功 | Connection test successful"
 // @Router /test/{id} [get]
 func (h *QueryHandler) TestConnection(c *gin.Context) {
 	idStr := c.Param("id")
@@ -115,12 +115,12 @@ func (h *QueryHandler) TestConnection(c *gin.Context) {
 }
 
 // ExecuteQuery 执行 查询语句
-// @Summary 执行 查询语句
+// @Summary 执行查询语句 | Execute query statement
 // @Tags Query
 // @Accept json
 // @Produce json
-// @Param body body ExecuteQueryRequest true "查询请求"
-// @Success 200 {object} ExecuteQueryResponse
+// @Param body body ExecuteQueryRequest true "查询请求 | Query request"
+// @Success 200 {object} ExecuteQueryResponse "查询结果 | Query result"
 // @Router /execute [post]
 func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 	var req ExecuteQueryRequest
@@ -213,12 +213,12 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 }
 
 // SaveQueryTask 保存 SQL 为任务
-// @Summary 保存 SQL 为任务
+// @Summary 保存 SQL 为任务 | Save SQL as task
 // @Tags Query
 // @Accept json
 // @Produce json
-// @Param body body SaveQueryTaskRequest true "保存请求"
-// @Success 200 {object} models.DevTask
+// @Param body body SaveQueryTaskRequest true "保存请求 | Save request"
+// @Success 200 {object} models.DevTask "已保存的任务 | Saved task"
 // @Router /sql/tasks [post]
 func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 	var req SaveQueryTaskRequest
@@ -273,13 +273,13 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 }
 
 // UpdateQueryTask 更新 查询任务
-// @Summary 更新 查询任务
+// @Summary 更新查询任务 | Update query task
 // @Tags Query
 // @Accept json
 // @Produce json
-// @Param id path int true "任务ID"
-// @Param body body SaveQueryTaskRequest true "更新请求"
-// @Success 200 {object} models.DevTask
+// @Param id path int true "任务ID | Task ID"
+// @Param body body SaveQueryTaskRequest true "更新请求 | Update request"
+// @Success 200 {object} models.DevTask "已更新的任务 | Updated task"
 // @Router /sql/tasks/{id} [put]
 func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
@@ -329,11 +329,11 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 }
 
 // GetQueryTask 获取 查询任务详情
-// @Summary 获取 查询任务详情
+// @Summary 获取查询任务详情 | Get query task details
 // @Tags Query
 // @Produce json
-// @Param id path int true "任务ID"
-// @Success 200 {object} models.DevTask
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.DevTask "任务详情 | Task details"
 // @Router /sql/tasks/{id} [get]
 func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
@@ -361,14 +361,14 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 }
 
 // ListQueryTasks 获取 查询任务列表
-// @Summary 获取 查询任务列表
+// @Summary 获取查询任务列表 | List query tasks
 // @Tags Query
 // @Produce json
-// @Param page query int false "页码"
-// @Param page_size query int false "每页数量"
-// @Param status query string false "状态过滤"
-// @Param keyword query string false "关键词搜索"
-// @Success 200 {object} models.ListDevTasksResponse
+// @Param page query int false "页码 | Page number"
+// @Param page_size query int false "每页数量 | Page size"
+// @Param status query string false "状态过滤 | Filter by status"
+// @Param keyword query string false "关键词搜索 | Keyword search"
+// @Success 200 {object} models.ListDevTasksResponse "任务列表 | Task list"
 // @Router /sql/tasks [get]
 func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 	var req models.ListDevTasksRequest
@@ -405,10 +405,10 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 }
 
 // DeleteQueryTask 删除 查询任务
-// @Summary 删除 查询任务
+// @Summary 删除查询任务 | Delete query task
 // @Tags Query
-// @Param id path int true "任务ID"
-// @Success 200 {object} map[string]string
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
 // @Router /sql/tasks/{id} [delete]
 func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
 	idStr := c.Param("id")

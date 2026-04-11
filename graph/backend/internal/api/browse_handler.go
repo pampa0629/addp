@@ -19,12 +19,12 @@ func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.S
 }
 
 // GetSchema godoc
-// @Summary      图谱 Schema
-// @Description  获取知识图谱的节点标签和关系类型 Schema
-// @Tags         图谱浏览
+// @Summary      图谱 Schema | Get graph schema
+// @Description  获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema of a knowledge graph
+// @Tags         图谱浏览 | Graph Browse
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.BrowseSchema
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/schema [get]
@@ -40,12 +40,12 @@ func (h *BrowseHandler) GetSchema(c *gin.Context) {
 }
 
 // GetStats godoc
-// @Summary      图谱统计
-// @Description  获取知识图谱的节点数、关系数、按标签分组统计
-// @Tags         图谱浏览
+// @Summary      图谱统计 | Get graph statistics
+// @Description  获取知识图谱的节点数、关系数、按标签分组统计 | Get node count, relation count and label-grouped statistics of a knowledge graph
+// @Tags         图谱浏览 | Graph Browse
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.BrowseStats
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/stats [get]
@@ -61,12 +61,12 @@ func (h *BrowseHandler) GetStats(c *gin.Context) {
 }
 
 // GetOverview godoc
-// @Summary      图谱概览
-// @Description  获取图谱概览子图（采样约100条关系）
-// @Tags         图谱浏览
+// @Summary      图谱概览 | Get graph overview
+// @Description  获取图谱概览子图（采样约100条关系）| Get graph overview subgraph (sampling ~100 relations)
+// @Tags         图谱浏览 | Graph Browse
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID"
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /graphs/{id}/overview [get]
@@ -82,14 +82,14 @@ func (h *BrowseHandler) GetOverview(c *gin.Context) {
 }
 
 // SearchNodes godoc
-// @Summary      全文搜索节点
-// @Description  在知识图谱中全文搜索实体节点
-// @Tags         图谱浏览
+// @Summary      全文搜索节点 | Full-text search nodes
+// @Description  在知识图谱中全文搜索实体节点 | Full-text search entity nodes in a knowledge graph
+// @Tags         图谱浏览 | Graph Browse
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                   true "知识图谱 ID"
-// @Param        request body models.SearchRequest  true "搜索请求"
+// @Param        id      path int                   true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.SearchRequest  true "搜索请求 | Search request"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -111,14 +111,14 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 }
 
 // ExpandNode godoc
-// @Summary      展开节点邻居
-// @Description  获取指定节点的邻居节点和关系
-// @Tags         图谱浏览
+// @Summary      展开节点邻居 | Expand node neighbors
+// @Description  获取指定节点的邻居节点和关系 | Get neighbor nodes and relations of a specified node
+// @Tags         图谱浏览 | Graph Browse
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                   true "知识图谱 ID"
-// @Param        request body models.ExpandRequest  true "展开请求"
+// @Param        id      path int                   true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.ExpandRequest  true "展开请求 | Expand request"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -140,14 +140,14 @@ func (h *BrowseHandler) ExpandNode(c *gin.Context) {
 }
 
 // FindPath godoc
-// @Summary      最短路径查询
-// @Description  查询两个节点之间的最短路径
-// @Tags         图谱浏览
+// @Summary      最短路径查询 | Find shortest path
+// @Description  查询两个节点之间的最短路径 | Find the shortest path between two nodes
+// @Tags         图谱浏览 | Graph Browse
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id      path int                 true "知识图谱 ID"
-// @Param        request body models.PathRequest  true "路径查询请求"
+// @Param        id      path int                 true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.PathRequest  true "路径查询请求 | Path query request"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse

@@ -25,10 +25,16 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 }
 
 // Search 执行混合检索（全文检索 + 向量语义检索）
-// @Summary Search
+// @Summary 执行混合检索 | Execute hybrid search
+// @Description 执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text and vector semantic search
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param q query string true "搜索关键词 | Search query"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认10 | Page size, default 10"
+// @Success 200 {object} map[string]interface{} "搜索结果 | Search results"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "搜索服务不可用 | Search service unavailable"
 // @Router /search [get]
 // @Security BearerAuth
 func (h *SearchHandler) Search(c *gin.Context) {
@@ -80,10 +86,14 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
-// @Summary ListHistory
+// @Summary 列出搜索历史 | List search history
+// @Description 获取当前用户的搜索历史记录 | Get search history for the current user
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param limit query int false "返回数量限制，默认10 | Result limit, default 10"
+// @Success 200 {object} map[string]interface{} "搜索历史列表 | Search history list"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
 // @Router /listhistory [get]
 // @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
@@ -127,11 +137,15 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 	})
 }
 
-// @Summary DeleteHistoryItem
+// @Summary 删除搜索历史记录 | Delete search history item
+// @Description 删除指定的搜索历史记录 | Delete a specific search history item
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /deletehistoryitem [get]
+// @Param id path int true "历史记录ID | History item ID"
+// @Success 204 "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Router /deletehistoryitem [delete]
 // @Security BearerAuth
 func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	if h.historyService == nil {
@@ -161,11 +175,14 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// @Summary ClearHistory
+// @Summary 清空搜索历史 | Clear search history
+// @Description 清空当前用户的所有搜索历史记录 | Clear all search history for the current user
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /clearhistory [get]
+// @Success 204 "清空成功 | Cleared successfully"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
+// @Router /clearhistory [delete]
 // @Security BearerAuth
 func (h *SearchHandler) ClearHistory(c *gin.Context) {
 	if h.historyService == nil {

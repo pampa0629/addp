@@ -22,7 +22,7 @@ func NewHealthHandler(healthService *service.HealthCheckService) *HealthHandler 
 }
 
 // GetModules 获取所有模块列表
-// @Summary GetModules
+// @Summary 获取模块列表 | Get module list
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -39,7 +39,7 @@ func (h *HealthHandler) GetModules(c *gin.Context) {
 }
 
 // CheckModuleHealth 检查单个模块健康状态
-// @Summary CheckModuleHealth
+// @Summary 检查模块健康状态 | Check module health
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -80,7 +80,7 @@ func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
 }
 
 // CheckAllModules 检查所有模块健康状态
-// @Summary CheckAllModules
+// @Summary 检查所有模块健康状态 | Check all modules health
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}

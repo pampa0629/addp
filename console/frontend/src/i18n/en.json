@@ -60,6 +60,12 @@
       "title": "AI Assistant",
       "fab": "Not sure where to start?"
     },
+    "copilot": {
+      "title": "Navigation Assistant",
+      "fab": "Not sure where to start?",
+      "placeholder": "Describe what you want to do, e.g. sync database data...",
+      "ask": "Find it"
+    },
     "login": {
       "username": "Username",
       "usernamePlaceholder": "Enter username",
@@ -73,6 +79,44 @@
       "networkError": "Network error, please check if the server is running",
       "requestFailed": "Request failed ({status})",
       "unknown": "Unknown error"
+    },
+    "apiDocs": {
+      "title": "API Docs",
+      "platformCenter": "Platform API Center",
+      "helpTitle": "ADDP Platform API Documentation",
+      "helpBaseUrl": "Base URL: http://localhost:8000 (Gateway entry)",
+      "helpVersionPrefix": "Version prefix: /api/v1/",
+      "helpAuth": "Auth: Bearer Token (JWT)",
+      "helpContentType": "Content-Type: application/json",
+      "helpNote": "Note: Auto-generated from Swagger/OpenAPI, each module provides its own",
+      "online": "Online",
+      "offline": "Offline",
+      "checking": "Checking",
+      "openInNewTab": "Open in new tab",
+      "moduleOfflineTitle": "Module Offline",
+      "moduleOfflineDesc": "This module is not running, cannot load API docs",
+      "recheck": "Recheck",
+      "noSwaggerTitle": "No Swagger Docs",
+      "noSwaggerDesc": "This module has no Swagger configured, service is online but docs unavailable",
+      "tryDirectAccess": "Try direct access",
+      "selectModule": "Select a module on the left to view API docs",
+      "modules": {
+        "agent": "Agent - AI Agent",
+        "copilot": "Copilot - AI Assistant",
+        "graph": "Graph - Knowledge Graph",
+        "develop": "Develop - Data Development",
+        "manager": "Manager - Data Management",
+        "meta": "Meta - Metadata",
+        "model": "Model - Data Modeling",
+        "monitor": "Monitor - Execution Monitor",
+        "orchestrator": "Orchestrator - Workflow Orchestration",
+        "portal": "Portal - Asset Portal",
+        "quality": "Quality - Data Quality",
+        "service": "Service - Data Services",
+        "standard": "Standard - Data Standards",
+        "system": "System - System Module",
+        "transfer": "Transfer - Data Transfer"
+      }
     },
     "groups": {
       "dataPrepare": "Data Preparation",

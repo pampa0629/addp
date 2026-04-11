@@ -464,9 +464,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 基于扫描结果，执行垃圾数据清理（软删除或物理删除）
+      description: 基于扫描结果，执行垃圾数据清理（软删除或物理删除）| Execute garbage data cleanup based on
+        scan results (soft delete or hard delete)
       parameters:
-      - description: 执行请求
+      - description: 执行请求 | Execute request
         in: body
         name: request
         required: true
@@ -480,28 +481,28 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.CreateExecuteTaskResponse'
         "400":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "401":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "500":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
       security:
       - BearerAuth: []
-      summary: 创建执行清理任务
+      summary: 创建执行清理任务 | Create cleanup execution task
       tags:
       - Cleanup
   /admin/cleanup/history:
     get:
-      description: 获取当前租户的清理任务历史记录
+      description: 获取当前租户的清理任务历史记录 | Get cleanup task history for current tenant
       parameters:
       - default: 20
-        description: 返回记录数
+        description: 返回记录数 | Limit
         in: query
         name: limit
         type: integer
@@ -513,29 +514,30 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.GetTaskHistoryResponse'
         "400":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "401":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "500":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
       security:
       - BearerAuth: []
-      summary: 获取清理任务历史
+      summary: 获取清理任务历史 | Get cleanup task history
       tags:
       - Cleanup
   /admin/cleanup/scan:
     post:
       consumes:
       - application/json
-      description: 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）
+      description: 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）| Scan garbage data for current tenant
+        (invalid engines, orphan data, soft-deleted data, etc.)
       parameters:
-      - description: 扫描请求
+      - description: 扫描请求 | Scan request
         in: body
         name: request
         required: true
@@ -549,27 +551,28 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.CreateScanTaskResponse'
         "400":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "401":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "500":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
       security:
       - BearerAuth: []
-      summary: 创建垃圾数据扫描任务
+      summary: 创建垃圾数据扫描任务 | Create garbage data scan task
       tags:
       - Cleanup
   /admin/cleanup/tasks/{task_id}:
     get:
-      description: 查询指定任务的执行状态和结果
+      description: 查询指定任务的执行状态和结果 | Query execution status and results of a specified
+        task
       parameters:
-      - description: 任务ID
+      - description: 任务ID | Task ID
         in: path
         name: task_id
         required: true
@@ -582,43 +585,43 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.GetTaskStatusResponse'
         "400":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "401":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "404":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
         "500":
-          description: 错误信息
+          description: 错误信息 | Error message
           schema:
             type: string
       security:
       - BearerAuth: []
-      summary: 查询清理任务状态
+      summary: 查询清理任务状态 | Get cleanup task status
       tags:
       - Cleanup
   /engines:
     get:
       consumes:
       - application/json
-      description: 分页获取引擎列表（支持按类型过滤）
+      description: 分页获取引擎列表（支持按类型过滤）| Get paginated engine list with type filtering
       parameters:
       - default: 1
-        description: 页码
+        description: 页码 | Page number
         in: query
         name: page
         type: integer
       - default: 10
-        description: 每页数量
+        description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
-      - description: 引擎类型
+      - description: 引擎类型 | Engine type
         in: query
         name: engine_type
         type: string
@@ -646,15 +649,15 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取引擎列表
+      summary: 获取引擎列表 | List engines
       tags:
-      - 引擎管理
+      - 引擎管理 | Engine Management
     post:
       consumes:
       - application/json
-      description: 创建新的存储引擎连接
+      description: 创建新的存储引擎连接 | Create a new storage engine connection
       parameters:
-      - description: 引擎信息
+      - description: 引擎信息 | Engine info
         in: body
         name: request
         required: true
@@ -673,13 +676,13 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建引擎
+      summary: 创建引擎 | Create engine
       tags:
-      - 引擎管理
+      - 引擎管理 | Engine Management
   /engines/:id/schemas:
     get:
       parameters:
-      - description: 资源ID
+      - description: 资源ID | Engine ID
         in: path
         name: id
         required: true
@@ -692,18 +695,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: 列出Schema列表
+      summary: 列出 Schema 列表 | List schemas
       tags:
       - Resources
   /engines/:id/tables:
     get:
       parameters:
-      - description: 资源ID
+      - description: 资源ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: Schema名称(默认public)
+      - description: 'Schema名称(默认public) | Schema name (default: public)'
         in: query
         name: schema
         type: string
@@ -715,16 +718,17 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: 列出表列表
+      summary: 列出表列表 | List tables
       tags:
       - Resources
   /login:
     post:
       consumes:
       - application/json
-      description: 使用用户名和密码登录，返回 JWT token
+      description: 使用用户名和密码登录，返回 JWT token | Login with username and password, returns
+        JWT token
       parameters:
-      - description: 登录信息
+      - description: 登录信息 | Login credentials
         in: body
         name: request
         required: true
@@ -745,34 +749,35 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      summary: 用户登录
+      summary: 用户登录 | User login
       tags:
-      - 认证
+      - 认证 | Auth
   /logs:
     get:
       consumes:
       - application/json
-      description: 分页获取审计日志（支持多条件过滤）
+      description: 分页获取审计日志（支持多条件过滤）| Get paginated audit logs with multi-condition
+        filtering
       parameters:
       - default: 1
-        description: 页码
+        description: 页码 | Page number
         in: query
         name: page
         type: integer
       - default: 10
-        description: 每页数量
+        description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
-      - description: 开始时间
+      - description: 开始时间 | Start time
         in: query
         name: start_time
         type: string
-      - description: 结束时间
+      - description: 结束时间 | End time
         in: query
         name: end_time
         type: string
-      - description: HTTP方法
+      - description: HTTP方法 | HTTP method
         in: query
         name: http_method
         type: string
@@ -800,14 +805,14 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取日志列表
+      summary: 获取日志列表 | List audit logs
       tags:
-      - 日志管理
+      - 日志管理 | Log Management
   /refresh:
     post:
       consumes:
       - application/json
-      description: 使用即将过期的 token 获取新的 token
+      description: 使用即将过期的 token 获取新的 token | Use expiring token to get a new token
       produces:
       - application/json
       responses:
@@ -821,16 +826,17 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 刷新 Token
+      summary: 刷新 Token | Refresh token
       tags:
-      - 认证
+      - 认证 | Auth
   /register:
     post:
       consumes:
       - application/json
-      description: 注册新用户（需开启公开注册）
+      description: 注册新用户（需开启公开注册）| Register new user (requires public registration
+        enabled)
       parameters:
-      - description: 注册信息
+      - description: 注册信息 | Registration info
         in: body
         name: request
         required: true
@@ -851,22 +857,22 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      summary: 用户注册
+      summary: 用户注册 | User registration
       tags:
-      - 认证
+      - 认证 | Auth
   /users:
     get:
       consumes:
       - application/json
-      description: 分页获取用户列表（自动过滤租户）
+      description: 分页获取用户列表（自动过滤租户）| Get paginated user list (auto-filtered by tenant)
       parameters:
       - default: 1
-        description: 页码
+        description: 页码 | Page number
         in: query
         name: page
         type: integer
       - default: 10
-        description: 每页数量
+        description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
@@ -894,15 +900,15 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取用户列表
+      summary: 获取用户列表 | List users
       tags:
-      - 用户管理
+      - 用户管理 | User Management
     post:
       consumes:
       - application/json
-      description: 创建新用户（租户管理员权限）
+      description: 创建新用户（租户管理员权限）| Create new user (tenant admin permission required)
       parameters:
-      - description: 用户信息
+      - description: 用户信息 | User info
         in: body
         name: request
         required: true
@@ -921,14 +927,14 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建用户
+      summary: 创建用户 | Create user
       tags:
-      - 用户管理
+      - 用户管理 | User Management
   /users/me:
     get:
       consumes:
       - application/json
-      description: 获取当前登录用户的详细信息
+      description: 获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user
       produces:
       - application/json
       responses:
@@ -942,9 +948,9 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取当前用户信息
+      summary: 获取当前用户信息 | Get current user info
       tags:
-      - 用户管理
+      - 用户管理 | User Management
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and JWT token.

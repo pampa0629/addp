@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -19,7 +21,7 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 }
 
 // ListGlossaries GET /api/model/glossaries
-// @Summary ListGlossaries
+// @Summary 获取业务术语列表 | List glossaries
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -28,7 +30,6 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 	tenantID := getTenantID(c)
 
-	// 当有 element_id 参数时，直接返回该数据元关联的术语
 	if elementIDStr := c.Query("element_id"); elementIDStr != "" {
 		if elementID, err := strconv.ParseInt(elementIDStr, 10, 64); err == nil {
 			glossaries, err := h.svc.GetGlossariesByElement(elementID, tenantID)
@@ -82,7 +83,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 }
 
 // CreateGlossary POST /api/model/glossaries
-// @Summary CreateGlossary
+// @Summary 创建业务术语 | Create glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -107,7 +108,7 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 }
 
 // GetGlossary GET /api/model/glossaries/:id
-// @Summary GetGlossary
+// @Summary 获取业务术语详情 | Get glossary detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -116,21 +117,21 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
 	tenantID := getTenantID(c)
 	glossary, err := h.svc.GetGlossary(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "glossary not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgGlossaryNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, glossary)
 }
 
 // UpdateGlossary PUT /api/model/glossaries/:id
-// @Summary UpdateGlossary
+// @Summary 更新业务术语 | Update glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -139,7 +140,7 @@ func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -161,7 +162,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 }
 
 // DeleteGlossary DELETE /api/model/glossaries/:id
-// @Summary DeleteGlossary
+// @Summary 删除业务术语 | Delete glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -170,7 +171,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -179,11 +180,11 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // ApproveGlossary POST /api/model/glossaries/:id/approve
-// @Summary ApproveGlossary
+// @Summary 审批业务术语 | Approve glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -192,7 +193,7 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -203,11 +204,11 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
 }
 
 // DeprecateGlossary POST /api/model/glossaries/:id/deprecate
-// @Summary DeprecateGlossary
+// @Summary 废弃业务术语 | Deprecate glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -216,7 +217,7 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -227,11 +228,11 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已废弃"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeprecateSuccess)})
 }
 
 // GetElementMappings GET /glossaries/:id/elements
-// @Summary GetElementMappings
+// @Summary 获取术语关联的数据元 | Get element mappings of glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -240,7 +241,7 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -254,7 +255,7 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 }
 
 // SetElementMappings PUT /glossaries/:id/elements
-// @Summary SetElementMappings
+// @Summary 设置术语关联的数据元 | Set element mappings of glossary
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -263,7 +264,7 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 
@@ -280,5 +281,5 @@ func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
 }

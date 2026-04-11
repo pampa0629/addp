@@ -16,10 +16,11 @@ func NewConfigHandler(cfg *config.Config) *ConfigHandler {
 }
 
 // GetMapConfig 返回地图服务相关配置
-// @Summary GetMapConfig
+// @Summary 获取地图服务配置 | Get map service configuration
+// @Description 返回地图服务相关的配置信息（高德地图Key、天地图Key等）| Return map service configuration (AMap key, TDT key, etc.)
 // @Tags Manager
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "地图配置信息 | Map configuration"
 // @Router /getmapconfig [get]
 // @Security BearerAuth
 func (h *ConfigHandler) GetMapConfig(c *gin.Context) {

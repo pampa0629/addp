@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,7 +22,7 @@ func NewUnitHandler(svc *service.UnitService) *UnitHandler {
 
 // --- 度量类别 ---
 
-// @Summary ListCategories
+// @Summary 获取度量类别列表 | List measurement categories
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -36,7 +38,7 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, cats)
 }
 
-// @Summary CreateCategory
+// @Summary 创建度量类别 | Create measurement category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -57,7 +59,7 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 	c.JSON(http.StatusCreated, cat)
 }
 
-// @Summary UpdateCategory
+// @Summary 更新度量类别 | Update measurement category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -66,7 +68,7 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateMeasurementCategoryRequest
@@ -83,7 +85,7 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 	c.JSON(http.StatusOK, cat)
 }
 
-// @Summary DeleteCategory
+// @Summary 删除度量类别 | Delete measurement category
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -92,7 +94,7 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -100,12 +102,12 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
 // --- 计量单位 ---
 
-// @Summary ListUnits
+// @Summary 获取计量单位列表 | List units
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -127,7 +129,7 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 	c.JSON(http.StatusOK, units)
 }
 
-// @Summary GetUnit
+// @Summary 获取计量单位详情 | Get unit detail
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -136,19 +138,19 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 func (h *UnitHandler) GetUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
 	unit, err := h.svc.GetUnit(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "unit not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgUnitNotFound)})
 		return
 	}
 	c.JSON(http.StatusOK, unit)
 }
 
-// @Summary CreateUnit
+// @Summary 创建计量单位 | Create unit
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -169,7 +171,7 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 	c.JSON(http.StatusCreated, unit)
 }
 
-// @Summary UpdateUnit
+// @Summary 更新计量单位 | Update unit
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -178,7 +180,7 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	var req models.UpdateUnitRequest
@@ -195,7 +197,7 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 	c.JSON(http.StatusOK, unit)
 }
 
-// @Summary DeleteUnit
+// @Summary 删除计量单位 | Delete unit
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -204,7 +206,7 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
 	tenantID := getTenantID(c)
@@ -212,6 +214,5 @@ func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
-

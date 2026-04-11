@@ -42,12 +42,12 @@ type GetJupyterURLResponse struct {
 }
 
 // GetJupyterURL 获取 Jupyter Lab 访问 URL
-// @Summary 获取 Jupyter Lab 访问 URL
+// @Summary 获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL
 // @Tags Notebook
 // @Accept json
 // @Produce json
-// @Param body body GetJupyterURLRequest true "请求"
-// @Success 200 {object} GetJupyterURLResponse
+// @Param body body GetJupyterURLRequest true "请求 | Request"
+// @Success 200 {object} GetJupyterURLResponse "Jupyter URL | Jupyter URL"
 // @Router /notebooks/jupyter-url [post]
 func (h *NotebookHandler) GetJupyterURL(c *gin.Context) {
 	var req GetJupyterURLRequest
@@ -85,12 +85,12 @@ type ExecuteNotebookResponse struct {
 }
 
 // ExecuteNotebook 执行 Notebook
-// @Summary 执行 Notebook
+// @Summary 执行 Notebook | Execute Notebook
 // @Tags Notebook
 // @Accept json
 // @Produce json
-// @Param body body ExecuteNotebookRequest true "执行请求"
-// @Success 200 {object} ExecuteNotebookResponse
+// @Param body body ExecuteNotebookRequest true "执行请求 | Execution request"
+// @Success 200 {object} ExecuteNotebookResponse "执行结果 | Execution result"
 // @Router /notebooks/execute [post]
 func (h *NotebookHandler) ExecuteNotebook(c *gin.Context) {
 	var req ExecuteNotebookRequest
@@ -145,10 +145,10 @@ type ListKernelsResponse struct {
 }
 
 // ListKernels 列出可用的 Kernel
-// @Summary 列出可用的 Kernel
+// @Summary 列出可用的 Kernel | List available kernels
 // @Tags Notebook
 // @Produce json
-// @Success 200 {object} ListKernelsResponse
+// @Success 200 {object} ListKernelsResponse "Kernel列表 | Kernel list"
 // @Router /notebooks/kernels [get]
 func (h *NotebookHandler) ListKernels(c *gin.Context) {
 	kernels, err := h.jupyterService.ListKernels(c.Request.Context())
@@ -166,10 +166,10 @@ func (h *NotebookHandler) ListKernels(c *gin.Context) {
 }
 
 // HealthCheck 检查 Jupyter Engine 健康状态
-// @Summary 检查 Jupyter Engine 健康状态
+// @Summary 检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status
 // @Tags Notebook
 // @Produce json
-// @Success 200 {object} map[string]string
+// @Success 200 {object} map[string]string "健康状态 | Health status"
 // @Router /notebooks/health [get]
 func (h *NotebookHandler) HealthCheck(c *gin.Context) {
 	err := h.jupyterService.HealthCheck(c.Request.Context())
@@ -198,16 +198,16 @@ type UploadNotebookRequest struct {
 }
 
 // UploadNotebook 上传 Notebook 文件并创建 dev_item
-// @Summary 上传 Notebook
+// @Summary 上传 Notebook | Upload Notebook
 // @Tags Notebook
 // @Accept multipart/form-data
 // @Produce json
-// @Param file formData file true "Notebook 文件 (.ipynb)"
-// @Param name formData string true "Notebook 名称"
-// @Param description formData string false "描述"
-// @Param data_sources formData string false "数据源 IDs (JSON 数组)"
-// @Param parameters formData string false "参数 (JSON 对象)"
-// @Success 200 {object} models.DevTask
+// @Param file formData file true "Notebook 文件 (.ipynb) | Notebook file (.ipynb)"
+// @Param name formData string true "Notebook 名称 | Notebook name"
+// @Param description formData string false "描述 | Description"
+// @Param data_sources formData string false "数据源 IDs (JSON 数组) | Data source IDs (JSON array)"
+// @Param parameters formData string false "参数 (JSON 对象) | Parameters (JSON object)"
+// @Success 200 {object} models.DevTask "已上传的Notebook | Uploaded Notebook"
 // @Router /notebooks/upload [post]
 func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 获取用户信息
@@ -316,11 +316,11 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 }
 
 // DownloadNotebook 下载 Notebook 文件
-// @Summary 下载 Notebook
+// @Summary 下载 Notebook | Download Notebook
 // @Tags Notebook
 // @Produce application/json
-// @Param id path int true "DevItem ID"
-// @Success 200 {file} binary
+// @Param id path int true "DevItem ID | DevItem ID"
+// @Success 200 {file} binary "Notebook文件 | Notebook file"
 // @Router /notebooks/:id/download [get]
 func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 	// 获取用户信息
@@ -373,12 +373,12 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 }
 
 // ListNotebooks 列出用户的 Notebooks
-// @Summary 列出 Notebooks
+// @Summary 列出 Notebooks | List Notebooks
 // @Tags Notebook
 // @Produce json
-// @Param page query int false "页码" default(1)
-// @Param page_size query int false "每页数量" default(20)
-// @Success 200 {object} models.ListDevTasksResponse
+// @Param page query int false "页码 | Page number" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} models.ListDevTasksResponse "Notebook列表 | Notebook list"
 // @Router /notebooks [get]
 func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	// 获取用户信息
@@ -418,10 +418,10 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 }
 
 // DeleteNotebook 删除 Notebook
-// @Summary 删除 Notebook
+// @Summary 删除 Notebook | Delete Notebook
 // @Tags Notebook
-// @Param id path int true "DevItem ID"
-// @Success 200 {object} map[string]string
+// @Param id path int true "DevItem ID | DevItem ID"
+// @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
 // @Router /notebooks/:id [delete]
 func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	// 获取用户信息

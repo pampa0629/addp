@@ -36,11 +36,11 @@ func NewOGCTilesHandler(
 // ============================================================================
 
 // GetLandingPage 返回 OGC Tiles API Landing Page
-// @Summary OGC Tiles API Landing Page
+// @Summary OGC Tiles API Landing Page | OGC Tiles API Landing Page
 // @Tags OGC Tiles
 // @Produce json
-// @Param serviceName path string true "服务名称"
-// @Success 200 {object} map[string]interface{}
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "Landing Page | Landing Page"
 // @Router /ogc/tiles/{serviceName} [get]
 func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -107,11 +107,11 @@ func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 // ============================================================================
 
 // GetConformance 返回 OGC API 符合性声明
-// @Summary OGC API Conformance
+// @Summary OGC API Conformance | OGC API Conformance
 // @Tags OGC Tiles
 // @Produce json
-// @Param serviceName path string true "服务名称"
-// @Success 200 {object} map[string]interface{}
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "符合性声明 | Conformance declaration"
 // @Router /ogc/tiles/{serviceName}/conformance [get]
 func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 	conformance := map[string]interface{}{
@@ -135,11 +135,11 @@ func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 // ============================================================================
 
 // GetTileMatrixSets 返回可用的瓦片矩阵集列表
-// @Summary 获取 Tile Matrix Sets
+// @Summary 获取 Tile Matrix Sets | Get Tile Matrix Sets
 // @Tags OGC Tiles
 // @Produce json
-// @Param serviceName path string true "服务名称"
-// @Success 200 {object} map[string]interface{}
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "瓦片矩阵集列表 | Tile Matrix Set list"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets [get]
 func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 	host := c.Request.Host
@@ -171,12 +171,12 @@ func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 }
 
 // GetTileMatrixSet 返回单个瓦片矩阵集详情
-// @Summary 获取单个 Tile Matrix Set
+// @Summary 获取单个 Tile Matrix Set | Get single Tile Matrix Set
 // @Tags OGC Tiles
 // @Produce json
-// @Param serviceName path string true "服务名称"
-// @Param tileMatrixSetId path string true "瓦片矩阵集 ID"
-// @Success 200 {object} map[string]interface{}
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param tileMatrixSetId path string true "瓦片矩阵集 ID | Tile Matrix Set ID"
+// @Success 200 {object} map[string]interface{} "瓦片矩阵集详情 | Tile Matrix Set details"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId} [get]
 func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 	tileMatrixSetId := c.Param("tileMatrixSetId")
@@ -223,11 +223,11 @@ func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 // ============================================================================
 
 // GetTilesets 返回瓦片集列表
-// @Summary 获取 Tilesets
+// @Summary 获取 Tilesets | Get Tilesets
 // @Tags OGC Tiles
 // @Produce json
-// @Param serviceName path string true "服务名称"
-// @Success 200 {object} map[string]interface{}
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "瓦片集列表 | Tileset list"
 // @Router /ogc/tiles/{serviceName}/tiles [get]
 func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -289,16 +289,16 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 // ============================================================================
 
 // GetTile 返回单个瓦片（复用 XYZ Tiles 逻辑）
-// @Summary 获取单个瓦片
+// @Summary 获取单个瓦片 | Get single tile
 // @Tags OGC Tiles
 // @Produce application/vnd.mapbox-vector-tile
-// @Param serviceName path string true "服务名称"
-// @Param layer path string true "图层名称"
-// @Param tileMatrixSetId path string true "瓦片矩阵集 ID"
-// @Param tileMatrix path string true "瓦片矩阵（缩放级别）"
-// @Param tileRow path string true "瓦片行"
-// @Param tileCol path string true "瓦片列"
-// @Success 200 {file} application/vnd.mapbox-vector-tile
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param layer path string true "图层名称 | Layer name"
+// @Param tileMatrixSetId path string true "瓦片矩阵集 ID | Tile Matrix Set ID"
+// @Param tileMatrix path string true "瓦片矩阵（缩放级别）| Tile matrix (zoom level)"
+// @Param tileRow path string true "瓦片行 | Tile row"
+// @Param tileCol path string true "瓦片列 | Tile column"
+// @Success 200 {file} application/vnd.mapbox-vector-tile "瓦片数据 | Tile data"
 // @Router /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol} [get]
 func (h *OGCTilesHandler) GetTile(c *gin.Context) {
 	serviceName := c.Param("serviceName")

@@ -60,6 +60,12 @@
       "title": "AI 助手",
       "fab": "不知道从哪开始？"
     },
+    "copilot": {
+      "title": "导航助手",
+      "fab": "不知道从哪开始？",
+      "placeholder": "描述你想做的事，例如：我想同步数据库数据...",
+      "ask": "帮我找"
+    },
     "login": {
       "username": "用户名",
       "usernamePlaceholder": "请输入用户名",
@@ -73,6 +79,44 @@
       "networkError": "网络连接失败，请检查服务器是否启动",
       "requestFailed": "请求失败 ({status})",
       "unknown": "未知错误"
+    },
+    "apiDocs": {
+      "title": "API 文档",
+      "platformCenter": "平台级文档中心",
+      "helpTitle": "ADDP 平台 API 文档",
+      "helpBaseUrl": "Base URL: http://localhost:8000 (Gateway 统一入口)",
+      "helpVersionPrefix": "版本前缀: /api/v1/",
+      "helpAuth": "认证方式: Bearer Token (JWT)",
+      "helpContentType": "Content-Type: application/json",
+      "helpNote": "说明: 基于 Swagger/OpenAPI 自动生成，各模块独立提供",
+      "online": "在线",
+      "offline": "离线",
+      "checking": "检测中",
+      "openInNewTab": "在新标签页打开",
+      "moduleOfflineTitle": "模块离线",
+      "moduleOfflineDesc": "该模块服务未运行，无法加载 API 文档",
+      "recheck": "重新检测",
+      "noSwaggerTitle": "暂无 Swagger 文档",
+      "noSwaggerDesc": "该模块尚未配置 Swagger，服务在线但文档不可用",
+      "tryDirectAccess": "尝试直接访问",
+      "selectModule": "请在左侧选择一个模块查看 API 文档",
+      "modules": {
+        "agent": "Agent - AI智能体",
+        "copilot": "Copilot - AI助手",
+        "graph": "Graph - 知识图谱",
+        "develop": "Develop - 数据开发",
+        "manager": "Manager - 数据管理",
+        "meta": "Meta - 元数据",
+        "model": "Model - 数据建模",
+        "monitor": "Monitor - 执行监控",
+        "orchestrator": "Orchestrator - 工作流编排",
+        "portal": "Portal - 资产门户",
+        "quality": "Quality - 数据质量",
+        "service": "Service - 数据服务",
+        "standard": "Standard - 数据标准",
+        "system": "System - 系统模块",
+        "transfer": "Transfer - 数据传输"
+      }
     },
     "groups": {
       "dataPrepare": "数据准备",

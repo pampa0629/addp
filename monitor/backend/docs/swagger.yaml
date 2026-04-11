@@ -17,7 +17,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: CheckAllModules
+      summary: 检查所有模块健康状态 | Check all modules health
       tags:
       - Monitor
   /checkmodulehealth:
@@ -32,7 +32,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: CheckModuleHealth
+      summary: 检查模块健康状态 | Check module health
       tags:
       - Monitor
   /getexecution:
@@ -47,7 +47,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: GetExecution
+      summary: 获取执行记录详情 | Get execution record detail
       tags:
       - Monitor
   /getmodules:
@@ -62,7 +62,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: GetModules
+      summary: 获取模块列表 | Get module list
       tags:
       - Monitor
   /getstatistics:
@@ -77,7 +77,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: GetStatistics
+      summary: 获取统计数据 | Get statistics
       tags:
       - Monitor
   /gettrenddata:
@@ -92,7 +92,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: GetTrendData
+      summary: 获取趋势数据 | Get trend data
       tags:
       - Monitor
   /listexecutions:
@@ -107,7 +107,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: ListExecutions
+      summary: 查询执行记录列表 | List execution records
       tags:
       - Monitor
 securityDefinitions:

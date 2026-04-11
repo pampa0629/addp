@@ -23,7 +23,7 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 }
 
 // ListExecutions 分页查询执行记录
-// @Summary ListExecutions
+// @Summary 查询执行记录列表 | List execution records
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -65,7 +65,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 }
 
 // GetExecution 获取单条执行记录
-// @Summary GetExecution
+// @Summary 获取执行记录详情 | Get execution record detail
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}

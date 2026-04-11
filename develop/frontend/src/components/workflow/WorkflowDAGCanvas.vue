@@ -92,6 +92,10 @@ onMounted(() => {
   setTimeout(() => {
     registerMultiPortNode()
     initGraph()
+    if (!graph.value) {
+      console.error('[WorkflowDAGCanvas] initGraph 失败，容器可能尚未挂载')
+      return
+    }
     initSelectionListener()
     graph.value.on('node:dblclick', handleNodeDoubleClick)
     graph.value.on('node:click', handleNodeClickForEdge)

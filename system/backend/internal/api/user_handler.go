@@ -16,13 +16,13 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 }
 
 // Create godoc
-// @Summary      创建用户
-// @Description  创建新用户（租户管理员权限）
-// @Tags         用户管理
+// @Summary      创建用户 | Create user
+// @Description  创建新用户（租户管理员权限）| Create new user (tenant admin permission required)
+// @Tags         用户管理 | User Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.UserCreateRequest true "用户信息"
+// @Param        request body models.UserCreateRequest true "用户信息 | User info"
 // @Success      200 {object} models.User
 // @Failure      400 {object} models.ErrorResponse
 // @Router       /users [post]
@@ -39,14 +39,14 @@ func (h *UserHandler) Create(c *gin.Context) {
 }
 
 // List godoc
-// @Summary      获取用户列表
-// @Description  分页获取用户列表（自动过滤租户）
-// @Tags         用户管理
+// @Summary      获取用户列表 | List users
+// @Description  分页获取用户列表（自动过滤租户）| Get paginated user list (auto-filtered by tenant)
+// @Tags         用户管理 | User Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page query int false "页码" default(1)
-// @Param        page_size query int false "每页数量" default(10)
+// @Param        page query int false "页码 | Page number" default(1)
+// @Param        page_size query int false "每页数量 | Page size" default(10)
 // @Success      200 {object} object{data=[]models.User,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /users [get]
@@ -106,9 +106,9 @@ func (h *UserHandler) Delete(c *gin.Context) {
 }
 
 // Me godoc
-// @Summary      获取当前用户信息
-// @Description  获取当前登录用户的详细信息
-// @Tags         用户管理
+// @Summary      获取当前用户信息 | Get current user info
+// @Description  获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user
+// @Tags         用户管理 | User Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth

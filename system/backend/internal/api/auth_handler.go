@@ -25,12 +25,12 @@ func NewAuthHandler(userService *service.UserService, cfg *config.Config) *AuthH
 }
 
 // Login godoc
-// @Summary      用户登录
-// @Description  使用用户名和密码登录，返回 JWT token
-// @Tags         认证
+// @Summary      用户登录 | User login
+// @Description  使用用户名和密码登录，返回 JWT token | Login with username and password, returns JWT token
+// @Tags         认证 | Auth
 // @Accept       json
 // @Produce      json
-// @Param        request body models.LoginRequest true "登录信息"
+// @Param        request body models.LoginRequest true "登录信息 | Login credentials"
 // @Success      200 {object} models.LoginResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
@@ -65,12 +65,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // Register godoc
-// @Summary      用户注册
-// @Description  注册新用户（需开启公开注册）
-// @Tags         认证
+// @Summary      用户注册 | User registration
+// @Description  注册新用户（需开启公开注册）| Register new user (requires public registration enabled)
+// @Tags         认证 | Auth
 // @Accept       json
 // @Produce      json
-// @Param        request body models.UserCreateRequest true "注册信息"
+// @Param        request body models.UserCreateRequest true "注册信息 | Registration info"
 // @Success      201 {object} models.User
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
@@ -97,9 +97,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // Refresh godoc
-// @Summary      刷新 Token
-// @Description  使用即将过期的 token 获取新的 token
-// @Tags         认证
+// @Summary      刷新 Token | Refresh token
+// @Description  使用即将过期的 token 获取新的 token | Use expiring token to get a new token
+// @Tags         认证 | Auth
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
