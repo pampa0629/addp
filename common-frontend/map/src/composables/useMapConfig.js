@@ -1,11 +1,26 @@
 import { ref, computed, onMounted } from 'vue'
-import configAPI from '../api/config'
+import defaultConfigAPI from '../api/config'
 
 const DEFAULT_AMAP_KEY = import.meta.env.VITE_AMAP_KEY || ''
 const DEFAULT_AMAP_SECURITY = import.meta.env.VITE_AMAP_SECURITY || ''
 const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
 
 const GAODE_BASE_MAP_VALUE = 'amapVector'
+
+// 允许宿主应用注入真实的 configAPI 实现
+let configAPI = defaultConfigAPI
+
+/**
+ * 注入地图配置 API 实现（在 main.js 中调用，早于任何组件挂载）
+ * @param {Object} api - 包含 getMapConfig() 方法的对象
+ */
+export function setMapConfigAPI(api) {
+  configAPI = api
+  // 重置加载状态，以便使用新的 API 重新加载
+  isConfigLoaded = false
+  baseMapOptions.value = []
+  mapConfig.value = { amapKey: '', amapSecurityJsCode: '', tdtKey: '' }
+}
 
 // 全局共享的地图配置
 const mapConfig = ref({

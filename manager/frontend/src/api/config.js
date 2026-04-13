@@ -1,8 +1,9 @@
 import client from './client'
 
 export const configAPI = {
-  getMapConfig() {
-    return client.get('/manager/config/map')
+  async getMapConfig() {
+    const data = await client.get('/manager/config/map')
+    return { data }
   }
 }
 

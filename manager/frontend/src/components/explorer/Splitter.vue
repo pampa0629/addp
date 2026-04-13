@@ -64,7 +64,7 @@ const handleMouseDown = (event) => {
 }
 
 .splitter:hover::after,
-body.is-resizing .splitter::after {
+body.is-h-resizing .splitter::after {
   background: var(--el-color-primary);
 }
 </style>

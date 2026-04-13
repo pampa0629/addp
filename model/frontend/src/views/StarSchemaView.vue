@@ -135,9 +135,7 @@
             <template #header>
               <span class="card-title">{{ t('model.star_schema.topology') }}</span>
             </template>
-            <div ref="mermaidContainer" class="mermaid-container">
-              <pre class="mermaid">{{ mermaidCode }}</pre>
-            </div>
+            <div ref="mermaidContainer" class="mermaid-container"></div>
           </el-card>
         </template>
       </el-col>
@@ -424,13 +422,10 @@ const handleRemoveDimRelation = async (rel) => {
 }
 
 const renderMermaid = async () => {
-  if (!mermaidContainer.value) return
-  const mermaidEl = mermaidContainer.value.querySelector('.mermaid')
-  if (!mermaidEl || !mermaidCode.value) return
-  mermaidEl.removeAttribute('data-processed')
-  mermaidEl.textContent = mermaidCode.value
+  if (!mermaidContainer.value || !mermaidCode.value) return
   try {
-    await mermaid.run({ nodes: [mermaidEl] })
+    const { svg } = await mermaid.render('mermaid-star-schema-' + Date.now(), mermaidCode.value)
+    mermaidContainer.value.innerHTML = svg
   } catch (err) {
     console.error('Mermaid渲染错误:', err)
   }

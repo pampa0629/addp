@@ -11,6 +11,9 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
   const size = ref(initialSize)
   const isResizing = ref(false)
 
+  // maxSize 支持传入函数，用于动态计算上限（如依赖容器高度）
+  const getMaxSize = typeof maxSize === 'function' ? maxSize : () => maxSize
+
   let startPosition = 0
   let startSize = 0
 
@@ -21,14 +24,18 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
       ? event.clientX - startPosition
       : event.clientY - startPosition
 
-    const nextSize = Math.min(maxSize, Math.max(minSize, startSize + delta))
+    const nextSize = Math.min(getMaxSize(), Math.max(minSize, startSize + delta))
     size.value = nextSize
   }
+
+  const resizeClass = direction === 'horizontal' ? 'is-h-resizing' : 'is-v-resizing'
 
   const stopResize = () => {
     if (!isResizing.value) return
     isResizing.value = false
-    document.body.classList.remove('is-resizing')
+    document.body.classList.remove(resizeClass)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
     document.removeEventListener('mousemove', onResize)
     document.removeEventListener('mouseup', stopResize)
   }
@@ -37,7 +44,9 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
     isResizing.value = true
     startPosition = direction === 'horizontal' ? event.clientX : event.clientY
     startSize = size.value
-    document.body.classList.add('is-resizing')
+    document.body.classList.add(resizeClass)
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'
     document.addEventListener('mousemove', onResize)
     document.addEventListener('mouseup', stopResize)
   }

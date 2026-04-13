@@ -124,7 +124,7 @@ type BaseConfig struct {
 
 // LoadSharedConfig 从 System 服务获取共享配置
 func LoadSharedConfig(systemURL string, target *BaseConfig) error {
-	url := fmt.Sprintf("%s/api/internal/config", systemURL)
+	url := fmt.Sprintf("%s/api/v1/internal/config", systemURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)

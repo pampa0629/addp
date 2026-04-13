@@ -75,9 +75,32 @@ export function formatCellValue(value) {
 
 /**
  * 获取对象节点类型标签
+ * @param {string} type - 节点类型
+ * @param {Function} [t] - 可选的 i18n 翻译函数，传入时返回翻译文本
  */
-export function getObjectNodeTypeLabel(type) {
+export function getObjectNodeTypeLabel(type, t) {
   const key = String(type || '').toLowerCase()
+  if (t) {
+    switch (key) {
+      case 'directory':
+      case 'prefix':
+        return t('objectStorage.typeDirectory')
+      case 'bucket':
+        return 'Bucket'
+      case 'object':
+        return t('objectStorage.typeObject')
+      case 'schema':
+        return 'Schema'
+      case 'database':
+        return t('objectStorage.typeDatabase')
+      case 'table':
+        return t('objectStorage.typeTable')
+      case 'view':
+        return t('objectStorage.typeView')
+      default:
+        return type || '-'
+    }
+  }
   switch (key) {
     case 'directory':
     case 'prefix':

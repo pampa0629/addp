@@ -7,34 +7,34 @@
         <span class="meta-value">{{ objectData.bucket || '-' }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">路径</span>
+        <span class="meta-label">{{ t('objectStorage.path') }}</span>
         <span class="meta-value">{{ objectData.path || '/' }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">类型</span>
-        <span class="meta-value">{{ getObjectNodeTypeLabel(objectData.node_type) }}</span>
+        <span class="meta-label">{{ t('objectStorage.type') }}</span>
+        <span class="meta-value">{{ getObjectNodeTypeLabel(objectData.node_type, t) }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">大小</span>
+        <span class="meta-label">{{ t('objectStorage.size') }}</span>
         <span class="meta-value">{{ formatBytes(objectData.size_bytes ?? objectData.sizeBytes) }}</span>
       </div>
       <div
         v-if="objectCount !== null && objectCount !== undefined"
         class="meta-row"
       >
-        <span class="meta-label">对象数量</span>
+        <span class="meta-label">{{ t('objectStorage.objectCount') }}</span>
         <span class="meta-value">{{ objectCount }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">Content-Type</span>
+        <span class="meta-label">{{ t('objectStorage.contentType') }}</span>
         <span class="meta-value">{{ objectData.content_type || objectData.contentType || '-' }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">更新时间</span>
+        <span class="meta-label">{{ t('objectStorage.lastModified') }}</span>
         <span class="meta-value">{{ formatDateTime(objectData.last_modified || objectData.lastModified) }}</span>
       </div>
       <div v-if="metadataEntries.length" class="meta-row meta-metadata">
-        <span class="meta-label">元数据</span>
+        <span class="meta-label">{{ t('objectStorage.metadata') }}</span>
         <div class="meta-value metadata-list">
           <div
             v-for="([key, value]) in metadataEntries"
@@ -47,7 +47,7 @@
         </div>
       </div>
       <div v-if="hasExtractedMetadata" class="meta-row meta-extracted">
-        <span class="meta-label">提取元数据</span>
+        <span class="meta-label">{{ t('objectStorage.extractedMetadata') }}</span>
         <div class="meta-value extracted-wrapper">
           <ExtractedMetadata :metadata="extractedMetadata" />
         </div>
@@ -64,24 +64,24 @@
         height="100%"
         @row-dblclick="handleRowDblclick"
       >
-        <el-table-column prop="name" label="名称" show-overflow-tooltip />
-        <el-table-column label="类型" width="120">
+        <el-table-column prop="name" :label="t('objectStorage.colName')" show-overflow-tooltip />
+        <el-table-column :label="t('objectStorage.colType')" width="120">
           <template #default="{ row }">
-            {{ getObjectNodeTypeLabel(row.type) }}
+            {{ getObjectNodeTypeLabel(row.type, t) }}
           </template>
         </el-table-column>
-        <el-table-column label="大小" width="160">
+        <el-table-column :label="t('objectStorage.colSize')" width="160">
           <template #default="{ row }">
             <span v-if="row.type !== 'prefix'">{{ formatBytes(row.size_bytes) }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="内容类型" show-overflow-tooltip>
+        <el-table-column :label="t('objectStorage.colContentType')" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.content_type || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="200">
+        <el-table-column :label="t('objectStorage.colLastModified')" width="200">
           <template #default="{ row }">
             {{ formatDateTime(row.last_modified) }}
           </template>
@@ -96,13 +96,14 @@
         v-if="contentPreview && objectData.content"
         :data="data"
       />
-      <div v-else class="placeholder">暂无可用内容</div>
+      <div v-else class="placeholder">{{ t('objectStorage.noContent') }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResizable } from '../../composables/useResizable'
 import { formatBytes, formatDateTime, getObjectNodeTypeLabel } from '../../utils/formatters'
 import ImagePreview from '../ImagePreview.vue'
@@ -123,6 +124,7 @@ const props = defineProps({
 
 const emit = defineEmits(['navigate'])
 
+const { t } = useI18n()
 const { size: metaHeight, startResize } = useResizable(140, 80, 300, 'vertical')
 
 const parseMaybeJSON = (value) => {
@@ -322,7 +324,7 @@ const handleRowDblclick = (row) => {
 }
 
 .meta-splitter:hover::after,
-body.is-resizing .meta-splitter::after {
+body.is-v-resizing .meta-splitter::after {
   background: var(--el-color-primary);
 }
 

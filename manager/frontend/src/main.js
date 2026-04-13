@@ -25,8 +25,12 @@ import {
   DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview, ExcelPreview
 } from '@common-ui/previews'
 import {
-  TablePreview, GeoJsonPreview, ShapefilePreview
+  TablePreview, GeoJsonPreview, ShapefilePreview,
+  mapMessagesZhCn, mapMessagesEn, setMapConfigAPI
 } from '@common-ui-map'
+import configAPI from '@/api/config'
+// 注入真实的地图配置 API，使 common-frontend/map 组件能获取到地图密钥
+setMapConfigAPI(configAPI)
 // 导入主题管理
 import { useTheme } from '@common-ui'
 
@@ -45,7 +49,10 @@ for (const [key, component] of Object.entries(icons)) {
 }
 
 const { i18n, init: initI18n } = createAddpI18n({
-  moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
+  moduleMessages: {
+    'zh-cn': { ...zhCnMessages, ...mapMessagesZhCn },
+    'en': { ...enMessages, ...mapMessagesEn }
+  },
   listenToConsole: true,
 })
 

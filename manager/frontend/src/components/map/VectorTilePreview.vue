@@ -3,7 +3,7 @@
   <div v-if="isLoadingConfig" class="loading-overlay">
     <div class="loading-content">
       <div class="loading-spinner"></div>
-      <p>正在加载瓦片配置...</p>
+      <p>{{ t('manager.vectorTile.loadingConfig') }}</p>
     </div>
   </div>
 
@@ -11,7 +11,7 @@
   <div v-if="error && !isLoadingConfig" class="error-banner">
     <span class="error-icon">⚠️</span>
     <span class="error-text">{{ error }}</span>
-    <button @click="retryLoadConfig" class="retry-btn">重试</button>
+    <button @click="retryLoadConfig" class="retry-btn">{{ t('manager.vectorTile.retry') }}</button>
   </div>
 
   <div ref="mapEl" class="vt-map"></div>
@@ -25,6 +25,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
@@ -51,6 +52,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['featureClick'])
+
+const { t } = useI18n()
 
 const mapEl = ref(null)
 let map
@@ -98,7 +101,7 @@ async function fetchTileConfig() {
 
     if (!data || typeof data !== 'object') {
       console.error('Invalid data:', data)
-      throw new Error(`无效的配置数据: ${JSON.stringify(data)}`)
+      throw new Error(t('manager.vectorTile.invalidConfig', { data: JSON.stringify(data) }))
     }
 
     tileConfig.value = {
@@ -116,7 +119,7 @@ async function fetchTileConfig() {
     }
   } catch (err) {
     console.error('Failed to load tile config:', err)
-    error.value = '无法加载瓦片配置，使用默认视图'
+    error.value = t('manager.vectorTile.loadConfigFailed')
 
     tileConfig.value = {
       min_zoom: 6,
@@ -164,8 +167,8 @@ async function initMap() {
   const controls = defaultControls({
     zoom: true,
     zoomOptions: {
-      zoomInTipLabel: '放大',
-      zoomOutTipLabel: '缩小'
+      zoomInTipLabel: t('manager.vectorTile.zoomIn'),
+      zoomOutTipLabel: t('manager.vectorTile.zoomOut')
     }
   })
 
@@ -179,7 +182,7 @@ async function initMap() {
 
     controls.push(new ZoomToExtent({
       extent: extentForControl,
-      tipLabel: '全幅显示',
+      tipLabel: t('manager.vectorTile.fitExtent'),
       label: '⛶'  // 四个角的方框图标，更能表达"适应到边界"的含义
     }))
   }
@@ -231,7 +234,7 @@ async function initMap() {
     if (currentZoom < minZoom) {
       if (!hasShownMinZoomWarning) {
         ElMessage.warning({
-          message: `当前层级 ${currentZoom} 低于建议范围，数据可能不可见。建议放大到 ${minZoom} 层级`,
+          message: t('manager.vectorTile.zoomTooLow', { zoom: currentZoom, min: minZoom }),
           duration: 3000,
           showClose: true
         })
@@ -241,7 +244,7 @@ async function initMap() {
     } else if (currentZoom > maxZoom) {
       if (!hasShownMaxZoomWarning) {
         ElMessage.info({
-          message: `当前层级 ${currentZoom} 超出预缓存范围 (${maxZoom})，加载可能较慢`,
+          message: t('manager.vectorTile.zoomTooHigh', { zoom: currentZoom, max: maxZoom }),
           duration: 3000,
           showClose: true
         })

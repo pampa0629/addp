@@ -10,7 +10,7 @@ export { default as ExtractedMetadata } from './components/ExtractedMetadata.vue
 export { default as MapPopup } from './components/MapPopup.vue'
 
 // Map Composables
-export { useMapConfig } from './composables/useMapConfig'
+export { useMapConfig, setMapConfigAPI } from './composables/useMapConfig'
 export { useGaodeMap } from './composables/useGaodeMap'
 export { useOpenLayersMap } from './composables/useOpenLayersMap'
 export { useResizable } from './composables/useResizable'
@@ -26,3 +26,7 @@ export { createDefaultStyleFunction, createHighlightStyle } from './utils/mapSty
 
 // Map Layers Config
 export { createGaodeBaseLayer, createOSMBaseLayer } from './config/mapLayers'
+
+// i18n messages (for merging into host app's i18n instance)
+export { default as mapMessagesZhCn } from './i18n/zh-cn.json'
+export { default as mapMessagesEn } from './i18n/en.json'

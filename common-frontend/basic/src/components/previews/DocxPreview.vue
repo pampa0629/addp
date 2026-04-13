@@ -948,7 +948,7 @@ onMounted(() => {
 .loading-hint {
   margin-top: 12px;
   padding: 12px;
-  background: #f4f4f5;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
   max-width: 400px;
 }
@@ -1027,7 +1027,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: white;
+  background: var(--addp-bg-primary);
   border-bottom: 1px solid var(--addp-border-color);
   flex-shrink: 0;
 }
@@ -1075,7 +1075,7 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 32px;
-  background: white;
+  background: var(--addp-bg-primary);
   margin: 16px;
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
@@ -1088,7 +1088,7 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.6;
   color: var(--addp-text-primary);
-  background: #f8f9fb;
+  background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
 }
@@ -1129,7 +1129,7 @@ onMounted(() => {
   margin: 16px 0;
   padding: 12px 16px;
   border-left: 4px solid var(--el-color-primary);
-  background: #f4f4f5;
+  background: var(--addp-bg-secondary);
   color: var(--addp-text-secondary);
   font-style: italic;
 }

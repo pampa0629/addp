@@ -20,14 +20,16 @@
       <!-- 可拖拽分隔器 -->
       <Splitter direction="horizontal" @resize="startTreeResize" />
 
-      <!-- 右侧预览面板 -->
-      <PreviewPanel
-        :selected-node="selectedNodeLegacy"
-        :preview-data="store.previewData"
-        :loading="store.previewLoading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
+      <!-- 右侧预览面板（独立滚动容器） -->
+      <div class="preview-container">
+        <PreviewPanel
+          :selected-node="selectedNodeLegacy"
+          :preview-data="store.previewData"
+          :loading="store.previewLoading"
+          @page-change="handlePageChange"
+          @navigate="handleNavigate"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -310,5 +312,11 @@ watch(() => route.query, async (query) => {
   height: 100%;
   overflow: auto;
   background: var(--addp-bg-primary) !important;
+}
+
+.preview-container {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 </style>

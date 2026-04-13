@@ -13,10 +13,10 @@
         type="info"
         show-icon
         :closable="false"
-        title="仅展示部分工作表"
+        :title="t('excelPreview.sheetsTruncatedTitle')"
       >
         <template #default>
-          当前仅展示前 {{ summary.sheet_limit ?? sheets.length }} 个工作表，可下载 Excel 查看全部内容。
+          {{ t('excelPreview.sheetsTruncatedBody', { limit: summary.sheet_limit ?? sheets.length }) }}
         </template>
       </el-alert>
       <el-alert
@@ -24,10 +24,10 @@
         type="info"
         show-icon
         :closable="false"
-        title="示例数据有限"
+        :title="t('excelPreview.rowsTruncatedTitle')"
       >
         <template #default>
-          每个工作表仅展示前 {{ summary.row_limit ?? excelSampleRows }} 行样例数据。
+          {{ t('excelPreview.rowsTruncatedBody', { limit: summary.row_limit ?? excelSampleRows }) }}
         </template>
       </el-alert>
     </div>
@@ -42,14 +42,14 @@
         >
           <div class="sheet-meta">
             <el-descriptions border size="small" :column="3">
-              <el-descriptions-item label="工作表">{{ sheet.name || `Sheet ${sheet.index + 1}` }}</el-descriptions-item>
-              <el-descriptions-item label="示例行数">{{ formatNumber(sheet.rows?.length || 0) }}</el-descriptions-item>
-              <el-descriptions-item label="总行数">
+              <el-descriptions-item :label="t('excelPreview.sheetName')">{{ sheet.name || `Sheet ${sheet.index + 1}` }}</el-descriptions-item>
+              <el-descriptions-item :label="t('excelPreview.sampleRows')">{{ formatNumber(sheet.rows?.length || 0) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('excelPreview.totalRows')">
                 {{ sheet.row_count != null ? formatNumber(sheet.row_count) : '—' }}
               </el-descriptions-item>
-              <el-descriptions-item label="列数">{{ formatNumber(sheet.column_count || 0) }}</el-descriptions-item>
-              <el-descriptions-item label="包含表头">{{ sheet.has_header ? '是' : '否' }}</el-descriptions-item>
-              <el-descriptions-item label="示例截断">{{ sheet.rows_truncated ? '是' : '否' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('excelPreview.columns')">{{ formatNumber(sheet.column_count || 0) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('excelPreview.hasHeader')">{{ sheet.has_header ? t('common.yes') : t('common.no') }}</el-descriptions-item>
+              <el-descriptions-item :label="t('excelPreview.rowsTruncated')">{{ sheet.rows_truncated ? t('common.yes') : t('common.no') }}</el-descriptions-item>
             </el-descriptions>
           </div>
 
@@ -81,30 +81,33 @@
               min-width="140"
             />
           </el-table>
-          <el-empty v-else description="该工作表暂无可展示的列" />
+          <el-empty v-else :description="t('excelPreview.noColumns')" />
 
           <el-alert
             v-if="sheet.rows_truncated"
             type="info"
             :closable="false"
             show-icon
-            title="仅展示部分数据"
+            :title="t('excelPreview.partialDataTitle')"
             class="sheet-alert"
           >
             <template #default>
-              当前仅展示前 {{ excelSampleRows }} 行示例，实际数据可能更多。
+              {{ t('excelPreview.partialDataBody', { limit: excelSampleRows }) }}
             </template>
           </el-alert>
         </el-tab-pane>
       </el-tabs>
     </div>
 
-    <el-empty v-else description="未能解析 Excel 工作表" />
+    <el-empty v-else :description="t('excelPreview.parseError')" />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   data: {
@@ -172,13 +175,13 @@ const formatBytes = (bytes) => {
 const summaryItems = computed(() => {
   const meta = summary.value || {}
   const items = [
-    { label: '工作表总数', value: formatNumber(meta.sheet_count ?? sheets.value.length) },
-    { label: '已加载工作表', value: formatNumber(meta.sampled_sheets ?? sheets.value.length) },
-    { label: '示例行数上限', value: formatNumber(meta.row_limit ?? excelSampleRows) },
-    { label: '列数上限', value: formatNumber(meta.column_limit ?? 0) }
+    { label: t('excelPreview.totalSheets'), value: formatNumber(meta.sheet_count ?? sheets.value.length) },
+    { label: t('excelPreview.loadedSheets'), value: formatNumber(meta.sampled_sheets ?? sheets.value.length) },
+    { label: t('excelPreview.rowLimit'), value: formatNumber(meta.row_limit ?? excelSampleRows) },
+    { label: t('excelPreview.columnLimit'), value: formatNumber(meta.column_limit ?? 0) }
   ]
   if (meta.size_bytes != null) {
-    items.push({ label: '文件大小', value: formatBytes(meta.size_bytes) })
+    items.push({ label: t('excelPreview.fileSize'), value: formatBytes(meta.size_bytes) })
   }
   return items
 })
@@ -187,7 +190,7 @@ const sheetLabel = (sheet) => {
   if (!sheet) return 'Sheet'
   const name = sheet.name || `Sheet ${Number(sheet.index ?? 0) + 1}`
   if (typeof sheet.row_count === 'number') {
-    return `${name} (${formatNumber(sheet.row_count)} 行)`
+    return `${name} (${t('excelPreview.rowCount', { count: formatNumber(sheet.row_count) })})`
   }
   return name
 }
@@ -213,7 +216,7 @@ const getColumnPairs = (sheet) => {
 }
 
 .summary-item {
-  background: #f4f7ff;
+  background: var(--el-fill-color);
   border-radius: 6px;
   padding: 10px 14px;
   display: flex;
@@ -239,7 +242,7 @@ const getColumnPairs = (sheet) => {
 
 .excel-body {
   background: var(--addp-bg-primary);
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 8px;
 }

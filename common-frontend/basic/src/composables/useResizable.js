@@ -25,10 +25,14 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
     size.value = nextSize
   }
 
+  const resizeClass = direction === 'horizontal' ? 'is-h-resizing' : 'is-v-resizing'
+
   const stopResize = () => {
     if (!isResizing.value) return
     isResizing.value = false
-    document.body.classList.remove('is-resizing')
+    document.body.classList.remove(resizeClass)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
     document.removeEventListener('mousemove', onResize)
     document.removeEventListener('mouseup', stopResize)
   }
@@ -37,7 +41,9 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
     isResizing.value = true
     startPosition = direction === 'horizontal' ? event.clientX : event.clientY
     startSize = size.value
-    document.body.classList.add('is-resizing')
+    document.body.classList.add(resizeClass)
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'
     document.addEventListener('mousemove', onResize)
     document.addEventListener('mouseup', stopResize)
   }

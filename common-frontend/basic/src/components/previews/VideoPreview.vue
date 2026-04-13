@@ -204,7 +204,7 @@ const videoSrc = computed(() => {
   if (token) {
     params.set('token', token)
   }
-  return `/api/manager/video-stream?${params.toString()}`
+  return `/api/v1/manager/video-stream?${params.toString()}`
 })
 
 const metadataForDetails = computed(() => {

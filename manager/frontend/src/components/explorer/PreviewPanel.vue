@@ -54,7 +54,7 @@
             @click="toggleGraphSchema"
           >
             <el-icon><Share /></el-icon>
-            Schema 图
+            {{ t('manager.explorer.schemaGraph') }}
           </el-button>
 
           <!-- 导入数据按钮（仅 PostgreSQL schema 节点） -->
@@ -540,7 +540,7 @@ const downloadInfo = computed(() => {
       fileName: ensureExtension(baseName, '.csv'),
       columns,
       rows,
-      note: '当前仅导出预览中的行数据'
+      note: t('manager.explorer.downloadNotePreviewOnly')
     }
   }
 
@@ -1143,28 +1143,28 @@ const objectMetadataTooltip = computed(() => {
   if (contentType.includes('pdf')) {
     const pages = extracted.pages || extracted.Pages || attributes.pages || attributes.page_count
     if (pages) {
-      parts.push(`页数: ${pages}`)
+      parts.push(t('manager.explorer.metaPdfPages', { value: pages }))
     }
 
     const author = extracted.author || extracted.Author || attributes.author
     if (author) {
-      parts.push(`作者: ${author}`)
+      parts.push(t('manager.explorer.metaPdfAuthor', { value: author }))
     }
 
     const title = extracted.title || extracted.Title || attributes.title
     if (title) {
-      parts.push(`标题: ${title}`)
+      parts.push(t('manager.explorer.metaPdfTitle', { value: title }))
     }
 
     const creator = extracted.creator || extracted.Creator || attributes.creator
     if (creator) {
-      parts.push(`创建工具: ${creator}`)
+      parts.push(t('manager.explorer.metaPdfCreator', { value: creator }))
     }
   }
 
   // 最后修改时间
   if (objectLastModified.value) {
-    parts.push(`最后修改: ${objectLastModified.value}`)
+    parts.push(t('manager.explorer.metaLastModified', { value: objectLastModified.value }))
   }
 
   return parts.join('\n')
@@ -1176,7 +1176,7 @@ const formatDuration = (seconds) => {
     seconds = parseFloat(seconds)
   }
   if (isNaN(seconds) || seconds < 0) {
-    return '未知'
+    return t('manager.explorer.metaUnknown')
   }
 
   const hours = Math.floor(seconds / 3600)
@@ -1196,7 +1196,7 @@ const formatBitrate = (bitrate) => {
     bitrate = parseFloat(bitrate)
   }
   if (isNaN(bitrate) || bitrate < 0) {
-    return '未知'
+    return t('manager.explorer.metaUnknown')
   }
 
   const k = 1000 // 使用 1000 而不是 1024
@@ -1257,17 +1257,17 @@ const showVectorizeButton = computed(() => {
 
 // 向量化按钮文本
 const vectorizeButtonText = computed(() => {
-  if (!props.selectedNode) return '向量化'
+  if (!props.selectedNode) return t('manager.explorer.vectorize')
 
   const nodeType = props.selectedNode.nodeType || props.selectedNode.type
 
   if (nodeType === 'object') {
-    return '向量化'
+    return t('manager.explorer.vectorize')
   } else if (nodeType === 'directory' || nodeType === 'bucket') {
-    return '批量向量化'
+    return t('manager.explorer.batchVectorize')
   }
 
-  return '向量化'
+  return t('manager.explorer.vectorize')
 })
 
 // 处理向量化按钮点击
@@ -1314,7 +1314,7 @@ const handleVectorize = async () => {
 
     const taskId = responseData?.task_id
     if (!taskId) {
-      ElMessage.success('向量化任务已提交')
+      ElMessage.success(t('manager.explorer.vectorizeTaskSubmitted'))
       return
     }
 
@@ -1324,8 +1324,8 @@ const handleVectorize = async () => {
       : (nodeType === 'bucket' ? bucket : node.label)
 
     notification = ElNotification({
-      title: '向量化进行中',
-      message: `正在向量化：${targetName}`,
+      title: t('manager.explorer.vectorizeInProgress'),
+      message: t('manager.explorer.vectorizingTarget', { name: targetName }),
       type: 'info',
       duration: 0, // 不自动关闭
       position: 'bottom-right'
@@ -1339,7 +1339,7 @@ const handleVectorize = async () => {
     if (notification) {
       notification.close()
     }
-    ElMessage.error('向量化失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error(t('manager.explorer.vectorizeTaskFailed', { error: error.response?.data?.error || error.message }))
   }
 }
 
@@ -1369,8 +1369,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
           // 检查是否跳过
           if (result.skipped) {
             ElNotification({
-              title: '向量化跳过',
-              message: `文件已经向量化，跳过：${targetName}\n原因：${result.skip_reason || '未修改'}`,
+              title: t('manager.explorer.vectorizeSkipped'),
+              message: t('manager.explorer.vectorizeSkippedMsg', { name: targetName, reason: result.skip_reason || t('manager.explorer.vectorizeSkipReasonDefault') }),
               type: 'info',
               duration: 5000,
               position: 'bottom-right'
@@ -1379,8 +1379,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
           }
           // 正常成功
           ElNotification({
-            title: '向量化完成',
-            message: `向量化成功：${targetName}`,
+            title: t('manager.explorer.vectorizeDone'),
+            message: t('manager.explorer.vectorizeSuccess', { name: targetName }),
             type: 'success',
             duration: 5000,
             position: 'bottom-right'
@@ -1390,18 +1390,18 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
 
         // 批量向量化显示统计信息
         const { total = 0, vectorized = 0, skipped = 0, failed = 0, errors = [] } = result
-        let successMessage = `向量化完成：${targetName}\n总计: ${total}, 成功: ${vectorized}, 跳过: ${skipped}, 失败: ${failed}`
+        let successMessage = t('manager.explorer.vectorizeBatchStats', { name: targetName, total, vectorized, skipped, failed })
 
         // 如果有失败，显示错误详情
         if (failed > 0 && errors.length > 0) {
-          successMessage += '\n\n失败详情：\n' + errors.slice(0, 5).join('\n')
+          successMessage += t('manager.explorer.vectorizeBatchErrors') + errors.slice(0, 5).join('\n')
           if (errors.length > 5) {
-            successMessage += `\n... 还有 ${errors.length - 5} 个错误`
+            successMessage += t('manager.explorer.vectorizeBatchMoreErrors', { count: errors.length - 5 })
           }
         }
 
         ElNotification({
-          title: failed > 0 ? '向量化完成（有失败）' : '向量化完成',
+          title: failed > 0 ? t('manager.explorer.vectorizeDoneWithFailed') : t('manager.explorer.vectorizeDone'),
           message: successMessage,
           type: failed > 0 ? 'warning' : 'success',
           duration: failed > 0 ? 10000 : 5000,
@@ -1414,8 +1414,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
         // 任务失败
         notification.close()
         ElNotification({
-          title: '向量化失败',
-          message: data.error || data.message || '未知错误',
+          title: t('manager.explorer.vectorizeFailed2'),
+          message: data.error || data.message || t('manager.explorer.vectorizeUnknownError'),
           type: 'error',
           duration: 8000,
           position: 'bottom-right'
@@ -1429,8 +1429,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
           // 达到最大轮询次数
           notification.close()
           ElNotification({
-            title: '向量化超时',
-            message: `任务执行时间过长，请稍后在数据库中查看结果`,
+            title: t('manager.explorer.vectorizeTimeout'),
+            message: t('manager.explorer.vectorizeTimeoutMsg'),
             type: 'warning',
             duration: 6000,
             position: 'bottom-right'
@@ -1450,8 +1450,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
         // 任务不存在（可能已被清理）
         notification.close()
         ElNotification({
-          title: '任务已完成',
-          message: '任务可能已完成，请在数据库中查看结果',
+          title: t('manager.explorer.vectorizeTaskDone'),
+          message: t('manager.explorer.vectorizeTaskDoneMsg'),
           type: 'info',
           duration: 5000,
           position: 'bottom-right'
@@ -1465,8 +1465,8 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
       } else {
         notification.close()
         ElNotification({
-          title: '状态查询失败',
-          message: '无法获取任务状态，请稍后查看结果',
+          title: t('manager.explorer.vectorizeStatusFailed'),
+          message: t('manager.explorer.vectorizeStatusFailedMsg'),
           type: 'warning',
           duration: 5000,
           position: 'bottom-right'

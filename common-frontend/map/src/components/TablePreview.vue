@@ -1,5 +1,5 @@
 <template>
-  <div class="table-preview">
+  <div ref="tablePreviewRef" class="table-preview">
     <!-- 地图预览控制栏（有几何字段时始终显示，switch 在 v-if 块外部避免销毁时报错） -->
     <div v-if="hasGeometry" class="map-controls">
       <div class="toggle-wrapper">
@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import { useResizable } from '../composables/useResizable'
@@ -109,7 +109,14 @@ const props = defineProps({
 const emit = defineEmits(['page-change'])
 
 const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
-const { size: mapHeight, startResize: startMapResize } = useResizable(260, 140, 520, 'vertical')
+
+const tablePreviewRef = ref(null)
+// maxSize 动态计算：容器高度 - 表格最小高度(80) - 控制栏(44) - 分隔条(8) - 间距(36)
+const getMaxMapHeight = () => {
+  if (!tablePreviewRef.value) return 800
+  return Math.max(200, tablePreviewRef.value.clientHeight - 160)
+}
+const { size: mapHeight, startResize: startMapResize } = useResizable(300, 140, getMaxMapHeight, 'vertical')
 
 const tableRef = ref(null)
 const mapRef = ref(null)
@@ -291,6 +298,14 @@ watch(
 
 onMounted(() => {
   loadMapConfig()
+  nextTick(() => {
+    if (tablePreviewRef.value) {
+      const h = tablePreviewRef.value.clientHeight
+      if (h > 0) {
+        mapHeight.value = Math.min(getMaxMapHeight(), Math.max(140, Math.round(h * 0.6)))
+      }
+    }
+  })
 })
 </script>
 
@@ -343,13 +358,13 @@ onMounted(() => {
 }
 
 .map-splitter:hover::after,
-body.is-resizing .map-splitter::after {
+body.is-v-resizing .map-splitter::after {
   background: var(--el-color-primary);
 }
 
 .table-wrapper {
   flex: 1 1 auto;
-  min-height: 220px;
+  min-height: 80px;
   display: flex;
   flex-direction: column;
 }

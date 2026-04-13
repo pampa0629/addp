@@ -57,7 +57,7 @@
                           </el-button>
                         </div>
                       </template>
-                      <el-empty v-else description="暂无历史记录" />
+                      <el-empty v-else :description="t('manager.retrieval.noHistory')" />
                     </el-scrollbar>
                   </div>
                 </el-popover>
@@ -106,10 +106,10 @@
                 {{ item.document_type }}
               </el-tag>
               <el-tag v-if="isHybridMatch(item)" type="danger" size="small" effect="dark">
-                🔥 关键词+向量
+                {{ t('manager.retrieval.hybridMatch') }}
               </el-tag>
               <el-tag v-else-if="isVectorMatch(item)" type="warning" size="small" effect="dark">
-                🔍 向量匹配
+                {{ t('manager.retrieval.vectorMatch') }}
               </el-tag>
             </div>
             <div class="result-actions">
@@ -139,7 +139,7 @@
           <div v-if="getSnippet(item)" class="result-snippet" v-html="getSnippet(item)" />
 
           <div class="result-extra" v-if="item.metadata && item.metadata.description">
-            简介：{{ item.metadata.description }}
+            {{ t('manager.retrieval.description') }}{{ item.metadata.description }}
           </div>
         </div>
 
@@ -242,7 +242,7 @@ const removeHistoryItem = async (item = {}) => {
     await loadHistory()
   } catch (error) {
     console.error('[DataRetrieval] 删除搜索历史失败', error)
-    ElMessage.error('删除历史失败')
+    ElMessage.error(t('manager.retrieval.deleteHistoryFailed'))
   }
 }
 
@@ -266,7 +266,7 @@ const handleClearHistory = async () => {
     ElMessage.success(t('manager.retrieval.clearSuccess'))
   } catch (error) {
     console.error('[DataRetrieval] 清除搜索历史失败', error)
-    ElMessage.error('清除历史失败')
+    ElMessage.error(t('manager.retrieval.clearHistoryFailed'))
   }
 }
 
@@ -495,7 +495,7 @@ const navigateToDocument = (item = {}) => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--addp-text-primary);
 }
 
 .search-subtitle {
@@ -619,7 +619,7 @@ const navigateToDocument = (item = {}) => {
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--addp-text-primary);
 }
 
 .results-count {
@@ -635,7 +635,7 @@ const navigateToDocument = (item = {}) => {
 
 .result-item {
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-light);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -688,7 +688,7 @@ const navigateToDocument = (item = {}) => {
 
 .vector-score :deep(.el-tag) {
   font-weight: 600;
-  border: 1px solid #f0ad4e;
+  border: 1px solid var(--el-color-warning);
 }
 
 .result-snippet {
@@ -703,7 +703,7 @@ const navigateToDocument = (item = {}) => {
 }
 
 .result-snippet mark {
-  background-color: #ffe58f;
+  background-color: var(--el-color-warning-light-7);
   padding: 0 2px;
 }
 
