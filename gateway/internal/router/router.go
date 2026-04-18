@@ -148,33 +148,32 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				}
 			})
 
-			// 查询服务数据访问端点（公开，认证由 Service 模块内部判断）
-			public.GET("/query/:serviceName", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-
-			// 图查询服务执行端点（公开，认证由 Service 模块内部判断）
-			public.POST("/gquery/:serviceName", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
 		} else {
 			public.POST("/system/login", systemProxy.Handle)
 			public.POST("/system/register", systemProxy.Handle)
-
-			// 查询服务数据访问端点（公开，认证由 Service 模块内部判断）
-			public.GET("/query/:serviceName", serviceProxy.Handle)
-
-			// 图查询服务执行端点（公开，认证由 Service 模块内部判断）
-			public.POST("/gquery/:serviceName", serviceProxy.Handle)
 		}
+	}
+
+	// 查询服务数据访问端点（公开，无需 API Key，认证由 Service 模块内部判断）
+	// 注意：使用 /api/query 而非 /api/v1/query，与 Service 模块路由保持一致
+	if moduleDiscovery != nil {
+		router.GET("/api/query/:serviceName", func(c *gin.Context) {
+			if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+				p.Handle(c)
+			} else {
+				serviceProxy.Handle(c)
+			}
+		})
+		router.POST("/api/gquery/:serviceName", func(c *gin.Context) {
+			if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+				p.Handle(c)
+			} else {
+				serviceProxy.Handle(c)
+			}
+		})
+	} else {
+		router.GET("/api/query/:serviceName", serviceProxy.Handle)
+		router.POST("/api/gquery/:serviceName", serviceProxy.Handle)
 	}
 
 	// OGC API Features 公开路由（不需要 API Key 认证）

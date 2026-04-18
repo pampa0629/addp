@@ -48,6 +48,17 @@ func (c *MetaClient) SetTenantID(tenantID *uint) {
 	c.tenantID = tenantID
 }
 
+// WithTenantID 返回一个带有租户 ID 的新 MetaClient（复用 httpClient，线程安全）
+func (c *MetaClient) WithTenantID(tenantID uint) *MetaClient {
+	return &MetaClient{
+		baseURL:     c.baseURL,
+		httpClient:  c.httpClient,
+		authToken:   c.authToken,
+		internalKey: c.internalKey,
+		tenantID:    &tenantID,
+	}
+}
+
 // addAuth 添加认证头（根据客户端类型选择 JWT 或 Internal Key）
 func (c *MetaClient) addAuth(req *http.Request) {
 	if c.internalKey != "" {

@@ -438,8 +438,8 @@ export function extractDataSourceSelection(node, options = {}) {
   let tableName = ''
   let fullName = ''
 
-  if (node.type === 'table') {
-    // 数据库表: path = [schema, table]
+  if (node.type === 'table' || node.type === 'lake_table') {
+    // 数据库表 / 湖表: path = [schema, table]
     schema = path[0] || ''
     tableName = path[path.length - 1] || ''
     fullName = `${schema}.${tableName}`

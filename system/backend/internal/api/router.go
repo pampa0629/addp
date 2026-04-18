@@ -5,7 +5,6 @@ import (
 
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	"github.com/addp/common/middleware/ratelimit"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
@@ -109,8 +108,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	{
 		// 认证路由（不需要认证）
 		authHandler := NewAuthHandler(userService, cfg)
-		// 登录接口限流: 15分钟内最多5次尝试
-		api.POST("/login", ratelimit.LoginRateLimitMiddleware(), authHandler.Login)
+		api.POST("/login", authHandler.Login)
 		api.POST("/register", authHandler.Register)
 		api.POST("/refresh", authHandler.Refresh) // Token 刷新端点
 

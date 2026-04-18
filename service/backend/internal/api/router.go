@@ -65,10 +65,10 @@ func SetupRouter(
 		}
 		c.Next()
 	}
-	router.GET("/api/v1/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
+	router.GET("/api/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
 
 	// 图查询服务执行端点（支持公开访问）
-	router.POST("/api/v1/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)
+	router.POST("/api/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)
 
 	// OGC API Features 端点（支持公开访问，handler内部会检查权限）
 	router.GET("/ogc/features/:serviceName", ogcFeaturesHandler.GetLandingPage)

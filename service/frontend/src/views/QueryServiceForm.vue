@@ -78,8 +78,8 @@
 
           <DataSourceCascader
             :api-base-url="metaApiBaseUrl"
-            :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
-            :selectable-node-types="['table']"
+            :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse', 'minio', 's3']"
+            :selectable-node-types="['table', 'lake_table']"
             :enable-geometry-detection="true"
             :require-geometry="false"
             :show-selection-info="true"
@@ -157,7 +157,7 @@
               <el-button
                 type="primary"
                 :loading="detectingSQLSpatial"
-                :disabled="!form.engine_id || !form.sql_query"
+                :disabled="form.engine_id === null || !form.sql_query"
                 @click="detectSQLSpatialFields"
               >
                 {{ t('service.query.detectSpatialBtn') }}
@@ -429,13 +429,18 @@ const hasGeometryField = computed(() => {
   }
 })
 
-// 计算属性：支持 SQL 的存储引擎（过滤掉对象存储）
+// 计算属性：支持 SQL 的存储引擎（含 DuckDB 虚拟引擎）
 const sqlSupportedEngines = computed(() => {
-  const supportedTypes = ['postgresql', 'mysql', 'doris', 'clickhouse', 'mongodb', 'spark']
-  return engines.value.filter(engine => {
+  const supportedTypes = ['postgresql', 'mysql', 'doris', 'clickhouse', 'mongodb', 'spark', 'minio', 's3']
+  const realEngines = engines.value.filter(engine => {
     const engineType = engine.engine_type?.toLowerCase() || ''
     return supportedTypes.includes(engineType)
   })
+  // 追加 DuckDB 虚拟引擎（engine_id = null）
+  return [
+    ...realEngines,
+    { id: null, name: 'DuckDB', engine_type: 'duckdb', _virtual: true }
+  ]
 })
 
 // 计算属性：是否可以进入下一步
@@ -446,7 +451,9 @@ const canProceed = computed(() => {
     if (form.config_type === 'table') {
       return form.engine_id && form.schema_name && form.table_name
     } else {
-      return form.engine_id && form.sql_query
+      // SQL 模式：DuckDB 虚拟引擎（engine_id=null）只需要 sql_query
+      const isDuckDB = form.engine_id === null && form.config_type === 'sql'
+      return (isDuckDB || form.engine_id) && form.sql_query
     }
   }
   return true
@@ -620,7 +627,8 @@ const handleSubmit = async () => {
       description: form.description,
       keywords: form.keywords,
       config_type: form.config_type,
-      engine_id: form.engine_id,
+      // DuckDB 虚拟引擎时 engine_id 为 null
+      engine_id: form.engine_id !== null ? form.engine_id : undefined,
       public_access: form.public_access,
       max_features: form.max_features
     }
@@ -837,7 +845,7 @@ onMounted(async () => {
 
 .config-card-wrapper.selected {
   border-color: var(--el-color-primary);
-  background-color: #f0f7ff;
+  background-color: var(--el-color-primary-light-9);
   box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
 }
 

@@ -33,6 +33,9 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 
 	// 2. Table模式的特殊验证
 	if req.ConfigType == "table" {
+		if req.EngineID == nil || *req.EngineID == 0 {
+			return nil, errors.New("engine_id is required for table mode")
+		}
 		if req.SchemaName == "" || req.TableName == "" {
 			return nil, errors.New("schema_name and table_name are required for table mode")
 		}
@@ -49,6 +52,7 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		if req.SchemaName != "" || req.TableName != "" {
 			return nil, errors.New("schema_name and table_name should not be provided in sql mode")
 		}
+		// engine_id 为 nil 时表示 DuckDB 联邦查询模式，合法
 	}
 
 	// 4. 检查服务名称是否唯一
@@ -66,19 +70,27 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		dataConfig = req.DataConfig
 	}
 
-	// 6. Table模式：自动检测空间字段
+	// 6. Table模式：自动检测空间字段 / 湖表信息
 	if req.ConfigType == "table" {
-		spatialMeta, err := s.metaClient.GetTableSpatialMetadata(req.EngineID, req.SchemaName, req.TableName)
-		if err != nil {
-			log.Printf("Warning: failed to get spatial metadata for table %s.%s: %v", req.SchemaName, req.TableName, err)
-		} else if spatialMeta != nil && spatialMeta.GeometryColumn != "" {
-			// 检测到空间字段，添加到 data_config
-			dataConfig["geometry"] = map[string]interface{}{
-				"has_geometry": true,
-				"column":       spatialMeta.GeometryColumn,
-				"srid":         spatialMeta.SRID,
-				"types":        spatialMeta.GeometryTypes,
-				"extent":       spatialMeta.Extent,
+		engineID := *req.EngineID
+		// 先尝试从 Meta 获取湖表信息（MinIO/S3 引擎）
+		lakeMode := s.detectLakeMode(tenantID, engineID, req.SchemaName, req.TableName)
+		if lakeMode != "" {
+			// 湖表：写入 lake_mode，跳过空间字段检测
+			dataConfig["lake_mode"] = lakeMode
+		} else {
+			// 关系型表：检测空间字段
+			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetTableSpatialMetadata(engineID, req.SchemaName, req.TableName)
+			if err != nil {
+				log.Printf("Warning: failed to get spatial metadata for table %s.%s: %v", req.SchemaName, req.TableName, err)
+			} else if spatialMeta != nil && spatialMeta.GeometryColumn != "" {
+				dataConfig["geometry"] = map[string]interface{}{
+					"has_geometry": true,
+					"column":       spatialMeta.GeometryColumn,
+					"srid":         spatialMeta.SRID,
+					"types":        spatialMeta.GeometryTypes,
+					"extent":       spatialMeta.Extent,
+				}
 			}
 		}
 	}
@@ -131,7 +143,40 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	return s.convertToDTO(service), nil
 }
 
-// buildProtocolsConfig 构建协议配置
+// detectLakeMode 通过 Meta 判断是否为湖表，返回 lake_mode（"directory"/"file"）或空字符串
+func (s *QueryServiceService) detectLakeMode(tenantID, engineID uint, schemaName, tableName string) string {
+	if s.metaClient == nil {
+		log.Printf("[detectLakeMode] metaClient is nil, skipping lake mode detection")
+		return ""
+	}
+	tree, err := s.metaClient.WithTenantID(tenantID).GetMetadataTree(engineID)
+	if err != nil {
+		log.Printf("[detectLakeMode] GetMetadataTree(engineID=%d) failed: %v", engineID, err)
+		return ""
+	}
+	log.Printf("[detectLakeMode] engineID=%d, got %d items", engineID, len(tree.Items))
+	// 构建期望的 full_name
+	expectedFullName := tableName
+	if schemaName != "" {
+		expectedFullName = schemaName + "/" + tableName
+	}
+	for _, item := range tree.Items {
+		if item.ItemType != "lake_table" {
+			continue
+		}
+		if item.Name != tableName && item.FullName != expectedFullName {
+			continue
+		}
+		if item.Attributes != nil {
+			if mode, ok := item.Attributes["mode"].(string); ok && mode != "" {
+				return mode
+			}
+		}
+		// 找到湖表但没有 mode 属性，默认 directory
+		return "directory"
+	}
+	return ""
+}
 func (s *QueryServiceService) buildProtocolsConfig(userProtocols map[string]interface{}, dataConfig map[string]interface{}) models.JSONB {
 	// 默认协议配置
 	protocols := map[string]interface{}{

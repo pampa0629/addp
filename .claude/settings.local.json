@@ -725,7 +725,12 @@
       "Read(//Users/pampa/**)",
       "Bash(GOPROXY=https://goproxy.cn,direct go list -m -versions github.com/parquet-go/parquet-go)",
       "Bash(GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=auto go list -m -versions github.com/parquet-go/parquet-go)",
-      "Bash(GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=auto go get github.com/parquet-go/parquet-go@v0.25.1)"
+      "Bash(GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=auto go get github.com/parquet-go/parquet-go@v0.25.1)",
+      "Bash(PGPASSWORD=\"addp_password\" psql -h localhost -p 15432 -U addp -d addp -c \"ALTER TABLE service.query_services ALTER COLUMN engine_id DROP NOT NULL;\")",
+      "Bash(PGPASSWORD=\"addp_password\" psql -h localhost -p 15432 -U addp -d addp -c \"SELECT service_name, config_type, engine_id, schema_name, table_name, data_config FROM service.query_services WHERE service_name = 'test_lake';\")",
+      "Bash(PGPASSWORD=\"addp_password\" psql -h localhost -p 15432 -U addp -d addp -c \"SELECT id, name, engine_type FROM system.engines WHERE id = 9;\")",
+      "Bash(PGPASSWORD=\"addp_password\" psql -h localhost -p 15432 -U addp -d addp -c \"DELETE FROM service.query_services WHERE service_name = 'test_lake';\")",
+      "Bash(PGPASSWORD=\"addp_password\" psql -h localhost -p 15432 -U addp -d addp -c \"SELECT data_config FROM service.query_services WHERE service_name = 'test_lake';\")"
     ],
     "deny": [],
     "ask": [],

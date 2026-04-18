@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/duckdb"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
@@ -17,18 +19,21 @@ import (
 
 // QueryExecutorService 查询执行服务
 type QueryExecutorService struct {
-	queryRepo   *repository.QueryServiceRepository
+	queryRepo    *repository.QueryServiceRepository
 	systemClient *client.SystemClient
+	metaClient   *client.MetaClient
 }
 
 // NewQueryExecutorService 创建查询执行服务
 func NewQueryExecutorService(
 	queryRepo *repository.QueryServiceRepository,
 	systemClient *client.SystemClient,
+	metaClient *client.MetaClient,
 ) *QueryExecutorService {
 	return &QueryExecutorService{
-		queryRepo:   queryRepo,
+		queryRepo:    queryRepo,
 		systemClient: systemClient,
+		metaClient:   metaClient,
 	}
 }
 
@@ -65,8 +70,33 @@ func (s *QueryExecutorService) ExecuteQuery(
 	service *models.QueryService,
 	params *QueryParams,
 ) (*QueryResult, error) {
+	// 设置分页参数
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize <= 0 {
+		params.PageSize = 50
+	}
+	maxFeatures := service.MaxFeatures
+	if maxFeatures <= 0 {
+		maxFeatures = 1000
+	}
+	if params.PageSize > maxFeatures {
+		params.PageSize = maxFeatures
+	}
+
+	// sql 模式 + engine_id IS NULL → DuckDB 联邦查询执行路径
+	if service.IsDuckDBSQL() {
+		return s.executeDuckDBSQLQuery(ctx, service, params)
+	}
+
+	// table 模式 + MinIO/S3 引擎 → DuckDB 执行路径
+	if service.ConfigType == "table" && service.IsLakeTable() {
+		return s.executeLakeTableQuery(ctx, service, params)
+	}
+
 	// 1. 获取存储引擎信息
-	engine, err := s.systemClient.GetEngine(service.EngineID)
+	engine, err := s.systemClient.GetEngine(service.GetEngineID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
@@ -84,22 +114,7 @@ func (s *QueryExecutorService) ExecuteQuery(
 		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
 
-	// 3. 设置分页参数
-	if params.Page < 1 {
-		params.Page = 1
-	}
-	if params.PageSize <= 0 {
-		params.PageSize = 50
-	}
-	maxFeatures := service.MaxFeatures
-	if maxFeatures <= 0 {
-		maxFeatures = 1000
-	}
-	if params.PageSize > maxFeatures {
-		params.PageSize = maxFeatures
-	}
-
-	// 4. 根据配置类型执行查询
+	// 3. 根据配置类型执行查询
 	var rows []map[string]interface{}
 	var total int64
 
@@ -113,8 +128,7 @@ func (s *QueryExecutorService) ExecuteQuery(
 		return nil, err
 	}
 
-	// 5. 格式化输出
-	result := &QueryResult{
+	return &QueryResult{
 		Data: rows,
 		Pagination: &Pagination{
 			Page:       params.Page,
@@ -122,9 +136,187 @@ func (s *QueryExecutorService) ExecuteQuery(
 			Total:      total,
 			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
 		},
+	}, nil
+}
+
+// executeLakeTableQuery 通过 DuckDB 执行湖表查询（MinIO/S3 上的 Parquet）
+func (s *QueryExecutorService) executeLakeTableQuery(
+	ctx context.Context,
+	service *models.QueryService,
+	params *QueryParams,
+) (*QueryResult, error) {
+	// 获取引擎连接信息
+	engine, err := s.systemClient.GetEngine(service.GetEngineID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
 
-	return result, nil
+	commonEngine := commonModels.Engine{
+		ID:             engine.ID,
+		Name:           engine.Name,
+		EngineType:     engine.EngineType,
+		ConnectionInfo: commonModels.ConnectionInfo(engine.ConnectionInfo),
+	}
+
+	// 从 ConnectionInfo 中获取 bucket；MinIO 引擎没有 bucket 字段，用 schema_name 作为 bucket
+	bucket := ""
+	if b, ok := engine.ConnectionInfo["bucket"].(string); ok {
+		bucket = b
+	}
+	schemaForPath := service.SchemaName
+	if bucket == "" && service.SchemaName != "" {
+		// MinIO 引擎：schema_name 即 bucket 名，路径中不再重复 schema
+		bucket = service.SchemaName
+		schemaForPath = ""
+	}
+
+	// 构建 S3 路径
+	s3Path := duckdb.BuildLakeTableS3Path(bucket, schemaForPath, service.TargetTable, service.GetLakeMode())
+
+	// 打开 DuckDB 连接
+	db, err := duckdb.OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	execCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	conn, err := db.Conn(execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
+	}
+	defer conn.Close()
+
+	// 挂载 S3 引擎
+	if err := duckdb.MountObjectStorage(execCtx, conn, commonEngine); err != nil {
+		return nil, fmt.Errorf("挂载 S3 引擎失败: %w", err)
+	}
+
+	// 构建 SELECT 字段
+	selectFields := "*"
+	if params.Fields != "" {
+		selectFields = params.Fields
+	}
+
+	// 构建 WHERE 条件
+	whereClause := ""
+	if params.Filter != "" {
+		whereClause = " WHERE " + params.Filter
+	}
+
+	// 构建 ORDER BY
+	orderByClause := ""
+	if params.OrderBy != "" {
+		orderByClause = " ORDER BY " + params.OrderBy
+	}
+
+	// 获取总数
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM read_parquet('%s')%s", s3Path, whereClause)
+	var total int64
+	row := conn.QueryRowContext(execCtx, countSQL)
+	if err := row.Scan(&total); err != nil {
+		return nil, fmt.Errorf("获取总数失败: %w", err)
+	}
+
+	// 分页查询
+	offset := (params.Page - 1) * params.PageSize
+	dataSQL := fmt.Sprintf("SELECT %s FROM read_parquet('%s')%s%s LIMIT %d OFFSET %d",
+		selectFields, s3Path, whereClause, orderByClause, params.PageSize, offset)
+
+	result, err := duckdb.ExecuteQuery(execCtx, conn, dataSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &QueryResult{
+		Data: result.Rows,
+		Pagination: &Pagination{
+			Page:       params.Page,
+			PageSize:   params.PageSize,
+			Total:      total,
+			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
+		},
+	}, nil
+}
+
+// executeDuckDBSQLQuery 通过 DuckDB 执行联邦 SQL 查询（engine_id IS NULL 时）
+func (s *QueryExecutorService) executeDuckDBSQLQuery(
+	ctx context.Context,
+	service *models.QueryService,
+	params *QueryParams,
+) (*QueryResult, error) {
+	// 获取租户下所有引擎
+	engines, err := s.systemClient.ListEngines("", service.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
+	}
+
+	// 构建湖表映射（engineName -> tableName -> physicalPath）
+	metaClient := s.getMetaClient()
+	lakeTableMap := duckdb.BuildLakeTableMap(ctx, service.TenantID, engines, metaClient)
+
+	// 改写 SQL（三段式引用 → read_parquet()）
+	rewriter := duckdb.NewSQLRewriter(metaClient, service.TenantID)
+	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, service.SqlQuery, lakeTableMap)
+	if err != nil {
+		return nil, fmt.Errorf("SQL 改写失败: %w", err)
+	}
+
+	// 打开 DuckDB 连接
+	db, err := duckdb.OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	conn, err := db.Conn(execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
+	}
+	defer conn.Close()
+
+	// 挂载所有引用到的引擎
+	referencedNames := duckdb.ExtractReferencedEngineNames(service.SqlQuery)
+	relevantEngines := duckdb.FilterEnginesByName(engines, referencedNames)
+	if err := duckdb.MountEngines(execCtx, conn, relevantEngines); err != nil {
+		return nil, fmt.Errorf("挂载引擎失败: %w", err)
+	}
+
+	// 获取总数
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS _q", rewrittenSQL)
+	var total int64
+	row := conn.QueryRowContext(execCtx, countSQL)
+	if err := row.Scan(&total); err != nil {
+		return nil, fmt.Errorf("获取总数失败: %w", err)
+	}
+
+	// 分页查询
+	offset := (params.Page - 1) * params.PageSize
+	paginatedSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", rewrittenSQL, params.PageSize, offset)
+	result, err := duckdb.ExecuteQuery(execCtx, conn, paginatedSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &QueryResult{
+		Data: result.Rows,
+		Pagination: &Pagination{
+			Page:       params.Page,
+			PageSize:   params.PageSize,
+			Total:      total,
+			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
+		},
+	}, nil
+}
+
+// getMetaClient 获取 MetaClient
+func (s *QueryExecutorService) getMetaClient() *client.MetaClient {
+	return s.metaClient
 }
 
 // executeTableQuery 执行表配置模式的查询

@@ -18,8 +18,8 @@ type QueryService struct {
 	// 配置方式（互斥）
 	ConfigType string `gorm:"size:50;not null;check:config_type IN ('table', 'sql');index:idx_query_services_config_type" json:"config_type"`
 
-	// 存储引擎
-	EngineID uint `gorm:"not null;index:idx_query_services_engine" json:"engine_id"`
+	// 存储引擎（DuckDB SQL 模式时为 nil）
+	EngineID *uint `gorm:"index:idx_query_services_engine" json:"engine_id"`
 
 	// 表配置字段（config_type='table'时使用）
 	SchemaName  string `gorm:"size:255;column:schema_name" json:"schema_name"`
@@ -66,9 +66,44 @@ func (QueryService) TableName() string {
 	return "service.query_services"
 }
 
+// IsDuckDBSQL 是否为 DuckDB 联邦 SQL 模式（engine_id 为 nil）
+func (q *QueryService) IsDuckDBSQL() bool {
+	return q.ConfigType == "sql" && (q.EngineID == nil || *q.EngineID == 0)
+}
+
+// GetEngineID 安全获取 EngineID（0 表示未设置）
+func (q *QueryService) GetEngineID() uint {
+	if q.EngineID == nil {
+		return 0
+	}
+	return *q.EngineID
+}
+
 // IsTableMode 是否为表配置模式
 func (q *QueryService) IsTableMode() bool {
 	return q.ConfigType == "table"
+}
+
+// IsLakeTable 是否为湖表（MinIO/S3 上的 Parquet 表）
+// 通过 data_config 中是否存在 lake_mode 字段来判断
+func (q *QueryService) IsLakeTable() bool {
+	if q.DataConfig == nil {
+		return false
+	}
+	_, hasLakeMode := q.DataConfig["lake_mode"]
+	return hasLakeMode
+}
+
+// GetLakeMode 获取湖表模式（directory 或 file）
+func (q *QueryService) GetLakeMode() string {
+	if q.DataConfig == nil {
+		return "directory"
+	}
+	mode, ok := q.DataConfig["lake_mode"].(string)
+	if !ok || mode == "" {
+		return "directory"
+	}
+	return mode
 }
 
 // IsSQLMode 是否为SQL配置模式
@@ -202,8 +237,8 @@ type CreateQueryServiceRequest struct {
 	// 配置方式（table 或 sql）
 	ConfigType string `json:"config_type" binding:"required,oneof=table sql"`
 
-	// 存储引擎
-	EngineID uint `json:"engine_id" binding:"required"`
+	// 存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）
+	EngineID *uint `json:"engine_id"`
 
 	// 表配置字段（config_type='table'时需要）
 	SchemaName string `json:"schema_name"`
@@ -254,7 +289,7 @@ type QueryServiceDTO struct {
 	Keywords    []string `json:"keywords"`
 
 	ConfigType string `json:"config_type"`
-	EngineID   uint   `json:"engine_id"`
+	EngineID   *uint  `json:"engine_id"`
 
 	// 表配置
 	SchemaName string `json:"schema_name,omitempty"`
