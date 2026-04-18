@@ -525,6 +525,17 @@ func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.M
 	return &result, nil
 }
 
+func (s *MetadataQueryService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
+	var item models.MetaItem
+
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, fmt.Errorf("item not found: %w", err)
+	}
+
+	result := convertToMetaItemLite(item)
+	return &result, nil
+}
+
 // ============================================================================
 // 辅助类型定义
 // ============================================================================

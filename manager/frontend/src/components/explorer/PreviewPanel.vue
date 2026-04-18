@@ -6,9 +6,14 @@
           <span class="header-title">{{ title }}</span>
           <!-- 表格空间信息 -->
           <div v-if="showTableInfo" class="table-info">
+            <!-- 湖表标签 -->
+            <el-tag v-if="isLakeTable" size="small" type="warning" class="info-badge">
+              <el-icon><DataBoard /></el-icon>
+              {{ t('manager.explorer.lakeTable') }}
+            </el-tag>
             <!-- 空间标签（带 tooltip）-->
             <el-tooltip
-              v-if="hasGeometry"
+              v-else-if="hasGeometry"
               :content="spatialInfoTooltip"
               placement="bottom"
               :show-after="300"
@@ -177,7 +182,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { MagicStick, Download, Location, Collection, Upload, Share } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Share, DataBoard } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import { GraphSchemaView } from '@addp/common-frontend/graph'
@@ -884,6 +889,10 @@ const title = computed(() => {
 // 表格信息相关计算属性
 const showTableInfo = computed(() => {
   return previewMode.value === 'table' && props.previewData
+})
+
+const isLakeTable = computed(() => {
+  return props.selectedNode?.type === 'lake_table'
 })
 
 const tableTotal = computed(() => {

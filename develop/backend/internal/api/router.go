@@ -72,6 +72,7 @@ func SetupRouter(
 	jupyterVenvHandler *JupyterVenvHandler,         // Jupyter 虚拟环境管理 (新方案)
 	devTaskService interface{},                     // 添加 devTaskService 参数
 	systemClient *commonClient.SystemClient,        // 用于审计日志
+	duckdbHandler *DuckDBHandler,                   // DuckDB 联邦查询
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -228,6 +229,17 @@ func SetupRouter(
 
 				// Jupyter Server 状态
 				jupyter.GET("/server/status", jupyterVenvHandler.GetJupyterServerStatus) // 获取 Jupyter Server 状态
+			}
+		}
+
+		// ========== DuckDB 联邦查询 ==========
+		if duckdbHandler != nil {
+			duckdb := api.Group("/duckdb")
+			{
+				duckdb.POST("/query", duckdbHandler.ExecuteFederatedQuery)   // 执行联邦查询
+				duckdb.GET("/sources", duckdbHandler.GetFederatedSources)    // 获取可查询数据源
+				duckdb.GET("/test", duckdbHandler.TestConnection)            // 测试 DuckDB 引擎可用性
+				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery)    // 获取样例查询
 			}
 		}
 	}

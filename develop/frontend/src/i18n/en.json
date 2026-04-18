@@ -9,6 +9,7 @@
       "queryEditor": "Query Editor",
       "notebook": "Notebook",
       "queryTasks": "Query Tasks",
+      "federatedQuery": "Federated Query",
       "workflow": "Workflow Editor",
       "tasks": "Task Management",
       "executions": "Execution Monitor"
@@ -485,6 +486,19 @@
       "deleteFailed": "Delete failed: ",
       "loadFailed": "Load failed: ",
       "viewNotSupported": "This type does not support viewing details"
+    },
+    "federated": {
+      "title": "Federated Query",
+      "refreshSources": "Refresh Sources",
+      "execute": "Execute",
+      "sources": "Data Sources",
+      "noSources": "No queryable data sources",
+      "editorTitle": "SQL Editor",
+      "hint": "Ctrl+Enter to execute",
+      "resultTitle": "Query Result",
+      "rows": "rows",
+      "loadSourcesFailed": "Failed to load data sources",
+      "executeFailed": "Query execution failed"
     }
   }
 }

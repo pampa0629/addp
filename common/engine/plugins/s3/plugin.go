@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"path/filepath"
 	"strings"
@@ -255,4 +256,138 @@ func (p *S3Plugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Client
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
 	})
+}
+
+// === FileSystemPlugin 接口实现 ===
+
+// ListDirectory 列出路径下的直接子内容（非递归）
+// path 格式：bucket/prefix/
+func (p *S3Plugin) ListDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	bucket, prefix := splitBucketPrefix(path)
+	if bucket == "" {
+		return nil, nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
+	}
+
+	objectCh := client.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: false,
+	})
+
+	var files []plugin.FileEntry
+	var dirs []plugin.DirEntry
+
+	for obj := range objectCh {
+		if obj.Err != nil {
+			return nil, nil, fmt.Errorf("failed to list directory: %w", obj.Err)
+		}
+		if strings.HasSuffix(obj.Key, "/") {
+			name := strings.TrimSuffix(strings.TrimPrefix(obj.Key, prefix), "/")
+			if name == "" {
+				continue
+			}
+			dirs = append(dirs, plugin.DirEntry{
+				Name: name,
+				Path: bucket + "/" + obj.Key,
+			})
+		} else {
+			name := strings.TrimPrefix(obj.Key, prefix)
+			if name == "" || strings.Contains(name, "/") {
+				continue
+			}
+			files = append(files, plugin.FileEntry{
+				Name:        name,
+				Path:        bucket + "/" + obj.Key,
+				Size:        obj.Size,
+				ModifiedAt:  obj.LastModified,
+				ContentType: p.InferContentType(obj.Key),
+			})
+		}
+	}
+
+	return files, dirs, nil
+}
+
+// ReadFile 流式读取文件内容
+// path 格式：bucket/key
+func (p *S3Plugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	bucket, key := splitBucketPrefix(path)
+	if bucket == "" || key == "" {
+		return nil, fmt.Errorf("invalid path: %s (expected bucket/key)", path)
+	}
+
+	obj, err := client.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
+	}
+	return obj, nil
+}
+
+// GetFileMetadata 获取文件元数据
+// path 格式：bucket/key
+func (p *S3Plugin) GetFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	bucket, key := splitBucketPrefix(path)
+	if bucket == "" || key == "" {
+		return nil, fmt.Errorf("invalid path: %s (expected bucket/key)", path)
+	}
+
+	info, err := client.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file metadata %s: %w", path, err)
+	}
+
+	return &plugin.FileMetadata{
+		Name:        filepath.Base(key),
+		Path:        path,
+		Size:        info.Size,
+		ModifiedAt:  info.LastModified,
+		ContentType: info.ContentType,
+		ETag:        info.ETag,
+	}, nil
+}
+
+// ListRoots 列出根节点（对象存储 = Bucket 列表）
+func (p *S3Plugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	buckets, err := client.ListBuckets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list buckets: %w", err)
+	}
+
+	result := make([]plugin.RootEntry, len(buckets))
+	for i, b := range buckets {
+		result[i] = plugin.RootEntry{
+			Name: b.Name,
+			Path: b.Name + "/",
+		}
+	}
+	return result, nil
+}
+
+// splitBucketPrefix 将 "bucket/prefix/..." 拆分为 bucket 和 prefix
+func splitBucketPrefix(path string) (bucket, prefix string) {
+	path = strings.TrimPrefix(path, "/")
+	idx := strings.Index(path, "/")
+	if idx < 0 {
+		return path, ""
+	}
+	return path[:idx], path[idx+1:]
 }

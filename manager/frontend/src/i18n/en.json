@@ -156,6 +156,7 @@
       "matchMetadata": "Metadata Match",
       "spatial": "Spatial",
       "dataTable": "Table",
+      "lakeTable": "Lake Table",
       "importData": "Import Data",
       "downloadPage": "Download",
       "loadingSchemaGraph": "Loading schema graph...",

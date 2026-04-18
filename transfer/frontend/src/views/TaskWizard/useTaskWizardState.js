@@ -19,12 +19,14 @@ export function useTaskWizardState() {
   const batchSize = ref(1000) // 批大小，默认 1000
 
   // Source 配置
+  const sourceObjectPath = ref('') // S3/Parquet 路径
+  const sourceObjectFile = ref('') // S3/Parquet 文件（可选）
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
   const sourceScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const sourceSchema = ref('')
   const sourceTable = ref('')
-  const sourceType = ref('postgresql') // postgresql, mysql, spatialite, s3
+  const sourceType = ref('postgresql') // postgresql, mysql, spatialite, s3, parquet
   const sourceQueryMode = ref('table') // table, sql
   const sourceSQLQuery = ref('') // SQL 查询语句
 
@@ -50,6 +52,9 @@ export function useTaskWizardState() {
       case 0: // 选择Source
         return sourceEngineID.value && sourceTable.value
       case 1: // 选择Target
+        if (targetType.value === 's3') {
+          return !!(targetEngineID.value && targetConfig.value?.output_path && targetConfig.value?.output_file_name)
+        }
         return targetEngineID.value && targetTable.value
       case 2: // 字段映射
         return fieldMappings.value.length > 0
@@ -93,7 +98,17 @@ export function useTaskWizardState() {
     }
 
     // Source 配置：根据查询模式添加不同字段
-    if (sourceQueryMode.value === 'sql') {
+    if (sourceType.value === 'parquet') {
+      // Parquet 数据源：指定路径（目录或单文件）
+      config.config.source.connector_type = 'parquet'
+      // prefix 为目录路径，file_name 为具体文件（可选）
+      const path = sourceObjectFile.value || sourceObjectPath.value
+      config.config.source.prefix = sourceObjectPath.value
+      if (sourceObjectFile.value) {
+        config.config.source.file_name = sourceObjectFile.value
+      }
+      config.config.source.path = path
+    } else if (sourceQueryMode.value === 'sql') {
       config.config.source.query_type = 'sql'
       config.config.source.query = sourceSQLQuery.value
     } else {
@@ -104,20 +119,21 @@ export function useTaskWizardState() {
 
     // Target 配置：根据目标类型添加不同字段
     if (targetType.value === 's3') {
-      // 对象存储配置
+      // 对象存储配置（targetConfig 中已是 snake_case，直接读取）
       const s3Config = targetConfig.value || {}
-      config.config.target.output_format = s3Config.outputFormat || 'csv'
-      config.config.target.output_path = s3Config.outputPath || ''
+      config.config.target.output_format = s3Config.output_format || 'csv'
+      config.config.target.output_path = s3Config.output_path || ''
+      config.config.target.output_file_name = s3Config.output_file_name || ''
 
       // CSV 专用选项
-      if (s3Config.outputFormat === 'csv') {
-        config.config.target.csv_headers = s3Config.csvHeaders !== false
-        config.config.target.csv_delimiter = s3Config.csvDelimiter || ','
+      if (s3Config.output_format === 'csv') {
+        config.config.target.csv_headers = s3Config.csv_headers !== false
+        config.config.target.csv_delimiter = s3Config.csv_delimiter || ','
       }
 
       // 空间格式需要几何字段
-      if (['geojson', 'shapefile'].includes(s3Config.outputFormat) && s3Config.geometryField) {
-        config.config.target.geometry_field = s3Config.geometryField
+      if (['geojson', 'shapefile'].includes(s3Config.output_format) && s3Config.geometry_field) {
+        config.config.target.geometry_field = s3Config.geometry_field
       }
     } else {
       // 数据库配置
@@ -158,6 +174,8 @@ export function useTaskWizardState() {
     sourceType.value = config.sourceType || 'postgresql'
     sourceQueryMode.value = config.queryMode || 'table'
     sourceSQLQuery.value = config.sqlQuery || ''
+    sourceObjectPath.value = config.objectPath || ''
+    sourceObjectFile.value = config.objectFile || ''
     sourceConfig.value = config.extra || {}
   }
 
@@ -334,6 +352,8 @@ export function useTaskWizardState() {
     sourceType.value = 'postgresql'
     sourceQueryMode.value = 'table'
     sourceSQLQuery.value = ''
+    sourceObjectPath.value = ''
+    sourceObjectFile.value = ''
     sourceConfig.value = {}
     targetEngineID.value = null
     targetScope.value = 'system'
@@ -363,6 +383,8 @@ export function useTaskWizardState() {
     sourceType,
     sourceQueryMode,
     sourceSQLQuery,
+    sourceObjectPath,
+    sourceObjectFile,
     targetConfig,
     targetEngineID,
     targetScope,

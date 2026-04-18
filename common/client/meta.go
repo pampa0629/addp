@@ -283,6 +283,37 @@ func (c *MetaClient) GetMetaNode(nodeID uint) (*models.MetaNode, error) {
 	return &result, nil
 }
 
+// GetMetaItemByID 获取单个 MetaItem 详情
+func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d", c.baseURL, itemID)
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result models.MetaItem
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // TriggerScanEngine 触发引擎元数据扫描
 func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) error {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/engine", c.baseURL)

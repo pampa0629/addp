@@ -30,8 +30,11 @@ func init() {
 	MustRegisterConnector("csv", readers.NewCSVReader, writers.NewCSVWriter)
 
 	// 对象存储
-	MustRegisterConnector("s3", nil, writers.NewS3Writer)
-	MustRegisterConnector("minio", nil, writers.NewS3Writer)
+	MustRegisterConnector("s3", readers.NewS3Reader, writers.NewS3Writer)
+	MustRegisterConnector("minio", readers.NewS3Reader, writers.NewS3Writer)
+
+	// Parquet（独立插件：支持作为数据源和目标）
+	MustRegisterConnector("parquet", readers.NewParquetReader, writers.NewParquetWriter)
 
 	// 后处理器（PostProcessor）
 	// 负责数据导入后的优化任务：主键创建、空间索引创建、统计更新

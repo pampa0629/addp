@@ -720,7 +720,12 @@
       "Bash(sed -i '' 's|// @Tags         引擎管理$|// @Tags         引擎管理 \\\\| Engine Management|g' /Users/pampa/code/addp/system/backend/internal/api/engine_handler.go)",
       "Bash(sed -i '' 's|// @Tags         日志管理$|// @Tags         日志管理 \\\\| Log Management|g' /Users/pampa/code/addp/system/backend/internal/api/log_handler.go)",
       "Bash(sed -i '' 's|// @Tags         用户管理$|// @Tags         用户管理 \\\\| User Management|g' /Users/pampa/code/addp/system/backend/internal/api/user_handler.go)",
-      "Bash(sed -i '' 's|// @Tags         任务管理$|// @Tags         任务管理 \\\\| Task Management|g' /Users/pampa/code/addp/transfer/backend/internal/api/task_handler.go)"
+      "Bash(sed -i '' 's|// @Tags         任务管理$|// @Tags         任务管理 \\\\| Task Management|g' /Users/pampa/code/addp/transfer/backend/internal/api/task_handler.go)",
+      "Read(//Users/pampa/.goenv/**)",
+      "Read(//Users/pampa/**)",
+      "Bash(GOPROXY=https://goproxy.cn,direct go list -m -versions github.com/parquet-go/parquet-go)",
+      "Bash(GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=auto go list -m -versions github.com/parquet-go/parquet-go)",
+      "Bash(GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=auto go get github.com/parquet-go/parquet-go@v0.25.1)"
     ],
     "deny": [],
     "ask": [],

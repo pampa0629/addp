@@ -29,7 +29,7 @@
           type="primary"
           :loading="testingConnection"
           @click="handleTestConnection"
-          :disabled="!selectedEngineId"
+          :disabled="selectedEngineId == null"
         >
           <el-icon><Connection /></el-icon>
           {{ t('develop.query.testConnection') }}
@@ -45,7 +45,7 @@
         <el-button
           type="primary"
           @click="showSaveDialog = true"
-          :disabled="!selectedEngineId || !queryContent"
+          :disabled="selectedEngineId == null || !queryContent"
         >
           <el-icon><FolderAdd /></el-icon>
           {{ t('develop.query.saveAsTask') }}
@@ -55,7 +55,7 @@
           type="success"
           @click="executeQuery"
           :loading="executing"
-          :disabled="!selectedEngineId || !queryContent"
+          :disabled="selectedEngineId == null || !queryContent"
         >
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.query.execute') }}
@@ -156,6 +156,7 @@ import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { GraphResultView } from '@addp/common-frontend/graph'
 import { executeQuery as executeAPI, testConnection, saveQueryTask, getSampleQuery } from '../api/query.js'
+import { executeFederatedQuery, testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
 import { getDevItem } from '../api/devItem.js'
 import client from '../api/client.js'
 
@@ -169,9 +170,16 @@ const ENGINE_LANGUAGE_MAP = {
   doris: 'sql',
   clickhouse: 'sql',
   spark: 'sql',
+  duckdb: 'sql',
   mongodb: 'json',
   neo4j: 'cypher'
 }
+
+// 当前选中引擎是否为 DuckDB 联邦查询引擎
+const isDuckDB = computed(() => {
+  const engine = engines.value.find(e => e.id === selectedEngineId.value)
+  return engine?.engine_type === 'duckdb'
+})
 
 // 状态
 const currentTaskId = ref(null)
@@ -220,11 +228,15 @@ const loadEngines = async () => {
 
 // 测试连接
 const handleTestConnection = async () => {
-  if (!selectedEngineId.value) return
+  if (selectedEngineId.value == null) return
 
   testingConnection.value = true
   try {
-    await testConnection(selectedEngineId.value)
+    if (isDuckDB.value) {
+      await testDuckDBConnection()
+    } else {
+      await testConnection(selectedEngineId.value)
+    }
     ElMessage.success(t('develop.query.testConnectionSuccess'))
   } catch (error) {
     ElMessage.error(t('develop.query.testConnectionFailed') + (error.response?.data?.error || error.message))
@@ -235,7 +247,7 @@ const handleTestConnection = async () => {
 
 // 执行查询
 const executeQuery = async () => {
-  if (!selectedEngineId.value) {
+  if (selectedEngineId.value == null) {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
@@ -253,11 +265,17 @@ const executeQuery = async () => {
   })
 
   try {
-    const response = await executeAPI(
-      selectedEngineId.value,
-      queryContent.value.trim(),
-      120000 // 2分钟超时
-    )
+    let response
+    if (isDuckDB.value) {
+      // DuckDB 联邦查询走独立端点
+      response = await executeFederatedQuery(queryContent.value.trim(), 120)
+    } else {
+      response = await executeAPI(
+        selectedEngineId.value,
+        queryContent.value.trim(),
+        120000 // 2分钟超时
+      )
+    }
 
     executionResult.value = {
       success: true,
@@ -329,7 +347,13 @@ const applyEngineLanguage = async (engine) => {
   editorRef.value?.setLanguage(lang)
 
   try {
-    const { query, language } = await getSampleQuery(engine.id)
+    let query, language
+    if (type === 'duckdb') {
+      // DuckDB 走独立的 sample-query 接口（虚拟引擎无 ID）
+      ;({ query, language } = await getDuckDBSampleQuery())
+    } else {
+      ;({ query, language } = await getSampleQuery(engine.id))
+    }
     queryContent.value = query
     editorRef.value?.setLanguage(language)
   } catch {

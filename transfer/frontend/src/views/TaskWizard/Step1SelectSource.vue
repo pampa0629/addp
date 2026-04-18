@@ -11,6 +11,7 @@
           <el-radio-button value="mysql">MySQL</el-radio-button>
           <el-radio-button value="spatialite">SpatiaLite</el-radio-button>
           <el-radio-button value="s3">S3/MinIO</el-radio-button>
+          <el-radio-button value="parquet">Parquet</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
@@ -92,8 +93,8 @@
         </el-select>
       </el-form-item>
 
-      <!-- 对象存储路径选择（仅 S3/MinIO） -->
-      <el-form-item v-if="sourceType === 's3' && formData.engineValue" :label="t('transfer.taskWizard.storagePathLabel')">
+      <!-- 对象存储路径选择（仅 S3/MinIO 或 Parquet） -->
+      <el-form-item v-if="(sourceType === 's3' || sourceType === 'parquet') && formData.engineValue" :label="t('transfer.taskWizard.storagePathLabel')">
         <el-input
           v-model="formData.objectPath"
           :placeholder="t('transfer.taskWizard.storagePathPlaceholder')"
@@ -105,12 +106,13 @@
           </template>
         </el-input>
         <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
-          <p>{{ t('transfer.taskWizard.storagePathHint') }}</p>
+          <p v-if="sourceType === 'parquet'">{{ t('transfer.taskWizard.parquetPathHint', '选择包含 .parquet 文件的目录或单个 .parquet 文件') }}</p>
+          <p v-else>{{ t('transfer.taskWizard.storagePathHint') }}</p>
         </div>
       </el-form-item>
 
-      <!-- 对象存储文件选择（仅 S3/MinIO，选择路径后显示） -->
-      <el-form-item v-if="sourceType === 's3' && formData.objectPath" :label="t('transfer.taskWizard.selectFileLabel')">
+      <!-- 对象存储文件选择（仅 S3/MinIO 或 Parquet，选择路径后显示） -->
+      <el-form-item v-if="(sourceType === 's3' || sourceType === 'parquet') && formData.objectPath" :label="sourceType === 'parquet' ? t('transfer.taskWizard.selectParquetFileLabel', '选择 Parquet 文件') : t('transfer.taskWizard.selectFileLabel')">
         <el-select
           v-model="formData.objectFile"
           :placeholder="t('transfer.taskWizard.selectFilePlaceholder')"
@@ -119,16 +121,19 @@
           @change="handleFileChange"
         >
           <el-option
-            v-for="file in files"
+            v-for="file in filteredFiles"
             :key="file.name"
             :label="file.name"
             :value="file.name"
           />
         </el-select>
+        <div v-if="sourceType === 'parquet'" class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
+          <p>{{ t('transfer.taskWizard.parquetDirHint', '也可以不选择具体文件，留空则读取目录下所有 .parquet 文件') }}</p>
+        </div>
       </el-form-item>
 
-      <!-- 表（仅 table 模式且非 S3/MinIO） -->
-      <el-form-item v-if="queryMode === 'table' && sourceType !== 's3'" :label="t('transfer.taskWizard.dataTableLabel')">
+      <!-- 表（仅 table 模式且非 S3/MinIO/Parquet） -->
+      <el-form-item v-if="queryMode === 'table' && sourceType !== 's3' && sourceType !== 'parquet'" :label="t('transfer.taskWizard.dataTableLabel')">
         <el-select
           v-model="formData.table"
           :placeholder="t('transfer.taskWizard.dataTablePlaceholder')"
@@ -146,8 +151,8 @@
         </el-select>
       </el-form-item>
 
-      <!-- 表信息预览（仅系统引擎有元数据且非 S3/MinIO） -->
-      <el-form-item v-if="selectedTable && hasTableMetadata && sourceType !== 's3'" :label="t('transfer.taskWizard.tableInfoLabel')">
+      <!-- 表信息预览（仅系统引擎有元数据且非 S3/MinIO/Parquet） -->
+      <el-form-item v-if="selectedTable && hasTableMetadata && sourceType !== 's3' && sourceType !== 'parquet'" :label="t('transfer.taskWizard.tableInfoLabel')">
         <div class="table-info">
           <p v-if="selectedTable.row_count !== undefined"><strong>{{ t('transfer.taskWizard.rowCountLabel') }}：</strong>{{ selectedTable.row_count || 0 }}</p>
           <p v-if="selectedTable.size_bytes !== undefined"><strong>{{ t('transfer.taskWizard.sizeLabel') }}：</strong>{{ formatBytes(selectedTable.size_bytes) }}</p>
@@ -155,8 +160,8 @@
         </div>
       </el-form-item>
 
-      <!-- 文件信息预览（仅 S3/MinIO） -->
-      <el-form-item v-if="sourceType === 's3' && selectedFile" :label="t('transfer.taskWizard.fileInfoLabel')">
+      <!-- 文件信息预览（仅 S3/MinIO 或 Parquet） -->
+      <el-form-item v-if="(sourceType === 's3' || sourceType === 'parquet') && selectedFile" :label="t('transfer.taskWizard.fileInfoLabel')">
         <div class="table-info">
           <p><strong>{{ t('transfer.taskWizard.fileNameLabel') }}：</strong>{{ selectedFile.name }}</p>
           <p v-if="selectedFile.size !== undefined"><strong>{{ t('transfer.taskWizard.fileSizeLabel') }}：</strong>{{ formatBytes(selectedFile.size) }}</p>
@@ -200,7 +205,7 @@ const props = defineProps({
 const emit = defineEmits(['next', 'prev'])
 
 // State
-const sourceType = ref('postgresql') // 数据源类型: postgresql, mysql, spatialite, s3
+const sourceType = ref('postgresql') // 数据源类型: postgresql, mysql, spatialite, s3, parquet
 const queryMode = ref('table') // 查询模式: table, sql
 const sqlQuery = ref('') // SQL 查询语句
 
@@ -261,15 +266,26 @@ const selectedEngine = computed(() => {
 
 // 根据数据源类型过滤引擎
 const filteredSystemEngines = computed(() => {
+  // parquet 复用 s3/minio 引擎
+  const filterType = sourceType.value === 'parquet' ? 's3' : sourceType.value
   return systemEngines.value.filter(e =>
-    matchesConnectorType(e.engine_type, sourceType.value)
+    matchesConnectorType(e.engine_type, filterType)
   )
 })
 
 const filteredLocalEngines = computed(() => {
+  const filterType = sourceType.value === 'parquet' ? 's3' : sourceType.value
   return localEngines.value.filter(e =>
-    matchesConnectorType(e.engine_type, sourceType.value)
+    matchesConnectorType(e.engine_type, filterType)
   )
+})
+
+// parquet 模式下只显示 .parquet 文件
+const filteredFiles = computed(() => {
+  if (sourceType.value === 'parquet') {
+    return files.value.filter(f => f.name.toLowerCase().endsWith('.parquet'))
+  }
+  return files.value
 })
 
 // 判断是否需要 schema 选择器（仅系统引擎的 postgresql/mysql）
@@ -297,6 +313,10 @@ const canProceed = computed(() => {
   if (sourceType.value === 's3') {
     return formData.engineValue && formData.objectPath && formData.objectFile
   }
+  // Parquet 模式：需要引擎和路径（文件可选，留空则读取目录下所有 .parquet）
+  if (sourceType.value === 'parquet') {
+    return formData.engineValue && formData.objectPath
+  }
   // SQL 模式：需要引擎和 SQL 查询
   if (queryMode.value === 'sql') {
     return formData.engineValue && sqlQuery.value.trim() !== ''
@@ -320,6 +340,15 @@ watch(canProceed, (newVal) => {
     // 更新向导状态
     if (sourceType.value === 's3') {
       // S3/MinIO 模式
+      props.wizardState.updateSource({
+        engineID: id,
+        scope: origin,
+        sourceType: sourceType.value,
+        objectPath: formData.objectPath,
+        objectFile: formData.objectFile
+      })
+    } else if (sourceType.value === 'parquet') {
+      // Parquet 模式
       props.wizardState.updateSource({
         engineID: id,
         scope: origin,

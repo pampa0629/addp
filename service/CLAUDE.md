@@ -725,19 +725,31 @@ Service 模块支持多种坐标参考系统（Coordinate Reference System, CRS�
 - Service 模块支持通过内部 API Key 调用 Gateway 的管理接口
 - 跨模块调用时使用内部认证，无需用户 JWT token
 
-### 6.4 Develop 模块（未来集成，待定）
+### 6.4 Develop 模块（湖表服务发布，规划中）
 
 **SQL 查询结果发布**
 - 用户在 Develop 模块的 SQL 工作台中编写查询
 - 一键将查询结果发布为数据服务（REST API 或 OGC 服务）
 - 动态服务：每次请求时执行 SQL，返回最新数据
 
-**工作流结果发布**
-- 用户在 Develop 模块的工作流编辑器中构建数据处理流程
-- 工作流输出结果自动注册到服务目录
-- 便于共享数据处理成果
+**湖表服务发布（中期规划）**
 
-**实现状态**：⚠️ 待定，需要进一步设计集成方案
+当前 Service 模块的数据源模型以存储引擎为中心（PostgreSQL/MySQL/MinIO），不支持 Parquet lake_table 的直接发布。中期规划引入新的服务类型：
+
+| 服务类型 | 数据源 | 执行引擎 | 协议 |
+|---|---|---|---|
+| `spatial` | 关系型表（含几何列） | 直连 DB | WFS/WMTS/OGC API/REST |
+| `table` | 关系型表 | 直连 DB | REST Query |
+| `lake`（规划） | Parquet on MinIO/S3 | DuckDB（内嵌） | REST Query |
+| `query`（规划） | 任意（SQL 定义） | DuckDB（内嵌） | REST Query |
+
+**架构决策**：
+- DuckDB 是嵌入式库，Service 模块直接内嵌，不依赖 Develop 模块的 DuckDB API（避免跨模块 HTTP 调用）
+- DuckDB 的挂载逻辑提取到 `common/duckdb/`，Service 和 Develop 共享
+- `lake` 类型：用户选择 MinIO/S3 引擎下的 lake_table，Service 用 DuckDB 读 Parquet 执行查询
+- `query` 类型：用户写一个跨源 SQL，Service 每次请求时用 DuckDB 执行并返回最新数据
+
+**实现状态**：⚠️ 规划中，待湖仓一体化第三阶段实施
 
 ---
 

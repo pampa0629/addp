@@ -279,6 +279,35 @@ definitions:
       timeout:
         type: integer
     type: object
+  github_com_addp_develop_backend_internal_service.DataSource:
+    properties:
+      engine_id:
+        type: integer
+      engine_name:
+        type: string
+      engine_type:
+        type: string
+      tables:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.TableRef'
+        type: array
+    type: object
+  github_com_addp_develop_backend_internal_service.FederatedQueryResult:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      execution_time_ms:
+        type: integer
+      row_count:
+        type: integer
+      rows:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
   github_com_addp_develop_backend_internal_service.JupyterInstance:
     properties:
       container_id:
@@ -307,6 +336,25 @@ definitions:
       language:
         type: string
       name:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_service.TableRef:
+    properties:
+      engine_name:
+        type: string
+      fields:
+        items:
+          type: string
+        type: array
+      item_type:
+        description: '"table" 或 "lake_table"'
+        type: string
+      physical_path:
+        description: 湖表专用
+        type: string
+      schema:
+        type: string
+      table:
         type: string
     type: object
   gorm.DeletedAt:
@@ -387,6 +435,16 @@ definitions:
         type: integer
       rows_count:
         type: integer
+    type: object
+  internal_api.FederatedQueryRequest:
+    properties:
+      sql:
+        type: string
+      timeout:
+        description: 超时秒数，默认 30
+        type: integer
+    required:
+    - sql
     type: object
   internal_api.GetJupyterURLRequest:
     properties:
@@ -607,6 +665,71 @@ info:
   title: ADDP Develop API
   version: "1.0"
 paths:
+  /duckdb/query:
+    post:
+      consumes:
+      - application/json
+      description: 通过 DuckDB 执行跨源联邦查询（湖表 + 关系型数据库）
+      parameters:
+      - description: 查询请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.FederatedQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.FederatedQueryResult'
+      summary: 执行联邦查询
+      tags:
+      - DuckDB
+  /duckdb/sample-query:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取 DuckDB 样例查询
+      tags:
+      - DuckDB
+  /duckdb/sources:
+    get:
+      description: 返回当前租户下所有可通过 DuckDB 查询的数据源（湖表 + 关系型表）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_develop_backend_internal_service.DataSource'
+            type: array
+      summary: 获取联邦查询数据源
+      tags:
+      - DuckDB
+  /duckdb/test:
+    get:
+      description: 执行 SELECT 1 验证 DuckDB 引擎可用
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 测试 DuckDB 连接
+      tags:
+      - DuckDB
   /engines:
     get:
       produces:

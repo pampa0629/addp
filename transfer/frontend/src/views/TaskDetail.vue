@@ -842,6 +842,16 @@ const buildConnectorDetails = (role) => {
     addItem(items, t('transfer.taskDetail.path'), config.path, 2)
   }
 
+  if (config.output_path) {
+    addItem(items, t('transfer.taskDetail.outputPath'), config.output_path)
+  }
+  if (config.output_file_name) {
+    addItem(items, t('transfer.taskDetail.outputFileName'), config.output_file_name)
+  }
+  if (config.output_format) {
+    addItem(items, t('transfer.taskDetail.outputFormat'), config.output_format)
+  }
+
   if (config.prefix) {
     addItem(items, t('transfer.taskDetail.prefix'), config.prefix)
   }

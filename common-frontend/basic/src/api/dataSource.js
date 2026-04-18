@@ -89,7 +89,8 @@ const getNodeIcon = (nodeType) => {
     'directory': 'Folder',
     'table': 'Document',
     'collection': 'Document',
-    'object': 'Document'
+    'object': 'Document',
+    'lake_table': 'DataBoard'
   }
   return iconMap[nodeType] || 'Document'
 }

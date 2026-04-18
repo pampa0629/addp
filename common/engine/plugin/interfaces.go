@@ -159,9 +159,9 @@ type RelationalDBPlugin interface {
 }
 
 // ObjectStoragePlugin 对象存储插件
-// 包含对象存储操作能力
+// 继承 FileSystemPlugin，同时提供对象存储特有的操作能力
 type ObjectStoragePlugin interface {
-	StoragePlugin
+	FileSystemPlugin
 
 	// ===== 对象存储操作方法（直接定义，不需要单独的 ObjectMetadataPlugin 接口）=====
 

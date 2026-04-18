@@ -31,11 +31,11 @@ type S3Reader struct {
 	tempFiles    []string        // 临时文件列表，用于清理
 }
 
-// NewS3Reader 创建 S3 读取器
-func NewS3Reader() *S3Reader {
+// NewS3Reader 创建 S3 读取器（符合 pipeline.ReaderFactory 签名）
+func NewS3Reader(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
 	return &S3Reader{
 		batchSize: 1000,
-	}
+	}, nil
 }
 
 // Open 打开 S3 连接

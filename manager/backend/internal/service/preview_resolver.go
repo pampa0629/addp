@@ -57,6 +57,7 @@ type PreviewResolverRequest struct {
 	Metadata   *commonModels.MetaNode     // 可选：Meta 节点数据
 	Pagination *Pagination                // 分页参数
 	TenantID   *uint                      // 租户 ID
+	ItemType   string                     // 数据项类型（如 "lake_table"），来自 MetaItem
 }
 
 // Pagination 分页参数
@@ -158,9 +159,50 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 	// 3. 尝试从 Meta 获取元数据（对于对象存储）
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
-	if r.metaClient != nil && engine.EngineType == "minio" {
-		// 对于对象存储，尝试获取元数据
-		if len(loc.Path) > 0 {
+	if r.metaClient != nil && isObjectStorageType(engine.EngineType) {
+		// 设置租户 ID，确保服务间调用时正确过滤
+		r.metaClient.SetTenantID(tenantID)
+
+		// 优先通过 meta_id 直接获取节点（更精确，避免路径歧义）
+		// 注意：虚拟 ID（>= 100000）对应 MetaItem，需要解码为真实 item ID
+		metaIDResolved := false
+		if loc.MetaID != nil {
+			metaID := *loc.MetaID
+			if metaID >= 100000 {
+				// 虚拟 ID：MetaItem 的 ID + 100000
+				realItemID := metaID - 100000
+				item, err := r.metaClient.GetMetaItemByID(realItemID)
+				if err == nil && item != nil {
+					metaItem = item
+					metaIDResolved = true
+					logger.L().Debug("从 Meta 通过虚拟 ID 获取到 MetaItem",
+						"virtual_meta_id", metaID,
+						"real_item_id", realItemID,
+						"item_type", item.ItemType)
+				} else {
+					logger.L().Debug("未从 Meta 通过虚拟 ID 获取到 MetaItem",
+						"virtual_meta_id", metaID,
+						"real_item_id", realItemID,
+						"error", err)
+				}
+			} else {
+				node, err := r.metaClient.GetMetaNode(metaID)
+				if err == nil && node != nil {
+					metaNode = node
+					metaIDResolved = true
+					logger.L().Debug("从 Meta 通过 ID 获取到节点元数据",
+						"meta_id", metaID,
+						"node_type", node.NodeType,
+						"total_size_bytes", node.TotalSizeBytes)
+				} else {
+					logger.L().Debug("未从 Meta 通过 ID 获取到节点元数据",
+						"meta_id", metaID,
+						"error", err)
+				}
+			}
+		}
+		if !metaIDResolved && len(loc.Path) > 0 {
+			// 回退到路径查找
 			bucketName := loc.Path[0]
 			if len(loc.Path) > 1 {
 				// 对象路径：bucket/path/to/file.ext
@@ -180,12 +222,11 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 				}
 			} else {
 				// Bucket 或 Prefix 路径
-				nodePath := bucketName
-				node, err := r.metaClient.GetNodeByPath(loc.EngineID, nodePath)
+				node, err := r.metaClient.GetNodeByPath(loc.EngineID, bucketName)
 				if err == nil && node != nil {
 					metaNode = node
 					logger.L().Debug("从 Meta 获取到节点元数据",
-						"path", nodePath,
+						"path", bucketName,
 						"total_size_bytes", node.TotalSizeBytes)
 				}
 			}
@@ -206,6 +247,10 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 	// 设置元数据（如果有）
 	if metaNode != nil {
 		req.Metadata = metaNode
+		// 从 MetaNode 的 NodeType 推断 ItemType（如 lake_table）
+		if metaNode.NodeType != "" && metaNode.NodeType != "directory" && metaNode.NodeType != "bucket" {
+			req.ItemType = metaNode.NodeType
+		}
 	} else if metaItem != nil {
 		// 将 MetaItem 转换为 MetaNode 格式
 		sizeBytes := int64(0)
@@ -219,6 +264,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			ItemCount:      1,
 			TotalSizeBytes: sizeBytes,
 		}
+		req.ItemType = metaItem.ItemType
 	}
 
 	// 5. 执行预览
@@ -297,6 +343,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		Page:     page,
 		PageSize: pageSize,
 		TenantID: req.TenantID,
+		ItemType: req.ItemType,
 	}
 }
 

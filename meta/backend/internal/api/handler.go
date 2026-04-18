@@ -879,6 +879,27 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
+// GetItemByID 按 ID 查询 MetaItem
+// GET /api/meta/items/:item_id
+func (h *Handler) GetItemByID(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+
+	itemIDStr := c.Param("item_id")
+	itemID, err := strconv.ParseUint(itemIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item_id"})
+		return
+	}
+
+	item, err := h.scanService.GetItemByID(tenantID, uint(itemID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
 // GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
 // GET /api/meta/metadata/tables/spatial?engine_id=X&schema=Y&table=Z
 func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {

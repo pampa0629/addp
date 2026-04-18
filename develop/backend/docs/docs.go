@@ -15,6 +15,106 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/duckdb/query": {
+            "post": {
+                "description": "通过 DuckDB 执行跨源联邦查询（湖表 + 关系型数据库）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DuckDB"
+                ],
+                "summary": "执行联邦查询",
+                "parameters": [
+                    {
+                        "description": "查询请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.FederatedQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.FederatedQueryResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/duckdb/sample-query": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DuckDB"
+                ],
+                "summary": "获取 DuckDB 样例查询",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/duckdb/sources": {
+            "get": {
+                "description": "返回当前租户下所有可通过 DuckDB 查询的数据源（湖表 + 关系型表）",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DuckDB"
+                ],
+                "summary": "获取联邦查询数据源",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.DataSource"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/duckdb/test": {
+            "get": {
+                "description": "执行 SELECT 1 验证 DuckDB 引擎可用",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DuckDB"
+                ],
+                "summary": "测试 DuckDB 连接",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "produces": [
@@ -1823,6 +1923,50 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_service.DataSource": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.TableRef"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.FederatedQueryResult": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_service.JupyterInstance": {
             "type": "object",
             "properties": {
@@ -1864,6 +2008,34 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.TableRef": {
+            "type": "object",
+            "properties": {
+                "engine_name": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "item_type": {
+                    "description": "\"table\" 或 \"lake_table\"",
+                    "type": "string"
+                },
+                "physical_path": {
+                    "description": "湖表专用",
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "table": {
                     "type": "string"
                 }
             }
@@ -1983,6 +2155,21 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rows_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.FederatedQueryRequest": {
+            "type": "object",
+            "required": [
+                "sql"
+            ],
+            "properties": {
+                "sql": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "description": "超时秒数，默认 30",
                     "type": "integer"
                 }
             }

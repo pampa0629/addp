@@ -19,8 +19,6 @@ import (
 var (
 	// ErrObjectStorageNotSupported 指定资源不是对象存储
 	ErrObjectStorageNotSupported = errors.New("resource is not object storage")
-	// ErrObjectStorageBucketRequired 对象存储连接信息缺少 bucket
-	ErrObjectStorageBucketRequired = errors.New("bucket is required")
 )
 
 // ObjectStorageDirectory 目录条目
@@ -65,34 +63,14 @@ func NewObjectStorageService(localResourceService *LocalEngineService) *ObjectSt
 }
 
 // ListDirectories 列出指定前缀下的子目录
+// 当引擎未配置 bucket 时，根目录列出所有 bucket；prefix 中第一段为 bucket 名
 func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageBrowseResult, error) {
 	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	if bucket == "" {
-		return nil, ErrObjectStorageBucketRequired
-	}
-
-	endpoint := getStringFromConn(connInfo, "endpoint")
-	accessKey := getStringFromConn(connInfo, "access_key")
-	secretKey := getStringFromConn(connInfo, "secret_key")
-	useSSL := getBoolFromConn(connInfo, "use_ssl")
-
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("incomplete object storage connection info")
-	}
-
-	endpoint, schemeSSL := stripEndpointScheme(endpoint)
-	if schemeSSL {
-		useSSL = true
-	}
-
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
+	client, err := buildMinIOClient(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create object storage client: %w", err)
 	}
@@ -100,6 +78,58 @@ func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uin
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	if bucket == "" {
+		return s.listDirectoriesNoBucket(ctx, client, prefix)
+	}
+	return s.listDirectoriesInBucket(ctx, client, bucket, prefix)
+}
+
+// listDirectoriesNoBucket 处理未配置 bucket 的情况
+// prefix 为空时列出所有 bucket；非空时从 prefix 第一段提取 bucket
+func (s *ObjectStorageService) listDirectoriesNoBucket(ctx context.Context, client *minio.Client, prefix string) (*ObjectStorageBrowseResult, error) {
+	sanitizedPrefix := sanitizePrefix(prefix)
+
+	if sanitizedPrefix == "" {
+		buckets, err := client.ListBuckets(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list buckets: %w", err)
+		}
+		directories := make([]ObjectStorageDirectory, 0, len(buckets))
+		for _, b := range buckets {
+			directories = append(directories, ObjectStorageDirectory{
+				Name: b.Name,
+				Path: b.Name + "/",
+			})
+		}
+		return &ObjectStorageBrowseResult{
+			Bucket:      "",
+			Prefix:      "",
+			Directories: directories,
+		}, nil
+	}
+
+	// 从 prefix 第一段提取 bucket
+	parts := strings.SplitN(sanitizedPrefix, "/", 2)
+	bucketName := parts[0]
+	subPrefix := ""
+	if len(parts) > 1 {
+		subPrefix = parts[1]
+	}
+
+	result, err := s.listDirectoriesInBucket(ctx, client, bucketName, subPrefix)
+	if err != nil {
+		return nil, err
+	}
+	// 将 bucket 名前缀加回到所有路径，保持 prefix 一致性
+	for i := range result.Directories {
+		result.Directories[i].Path = bucketName + "/" + result.Directories[i].Path
+	}
+	result.Prefix = sanitizedPrefix
+	return result, nil
+}
+
+// listDirectoriesInBucket 列出指定 bucket 内的子目录
+func (s *ObjectStorageService) listDirectoriesInBucket(ctx context.Context, client *minio.Client, bucket, prefix string) (*ObjectStorageBrowseResult, error) {
 	sanitizedPrefix := sanitizePrefix(prefix)
 	opts := minio.ListObjectsOptions{
 		Prefix:    sanitizedPrefix,
@@ -154,16 +184,83 @@ func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uin
 }
 
 // ListFiles 列出指定前缀下的文件（不包括子目录）
+// 当引擎未配置 bucket 时，从 prefix 第一段提取 bucket 名
 func (s *ObjectStorageService) ListFiles(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageListFilesResult, error) {
 	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	if bucket == "" {
-		return nil, ErrObjectStorageBucketRequired
+	client, err := buildMinIOClient(connInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create object storage client: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	sanitizedPrefix := sanitizePrefix(prefix)
+
+	// 当引擎未配置 bucket 时，从 prefix 第一段提取
+	if bucket == "" {
+		if sanitizedPrefix == "" {
+			return &ObjectStorageListFilesResult{Bucket: "", Prefix: "", Files: []ObjectStorageFile{}}, nil
+		}
+		parts := strings.SplitN(sanitizedPrefix, "/", 2)
+		bucket = parts[0]
+		if len(parts) > 1 {
+			sanitizedPrefix = parts[1]
+		} else {
+			sanitizedPrefix = ""
+		}
+	}
+
+	opts := minio.ListObjectsOptions{
+		Prefix:    sanitizedPrefix,
+		Recursive: false,
+	}
+
+	objectCh := client.ListObjects(ctx, bucket, opts)
+	files := make([]ObjectStorageFile, 0)
+
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, fmt.Errorf("failed to list objects: %w", object.Err)
+		}
+
+		if strings.HasSuffix(object.Key, "/") {
+			continue
+		}
+
+		relativePath := strings.TrimPrefix(object.Key, sanitizedPrefix)
+		if strings.Contains(relativePath, "/") {
+			continue
+		}
+
+		files = append(files, ObjectStorageFile{
+			Name:         object.Key,
+			Size:         object.Size,
+			LastModified: object.LastModified,
+		})
+
+		if len(files) >= 1000 {
+			break
+		}
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+	})
+
+	return &ObjectStorageListFilesResult{
+		Bucket: bucket,
+		Prefix: sanitizedPrefix,
+		Files:  files,
+	}, nil
+}
+
+// buildMinIOClient 从连接信息创建 MinIO 客户端
+func buildMinIOClient(connInfo map[string]interface{}) (*minio.Client, error) {
 	endpoint := getStringFromConn(connInfo, "endpoint")
 	accessKey := getStringFromConn(connInfo, "access_key")
 	secretKey := getStringFromConn(connInfo, "secret_key")
@@ -178,65 +275,10 @@ func (s *ObjectStorageService) ListFiles(ctx context.Context, tenantID uint, sco
 		useSSL = true
 	}
 
-	client, err := minio.New(endpoint, &minio.Options{
+	return minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create object storage client: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	sanitizedPrefix := sanitizePrefix(prefix)
-	opts := minio.ListObjectsOptions{
-		Prefix:    sanitizedPrefix,
-		Recursive: false,
-	}
-
-	objectCh := client.ListObjects(ctx, bucket, opts)
-	files := make([]ObjectStorageFile, 0)
-
-	for object := range objectCh {
-		if object.Err != nil {
-			return nil, fmt.Errorf("failed to list objects: %w", object.Err)
-		}
-
-		// 跳过目录（以 / 结尾的对象）
-		if strings.HasSuffix(object.Key, "/") {
-			continue
-		}
-
-		// 只列出当前目录下的文件，不包括子目录中的文件
-		relativePath := strings.TrimPrefix(object.Key, sanitizedPrefix)
-		if strings.Contains(relativePath, "/") {
-			// 这是子目录中的文件，跳过
-			continue
-		}
-
-		files = append(files, ObjectStorageFile{
-			Name:         object.Key,
-			Size:         object.Size,
-			LastModified: object.LastModified,
-		})
-
-		// 限制返回的文件数量，避免过大
-		if len(files) >= 1000 {
-			break
-		}
-	}
-
-	// 按名称排序
-	sort.Slice(files, func(i, j int) bool {
-		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
-	})
-
-	return &ObjectStorageListFilesResult{
-		Bucket: bucket,
-		Prefix: sanitizedPrefix,
-		Files:  files,
-	}, nil
 }
 
 func (s *ObjectStorageService) resolveConnectionInfo(scope string, engineID, tenantID uint) (map[string]interface{}, string, error) {

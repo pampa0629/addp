@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,6 +39,17 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 		})
 		return
 	}
+
+	// 追加虚拟 DuckDB 引擎条目（内置联邦查询引擎，不注册到 System）
+	duckdbEngine := commonModels.Engine{
+		ID:          0, // 虚拟 ID，前端用 engine_type 判断路由
+		Name:        "DuckDB 联邦查询",
+		EngineType:  "duckdb",
+		Description: "内置联邦查询引擎，支持湖表（Parquet）与关系型表跨源 JOIN",
+		IsBuiltin:   true,
+		IsActive:    true,
+	}
+	engines = append(engines, duckdbEngine)
 
 	// 返回引擎列表（与前端期望的格式一致）
 	c.JSON(http.StatusOK, engines)

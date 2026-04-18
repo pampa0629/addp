@@ -47,8 +47,6 @@ func (h *ObjectStorageHandler) BrowseDirectories(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
 		case errors.Is(err, service.ErrObjectStorageNotSupported):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "resource is not object storage"})
-		case errors.Is(err, service.ErrObjectStorageBucketRequired):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "bucket is required"})
 		default:
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
@@ -79,8 +77,6 @@ func (h *ObjectStorageHandler) ListFiles(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
 		case errors.Is(err, service.ErrObjectStorageNotSupported):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "resource is not object storage"})
-		case errors.Is(err, service.ErrObjectStorageBucketRequired):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "bucket is required"})
 		default:
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}

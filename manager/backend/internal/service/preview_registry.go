@@ -28,6 +28,7 @@ type PreviewRequest struct {
 	Page     int
 	PageSize int
 	TenantID *uint
+	ItemType string // 数据项类型（如 "lake_table"），用于特殊预览路由
 }
 
 // Mode 根据请求推断预览模式。

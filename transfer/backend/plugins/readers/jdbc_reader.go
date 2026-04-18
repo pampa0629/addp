@@ -511,15 +511,21 @@ func (r *JDBCReader) inferSchema(ctx context.Context) (*pipeline.Schema, error) 
 // mapDatabaseType 映射数据库类型到统一类型
 func (r *JDBCReader) mapDatabaseType(dbType string) string {
 	switch dbType {
-	case "VARCHAR", "TEXT", "CHAR", "STRING":
+	case "VARCHAR", "TEXT", "CHAR", "STRING", "BPCHAR", "NAME", "UUID", "CITEXT":
 		return "string"
-	case "INT", "INTEGER", "BIGINT", "SMALLINT":
-		return "int"
-	case "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC":
-		return "float"
+	// database/sql 对所有整数类型统一返回 int64，统一映射为 bigint
+	case "INT", "INTEGER", "SMALLINT", "INT2", "INT4":
+		return "bigint"
+	case "BIGINT", "INT8", "OID", "XID":
+		return "bigint"
+	// database/sql 对浮点类型统一返回 float64
+	case "FLOAT", "FLOAT4", "REAL":
+		return "double"
+	case "DOUBLE", "FLOAT8", "DECIMAL", "NUMERIC":
+		return "double"
 	case "BOOL", "BOOLEAN":
 		return "bool"
-	case "DATE", "DATETIME", "TIMESTAMP", "TIMESTAMPTZ":
+	case "DATE", "DATETIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMETZ", "TIME":
 		return "datetime"
 	case "JSON", "JSONB":
 		return "json"

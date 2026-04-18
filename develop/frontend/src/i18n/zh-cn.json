@@ -9,6 +9,7 @@
       "queryEditor": "查询编辑器",
       "notebook": "Notebook 开发",
       "queryTasks": "查询任务",
+      "federatedQuery": "联邦查询",
       "workflow": "工作流编辑器",
       "tasks": "任务管理",
       "executions": "执行监控"
@@ -485,6 +486,19 @@
       "deleteFailed": "删除失败: ",
       "loadFailed": "加载失败: ",
       "viewNotSupported": "该类型暂不支持查看详情"
+    },
+    "federated": {
+      "title": "联邦查询",
+      "refreshSources": "刷新数据源",
+      "execute": "执行",
+      "sources": "数据源",
+      "noSources": "暂无可查询的数据源",
+      "editorTitle": "SQL 编辑器",
+      "hint": "Ctrl+Enter 执行",
+      "resultTitle": "查询结果",
+      "rows": "行",
+      "loadSourcesFailed": "加载数据源失败",
+      "executeFailed": "查询执行失败"
     }
   }
 }

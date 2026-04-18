@@ -80,10 +80,13 @@ func (w *S3Writer) Open(ctx context.Context, config pipeline.ConnectorConfig) er
 	switch w.fileType {
 	case "csv-wkt":
 		w.writerFileType = "csv"
-	case "geojson", "json", "jsonl", "csv", "parquet":
+	case "geojson", "json", "jsonl", "csv":
 		w.writerFileType = w.fileType
 	case "shapefile":
 		w.writerFileType = "shapefile"
+	case "parquet":
+		// parquet 委托给独立的 ParquetWriter
+		w.writerFileType = "parquet"
 	default:
 		w.writerFileType = w.fileType
 	}
@@ -128,6 +131,8 @@ func (w *S3Writer) Open(ctx context.Context, config pipeline.ConnectorConfig) er
 		return w.openShapefileWriter(ctx, config)
 	case "geojson":
 		return w.openGeoJSONWriter(ctx, config)
+	case "parquet":
+		return w.openParquetWriter(ctx, config)
 	default:
 		return w.openFileWriter(ctx, config)
 	}
@@ -194,6 +199,21 @@ func (w *S3Writer) openGeoJSONWriter(ctx context.Context, config pipeline.Connec
 	return nil
 }
 
+func (w *S3Writer) openParquetWriter(ctx context.Context, config pipeline.ConnectorConfig) error {
+	// 委托给独立的 ParquetWriter，复用 S3 连接配置
+	pw, err := NewParquetWriter(config)
+	if err != nil {
+		return err
+	}
+	if err := pw.Open(ctx, config); err != nil {
+		return err
+	}
+	w.fileWriter = pw
+	// parquet writer 自己负责上传，S3Writer 不再重复上传
+	w.uploadOnClose = false
+	return nil
+}
+
 func (w *S3Writer) openShapefileWriter(ctx context.Context, config pipeline.ConnectorConfig) error {
 	tempDir, err := os.MkdirTemp("", "s3_writer_shapefile_*")
 	if err != nil {
@@ -242,8 +262,8 @@ func (w *S3Writer) Flush(ctx context.Context) error {
 		return err
 	}
 
-	// Shapefile 上传延迟到 Close 阶段，确保所有文件写入并关闭
-	if w.fileType == "shapefile" {
+	// Shapefile/Parquet 上传延迟到 Close 阶段
+	if w.fileType == "shapefile" || !w.uploadOnClose {
 		return nil
 	}
 	return w.uploadToS3(ctx)

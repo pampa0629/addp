@@ -207,6 +207,19 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		}
 		return handler, nil
 	},
+	"parquet": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &parquetContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(63),
+				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".parquet"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"})),
+			},
+			maxBytes: cfg.maxBytesOr(maxParquetPreviewBytes),
+			rowLimit: defaultParquetRowLimit,
+		}
+		handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
+		return handler, nil
+	},
 }
 
 func normalizeExtensions(values []string) []string {

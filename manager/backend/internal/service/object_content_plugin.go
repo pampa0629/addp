@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/excel"
 	"github.com/addp/common/format/geojson"
+	commonParquet "github.com/addp/common/format/parquet"
 	"github.com/addp/common/format/sqlite"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
@@ -898,4 +899,170 @@ func runCommandCollectingOutput(cmd *exec.Cmd) ([]byte, string, error) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.String(), err
+}
+
+// ------------ Parquet 处理器 ------------
+
+const (
+	maxParquetPreviewBytes = 200 * 1024 * 1024 // 200MB
+	defaultParquetRowLimit = 50
+)
+
+type parquetContentHandler struct {
+	baseContentHandler
+	maxBytes int64
+	rowLimit int
+}
+
+// HandleStream 流式处理 Parquet 文件（下载到临时文件后解析）
+func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+	tmpFile, err := os.CreateTemp("", "parquet-preview-*.parquet")
+	if err != nil {
+		return nil, false, fmt.Errorf("创建临时 Parquet 文件失败: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+	}()
+
+	reader, err := streamer()
+	if err != nil {
+		return nil, false, fmt.Errorf("获取对象流失败: %w", err)
+	}
+	defer reader.Close()
+
+	written, err := io.Copy(tmpFile, reader)
+	if err != nil {
+		return nil, false, fmt.Errorf("写入 Parquet 临时文件失败: %w", err)
+	}
+	if written == 0 {
+		return &models.ObjectPreviewContent{
+			Kind: "table",
+			Text: "Parquet 文件为空或无法读取",
+		}, false, nil
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, false, fmt.Errorf("关闭 Parquet 临时文件失败: %w", err)
+	}
+
+	logger.L().Info("Parquet 预览: 流式下载完成", "path", req.Path+req.Name, "size_bytes", written, "tmp_path", tmpPath)
+
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("打开 Parquet 临时文件失败: %w", err)
+	}
+	defer f.Close()
+
+	parser := &commonParquet.Parser{}
+	opts := format.DefaultParseOptions()
+
+	tableInfo, err := parser.ParseTableInfo(ctx, f, opts)
+	if err != nil {
+		return nil, false, fmt.Errorf("解析 Parquet Schema 失败: %w", err)
+	}
+
+	// 重新打开文件读取预览数据（ParseTableInfo 已消耗了 reader）
+	f2, err := os.Open(tmpPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("重新打开 Parquet 临时文件失败: %w", err)
+	}
+	defer f2.Close()
+
+	rowLimit := int64(h.rowLimit)
+	if rowLimit <= 0 {
+		rowLimit = defaultParquetRowLimit
+	}
+	rows, err := parser.ReadPreview(ctx, f2, 0, rowLimit, opts)
+	if err != nil {
+		return nil, false, fmt.Errorf("读取 Parquet 预览数据失败: %w", err)
+	}
+
+	// 构建列信息
+	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
+		col := map[string]interface{}{
+			"name":     field.Name,
+			"type":     string(field.Type),
+			"nullable": field.Nullable,
+		}
+		if field.OriginalType != "" {
+			col["original_type"] = field.OriginalType
+		}
+		columns = append(columns, col)
+	}
+
+	totalRows := int64(0)
+	if tableInfo.RowCount != nil {
+		totalRows = *tableInfo.RowCount
+	}
+	truncated := int64(len(rows)) < totalRows
+
+	metadata := buildPreviewMetadata(req, h.maxBytes)
+	metadata["row_count"] = totalRows
+	metadata["column_count"] = len(columns)
+
+	return &models.ObjectPreviewContent{
+		Kind: "table",
+		JSON: map[string]interface{}{
+			"columns":    columns,
+			"rows":       rows,
+			"total_rows": totalRows,
+		},
+		Metadata:  metadata,
+		Truncated: truncated,
+	}, truncated, nil
+}
+
+// Handle 回退实现（不推荐，Parquet 需要随机访问）
+func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	data, _, err := fetcher(h.maxBytes)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) == 0 {
+		return &models.ObjectPreviewContent{Kind: "table", Text: "Parquet 文件为空或无法读取"}, false, nil
+	}
+
+	parser := &commonParquet.Parser{}
+	opts := format.DefaultParseOptions()
+
+	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(data), opts)
+	if err != nil {
+		return nil, false, fmt.Errorf("解析 Parquet Schema 失败: %w", err)
+	}
+
+	rowLimit := int64(h.rowLimit)
+	if rowLimit <= 0 {
+		rowLimit = defaultParquetRowLimit
+	}
+	rows, err := parser.ReadPreview(ctx, bytes.NewReader(data), 0, rowLimit, opts)
+	if err != nil {
+		return nil, false, fmt.Errorf("读取 Parquet 预览数据失败: %w", err)
+	}
+
+	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
+		columns = append(columns, map[string]interface{}{
+			"name":     field.Name,
+			"type":     string(field.Type),
+			"nullable": field.Nullable,
+		})
+	}
+
+	totalRows := int64(0)
+	if tableInfo.RowCount != nil {
+		totalRows = *tableInfo.RowCount
+	}
+
+	return &models.ObjectPreviewContent{
+		Kind: "table",
+		JSON: map[string]interface{}{
+			"columns":    columns,
+			"rows":       rows,
+			"total_rows": totalRows,
+		},
+		Metadata:  buildPreviewMetadata(req, h.maxBytes),
+		Truncated: int64(len(rows)) < totalRows,
+	}, int64(len(rows)) < totalRows, nil
 }

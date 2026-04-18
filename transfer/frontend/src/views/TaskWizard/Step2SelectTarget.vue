@@ -61,10 +61,28 @@
         <el-form-item :label="t('transfer.taskWizard.outputPathLabel')">
           <el-input
             v-model="outputPath"
-            placeholder="例如：exports/data.csv 或 exports/output.geojson"
-          />
+            :placeholder="t('transfer.taskWizard.storagePathPlaceholder')"
+            readonly
+            @click="showOutputPathPicker = true"
+          >
+            <template #append>
+              <el-button :disabled="!formData.engineID" @click="showOutputPathPicker = true">{{ t('transfer.taskWizard.browse') }}</el-button>
+            </template>
+          </el-input>
           <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
             <p>{{ t('transfer.taskWizard.outputPathHint') }}</p>
+          </div>
+        </el-form-item>
+
+        <!-- 输出文件名 -->
+        <el-form-item :label="t('transfer.taskWizard.outputFileNameLabel')">
+          <el-input
+            v-model="outputFileName"
+            :placeholder="t('transfer.taskWizard.outputFileNamePlaceholder')"
+            @input="syncS3Target"
+          />
+          <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
+            <p>{{ t('transfer.taskWizard.outputFileNameHint') }}</p>
           </div>
         </el-form-item>
 
@@ -160,6 +178,15 @@
       </el-form-item>
       </template>
     </el-form>
+
+    <!-- 对象存储路径选择器 -->
+    <ObjectStoragePathPicker
+      v-model:visible="showOutputPathPicker"
+      scope="system"
+      :resource-id="formData.engineID"
+      :initial-prefix="outputPath"
+      @selected="handleOutputPathSelected"
+    />
   </div>
 </template>
 
@@ -169,6 +196,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getTables, getTableFields, getSchemas } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
+import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
 
 const { t } = useI18n()
 
@@ -189,10 +217,12 @@ const targetType = ref('postgresql') // 目标类型: postgresql, mysql, s3
 
 // 对象存储导出配置
 const outputFormat = ref('csv') // csv, jsonl, parquet, geojson, shapefile
-const outputPath = ref('') // 输出路径
+const outputPath = ref('') // 输出路径（目录）
+const outputFileName = ref('') // 输出文件名
 const csvHeaders = ref(true) // CSV 是否包含表头
 const csvDelimiter = ref(',') // CSV 分隔符
 const geometryField = ref('') // 几何字段（用于空间格式）
+const showOutputPathPicker = ref(false) // 是否显示路径选择器
 
 const targetEngines = ref([])
 const schemas = ref([])
@@ -228,7 +258,7 @@ const isDatabase = computed(() => {
 
 // 判断是否有空间字段（用于判断是否可以选择 geojson/shapefile 格式）
 const hasSpatialFields = computed(() => {
-  return props.wizardState.sourceFields.some(field => {
+  return (props.wizardState.sourceFields.value || []).some(field => {
     const standardType = (field.standard_type || '').toLowerCase()
     const dataType = (field.data_type || '').toLowerCase()
     return standardType === 'geometry' ||
@@ -250,39 +280,39 @@ const needsSchema = computed(() => {
 
 const canProceed = computed(() => {
   if (targetType.value === 's3') {
-    // 对象存储：需要引擎和输出路径
-    return formData.engineID && outputPath.value.trim() !== ''
+    // 对象存储：需要引擎、输出路径和文件名
+    return formData.engineID && outputPath.value.trim() !== '' && outputFileName.value.trim() !== ''
   }
   // 数据库：需要引擎和表
   return formData.engineID && formData.table
 })
 
+function syncS3Target() {
+  if (targetType.value !== 's3' || !formData.engineID || !outputPath.value.trim() || !outputFileName.value.trim()) return
+  const extra = {
+    output_format: outputFormat.value,
+    output_path: outputPath.value,
+    output_file_name: outputFileName.value
+  }
+  if (outputFormat.value === 'csv') {
+    extra.csv_headers = csvHeaders.value
+    extra.csv_delimiter = csvDelimiter.value
+  }
+  if (['geojson', 'shapefile'].includes(outputFormat.value) && geometryField.value) {
+    extra.geometry_field = geometryField.value
+  }
+  props.wizardState.updateTarget({
+    engineID: formData.engineID,
+    scope: 'system',
+    targetType: targetType.value,
+    extra
+  })
+}
+
 watch(canProceed, (newVal) => {
   if (newVal) {
     if (targetType.value === 's3') {
-      // 对象存储配置
-      const extra = {
-        output_format: outputFormat.value,
-        output_path: outputPath.value
-      }
-
-      // CSV 专用选项
-      if (outputFormat.value === 'csv') {
-        extra.csv_headers = csvHeaders.value
-        extra.csv_delimiter = csvDelimiter.value
-      }
-
-      // 空间格式需要几何字段
-      if (['geojson', 'shapefile'].includes(outputFormat.value) && geometryField.value) {
-        extra.geometry_field = geometryField.value
-      }
-
-      props.wizardState.updateTarget({
-        engineID: formData.engineID,
-        scope: 'system', // 目标引擎来源（当前仅支持 system）
-        targetType: targetType.value,
-        extra
-      })
+      syncS3Target()
     } else {
       // 数据库配置
       props.wizardState.updateTarget({
@@ -295,6 +325,11 @@ watch(canProceed, (newVal) => {
     }
   }
 })
+
+function handleOutputPathSelected(path) {
+  outputPath.value = path
+  syncS3Target()
+}
 
 function handleTargetTypeChange() {
   // 切换目标类型时，清空已选择的引擎和表
@@ -394,6 +429,7 @@ async function restoreState() {
     const config = state.targetConfig.value
     if (config.output_format) outputFormat.value = config.output_format
     if (config.output_path) outputPath.value = config.output_path
+    if (config.output_file_name) outputFileName.value = config.output_file_name
     if (config.csv_headers !== undefined) csvHeaders.value = config.csv_headers
     if (config.csv_delimiter) csvDelimiter.value = config.csv_delimiter
     if (config.geometry_field) geometryField.value = config.geometry_field

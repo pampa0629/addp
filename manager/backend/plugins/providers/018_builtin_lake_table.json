@@ -1,0 +1,6 @@
+{
+  "name": "builtin:lake-table",
+  "type": "builtin",
+  "builtin": "lake-table",
+  "priority": 98
+}

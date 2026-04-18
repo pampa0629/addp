@@ -30,6 +30,7 @@ type ScanService struct {
 	dbScanService            *DatabaseScanService          // 数据库扫描服务
 	nosqlScanService         *NoSQLScanService             // NoSQL 数据库扫描服务
 	objectScanService        *ObjectStorageScanService     // 对象存储扫描服务
+	fsScanService            *FileSystemScanService        // 文件系统扫描服务（湖表检测）
 	metadataQueryService     *MetadataQueryService         // 元数据查询服务（独立）
 	resourceDiscoveryService *ResourceDiscoveryService     // 资源发现服务（独立）
 	engineService            *EngineService
@@ -83,6 +84,9 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 
 	// 创建 ObjectStorageScanService（使用独立服务，无循环依赖）
 	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
+
+	// 创建 FileSystemScanService（湖表检测）
+	s.fsScanService = NewFileSystemScanService(db, log, repo, indexerService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
@@ -478,9 +482,9 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
 		// NoSQL 扫描（MongoDB、CouchDB 等）
 		schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(nosqlPlugin, resource, tenantID, schemaNames, scanDepth, reporter)
-	} else if _, ok := p.(plugin.ObjectStoragePlugin); ok && isObjectStorageType(resourceType) {
-		// 对象存储扫描（MinIO、S3 等）
-		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, scanDepth, reporter)
+	} else if _, ok := p.(plugin.FileSystemPlugin); ok && isObjectStorageType(resourceType) {
+		// 文件系统扫描（MinIO、S3 等）—— 优先运行湖表检测
+		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
 	} else if _, ok := p.(plugin.RelationalDBPlugin); ok {
 		// 关系型数据库扫描（PostgreSQL、MySQL 等）
 		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, 0, scanDepth, reporter)
@@ -1050,6 +1054,15 @@ func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, t
 	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
 }
 
+// scanFileSystemResourceWithReporter 扫描文件系统资源（湖表检测 + 对象存储回退）
+func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, reporter)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return roots, items, 0, nil
+}
+
 func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	// 标准化 scanDepth
 	if scanDepth == "" {
@@ -1324,4 +1337,9 @@ func (s *ScanService) GetTableSpatialMetadata(tenantID, engineID uint, schema, t
 // GetMetaNodeByID 获取单个节点详情（用于Manager模块）
 func (s *ScanService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {
 	return s.metadataQueryService.GetMetaNodeByID(tenantID, nodeID)
+}
+
+// GetItemByID 按 ID 查询 MetaItem
+func (s *ScanService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
+	return s.metadataQueryService.GetItemByID(tenantID, itemID)
 }

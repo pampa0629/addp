@@ -386,6 +386,8 @@ func (s *ExecutionEngineService) inferConnectorType(config map[string]interface{
 			return "kafka"
 		case "csv", "geojson", "shapefile", "geopackage":
 			return "file"
+		case "parquet":
+			return "parquet"
 		default:
 			// 对于未知的 engine_type，直接使用它
 			return engineType
@@ -577,14 +579,36 @@ func (s *ExecutionEngineService) resolveSystemEngine(engineID uint, taskConfig m
 			k != "access_key" && k != "secret_key" && k != "bucket" &&
 			k != "scope" && k != "engine_id" {
 
-			// 特殊处理：将 path/scope 映射到 file_name/prefix（用于 S3 Writer）
-			if k == "path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+			// 特殊处理：将 output_path/output_format/output_file_name 映射到 S3Writer 期望的字段名
+			if k == "output_path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// output_path 是目录前缀，映射到 prefix
+				s.logger.Info("mapping output_path to prefix", "value", v)
+				connectorConfig["prefix"] = v
+			} else if k == "output_format" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// output_format 映射到 file_type（S3Writer 期望的字段名）
+				s.logger.Info("mapping output_format to file_type", "value", v)
+				connectorConfig["file_type"] = v
+			} else if k == "output_file_name" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// output_file_name 映射到 file_name
+				s.logger.Info("mapping output_file_name to file_name", "value", v)
+				connectorConfig["file_name"] = v
+			} else if k == "csv_delimiter" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// csv_delimiter 映射到 delimiter（S3Writer/CSVWriter 期望的字段名）
+				connectorConfig["delimiter"] = v
+			} else if k == "path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
 				s.logger.Info("mapping path to file_name", "value", v)
 				connectorConfig["file_name"] = v
 			} else if k == "format" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
 				// 将 format 映射到 file_type（S3Writer 期望的字段名）
 				s.logger.Info("mapping format to file_type", "value", v)
 				connectorConfig["file_type"] = v
+			} else if k == "connector_type" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// parquet 数据源：覆盖 type 为 parquet，让注册表路由到 ParquetReader
+				if v == "parquet" {
+					connectorConfig["type"] = "parquet"
+					connectorConfig["engine_type"] = "parquet"
+					s.logger.Info("parquet source: overriding connector type to parquet")
+				}
 			} else {
 				s.logger.Debug("adding config", "key", k, "value", v)
 				connectorConfig[k] = v
@@ -593,6 +617,28 @@ func (s *ExecutionEngineService) resolveSystemEngine(engineID uint, taskConfig m
 	}
 
 	s.logger.Info("final connector config", "config", connectorConfig)
+
+	// 当引擎未配置 bucket 时，从 prefix 第一段提取 bucket 名
+	if resource.EngineType == "s3" || resource.EngineType == "minio" {
+		if bucket, _ := connectorConfig["bucket"].(string); bucket == "" {
+			if prefix, ok := connectorConfig["prefix"].(string); ok && prefix != "" {
+				trimmed := strings.TrimPrefix(prefix, "/")
+				parts := strings.SplitN(trimmed, "/", 2)
+				if parts[0] != "" {
+					connectorConfig["bucket"] = parts[0]
+					if len(parts) > 1 {
+						connectorConfig["prefix"] = parts[1]
+					} else {
+						connectorConfig["prefix"] = ""
+					}
+					s.logger.Info("extracted bucket from prefix",
+						"bucket", parts[0],
+						"remaining_prefix", connectorConfig["prefix"])
+				}
+			}
+		}
+	}
+
 	return connectorConfig, nil
 }
 

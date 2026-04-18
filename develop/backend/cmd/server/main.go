@@ -118,6 +118,11 @@ func main() {
 	)
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
+	// 6. DuckDB 联邦查询服务
+	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	duckdbService := service.NewDuckDBService(cfg, systemClient, metaClient)
+	log.Printf("✅ DuckDBService 初始化完成")
+
 	// ========== Handler 层 ==========
 	devItemHandler := api.NewDevItemHandler(devTaskService)
 	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
@@ -125,6 +130,7 @@ func main() {
 	engineHandler := api.NewEngineHandler(systemClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, devTaskService)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
+	duckdbHandler := api.NewDuckDBHandler(duckdbService)
 
 	// Jupyter 实例管理 Handler (Docker 方案,已废弃)
 	var jupyterInstanceHandler *api.JupyterInstanceHandler
@@ -143,7 +149,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient)
+	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 模块注册（注册到 System service_registry）==========
