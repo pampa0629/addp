@@ -247,58 +247,27 @@ func (s *QueryExecutorService) executeDuckDBSQLQuery(
 	service *models.QueryService,
 	params *QueryParams,
 ) (*QueryResult, error) {
-	// 获取租户下所有引擎
-	engines, err := s.systemClient.ListEngines("", service.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
-	}
-
-	// 构建湖表映射（engineName -> tableName -> physicalPath）
-	metaClient := s.getMetaClient()
-	lakeTableMap := duckdb.BuildLakeTableMap(ctx, service.TenantID, engines, metaClient)
-
-	// 改写 SQL（三段式引用 → read_parquet()）
-	rewriter := duckdb.NewSQLRewriter(metaClient, service.TenantID)
-	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, service.SqlQuery, lakeTableMap)
-	if err != nil {
-		return nil, fmt.Errorf("SQL 改写失败: %w", err)
-	}
-
-	// 打开 DuckDB 连接
-	db, err := duckdb.OpenDB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
 	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	conn, err := db.Conn(execCtx)
+	session, err := duckdb.PrepareFederatedQuery(execCtx, service.TenantID, service.SqlQuery, s.systemClient, s.metaClient)
 	if err != nil {
-		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
+		return nil, err
 	}
-	defer conn.Close()
-
-	// 挂载所有引用到的引擎
-	referencedNames := duckdb.ExtractReferencedEngineNames(service.SqlQuery)
-	relevantEngines := duckdb.FilterEnginesByName(engines, referencedNames)
-	if err := duckdb.MountEngines(execCtx, conn, relevantEngines); err != nil {
-		return nil, fmt.Errorf("挂载引擎失败: %w", err)
-	}
+	defer session.Close()
 
 	// 获取总数
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS _q", rewrittenSQL)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS _q", session.RewrittenSQL)
 	var total int64
-	row := conn.QueryRowContext(execCtx, countSQL)
+	row := session.Conn.QueryRowContext(execCtx, countSQL)
 	if err := row.Scan(&total); err != nil {
 		return nil, fmt.Errorf("获取总数失败: %w", err)
 	}
 
 	// 分页查询
 	offset := (params.Page - 1) * params.PageSize
-	paginatedSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", rewrittenSQL, params.PageSize, offset)
-	result, err := duckdb.ExecuteQuery(execCtx, conn, paginatedSQL)
+	paginatedSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", session.RewrittenSQL, params.PageSize, offset)
+	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, paginatedSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -312,11 +281,6 @@ func (s *QueryExecutorService) executeDuckDBSQLQuery(
 			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
 		},
 	}, nil
-}
-
-// getMetaClient 获取 MetaClient
-func (s *QueryExecutorService) getMetaClient() *client.MetaClient {
-	return s.metaClient
 }
 
 // executeTableQuery 执行表配置模式的查询

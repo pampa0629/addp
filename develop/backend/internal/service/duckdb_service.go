@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"time"
@@ -93,61 +92,21 @@ func (s *DuckDBService) ExecuteQuery(ctx context.Context, tenantID uint, sqlStr 
 
 	start := time.Now()
 
-	// 解析 SQL 中引用的引擎名（三段式 engine.schema.table）
-	referencedEngines := duckdb.ExtractReferencedEngineNames(sqlStr)
-
-	// 只有 SQL 引用了外部引擎时才去拉取引擎列表并挂载
-	var engines []commonModels.Engine
-	if len(referencedEngines) > 0 {
-		var err error
-		engines, err = s.systemClient.ListEngines("", tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("获取引擎列表失败: %w", err)
-		}
-		engines = duckdb.FilterEnginesByName(engines, referencedEngines)
-	}
-
-	// 初始化 DuckDB 内存连接
-	db, err := duckdb.OpenDB()
+	session, err := duckdb.PrepareFederatedQuery(ctx, tenantID, sqlStr, s.systemClient, s.metaClient)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
-	}
-	defer conn.Close()
-
-	// 按需挂载引擎 + 构建湖表映射
-	var engineLakeTables map[string]map[string]string
-	if len(engines) > 0 {
-		engineLakeTables = duckdb.BuildLakeTableMap(ctx, tenantID, engines, s.metaClient)
-		if err := duckdb.MountEngines(ctx, conn, engines); err != nil {
-			s.logger.Warn("部分引擎挂载失败", "error", err)
-		}
-	}
-
-	// 改写 SQL（湖表引用 → read_parquet）
-	rewriter := duckdb.NewSQLRewriter(s.metaClient, tenantID)
-	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, sqlStr, engineLakeTables)
-	if err != nil {
-		s.logger.Warn("SQL 改写失败，使用原始 SQL", "error", err)
-		rewrittenSQL = sqlStr
-	}
+	defer session.Close()
 
 	s.logger.Info("executing federated query",
 		"original_sql", sqlStr,
-		"rewritten_sql", rewrittenSQL,
-		"tenant_id", tenantID,
-		"mounted_engines", len(engines))
+		"rewritten_sql", session.RewrittenSQL,
+		"tenant_id", tenantID)
 
-	// 执行查询
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	result, err := duckdb.ExecuteQuery(execCtx, conn, rewrittenSQL)
+	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, session.RewrittenSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -232,9 +191,7 @@ func (s *DuckDBService) getLakeTables(ctx context.Context, tenantID uint, engine
 		return nil
 	}
 
-	s.metaClient.SetTenantID(&tenantID)
-
-	tree, err := s.metaClient.GetMetadataTree(engine.ID)
+	tree, err := s.metaClient.WithTenantID(tenantID).GetMetadataTree(engine.ID)
 	if err != nil {
 		s.logger.Warn("获取元数据树失败", "engine_id", engine.ID, "error", err)
 		return nil
@@ -268,8 +225,7 @@ func (s *DuckDBService) getRelationalTables(ctx context.Context, tenantID uint, 
 		return nil
 	}
 
-	s.metaClient.SetTenantID(&tenantID)
-	tree, err := s.metaClient.GetMetadataTree(engine.ID)
+	tree, err := s.metaClient.WithTenantID(tenantID).GetMetadataTree(engine.ID)
 	if err != nil {
 		s.logger.Warn("获取元数据树失败", "engine_id", engine.ID, "error", err)
 		return nil
@@ -319,7 +275,3 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-// openDuckDB 打开 DuckDB 内存连接（兼容旧代码）
-func openDuckDB() (*sql.DB, error) {
-	return duckdb.OpenDB()
-}
