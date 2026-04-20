@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [116.3974, 39.9093] },
+      "properties": { "name": "天安门", "city": "北京" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [121.4737, 31.2304] },
+      "properties": { "name": "外滩", "city": "上海" }
+    }
+  ]
+}

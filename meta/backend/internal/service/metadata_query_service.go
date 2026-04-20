@@ -297,9 +297,10 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
 	}
 
-	// 查询所有项
+	// 查询所有项（只返回 node_id 存在于 meta_node 中的 items，过滤孤立记录）
 	var items []models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_id IN (SELECT id FROM metadata.meta_node WHERE tenant_id = ? AND engine_id = ?)",
+		tenantID, engineID, tenantID, engineID).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
 	}

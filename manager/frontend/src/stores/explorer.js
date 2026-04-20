@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { parseLocator, buildLocator } from '@addp/common-frontend'
+import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 
 /**
@@ -341,9 +341,11 @@ export const useExplorerStore = defineStore('explorer', {
           })
 
           if (updated) {
-            // 强制触发 Vue 3 响应式更新：重新赋值整个 engineTrees
-            // 这样 computed getter (engineNodes) 会重新计算
-            this.engineTrees = { ...this.engineTrees }
+            // 深度克隆引擎树，确保 Vue 3 响应式系统检测到所有层级的变化
+            this.engineTrees = {
+              ...this.engineTrees,
+              [loc.engineId]: deepCloneTree(this.engineTrees[loc.engineId])
+            }
             console.log(`[ExplorerStore] 已触发响应式更新`)
           }
         }
@@ -420,14 +422,20 @@ export const useExplorerStore = defineStore('explorer', {
       if (!tree || !locator) return false
 
       if (tree.locator === locator) {
-        // 找到目标节点，更新属性
+        // 找到目标节点，用新对象替换属性，触发 Vue 3 响应式
         Object.assign(tree, updates)
         return true
       }
 
-      // 递归查找子节点
+      // 递归查找子节点，找到后替换父节点的 children 数组（触发响应式）
       if (tree.children && tree.children.length > 0) {
-        for (const child of tree.children) {
+        for (let i = 0; i < tree.children.length; i++) {
+          const child = tree.children[i]
+          if (child.locator === locator) {
+            // 直接替换数组元素为新对象，触发 Vue 3 响应式
+            tree.children[i] = { ...child, ...updates }
+            return true
+          }
           if (this.updateTreeNode(child, locator, updates)) {
             return true
           }
@@ -457,6 +465,17 @@ export const useExplorerStore = defineStore('explorer', {
     }
   }
 })
+
+/**
+ * 深度克隆树节点（用于触发 Vue 3 响应式更新）
+ */
+function deepCloneTree(node) {
+  if (!node) return node
+  return {
+    ...node,
+    children: node.children ? node.children.map(deepCloneTree) : []
+  }
+}
 
 /**
  * 在树中查找节点（通过 locator）

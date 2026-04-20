@@ -64,7 +64,9 @@
         @current-change="handleCurrentChange"
       >
         <template #default="{ data, node }">
-          <slot name="node" :node="node" :data="data">
+          <!-- 哨兵节点：仅用于让 el-tree 显示展开箭头，不渲染内容 -->
+          <span v-if="data.type === '__sentinel__'" style="display:none" />
+          <slot v-else name="node" :node="node" :data="data">
             <span
               class="tree-node-wrapper"
               @dblclick="enableDblclickToggle ? handleNodeDblclick($event, node, data) : null"
@@ -408,10 +410,27 @@ const currentFilterMethod = computed(() => {
   return props.filterMethod || defaultFilterMethod
 })
 
+// 为 hasChildren=true 但 children=[] 的节点注入哨兵子节点
+// el-tree 在非懒加载模式下只根据 children 数组长度判断是否显示展开箭头，忽略 isLeaf
+// 注入哨兵后 el-tree 会显示展开箭头，展开时哨兵节点被隐藏（通过 type='__sentinel__' 过滤）
+const SENTINEL_ID = '__sentinel__'
+const injectSentinels = (nodes) => {
+  if (!nodes) return nodes
+  return nodes.map(node => {
+    const hasEmptyChildren = (!node.children || node.children.length === 0) && node.hasChildren
+    const children = hasEmptyChildren
+      ? [{ id: SENTINEL_ID + node.id, type: SENTINEL_ID, label: '', hasChildren: false, children: [] }]
+      : node.children?.length
+        ? injectSentinels(node.children)
+        : node.children
+    return children === node.children ? node : { ...node, children }
+  })
+}
+
 // 过滤后的树数据
 const filteredTreeData = computed(() => {
   if (!props.filterText) {
-    return props.treeData
+    return injectSentinels(props.treeData)
   }
 
   if (!props.highlightMatch) {
@@ -540,13 +559,13 @@ watch(
 
 // 节点点击
 const handleNodeClick = (nodeData) => {
-  if (!nodeData) return
+  if (!nodeData || nodeData.type === SENTINEL_ID) return
   emit('node-click', nodeData)
 }
 
 // 当前节点变化
 const handleCurrentChange = (data, node) => {
-  if (data) {
+  if (data && data.type !== SENTINEL_ID) {
     emit('update:current-node-key', data.id)
     emit('current-change', data, node)
   }
@@ -554,7 +573,7 @@ const handleCurrentChange = (data, node) => {
 
 // 节点展开
 const handleNodeExpand = (data) => {
-  if (!data) return
+  if (!data || data.type === SENTINEL_ID) return
   const keys = new Set(props.expandedKeys)
   keys.add(data.id)
   emit('update:expanded-keys', Array.from(keys))
@@ -563,7 +582,7 @@ const handleNodeExpand = (data) => {
 
 // 节点折叠
 const handleNodeCollapse = (data) => {
-  if (!data) return
+  if (!data || data.type === SENTINEL_ID) return
   const keys = props.expandedKeys.filter((id) => id !== data.id)
   emit('update:expanded-keys', keys)
   emit('node-collapse', data)

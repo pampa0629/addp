@@ -3,7 +3,7 @@
 # 业务库启动脚本
 #
 # 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS
-# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选), Neo4j (可选)
+# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选), Neo4j (可选), NFS (可选)
 # 特性: 幂等执行（可重复运行，已运行的服务会跳过）
 #
 # 使用方法:
@@ -16,6 +16,7 @@
 #   bash scripts/start.sh -doris             # 只启动 Doris
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
+#   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
 #   bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB
 
@@ -40,6 +41,7 @@ ENABLE_MONGODB=false
 ENABLE_DORIS=false
 ENABLE_SPARK=false
 ENABLE_NEO4J=false
+ENABLE_NFS=false
 HAS_ARGS=false
 
 for arg in "$@"; do
@@ -53,6 +55,7 @@ for arg in "$@"; do
             ENABLE_DORIS=true
             ENABLE_SPARK=true
             ENABLE_NEO4J=true
+            ENABLE_NFS=true
             ;;
         -postgres)
             ENABLE_PG=true
@@ -75,6 +78,9 @@ for arg in "$@"; do
         -neo4j)
             ENABLE_NEO4J=true
             ;;
+        -nfs)
+            ENABLE_NFS=true
+            ;;
         -h|--help)
             echo "使用方法:"
             echo "  bash scripts/start.sh                       # 默认启动 PostgreSQL + MinIO"
@@ -86,6 +92,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -doris                # 只启动 Doris"
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
+            echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB"
             exit 0
@@ -144,6 +151,11 @@ if [ "$ENABLE_NEO4J" = true ]; then
 else
     echo -e "  Neo4j: ✗ (使用 -neo4j 启用)"
 fi
+if [ "$ENABLE_NFS" = true ]; then
+    echo -e "  NFS: ✓"
+else
+    echo -e "  NFS: ✗ (使用 -nfs 启用)"
+fi
 echo ""
 
 # 1. 检查并创建 .env
@@ -170,10 +182,12 @@ echo -e "${YELLOW}🔍 检测 CPU 架构: ${ARCH}${NC}"
 case "${ARCH}" in
     aarch64|arm64)
         export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+        export NFS_IMAGE="apnar/nfs-ganesha:latest"
         echo -e "${GREEN}✓ ARM64 架构，使用: ${POSTGRES_IMAGE}${NC}"
         ;;
     x86_64)
         export POSTGRES_IMAGE="postgis/postgis:15-3.4"
+        export NFS_IMAGE="apnar/nfs-ganesha:latest"
         echo -e "${GREEN}✓ AMD64 架构，使用: ${POSTGRES_IMAGE}${NC}"
         ;;
     *)
@@ -198,6 +212,7 @@ SPARK_THRIFT_PORT=${SPARK_THRIFT_PORT:-10000}
 
 NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
+NFS_PORT_VAL=${NFS_PORT:-2049}
 
 check_port_used_by_self() {
     local port=$1
@@ -217,6 +232,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT"
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
+[ "$ENABLE_NFS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NFS_PORT_VAL"
 
 for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
@@ -226,7 +242,8 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-mongodb" || \
            check_port_used_by_self $port "business-doris-fe" || \
            check_port_used_by_self $port "business-spark-master" || \
-           check_port_used_by_self $port "business-neo4j"; then
+           check_port_used_by_self $port "business-neo4j" || \
+           check_port_used_by_self $port "business-nfs"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
             echo -e "${YELLOW}⚠️  端口 ${port} 被其他进程占用${NC}"
@@ -307,7 +324,6 @@ fi
 
 # Neo4j
 if [ "$ENABLE_NEO4J" = true ]; then
-    # 确保插件目录存在
     mkdir -p "${PROJECT_ROOT}/neo4j/plugins"
 
     # 自动下载 Neo4j 插件（GDS + Spatial）
@@ -359,6 +375,18 @@ except Exception as e:
     else
         docker compose up -d neo4j
         echo -e "${GREEN}✓ Neo4j 已启动${NC}"
+    fi
+fi
+
+# NFS
+if [ "$ENABLE_NFS" = true ]; then
+    # 确保测试数据目录存在
+    mkdir -p "${PROJECT_ROOT}/nas-data/gis-data"
+    if docker ps --filter "name=business-nfs" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ NFS 已运行，跳过启动${NC}"
+    else
+        docker compose --profile nfs up -d nfs-server
+        echo -e "${GREEN}✓ NFS 已启动${NC}"
     fi
 fi
 echo ""
@@ -438,6 +466,16 @@ if [ "$ENABLE_NEO4J" = true ]; then
         sleep 1
     done
 fi
+
+if [ "$ENABLE_NFS" = true ]; then
+    for i in {1..20}; do
+        if docker ps --filter "name=business-nfs" --format '{{.Status}}' | grep -q "Up"; then
+            echo -e "${GREEN}✓ NFS 就绪${NC}"
+            break
+        fi
+        sleep 1
+    done
+fi
 echo ""
 
 # 7. 验证 PostGIS（幂等，仅当 PostgreSQL 启用时）
@@ -496,6 +534,9 @@ fi
 if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "Neo4j Browser: http://localhost:${NEO4J_HTTP_PORT_VAL}"
     echo -e "Neo4j Bolt: bolt://localhost:${NEO4J_BOLT_PORT_VAL}"
+fi
+if [ "$ENABLE_NFS" = true ]; then
+    echo -e "NFS Server: localhost:${NFS_PORT_VAL} (export: /exports/data)"
 fi
 
 echo ""

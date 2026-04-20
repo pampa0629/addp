@@ -28,6 +28,9 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	},
+	"filesystem": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewFileSystemPreviewProvider(repo, content), nil
+	},
 	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewSchemaPreviewProvider(repo, metaClient), nil
 	},

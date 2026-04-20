@@ -88,7 +88,12 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return s.listNoSQLSchemas(engineID, resource, nosqlPlugin)
 	}
 
-	return nil, fmt.Errorf("engine %s does not implement RelationalDBPlugin or NoSQLPlugin", resource.EngineType)
+	// 5. 尝试文件系统插件（NFS/NAS 等）
+	if fsPlugin, ok := p.(plugin.FileSystemPlugin); ok {
+		return s.listFileSystemRoots(engineID, resource, fsPlugin)
+	}
+
+	return nil, fmt.Errorf("engine %s does not implement RelationalDBPlugin, NoSQLPlugin or FileSystemPlugin", resource.EngineType)
 }
 
 // listRelationalSchemas 列出关系型数据库的 Schema
@@ -158,77 +163,97 @@ func (s *ResourceDiscoveryService) listNoSQLSchemas(engineID uint, resource *com
 
 	return result, nil
 }
+
+// listFileSystemRoots 列出文件系统根节点（NFS/NAS 挂载点）作为 Schema
+func (s *ResourceDiscoveryService) listFileSystemRoots(engineID uint, resource *commonModels.Engine, fsPlugin plugin.FileSystemPlugin) ([]*models.SchemaInfo, error) {
+	roots, err := fsPlugin.ListRoots(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+	if err != nil {
+		s.engineService.TriggerConnectionCheck(engineID)
+		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
+			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
+		}
+		return nil, fmt.Errorf("failed to list NFS roots: %w", err)
+	}
+
+	if resource.ConnectionStatus == "offline" {
+		s.engineService.TriggerConnectionCheck(engineID)
+	}
+
+	var result []*models.SchemaInfo
+	for _, root := range roots {
+		result = append(result, &models.SchemaInfo{
+			Name: root.Name,
+		})
+	}
+	return result, nil
+}
+
 func (s *ResourceDiscoveryService) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
 	resource, err := s.engineService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isObjectStorageType(strings.ToLower(resource.EngineType)) {
-		return nil, fmt.Errorf("resource %s is not object storage", resource.EngineType)
-	}
-
-	// ✅ 重构后：直接使用 ObjectStoragePlugin
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	objPlugin, ok := p.(plugin.ObjectStoragePlugin)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
+	// ObjectStoragePlugin（MinIO、S3）：用 ListBuckets + ListObjects
+	if objPlugin, ok := p.(plugin.ObjectStoragePlugin); ok {
+		return s.listObjectStorageNodes(resource, objPlugin, path)
 	}
 
-	// 解析路径：bucket/prefix
+	// FileSystemPlugin（NFS 等）：用 ListRoots + ListDirectory
+	if fsPlugin, ok := p.(plugin.FileSystemPlugin); ok {
+		return s.listFileSystemNodes(resource, fsPlugin, path)
+	}
+
+	return nil, fmt.Errorf("engine %s does not support file/object browsing", resource.EngineType)
+}
+
+func (s *ResourceDiscoveryService) listObjectStorageNodes(resource *commonModels.Engine, objPlugin plugin.ObjectStoragePlugin, path string) ([]*models.ObjectNode, error) {
 	bucket, prefix := splitObjectPath(path)
 
-	// 🔧 如果 path 为空，列出所有 buckets（根级别）
 	if bucket == "" {
 		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
 		if err != nil {
 			return nil, fmt.Errorf("failed to list buckets: %w", err)
 		}
-
 		var result []*models.ObjectNode
-		for _, bucketInfo := range buckets {
+		for _, b := range buckets {
 			result = append(result, &models.ObjectNode{
-				Name: bucketInfo.Name,
-				Path: bucketInfo.Name,
+				Name: b.Name,
+				Path: b.Name,
 				Type: "bucket",
 			})
 		}
 		return result, nil
 	}
 
-	// 非递归列出对象（用于目录浏览）
 	objects, err := objPlugin.ListObjects(
 		context.Background(),
 		plugin.ConnectionInfo(resource.ConnectionInfo),
 		bucket,
 		prefix,
-		false, // 非递归
+		false,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// 转换为 ObjectNode 格式
 	var result []*models.ObjectNode
 	for _, obj := range objects {
-		// 计算相对路径和节点名称
 		relativePath := strings.TrimPrefix(obj.Key, prefix)
 		if relativePath == "" {
-			continue // 跳过空路径
+			continue
 		}
-
-		// 判断是目录还是文件
 		nodeType := "object"
 		name := filepath.Base(obj.Key)
 		if strings.HasSuffix(obj.Key, "/") {
 			nodeType = "prefix"
 			name = strings.TrimSuffix(name, "/")
 		}
-
 		item := &models.ObjectNode{
 			Name:        name,
 			Path:        obj.Key,
@@ -242,6 +267,51 @@ func (s *ResourceDiscoveryService) ListObjectStorageNodes(engineID, tenantID uin
 		}
 		result = append(result, item)
 	}
+	return result, nil
+}
 
+func (s *ResourceDiscoveryService) listFileSystemNodes(resource *commonModels.Engine, fsPlugin plugin.FileSystemPlugin, path string) ([]*models.ObjectNode, error) {
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+
+	// 路径为空：列出根节点
+	if path == "" {
+		roots, err := fsPlugin.ListRoots(context.Background(), connInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list roots: %w", err)
+		}
+		var result []*models.ObjectNode
+		for _, r := range roots {
+			result = append(result, &models.ObjectNode{
+				Name: r.Name,
+				Path: r.Path,
+				Type: "bucket", // 复用 bucket 类型，前端统一展示
+			})
+		}
+		return result, nil
+	}
+
+	// 列出指定目录内容
+	files, dirs, err := fsPlugin.ListDirectory(context.Background(), connInfo, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list directory %s: %w", path, err)
+	}
+
+	var result []*models.ObjectNode
+	for _, d := range dirs {
+		result = append(result, &models.ObjectNode{
+			Name: d.Name,
+			Path: d.Path,
+			Type: "prefix",
+		})
+	}
+	for _, f := range files {
+		result = append(result, &models.ObjectNode{
+			Name:      f.Name,
+			Path:      f.Path,
+			Type:      "object",
+			SizeBytes: f.Size,
+			FileType:  filepath.Ext(f.Name),
+		})
+	}
 	return result, nil
 }

@@ -167,6 +167,10 @@
     "useSsl": "使用 SSL",
     "filePath": "文件路径",
     "filePathPlaceholder": "/path/to/data.sqlite 或 .spatialite",
+    "nfsServer": "NFS 服务器",
+    "nfsExportPath": "导出路径",
+    "nfsAccessMode": "访问模式",
+    "nfsVersion": "NFS 版本",
     "protocol": "协议",
     "description": "描述",
     "descPlaceholder": "请输入资源描述",
@@ -197,6 +201,7 @@
     "authSource": "认证库（可选）",
     "authSourcePlaceholder": "admin",
     "hints": {
+      "nfs": "NFS 文件系统，基于 IP 访问控制，无需用户名密码。server 填写 NFS 服务器地址，export_path 填写导出路径（如 /exports/data）。",
       "dorisPassword": "Doris 默认 root 用户无密码，可留空。如已设置密码请填写。",
       "clickhousePassword": "ClickHouse 默认 default 用户无密码。默认端口: 9000 (Native), 8123 (HTTP)",
       "mongoAuth": "MongoDB 默认端口: 27017。启用认证时请填写用户名和密码；认证库（auth_source）是存储用户凭据的数据库，root 用户默认为 admin。",
@@ -216,7 +221,9 @@
       "inputEndpoint": "请输入端点地址",
       "inputAccessKey": "请输入 Access Key",
       "inputSecretKey": "请输入 Secret Key",
-      "inputFilePath": "请输入文件路径"
+      "inputFilePath": "请输入文件路径",
+      "inputNfsServer": "请输入 NFS 服务器地址",
+      "inputNfsExportPath": "请输入 NFS 导出路径"
     }
   },
   "engineForm": {

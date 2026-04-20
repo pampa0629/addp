@@ -182,6 +182,29 @@
       </el-form-item>
     </template>
 
+    <!-- NFS 文件系统 -->
+    <template v-else-if="formState.engine_type === 'nfs'">
+      <el-form-item :label="t('storageEngine.nfsServer')" prop="connection_info.server">
+        <el-input v-model="formState.connection_info.server" placeholder="192.168.1.100" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.nfsExportPath')" prop="connection_info.export_path">
+        <el-input v-model="formState.connection_info.export_path" placeholder="/exports/data" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.nfsAccessMode')">
+        <el-select v-model="formState.connection_info.access_mode">
+          <el-option label="读写 (rw)" value="rw" />
+          <el-option label="只读 (ro)" value="ro" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.nfsVersion')">
+        <el-select v-model="formState.connection_info.nfs_version">
+          <el-option label="NFSv3" value="3" />
+          <el-option label="NFSv4" value="4" />
+        </el-select>
+      </el-form-item>
+      <div class="field-hint">{{ t('storageEngine.hints.nfs') }}</div>
+    </template>
+
     <!-- Neo4j -->
     <template v-else-if="formState.engine_type === 'neo4j'">
       <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
@@ -401,6 +424,7 @@ const props = defineProps({
       { label: 'MongoDB', value: 'mongodb' },
       { label: 'MinIO', value: 'minio' },
       { label: 'Neo4j', value: 'neo4j' },
+      { label: 'NFS 文件系统', value: 'nfs' },
       { label: 'Apache Spark', value: 'spark' },
       { label: 'SpatiaLite/SQLite', value: 'spatialite' }
     ])
@@ -490,6 +514,13 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       secret_key: original.secret_key ?? '',
       bucket: original.bucket ?? '',
       use_ssl: original.use_ssl ?? false
+    }
+  } else if (form.engine_type === 'nfs') {
+    form.connection_info = {
+      server: original.server ?? '',
+      export_path: original.export_path ?? '/exports/data',
+      access_mode: original.access_mode ?? 'rw',
+      nfs_version: original.nfs_version ?? '3'
     }
   } else if (form.engine_type === 'spatialite' || form.engine_type === 'sqlite') {
     form.connection_info = {
@@ -723,6 +754,15 @@ const computedRules = computed(() => {
       'connection_info.endpoint': rules['connection_info.endpoint'],
       'connection_info.access_key': rules['connection_info.access_key'],
       'connection_info.secret_key': rules['connection_info.secret_key']
+    }
+  }
+
+  if (formState.engine_type === 'nfs') {
+    return {
+      engine_type: rules.engine_type,
+      name: rules.name,
+      'connection_info.server': [{ required: true, message: t('storageEngine.valid.inputNfsServer'), trigger: 'blur' }],
+      'connection_info.export_path': [{ required: true, message: t('storageEngine.valid.inputNfsExportPath'), trigger: 'blur' }]
     }
   }
 

@@ -9,12 +9,10 @@ import (
 // NormalizeHost 规范化主机地址
 // 在 Docker 环境中，将 localhost 转换为容器可访问的地址
 func NormalizeHost(host string) string {
-	if host == "localhost" || host == "127.0.0.1" {
+	if host == "localhost" || host == "127.0.0.1" || host == "host.docker.internal" {
 		if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
 			return alias
 		}
-		// 默认将 localhost 转换为 127.0.0.1 以强制使用 TCP 连接
-		// (避免 macOS 上尝试使用 Unix socket)
 		return "127.0.0.1"
 	}
 	return host

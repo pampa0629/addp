@@ -205,15 +205,36 @@ func (r *ScanRepository) HardDeleteItemsByNode(nodeID uint) error {
 	return r.db.Unscoped().Where("node_id = ?", nodeID).Delete(&models.MetaItem{}).Error
 }
 
-// HardDeleteDescendantNodes 硬删除子孙节点
+// HardDeleteDescendantNodes 硬删除子孙节点及其下的所有数据项
 func (r *ScanRepository) HardDeleteDescendantNodes(node *models.MetaNode) error {
 	if node.Path == "" {
 		return nil
 	}
 	prefix := fmt.Sprintf("%s/%%", node.Path)
-	return r.db.Unscoped().
+
+	// 先找出所有子孙节点 ID
+	var descendantIDs []uint
+	if err := r.db.Unscoped().Model(&models.MetaNode{}).
 		Where("path LIKE ?", prefix).
 		Where("id <> ?", node.ID).
+		Pluck("id", &descendantIDs).Error; err != nil {
+		return err
+	}
+
+	if len(descendantIDs) == 0 {
+		return nil
+	}
+
+	// 级联删除这些节点下的所有 items
+	if err := r.db.Unscoped().
+		Where("node_id IN ?", descendantIDs).
+		Delete(&models.MetaItem{}).Error; err != nil {
+		return err
+	}
+
+	// 删除子孙节点
+	return r.db.Unscoped().
+		Where("id IN ?", descendantIDs).
 		Delete(&models.MetaNode{}).Error
 }
 

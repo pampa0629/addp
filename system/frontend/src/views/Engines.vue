@@ -508,6 +508,7 @@ const engineTypeMap = {
   'mongodb': 'MongoDB',
   'minio': 'MinIO',
   'neo4j': 'Neo4j',
+  'nfs': 'NFS 文件系统',
   'spark': 'Apache Spark',
   'spatialite': 'SpatiaLite/SQLite',
   'database': 'Database',
@@ -524,6 +525,7 @@ const getEngineTypeColor = (type) => {
     'mysql': 'success',
     'doris': 'warning',
     'minio': 'warning',
+    'nfs': 'warning',
     'spark': 'danger',
     'database': 'success',
     'compute_engine': 'info'

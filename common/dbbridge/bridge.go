@@ -18,6 +18,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/jupyter"
 	_ "github.com/addp/common/engine/plugins/math_workflow"
 	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/nfs"
 	_ "github.com/addp/common/engine/plugins/mongodb"
 	_ "github.com/addp/common/engine/plugins/mysql"
 	_ "github.com/addp/common/engine/plugins/neo4j"

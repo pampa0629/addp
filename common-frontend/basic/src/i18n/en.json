@@ -167,6 +167,10 @@
     "useSsl": "Use SSL",
     "filePath": "File Path",
     "filePathPlaceholder": "/path/to/data.sqlite or .spatialite",
+    "nfsServer": "NFS Server",
+    "nfsExportPath": "Export Path",
+    "nfsAccessMode": "Access Mode",
+    "nfsVersion": "NFS Version",
     "protocol": "Protocol",
     "description": "Description",
     "descPlaceholder": "Enter resource description",
@@ -197,6 +201,7 @@
     "authSource": "Auth Source (optional)",
     "authSourcePlaceholder": "admin",
     "hints": {
+      "nfs": "NFS filesystem uses IP-based access control, no username/password required. Enter the NFS server address and export path (e.g. /exports/data).",
       "dorisPassword": "Doris default root user has no password. Leave blank if no password is set.",
       "clickhousePassword": "ClickHouse default user has no password. Default ports: 9000 (Native), 8123 (HTTP)",
       "mongoAuth": "MongoDB default port: 27017. Fill in username/password when auth is enabled. Auth source is the database holding user credentials, default is 'admin' for root.",
@@ -216,7 +221,9 @@
       "inputEndpoint": "Please enter endpoint",
       "inputAccessKey": "Please enter Access Key",
       "inputSecretKey": "Please enter Secret Key",
-      "inputFilePath": "Please enter file path"
+      "inputFilePath": "Please enter file path",
+      "inputNfsServer": "Please enter NFS server address",
+      "inputNfsExportPath": "Please enter NFS export path"
     }
   },
   "engineForm": {

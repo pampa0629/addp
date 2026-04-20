@@ -468,8 +468,6 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
-	resourceType := strings.ToLower(resource.EngineType)
-
 	schemas, tables, fields := 0, 0, 0
 
 	// 获取插件以判断类型
@@ -482,8 +480,11 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
 		// NoSQL 扫描（MongoDB、CouchDB 等）
 		schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(nosqlPlugin, resource, tenantID, schemaNames, scanDepth, reporter)
-	} else if _, ok := p.(plugin.FileSystemPlugin); ok && isObjectStorageType(resourceType) {
-		// 文件系统扫描（MinIO、S3 等）—— 优先运行湖表检测
+	} else if _, ok := p.(plugin.ObjectStoragePlugin); ok {
+		// 对象存储扫描（MinIO、S3 等）—— 优先运行湖表检测
+		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
+	} else if _, ok := p.(plugin.FileSystemPlugin); ok {
+		// 文件系统扫描（NFS、HDFS 等）—— 同样走文件系统扫描路径
 		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
 	} else if _, ok := p.(plugin.RelationalDBPlugin); ok {
 		// 关系型数据库扫描（PostgreSQL、MySQL 等）
@@ -603,57 +604,45 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	)
 	s.log.Info("开始扫描资源", startFields...)
 
-	// 检查是否为对象存储类型
-	if isObjectStorageType(strings.ToLower(resource.EngineType)) {
-		// 使用 ObjectStoragePlugin 扫描
-		p, err := plugin.Get(resource.EngineType)
+	// 根据插件类型路由到对应的扫描服务
+	p0, err0 := plugin.Get(resource.EngineType)
+	if err0 != nil {
+		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+
+	if _, ok := p0.(plugin.FileSystemPlugin); ok {
+		// 文件系统类型（ObjectStoragePlugin 继承 FileSystemPlugin，NFS 也实现 FileSystemPlugin）
+		// 统一走文件系统扫描路径：列出根节点后全量扫描
+		fsPlugin := p0.(plugin.FileSystemPlugin)
+
+		roots, err := fsPlugin.ListRoots(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
 		if err != nil {
-			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+			return 0, 0, 0, fmt.Errorf("failed to list roots: %w", err)
 		}
 
-		objPlugin, ok := p.(plugin.ObjectStoragePlugin)
-		if !ok {
-			return 0, 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
-		}
-
-		// 列出所有 buckets
-		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to list buckets: %w", err)
-		}
-
-		if len(buckets) == 0 {
-			s.log.Info("对象存储资源未配置可扫描桶，跳过扫描", cloneLogFields(startFields, "allowed_bucket_count", 0)...)
+		if len(roots) == 0 {
+			s.log.Info("文件系统资源无可扫描根节点，跳过扫描", startFields...)
 			return 0, 0, 0, nil
 		}
 
-		// 构建扫描路径列表
 		var paths []string
-		for _, b := range buckets {
-			paths = append(paths, b.Name)
+		for _, r := range roots {
+			paths = append(paths, r.Path)
 		}
 		sort.Strings(paths)
 
-		s.log.Info("对象存储资源扫描开始", cloneLogFields(startFields, "bucket_count", len(buckets), "buckets", paths)...)
+		s.log.Info("文件系统资源扫描开始", cloneLogFields(startFields, "root_count", len(roots), "roots", paths)...)
 
-		// 调用 ObjectStorageScanService 进行扫描
-		totalBuckets, totalObjects, err := s.objectScanService.ScanPaths(
-			resource,
-			tenantID,
-			paths,
-			nil,
-			"deep",
-			nil,
-		)
+		totalRoots, totalItems, err := s.fsScanService.ScanPaths(resource, tenantID, paths, nil)
 		if err != nil {
-			return 0, 0, 0, fmt.Errorf("object storage scan failed: %w", err)
+			return 0, 0, 0, fmt.Errorf("filesystem scan failed: %w", err)
 		}
 
-		s.log.Info("对象存储资源扫描完成", cloneLogFields(startFields,
-			"buckets_scanned", totalBuckets,
-			"objects_scanned", totalObjects,
+		s.log.Info("文件系统资源扫描完成", cloneLogFields(startFields,
+			"roots_scanned", totalRoots,
+			"items_scanned", totalItems,
 		)...)
-		return totalBuckets, totalObjects, 0, nil
+		return totalRoots, totalItems, 0, nil
 	}
 
 	// 数据库扫描：直接使用 RelationalDBPlugin

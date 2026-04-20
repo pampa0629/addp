@@ -58,13 +58,19 @@ func (s *FileSystemScanService) ScanPaths(
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
-	// 如果没有指定路径，列出所有根节点
+	// 始终先获取根节点列表，建立 path→name 映射
+	allRoots, err := fsPlugin.ListRoots(context.Background(), connInfo)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to list roots: %w", err)
+	}
+	pathToName := make(map[string]string, len(allRoots))
+	for _, r := range allRoots {
+		pathToName[r.Path] = r.Name
+	}
+
+	// 如果没有指定路径，扫描所有根节点
 	if len(paths) == 0 {
-		roots, err := fsPlugin.ListRoots(context.Background(), connInfo)
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to list roots: %w", err)
-		}
-		for _, r := range roots {
+		for _, r := range allRoots {
 			paths = append(paths, r.Path)
 		}
 	}
@@ -89,9 +95,16 @@ func (s *FileSystemScanService) ScanPaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", rootPath))
 		}
 
-		rootName := strings.Trim(rootPath, "/")
-		if idx := strings.LastIndex(rootName, "/"); idx >= 0 {
-			rootName = rootName[idx+1:]
+		// 优先使用 ListRoots 返回的名称，避免从 "/" 推导出空字符串
+		rootName := pathToName[rootPath]
+		if rootName == "" {
+			rootName = strings.Trim(rootPath, "/")
+			if idx := strings.LastIndex(rootName, "/"); idx >= 0 {
+				rootName = rootName[idx+1:]
+			}
+		}
+		if rootName == "" {
+			rootName = rootPath // 最后兜底
 		}
 
 		// 创建根节点（bucket）
@@ -101,12 +114,18 @@ func (s *FileSystemScanService) ScanPaths(
 			s.log.Warn("创建根节点失败", "path", rootPath, "error", err)
 			continue
 		}
+
+		// 标记扫描中
+		_ = s.repo.ResetNodeState(rootNode, "扫描中")
 		totalRoots++
 
 		// 递归扫描目录
-		items, err := s.scanDirectory(context.Background(), fsPlugin, connInfo, resource, tenantID, rootPath, rootNode, true)
-		if err != nil {
-			s.log.Warn("扫描目录失败", "path", rootPath, "error", err)
+		items, scanErr := s.scanDirectory(context.Background(), fsPlugin, connInfo, resource, tenantID, rootPath, rootNode, true)
+		if scanErr != nil {
+			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
+			_ = s.repo.FinalizeNodeState(rootNode, "扫描失败", items, 0, scanErr.Error())
+		} else {
+			_ = s.repo.FinalizeNodeState(rootNode, "已扫描", items, 0, "")
 		}
 		totalItems += items
 
@@ -294,9 +313,13 @@ func (s *FileSystemScanService) scanDirectory(
 			continue
 		}
 
-		items, err := s.scanDirectory(ctx, fsPlugin, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
-		if err != nil {
-			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", err)
+		_ = s.repo.ResetNodeState(subdirNode, "扫描中")
+		items, scanErr := s.scanDirectory(ctx, fsPlugin, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
+		if scanErr != nil {
+			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
+			_ = s.repo.FinalizeNodeState(subdirNode, "扫描失败", items, 0, scanErr.Error())
+		} else {
+			_ = s.repo.FinalizeNodeState(subdirNode, "已扫描", items, 0, "")
 		}
 		totalItems += items
 	}

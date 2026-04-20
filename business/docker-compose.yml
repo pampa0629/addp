@@ -248,6 +248,27 @@ services:
           cpus: '2'
           memory: 2G
 
+  # NFS Server（模拟 NAS，用于开发测试）
+  # 使用 apnar/nfs-ganesha（用户态 NFS，兼容 Docker Desktop on Mac）
+  # 注意：Docker Desktop VirtioFS 不支持 bind mount 给 NFS-Ganesha，使用 named volume
+  nfs-server:
+    image: ${NFS_IMAGE:-apnar/nfs-ganesha:latest}
+    container_name: business-nfs
+    volumes:
+      - nfs-data:/export
+    ports:
+      - "${NFS_PORT:-2049}:2049"
+    environment:
+      EXPORT_PATH: /export
+      PSEUDO_PATH: /export
+    cap_add:
+      - SYS_ADMIN
+    networks:
+      - business-network
+    restart: unless-stopped
+    profiles:
+      - nfs  # 按需启动：docker-compose --profile nfs up -d nfs-server
+
   # Spark Worker 2 (可选，通过 --profile full 启用)
   spark-worker-2:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
@@ -297,6 +318,8 @@ volumes:
   neo4j_data:
     driver: local
   neo4j_logs:
+    driver: local
+  nfs-data:
     driver: local
 
 networks:

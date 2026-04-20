@@ -594,11 +594,11 @@ const stopResizing = () => {
   enforceBounds()
 }
 
-// 判断是否为对象存储类型
+// 判断是否为对象存储/文件系统类型（走 storage/nodes 路径而非 schemas/available）
 const isObjectStorageType = (resourceType) => {
   if (!resourceType) return false
   const type = resourceType.toLowerCase()
-  return ['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)
+  return ['s3', 'minio', 'oss', 'object_storage', 'object-storage', 'nfs'].includes(type)
 }
 
 // 判断是否为 NoSQL 数据库类型
@@ -610,8 +610,13 @@ const isNoSQLType = (resourceType) => {
 
 // 获取 Schema/Collection/Bucket 的术语
 const getSchemaTerminology = (resourceType, plural = false) => {
-  if (isObjectStorageType(resourceType)) {
-    return plural ? 'Bucket' : 'Bucket'
+  if (!resourceType) return 'Schema'
+  const type = resourceType.toLowerCase()
+  if (type === 'nfs') {
+    return '目录'
+  }
+  if (['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)) {
+    return 'Bucket'
   }
   if (isNoSQLType(resourceType)) {
     return plural ? 'Collection' : 'Collection'

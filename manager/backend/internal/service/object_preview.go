@@ -101,6 +101,16 @@ func isObjectStorageType(resourceType string) bool {
 	}
 }
 
+// isFileSystemType 判断引擎类型是否为文件系统类（NFS 等）
+func isFileSystemType(resourceType string) bool {
+	switch strings.ToLower(resourceType) {
+	case "nfs":
+		return true
+	default:
+		return false
+	}
+}
+
 // isMetaNotFoundError 检查错误是否为 Meta API 的 404 错误
 func isMetaNotFoundError(err error) bool {
 	if err == nil {

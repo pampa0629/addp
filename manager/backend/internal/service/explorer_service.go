@@ -479,12 +479,9 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 				Depth:          depth, // 动态计算深度，不再硬编码
 				Path:           item.FullName,
 				ScanStatus:     "completed",
-				ItemCount:      0, // Items 没有子项
+				ItemCount:      0, // 叶子节点没有子树节点（RowCount 是数据行数，不是子节点数）
 				TotalSizeBytes: 0,
 				Attributes:     item.Attributes,
-			}
-			if item.RowCount != nil {
-				node.ItemCount = int(*item.RowCount)
 			}
 			if item.SizeBytes != nil {
 				node.TotalSizeBytes = *item.SizeBytes

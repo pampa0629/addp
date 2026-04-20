@@ -177,9 +177,11 @@ const handleNodeClick = async (node) => {
   }
 
   // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突
+  // 注意：不使用 !node.loaded 判断，避免已有子节点的节点在折叠后点击时被重新展开
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
   if (isDirLike) {
-    const needsLoading = (!node.children || node.children.length === 0 || !node.loaded) && node.hasChildren
+    const realChildren = (node.children || []).filter(c => c.type !== '__sentinel__')
+    const needsLoading = realChildren.length === 0 && node.hasChildren
     if (!isCurrentlyExpanded && needsLoading) {
       // 首次展开：el-tree 因暂无子节点可能不会自动展开，需要强制 store 记录展开状态
       store.expandNode(locator)
@@ -300,9 +302,11 @@ const handleNodeExpand = async (node) => {
   }
 
   // 🚀 优化：使用增量加载替代全量重载
-  // 如果是容器节点且未加载子节点，使用增量加载
+  // 如果是容器节点且子节点为空，使用增量加载
+  // 注意：过滤哨兵节点（__sentinel__）后再判断是否需要加载
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
-  const needsLoading = isDirLike && (!node.children || node.children.length === 0 || !node.loaded)
+  const realChildren = (node.children || []).filter(c => c.type !== '__sentinel__')
+  const needsLoading = isDirLike && realChildren.length === 0
 
   console.log('[ExplorerTree] 增量加载检查:', {
     isDirLike,

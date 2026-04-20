@@ -293,15 +293,15 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 	schema := ""
 	table := ""
 
-	// 对于对象存储类型，schema 是 bucket，table 是完整的对象路径
+	// 对于对象存储类型和文件系统类型，schema 是根名称，table 是完整的子路径
 	// 对于关系型数据库，schema 是第一个组件，table 是第二个组件
-	if isObjectStorageType(req.Engine.EngineType) {
-		// 对象存储: path = [bucket, ...objectPath]
-		// schema = bucket, table = objectPath (joined)
+	if isObjectStorageType(req.Engine.EngineType) || isFileSystemType(req.Engine.EngineType) {
+		// 对象存储/文件系统: path = [rootName, ...subPath]
+		// schema = rootName, table = subPath (joined)
 		if len(req.Locator.Path) >= 1 {
-			schema = req.Locator.Path[0] // bucket
+			schema = req.Locator.Path[0] // bucket / 根目录名
 			if len(req.Locator.Path) > 1 {
-				// 将剩余路径组件合并为完整对象路径
+				// 将剩余路径组件合并为完整子路径
 				table = strings.Join(req.Locator.Path[1:], "/")
 			}
 		}
@@ -344,6 +344,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		PageSize: pageSize,
 		TenantID: req.TenantID,
 		ItemType: req.ItemType,
+		NodeType: string(req.Locator.Type),
 	}
 }
 
