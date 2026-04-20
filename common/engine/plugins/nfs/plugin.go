@@ -189,6 +189,76 @@ func (p *NFSPlugin) GetFileMetadata(ctx context.Context, connInfo plugin.Connect
 	}, nil
 }
 
+// === 写入方法（不在 FileSystemPlugin 接口中，NFS 插件专有）===
+
+// OpenFileForWrite 打开 NFS 文件用于写入（文件不存在则创建，存在则覆盖）
+func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.WriteCloser, error) {
+	server, exportPath, err := p.parseConnInfo(connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	_, target, err := getOrCreateMount(server, exportPath)
+	if err != nil {
+		invalidatePool(server, exportPath)
+		return nil, fmt.Errorf("NFS connection failed: %w", err)
+	}
+
+	filePath := normalizePath(path)
+	// 先删除已有文件（模拟 truncate，OpenFile 不会自动截断）
+	_ = target.Remove(filePath)
+
+	f, err := target.OpenFile(filePath, 0644)
+	if err != nil {
+		invalidatePool(server, exportPath)
+		return nil, fmt.Errorf("failed to open NFS file for write %s: %w", filePath, err)
+	}
+	return f, nil
+}
+
+// MkdirAll 在 NFS 上递归创建目录
+func (p *NFSPlugin) MkdirAll(ctx context.Context, connInfo plugin.ConnectionInfo, path string) error {
+	server, exportPath, err := p.parseConnInfo(connInfo)
+	if err != nil {
+		return err
+	}
+
+	_, target, err := getOrCreateMount(server, exportPath)
+	if err != nil {
+		invalidatePool(server, exportPath)
+		return fmt.Errorf("NFS connection failed: %w", err)
+	}
+
+	dirPath := normalizePath(path)
+	parts := strings.Split(strings.TrimPrefix(dirPath, "/"), "/")
+	current := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		current = current + "/" + part
+		if _, err := target.Mkdir(current, 0755); err != nil {
+			// 目录已存在则忽略
+			if _, _, lookupErr := target.Lookup(current); lookupErr == nil {
+				continue
+			}
+			return fmt.Errorf("failed to create NFS directory %s: %w", current, err)
+		}
+	}
+	return nil
+}
+
+// WriteFile 将 reader 内容写入 NFS 文件
+func (p *NFSPlugin) WriteFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string, r io.Reader) error {
+	f, err := p.OpenFileForWrite(ctx, connInfo, path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, r)
+	return err
+}
+
 // === 辅助方法 ===
 
 func (p *NFSPlugin) parseConnInfo(connInfo plugin.ConnectionInfo) (server, exportPath string, err error) {

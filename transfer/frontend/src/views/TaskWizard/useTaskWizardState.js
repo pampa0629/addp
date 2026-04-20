@@ -52,7 +52,7 @@ export function useTaskWizardState() {
       case 0: // 选择Source
         return sourceEngineID.value && sourceTable.value
       case 1: // 选择Target
-        if (targetType.value === 's3') {
+        if (targetType.value === 's3' || targetType.value === 'nfs') {
           return !!(targetEngineID.value && targetConfig.value?.output_path && targetConfig.value?.output_file_name)
         }
         return targetEngineID.value && targetTable.value
@@ -118,22 +118,19 @@ export function useTaskWizardState() {
     }
 
     // Target 配置：根据目标类型添加不同字段
-    if (targetType.value === 's3') {
-      // 对象存储配置（targetConfig 中已是 snake_case，直接读取）
-      const s3Config = targetConfig.value || {}
-      config.config.target.output_format = s3Config.output_format || 'csv'
-      config.config.target.output_path = s3Config.output_path || ''
-      config.config.target.output_file_name = s3Config.output_file_name || ''
+    if (targetType.value === 's3' || targetType.value === 'nfs') {
+      const fileConfig = targetConfig.value || {}
+      config.config.target.output_format = fileConfig.output_format || 'csv'
+      config.config.target.output_path = fileConfig.output_path || ''
+      config.config.target.output_file_name = fileConfig.output_file_name || ''
 
-      // CSV 专用选项
-      if (s3Config.output_format === 'csv') {
-        config.config.target.csv_headers = s3Config.csv_headers !== false
-        config.config.target.csv_delimiter = s3Config.csv_delimiter || ','
+      if (fileConfig.output_format === 'csv') {
+        config.config.target.csv_headers = fileConfig.csv_headers !== false
+        config.config.target.csv_delimiter = fileConfig.csv_delimiter || ','
       }
 
-      // 空间格式需要几何字段
-      if (['geojson', 'shapefile'].includes(s3Config.output_format) && s3Config.geometry_field) {
-        config.config.target.geometry_field = s3Config.geometry_field
+      if (['geojson', 'shapefile'].includes(fileConfig.output_format) && fileConfig.geometry_field) {
+        config.config.target.geometry_field = fileConfig.geometry_field
       }
     } else {
       // 数据库配置

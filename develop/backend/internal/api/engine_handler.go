@@ -55,6 +55,27 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
+// ListNfsEngines 获取 NFS 引擎列表（供工作流 NFS 文件选择器使用）
+// @Summary 获取 NFS 存储引擎列表 | List NFS storage engines
+// @Tags Engines
+// @Produce json
+// @Success 200 {array} commonModels.Engine "NFS 引擎列表"
+// @Router /engines/nfs [get]
+func (h *EngineHandler) ListNfsEngines(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+
+	engines, err := h.systemClient.ListEngines("nfs", tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取NFS引擎列表失败",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, engines)
+}
+
 // ListSchemas 获取指定引擎的 schema 列表
 // @Summary 获取数据库 schema 列表 | List database schemas
 // @Tags Engines

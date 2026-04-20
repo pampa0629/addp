@@ -9,6 +9,14 @@ export const listEngines = () => {
 }
 
 /**
+ * 获取 NFS 存储引擎列表
+ * @returns {Promise}
+ */
+export const listNfsEngines = () => {
+  return client.get('/develop/engines/nfs')
+}
+
+/**
  * 获取指定引擎的 schema 列表
  * @param {number} engineId - 引擎ID
  * @returns {Promise}

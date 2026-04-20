@@ -164,7 +164,7 @@ const getServiceUrl = (service) => {
   } else if (props.source === 'registered') {
     return service.endpoint_url || t('service.common.notConfigured')
   } else if (props.source === 'graph') {
-    return service.endpoints?.execute || `/api/graph/${service.service_name}`
+    return service.endpoints?.execute || `/api/v1/graph/${service.service_name}`
   } else {
     return service.url || t('service.common.notConfigured')
   }

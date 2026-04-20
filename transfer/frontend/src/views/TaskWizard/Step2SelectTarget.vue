@@ -10,6 +10,7 @@
           <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
           <el-radio-button value="mysql">MySQL</el-radio-button>
           <el-radio-button value="s3">{{ t('transfer.taskWizard.objectStorageOption') }}</el-radio-button>
+          <el-radio-button value="nfs">NFS 文件系统</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
@@ -30,8 +31,8 @@
         </el-select>
       </el-form-item>
 
-      <!-- 对象存储配置 -->
-      <template v-if="targetType === 's3'">
+      <!-- 对象存储 / NFS 配置 -->
+      <template v-if="targetType === 's3' || targetType === 'nfs'">
         <!-- 输出格式 -->
         <el-form-item :label="t('transfer.taskWizard.outputFormatLabel')">
           <el-select v-model="outputFormat" :placeholder="t('transfer.taskWizard.outputFormatLabel')">
@@ -39,21 +40,15 @@
             <el-option label="JSON Lines" value="jsonl" />
             <el-option label="Parquet" value="parquet" />
             <el-option
-              label="GeoJSON"
+              :label="hasSpatialFields ? 'GeoJSON' : `GeoJSON (${t('transfer.taskWizard.noSpatialFields')})`"
               value="geojson"
               :disabled="!hasSpatialFields"
-            >
-              <span>GeoJSON</span>
-              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">{{ t('transfer.taskWizard.noSpatialFields') }}</span>
-            </el-option>
+            />
             <el-option
-              label="Shapefile"
+              :label="hasSpatialFields ? 'Shapefile' : `Shapefile (${t('transfer.taskWizard.noSpatialFields')})`"
               value="shapefile"
               :disabled="!hasSpatialFields"
-            >
-              <span>Shapefile</span>
-              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">{{ t('transfer.taskWizard.noSpatialFields') }}</span>
-            </el-option>
+            />
           </el-select>
         </el-form-item>
 
@@ -61,11 +56,12 @@
         <el-form-item :label="t('transfer.taskWizard.outputPathLabel')">
           <el-input
             v-model="outputPath"
-            :placeholder="t('transfer.taskWizard.storagePathPlaceholder')"
-            readonly
-            @click="showOutputPathPicker = true"
+            :placeholder="targetType === 'nfs' ? '例如：exports/roads/' : t('transfer.taskWizard.storagePathPlaceholder')"
+            :readonly="targetType === 's3'"
+            @click="targetType === 's3' && (showOutputPathPicker = true)"
+            @input="syncTarget"
           >
-            <template #append>
+            <template v-if="targetType === 's3'" #append>
               <el-button :disabled="!formData.engineID" @click="showOutputPathPicker = true">{{ t('transfer.taskWizard.browse') }}</el-button>
             </template>
           </el-input>
@@ -79,7 +75,7 @@
           <el-input
             v-model="outputFileName"
             :placeholder="t('transfer.taskWizard.outputFileNamePlaceholder')"
-            @input="syncS3Target"
+            @input="syncTarget"
           />
           <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
             <p>{{ t('transfer.taskWizard.outputFileNameHint') }}</p>
@@ -110,7 +106,7 @@
         >
           <el-select v-model="geometryField" :placeholder="t('transfer.taskWizard.geometryFieldLabel')">
             <el-option
-              v-for="field in props.wizardState.sourceFields.filter(f => {
+              v-for="field in (props.wizardState.sourceFields.value || []).filter(f => {
                 const standardType = (f.standard_type || '').toLowerCase()
                 const dataType = (f.data_type || '').toLowerCase()
                 return standardType === 'geometry' ||
@@ -179,8 +175,9 @@
       </template>
     </el-form>
 
-    <!-- 对象存储路径选择器 -->
+    <!-- 对象存储路径选择器（仅 S3） -->
     <ObjectStoragePathPicker
+      v-if="targetType === 's3'"
       v-model:visible="showOutputPathPicker"
       scope="system"
       :resource-id="formData.engineID"
@@ -213,7 +210,7 @@ const formData = reactive({
   table: ''
 })
 
-const targetType = ref('postgresql') // 目标类型: postgresql, mysql, s3
+const targetType = ref('postgresql') // 目标类型: postgresql, mysql, s3, nfs
 
 // 对象存储导出配置
 const outputFormat = ref('csv') // csv, jsonl, parquet, geojson, shapefile
@@ -238,6 +235,9 @@ const matchesConnectorType = (resourceType, connectorType) => {
   if (type === 's3') {
     return ['s3', 'minio', 'oss'].includes(resource)
   }
+  if (type === 'nfs') {
+    return resource === 'nfs'
+  }
   if (type === 'spatialite' || type === 'sqlite') {
     return resource.includes('spatialite') || resource.includes('sqlite')
   }
@@ -251,9 +251,9 @@ const filteredTargetEngines = computed(() => {
   )
 })
 
-// 判断当前目标类型是否为数据库（非对象存储）
+// 判断当前目标类型是否为数据库（非对象存储/NFS）
 const isDatabase = computed(() => {
-  return targetType.value !== 's3'
+  return targetType.value !== 's3' && targetType.value !== 'nfs'
 })
 
 // 判断是否有空间字段（用于判断是否可以选择 geojson/shapefile 格式）
@@ -271,7 +271,7 @@ const hasSpatialFields = computed(() => {
 
 // 判断是否需要 Schema 选择器（PostgreSQL/MySQL 的系统引擎需要）
 const needsSchema = computed(() => {
-  if (!formData.engineID || targetType.value === 's3') return false
+  if (!formData.engineID || targetType.value === 's3' || targetType.value === 'nfs') return false
   const engine = targetEngines.value.find(e => e.id === formData.engineID)
   if (!engine) return false
   const engineType = (engine.engine_type || '').toLowerCase()
@@ -279,16 +279,14 @@ const needsSchema = computed(() => {
 })
 
 const canProceed = computed(() => {
-  if (targetType.value === 's3') {
-    // 对象存储：需要引擎、输出路径和文件名
+  if (targetType.value === 's3' || targetType.value === 'nfs') {
     return formData.engineID && outputPath.value.trim() !== '' && outputFileName.value.trim() !== ''
   }
-  // 数据库：需要引擎和表
   return formData.engineID && formData.table
 })
 
-function syncS3Target() {
-  if (targetType.value !== 's3' || !formData.engineID || !outputPath.value.trim() || !outputFileName.value.trim()) return
+function syncTarget() {
+  if ((targetType.value !== 's3' && targetType.value !== 'nfs') || !formData.engineID || !outputPath.value.trim() || !outputFileName.value.trim()) return
   const extra = {
     output_format: outputFormat.value,
     output_path: outputPath.value,
@@ -309,10 +307,13 @@ function syncS3Target() {
   })
 }
 
+// 保留 syncS3Target 别名以兼容 watch
+const syncS3Target = syncTarget
+
 watch(canProceed, (newVal) => {
   if (newVal) {
-    if (targetType.value === 's3') {
-      syncS3Target()
+    if (targetType.value === 's3' || targetType.value === 'nfs') {
+      syncTarget()
     } else {
       // 数据库配置
       props.wizardState.updateTarget({
@@ -328,7 +329,7 @@ watch(canProceed, (newVal) => {
 
 function handleOutputPathSelected(path) {
   outputPath.value = path
-  syncS3Target()
+  syncTarget()
 }
 
 function handleTargetTypeChange() {

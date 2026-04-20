@@ -165,6 +165,7 @@ func SetupRouter(
 		engines := api.Group("/engines")
 		{
 			engines.GET("", engineHandler.ListEngines)           // 获取引擎列表
+			engines.GET("/nfs", engineHandler.ListNfsEngines)     // 获取 NFS 引擎列表
 			engines.GET("/:id/schemas", engineHandler.ListSchemas) // 获取 schemas 列表
 			engines.GET("/:id/tables", engineHandler.ListTables)   // 获取表列表
 		}

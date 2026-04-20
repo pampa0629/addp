@@ -609,6 +609,15 @@ func (s *ExecutionEngineService) resolveSystemEngine(engineID uint, taskConfig m
 					connectorConfig["engine_type"] = "parquet"
 					s.logger.Info("parquet source: overriding connector type to parquet")
 				}
+			} else if k == "output_path" && resource.EngineType == "nfs" {
+				// NFS: output_path 映射到 path（NFSWriter 期望的字段名）
+				connectorConfig["path"] = v
+			} else if k == "output_format" && resource.EngineType == "nfs" {
+				connectorConfig["file_type"] = v
+			} else if k == "output_file_name" && resource.EngineType == "nfs" {
+				connectorConfig["file_name"] = v
+			} else if k == "csv_delimiter" && resource.EngineType == "nfs" {
+				connectorConfig["delimiter"] = v
 			} else {
 				s.logger.Debug("adding config", "key", k, "value", v)
 				connectorConfig[k] = v
@@ -743,6 +752,16 @@ func (s *ExecutionEngineService) resourceToConnectorConfig(resource *commonModel
 			connectorConfig["use_ssl"] = useSSL
 		} else {
 			connectorConfig["use_ssl"] = false
+		}
+
+	case "nfs":
+		// NFS 连接器配置
+		connectorConfig["type"] = "nfs"
+		if server, ok := connInfo["server"].(string); ok {
+			connectorConfig["server"] = server
+		}
+		if exportPath, ok := connInfo["export_path"].(string); ok {
+			connectorConfig["export_path"] = exportPath
 		}
 
 	default:

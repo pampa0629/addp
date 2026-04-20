@@ -337,7 +337,8 @@ export const useExplorerStore = defineStore('explorer', {
         if (this.engineTrees[loc.engineId]) {
           const updated = this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
             children,
-            loaded: true
+            loaded: true,
+            hasChildren: children.length > 0
           })
 
           if (updated) {

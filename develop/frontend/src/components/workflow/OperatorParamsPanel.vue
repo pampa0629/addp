@@ -59,6 +59,23 @@
                 </div>
               </template>
 
+              <!-- 特殊处理：NFS 文件选择器 -->
+              <template v-else-if="param.ui_type === 'nfs_file_picker'">
+                <div class="data-source-section">
+                  <h4 class="subsection-title">{{ param.name || 'NFS 文件' }}</h4>
+                  <p v-if="param.description" class="subsection-description">{{ param.description }}</p>
+                  <NfsFilePicker
+                    :engine-id="formData.engine_id"
+                    :path="formData.path"
+                    @change="handleNfsFileSelection"
+                  />
+                  <div v-if="param.notes" class="help-text" style="margin-top: 8px">
+                    <el-icon style="margin-right: 4px"><InfoFilled /></el-icon>
+                    {{ param.notes }}
+                  </div>
+                </div>
+              </template>
+
               <!-- 常规参数渲染 -->
               <el-form-item
                 v-else
@@ -116,6 +133,7 @@ import { ElMessage } from 'element-plus'
 import EngineSelect from './EngineSelect.vue'
 import SchemaSelect from './SchemaSelect.vue'
 import TableSelect from './TableSelect.vue'
+import NfsFilePicker from './NfsFilePicker.vue'
 import { DataSourceCascader } from '@addp/common-frontend'
 
 const { t } = useI18n()
@@ -213,6 +231,12 @@ const effectiveParameters = computed(() => {
     // 隐藏被 DataSourceCascader 自动填充的参数
     const autoFilledParams = ['engine_id', 'schema', 'table']
     params = params.filter(p => !autoFilledParams.includes(p.name))
+  }
+
+  // 检查是否有可见的 nfs_file_picker
+  const hasVisibleNfsFilePicker = params.some(p => p.ui_type === 'nfs_file_picker')
+  if (hasVisibleNfsFilePicker) {
+    params = params.filter(p => !['engine_id', 'path'].includes(p.name))
   }
 
   return params
@@ -355,6 +379,15 @@ const handleDataSourceSelection = (selection) => {
   ElMessage.success(t('develop.operatorParams.dataSourceSelected', { name: selection.fullName }))
 }
 
+// 处理 NFS 文件选择器的选择结果
+const handleNfsFileSelection = ({ engineId, path, format }) => {
+  formData.value.engine_id = engineId
+  formData.value.path = path
+  if (format) {
+    formData.value.format = format
+  }
+}
+
 // 保存参数
 const saveParams = () => {
   // 验证必填参数
@@ -387,11 +420,17 @@ const saveParams = () => {
     }
   })
 
-  console.log('[OperatorParamsPanel] 保存参数:', {
-    原始参数: formData.value,
-    清理后参数: cleanedParams,
-    有效参数列表: effectiveParameters.value.map(p => p.name)
-  })
+  // 补充被 effectiveParameters 过滤掉的特殊 UI 组件自动填充字段
+  const allParams = props.parameters && props.parameters.length > 0 ? props.parameters : []
+  if (allParams.some(p => p.ui_type === 'nfs_file_picker')) {
+    if (formData.value.engine_id != null) cleanedParams.engine_id = formData.value.engine_id
+    if (formData.value.path) cleanedParams.path = formData.value.path
+  }
+  if (allParams.some(p => p.ui_type === 'data_source_cascader')) {
+    if (formData.value.engine_id != null) cleanedParams.engine_id = formData.value.engine_id
+    if (formData.value.schema) cleanedParams.schema = formData.value.schema
+    if (formData.value.table) cleanedParams.table = formData.value.table
+  }
 
   emit('save', {
     nodeId: props.nodeId,

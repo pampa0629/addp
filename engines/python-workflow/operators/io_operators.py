@@ -6,6 +6,7 @@ I/O 算子模块
 """
 
 import logging
+import os
 import pandas as pd
 import geopandas as gpd
 from typing import Dict, Any
@@ -18,7 +19,69 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
-# ==================== 算子实现 ====================
+# ==================== 文件读写辅助函数 ====================
+
+_SPATIAL_FORMATS = {'shp', 'geojson', 'gpkg', 'kml', 'gml', 'fgb'}
+
+def _read_file(full_path: str, fmt: str, geom_column: str = None):
+    """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
+    if fmt in _SPATIAL_FORMATS:
+        kwargs = {}
+        if geom_column:
+            kwargs['geometry'] = geom_column
+        return gpd.read_file(full_path, **kwargs)
+    elif fmt in ('csv',):
+        return gpd.GeoDataFrame(pd.read_csv(full_path))
+    elif fmt in ('parquet',):
+        return gpd.GeoDataFrame(pd.read_parquet(full_path))
+    elif fmt in ('xlsx', 'xls'):
+        return gpd.GeoDataFrame(pd.read_excel(full_path))
+    elif fmt in ('json',):
+        return gpd.GeoDataFrame(pd.read_json(full_path))
+    elif fmt in ('feather',):
+        return gpd.GeoDataFrame(pd.read_feather(full_path))
+    else:
+        raise ValueError(f"不支持的文件格式: {fmt}，支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb")
+
+
+def _write_file(df, full_path: str, fmt: str, mode: str = 'replace'):
+    """根据格式写入文件"""
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    if mode == 'fail' and os.path.exists(full_path):
+        raise FileExistsError(f"文件已存在: {full_path}")
+    if fmt in _SPATIAL_FORMATS:
+        if not isinstance(df, gpd.GeoDataFrame):
+            raise ValueError("保存空间格式文件需要 GeoDataFrame 输入")
+        df.to_file(full_path, driver=_spatial_driver(fmt))
+    elif fmt == 'csv':
+        df.to_csv(full_path, index=False)
+    elif fmt == 'parquet':
+        df.to_parquet(full_path, index=False)
+    elif fmt in ('xlsx', 'xls'):
+        df.to_excel(full_path, index=False)
+    elif fmt == 'json':
+        df.to_json(full_path, orient='records', force_ascii=False)
+    elif fmt == 'feather':
+        df.to_feather(full_path)
+    else:
+        raise ValueError(f"不支持的文件格式: {fmt}")
+
+
+def _strip_nfs_root_prefix(base_path: str, path: str) -> str:
+    # locator 路径第一段是 export_path 的最后一段（根节点显示名），需去除避免重复
+    root_name = os.path.basename(base_path.rstrip('/'))
+    relative = path.lstrip('/')
+    if root_name and (relative == root_name or relative.startswith(root_name + '/')):
+        relative = relative[len(root_name):].lstrip('/')
+    return relative
+
+
+def _spatial_driver(fmt: str) -> str:
+    return {'shp': 'ESRI Shapefile', 'gpkg': 'GPKG', 'kml': 'KML',
+            'gml': 'GML', 'fgb': 'FlatGeobuf', 'geojson': 'GeoJSON'}.get(fmt, 'GeoJSON')
+
+
+
 
 def load(
     source_type: str,
@@ -126,6 +189,18 @@ def load(
 
         return gdf
 
+    elif source_type == 'nfs':
+        if not connection_info:
+            raise ValueError("source_type=nfs 时必须提供 connection_info")
+        base_path = connection_info.get('mount_path') or connection_info.get('export_path')
+        if not base_path:
+            raise ValueError("NFS connection_info 缺少 export_path 字段")
+        if not path:
+            raise ValueError("source_type=nfs 时必须提供 path 参数")
+        full_path = os.path.join(base_path, _strip_nfs_root_prefix(base_path, path))
+        fmt = (format or os.path.splitext(path)[1].lstrip('.')).lower()
+        return _read_file(full_path, fmt, geom_column)
+
     elif source_type == 'geojson':
         # 直接解析 GeoJSON 对象
         if not geojson:
@@ -231,6 +306,19 @@ def save(
 
         return input_df
 
+    elif target_type == 'nfs':
+        if not connection_info:
+            raise ValueError("target_type=nfs 时必须提供 connection_info")
+        base_path = connection_info.get('mount_path') or connection_info.get('export_path')
+        if not base_path:
+            raise ValueError("NFS connection_info 缺少 export_path 字段")
+        if not path:
+            raise ValueError("target_type=nfs 时必须提供 path 参数")
+        full_path = os.path.join(base_path, _strip_nfs_root_prefix(base_path, path))
+        fmt = (format or os.path.splitext(path)[1].lstrip('.')).lower()
+        _write_file(input_df, full_path, fmt, mode)
+        return input_df
+
     else:
         raise ValueError(f"Unsupported target_type: {target_type}")
 
@@ -242,9 +330,9 @@ LOAD_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据加载",
-    brief_description="从数据库表或GeoJSON对象加载空间数据,支持多种数据源",
+    brief_description="从数据库表、NFS文件或GeoJSON对象加载数据,支持多种数据源",
 
-    overview="通用数据加载算子,支持从数据库表(PostgreSQL/MySQL/Doris)或内存GeoJSON对象加载空间数据。根据 source_type 参数自动选择加载方式。如需导入外部文件（如 Shapefile），请先通过 Manager 模块的导入数据功能将文件导入到数据库表，再通过本算子以 source_type=table 方式读取。",
+    overview="通用数据加载算子,支持从数据库表(PostgreSQL/MySQL/Doris)、NFS文件系统或内存GeoJSON对象加载数据。根据 source_type 参数自动选择加载方式。NFS 支持 pandas/geopandas 所有常见格式。",
 
     params=[
         OperatorParam(
@@ -253,8 +341,8 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="数据来源类型",
-            notes="可选值: table(数据库表), geojson(GeoJSON对象)",
-            enum=["table", "geojson"],
+            notes="可选值: table(数据库表), nfs(NFS文件), geojson(GeoJSON对象)",
+            enum=["table", "nfs", "geojson"],
             default="table"
         ),
         # 特殊参数：数据源级联选择器（仅在 source_type=table 时显示）
@@ -267,7 +355,7 @@ LOAD_METADATA = OperatorMetadata(
             notes="使用可视化界面选择数据源，支持引擎→Schema→表的级联选择，自动填充下方参数",
             ui_type="data_source_cascader",
             ui_config={
-                "api_base_url": "/api/meta",
+                "api_base_url": "/api/v1/meta",
                 "engine_types": ["postgresql", "mysql", "doris", "clickhouse"],
                 "selectable_node_types": ["table"],
                 "enable_geometry_detection": True,
@@ -307,6 +395,49 @@ LOAD_METADATA = OperatorMetadata(
             depends_on="source_type",
             show_when={"source_type": "table"}
         ),
+        # NFS 文件选择器（仅在 source_type=nfs 时显示）
+        OperatorParam(
+            name="NFS文件",
+            type="ui",
+            data_type="object",
+            required=False,
+            description="选择NFS引擎和文件路径",
+            notes="从资源树中选择文件，自动填充 engine_id 和 path",
+            ui_type="nfs_file_picker",
+            depends_on="source_type",
+            show_when={"source_type": "nfs"}
+        ),
+        OperatorParam(
+            name="engine_id",
+            type="param",
+            data_type="integer",
+            required=False,
+            description="NFS存储引擎ID",
+            notes="由NFS文件选择器自动填充",
+            depends_on="source_type",
+            show_when={"source_type": "nfs"}
+        ),
+        OperatorParam(
+            name="path",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件路径（相对于NFS挂载根目录）",
+            notes="由NFS文件选择器自动填充，也可手动输入，如 data/rivers.shp",
+            depends_on="source_type",
+            show_when={"source_type": "nfs"}
+        ),
+        OperatorParam(
+            name="format",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件格式（可选，默认从扩展名推断）",
+            notes="支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb",
+            enum=["csv", "parquet", "xlsx", "json", "feather", "shp", "geojson", "gpkg", "kml", "gml", "fgb"],
+            depends_on="source_type",
+            show_when={"source_type": "nfs"}
+        ),
         OperatorParam(
             name="geojson",
             type="param",
@@ -332,16 +463,16 @@ LOAD_METADATA = OperatorMetadata(
 
     use_cases=[
         "从业务数据库加载河流数据: source_type=table, engine_id=1, table=rivers",
+        "从NFS加载CSV文件: source_type=nfs, engine_id=3, path=data/points.csv",
+        "从NFS加载Shapefile: source_type=nfs, engine_id=3, path=gis/roads.shp",
         "从内存GeoJSON加载临时数据: source_type=geojson, geojson={...}",
-        "工作流起始节点: 作为数据输入的第一步",
-        "加载通过 Manager 导入的 Shapefile: source_type=table, engine_id=5, schema=public, table=railway"
     ],
 
     notes=[
+        "NFS source_type 直接通过 export_path（或 mount_path）访问文件，格式从扩展名自动推断",
+        "NFS 支持空间格式(shp/gpkg/geojson等)和非空间格式(csv/parquet/xlsx等)",
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",
         "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
-        "如需从外部文件（Shapefile/GeoJSON）加载数据，请先通过 Manager 模块的导入数据功能将文件导入到数据库表，再通过本算子以 source_type=table 方式读取",
-        "加载后的 GeoDataFrame 会保留所有属性字段",
         "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],
 
@@ -364,9 +495,9 @@ SAVE_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据保存",
-    brief_description="将数据保存到数据库表,支持普通表和空间表",
+    brief_description="将数据保存到数据库表或NFS文件,支持普通表和空间表",
 
-    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)。根据 target_type 参数自动选择保存方式。",
+    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)或 NFS 文件系统。根据 target_type 参数自动选择保存方式。",
 
     params=[
         OperatorParam(
@@ -382,9 +513,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="保存目标类型",
-            enum=["table"],
+            enum=["table", "nfs"],
             default="table",
-            notes="当前仅支持 table(数据库表)"
+            notes="table(数据库表) 或 nfs(NFS文件系统)"
         ),
         OperatorParam(
             name="保存目标",
@@ -431,6 +562,61 @@ SAVE_METADATA = OperatorMetadata(
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
+        # NFS 文件选择器（仅在 target_type=nfs 时显示）
+        OperatorParam(
+            name="NFS文件",
+            type="ui",
+            data_type="object",
+            required=False,
+            description="选择NFS引擎和保存路径",
+            notes="从资源树中选择目录或直接输入路径，自动填充 engine_id 和 path",
+            ui_type="nfs_file_picker",
+            depends_on="target_type",
+            show_when={"target_type": "nfs"}
+        ),
+        OperatorParam(
+            name="engine_id",
+            type="param",
+            data_type="integer",
+            required=False,
+            description="NFS存储引擎ID",
+            notes="由NFS文件选择器自动填充",
+            depends_on="target_type",
+            show_when={"target_type": "nfs"}
+        ),
+        OperatorParam(
+            name="path",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件路径（相对于NFS挂载根目录）",
+            notes="由NFS文件选择器自动填充，也可手动输入，如 output/result.csv",
+            depends_on="target_type",
+            show_when={"target_type": "nfs"}
+        ),
+        OperatorParam(
+            name="format",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件格式（可选，默认从扩展名推断）",
+            notes="支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb",
+            enum=["csv", "parquet", "xlsx", "json", "feather", "shp", "geojson", "gpkg", "kml", "gml", "fgb"],
+            depends_on="target_type",
+            show_when={"target_type": "nfs"}
+        ),
+        OperatorParam(
+            name="mode",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件已存在时的处理方式",
+            enum=["replace", "fail"],
+            default="replace",
+            notes="replace(覆盖), fail(抛出错误)。nfs 不支持 append 模式",
+            depends_on="target_type",
+            show_when={"target_type": "nfs"}
+        ),
         OperatorParam(
             name="mode",
             type="param",
@@ -447,14 +633,17 @@ SAVE_METADATA = OperatorMetadata(
 
     use_cases=[
         "保存分析结果到数据库: target_type=table, engine_id=1, table=result, mode=replace",
+        "保存结果到NFS CSV: target_type=nfs, engine_id=3, path=output/result.csv",
+        "保存空间数据到NFS GeoPackage: target_type=nfs, engine_id=3, path=gis/result.gpkg",
         "工作流结束节点: 作为数据输出的最后一步"
     ],
 
     notes=[
         "自动识别输入数据类型（DataFrame 或 GeoDataFrame）",
+        "NFS 保存时自动创建目标目录",
+        "NFS 空间格式(shp/gpkg等)需要 GeoDataFrame 输入",
         "保存空间数据到 PostgreSQL 时使用 PostGIS，自动创建几何索引",
-        "保存普通数据使用标准 SQL 表",
-        "mode=append 时要求表结构与数据结构一致",
+        "mode=append 仅 table 模式支持，nfs 模式不支持追加",
         "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],
 

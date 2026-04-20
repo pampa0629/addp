@@ -86,7 +86,11 @@ NFS 插件直接实现此接口，与 ObjectStoragePlugin（MinIO/S3）平等。
 
 ---
 
-## 四、关键设计决策：FileAccessor 抽象
+## 四、关键设计决策：读写两个正交抽象
+
+存储引擎（WHERE）与文件格式（WHAT）在读写两个方向上都需要解耦，分别引入两个抽象接口，放在 `transfer/backend/pkg/vfs/`。
+
+### 4.1 FileAccessor（读抽象）
 
 Transfer 和 Service 模块中，格式读取器（ShapefileReader、ParquetReader 等）目前依赖本地文件路径。  
 为支持任意存储引擎（NFS、MinIO、S3），引入 `FileAccessor` 抽象：
@@ -119,8 +123,59 @@ type ShapefileReader struct { filePath string }
 type ShapefileReader struct { accessor FileAccessor; filePath string }
 ```
 
-**影响范围**：ShapefileReader、GeoJSONReader、ParquetReader、CSVReader 等均需适配，  
-但改造后，新增任何存储引擎时，所有格式**零改动**自动支持。
+### 4.2 VFS（写抽象）
+
+格式写入器（ShapefileWriter、ParquetWriter、GeoJSONWriter、CSVWriter）目前直接调用 `os.Create(path)`，只能写本地文件系统。引入 `VFS` 接口解耦写入目标：
+
+```go
+// VFS 为格式写入器提供统一的文件写入接口
+// 屏蔽底层存储引擎差异
+type VFS interface {
+    Create(path string) (io.WriteCloser, error)
+    MkdirAll(path string) error
+}
+```
+
+各存储引擎实现：
+- `LocalVFS`：封装 `os.Create` / `os.MkdirAll`（现有写入器的基础，零行为变化）
+- `NFSVFS`：封装 go-nfs-client 的写入 API，**直接写入 NFS，无临时目录**
+
+格式写入器统一接受 `VFS`，不再直接调用 `os.Create`：
+
+```go
+// 改造前
+func (w *GeoJSONWriter) Open(...) error {
+    w.file, _ = os.Create(path)  // 只能写本地
+}
+
+// 改造后
+func (w *GeoJSONWriter) Open(...) error {
+    w.file, _ = w.vfs.Create(path)  // 写任意存储引擎
+}
+```
+
+**写入路径对比**：
+
+| 目标存储 | VFS 实现 | 临时目录 | 说明 |
+|---------|---------|---------|------|
+| NFS | `NFSVFS` | ❌ 不需要 | go-nfs-client 直接写，发挥 NFS 性能优势 |
+| 本地 FS | `LocalVFS` | ❌ 不需要 | 直接写本地路径 |
+| S3/MinIO | `LocalVFS` | ✅ 需要 | 对象存储不支持流式写，仍需临时目录再上传 |
+
+**影响范围**：ShapefileWriter、GeoJSONWriter、ParquetWriter、CSVWriter 均需将 `os.Create` 替换为 `vfs.Create`，改动量小，但改造后新增任何存储引擎时，所有格式**零改动**自动支持。
+
+### 4.3 NFS 插件补充写入能力
+
+当前 `common/engine/plugins/nfs/plugin.go` 只有读操作。需补充：
+
+```go
+// 在 NFS plugin 上新增（不加入 FileSystemPlugin 接口，接口保持只读）
+func (p *NFSPlugin) WriteFile(ctx, connInfo, path string, r io.Reader) error
+func (p *NFSPlugin) MkdirAll(ctx, connInfo, path string) error
+func (p *NFSPlugin) OpenFileForWrite(ctx, connInfo, path string) (io.WriteCloser, error)
+```
+
+`NFSVFS` 内部持有 NFS plugin 引用，调用上述方法实现 `VFS` 接口。
 
 ---
 
@@ -264,38 +319,67 @@ Manager 数据浏览通过 Meta API 查询节点，NFS 扫描后节点已正确�
 
 **目标**：NFS 数据可导入、可发布服务、可在开发工作台使用。
 
-#### 1. Transfer 模块：引入 FileAccessor 抽象
+#### 1. Transfer 模块：引入 FileAccessor + VFS 双抽象
 
-**步骤 1**：在 `transfer/backend/` 新增 `FileAccessor` 接口（见第四节）。
+两个接口统一放在 `transfer/backend/pkg/vfs/`（见第四节）。
 
-**步骤 2**：实现各存储引擎的 FileAccessor：
+**读路径改造**：
+
+步骤 1：实现各存储引擎的 `FileAccessor`：
 - `LocalFileAccessor`（重构现有逻辑）
 - `NFSFileAccessor`（直接流式读取，无临时目录）
 - `ObjectStorageFileAccessor`（重构现有 S3ShapefileReader 逻辑，临时目录方式）
 
-**步骤 3**：改造格式读取器接受 `FileAccessor`：
-- `ShapefileReader`：接受 `FileAccessor`，通过 `OpenSibling` 获取 .shx/.dbf
-- `ParquetReader`：接受 `FileAccessor`，通过 `List` 支持目录表模式
-- `GeoJSONReader`、`CSVReader` 等：接受 `FileAccessor`
+步骤 2：改造格式读取器接受 `FileAccessor`：
+- `ShapefileReader`：通过 `OpenSibling` 获取 .shx/.dbf
+- `ParquetReader`：通过 `List` 支持目录表模式
+- `GeoJSONReader`、`CSVReader` 等
 
-**步骤 4**：Transfer 任务配置中，`source` 通过 `engine_id` 确定存储引擎，  
-通过 `connector`（格式类型）确定读取器，两者独立配置：
+**写路径改造**：
+
+步骤 3：实现各存储引擎的 `VFS`：
+- `LocalVFS`（封装 os.Create，现有写入器零行为变化）
+- `NFSVFS`（调用 NFS plugin 的 OpenFileForWrite，直接写 NFS）
+
+步骤 4：改造格式写入器接受 `VFS`（将 `os.Create` 替换为 `vfs.Create`）：
+- `ShapefileWriter`、`GeoJSONWriter`、`ParquetWriter`、`CSVWriter`
+
+步骤 5：新增 `NFSWriter`（`transfer/backend/plugins/writers/nfs_writer.go`），  
+采用与 S3Writer 相同的委托模式，根据 `file_type` 选择格式写入器，传入 `NFSVFS`：
+
+```go
+type NFSWriter struct {
+    vfs        vfs.VFS          // NFSVFS 实例
+    fileWriter pipeline.Writer  // 委托给 ShapefileWriter / ParquetWriter 等
+    engineID   uint
+    path       string
+    fileType   string
+}
+```
+
+步骤 6：在 `builtin_registration.go` 注册 `"nfs"` writer。
+
+**任务配置结构**（读写统一用 engine_id + connector 两个维度）：
 
 ```json
 {
   "source": {
-    "engine_id": 5,
-    "connector": "shapefile",
-    "path": "/gis-data/roads/roads.shp"
-  },
-  "target": {
     "engine_id": 1,
     "connector": "postgresql",
     "schema": "public",
     "table": "roads"
+  },
+  "target": {
+    "engine_id": 5,
+    "connector": "nfs",
+    "path": "exports/roads/",
+    "file_name": "roads_2024",
+    "file_type": "shapefile"
   }
 }
 ```
+
+**前端改造**：Transfer 任务创建 UI 新增 NFS 目标选项（engine 下拉 + 路径输入 + file_type 选择）。
 
 #### 2. Service 模块：基于 FileSystemPlugin 的文件型数据服务
 

@@ -251,28 +251,9 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 // 内部辅助方法
 
 // shouldHaveChildren 判断节点是否应该有子节点
-// 对于容器类型（schema, bucket, directory 等），即使 ItemCount=0 也可能有子节点
-// 对于叶子类型（table, object 等），根据 ItemCount 判断
+// 统一根据 ItemCount 判断：ItemCount > 0 则有子节点，否则无子节点
+// 这样空的 schema/bucket/directory 不会显示展开箭头
 func shouldHaveChildren(nodeType string, itemCount int) bool {
-	// 数据库容器类型：即使 ItemCount=0 也可能有子项
-	databaseContainers := map[string]bool{
-		"database": true,
-		"schema":   true,
-	}
-
-	// 对象存储容器类型：即使 ItemCount=0 也可能有子项
-	objectStorageContainers := map[string]bool{
-		"bucket":    true,
-		"prefix":    true,
-		"directory": true,
-	}
-
-	// 如果是容器类型，总是返回 true（允许展开尝试加载）
-	if databaseContainers[nodeType] || objectStorageContainers[nodeType] {
-		return true
-	}
-
-	// 叶子类型：根据 ItemCount 判断
 	return itemCount > 0
 }
 

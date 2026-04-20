@@ -199,6 +199,28 @@ const docTemplate = `{
                 }
             }
         },
+        "/engines/nfs": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Engines"
+                ],
+                "summary": "获取 NFS 存储引擎列表 | List NFS storage engines",
+                "responses": {
+                    "200": {
+                        "description": "NFS 引擎列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Engine"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/execute": {
             "post": {
                 "consumes": [

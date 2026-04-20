@@ -785,6 +785,20 @@ paths:
       summary: 获取数据库表列表 | List database tables
       tags:
       - Engines
+  /engines/nfs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: NFS 引擎列表
+          schema:
+            items:
+              $ref: '#/definitions/models.Engine'
+            type: array
+      summary: 获取 NFS 存储引擎列表 | List NFS storage engines
+      tags:
+      - Engines
   /execute:
     post:
       consumes:

@@ -87,6 +87,9 @@
       "taskNameRequired": "请输入任务名称",
       "taskNameLength": "长度在 2 到 100 个字符",
       "taskNamePattern": "只能包含字母、数字、下划线和中文",
+      "nameRequired": "请输入任务名称",
+      "nameLengthHint": "长度在 2 到 100 个字符",
+      "namePatternHint": "只能包含字母、数字、下划线和中文",
       "scheduleRequired": "启用调度时必须配置调度表达式"
     },
     "queryTasks": {
@@ -233,6 +236,15 @@
     "engineSelect": {
       "placeholder": "请选择存储引擎",
       "loadFailed": "获取存储引擎列表失败"
+    },
+    "nfsFilePicker": {
+      "engine": "NFS引擎",
+      "selectEngine": "请选择NFS引擎",
+      "path": "文件路径",
+      "pathPlaceholder": "手动输入路径，如 data/result.csv",
+      "emptyTree": "暂无文件",
+      "loadEnginesFailed": "获取引擎列表失败",
+      "loadTreeFailed": "加载文件树失败"
     },
     "operatorParams": {
       "selectNode": "请从画布中选择一个节点",

@@ -33,6 +33,9 @@ func init() {
 	MustRegisterConnector("s3", readers.NewS3Reader, writers.NewS3Writer)
 	MustRegisterConnector("minio", readers.NewS3Reader, writers.NewS3Writer)
 
+	// NFS 文件系统
+	MustRegisterConnector("nfs", nil, writers.NewNFSWriter)
+
 	// Parquet（独立插件：支持作为数据源和目标）
 	MustRegisterConnector("parquet", readers.NewParquetReader, writers.NewParquetWriter)
 

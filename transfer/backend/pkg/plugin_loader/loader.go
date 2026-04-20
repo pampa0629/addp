@@ -126,6 +126,17 @@ func (l *PluginLoader) initBuiltinPlugins() {
 	// ============================================================
 	l.writerRegistry["s3"] = writers.NewS3Writer
 	l.writerRegistry["minio"] = writers.NewS3Writer
+
+	// ============================================================
+	// NFS 文件系统 Writer
+	// ============================================================
+	l.writerRegistry["nfs"] = writers.NewNFSWriter
+
+	// ============================================================
+	// Parquet 格式 Reader/Writer
+	// ============================================================
+	l.readerRegistry["parquet"] = readers.NewParquetReader
+	l.writerRegistry["parquet"] = writers.NewParquetWriter
 }
 
 // LoadPlugins 加载所有启用的插件到运行时注册表

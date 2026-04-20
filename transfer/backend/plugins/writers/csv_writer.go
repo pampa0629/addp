@@ -4,21 +4,23 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 
 	"github.com/addp/transfer/pkg/pipeline"
+	"github.com/addp/transfer/pkg/vfs"
 )
 
 // CSVWriter writes data to CSV files
 type CSVWriter struct {
 	csvWriter   *csv.Writer
-	file        *os.File
+	file        io.WriteCloser
 	schema      *pipeline.Schema
 	writeHeader bool
 	nullValue   string
 	rowCount    int64
 	firstBatch  bool
+	vfs         vfs.VFS // nil 时使用本地文件系统
 }
 
 // NewCSVWriter creates a CSV writer factory function
@@ -33,13 +35,11 @@ func NewCSVWriter(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
 func (w *CSVWriter) Open(ctx context.Context, config pipeline.ConnectorConfig) error {
 	cfg := config.Config
 
-	// Get file path
 	filePath, ok := cfg["file_path"].(string)
 	if !ok || filePath == "" {
 		return fmt.Errorf("file_path is required")
 	}
 
-	// Parse config
 	if writeHeader, ok := cfg["write_header"].(bool); ok {
 		w.writeHeader = writeHeader
 	}
@@ -47,17 +47,19 @@ func (w *CSVWriter) Open(ctx context.Context, config pipeline.ConnectorConfig) e
 		w.nullValue = nullValue
 	}
 
-	// Open file for writing
-	file, err := os.Create(filePath)
+	fs := w.vfs
+	if fs == nil {
+		fs = &vfs.LocalVFS{}
+	}
+
+	file, err := fs.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 	w.file = file
 
-	// Create CSV writer
 	csvWriter := csv.NewWriter(file)
 
-	// Configure writer
 	if delimiter, ok := cfg["delimiter"].(string); ok && len(delimiter) > 0 {
 		csvWriter.Comma = rune(delimiter[0])
 	} else {
@@ -79,7 +81,6 @@ func (w *CSVWriter) Write(ctx context.Context, batch *pipeline.DataBatch) error 
 		return fmt.Errorf("writer not opened")
 	}
 
-	// Get schema from batch
 	if w.schema == nil && batch.Schema != nil {
 		w.schema = batch.Schema
 	}
@@ -88,38 +89,28 @@ func (w *CSVWriter) Write(ctx context.Context, batch *pipeline.DataBatch) error 
 		return fmt.Errorf("schema not available in batch")
 	}
 
-	// Write header on first batch
 	if w.firstBatch && w.writeHeader {
 		headers := make([]string, len(w.schema.Fields))
 		for i, field := range w.schema.Fields {
 			headers[i] = field.Name
 		}
-
 		if err := w.csvWriter.Write(headers); err != nil {
 			return fmt.Errorf("failed to write CSV header: %w", err)
 		}
 		w.firstBatch = false
 	}
 
-	// Write each record
 	for _, record := range batch.Rows {
 		row := make([]string, len(w.schema.Fields))
-
 		for i, field := range w.schema.Fields {
-			value := record[field.Name]
-
-			// Convert to string
-			row[i] = w.valueToString(value, field.Type)
+			row[i] = w.valueToString(record[field.Name], field.Type)
 		}
-
 		if err := w.csvWriter.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
-
 		w.rowCount++
 	}
 
-	// Flush periodically (every 100 rows)
 	if w.rowCount%100 == 0 {
 		w.csvWriter.Flush()
 		if err := w.csvWriter.Error(); err != nil {
@@ -130,12 +121,10 @@ func (w *CSVWriter) Write(ctx context.Context, batch *pipeline.DataBatch) error 
 	return nil
 }
 
-// valueToString converts a value to string for CSV output
 func (w *CSVWriter) valueToString(value interface{}, fieldType string) string {
 	if value == nil {
 		return w.nullValue
 	}
-
 	switch v := value.(type) {
 	case string:
 		return v
@@ -162,12 +151,10 @@ func (w *CSVWriter) Flush(ctx context.Context) error {
 	if w.csvWriter == nil {
 		return fmt.Errorf("writer not opened")
 	}
-
 	w.csvWriter.Flush()
 	if err := w.csvWriter.Error(); err != nil {
 		return fmt.Errorf("failed to flush CSV: %w", err)
 	}
-
 	return nil
 }
 
@@ -180,4 +167,18 @@ func (w *CSVWriter) Close() error {
 		return w.file.Close()
 	}
 	return nil
+}
+
+// newCSVWriterWithFile 使用已打开的 io.WriteCloser 创建 CSV Writer（供 NFSWriter 使用）
+func newCSVWriterWithFile(file io.WriteCloser, delimiter string, writeHeader bool) *CSVWriter {
+	csvWriter := csv.NewWriter(file)
+	if len(delimiter) > 0 {
+		csvWriter.Comma = rune(delimiter[0])
+	}
+	return &CSVWriter{
+		csvWriter:   csvWriter,
+		file:        file,
+		writeHeader: writeHeader,
+		firstBatch:  true,
+	}
 }

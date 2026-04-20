@@ -84,6 +84,14 @@ plugins:
       enabled: true
       description: "CSV 表格数据 Reader"
 
+    # ============================================================
+    # Parquet 格式 Reader
+    # ============================================================
+    - name: parquet
+      type: parquet
+      enabled: true
+      description: "Apache Parquet 列式存储 Reader"
+
   # ============================================================
   # Writers 配置
   # ============================================================
@@ -156,6 +164,22 @@ plugins:
       type: minio
       enabled: true
       description: "MinIO 对象存储 Writer（S3 兼容）"
+
+    # ============================================================
+    # NFS 文件系统 Writer
+    # ============================================================
+    - name: nfs
+      type: nfs
+      enabled: true
+      description: "NFS 文件系统 Writer，支持 csv/geojson/shapefile/parquet"
+
+    # ============================================================
+    # Parquet 格式 Writer
+    # ============================================================
+    - name: parquet
+      type: parquet
+      enabled: true
+      description: "Apache Parquet 列式存储 Writer"
 
 # ============================================================
 # 外部插件示例（暂未启用）

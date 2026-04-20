@@ -55,12 +55,12 @@ class ADDPDataSourceMagics(Magics):
 
         # 2. 调用 ADDP API 获取数据源
         print(f"🔄 正在从 ADDP 加载数据源...")
-        print(f"   API: {api_base}/api/develop/engines")
+        print(f"   API: {api_base}/api/v1/develop/engines")
 
         try:
             headers = {'Authorization': f'Bearer {token}'}
             response = requests.get(
-                f'{api_base}/api/develop/engines',
+                f'{api_base}/api/v1/develop/engines',
                 headers=headers,
                 timeout=10
             )
