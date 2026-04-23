@@ -52,12 +52,13 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator    *resource.ResourceLocator // 资源定位符
-	Engine     *commonModels.Engine       // 引擎信息
-	Metadata   *commonModels.MetaNode     // 可选：Meta 节点数据
-	Pagination *Pagination                // 分页参数
-	TenantID   *uint                      // 租户 ID
-	ItemType   string                     // 数据项类型（如 "lake_table"），来自 MetaItem
+	Locator      *resource.ResourceLocator // 资源定位符
+	Engine       *commonModels.Engine       // 引擎信息
+	Metadata     *commonModels.MetaNode     // 可选：Meta 节点数据
+	Pagination   *Pagination                // 分页参数
+	TenantID     *uint                      // 租户 ID
+	ItemType     string                     // 数据项类型（如 "lake_table"），来自 MetaItem
+	PhysicalPath string                     // 物理路径（来自 meta_item.attributes.physical_path）
 }
 
 // Pagination 分页参数
@@ -156,10 +157,10 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 尝试从 Meta 获取元数据（对于对象存储）
+	// 3. 尝试从 Meta 获取元数据（对于对象存储和文件系统类型）
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
-	if r.metaClient != nil && isObjectStorageType(engine.EngineType) {
+	if r.metaClient != nil && (isObjectStorageType(engine.EngineType) || isFileSystemType(engine.EngineType)) {
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
@@ -233,6 +234,14 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		}
 	}
 
+	// 对文件系统类型，用 metaItem.FullName 修正 locator 路径（前端传来的路径可能缺少根目录）
+	if metaItem != nil && isFileSystemType(engine.EngineType) && metaItem.FullName != "" {
+		parts := strings.Split(strings.Trim(metaItem.FullName, "/"), "/")
+		if len(parts) > 0 {
+			loc.Path = parts
+		}
+	}
+
 	// 4. 构建请求
 	req := &PreviewResolverRequest{
 		Locator: loc,
@@ -248,7 +257,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 	if metaNode != nil {
 		req.Metadata = metaNode
 		// 从 MetaNode 的 NodeType 推断 ItemType（如 lake_table）
-		if metaNode.NodeType != "" && metaNode.NodeType != "directory" && metaNode.NodeType != "bucket" {
+		if metaNode.NodeType != "" && metaNode.NodeType != "directory" && metaNode.NodeType != "bucket" && metaNode.NodeType != "dir" && metaNode.NodeType != "root" {
 			req.ItemType = metaNode.NodeType
 		}
 	} else if metaItem != nil {
@@ -265,6 +274,14 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			TotalSizeBytes: sizeBytes,
 		}
 		req.ItemType = metaItem.ItemType
+		// 提取 physical_path（仅单文件湖表，mode="file"）
+		// 目录型湖表的 physical_path 是目录路径，不能当文件读
+		if physPath, ok := metaItem.Attributes["physical_path"].(string); ok && physPath != "" {
+			mode, _ := metaItem.Attributes["mode"].(string)
+			if mode == "file" {
+				req.PhysicalPath = physPath
+			}
+		}
 	}
 
 	// 5. 执行预览
@@ -337,14 +354,15 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 	}
 
 	return &PreviewRequest{
-		Engine:   managerEngine,
-		Schema:   schema,
-		Table:    table,
-		Page:     page,
-		PageSize: pageSize,
-		TenantID: req.TenantID,
-		ItemType: req.ItemType,
-		NodeType: string(req.Locator.Type),
+		Engine:       managerEngine,
+		Schema:       schema,
+		Table:        table,
+		Page:         page,
+		PageSize:     pageSize,
+		TenantID:     req.TenantID,
+		ItemType:     req.ItemType,
+		NodeType:     string(req.Locator.Type),
+		PhysicalPath: req.PhysicalPath,
 	}
 }
 

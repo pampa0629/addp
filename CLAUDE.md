@@ -285,7 +285,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 **租户管理员**: `admin` / `123456` (管理默认租户的用户、引擎、数据)
 **超级管理员**: `SuperAdmin` / `20251001#SuperAdmin` (系统级管理、租户管理)
-`POST /api/system/login` - 用户登录
+`POST /api/v1/system/login` - 用户登录
 详细说明和启用方法: system/CLAUDE.md
 
 ### 配置中心模式

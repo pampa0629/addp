@@ -264,8 +264,18 @@ func ReadFirstParquetPreview(
 		return nil, nil, fmt.Errorf("no parquet files found in %s", dirPath)
 	}
 
-	// 读取 Schema
-	rc, err := fsPlugin.ReadFile(ctx, connInfo, firstParquet.Path)
+	return ReadParquetFilePreview(ctx, fsPlugin, connInfo, firstParquet.Path, offset, limit)
+}
+
+// ReadParquetFilePreview 直接读取单个 Parquet 文件的预览数据（已知物理路径）
+func ReadParquetFilePreview(
+	ctx context.Context,
+	fsPlugin plugin.FileSystemPlugin,
+	connInfo plugin.ConnectionInfo,
+	filePath string,
+	offset, limit int64,
+) ([]format.FieldInfo, []map[string]interface{}, error) {
+	rc, err := fsPlugin.ReadFile(ctx, connInfo, filePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read parquet file: %w", err)
 	}
@@ -278,13 +288,11 @@ func ReadFirstParquetPreview(
 
 	parser := &Parser{}
 
-	// 解析 Schema
 	tableInfo, err := parser.ParseTableInfo(ctx, strings.NewReader(string(data)), nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse parquet schema: %w", err)
 	}
 
-	// 读取预览数据
 	rows, err := parser.ReadPreview(ctx, strings.NewReader(string(data)), offset, limit, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read parquet preview: %w", err)

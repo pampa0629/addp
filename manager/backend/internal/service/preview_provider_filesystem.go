@@ -87,7 +87,7 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}
 
 	// 目录预览：路径以 / 结尾，或为空，或 NodeType 表明是目录类节点
-	isDirNode := req.NodeType == "prefix" || req.NodeType == "directory" || req.NodeType == "bucket"
+	isDirNode := req.NodeType == "prefix" || req.NodeType == "directory" || req.NodeType == "bucket" || req.NodeType == "dir" || req.NodeType == "root"
 	if isDirectoryPath(filePath) || filePath == "" || isDirNode {
 		return p.previewDirectory(ctx, fsPlugin, connInfo, engine, rootName, fullPath, preview)
 	}

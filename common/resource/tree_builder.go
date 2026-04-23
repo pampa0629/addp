@@ -376,8 +376,9 @@ func parsePath(fullName string, nodeType string) []string {
 		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
-	case "bucket", "prefix", "directory", "object":
+	case "bucket", "prefix", "directory", "object", "root", "dir", "file":
 		// MinIO/S3: bucket/prefix/object 使用斜杠分隔
+		// 文件系统: root/dir/file 使用斜杠分隔
 		return strings.Split(fullName, "/")
 	default:
 		// 默认：尝试斜杠分隔
@@ -393,11 +394,14 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"bucket":            TypeBucket,
 		"prefix":            TypeDirectory,
 		"directory":         TypeDirectory,
+		"root":              TypeRoot,
+		"dir":               TypeDir,
 		"table":             TypeTable,
 		"collection":        TypeCollection,
 		"node_label":        TypeCollection,
 		"relationship_type": TypeCollection,
 		"object":            TypeObject,
+		"file":              TypeFile,
 	}
 	if t, ok := mapping[metaNodeType]; ok {
 		return t
@@ -437,9 +441,12 @@ func getIconByType(nodeType string) string {
 		"bucket":     "FolderOpen",
 		"directory":  "Folder",
 		"prefix":     "Folder",
+		"root":       "FolderOpen",
+		"dir":        "Folder",
 		"table":      "Table",
 		"collection": "DocumentText",
 		"object":     "Document",
+		"file":       "Document",
 	}
 	if icon, ok := icons[nodeType]; ok {
 		return icon

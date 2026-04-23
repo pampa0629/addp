@@ -81,24 +81,64 @@ fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 
 ## 三、文件系统
 
+文件系统包括：NFS、本地文件系统（Linux/macOS/Windows）、SFTP 等。
+
+### root 的定义
+
+不同文件系统类型的 `root` 值不同：
+
+| 文件系统类型 | root 值 | 说明 |
+|------------|--------|------|
+| NFS | `""` (空字符串) | 挂载点由引擎配置的 export_path 决定，不进入路径 |
+| Linux / macOS | `"/"` | 绝对路径以 `/` 开头 |
+| Windows | `"C:/"` 等 | 盘符加斜杠 |
+
 ### 字段定义
 
-**示例**: `/data/image/开会.jpg`
+**示例（NFS）**: `dir1/dir2/开会.jpg`
 
-- **path**: `/data/image/` (目录路径，以 `/` 结尾)
+- **root**: `""` (NFS 为空，由引擎配置决定挂载点)
+- **path**: `dir1/dir2/` (目录路径，以 `/` 结尾；根目录下的文件 path 为 `""`)
 - **name**: `开会.jpg` (文件名)
-- **full_name**: `/data/image/开会.jpg` (拼接规则: `path + name`)
+- **full_name**: `dir1/dir2/开会.jpg` (拼接规则: `root + path + name`)
+
+**示例（Linux）**: `/data/image/开会.jpg`
+
+- **root**: `"/"`
+- **path**: `data/image/` (不含 root 前缀，以 `/` 结尾)
+- **name**: `开会.jpg`
+- **full_name**: `/data/image/开会.jpg` (拼接规则: `root + path + name`)
+
+**根目录下的文件（NFS）**: `README.md`
+
+- **root**: `""`
+- **path**: `""` (根目录，空字符串)
+- **name**: `README.md`
+- **full_name**: `README.md`
 
 ### 指纹计算（两步方式）
 
 ```go
-// 步骤1: 计算 full_name
-fullName := path + name
-// "/data/image/" + "users.csv" → "/data/image/users.csv"
-
-// 步骤2: 计算指纹
+// NFS 根目录下的文件
+root := ""
+path := ""
+name := "README.md"
+fullName := root + path + name  // "README.md"
 fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
-// SHA256("3:/data/image/users.csv")
+
+// NFS 子目录文件
+root = ""
+path = "dir1/dir2/"
+name = "users.csv"
+fullName = root + path + name  // "dir1/dir2/users.csv"
+fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
+
+// Linux 文件系统
+root = "/"
+path = "data/image/"
+name = "开会.jpg"
+fullName = root + path + name  // "/data/image/开会.jpg"
+fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
 ```
 
 ## 四、通用原则
@@ -394,16 +434,39 @@ fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 ### 文件系统
 
 ```go
-// 示例3：文件系统
+// 示例3a：NFS 根目录下的文件
 engineID := uint(3)
-path := "/data/image/"
-name := "users.csv"
+root := ""
+path := ""
+name := "README.md"
 
-fullName := path + name
-// fullName = "/data/image/users.csv"
+fullName := root + path + name
+// fullName = "README.md"
 
 fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
-// fingerprint = SHA256("3:/data/image/users.csv")
+// fingerprint = SHA256("3:README.md")
+
+// 示例3b：NFS 子目录文件
+root = ""
+path = "dir1/dir2/"
+name = "users.csv"
+
+fullName = root + path + name
+// fullName = "dir1/dir2/users.csv"
+
+fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
+// fingerprint = SHA256("3:dir1/dir2/users.csv")
+
+// 示例3c：Linux 文件系统
+root = "/"
+path = "data/image/"
+name = "开会.jpg"
+
+fullName = root + path + name
+// fullName = "/data/image/开会.jpg"
+
+fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
+// fingerprint = SHA256("3:/data/image/开会.jpg")
 ```
 
 ## 十、常见问题 (FAQ)

@@ -284,7 +284,7 @@ func (s *ResourceDiscoveryService) listFileSystemNodes(resource *commonModels.En
 			result = append(result, &models.ObjectNode{
 				Name: r.Name,
 				Path: r.Path,
-				Type: "bucket", // 复用 bucket 类型，前端统一展示
+				Type: "root",
 			})
 		}
 		return result, nil
@@ -301,14 +301,14 @@ func (s *ResourceDiscoveryService) listFileSystemNodes(resource *commonModels.En
 		result = append(result, &models.ObjectNode{
 			Name: d.Name,
 			Path: d.Path,
-			Type: "prefix",
+			Type: "dir",
 		})
 	}
 	for _, f := range files {
 		result = append(result, &models.ObjectNode{
 			Name:      f.Name,
 			Path:      f.Path,
-			Type:      "object",
+			Type:      "file",
 			SizeBytes: f.Size,
 			FileType:  filepath.Ext(f.Name),
 		})

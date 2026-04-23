@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	commonFormat "github.com/addp/common/format"
 	"github.com/addp/common/engine/plugin"
 	parquetformat "github.com/addp/common/format/parquet"
 	"github.com/addp/manager/internal/models"
 )
+
 
 // LakeTablePreviewProvider 湖表预览 Provider
 // 支持 item_type="lake_table" 的数据项预览（Parquet/ORC/Avro 目录）
@@ -36,7 +37,7 @@ func (p *LakeTablePreviewProvider) Supports(req *PreviewRequest) bool {
 	if req == nil || req.Engine == nil {
 		return false
 	}
-	return req.ItemType == "lake_table" && isObjectStorageType(req.Engine.EngineType)
+	return req.ItemType == "lake_table" && (isObjectStorageType(req.Engine.EngineType) || isFileSystemType(req.Engine.EngineType))
 }
 
 func (p *LakeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -53,12 +54,6 @@ func (p *LakeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 
-	// 构建目录路径：schema 是 bucket，table 是目录路径
-	dirPath := req.Schema
-	if req.Table != "" {
-		dirPath = req.Schema + "/" + strings.TrimPrefix(req.Table, "/")
-	}
-
 	// 分页参数
 	page := req.Page
 	if page < 1 {
@@ -71,10 +66,25 @@ func (p *LakeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	offset := int64((page - 1) * pageSize)
 	limit := int64(pageSize)
 
-	// 读取预览数据
-	fields, rows, err := parquetformat.ReadFirstParquetPreview(ctx, fsPlugin, connInfo, dirPath, offset, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read lake table preview: %w", err)
+	var fields []commonFormat.FieldInfo
+	var rows []map[string]interface{}
+
+	if req.PhysicalPath != "" {
+		// 单文件模式：直接用 physical_path 读取（NFS/MinIO 单 parquet 文件）
+		var err error
+		fields, rows, err = parquetformat.ReadParquetFilePreview(ctx, fsPlugin, connInfo, req.PhysicalPath, offset, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read lake table preview: %w", err)
+		}
+	} else {
+		// 目录模式：列举目录找第一个 parquet 文件
+		// 使用 buildFSPath 将 schema/table 转换为 NFS 绝对路径
+		dirPath := buildFSPath(req.Schema, req.Table)
+		var err error
+		fields, rows, err = parquetformat.ReadFirstParquetPreview(ctx, fsPlugin, connInfo, dirPath, offset, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read lake table preview: %w", err)
+		}
 	}
 
 	// 构建列名和列元数据

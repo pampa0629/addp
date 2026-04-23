@@ -101,12 +101,18 @@ graph TB
 |---------|---------------|-------------|-------------|------------|-----------------|
 | **关系型数据库** | PostgreSQL/MySQL | Database | Schema | Table | Column |
 | **NoSQL 数据库** | MongoDB | Database | - | Collection | Field |
-| **对象存储** | MinIO/S3 | Bucket | Folder | Object/File | File Metadata |
+| **对象存储** | MinIO/S3 | Bucket | Folder | Object | File Metadata |
+| **NFS** | NFS Engine | Root (`""`) | Dir | File | File Metadata |
+| **本地文件系统** | Local FS Engine | Root (`"/"` 或 `"C:/"`) | Dir | File | File Metadata |
 
 **抽象规则**:
-- **Node**: 层次结构的容器,用于组织数据(Database、Schema、Bucket、Folder)
+- **Node**: 层次结构的容器,用于组织数据(Database、Schema、Bucket、Folder、Root、Dir)
 - **Item**: 可查询的数据单元,是元数据扫描的目标(Table、Collection、File)
 - **Metadata**: Item 的详细描述信息(Column、Field、File Metadata)
+
+**文件系统 vs 对象存储的 Node 类型区别**:
+- 对象存储使用 `bucket` / `prefix`（prefix 是虚拟目录，对象键的前缀）
+- 文件系统使用 `root` / `dir`（真实目录树，root 来自引擎配置不进入路径）
 
 ---
 

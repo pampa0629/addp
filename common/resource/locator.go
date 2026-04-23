@@ -13,11 +13,14 @@ type ResourceType string
 const (
 	TypeTable      ResourceType = "table"
 	TypeCollection ResourceType = "collection"
-	TypeObject     ResourceType = "object"
+	TypeObject     ResourceType = "object"   // 对象存储文件
+	TypeFile       ResourceType = "file"     // 文件系统文件（NFS/本地FS）
 	TypeDirectory  ResourceType = "directory"
 	TypeDatabase   ResourceType = "database"
 	TypeSchema     ResourceType = "schema"
-	TypeBucket     ResourceType = "bucket"
+	TypeBucket     ResourceType = "bucket"   // 对象存储桶
+	TypeRoot       ResourceType = "root"     // 文件系统根目录
+	TypeDir        ResourceType = "dir"      // 文件系统子目录
 	TypeUnknown    ResourceType = "unknown"
 )
 

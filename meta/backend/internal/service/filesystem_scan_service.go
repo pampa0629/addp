@@ -107,9 +107,12 @@ func (s *FileSystemScanService) ScanPaths(
 			rootName = rootPath // 最后兜底
 		}
 
-		// 创建根节点（bucket）
+		// 创建根节点（root）
+		// full_name 按规范：NFS 为 ""，本地FS 为 "/" 或 "C:/" 等
+		// NFS 引擎的 root 标识为空字符串，路径由引擎配置的 export_path 决定
+		rootFullName := rootFSIdentifier(resource.EngineType, rootPath)
 		rootAttrs := models.JSONMap{"path": rootPath}
-		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "bucket", rootName, rootName, rootAttrs)
+		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, rootFullName, rootAttrs)
 		if err != nil {
 			s.log.Warn("创建根节点失败", "path", rootPath, "error", err)
 			continue
@@ -267,7 +270,7 @@ func (s *FileSystemScanService) scanDirectory(
 
 			// 文件名去掉扩展名作为逻辑表名
 			itemName := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
-			fullName := parentNode.FullName + "/" + itemName
+			fullName := joinFSPath(parentNode.FullName, itemName)
 
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
@@ -281,17 +284,17 @@ func (s *FileSystemScanService) scanDirectory(
 				s.log.Info("识别到单文件湖表", "path", file.Path, "name", itemName)
 			}
 		} else {
-			// 普通文件 → object
+			// 普通文件 → file
 			fileAttrs := models.JSONMap{
 				"path":         file.Path,
 				"size":         file.Size,
 				"content_type": file.ContentType,
 			}
 			itemName := file.Name
-			fullName := parentNode.FullName + "/" + itemName
+			fullName := joinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
-				"object", itemName, fullName,
+				"file", itemName, fullName,
 				fileAttrs, nil, &file.Size, nil,
 			)
 			if upsertErr != nil {
@@ -306,8 +309,8 @@ func (s *FileSystemScanService) scanDirectory(
 	for _, subdir := range subdirs {
 		subdirName := subdir.Name
 		subdirAttrs := models.JSONMap{"path": subdir.Path}
-		subdirFullName := parentNode.FullName + "/" + subdirName
-		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "prefix", subdirName, subdirFullName, subdirAttrs)
+		subdirFullName := joinFSPath(parentNode.FullName, subdirName)
+		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, subdirFullName, subdirAttrs)
 		if err != nil {
 			s.log.Warn("创建子目录节点失败", "path", subdir.Path, "error", err)
 			continue
@@ -325,6 +328,28 @@ func (s *FileSystemScanService) scanDirectory(
 	}
 
 	return totalItems, nil
+}
+
+// joinFSPath 拼接文件系统路径
+// 规范：full_name = root + path + name，root 为 "" 时不加前缀 "/"
+func joinFSPath(parent, name string) string {
+	if parent == "" {
+		return name
+	}
+	return parent + "/" + name
+}
+
+// rootFSIdentifier 返回文件系统根节点的 full_name 标识
+// NFS: "" (挂载点由引擎配置决定，不进入路径)
+// 本地FS: "/" (Linux/macOS) 或 "C:/" 等 (Windows，直接用 rootPath)
+func rootFSIdentifier(engineType, rootPath string) string {
+	switch strings.ToLower(engineType) {
+	case "nfs", "nas":
+		return ""
+	default:
+		// 本地文件系统：rootPath 本身就是 root 标识（如 "/" 或 "C:/"）
+		return rootPath
+	}
 }
 
 // inferItemName 从路径推断数据项名称
