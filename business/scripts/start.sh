@@ -16,6 +16,7 @@
 #   bash scripts/start.sh -doris             # 只启动 Doris
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
+#   bash scripts/start.sh -mysql             # 只启动 MySQL
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
 #   bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB
@@ -42,6 +43,7 @@ ENABLE_DORIS=false
 ENABLE_SPARK=false
 ENABLE_NEO4J=false
 ENABLE_NFS=false
+ENABLE_MYSQL=false
 HAS_ARGS=false
 
 for arg in "$@"; do
@@ -56,6 +58,7 @@ for arg in "$@"; do
             ENABLE_SPARK=true
             ENABLE_NEO4J=true
             ENABLE_NFS=true
+            ENABLE_MYSQL=true
             ;;
         -postgres)
             ENABLE_PG=true
@@ -78,6 +81,9 @@ for arg in "$@"; do
         -neo4j)
             ENABLE_NEO4J=true
             ;;
+        -mysql)
+            ENABLE_MYSQL=true
+            ;;
         -nfs)
             ENABLE_NFS=true
             ;;
@@ -92,6 +98,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -doris                # 只启动 Doris"
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
+            echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB"
@@ -151,6 +158,11 @@ if [ "$ENABLE_NEO4J" = true ]; then
 else
     echo -e "  Neo4j: ✗ (使用 -neo4j 启用)"
 fi
+if [ "$ENABLE_MYSQL" = true ]; then
+    echo -e "  MySQL: ✓"
+else
+    echo -e "  MySQL: ✗ (使用 -mysql 启用)"
+fi
 if [ "$ENABLE_NFS" = true ]; then
     echo -e "  NFS: ✓"
 else
@@ -182,12 +194,10 @@ echo -e "${YELLOW}🔍 检测 CPU 架构: ${ARCH}${NC}"
 case "${ARCH}" in
     aarch64|arm64)
         export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
-        export NFS_IMAGE="apnar/nfs-ganesha:latest"
         echo -e "${GREEN}✓ ARM64 架构，使用: ${POSTGRES_IMAGE}${NC}"
         ;;
     x86_64)
         export POSTGRES_IMAGE="postgis/postgis:15-3.4"
-        export NFS_IMAGE="apnar/nfs-ganesha:latest"
         echo -e "${GREEN}✓ AMD64 架构，使用: ${POSTGRES_IMAGE}${NC}"
         ;;
     *)
@@ -212,7 +222,7 @@ SPARK_THRIFT_PORT=${SPARK_THRIFT_PORT:-10000}
 
 NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
-NFS_PORT_VAL=${NFS_PORT:-2049}
+MYSQL_PORT_VAL=${MYSQL_PORT:-3306}
 
 check_port_used_by_self() {
     local port=$1
@@ -232,7 +242,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT"
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
-[ "$ENABLE_NFS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NFS_PORT_VAL"
+[ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
 
 for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
@@ -242,8 +252,7 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-mongodb" || \
            check_port_used_by_self $port "business-doris-fe" || \
            check_port_used_by_self $port "business-spark-master" || \
-           check_port_used_by_self $port "business-neo4j" || \
-           check_port_used_by_self $port "business-nfs"; then
+           check_port_used_by_self $port "business-neo4j"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
             echo -e "${YELLOW}⚠️  端口 ${port} 被其他进程占用${NC}"
@@ -378,16 +387,48 @@ except Exception as e:
     fi
 fi
 
-# NFS
-if [ "$ENABLE_NFS" = true ]; then
-    # 确保测试数据目录存在
-    mkdir -p "${PROJECT_ROOT}/nas-data/gis-data"
-    if docker ps --filter "name=business-nfs" --format '{{.Status}}' | grep -q "Up"; then
-        echo -e "${GREEN}✓ NFS 已运行，跳过启动${NC}"
+# MySQL
+if [ "$ENABLE_MYSQL" = true ]; then
+    if docker ps --filter "name=business-mysql" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ MySQL 已运行，跳过启动${NC}"
     else
-        docker compose --profile nfs up -d nfs-server
-        echo -e "${GREEN}✓ NFS 已启动${NC}"
+        docker compose up -d mysql
+        echo -e "${GREEN}✓ MySQL 已启动${NC}"
     fi
+fi
+
+# NFS（macOS 内置 NFS）
+if [ "$ENABLE_NFS" = true ]; then
+    NFS_EXPORT_PATH="${PROJECT_ROOT}/nfs/data"
+    mkdir -p "${NFS_EXPORT_PATH}/gis-data"
+
+    if [ "$(uname -s)" != "Darwin" ]; then
+        echo -e "${RED}✗ -nfs 当前仅支持 macOS 内置 NFS${NC}"
+        exit 1
+    fi
+
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}✗ 配置 macOS NFS 需要 sudo 权限${NC}"
+        echo -e "${YELLOW}请使用: sudo bash scripts/start.sh -nfs${NC}"
+        exit 1
+    fi
+
+    EXPORTS_FILE="/etc/exports"
+    OLD_EXPORT="${PROJECT_ROOT}/nas-data"
+    NEW_EXPORT="${NFS_EXPORT_PATH}"
+
+    if [ -f "${EXPORTS_FILE}" ]; then
+        sed -i '' "s|${OLD_EXPORT}|${NEW_EXPORT}|g" "${EXPORTS_FILE}"
+    fi
+
+    if ! grep -Fq "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" "${EXPORTS_FILE}" 2>/dev/null; then
+        echo "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" >> "${EXPORTS_FILE}"
+    fi
+
+    nfsd restart >/dev/null 2>&1 || nfsd enable >/dev/null 2>&1 || true
+    nfsd checkexports >/dev/null 2>&1 || true
+
+    echo -e "${GREEN}✓ macOS NFS 导出已配置并重载${NC}"
 fi
 echo ""
 
@@ -468,9 +509,18 @@ if [ "$ENABLE_NEO4J" = true ]; then
 fi
 
 if [ "$ENABLE_NFS" = true ]; then
-    for i in {1..20}; do
-        if docker ps --filter "name=business-nfs" --format '{{.Status}}' | grep -q "Up"; then
-            echo -e "${GREEN}✓ NFS 就绪${NC}"
+    NFS_EXPORT_PATH="${PROJECT_ROOT}/nfs/data"
+    if [ -d "${NFS_EXPORT_PATH}" ]; then
+        echo -e "${GREEN}✓ NFS 就绪${NC}"
+    else
+        echo -e "${YELLOW}⚠️  NFS 导出目录不存在: ${NFS_EXPORT_PATH}${NC}"
+    fi
+fi
+
+if [ "$ENABLE_MYSQL" = true ]; then
+    for i in {1..30}; do
+        if docker exec business-mysql mysqladmin ping -h localhost -u root -p"${MYSQL_ROOT_PASSWORD:-password}" --silent >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ MySQL 就绪${NC}"
             break
         fi
         sleep 1
@@ -535,8 +585,11 @@ if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "Neo4j Browser: http://localhost:${NEO4J_HTTP_PORT_VAL}"
     echo -e "Neo4j Bolt: bolt://localhost:${NEO4J_BOLT_PORT_VAL}"
 fi
+if [ "$ENABLE_MYSQL" = true ]; then
+    echo -e "MySQL: localhost:${MYSQL_PORT_VAL:-3306}  (root / ${MYSQL_ROOT_PASSWORD:-password})"
+fi
 if [ "$ENABLE_NFS" = true ]; then
-    echo -e "NFS Server: localhost:${NFS_PORT_VAL} (export: /exports/data)"
+    echo -e "NFS Server: localhost:2049 (export: ${PROJECT_ROOT}/nfs/data)"
 fi
 
 echo ""

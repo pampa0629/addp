@@ -74,11 +74,11 @@ func (p *MySQLPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (str
 	// MySQL DSN 格式：user:password@tcp(host:port)/database
 	// 处理空密码的情况
 	if password == "" {
-		return fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+		return fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s&charset=utf8mb4&collation=utf8mb4_unicode_ci",
 			user, host, port, database), nil
 	}
 
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s&charset=utf8mb4&collation=utf8mb4_unicode_ci",
 		user, password, host, port, database), nil
 }
 
@@ -194,8 +194,8 @@ func (p *MySQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string
 
 	query := `
 		SELECT
-			table_schema as schema,
-			table_name,
+			table_schema as ` + "`schema`" + `,
+			table_name as table_name,
 			COALESCE(table_rows, 0) as row_count,
 			COALESCE(data_length + index_length, 0) as size_bytes
 		FROM information_schema.tables
@@ -218,8 +218,8 @@ func (p *MySQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 
 	query := `
 		SELECT
-			column_name,
-			data_type,
+			column_name as column_name,
+			data_type as data_type,
 			IF(is_nullable = 'YES', true, false) as is_nullable,
 			IF(column_key = 'PRI', true, false) as is_primary_key,
 			COALESCE(column_comment, '') as comment
@@ -272,3 +272,6 @@ func (p *MySQLPlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemSchemas[schemaName]
 }
+
+// SchemaNodeType 返回第一层节点的类型名
+func (p *MySQLPlugin) SchemaNodeType() string { return "database" }

@@ -13,8 +13,9 @@ type ResourceType string
 const (
 	TypeTable      ResourceType = "table"
 	TypeCollection ResourceType = "collection"
-	TypeObject     ResourceType = "object"   // 对象存储文件
-	TypeFile       ResourceType = "file"     // 文件系统文件（NFS/本地FS）
+	TypeObject     ResourceType = "object"     // 对象存储文件
+	TypeFile       ResourceType = "file"       // 文件系统文件（NFS/本地FS）
+	TypeLakeTable  ResourceType = "lake_table" // 湖表（Parquet/ORC/Avro）
 	TypeDirectory  ResourceType = "directory"
 	TypeDatabase   ResourceType = "database"
 	TypeSchema     ResourceType = "schema"

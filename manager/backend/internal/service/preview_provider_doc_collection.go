@@ -36,9 +36,18 @@ func (p *docCollectionPreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	// 检查是否有对应的 DocCollectionParser
+	// 需要有对应 parser，且引擎至少实现 NoSQLPlugin（用于创建/关闭客户端）
 	parser, err := format.GetDocCollectionParser(req.Engine.EngineType)
-	return err == nil && parser != nil
+	if err != nil || parser == nil {
+		return false
+	}
+
+	pl, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return false
+	}
+	_, ok := pl.(plugin.NoSQLPlugin)
+	return ok
 }
 
 func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {

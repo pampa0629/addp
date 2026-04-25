@@ -172,9 +172,9 @@
                       <span class="schema-name">{{ row.name }}</span>
                       <el-tag
                         size="small"
-                        :type="row.scan_status === '已扫描' ? 'success' : row.scan_status === '扫描中' ? 'warning' : 'info'"
+                        :type="row.scan_status === 'completed' ? 'success' : row.scan_status === 'running' ? 'warning' : 'info'"
                       >
-                        {{ row.scan_status }}
+                        {{ t(`meta.status.${row.scan_status}`) || row.scan_status }}
                       </el-tag>
 
                       <!-- 调度状态图标 -->
@@ -222,7 +222,7 @@
                       :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
                     >
                       <el-icon><Search /></el-icon>
-                      {{ row.scan_status === '已扫描' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
+                      {{ row.scan_status === 'completed' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
                     </el-button>
                     <el-button
                       type="success"
@@ -698,7 +698,7 @@ const loadSchemas = async () => {
           ...available,
           id: scanned?.id,
           schema_name: available.name,  // 保持兼容
-          scan_status: scanned?.scan_status || '未扫描',
+          scan_status: scanned?.scan_status || 'pending',
           table_count: scanned?.table_count || 0,
           scanned_at: scanned?.scanned_at || '',
           total_size_bytes: scanned?.total_size_bytes || 0

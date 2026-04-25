@@ -357,3 +357,6 @@ func (p *PostgreSQLPlugin) IsSystemSchema(schemaName string) bool {
 
 	return false
 }
+
+// SchemaNodeType 返回第一层节点的类型名
+func (p *PostgreSQLPlugin) SchemaNodeType() string { return "schema" }

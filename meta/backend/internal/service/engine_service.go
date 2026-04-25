@@ -415,7 +415,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	var scanned []countRow
 	if err := s.db.Table("metadata.meta_node").
 		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
-		Where("parent_node_id IS NULL AND scan_status = ?", "已扫描").
+		Where("parent_node_id IS NULL AND scan_status = ?", "completed").
 		Select("engine_id, COUNT(*) AS count").
 		Group("engine_id").
 		Scan(&scanned).Error; err != nil {

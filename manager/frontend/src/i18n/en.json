@@ -233,7 +233,14 @@
       "metaPdfTitle": "Title: {value}",
       "metaPdfCreator": "Creator: {value}",
       "metaLastModified": "Last Modified: {value}",
-      "metaUnknown": "Unknown"
+      "metaUnknown": "Unknown",
+      "engineName": "Engine Name",
+      "engineType": "Engine Type",
+      "hostPort": "Host:Port",
+      "type": "Type",
+      "name": "Name",
+      "expand": "Expand",
+      "collapse": "Collapse"
     },
     "directories": {
       "title": "Directory Management",
@@ -385,6 +392,46 @@
       "scanDepthBasic": "Basic",
       "scanDepthDeep": "Deep",
       "scanDepthFull": "Full"
+    }
+  },
+  "engine": {
+    "term": {
+      "schema": "Schema",
+      "database": "Database",
+      "bucket": "Bucket",
+      "prefix": "Prefix",
+      "directory": "Directory",
+      "dir": "Directory",
+      "root": "Root",
+      "table": "Table",
+      "view": "View",
+      "collection": "Collection",
+      "label": "Label",
+      "relationship": "Relationship",
+      "file": "File",
+      "object": "Object",
+      "lake_table": "Lake Table"
+    }
+  },
+  "meta": {
+    "itemType": "Item Type",
+    "fullName": "Full Name",
+    "columnCount": "Column Count",
+    "rowCount": "Row Count",
+    "size": "Size",
+    "scannedAt": "Scanned At",
+    "scanStatus": "Scan Status",
+    "itemCount": "Item Count",
+    "metaId": "Metadata ID",
+    "sizeBytes": "Size (Bytes)",
+    "additionalAttributes": "Additional Attributes",
+    "nodeChildren": "Child Nodes",
+    "nodeItems": "Items",
+    "status": {
+      "completed": "Scanned",
+      "pending": "Pending",
+      "running": "Scanning",
+      "failed": "Failed"
     }
   }
 }

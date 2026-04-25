@@ -96,6 +96,9 @@
                     <el-icon v-else-if="data.type === 'engine' && (data.engineType === 'minio' || data.engineType === 's3')">
                       <Shop />
                     </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && (data.engineType === 'nfs' || data.engineType === 'nas')">
+                      <FolderOpened />
+                    </el-icon>
                     <!-- 其他节点类型图标 -->
                     <el-icon v-else-if="data.type === 'schema'">
                       <OfficeBuilding />
@@ -118,7 +121,7 @@
                     <el-icon v-else-if="data.type === 'task'">
                       <Files />
                     </el-icon>
-                    <el-icon v-else-if="data.type === 'folder'">
+                    <el-icon v-else-if="data.type === 'folder' || data.type === 'dir'">
                       <Folder />
                     </el-icon>
                     <el-icon v-else-if="data.type === 'file'">

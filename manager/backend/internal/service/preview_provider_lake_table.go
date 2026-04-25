@@ -78,8 +78,8 @@ func (p *LakeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		}
 	} else {
 		// 目录模式：列举目录找第一个 parquet 文件
-		// 使用 buildFSPath 将 schema/table 转换为 NFS 绝对路径
-		dirPath := buildFSPath(req.Schema, req.Table)
+		// 目录模式：NFS 物理路径 = "/" + schema + "/" + table
+		dirPath := nfsPhysicalPath(req.Schema, req.Table)
 		var err error
 		fields, rows, err = parquetformat.ReadFirstParquetPreview(ctx, fsPlugin, connInfo, dirPath, offset, limit)
 		if err != nil {

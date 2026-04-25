@@ -198,7 +198,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
 			attrs := models.JSONMap{"bucket": bucketName}
-			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, bucketName, attrs)
+			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
 				return totalBuckets, totalObjects, err
 			}
@@ -209,7 +209,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 		fullBucket := prefix == ""
 		if fullBucket {
 			if !processedBuckets[bucketName] {
-				if err := s.repo.ResetNodeState(bucketNode, "扫描中"); err != nil {
+				if err := s.repo.ResetNodeState(bucketNode, "running"); err != nil {
 					return totalBuckets, totalObjects, err
 				}
 			}
@@ -307,7 +307,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 			continue
 		}
 
-		if err := s.repo.FinalizeNodeState(bucketNode, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
+		if err := s.repo.FinalizeNodeState(bucketNode, "completed", agg.itemCount, agg.totalSize, ""); err != nil {
 			s.log.Warn("完成bucket节点状态更新失败",
 				"bucket", bucketName,
 				"error", err,
@@ -324,12 +324,12 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 		}
 
 		// 更新子目录节点的统计信息和扫描状态
-		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"已扫描"
+		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"completed"
 		now := time.Now()
 		if err := s.db.Model(agg.node).Updates(map[string]interface{}{
 			"item_count":       agg.itemCount,
 			"total_size_bytes": agg.totalSize,
-			"scan_status":      "已扫描",
+			"scan_status":      "completed",
 			"scanned_at":       now,
 		}).Error; err != nil {
 			s.log.Warn("更新子目录节点统计信息失败",
@@ -679,7 +679,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
 			attrs := models.JSONMap{"bucket": bucketName}
-			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, bucketName, attrs)
+			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
 				return totalBuckets, totalObjects, err
 			}
@@ -690,7 +690,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		fullBucket := relativePath == ""
 		if fullBucket {
 			if !processedBuckets[bucketName] {
-				if err := s.repo.ResetNodeState(bucketNode, "扫描中"); err != nil {
+				if err := s.repo.ResetNodeState(bucketNode, "running"); err != nil {
 					return totalBuckets, totalObjects, err
 				}
 			}
@@ -792,7 +792,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 			continue
 		}
 
-		if err := s.repo.FinalizeNodeState(bucketNode, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
+		if err := s.repo.FinalizeNodeState(bucketNode, "completed", agg.itemCount, agg.totalSize, ""); err != nil {
 			s.log.Warn("完成bucket节点状态更新失败",
 				"bucket", bucketName,
 				"error", err,
@@ -809,12 +809,12 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		}
 
 		// 更新子目录节点的统计信息和扫描状态
-		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"已扫描"
+		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"completed"
 		now := time.Now()
 		if err := s.db.Model(agg.node).Updates(map[string]interface{}{
 			"item_count":       agg.itemCount,
 			"total_size_bytes": agg.totalSize,
-			"scan_status":      "已扫描",
+			"scan_status":      "completed",
 			"scanned_at":       now,
 		}).Error; err != nil {
 			s.log.Warn("更新子目录节点统计信息失败",
@@ -892,7 +892,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 				"bucket": bucketNode.Name,
 				"path":   pathSoFar + "/", // ✅ 路径规范：目录路径必须以 / 结尾
 			}
-			childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
+			childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 			if err != nil {
 				return objects, err
 			}
@@ -986,7 +986,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 					"bucket": meta.Bucket,
 					"path":   strings.Join(segmentsToProcess[:idx+1], "/") + "/", // ✅ 路径规范：目录路径必须以 / 结尾
 				}
-				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
+				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
 					return objects, err
 				}
@@ -1009,13 +1009,22 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
 		}
 
+		// 提前判断是否为湖表格式，以便正确计算 fullName 和 fingerprint
+		// 湖表的逻辑名称去掉扩展名，与 NFS 保持一致
+		itemType := "object"
+		itemName := objectName
+		if isLakeTableFormat(meta.FileType) {
+			itemType = "lake_table"
+			itemName = logicalLakeTableName(objectName)
+		}
+
 		// 构建基础属性
 		// 按照路径统一规范：拆分为 bucket、path（目录，以/结尾）、name（文件名）
 		dir, name := commonModels.SplitObjectPath(meta.Path)
 		attrs := models.JSONMap{
 			"bucket":       meta.Bucket,
 			"path":         dir,  // 目录路径（以 / 结尾）
-			"name":         name, // 文件名
+			"name":         name, // 文件名（原始，含扩展名）
 			"file_type":    meta.FileType,
 			"object_count": meta.ObjectCount,
 		}
@@ -1024,9 +1033,12 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		}
 
 		// 生成fingerprint - 两步计算方式
-		// 步骤1: 使用已拆分的 dir 和 name 拼接 full_name (bucket/path+name)
-		// 步骤2: 计算指纹 SHA256(engineID:fullName)
-		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
+		// 湖表使用逻辑名称（去掉扩展名）计算 fullName，与 NFS 保持一致
+		logicalName := name
+		if itemType == "lake_table" {
+			logicalName = logicalLakeTableName(name)
+		}
+		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, logicalName)
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
@@ -1079,25 +1091,9 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 
 		sizeVal := meta.SizeBytes
 
-		// 重要：fullName必须基于扫描路径前缀正确计算
-		// Scanner返回的RelativePath是相对于扫描路径的，不是相对于bucket的
-		// 例如：扫描 addp/shapefile 时，文件 shapefile/示例数据.shp 的 RelativePath 是 "示例数据.shp"
-		// 我们需要加上 scanPathPrefix 来得到完整路径
-		// 注意：这里重新计算 fullName 用于 UpsertItem，与前面计算指纹的 fullName 不同
-		fullName = meta.Bucket
-		if scanPathPrefix != "" && trimmed != "" {
-			// 扫描子目录：bucket/scanPathPrefix/relativePath
-			fullName = meta.Bucket + "/" + scanPathPrefix + "/" + trimmed
-		} else if scanPathPrefix != "" {
-			// 扫描子目录但文件在根目录（不应该发生）
-			fullName = meta.Bucket + "/" + scanPathPrefix
-		} else if trimmed != "" {
-			// 扫描整个bucket：bucket/relativePath
-			fullName = meta.Bucket + "/" + trimmed
-		}
-		// 否则 fullName = bucket（bucket级别的对象）
+		// fullName 已在上方通过 JoinObjectPath(bucket, dir, name) 计算，直接复用
+		// 不再基于 scanPathPrefix 重新拼接，避免前缀重复（如 bucket/prefix/prefix/file）
 
-		// Debug logging (using INFO to ensure it shows)
 		s.log.Info("计算fullName和父节点",
 			"meta.Bucket", meta.Bucket,
 			"meta.Path", meta.Path,
@@ -1108,7 +1104,15 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"currentParent_name", currentParent.Name,
 			"objectName", objectName)
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
+		// 湖表属性（itemType 和 itemName 已在上方确定）
+		if itemType == "lake_table" {
+			enhancedAttrs["format"] = meta.FileType
+			enhancedAttrs["mode"] = "file"
+			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
+			enhancedAttrs["physical_path"] = meta.Bucket + "/" + meta.Path
+		}
+
+		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
 		if err != nil {
 			return objects, err
 		}
@@ -1312,4 +1316,25 @@ func getBoolFromConn(info commonModels.ConnectionInfo, key string) bool {
 		}
 	}
 	return false
+}
+
+func isLakeTableFormat(fileType string) bool {
+	switch strings.ToLower(strings.TrimSpace(fileType)) {
+	case "parquet", "orc", "avro":
+		return true
+	default:
+		return false
+	}
+}
+
+func logicalLakeTableName(fileName string) string {
+	ext := filepath.Ext(fileName)
+	if ext == "" {
+		return fileName
+	}
+	base := strings.TrimSuffix(fileName, ext)
+	if strings.TrimSpace(base) == "" {
+		return fileName
+	}
+	return base
 }

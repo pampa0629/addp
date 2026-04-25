@@ -19,6 +19,12 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"doc-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDocCollectionPreviewProvider(), nil
 	},
+	"graph-label": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewGraphLabelPreviewProvider(), nil
+	},
+	"graph-relationship": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewGraphRelationshipPreviewProvider(), nil
+	},
 	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewFileTablePreviewProvider(), nil
 	},

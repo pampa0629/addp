@@ -573,7 +573,7 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 		return nil, fmt.Errorf("database node not found: %s", database)
 	}
 
-	// 从 Items 中过滤出对应数据库的 collection 和 relationship_type
+	// 从 Items 中过滤出对应数据库的 label 和 relationship
 	resp := &GraphSchemaResponse{
 		NodeLabels:    []NodeLabelSchema{},
 		Relationships: []RelationshipSchema{},
@@ -584,7 +584,7 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 			continue
 		}
 		switch item.ItemType {
-		case "collection":
+		case "label":
 			label := NodeLabelSchema{
 				Label:      item.Name,
 				Properties: extractStringSliceFromAttrs(item.Attributes, "fields"),
@@ -595,7 +595,7 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 				label.Count = toInt64(v)
 			}
 			resp.NodeLabels = append(resp.NodeLabels, label)
-		case "relationship_type":
+		case "relationship":
 			rel := RelationshipSchema{
 				Type:       item.Name,
 				FromLabels: extractStringSliceFromAttrs(item.Attributes, "from_labels"),
@@ -702,7 +702,7 @@ func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONM
 	}
 
 	// MongoDB 集合类型（collection）：通常是 database.collection
-	if itemType == "collection" {
+	if itemType == "collection" || itemType == "label" || itemType == "relationship" {
 		segments := strings.Split(fullName, ".")
 		return len(segments)
 	}

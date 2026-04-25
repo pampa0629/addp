@@ -56,7 +56,8 @@ func composeNodeFullName(name string, parent *models.MetaNode, separator string)
 func (r *ScanRepository) UpsertNode(
 	tenantID, engineID uint,
 	parent *models.MetaNode,
-	nodeType, name, fullName string,
+	nodeType, name string,
+	fullName *string, // nil = 自动计算，非 nil = 显式指定（空字符串也有效）
 	attrs models.JSONMap,
 ) (*models.MetaNode, error) {
 	var parentID *uint
@@ -87,11 +88,11 @@ func (r *ScanRepository) UpsertNode(
 			NodeType:     nodeType,
 			Name:         name,
 			Depth:        depth,
-			ScanStatus:   "未扫描",
+			ScanStatus:   "pending",
 			Attributes:   models.JSONMap{},
 		}
-		if fullName != "" {
-			node.FullName = fullName
+		if fullName != nil {
+			node.FullName = *fullName
 		}
 		if attrs != nil {
 			node.Attributes = attrs
@@ -106,7 +107,7 @@ func (r *ScanRepository) UpsertNode(
 		update := map[string]interface{}{"path": path}
 		node.Path = path
 
-		if node.FullName == "" {
+		if fullName == nil {
 			node.FullName = composeNodeFullName(node.Name, parent, ".")
 			update["full_name"] = node.FullName
 		}
@@ -142,9 +143,9 @@ func (r *ScanRepository) UpsertNode(
 		node.Path = path
 	}
 
-	expectedFullName := fullName
-	if expectedFullName == "" {
-		expectedFullName = composeNodeFullName(name, parent, ".")
+	expectedFullName := composeNodeFullName(name, parent, ".")
+	if fullName != nil {
+		expectedFullName = *fullName
 	}
 	if node.FullName != expectedFullName {
 		updates["full_name"] = expectedFullName
@@ -173,7 +174,7 @@ func (r *ScanRepository) ResetNodeState(node *models.MetaNode, status string) er
 		"scan_error":  "", // 清除错误信息
 	}
 
-	if status == "扫描中" {
+	if status == "running" {
 		update["scanned_at"] = now
 	}
 	return r.db.Model(node).Updates(update).Error
@@ -194,7 +195,7 @@ func (r *ScanRepository) FinalizeNodeState(
 		"scan_error":       errMsg,
 	}
 
-	if status == "已扫描" {
+	if status == "completed" {
 		update["scanned_at"] = time.Now()
 	}
 	return r.db.Model(node).Updates(update).Error

@@ -150,6 +150,12 @@
       "loadTaskRunsFailed": "Failed to load task runs: {msg}",
       "taskId": "Task #{id}",
       "runIdLabel": "Run #{id}"
+    },
+    "status": {
+      "pending": "Pending",
+      "running": "Scanning",
+      "completed": "Scanned",
+      "failed": "Failed"
     }
   }
 }

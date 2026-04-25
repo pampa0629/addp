@@ -184,104 +184,6 @@ func (p *Neo4jPlugin) ListDatabases(ctx context.Context, connInfo plugin.Connect
 	return databases, nil
 }
 
-// ListCollections 实现 NoSQLPlugin 接口 - 列出所有 Node Label（相当于"表"）
-func (p *Neo4jPlugin) ListCollections(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.CollectionInfo, error) {
-	driver, err := p.createDriver(ctx, connInfo)
-	if err != nil {
-		return nil, err
-	}
-	defer driver.Close(ctx)
-
-	session := driver.NewSession(ctx, neo4jdriver.SessionConfig{
-		AccessMode:   neo4jdriver.AccessModeRead,
-		DatabaseName: database,
-	})
-	defer session.Close(ctx)
-
-	// 获取所有 Node Label
-	result, err := session.Run(ctx, "CALL db.labels() YIELD label RETURN label ORDER BY label", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Neo4j labels: %w", err)
-	}
-
-	records, err := result.Collect(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to collect Neo4j labels: %w", err)
-	}
-
-	collections := make([]plugin.CollectionInfo, 0, len(records))
-	for _, record := range records {
-		labelVal, ok := record.Get("label")
-		if !ok {
-			continue
-		}
-		label, ok := labelVal.(string)
-		if !ok {
-			continue
-		}
-
-		// 获取该 label 的节点数量
-		stats, err := p.GetCollectionStats(ctx, connInfo, database, label)
-		if err != nil {
-			collections = append(collections, plugin.CollectionInfo{
-				Database:      database,
-				Name:          label,
-				DocumentCount: 0,
-			})
-			continue
-		}
-
-		collections = append(collections, plugin.CollectionInfo{
-			Database:      database,
-			Name:          label,
-			DocumentCount: stats.DocumentCount,
-			SizeBytes:     stats.SizeBytes,
-		})
-	}
-
-	return collections, nil
-}
-
-// GetCollectionStats 实现 NoSQLPlugin 接口 - 获取指定 Label 的统计信息
-func (p *Neo4jPlugin) GetCollectionStats(ctx context.Context, connInfo plugin.ConnectionInfo, database, label string) (*plugin.CollectionStats, error) {
-	driver, err := p.createDriver(ctx, connInfo)
-	if err != nil {
-		return nil, err
-	}
-	defer driver.Close(ctx)
-
-	session := driver.NewSession(ctx, neo4jdriver.SessionConfig{
-		AccessMode:   neo4jdriver.AccessModeRead,
-		DatabaseName: database,
-	})
-	defer session.Close(ctx)
-
-	// 统计该 Label 节点数量
-	result, err := session.Run(ctx,
-		fmt.Sprintf("MATCH (n:`%s`) RETURN count(n) AS count", label),
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count nodes for label %s: %w", label, err)
-	}
-
-	record, err := result.Single(ctx)
-	if err != nil {
-		return &plugin.CollectionStats{DocumentCount: 0, Indexes: []plugin.IndexInfo{}}, nil
-	}
-
-	countVal, _ := record.Get("count")
-	count, _ := countVal.(int64)
-
-	return &plugin.CollectionStats{
-		DocumentCount: count,
-		SizeBytes:     0,
-		IndexCount:    0,
-		AvgDocSize:    0,
-		Indexes:       []plugin.IndexInfo{},
-	}, nil
-}
-
 // IsSystemDatabase 实现 NoSQLPlugin 接口 - 判断是否为系统数据库
 func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	// Neo4j 系统数据库
@@ -298,14 +200,56 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 
 // ListNodeLabels 实现 GraphDBPlugin 接口 - 列出所有节点标签
 func (p *Neo4jPlugin) ListNodeLabels(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.NodeLabelInfo, error) {
-	collections, err := p.ListCollections(ctx, connInfo, database)
+	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
 	}
-	labels := make([]plugin.NodeLabelInfo, len(collections))
-	for i, c := range collections {
-		labels[i] = plugin.NodeLabelInfo{Name: c.Name, Count: c.DocumentCount}
+	defer driver.Close(ctx)
+
+	session := driver.NewSession(ctx, neo4jdriver.SessionConfig{
+		AccessMode:   neo4jdriver.AccessModeRead,
+		DatabaseName: database,
+	})
+	defer session.Close(ctx)
+
+	result, err := session.Run(ctx, "CALL db.labels() YIELD label RETURN label ORDER BY label", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Neo4j labels: %w", err)
 	}
+
+	records, err := result.Collect(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect Neo4j labels: %w", err)
+	}
+
+	labels := make([]plugin.NodeLabelInfo, 0, len(records))
+	for _, record := range records {
+		labelVal, ok := record.Get("label")
+		if !ok {
+			continue
+		}
+		label, ok := labelVal.(string)
+		if !ok {
+			continue
+		}
+
+		// 统计该 label 的节点数量
+		countResult, err := session.Run(ctx,
+			fmt.Sprintf("MATCH (n:`%s`) RETURN count(n) AS count", escapeCypherLabel(label)),
+			nil,
+		)
+		var count int64
+		if err == nil {
+			if rec, err := countResult.Single(ctx); err == nil {
+				if v, ok := rec.Get("count"); ok {
+					count, _ = v.(int64)
+				}
+			}
+		}
+
+		labels = append(labels, plugin.NodeLabelInfo{Name: label, Count: count})
+	}
+
 	return labels, nil
 }
 
@@ -341,6 +285,10 @@ func (p *Neo4jPlugin) ListRelationshipTypes(ctx context.Context, connInfo plugin
 		}
 		relType, ok := relTypeVal.(string)
 		if !ok {
+			continue
+		}
+
+		if isInternalRelationshipType(relType) {
 			continue
 		}
 
@@ -659,6 +607,16 @@ func isCypherWriteQuery(cypher string) bool {
 // escapeCypherLabel 转义 Cypher 标签/关系类型中的反引号，防止注入
 func escapeCypherLabel(label string) string {
 	return strings.ReplaceAll(label, "`", "``")
+}
+
+func isInternalRelationshipType(relType string) bool {
+	internalTypes := map[string]struct{}{
+		"RTREE_METADATA":  {},
+		"RTREE_REFERENCE": {},
+		"RTREE_ROOT":      {},
+	}
+	_, ok := internalTypes[strings.ToUpper(relType)]
+	return ok
 }
 
 // convertNeo4jValue 将 Neo4j 值转为 JSON 友好的 Go 类型

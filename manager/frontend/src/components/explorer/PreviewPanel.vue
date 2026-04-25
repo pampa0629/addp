@@ -873,7 +873,12 @@ const title = computed(() => {
   if (['object', 'directory', 'bucket'].includes(nodeType)) {
     const path = node.path || node.table || ''
     if (path) {
-      return `${node.schema}/${path} - ${t('manager.explorer.dataPreview')}`
+      const schema = String(node.schema || '')
+      const normalizedPath = String(path)
+      const displayPath = schema && normalizedPath.startsWith(`${schema}/`)
+        ? normalizedPath
+        : (schema ? `${schema}/${normalizedPath}` : normalizedPath)
+      return `${displayPath} - ${t('manager.explorer.dataPreview')}`
     }
     return `${node.schema || node.label || ''} - ${t('manager.explorer.dataPreview')}`
   }

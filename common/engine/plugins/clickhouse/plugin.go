@@ -264,3 +264,16 @@ func (p *ClickHousePlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, sc
 
 	return count, nil
 }
+
+// IsSystemSchema 判断是否为系统 Database
+func (p *ClickHousePlugin) IsSystemSchema(schemaName string) bool {
+	systemDatabases := map[string]bool{
+		"system":             true,
+		"information_schema": true,
+		"INFORMATION_SCHEMA": true,
+	}
+	return systemDatabases[schemaName]
+}
+
+// SchemaNodeType 返回第一层节点的类型名
+func (p *ClickHousePlugin) SchemaNodeType() string { return "database" }

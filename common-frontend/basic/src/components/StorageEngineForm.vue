@@ -123,6 +123,32 @@
       </div>
     </template>
 
+    <!-- MySQL -->
+    <template v-else-if="formState.engine_type === 'mysql'">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.database') + ' (' + t('common.optional') + ')'">
+        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" placeholder="root" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        {{ t('storageEngine.passwordHint') }}
+      </div>
+    </template>
+
     <!-- MongoDB -->
     <template v-else-if="formState.engine_type === 'mongodb'">
       <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
@@ -709,7 +735,6 @@ const computedRules = computed(() => {
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database'],
       'connection_info.user': rules['connection_info.user'],
       'connection_info.password': rules['connection_info.password']
     }
@@ -891,5 +916,13 @@ watch(
   margin: -8px 0 16px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+</style>
+
+<style>
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: var(--el-text-color-placeholder) !important;
+  opacity: 0.6;
 }
 </style>

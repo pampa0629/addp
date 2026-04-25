@@ -47,13 +47,12 @@ func (p *fileSystemPreviewProvider) Supports(req *PreviewRequest) bool {
 
 func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	engine := req.Engine
-	// schema = 根路径名（bucket 等价物），table = 文件/目录路径
+	// schema = locator path[0]，table = locator path[1:] 的 join
+	// NFS 物理路径 = "/" + schema + "/" + table（schema 为空时返回 "/"）
 	rootName := req.Schema
 	filePath := req.Table
 
-	// 构建完整路径：NFS 使用 / 开头的绝对路径
-	// rootName 对应 ListRoots 返回的 Name，filePath 是相对于根的路径
-	fullPath := buildFSPath(rootName, filePath)
+	fullPath := nfsPhysicalPath(rootName, filePath)
 
 	pl, err := plugin.Get(engine.EngineType)
 	if err != nil {
@@ -223,20 +222,22 @@ func (p *fileSystemPreviewProvider) previewFile(
 	return preview, nil
 }
 
-// buildFSPath 从 rootName 和 filePath 构建文件系统路径
-// NFS 使用绝对路径（/），filePath 可能是 "nas-data/gis-data/sample.csv" 格式
+// nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径
+// schema = locator path[0]，table = locator path[1:] 的 join
+// 转换规则：NFS物理路径 = "/" + schema + "/" + table
+func nfsPhysicalPath(schema, table string) string {
+	if schema == "" {
+		return "/"
+	}
+	if table == "" {
+		return "/" + schema
+	}
+	return "/" + schema + "/" + table
+}
+
+// buildFSPath 保留供外部调用兼容，内部已改用 nfsPhysicalPath
 func buildFSPath(rootName, filePath string) string {
-	if filePath == "" {
-		return "/"
-	}
-	// 去掉 rootName 前缀（如果有）
-	clean := strings.TrimPrefix(filePath, rootName+"/")
-	clean = strings.TrimPrefix(clean, rootName)
-	clean = strings.Trim(clean, "/")
-	if clean == "" {
-		return "/"
-	}
-	return "/" + clean
+	return nfsPhysicalPath(rootName, filePath)
 }
 
 // isDirectoryPath 判断路径是否为目录（以 / 结尾或为空）

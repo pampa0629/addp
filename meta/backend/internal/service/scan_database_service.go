@@ -80,19 +80,19 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	}
 
 	// 4. 创建/更新 Schema 节点
-	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, "schema", schemaName, "", nil)
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, relPlugin.SchemaNodeType(), schemaName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	if err := s.repo.ResetNodeState(schemaNode, "扫描中"); err != nil {
+	if err := s.repo.ResetNodeState(schemaNode, "running"); err != nil {
 		return 0, 0, 0, err
 	}
 
 	// 5. 扫描表
 	tables, fields, err := s.scanTables(ctx, resource, relPlugin, db, tenantID, engineID, schemaNode, schemaName, scanDepth)
 	if err != nil {
-		s.repo.FinalizeNodeState(schemaNode, "未扫描", 0, 0, err.Error())
+		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
 	}
 
@@ -104,7 +104,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 		}
 	}
 
-	if err := s.repo.FinalizeNodeState(schemaNode, "已扫描", tables, totalSize, ""); err != nil {
+	if err := s.repo.FinalizeNodeState(schemaNode, "completed", tables, totalSize, ""); err != nil {
 		return 0, tables, fields, err
 	}
 

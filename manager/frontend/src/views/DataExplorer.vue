@@ -22,7 +22,21 @@
 
       <!-- 右侧预览面板（独立滚动容器） -->
       <div class="preview-container">
-        <PreviewPanel
+        <EnginePanel
+          v-if="panelType === 'engine'"
+          :engine="selectedEngine"
+          :tree-root="selectedEngineTree"
+        />
+
+        <NodePanel
+          v-else-if="panelType === 'node'"
+          :selected-node="store.selectedNode"
+          :children="currentNodeChildren"
+          @open-node="handleOpenNode"
+        />
+
+        <ItemPanel
+          v-else
           :selected-node="selectedNodeLegacy"
           :preview-data="store.previewData"
           :loading="store.previewLoading"
@@ -42,7 +56,9 @@ import { useI18n } from 'vue-i18n'
 import { parseLocator } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
-import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
+import EnginePanel from '@/components/explorer/EnginePanel.vue'
+import NodePanel from '@/components/explorer/NodePanel.vue'
+import ItemPanel from '@/components/explorer/ItemPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
@@ -61,6 +77,9 @@ const treeRef = ref(null)
 // 控制搜索显示（可选功能，暂时隐藏）
 const showSearch = ref(false)
 
+const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object', 'lake_table'])
+const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
+
 // 计算属性：兼容旧版 PreviewPanel 的 selectedNode 格式
 const selectedNodeLegacy = computed(() => {
   if (!store.selectedNode) return null
@@ -73,7 +92,7 @@ const selectedNodeLegacy = computed(() => {
     locator: store.selectedLocator,
     engineId: loc.engineId,
     engineType: store.selectedNode.engineType || engine?.engine_type || '',
-      engineName: engine?.name || t('manager.explorer.engineNotFound', { engineId: loc.engineId }),
+    engineName: engine?.name || t('manager.explorer.engineNotFound', { engineId: loc.engineId }),
     schema: loc.path[0] || '',
     table: loc.path[1] || '',
     path: loc.path.join('/'),
@@ -82,20 +101,49 @@ const selectedNodeLegacy = computed(() => {
   }
 })
 
+const selectedEngine = computed(() => {
+  if (!store.selectedLocator) return null
+  const loc = parseLocator(store.selectedLocator)
+  return store.engines.find(e => e.id === loc.engineId) || null
+})
+
+const selectedEngineTree = computed(() => {
+  const engine = selectedEngine.value
+  if (!engine) return null
+  return store.engineTrees[engine.id] || null
+})
+
+const panelType = computed(() => {
+  const node = store.selectedNode
+  if (!node) return 'item'
+  if (node.type === 'engine') return 'engine'
+  if (nodeTypes.has(node.type)) return 'node'
+  return 'item'
+})
+
+const currentNodeChildren = computed(() => {
+  const node = store.selectedNode
+  if (!node || panelType.value !== 'node') return []
+  return (node.children || []).filter(child => child.type !== '__sentinel__')
+})
+
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }) => {
   console.log('[DataExplorer] 节点选择:', { label: node.label, locator })
 
-  // 非引擎节点，加载预览
-  if (node.type !== 'engine') {
-    try {
+  try {
+    if (node.type !== 'engine' && nodeTypes.has(node.type)) {
+      await store.loadNodeChildren(locator, 1)
+    }
+
+    if (node.type !== 'engine' && itemTypes.has(node.type)) {
       await store.loadPreview(locator, 1)
-    } catch (error) {
-      console.error('加载预览失败:', error)
-      // 提取后端返回的错误信息（优先使用 response.data.error，否则使用 error.message）
-      const errorMessage = error.response?.data?.error || error.message
-      ElMessage.error(errorMessage)
-    }  }
+    }
+  } catch (error) {
+    console.error('加载节点数据失败:', error)
+    const errorMessage = error.response?.data?.error || error.message
+    ElMessage.error(errorMessage)
+  }
 }
 
 // 事件处理：搜索结果选择
@@ -141,6 +189,14 @@ const handlePageChange = async (page) => {
 const handleNavigate = (params) => {
   console.log('导航:', params)
   // TODO: 实现导航逻辑
+}
+
+const handleOpenNode = async (locator) => {
+  if (!locator) return
+  store.selectNode(locator)
+  const node = store.selectedNode
+  if (!node) return
+  await handleNodeSelect({ node, locator })
 }
 
 // 初始化

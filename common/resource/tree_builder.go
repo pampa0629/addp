@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 )
 
@@ -15,6 +16,7 @@ type TreeNode struct {
 	Locator     string                 `json:"locator"`      // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
 	Label       string                 `json:"label"`        // 显示标签（节点名称）
 	Type        string                 `json:"type"`         // 节点类型 (schema/table/bucket/directory/object)
+	TypeLabel   string                 `json:"typeLabel"`    // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
 	Icon        string                 `json:"icon"`         // 图标名称
 	Metadata    map[string]interface{} `json:"metadata"`     // 元数据（meta_id、item_count、scanned_at 等）
 	Children    []*TreeNode            `json:"children"`     // 子节点
@@ -127,16 +129,27 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 	for _, node := range metaNodes {
 		treeNode := nodeMap[node.ID]
 
+		// root 节点透明化：仅对 NFS/NAS 生效（挂载点不显示为独立层级）
+		// 对象存储（minio/s3）的 root 节点不透明化，保留其层级
+		isNFSRoot := node.NodeType == "root" && isNFSEngine(engine.EngineType)
+		if isNFSRoot {
+			continue
+		}
+
 		if node.ParentNodeID == nil || node.Depth == 1 {
-			// 顶层节点，添加到 root
+			// 顶层节点，添加到引擎根节点
 			root.Children = append(root.Children, treeNode)
 		} else {
 			// 子节点，添加到父节点的 children
-			if parentNode, exists := nodeMap[*node.ParentNodeID]; exists {
-				parentNode.Children = append(parentNode.Children, treeNode)
-			} else {
-				// 父节点不存在时，作为顶层节点
+			parentTreeNode, exists := nodeMap[*node.ParentNodeID]
+			if !exists {
+				// 父节点不存在（可能是被透明化的 NFS root），直接挂到引擎根节点
 				root.Children = append(root.Children, treeNode)
+			} else if parentTreeNode.Type == "root" && isNFSEngine(engine.EngineType) {
+				// 父节点是 NFS root（透明化），直接挂到引擎根节点
+				root.Children = append(root.Children, treeNode)
+			} else {
+				parentTreeNode.Children = append(parentTreeNode.Children, treeNode)
 			}
 		}
 	}
@@ -241,6 +254,7 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 		Locator:     locatorURI,
 		Label:       loc.LastSegment(),
 		Type:        string(loc.Type),
+		TypeLabel:   "engine.term." + string(loc.Type),
 		Icon:        getIconByType(string(loc.Type)),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
@@ -293,17 +307,29 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	// 构建元数据
 	metadata := map[string]interface{}{
-		"meta_id":         node.ID,
-		"item_count":      node.ItemCount,
-		"size_bytes":      node.TotalSizeBytes,
-		"scan_status":     node.ScanStatus,
+		"meta_id":     node.ID,
+		"full_name":   node.FullName,
+		"item_count":  node.ItemCount,
+		"size_bytes":  node.TotalSizeBytes,
+		"scan_status": node.ScanStatus,
 	}
 	if node.LastScanAt != nil {
 		metadata["scanned_at"] = node.LastScanAt.Format(time.RFC3339)
 	}
 
-	// 合并自定义属性
+	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
+	protectedKeys := map[string]bool{
+		"meta_id":     true,
+		"full_name":   true,
+		"item_count":  true,
+		"size_bytes":  true,
+		"scan_status": true,
+		"scanned_at":  true,
+	}
 	for k, v := range node.Attributes {
+		if protectedKeys[k] {
+			continue
+		}
 		metadata[k] = v
 	}
 
@@ -313,6 +339,12 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
 	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
 
+	// 获取 typeLabel（i18n key）：优先使用插件自定义映射，否则用默认规则
+	typeLabel := "engine.term." + node.NodeType
+	if plug, err := plugin.Get(engine.EngineType); err == nil {
+		typeLabel = plugin.GetTermI18nKey(plug, node.NodeType)
+	}
+
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
 	// 前端会根据 hasChildren=true && children.length=0 判断需要懒加载
@@ -321,6 +353,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		Locator:     locatorURI,
 		Label:       node.Name,
 		Type:        node.NodeType,
+		TypeLabel:   typeLabel,
 		Icon:        getIconByType(node.NodeType),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
@@ -336,9 +369,8 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 // calculateItemDepth 动态计算 Item 的深度
 // 根据 ItemType 和 FullName 计算节点在树中的深度
 func calculateItemDepth(itemType, fullName string) int {
-	// 对象存储类型（object）：根据路径中的斜杠数量计算
-	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
-	if itemType == "object" {
+	// 对象存储类型（object/lake_table）：根据路径中的斜杠数量计算
+	if itemType == "object" || itemType == "lake_table" {
 		segments := strings.Split(strings.Trim(fullName, "/"), "/")
 		return len(segments)
 	}
@@ -351,7 +383,7 @@ func calculateItemDepth(itemType, fullName string) int {
 	}
 
 	// MongoDB 集合类型（collection）：通常是 database.collection
-	if itemType == "collection" {
+	if itemType == "collection" || itemType == "label" || itemType == "relationship" {
 		segments := strings.Split(fullName, ".")
 		return len(segments)
 	}
@@ -372,13 +404,13 @@ func parsePath(fullName string, nodeType string) []string {
 		// PostgreSQL: schema 只有一级路径
 		// MongoDB: database 只有一级路径
 		return []string{fullName}
-	case "table", "collection", "node_label", "relationship_type":
+	case "table", "collection", "label", "relationship":
 		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
-	case "bucket", "prefix", "directory", "object", "root", "dir", "file":
-		// MinIO/S3: bucket/prefix/object 使用斜杠分隔
-		// 文件系统: root/dir/file 使用斜杠分隔
+	case "bucket", "prefix", "directory", "object", "root", "dir", "file", "lake_table":
+		// MinIO/S3: bucket/prefix/object/lake_table 使用斜杠分隔
+		// 文件系统: root/dir/file/lake_table 使用斜杠分隔
 		return strings.Split(fullName, "/")
 	default:
 		// 默认：尝试斜杠分隔
@@ -389,19 +421,20 @@ func parsePath(fullName string, nodeType string) []string {
 // convertNodeType 将 MetaNode 的 NodeType 转换为 ResourceType
 func convertNodeType(metaNodeType string) ResourceType {
 	mapping := map[string]ResourceType{
-		"database":          TypeDatabase,
-		"schema":            TypeSchema,
-		"bucket":            TypeBucket,
-		"prefix":            TypeDirectory,
-		"directory":         TypeDirectory,
-		"root":              TypeRoot,
-		"dir":               TypeDir,
-		"table":             TypeTable,
-		"collection":        TypeCollection,
-		"node_label":        TypeCollection,
-		"relationship_type": TypeCollection,
-		"object":            TypeObject,
-		"file":              TypeFile,
+		"database":     TypeDatabase,
+		"schema":       TypeSchema,
+		"bucket":       TypeBucket,
+		"prefix":       TypeDirectory,
+		"directory":    TypeDirectory,
+		"root":         TypeRoot,
+		"dir":          TypeDir,
+		"table":        TypeTable,
+		"collection":   TypeCollection,
+		"label":        TypeCollection,
+		"relationship": TypeCollection,
+		"object":       TypeObject,
+		"file":         TypeFile,
+		"lake_table":   TypeLakeTable,
 	}
 	if t, ok := mapping[metaNodeType]; ok {
 		return t
@@ -424,6 +457,8 @@ func getEngineIcon(engineType string) string {
 		"mongodb":         "DocumentText",
 		"minio":           "FolderOpen",
 		"s3":              "FolderOpen",
+		"nfs":             "FolderOpen",
+		"nas":             "FolderOpen",
 		"python_workflow": "CodeBracket",
 		"spark_sql":       "Lightning",
 	}
@@ -445,8 +480,11 @@ func getIconByType(nodeType string) string {
 		"dir":        "Folder",
 		"table":      "Table",
 		"collection": "DocumentText",
+		"label":      "DocumentText",
+		"relationship": "DocumentText",
 		"object":     "Document",
 		"file":       "Document",
+		"lake_table": "Table",
 	}
 	if icon, ok := icons[nodeType]; ok {
 		return icon
@@ -558,4 +596,12 @@ func filterNode(node *TreeNode, typeSet map[string]bool) *TreeNode {
 		Metadata: node.Metadata,
 		Children: filteredChildren,
 	}
+}
+
+func isNFSEngine(engineType string) bool {
+	switch strings.ToLower(engineType) {
+	case "nfs", "nas":
+		return true
+	}
+	return false
 }

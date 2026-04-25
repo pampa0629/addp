@@ -55,9 +55,11 @@ func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantI
 // GetByExecutionID 根据 UUID 查询
 func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executionID string, tenantID int) (*models.TaskExecution, error) {
 	var exec models.TaskExecution
-	err := r.db.WithContext(ctx).
-		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).
-		First(&exec).Error
+	query := r.db.WithContext(ctx).Where("execution_id = ?", executionID)
+	if tenantID != 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	err := query.First(&exec).Error
 	return &exec, WrapDBError(err)
 }
 

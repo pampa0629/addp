@@ -278,3 +278,6 @@ func (p *DorisPlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemSchemas[schemaName]
 }
+
+// SchemaNodeType 返回第一层节点的类型名
+func (p *DorisPlugin) SchemaNodeType() string { return "database" }

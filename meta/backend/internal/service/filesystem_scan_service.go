@@ -95,40 +95,31 @@ func (s *FileSystemScanService) ScanPaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", rootPath))
 		}
 
-		// 优先使用 ListRoots 返回的名称，避免从 "/" 推导出空字符串
+		// 使用 ListRoots 返回的名称；插件返回空名时保持空字符串（如 NFS，挂载点透明）
 		rootName := pathToName[rootPath]
-		if rootName == "" {
-			rootName = strings.Trim(rootPath, "/")
-			if idx := strings.LastIndex(rootName, "/"); idx >= 0 {
-				rootName = rootName[idx+1:]
-			}
-		}
-		if rootName == "" {
-			rootName = rootPath // 最后兜底
-		}
 
 		// 创建根节点（root）
 		// full_name 按规范：NFS 为 ""，本地FS 为 "/" 或 "C:/" 等
 		// NFS 引擎的 root 标识为空字符串，路径由引擎配置的 export_path 决定
 		rootFullName := rootFSIdentifier(resource.EngineType, rootPath)
 		rootAttrs := models.JSONMap{"path": rootPath}
-		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, rootFullName, rootAttrs)
+		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, &rootFullName, rootAttrs)
 		if err != nil {
 			s.log.Warn("创建根节点失败", "path", rootPath, "error", err)
 			continue
 		}
 
 		// 标记扫描中
-		_ = s.repo.ResetNodeState(rootNode, "扫描中")
+		_ = s.repo.ResetNodeState(rootNode, "running")
 		totalRoots++
 
 		// 递归扫描目录
 		items, scanErr := s.scanDirectory(context.Background(), fsPlugin, connInfo, resource, tenantID, rootPath, rootNode, true)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
-			_ = s.repo.FinalizeNodeState(rootNode, "扫描失败", items, 0, scanErr.Error())
+			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
 		} else {
-			_ = s.repo.FinalizeNodeState(rootNode, "已扫描", items, 0, "")
+			_ = s.repo.FinalizeNodeState(rootNode, "completed", items, 0, "")
 		}
 		totalItems += items
 
@@ -310,19 +301,19 @@ func (s *FileSystemScanService) scanDirectory(
 		subdirName := subdir.Name
 		subdirAttrs := models.JSONMap{"path": subdir.Path}
 		subdirFullName := joinFSPath(parentNode.FullName, subdirName)
-		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, subdirFullName, subdirAttrs)
+		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)
 		if err != nil {
 			s.log.Warn("创建子目录节点失败", "path", subdir.Path, "error", err)
 			continue
 		}
 
-		_ = s.repo.ResetNodeState(subdirNode, "扫描中")
+		_ = s.repo.ResetNodeState(subdirNode, "running")
 		items, scanErr := s.scanDirectory(ctx, fsPlugin, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
-			_ = s.repo.FinalizeNodeState(subdirNode, "扫描失败", items, 0, scanErr.Error())
+			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
 		} else {
-			_ = s.repo.FinalizeNodeState(subdirNode, "已扫描", items, 0, "")
+			_ = s.repo.FinalizeNodeState(subdirNode, "completed", items, 0, "")
 		}
 		totalItems += items
 	}

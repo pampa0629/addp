@@ -59,9 +59,7 @@ func (p *NFSPlugin) SupportsMetadataQuery() bool { return true }
 
 // === FileSystemPlugin 接口实现 ===
 
-// ListRoots 返回 NFS export_path 本身作为唯一根节点
-// 根节点 Path 为 "/"（NFS 挂载点），Name 为 export_path 的最后一段
-// 根目录下的文件和子目录由 ListDirectory("/") 获取
+// ListRoots 返回 NFS 唯一根节点，Name 为空（挂载点透明，不暴露 export_path）
 func (p *NFSPlugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
@@ -74,13 +72,9 @@ func (p *NFSPlugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInf
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
-	// NFS 只有一个根节点：export_path 本身
-	name := filepath.Base(strings.TrimSuffix(exportPath, "/"))
-	if name == "" || name == "." || name == "/" {
-		name = "root"
-	}
+	// NFS 根节点用 "." 表示挂载根（不暴露 export_path）
 	return []plugin.RootEntry{{
-		Name: name,
+		Name: ".",
 		Path: "/",
 	}}, nil
 }

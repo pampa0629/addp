@@ -748,7 +748,10 @@
       "Bash(nfsd man:*)",
       "Bash(col -b)",
       "Bash(sudo nfsd:*)",
-      "Bash(launchctl list:*)"
+      "Bash(launchctl list:*)",
+      "Bash(jobs)",
+      "Bash(go vet *)",
+      "Bash(sudo lsof *)"
     ],
     "deny": [],
     "ask": [],

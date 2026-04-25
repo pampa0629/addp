@@ -233,7 +233,14 @@
       "metaPdfTitle": "标题: {value}",
       "metaPdfCreator": "创建工具: {value}",
       "metaLastModified": "最后修改: {value}",
-      "metaUnknown": "未知"
+      "metaUnknown": "未知",
+      "engineName": "引擎名称",
+      "engineType": "引擎类型",
+      "hostPort": "连接地址",
+      "type": "类型",
+      "name": "名称",
+      "expand": "展开",
+      "collapse": "收起"
     },
     "directories": {
       "title": "目录管理",
@@ -385,6 +392,46 @@
       "scanDepthBasic": "基础",
       "scanDepthDeep": "深入",
       "scanDepthFull": "全量"
+    }
+  },
+  "engine": {
+    "term": {
+      "schema": "Schema",
+      "database": "Database",
+      "bucket": "Bucket",
+      "prefix": "Prefix",
+      "directory": "Directory",
+      "dir": "Directory",
+      "root": "Root",
+      "table": "Table",
+      "view": "View",
+      "collection": "Collection",
+      "label": "Label",
+      "relationship": "Relationship",
+      "file": "File",
+      "object": "Object",
+      "lake_table": "Lake Table"
+    }
+  },
+  "meta": {
+    "itemType": "数据项类型",
+    "fullName": "完整名称",
+    "columnCount": "字段数",
+    "rowCount": "行数",
+    "size": "大小",
+    "scannedAt": "扫描时间",
+    "scanStatus": "扫描状态",
+    "itemCount": "数据项数量",
+    "metaId": "元数据ID",
+    "sizeBytes": "字节大小",
+    "additionalAttributes": "附加属性",
+    "nodeChildren": "子节点",
+    "nodeItems": "数据项",
+    "status": {
+      "completed": "已扫描",
+      "pending": "未扫描",
+      "running": "扫描中",
+      "failed": "扫描失败"
     }
   }
 }

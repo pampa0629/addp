@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonFormat "github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -128,7 +130,10 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 		return nil, fmt.Errorf("preview failed: %w", err)
 	}
 
-	// 6. 组装新的 PreviewResult
+	// 6. 补充 item_meta（来自 meta）
+	r.attachItemMeta(tablePreview, req)
+
+	// 7. 组装新的 PreviewResult
 	result := r.convertToNewResult(tablePreview, req)
 
 	return result, nil
@@ -399,4 +404,55 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 	}
 
 	return metadata
+}
+
+// attachItemMeta 将 Meta 元数据附加到预览响应
+func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *PreviewResolverRequest) {
+	if preview == nil || req == nil || req.Metadata == nil {
+		return
+	}
+
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = req.Metadata.NodeType
+	}
+
+	meta := &models.ItemMetadata{
+		ItemType:        itemType,
+		ItemTypeI18nKey: "engine.term." + itemType,
+		FullName:        req.Metadata.FullName,
+		Attributes:      mapToMetaAttributes(req.Metadata.Attributes),
+		ScannedAt:       req.Metadata.LastScanAt,
+	}
+
+	if req.Engine != nil {
+		if p, err := plugin.Get(req.Engine.EngineType); err == nil {
+			meta.ItemTypeI18nKey = plugin.GetTermI18nKey(p, itemType)
+		}
+	}
+
+	// FullName 兜底
+	if meta.FullName == "" {
+		meta.FullName = req.Metadata.Path
+	}
+
+	preview.ItemMeta = meta
+}
+
+func mapToMetaAttributes(attrs map[string]interface{}) []models.MetaAttribute {
+	if len(attrs) == 0 {
+		return []models.MetaAttribute{}
+	}
+
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	result := make([]models.MetaAttribute, 0, len(attrs))
+	for _, k := range keys {
+		result = append(result, models.MetaAttribute{Key: k, Value: attrs[k]})
+	}
+	return result
 }

@@ -1,13 +1,13 @@
 #!/bin/bash
-# Business Database Restart Script
 # 业务库重启脚本
 #
-# 功能: 检测架构、清理旧镜像、重启服务
-# 特性: 幂等执行
+# 使用方法:
+#   bash scripts/restart.sh              # 重启默认服务 (PostgreSQL + MinIO)
+#   bash scripts/restart.sh -mysql       # 只重启 MySQL
+#   bash scripts/restart.sh -all         # 重启所有服务
 
 set -e
 
-# 获取脚本所在目录并切换到项目根目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -21,37 +21,9 @@ echo -e "${GREEN}  Business Database Restart${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# 1. 检测架构
-ARCH=$(uname -m)
-echo -e "${YELLOW}🔍 检测 CPU 架构: ${ARCH}${NC}"
-
-case "${ARCH}" in
-    aarch64|arm64)
-        export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
-        echo -e "${GREEN}✓ ARM64，使用: ${POSTGRES_IMAGE}${NC}"
-        ;;
-    x86_64)
-        export POSTGRES_IMAGE="postgis/postgis:15-3.4"
-        echo -e "${GREEN}✓ AMD64，使用: ${POSTGRES_IMAGE}${NC}"
-        ;;
-    *)
-        echo -e "${RED}✗ 不支持的架构: ${ARCH}${NC}"
-        exit 1
-        ;;
-esac
-echo ""
-
-# 2. 停止服务
 echo -e "${YELLOW}🛑 停止服务...${NC}"
-./stop.sh
+"${SCRIPT_DIR}/stop.sh" "$@"
 echo ""
 
-# 3. 清理旧镜像（可选）
-echo -e "${YELLOW}🧹 清理旧镜像...${NC}"
-docker image prune -f >/dev/null 2>&1 || true
-echo -e "${GREEN}✓ 清理完成${NC}"
-echo ""
-
-# 4. 启动服务
 echo -e "${YELLOW}🚀 启动服务...${NC}"
-./start.sh
+"${SCRIPT_DIR}/start.sh" "$@"

@@ -150,6 +150,12 @@
       "loadTaskRunsFailed": "加载任务运行失败: {msg}",
       "taskId": "任务 #{id}",
       "runIdLabel": "运行 #{id}"
+    },
+    "status": {
+      "pending": "未扫描",
+      "running": "扫描中",
+      "completed": "已扫描",
+      "failed": "扫描失败"
     }
   }
 }

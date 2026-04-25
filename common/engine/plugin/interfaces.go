@@ -156,7 +156,12 @@ type RelationalDBPlugin interface {
 	// 例如 PostgreSQL: pg_catalog, information_schema
 	//      MySQL: information_schema, mysql, performance_schema
 	IsSystemSchema(schemaName string) bool
+
+	// SchemaNodeType 返回第一层节点的类型名
+	// PostgreSQL 返回 "schema"，MySQL/Doris/ClickHouse 返回 "database"
+	SchemaNodeType() string
 }
+
 
 // ObjectStoragePlugin 对象存储插件
 // 继承 FileSystemPlugin，同时提供对象存储特有的操作能力
@@ -208,21 +213,13 @@ type ObjectStoragePlugin interface {
 
 // ============ NoSQL 数据库插件 ============
 
-// NoSQLPlugin NoSQL 数据库插件通用接口
-// 负责连接管理和基础元数据查询
-// Schema 推断由对应的 Parser 完成（如 DocCollectionParser）
+// NoSQLPlugin NoSQL 数据库插件通用接口（公共基础能力）
+// 仅包含所有 NoSQL 引擎共享的能力；文档/图模型专属能力由子接口承载
 type NoSQLPlugin interface {
-
 	StoragePlugin
 
 	// ListDatabases 列出所有 Database
 	ListDatabases(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
-
-	// ListCollections 列出指定 Database 下的所有 Collection
-	ListCollections(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
-
-	// GetCollectionStats 获取 Collection 统计信息
-	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
 
 	// IsSystemDatabase 判断是否为系统 Database
 	IsSystemDatabase(databaseName string) bool
@@ -232,6 +229,18 @@ type NoSQLPlugin interface {
 
 	// CloseClient 关闭数据库客户端
 	CloseClient(ctx context.Context, client interface{}) error
+}
+
+// DocumentDBPlugin 文档型数据库插件接口（MongoDB 等）
+// 在 NoSQLPlugin 之上增加文档集合查询能力
+type DocumentDBPlugin interface {
+	NoSQLPlugin
+
+	// ListCollections 列出指定 Database 下的所有 Collection
+	ListCollections(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
+
+	// GetCollectionStats 获取 Collection 统计信息
+	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
 }
 
 // ============ 数据结构定义 ============
@@ -254,26 +263,26 @@ func DefaultPoolConfig() *PoolConfig {
 
 // SchemaInfo Schema/Database 信息
 type SchemaInfo struct {
-	Name       string // Schema 或 Database 名称
-	TableCount int    // 包含的表数量
+	Name       string `gorm:"column:name"`        // Schema 或 Database 名称
+	TableCount int    `gorm:"column:table_count"` // 包含的表数量
 }
 
 // TableInfo 表信息
 type TableInfo struct {
-	Schema       string     // 所属 Schema
-	TableName    string     // 表名
-	RowCount     int64      // 行数（估算值）
-	SizeBytes    int64      // 表大小（字节）
-	LastModified *time.Time // 表的最后修改时间（用于增量扫描）
+	Schema       string     `gorm:"column:schema"`        // 所属 Schema
+	TableName    string     `gorm:"column:table_name"`    // 表名
+	RowCount     int64      `gorm:"column:row_count"`     // 行数（估算值）
+	SizeBytes    int64      `gorm:"column:size_bytes"`    // 表大小（字节）
+	LastModified *time.Time `gorm:"column:last_modified"` // 表的最后修改时间（用于增量扫描）
 }
 
 // ColumnInfo 列信息
 type ColumnInfo struct {
-	ColumnName   string // 列名
-	DataType     string // 原生数据类型（如 varchar, int4, geometry, geography）
-	IsNullable   bool   // 是否可为空
-	IsPrimaryKey bool   // 是否主键
-	Comment      string // 列注释
+	ColumnName   string `gorm:"column:column_name"`   // 列名
+	DataType     string `gorm:"column:data_type"`     // 原生数据类型（如 varchar, int4, geometry, geography）
+	IsNullable   bool   `gorm:"column:is_nullable"`   // 是否可为空
+	IsPrimaryKey bool   `gorm:"column:is_primary_key"` // 是否主键
+	Comment      string `gorm:"column:comment"`       // 列注释
 }
 
 // DatabaseInfo Database 信息（NoSQL）
@@ -410,7 +419,7 @@ type GraphQueryResult struct {
 // 用于支持属性图数据库（Neo4j 及未来的 Amazon Neptune、ArangoDB 等）
 // 在 NoSQLPlugin 之上增加图结构查询能力（关系类型、图 Schema）
 type GraphDBPlugin interface {
-	StoragePlugin
+	NoSQLPlugin
 
 	// ListNodeLabels 列出图数据库中所有节点标签及统计信息
 	// 等价于 NoSQL 中的 ListCollections，但返回图数据库特有的 NodeLabelInfo 类型
@@ -434,4 +443,31 @@ type GraphQueryPlugin interface {
 	// ExecuteGraphQuery 执行图查询并返回包含图数据的结果
 	// 除标准表格结果外，还会提取结果中的节点和关系对象供图可视化渲染
 	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, query string) (*GraphQueryResult, error)
+}
+
+// ============ 术语 i18n 接口 ============
+
+// TermI18nProvider 术语 i18n 提供者（可选接口）
+//
+// 引擎插件可选实现此接口，为引擎特有术语提供自定义 i18n key 映射。
+// 未实现时，调用方使用默认规则：返回 "engine.term." + term。
+//
+// 绝大多数插件无需实现此接口，默认规则已足够。
+// 仅当引擎需要将某个通用术语映射到不同 i18n key 时才实现。
+type TermI18nProvider interface {
+	// TermI18nKey 将通用英文术语转换为 i18n key
+	// term: 通用英文术语，如 "schema", "database", "label", "relationship", "table", "view"
+	// 返回: i18n key，如 "engine.term.schema"
+	TermI18nKey(term string) string
+}
+
+// GetTermI18nKey 获取术语的 i18n key（统一入口）
+//
+// 优先使用插件自定义映射（若插件实现了 TermI18nProvider），
+// 否则使用默认规则：返回 "engine.term." + term。
+func GetTermI18nKey(plug EnginePlugin, term string) string {
+	if provider, ok := plug.(TermI18nProvider); ok {
+		return provider.TermI18nKey(term)
+	}
+	return "engine.term." + term
 }

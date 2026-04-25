@@ -1,0 +1,8 @@
+{
+  "name": "builtin:graph-relationship",
+  "type": "builtin",
+  "builtin": "graph-relationship",
+  "priority": 102,
+  "description": "Neo4j 关系类型预览（采样关系属性）",
+  "enabled": true
+}

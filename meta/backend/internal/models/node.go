@@ -17,7 +17,7 @@ type MetaNode struct {
 	Depth          int            `gorm:"not null" json:"depth"`
 	Path           string         `gorm:"type:text" json:"path,omitempty"`
 	FullName       string         `gorm:"type:text" json:"full_name,omitempty"`
-	ScanStatus     string         `gorm:"size:20;default:'未扫描';index" json:"scan_status" comment:"扫描状态：未扫描/扫描中/已扫描"`
+	ScanStatus     string         `gorm:"size:20;default:'pending';index" json:"scan_status" comment:"扫描状态：pending/running/completed/failed"`
 	ScannedAt      *time.Time     `gorm:"index" json:"scanned_at,omitempty" comment:"节点的最后扫描时间"`
 	ScanError      string         `gorm:"type:text;column:scan_error" json:"scan_error,omitempty" comment:"扫描错误信息"`
 	ItemCount      int            `gorm:"default:0" json:"item_count"`

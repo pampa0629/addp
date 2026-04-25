@@ -167,9 +167,9 @@ func (s *ScanService) cleanupStaleScanLocks() {
 
 	ctx := context.Background()
 
-	// 1. 查询所有状态为"扫描中"的节点
+	// 1. 查询所有状态为"running"的节点
 	var staleNodes []models.MetaNode
-	if err := s.db.Where("scan_status = ?", "扫描中").Find(&staleNodes).Error; err != nil {
+	if err := s.db.Where("scan_status = ?", "running").Find(&staleNodes).Error; err != nil {
 		s.log.Warn("查询残留扫描节点失败", "error", err)
 		return
 	}
@@ -196,9 +196,9 @@ func (s *ScanService) cleanupStaleScanLocks() {
 			continue
 		}
 
-		// 4. 重置节点状态为"未扫描"
+		// 4. 重置节点状态为"pending"
 		if err := s.db.Model(&node).Updates(map[string]interface{}{
-			"scan_status": "未扫描",
+			"scan_status": "pending",
 			"scanned_at":  nil,
 		}).Error; err != nil {
 			s.log.Warn("重置节点状态失败",
@@ -280,7 +280,7 @@ type nodeAggregate struct {
 	totalSize int64
 }
 
-func (s *ScanService) upsertNode(tenantID, engineID uint, parent *models.MetaNode, nodeType, name, fullName string, attrs models.JSONMap) (*models.MetaNode, error) {
+func (s *ScanService) upsertNode(tenantID, engineID uint, parent *models.MetaNode, nodeType, name string, fullName *string, attrs models.JSONMap) (*models.MetaNode, error) {
 	return s.repo.UpsertNode(tenantID, engineID, parent, nodeType, name, fullName, attrs)
 }
 
@@ -481,10 +481,10 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		// NoSQL 扫描（MongoDB、CouchDB 等）
 		schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(nosqlPlugin, resource, tenantID, schemaNames, scanDepth, reporter)
 	} else if _, ok := p.(plugin.ObjectStoragePlugin); ok {
-		// 对象存储扫描（MinIO、S3 等）—— 优先运行湖表检测
-		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
+		// 对象存储扫描（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
+		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, nil, scanDepth, reporter)
 	} else if _, ok := p.(plugin.FileSystemPlugin); ok {
-		// 文件系统扫描（NFS、HDFS 等）—— 同样走文件系统扫描路径
+		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/lake_table 语义节点
 		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
 	} else if _, ok := p.(plugin.RelationalDBPlugin); ok {
 		// 关系型数据库扫描（PostgreSQL、MySQL 等）
@@ -610,9 +610,22 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
+	if _, ok := p0.(plugin.ObjectStoragePlugin); ok {
+		// 对象存储类型（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
+		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, nil, "deep", nil)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("object storage scan failed: %w", err)
+		}
+		s.log.Info("对象存储资源扫描完成", cloneLogFields(startFields,
+			"buckets_scanned", buckets,
+			"objects_scanned", objects,
+		)...)
+		return buckets, objects, 0, nil
+	}
+
 	if _, ok := p0.(plugin.FileSystemPlugin); ok {
-		// 文件系统类型（ObjectStoragePlugin 继承 FileSystemPlugin，NFS 也实现 FileSystemPlugin）
-		// 统一走文件系统扫描路径：列出根节点后全量扫描
+		// 文件系统类型（NFS 等）—— 写入 root/dir/file/lake_table 语义节点
+		// 注意：ObjectStoragePlugin 也实现了 FileSystemPlugin，但已在上方分支处理
 		fsPlugin := p0.(plugin.FileSystemPlugin)
 
 		roots, err := fsPlugin.ListRoots(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
