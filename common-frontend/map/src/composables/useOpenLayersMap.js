@@ -14,6 +14,7 @@ import Style from 'ol/style/Style'
 import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
+import { createHighlightStyle } from '../utils/mapStyles'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
 const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
@@ -41,6 +42,8 @@ export function useOpenLayersMap(config) {
   const mapInstance = ref(null)
   const vectorSource = ref(null)
   const vectorLayer = ref(null)
+  const highlightSource = ref(null)
+  const highlightLayer = ref(null)
   const popupOverlay = ref(null)
   const popupElement = ref(null)
   const featureStore = new Map()
@@ -143,6 +146,14 @@ export function useOpenLayersMap(config) {
           return polygonStyle
         }
       })
+      vectorLayer.value.setZIndex(10)
+
+      highlightSource.value = new VectorSource()
+      highlightLayer.value = new VectorLayer({
+        source: highlightSource.value,
+        style: createHighlightStyle()
+      })
+      highlightLayer.value.setZIndex(200)
 
       mapInstance.value = new OlMap({
         target: container,
@@ -181,11 +192,15 @@ export function useOpenLayersMap(config) {
       if (baseLayer) layers.push(baseLayer)
       if (labelLayer) layers.push(labelLayer)
       if (vectorLayer.value) layers.push(vectorLayer.value)
+      if (highlightLayer.value) layers.push(highlightLayer.value)
       currentBaseType = baseType
     } else {
       const layers = mapInstance.value.getLayers()
       if (vectorLayer.value && !layers.getArray().includes(vectorLayer.value)) {
         layers.push(vectorLayer.value)
+      }
+      if (highlightLayer.value && !layers.getArray().includes(highlightLayer.value)) {
+        layers.push(highlightLayer.value)
       }
     }
 
@@ -199,6 +214,7 @@ export function useOpenLayersMap(config) {
     if (!mapInstance.value || !vectorSource.value) return
 
     hidePopup()
+    clearHighlight()
     vectorSource.value.clear()
     featureStore.clear()
 
@@ -295,8 +311,11 @@ export function useOpenLayersMap(config) {
     // 绑定点击事件
     if (options.onFeatureClick && !mapClickKey) {
       mapClickKey = mapInstance.value.on('singleclick', (evt) => {
-        const feature = mapInstance.value.forEachFeatureAtPixel(evt.pixel, (f) => f)
+        const feature = mapInstance.value.forEachFeatureAtPixel(evt.pixel, (f, layer) => {
+          return layer === vectorLayer.value ? f : null
+        })
         if (feature) {
+          highlightFeature(feature)
           const originalFeature = feature.get('originalFeature')
           const geometry = feature.getGeometry()
           let coordinate = evt.coordinate
@@ -314,9 +333,27 @@ export function useOpenLayersMap(config) {
           }
           options.onFeatureClick(originalFeature, coordinate)
         } else {
+          clearHighlight()
           hidePopup()
         }
       })
+    }
+  }
+
+  const clearHighlight = () => {
+    if (highlightSource.value) {
+      highlightSource.value.clear()
+    }
+  }
+
+  const highlightFeature = (feature) => {
+    if (!feature || !highlightSource.value) return
+    clearHighlight()
+    try {
+      const highlighted = feature.clone()
+      highlightSource.value.addFeature(highlighted)
+    } catch (error) {
+      console.warn('OpenLayers 高亮要素失败', error)
     }
   }
 
@@ -329,6 +366,8 @@ export function useOpenLayersMap(config) {
     if (!geometry || typeof geometry.getExtent !== 'function') {
       return false
     }
+
+    highlightFeature(feature)
 
     const shouldFit = options.fit !== false
     const padding = options.padding || [40, 40, 40, 40]
@@ -403,6 +442,8 @@ export function useOpenLayersMap(config) {
     mapInstance.value = null
     vectorLayer.value = null
     vectorSource.value = null
+    highlightLayer.value = null
+    highlightSource.value = null
     currentBaseType = ''
     popupOverlay.value = null
     popupElement.value = null
@@ -417,9 +458,12 @@ export function useOpenLayersMap(config) {
     mapInstance,
     vectorSource,
     vectorLayer,
+    highlightSource,
+    highlightLayer,
     initMap,
     renderFeatures,
     focusFeature,
+    clearHighlight,
     showPopup,
     hidePopup,
     updateViewState,

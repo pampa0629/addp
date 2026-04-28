@@ -177,7 +177,25 @@ func (p *fileSystemPreviewProvider) previewFile(
 		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
+				streamer := func() (io.ReadCloser, error) {
+					return fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
+				}
+				siblingProvider := func(path string) (io.ReadCloser, error) {
+					return fsPlugin.ReadFile(ctxTimeout, connInfo, path)
+				}
+				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, contentReq, streamer, siblingProvider)
+				if err != nil {
+					return nil, err
+				}
+				if content != nil {
+					preview.Object.Content = content
+					if truncated || content.Truncated {
+						preview.Object.Truncated = true
+						preview.Object.Content.Truncated = true
+					}
+				}
+			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
 				}
@@ -215,6 +233,27 @@ func (p *fileSystemPreviewProvider) previewFile(
 						preview.Object.Content.Truncated = true
 					}
 				}
+			}
+		}
+	}
+
+	if shouldBuildShapefileTablePreview(preview) {
+		if cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(preview.Object.Content); ok {
+			preview.Columns = cols
+			preview.Rows = rows
+			preview.GeometryColumns = geomCols
+			preview.RenderGeometryColumns = renderCols
+			if srid > 0 {
+				preview.SRID = srid
+			}
+			if total, ok := resolveShapefilePreviewTotal(preview.Object.Content, len(rows)); ok {
+				preview.Total = total
+			} else {
+				preview.Total = len(rows)
+			}
+			preview.Page = 1
+			if preview.Total > 0 {
+				preview.PageSize = preview.Total
 			}
 		}
 	}

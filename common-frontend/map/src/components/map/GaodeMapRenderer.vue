@@ -108,4 +108,12 @@ defineExpose({
   border: 2px solid #ffffff;
   box-shadow: 0 0 6px rgba(64, 158, 255, 0.4);
 }
+
+:deep(.gaode-point-marker.is-highlighted) {
+  width: 18px;
+  height: 18px;
+  background-color: #ffd700;
+  border-color: #fff7bf;
+  box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.35), 0 0 14px rgba(255, 215, 0, 0.7);
+}
 </style>

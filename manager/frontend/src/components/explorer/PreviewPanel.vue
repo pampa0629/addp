@@ -888,8 +888,8 @@ const title = computed(() => {
   const node = props.selectedNode
   const nodeType = node.nodeType || node.type
 
-  // 对象存储类型
-  if (['object', 'directory', 'bucket'].includes(nodeType)) {
+  // 对象/文件系统类型
+  if (['object', 'file', 'directory', 'bucket', 'prefix'].includes(nodeType)) {
     const path = node.path || node.table || ''
     if (path) {
       const schema = String(node.schema || '')
@@ -904,7 +904,7 @@ const title = computed(() => {
 
   // 表格类型
   if (node.schema && node.table) {
-    return `${node.schema}.${node.table} - ${t('manager.explorer.dataPreview')}`
+    return `${node.schema}/${node.table} - ${t('manager.explorer.dataPreview')}`
   }
 
   return `${node.label || ''} - ${t('manager.explorer.dataPreview')}`

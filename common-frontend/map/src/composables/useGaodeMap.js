@@ -3,6 +3,50 @@ import { ElMessage } from 'element-plus'
 import AMapLoader from '@amap/amap-jsapi-loader'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
+const POINT_STYLE = {
+  radius: 6,
+  strokeColor: '#ffffff',
+  strokeWeight: 2,
+  fillColor: '#409EFF',
+  fillOpacity: 0.9,
+  zIndex: 20
+}
+const POINT_HIGHLIGHT_STYLE = {
+  radius: 10,
+  strokeColor: '#FFD700',
+  strokeWeight: 3,
+  fillColor: '#FFD700',
+  fillOpacity: 0.95,
+  zIndex: 120
+}
+const LINE_STYLE = {
+  strokeColor: '#409EFF',
+  strokeWeight: 3,
+  strokeOpacity: 0.9,
+  zIndex: 20
+}
+const LINE_HIGHLIGHT_STYLE = {
+  strokeColor: '#FFD700',
+  strokeWeight: 6,
+  strokeOpacity: 1,
+  zIndex: 120
+}
+const POLYGON_STYLE = {
+  strokeColor: '#67C23A',
+  strokeWeight: 2,
+  strokeOpacity: 0.8,
+  fillColor: '#67C23A',
+  fillOpacity: 0.25,
+  zIndex: 20
+}
+const POLYGON_HIGHLIGHT_STYLE = {
+  strokeColor: '#FFD700',
+  strokeWeight: 4,
+  strokeOpacity: 1,
+  fillColor: '#FFD700',
+  fillOpacity: 0.32,
+  zIndex: 120
+}
 
 const getGeometryBounds = (geometry) => {
   if (!geometry?.coordinates) return null
@@ -55,6 +99,7 @@ export function useGaodeMap(config) {
   const infoWindow = ref(null)
   const featureOverlayMap = new Map()
   const featureDataMap = new Map()
+  let highlightedOverlays = []
 
   let eventsBound = false
   let viewState = { center: DEFAULT_CENTER, zoom: 4 }
@@ -156,45 +201,47 @@ export function useGaodeMap(config) {
     if (!isFinite(lng) || !isFinite(lat) || !amapLib.value) return null
 
     if (amapLib.value.CircleMarker) {
-      return new amapLib.value.CircleMarker({
+      const marker = new amapLib.value.CircleMarker({
         center: [lng, lat],
-        radius: 6,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-        fillColor: '#409EFF',
-        fillOpacity: 0.9
+        ...POINT_STYLE
       })
+      marker.__addpDefaultStyle = POINT_STYLE
+      marker.__addpHighlightStyle = POINT_HIGHLIGHT_STYLE
+      return marker
     }
 
     const div = document.createElement('div')
     div.className = 'gaode-point-marker'
-    return new amapLib.value.Marker({
+    const marker = new amapLib.value.Marker({
       position: [lng, lat],
       offset: new amapLib.value.Pixel(-6, -6),
       content: div
     })
+    marker.__addpDefaultClassName = 'gaode-point-marker'
+    marker.__addpHighlightClassName = 'gaode-point-marker is-highlighted'
+    return marker
   }
 
   const createPolygon = (rings) => {
     if (!amapLib.value) return null
-    return new amapLib.value.Polygon({
+    const polygon = new amapLib.value.Polygon({
       path: rings,
-      strokeColor: '#67C23A',
-      strokeWeight: 2,
-      strokeOpacity: 0.8,
-      fillColor: '#67C23A',
-      fillOpacity: 0.25
+      ...POLYGON_STYLE
     })
+    polygon.__addpDefaultStyle = POLYGON_STYLE
+    polygon.__addpHighlightStyle = POLYGON_HIGHLIGHT_STYLE
+    return polygon
   }
 
   const createPolyline = (path) => {
     if (!amapLib.value) return null
-    return new amapLib.value.Polyline({
+    const polyline = new amapLib.value.Polyline({
       path,
-      strokeColor: '#409EFF',
-      strokeWeight: 3,
-      strokeOpacity: 0.9
+      ...LINE_STYLE
     })
+    polyline.__addpDefaultStyle = LINE_STYLE
+    polyline.__addpHighlightStyle = LINE_HIGHLIGHT_STYLE
+    return polyline
   }
 
   const registerFeatureOverlay = (feature, overlay) => {
@@ -233,7 +280,10 @@ export function useGaodeMap(config) {
             newOverlays.push(marker)
             registerFeatureOverlay(feature, marker)
             if (options.onFeatureClick) {
-              marker.on('click', () => options.onFeatureClick(feature, marker.getPosition()))
+              marker.on('click', () => {
+                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                options.onFeatureClick(feature, marker.getPosition())
+              })
             }
           }
           break
@@ -245,7 +295,10 @@ export function useGaodeMap(config) {
               newOverlays.push(marker)
               registerFeatureOverlay(feature, marker)
               if (options.onFeatureClick) {
-                marker.on('click', () => options.onFeatureClick(feature, marker.getPosition()))
+                marker.on('click', () => {
+                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                  options.onFeatureClick(feature, marker.getPosition())
+                })
               }
             }
           })
@@ -258,7 +311,10 @@ export function useGaodeMap(config) {
             newOverlays.push(polyline)
             registerFeatureOverlay(feature, polyline)
             if (options.onFeatureClick) {
-              polyline.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
+              polyline.on('click', (e) => {
+                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                options.onFeatureClick(feature, e.lnglat)
+              })
             }
           }
           break
@@ -271,7 +327,10 @@ export function useGaodeMap(config) {
               newOverlays.push(polyline)
               registerFeatureOverlay(feature, polyline)
               if (options.onFeatureClick) {
-                polyline.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
+                polyline.on('click', (e) => {
+                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                  options.onFeatureClick(feature, e.lnglat)
+                })
               }
             }
           })
@@ -284,7 +343,10 @@ export function useGaodeMap(config) {
             newOverlays.push(polygon)
             registerFeatureOverlay(feature, polygon)
             if (options.onFeatureClick) {
-              polygon.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
+              polygon.on('click', (e) => {
+                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                options.onFeatureClick(feature, e.lnglat)
+              })
             }
           }
           break
@@ -297,7 +359,10 @@ export function useGaodeMap(config) {
               newOverlays.push(polygon)
               registerFeatureOverlay(feature, polygon)
               if (options.onFeatureClick) {
-                polygon.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
+                polygon.on('click', (e) => {
+                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
+                  options.onFeatureClick(feature, e.lnglat)
+                })
               }
             }
           })
@@ -338,6 +403,8 @@ export function useGaodeMap(config) {
     const padding = options.padding || [40, 40, 40, 40]
     const minZoom = options.minZoom || 8
 
+    highlightFeatureByKey(rowKey)
+
     if (shouldFit && overlaysForFeature.length > 0 && mapInstance.value.setFitView) {
       mapInstance.value.setFitView(overlaysForFeature, false, padding)
       setTimeout(updateViewState, 0)
@@ -366,7 +433,44 @@ export function useGaodeMap(config) {
     return true
   }
 
+  const setOverlayStyle = (overlay, style) => {
+    if (!overlay || !style) return
+    if (style.className && typeof overlay.setContent === 'function') {
+      const div = document.createElement('div')
+      div.className = style.className || overlay.__addpDefaultClassName || 'gaode-point-marker'
+      overlay.setContent(div)
+    } else if (typeof overlay.setOptions === 'function') {
+      overlay.setOptions({ ...style })
+    }
+  }
+
+  const clearHighlight = () => {
+    highlightedOverlays.forEach((overlay) => {
+      if (overlay?.__addpDefaultStyle) {
+        setOverlayStyle(overlay, overlay.__addpDefaultStyle)
+      } else if (overlay?.__addpDefaultClassName) {
+        setOverlayStyle(overlay, { className: overlay.__addpDefaultClassName })
+      }
+    })
+    highlightedOverlays = []
+  }
+
+  const highlightFeatureByKey = (rowKey) => {
+    if (!rowKey) return
+    const overlaysForFeature = featureOverlayMap.get(rowKey) || []
+    clearHighlight()
+    overlaysForFeature.forEach((overlay) => {
+      if (overlay?.__addpHighlightStyle) {
+        setOverlayStyle(overlay, overlay.__addpHighlightStyle)
+      } else if (overlay?.__addpHighlightClassName) {
+        setOverlayStyle(overlay, { className: overlay.__addpHighlightClassName })
+      }
+    })
+    highlightedOverlays = overlaysForFeature
+  }
+
   const clearOverlays = () => {
+    clearHighlight()
     if (overlays.value.length > 0) {
       overlays.value.forEach((overlay) => {
         if (overlay?.setMap) {
