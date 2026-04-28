@@ -5,7 +5,13 @@
   "priority": 66,
   "match": {
     "extensions": [".shp"],
-    "content_types": ["application/x-esri-shapefile", "application/octet-stream"]
+    "content_types": [
+      "application/x-esri-shapefile",
+      "application/x-shapefile",
+      "application/octet-stream",
+      "binary/octet-stream",
+      "shp"
+    ]
   },
   "metadata": {
     "max_features": 200

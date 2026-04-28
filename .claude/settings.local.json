@@ -757,7 +757,8 @@
       "Bash(gofmt -w /Users/pampa/code/addp/manager/backend/internal/service/object_preview.go /Users/pampa/code/addp/manager/backend/internal/service/object_preview_test.go)",
       "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run -s lint)",
       "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run lint)",
-      "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run build)"
+      "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run build)",
+      "Bash(docker version *)"
     ],
     "deny": [],
     "ask": [],

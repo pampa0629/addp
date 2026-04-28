@@ -161,7 +161,10 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(66),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/x-esri-shapefile"})),
+				matcher: newObjectContentMatcher(
+					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}),
+					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, defaultShapefileContentTypes()),
+				),
 			},
 			maxFeatures: defaultShapefilePreviewFeatures,
 		}
@@ -246,6 +249,16 @@ func normalizeContentTypes(values []string) []string {
 		}
 	}
 	return normalized
+}
+
+func defaultShapefileContentTypes() []string {
+	return []string{
+		"application/x-esri-shapefile",
+		"application/x-shapefile",
+		"application/octet-stream",
+		"binary/octet-stream",
+		"shp",
+	}
 }
 
 func normalizeExtensionsOrDefault(values, fallback []string) []string {

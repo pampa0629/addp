@@ -2,13 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"time"
 
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 )
@@ -29,8 +31,8 @@ func NewFileSystemPreviewProvider(metadataRepo *repository.MetadataRepository, c
 	}
 }
 
-func (p *fileSystemPreviewProvider) Name() string     { return "builtin:filesystem" }
-func (p *fileSystemPreviewProvider) Priority() int    { return p.priority }
+func (p *fileSystemPreviewProvider) Name() string  { return "builtin:filesystem" }
+func (p *fileSystemPreviewProvider) Priority() int { return p.priority }
 
 func (p *fileSystemPreviewProvider) Supports(req *PreviewRequest) bool {
 	if req == nil || req.Engine == nil {
@@ -182,7 +184,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 					return fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
 				}
 				siblingProvider := func(path string) (io.ReadCloser, error) {
-					return fsPlugin.ReadFile(ctxTimeout, connInfo, path)
+					return readFileSystemSibling(ctxTimeout, fsPlugin, connInfo, path)
 				}
 				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, contentReq, streamer, siblingProvider)
 				if err != nil {
@@ -237,28 +239,33 @@ func (p *fileSystemPreviewProvider) previewFile(
 		}
 	}
 
-	if shouldBuildShapefileTablePreview(preview) {
-		if cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(preview.Object.Content); ok {
-			preview.Columns = cols
-			preview.Rows = rows
-			preview.GeometryColumns = geomCols
-			preview.RenderGeometryColumns = renderCols
-			if srid > 0 {
-				preview.SRID = srid
-			}
-			if total, ok := resolveShapefilePreviewTotal(preview.Object.Content, len(rows)); ok {
-				preview.Total = total
-			} else {
-				preview.Total = len(rows)
-			}
-			preview.Page = 1
-			if preview.Total > 0 {
-				preview.PageSize = preview.Total
-			}
-		}
-	}
+	applyShapefileTablePreview(preview)
 
 	return preview, nil
+}
+
+func readFileSystemSibling(ctx context.Context, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+	if fsPlugin == nil {
+		return nil, fs.ErrNotExist
+	}
+	var lastErr error
+	for _, candidate := range candidateSiblingPathVariants(path) {
+		reader, err := fsPlugin.ReadFile(ctx, connInfo, candidate)
+		if err == nil {
+			return reader, nil
+		}
+		if isFileSystemNotFoundErr(err) {
+			if lastErr == nil {
+				lastErr = err
+			}
+			continue
+		}
+		lastErr = err
+	}
+	if lastErr == nil || isFileSystemNotFoundErr(lastErr) {
+		return nil, fs.ErrNotExist
+	}
+	return nil, lastErr
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径
@@ -296,4 +303,42 @@ func splitFSPath(path string) (dir, name string) {
 		return "/", path
 	}
 	return path[:idx+1], path[idx+1:]
+}
+
+func candidateSiblingPathVariants(path string) []string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil
+	}
+	withoutLeading := strings.TrimLeft(trimmed, "/")
+	withLeading := "/" + withoutLeading
+	candidates := []string{trimmed, withoutLeading, withLeading}
+
+	seen := make(map[string]struct{}, len(candidates))
+	unique := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		unique = append(unique, candidate)
+	}
+	return unique
+}
+
+func isFileSystemNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not exist") ||
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "no such file") ||
+		strings.Contains(msg, "no such object")
 }

@@ -99,6 +99,34 @@ func TestObjectContentMatcherWPS(t *testing.T) {
 	}
 }
 
+func TestObjectContentMatcherShapefileAliases(t *testing.T) {
+	t.Parallel()
+	matcher := newObjectContentMatcher(
+		[]string{".shp"},
+		defaultShapefileContentTypes(),
+	)
+	testcases := []string{
+		"application/x-esri-shapefile",
+		"application/x-shapefile",
+		"application/octet-stream",
+		"binary/octet-stream",
+		"shp",
+	}
+	for _, contentType := range testcases {
+		contentType := contentType
+		t.Run(contentType, func(t *testing.T) {
+			t.Parallel()
+			req := &ObjectContentRequest{
+				Extension:   ".shp",
+				ContentType: contentType,
+			}
+			if !matcher.matches(req) {
+				t.Fatalf("expected matcher to accept shapefile content type %q", contentType)
+			}
+		})
+	}
+}
+
 func TestShouldBuildShapefileTablePreview(t *testing.T) {
 	t.Parallel()
 	preview := &models.TablePreview{
@@ -145,6 +173,9 @@ func TestBuildShapefileTableRows(t *testing.T) {
 				},
 			},
 		},
+		Metadata: map[string]interface{}{
+			"source_srid": 3857,
+		},
 	}
 
 	cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(content)
@@ -160,8 +191,8 @@ func TestBuildShapefileTableRows(t *testing.T) {
 	if renderCols[shapefileGeometryColumn] != renderGeometryColumnName(shapefileGeometryColumn) {
 		t.Fatalf("unexpected render geometry columns: %+v", renderCols)
 	}
-	if srid != 0 {
-		t.Fatalf("expected srid 0 by default, got %d", srid)
+	if srid != 3857 {
+		t.Fatalf("expected srid 3857, got %d", srid)
 	}
 	if _, exists := rows[0][shapefileGeometryColumn]; !exists {
 		t.Fatalf("expected geometry field in row")
@@ -186,6 +217,61 @@ func TestBuildShapefileTableRows(t *testing.T) {
 	}
 	if !hasName || !hasGeometry || !hasRenderGeometry {
 		t.Fatalf("expected columns include name and geometry, got %+v", cols)
+	}
+}
+
+func TestApplyShapefileTablePreview(t *testing.T) {
+	t.Parallel()
+
+	preview := &models.TablePreview{
+		Mode:            PreviewModeObject,
+		Columns:         []string{},
+		Rows:            []map[string]interface{}{},
+		GeometryColumns: []string{},
+		Object: &models.ObjectPreview{
+			Content: &models.ObjectPreviewContent{
+				Kind: "shapefile",
+				GeoJSON: map[string]interface{}{
+					"type": "FeatureCollection",
+					"features": []interface{}{
+						map[string]interface{}{
+							"type": "Feature",
+							"id":   "feature-1",
+							"geometry": map[string]interface{}{
+								"type":        "Point",
+								"coordinates": []interface{}{116.4, 39.9},
+							},
+							"properties": map[string]interface{}{
+								"name": "A",
+							},
+						},
+					},
+				},
+				Metadata: map[string]interface{}{
+					"source_srid":           "32650",
+					"preview_feature_count": float64(1),
+				},
+			},
+		},
+	}
+
+	applyShapefileTablePreview(preview)
+
+	if preview.Total != 1 || preview.PageSize != 1 {
+		t.Fatalf("unexpected total/page_size: %d/%d", preview.Total, preview.PageSize)
+	}
+	if preview.SRID != 32650 {
+		t.Fatalf("expected srid 32650, got %d", preview.SRID)
+	}
+	renderColumn := renderGeometryColumnName(shapefileGeometryColumn)
+	if preview.RenderGeometryColumns[shapefileGeometryColumn] != renderColumn {
+		t.Fatalf("unexpected render geometry columns: %+v", preview.RenderGeometryColumns)
+	}
+	if got := preview.Rows[0][renderColumn]; got == nil {
+		t.Fatalf("expected render geometry value")
+	}
+	if got := preview.Rows[0]["__feature_id"]; got != "feature-1" {
+		t.Fatalf("expected feature id, got %#v", got)
 	}
 }
 

@@ -467,26 +467,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	if shouldBuildShapefileTablePreview(preview) {
-		if cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(preview.Object.Content); ok {
-			preview.Columns = cols
-			preview.Rows = rows
-			preview.GeometryColumns = geomCols
-			preview.RenderGeometryColumns = renderCols
-			if srid > 0 {
-				preview.SRID = srid
-			}
-			if total, ok := resolveShapefilePreviewTotal(preview.Object.Content, len(rows)); ok {
-				preview.Total = total
-			} else {
-				preview.Total = len(rows)
-			}
-			preview.Page = 1
-			if preview.Total > 0 {
-				preview.PageSize = preview.Total
-			}
-		}
-	}
+	applyShapefileTablePreview(preview)
 
 	// Manager不做任何元数据解析，只负责原样传递Meta存储的attributes
 	// 前端会根据attributes中的内容自动识别和显示元数据
@@ -519,6 +500,34 @@ func shouldBuildShapefileTablePreview(preview *models.TablePreview) bool {
 		return true
 	}
 	return strings.EqualFold(preview.Object.Content.Kind, "shapefile")
+}
+
+func applyShapefileTablePreview(preview *models.TablePreview) {
+	if !shouldBuildShapefileTablePreview(preview) {
+		return
+	}
+
+	cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(preview.Object.Content)
+	if !ok {
+		return
+	}
+
+	preview.Columns = cols
+	preview.Rows = rows
+	preview.GeometryColumns = geomCols
+	preview.RenderGeometryColumns = renderCols
+	if srid > 0 {
+		preview.SRID = srid
+	}
+	if total, ok := resolveShapefilePreviewTotal(preview.Object.Content, len(rows)); ok {
+		preview.Total = total
+	} else {
+		preview.Total = len(rows)
+	}
+	preview.Page = 1
+	if preview.Total > 0 {
+		preview.PageSize = preview.Total
+	}
 }
 
 func isShapefileFileType(attrs models.JSONMap) bool {
@@ -586,6 +595,10 @@ func buildShapefileTableRows(content *models.ObjectPreviewContent) ([]string, []
 		if geom, exists := feature["geometry"]; exists {
 			row[shapefileGeometryColumn] = geom
 			row[renderGeometryColumn] = geom
+		}
+		if id, exists := feature["id"]; exists {
+			row["__feature_id"] = id
+			columnsSet["__feature_id"] = struct{}{}
 		}
 		rows = append(rows, row)
 	}

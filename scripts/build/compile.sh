@@ -133,6 +133,10 @@ update_compile_cache() {
     date +%s > "$cache_file"
 }
 
+NATIVE_GOOS="$(go env GOOS)"
+NATIVE_GOARCH="$(go env GOARCH)"
+GO_DOCKER_IMAGE="golang:1.24"
+
 compile_service() {
     local name=$1 dir=$2 arch=$3
 
@@ -140,7 +144,6 @@ compile_service() {
     local entry_point="./cmd/server"
 
     if [[ "$name" == *"-worker" ]]; then
-        # Special case for workers (transfer-worker, meta-worker, manager-worker)
         entry_point="./cmd/worker"
     elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
         entry_point="./cmd/gateway"
@@ -148,38 +151,56 @@ compile_service() {
 
     # Calculate output path: dist/{build}-{os}-{arch}/{binary_name}
     local output_dir="${DIST_DIR}/${BUILD_TYPE}-${GOOS}-${arch}"
-    local binary_name="${name%-backend}"  # Remove -backend suffix (system-backend → system)
-    binary_name="${binary_name%-worker}"  # Keep -worker suffix for workers (transfer-worker → transfer-worker)
+    local binary_name="${name%-backend}"
+    binary_name="${binary_name%-worker}"
 
-    # Special handling: restore -worker suffix if it was in original name
     if [[ "$name" == *"-worker" ]]; then
         binary_name="${binary_name}-worker"
     fi
 
     local output_path="${output_dir}/${binary_name}"
 
-    # Create output directory
     mkdir -p "$output_dir"
 
-    # Check if recompilation is needed
     if needs_recompile "$name" "$dir" "$arch" "$binary_name"; then
         echo -e "${YELLOW}Compiling ${name} for ${GOOS}/${arch}...${NC}"
-        cd "$dir"
 
-        CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="$arch" go build -ldflags="-s -w" -o "$output_path" $entry_point
+        local build_ok=false
 
-        if [ $? -eq 0 ]; then
+        if [[ "$GOOS" != "$NATIVE_GOOS" ]]; then
+            # Cross-OS compilation: use Docker to handle CGO dependencies (e.g. go-duckdb)
+            local rel_output="${output_path#$PROJECT_ROOT/}"
+            if docker run --rm \
+                --platform "${GOOS}/${arch}" \
+                -v "${PROJECT_ROOT}:/workspace" \
+                -v "${LOCAL_GOMODCACHE}:/go/pkg/mod" \
+                -v "${LOCAL_GOCACHE}:/root/.cache/go-build" \
+                -e GOMODCACHE=/go/pkg/mod \
+                -e GOCACHE=/root/.cache/go-build \
+                -e GOTOOLCHAIN=local \
+                -w "/workspace/${dir}" \
+                "${GO_DOCKER_IMAGE}" \
+                go build -ldflags="-s -w" -o "/workspace/${rel_output}" ${entry_point}; then
+                build_ok=true
+            fi
+        else
+            # Native build
+            cd "$dir"
+            if CGO_ENABLED=1 GOOS="${GOOS}" GOARCH="$arch" go build -ldflags="-s -w" -o "$output_path" $entry_point; then
+                build_ok=true
+            fi
+            cd - > /dev/null
+        fi
+
+        if [[ "$build_ok" == true ]]; then
             echo -e "${GREEN}✓ Compiled ${binary_name} → ${output_path} ($(du -h $output_path | cut -f1))${NC}"
             update_compile_cache "$name" "$arch"
-            cd - > /dev/null
             return 0
         else
             echo -e "${RED}✗ Failed ${name}${NC}"
-            cd - > /dev/null
             return 1
         fi
     else
-        # Use cached binary
         echo -e "${CYAN}⚡ Using cached ${binary_name} for ${GOOS}/${arch} (no source changes)${NC}"
         return 0
     fi
