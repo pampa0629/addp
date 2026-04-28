@@ -117,6 +117,7 @@
     },
     "engine": {
       "title": "引擎管理",
+      "typeNfs": "NFS 文件系统",
       "addStorage": "注册标准引擎",
       "addCompute": "注册扩展引擎",
       "filter": "过滤:",
@@ -172,8 +173,8 @@
       },
       "typeSelection": {
         "title": "选择引擎类型",
-        "storage": "存储引擎",
-        "storageDesc": "数据库、对象存储等数据存储服务",
+        "storage": "标准引擎",
+        "storageDesc": "数据库、对象存储等标准数据引擎服务",
         "compute": "计算引擎",
         "computeDesc": "提供计算能力的服务"
       },
@@ -188,7 +189,7 @@
       },
       "dialog": {
         "add": "新建引擎",
-        "addStorage": "新建存储引擎",
+        "addStorage": "新建标准引擎",
         "addCompute": "新建计算引擎",
         "edit": "编辑引擎",
         "details": "引擎详情 - {name}",
@@ -232,6 +233,23 @@
           "depth": "(深度: {depth})",
           "yes": "是",
           "no": "否"
+        }
+      },
+      "registerPanel": {
+        "title": "选择标准引擎类型",
+        "subtitle": "左侧选择引擎，右侧填写连接信息",
+        "editLockedHint": "编辑状态下不允许切换引擎类型",
+        "types": {
+          "postgresql": "企业级关系数据库",
+          "mysql": "通用关系数据库",
+          "doris": "MPP 分析型数据库",
+          "clickhouse": "列式分析数据库",
+          "mongodb": "文档型数据库",
+          "minio": "S3 兼容对象存储",
+          "neo4j": "图数据库",
+          "nfs": "网络文件系统",
+          "spark": "分布式计算引擎",
+          "spatialite": "轻量级本地文件数据库"
         }
       },
       "msg": {

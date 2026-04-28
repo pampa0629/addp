@@ -1,7 +1,7 @@
 <template>
   <div ref="tablePreviewRef" class="table-preview">
     <!-- 地图预览控制栏（有几何字段时始终显示，switch 在 v-if 块外部避免销毁时报错） -->
-    <div v-if="hasGeometry" class="map-controls">
+    <div v-if="hasGeometry" ref="mapControlsRef" class="map-controls">
       <div class="toggle-wrapper">
         <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
@@ -17,15 +17,21 @@
     </div>
 
     <template v-if="hasGeometry && showMap">
-      <MapContainer
-        ref="mapRef"
-        :features="geoFeatures"
-        :base-map-type="baseMapType"
-        :height="mapHeight + 'px'"
-        @feature-click="handleFeatureClick"
-      />
+      <div ref="mapWrapperRef" class="map-wrapper" :style="{ height: mapHeight + 'px' }">
+        <MapContainer
+          v-if="geoFeatures.length > 0"
+          ref="mapRef"
+          :features="geoFeatures"
+          :base-map-type="baseMapType"
+          height="100%"
+          @feature-click="handleFeatureClick"
+        />
+        <div v-else class="map-placeholder">
+          <el-empty :description="suppressedMapMessage || t('map.noGeometryData')" :image-size="60" />
+        </div>
+      </div>
 
-      <div class="map-splitter" @mousedown="startMapResize"></div>
+      <div ref="splitterRef" class="map-splitter" @mousedown="startMapResize"></div>
     </template>
 
     <!-- 表格区域 -->
@@ -54,7 +60,7 @@
     </div>
 
     <!-- 分页 -->
-    <div v-if="total > 0" class="pagination">
+    <div v-if="total > 0" ref="paginationRef" class="pagination">
       <el-pagination
         background
         layout="prev, pager, next"
@@ -65,12 +71,36 @@
       />
       <div class="tip">{{ t('map.maxRows') }}</div>
     </div>
+
+    <!-- Shapefile 附加属性（可折叠） -->
+    <div v-if="shapefileMetaItems.length > 0" ref="shapefileMetaRef" class="shapefile-meta">
+      <div class="shapefile-meta-header" @click="shapefileMetaExpanded = !shapefileMetaExpanded">
+        <span class="shapefile-meta-title">{{ t('map.shapefileAttributes') }}</span>
+        <el-icon class="shapefile-meta-icon" :class="{ expanded: shapefileMetaExpanded }">
+          <ArrowDown />
+        </el-icon>
+      </div>
+      <el-descriptions
+        v-show="shapefileMetaExpanded"
+        :column="2"
+        border
+        size="small"
+        class="shapefile-meta-desc"
+      >
+        <el-descriptions-item
+          v-for="item in shapefileMetaItems"
+          :key="item.key"
+          :label="item.key"
+        >{{ item.value }}</el-descriptions-item>
+      </el-descriptions>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { useMapConfig } from '../composables/useMapConfig'
 import { useResizable } from '../composables/useResizable'
 import MapContainer from './map/MapContainer.vue'
@@ -81,18 +111,63 @@ const { t } = useI18n()
 
 const wktFormat = new WKT()
 const geojsonFormat = new GeoJSON()
+const DEFAULT_MAP_HEIGHT = 520
+const MIN_MAP_HEIGHT = 240
+const MIN_TABLE_HEIGHT = 80
+const CONTAINER_GAP = 12
 
 const WKT_TYPE_RE = /^(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)/i
 
-const parseGeometry = (geometryStr) => {
-  if (typeof geometryStr !== 'string') return geometryStr
+const isValidGeoJSONGeometry = (geom) => {
+  if (!geom || typeof geom !== 'object') return false
+  if (typeof geom.type !== 'string') return false
+  const validTypes = new Set([
+    'Point',
+    'MultiPoint',
+    'LineString',
+    'MultiLineString',
+    'Polygon',
+    'MultiPolygon',
+    'GeometryCollection'
+  ])
+  if (!validTypes.has(geom.type)) return false
+  if (geom.type === 'GeometryCollection') {
+    return Array.isArray(geom.geometries)
+  }
+  return geom.coordinates !== undefined
+}
+
+const parseGeometry = (rawGeometry) => {
+  if (rawGeometry === null || rawGeometry === undefined) return null
+
+  // 已是对象时，兼容 Geometry / Feature / FeatureCollection
+  if (typeof rawGeometry === 'object') {
+    if (isValidGeoJSONGeometry(rawGeometry)) {
+      return rawGeometry
+    }
+    if (rawGeometry.type === 'Feature' && isValidGeoJSONGeometry(rawGeometry.geometry)) {
+      return rawGeometry.geometry
+    }
+    if (rawGeometry.type === 'FeatureCollection' && Array.isArray(rawGeometry.features)) {
+      const firstGeometry = rawGeometry.features.find((f) => isValidGeoJSONGeometry(f?.geometry))?.geometry
+      return firstGeometry || null
+    }
+    return null
+  }
+
+  if (typeof rawGeometry !== 'string') return null
+
   // 去除 EWKT 的 SRID 前缀，如 "SRID=4326;MULTIPOLYGON(...)"
-  const wktStr = geometryStr.replace(/^SRID=\d+;/i, '').trim()
+  const wktStr = rawGeometry.replace(/^SRID=\d+;/i, '').trim()
   if (WKT_TYPE_RE.test(wktStr)) {
     const olGeom = wktFormat.readGeometry(wktStr)
     return geojsonFormat.writeGeometryObject(olGeom)
   }
-  return JSON.parse(geometryStr)
+
+  const parsed = JSON.parse(rawGeometry)
+  if (isValidGeoJSONGeometry(parsed)) return parsed
+  if (parsed?.type === 'Feature' && isValidGeoJSONGeometry(parsed.geometry)) return parsed.geometry
+  return null
 }
 
 const props = defineProps({
@@ -111,12 +186,36 @@ const emit = defineEmits(['page-change'])
 const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
 
 const tablePreviewRef = ref(null)
-// maxSize 动态计算：容器高度 - 表格最小高度(80) - 控制栏(44) - 分隔条(8) - 间距(36)
-const getMaxMapHeight = () => {
-  if (!tablePreviewRef.value) return 800
-  return Math.max(200, tablePreviewRef.value.clientHeight - 160)
+const mapControlsRef = ref(null)
+const mapWrapperRef = ref(null)
+const splitterRef = ref(null)
+const paginationRef = ref(null)
+const shapefileMetaRef = ref(null)
+
+const getSectionHeight = (target, fallback = 0) => target?.value?.offsetHeight || fallback
+
+const getVisibleSectionCount = () => {
+  let count = 1
+  if (hasGeometry.value) count += 1
+  if (hasGeometry.value && showMap.value) count += 2
+  if (total.value > 0) count += 1
+  if (shapefileMetaItems.value.length > 0) count += 1
+  return count
 }
-const { size: mapHeight, startResize: startMapResize } = useResizable(300, 140, getMaxMapHeight, 'vertical')
+
+const getMaxMapHeight = () => {
+  const containerH = tablePreviewRef.value?.clientHeight || 0
+  const viewportH = typeof window !== 'undefined' ? window.innerHeight : DEFAULT_MAP_HEIGHT
+  const base = containerH > 0 ? containerH : viewportH
+  const controlsH = hasGeometry.value ? getSectionHeight(mapControlsRef, 44) : 0
+  const splitterH = hasGeometry.value && showMap.value ? getSectionHeight(splitterRef, 14) : 0
+  const paginationH = total.value > 0 ? getSectionHeight(paginationRef, 40) : 0
+  const metaH = shapefileMetaItems.value.length > 0 ? getSectionHeight(shapefileMetaRef) : 0
+  const gapTotal = Math.max(0, getVisibleSectionCount() - 1) * CONTAINER_GAP
+  const available = base - controlsH - splitterH - paginationH - metaH - gapTotal - MIN_TABLE_HEIGHT
+  return Math.max(160, available)
+}
+const { size: mapHeight, startResize: startMapResizeInternal } = useResizable(DEFAULT_MAP_HEIGHT, MIN_MAP_HEIGHT, getMaxMapHeight, 'vertical')
 
 const tableRef = ref(null)
 const mapRef = ref(null)
@@ -125,14 +224,118 @@ const baseMapType = ref('')
 const currentRowKey = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
+const shapefileMetaExpanded = ref(false)
+const hasManualMapResize = ref(false)
+
+let resizeObserver = null
+
+const getDefaultMapHeight = () => {
+  const containerH = tablePreviewRef.value?.clientHeight || 0
+  const viewportH = typeof window !== 'undefined' ? window.innerHeight : DEFAULT_MAP_HEIGHT
+  const base = containerH > 300 ? containerH : viewportH
+  return Math.max(MIN_MAP_HEIGHT, Math.round(base * 0.58))
+}
+
+const syncMapHeight = (forceDefault = false) => {
+  if (!hasGeometry.value || !showMap.value) return
+
+  const maxHeight = getMaxMapHeight()
+  const lowerBound = Math.min(MIN_MAP_HEIGHT, maxHeight)
+
+  if (forceDefault || !hasManualMapResize.value) {
+    mapHeight.value = Math.min(maxHeight, getDefaultMapHeight())
+    return
+  }
+
+  if (mapHeight.value > maxHeight) {
+    mapHeight.value = maxHeight
+    return
+  }
+
+  if (mapHeight.value < lowerBound) {
+    mapHeight.value = lowerBound
+  }
+}
+
+const scheduleMapHeightSync = (forceDefault = false) => {
+  nextTick(() => {
+    syncMapHeight(forceDefault)
+  })
+}
+
+const handleWindowResize = () => {
+  scheduleMapHeightSync(false)
+}
+
+const startMapResize = (event) => {
+  hasManualMapResize.value = true
+  startMapResizeInternal(event)
+}
 
 const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total || 0)
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
+const renderGeometryColumns = computed(() => props.data?.render_geometry_columns || {})
+const previewSRID = computed(() => Number(props.data?.srid || 0))
+
+// shapefile 附加属性：从 object.content.metadata 提取
+const shapefileMetaItems = computed(() => {
+  const meta = props.data?.object?.content?.metadata
+  if (!meta || typeof meta !== 'object') return []
+  const skip = new Set(['required_parts', 'optional_parts'])
+  return Object.entries(meta)
+    .filter(([k]) => !skip.has(k))
+    .map(([k, v]) => ({
+      key: k,
+      value: Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v))
+    }))
+})
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
+const activeRenderGeometryColumn = computed(() => {
+  const column = activeGeometryColumn.value
+  if (!column) return ''
+  return renderGeometryColumns.value?.[column] || ''
+})
+const transformStatus = computed(() => {
+  const value = props.data?.object?.content?.metadata?.transform_status
+  return typeof value === 'string' ? value : ''
+})
+const transformMessage = computed(() => {
+  const value = props.data?.object?.content?.metadata?.transform_message || props.data?.object?.content?.metadata?.transform_error
+  return typeof value === 'string' ? value : ''
+})
+const shouldSuppressRawGeometryMap = computed(() => {
+  if (activeRenderGeometryColumn.value) return false
+  if (transformStatus.value === 'unknown_crs' || transformStatus.value === 'unsupported_crs') {
+    return true
+  }
+  return previewSRID.value > 0 && previewSRID.value !== 4326
+})
+const suppressedMapMessage = computed(() => {
+  if (!shouldSuppressRawGeometryMap.value) return ''
+  if (transformMessage.value) return transformMessage.value
+  if (transformStatus.value === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
+  if (transformStatus.value === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
+  if (previewSRID.value > 0 && previewSRID.value !== 4326) return t('map.mapSuppressedNonWGS84')
+  return ''
+})
+
+const buildFeatureProperties = (row) => {
+  const properties = { ...row }
+  geometryColumns.value.forEach((column) => {
+    delete properties[column]
+    const renderColumn = renderGeometryColumns.value?.[column]
+    if (renderColumn) {
+      delete properties[renderColumn]
+    }
+  })
+  // OpenLayers 默认使用 "geometry" 作为几何属性名，这个键必须移除，否则会覆盖真实几何对象。
+  delete properties.geometry
+  return properties
+}
 
 const escapeHtml = (value) => {
   if (value === null || value === undefined) return ''
@@ -174,7 +377,8 @@ const buildPopupContent = (row) => {
 const displayColumns = computed(() => {
   if (!columns.value || columns.value.length === 0) return []
   const geometrySet = new Set(geometryColumns.value || [])
-  const filtered = columns.value.filter((col) => !geometrySet.has(col))
+  const renderGeometrySet = new Set(Object.values(renderGeometryColumns.value || {}))
+  const filtered = columns.value.filter((col) => !geometrySet.has(col) && !renderGeometrySet.has(col))
   return filtered.length > 0 ? filtered : columns.value
 })
 
@@ -190,16 +394,20 @@ const tableData = computed(() => {
 // 转换为 GeoJSON Features
 const geoFeatures = computed(() => {
   if (!hasGeometry.value || !activeGeometryColumn.value) return []
+  if (shouldSuppressRawGeometryMap.value) return []
   const column = activeGeometryColumn.value
   return tableData.value
     .map((row) => {
-      const geometryStr = row[column]
-      if (!geometryStr) return null
+      const renderColumn = activeRenderGeometryColumn.value
+      const rawGeometry = renderColumn ? row[renderColumn] : row[column]
+      if (rawGeometry === null || rawGeometry === undefined) return null
       try {
+        const geometry = parseGeometry(rawGeometry)
+        if (!geometry) return null
         return {
           type: 'Feature',
-          geometry: parseGeometry(geometryStr),
-          properties: row
+          geometry,
+          properties: buildFeatureProperties(row)
         }
       } catch (error) {
         console.warn('解析几何数据失败', error)
@@ -252,11 +460,17 @@ const handleRowClick = (row) => {
 
 const handleFeatureClick = ({ feature, coordinate, position }) => {
   const rowData = feature?.properties
-  if (rowData && tableRef.value) {
-    currentRowKey.value = rowData.__rowKey || ''
-    tableRef.value.setCurrentRow(rowData)
+  if (!rowData) return
+  const rowKey = rowData.__rowKey || ''
+  currentRowKey.value = rowKey
+  // 必须传入 tableData 中的对象引用，否则 el-table 内部访问 emitsOptions 会报错
+  if (tableRef.value && rowKey) {
+    const matched = tableData.value.find((r) => r.__rowKey === rowKey)
+    if (matched) {
+      tableRef.value.setCurrentRow(matched)
+    }
   }
-  if (rowData && hasGeometry.value) {
+  if (hasGeometry.value) {
     showPopupForRow(rowData, { coordinate, position })
   }
 }
@@ -265,6 +479,23 @@ const handlePageChange = (page) => {
   currentPage.value = page
   emit('page-change', page)
 }
+
+watch(
+  () => props.data?.page,
+  (page) => {
+    currentPage.value = Number(page) > 0 ? Number(page) : 1
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.data?.page_size,
+  (size) => {
+    const parsedSize = Number(size)
+    pageSize.value = parsedSize > 0 ? parsedSize : Math.max(rows.value.length, 10)
+  },
+  { immediate: true }
+)
 
 // 当 baseMapOptions 变化时，自动设置默认底图
 watch(
@@ -283,6 +514,16 @@ watch(
     if (!value && mapRef.value && typeof mapRef.value.hidePopup === 'function') {
       mapRef.value.hidePopup()
     }
+    if (value) {
+      scheduleMapHeightSync(false)
+    }
+  }
+)
+
+watch(
+  [hasGeometry, total, shapefileMetaExpanded, () => shapefileMetaItems.value.length],
+  () => {
+    scheduleMapHeightSync(false)
   }
 )
 
@@ -298,14 +539,37 @@ watch(
 
 onMounted(() => {
   loadMapConfig()
-  nextTick(() => {
-    if (tablePreviewRef.value) {
-      const h = tablePreviewRef.value.clientHeight
-      if (h > 0) {
-        mapHeight.value = Math.min(getMaxMapHeight(), Math.max(140, Math.round(h * 0.6)))
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+  }
+
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      syncMapHeight(false)
+    })
+    ;[
+      tablePreviewRef.value,
+      mapControlsRef.value,
+      paginationRef.value,
+      shapefileMetaRef.value
+    ].forEach((element) => {
+      if (element) {
+        resizeObserver.observe(element)
       }
-    }
-  })
+    })
+  }
+
+  scheduleMapHeightSync(true)
+})
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleWindowResize)
+  }
 })
 </script>
 
@@ -315,6 +579,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   height: 100%;
+  min-height: 0;
 }
 
 .map-controls {
@@ -338,11 +603,39 @@ onMounted(() => {
   min-width: 160px;
 }
 
+.map-wrapper {
+  flex: 0 0 auto;
+  min-height: 160px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.map-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color-lighter);
+}
+
 .map-splitter {
-  height: 8px;
+  height: 14px;
   cursor: row-resize;
   position: relative;
-  margin: -4px 0 4px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.map-splitter::before {
+  content: '⋯';
+  font-size: 16px;
+  line-height: 1;
+  color: var(--el-color-primary-light-5);
+  letter-spacing: 2px;
 }
 
 .map-splitter::after {
@@ -352,14 +645,19 @@ onMounted(() => {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 2px;
-  background: var(--el-color-primary-light-8);
+  height: 3px;
+  background: var(--el-color-primary-light-7);
   border-radius: 2px;
 }
 
 .map-splitter:hover::after,
 body.is-v-resizing .map-splitter::after {
   background: var(--el-color-primary);
+}
+
+.map-splitter:hover::before,
+body.is-v-resizing .map-splitter::before {
+  color: var(--el-color-primary);
 }
 
 .table-wrapper {
@@ -382,5 +680,42 @@ body.is-v-resizing .map-splitter::after {
 .pagination .tip {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.shapefile-meta {
+  flex-shrink: 0;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.shapefile-meta-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  cursor: pointer;
+  background: var(--el-fill-color-light);
+  user-select: none;
+}
+
+.shapefile-meta-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+}
+
+.shapefile-meta-icon {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.2s;
+}
+
+.shapefile-meta-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.shapefile-meta-desc {
+  padding: 8px;
 }
 </style>

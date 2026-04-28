@@ -138,10 +138,10 @@
     }
   },
   "storageEngine": {
-    "type": "存储引擎类型",
-    "typePlaceholder": "请选择存储引擎类型",
+    "type": "标准引擎类型",
+    "typePlaceholder": "请选择标准引擎类型",
     "name": "名称",
-    "namePlaceholder": "请输入资源名称",
+    "namePlaceholder": "请输入引擎名称",
     "host": "主机地址",
     "port": "端口",
     "database": "数据库名",
@@ -170,6 +170,9 @@
     "nfsServer": "NFS 服务器",
     "nfsExportPath": "导出路径",
     "nfsAccessMode": "访问模式",
+    "nfsAccessModeRw": "读写 (rw)",
+    "nfsAccessModeRo": "只读 (ro)",
+    "typeNfs": "NFS 文件系统",
     "nfsVersion": "NFS 版本",
     "protocol": "协议",
     "description": "描述",
@@ -211,8 +214,8 @@
       "workflow": "工作流引擎的 API 端点已标准化，无需手动配置。"
     },
     "valid": {
-      "selectType": "请选择存储引擎类型",
-      "inputName": "请输入资源名称",
+      "selectType": "请选择标准引擎类型",
+      "inputName": "请输入引擎名称",
       "inputHost": "请输入主机地址",
       "inputPort": "请输入端口",
       "inputDatabase": "请输入数据库名",
@@ -293,6 +296,10 @@
     "rowCount": "{count} 行"
   },
   "objectStorage": {
+    "bucket": "Bucket",
+    "rootDir": "根目录",
+    "schema": "Schema",
+    "database": "数据库",
     "path": "路径",
     "type": "类型",
     "size": "大小",

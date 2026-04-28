@@ -10,6 +10,7 @@
  * 使用此入口的前端模块需要在 package.json 中安装以下依赖：
  *   - marked (MarkdownPreview)
  *   - dompurify (MarkdownPreview)
+ *   - mermaid (MarkdownPreview)
  *   - jszip (DocxPreview, PptxPreview)
  *   - mammoth (DocxPreview)
  *

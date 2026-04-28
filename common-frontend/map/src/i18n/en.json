@@ -16,6 +16,13 @@
     "maxRows": "Showing first 50 rows maximum",
     "unknown": "Unknown",
     "noData": "No data",
-    "noFieldData": "No fields to display"
+    "noFieldData": "No fields to display",
+    "features": "features",
+    "noGeometryData": "No geometry data",
+    "shapefileAttributes": "Shapefile Attributes",
+    "transformEngine": "Transform Engine",
+    "mapSuppressedUnknownCRS": "Source CRS is unknown, map rendering has been skipped",
+    "mapSuppressedUnsupportedCRS": "Coordinate transformation is not reliable for this preview, map rendering has been skipped",
+    "mapSuppressedNonWGS84": "Preview geometry was not converted to EPSG:4326, map rendering has been skipped"
   }
 }

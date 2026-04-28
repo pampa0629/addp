@@ -179,12 +179,56 @@
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="600px"
+      :width="isStorageLayout ? '980px' : '600px'"
       @close="resetForm"
     >
-      <!-- 存储引擎表单 -->
+      <!-- 标准引擎表单（左侧类型选择 + 右侧连接信息） -->
+      <template v-if="isStorageLayout">
+        <div class="storage-layout">
+          <aside class="engine-type-sidebar">
+            <div class="sidebar-title">{{ t('system.engine.registerPanel.title') }}</div>
+            <div class="sidebar-subtitle">{{ t('system.engine.registerPanel.subtitle') }}</div>
+            <div class="engine-type-list">
+              <el-tooltip
+                v-for="item in visibleStorageEngineTypeOptions"
+                :key="item.value"
+                :content="item.desc"
+                placement="right"
+              >
+                <button
+                  type="button"
+                  class="engine-type-item"
+                  :class="{
+                    'is-active': form.engine_type === item.value,
+                    'is-disabled': isEdit
+                  }"
+                  :disabled="isEdit"
+                  @click="selectStorageEngineType(item.value)"
+                >
+                  <span class="engine-type-icon">{{ item.icon }}</span>
+                  <span class="engine-type-name">{{ item.label }}</span>
+                </button>
+              </el-tooltip>
+            </div>
+            <div v-if="isEdit" class="sidebar-hint">
+              {{ t('system.engine.registerPanel.editLockedHint') }}
+            </div>
+          </aside>
+
+          <section class="storage-form-panel">
+            <StorageEngineForm
+              ref="storageFormRef"
+              v-model="form"
+              :is-edit="isEdit"
+              :show-type-selector="false"
+            />
+          </section>
+        </div>
+      </template>
+
+      <!-- 标准引擎表单（非双栏场景兜底） -->
       <StorageEngineForm
-        v-if="!isComputeEngineForm"
+        v-else-if="!isComputeEngineForm"
         ref="storageFormRef"
         v-model="form"
         :is-edit="isEdit"
@@ -396,6 +440,81 @@ const isComputeEngineForm = computed(() => {
          (isEdit.value && form.value.engine_type === 'compute_engine')
 })
 
+const isStorageLayout = computed(() => {
+  return !isComputeEngineForm.value
+})
+
+const storageEngineTypeOptions = computed(() => ([
+  {
+    value: 'postgresql',
+    icon: '🐘',
+    label: 'PostgreSQL',
+    desc: t('system.engine.registerPanel.types.postgresql')
+  },
+  {
+    value: 'mysql',
+    icon: '🐬',
+    label: 'MySQL',
+    desc: t('system.engine.registerPanel.types.mysql')
+  },
+  {
+    value: 'doris',
+    icon: '🟠',
+    label: 'Apache Doris',
+    desc: t('system.engine.registerPanel.types.doris')
+  },
+  {
+    value: 'clickhouse',
+    icon: '⚡',
+    label: 'ClickHouse',
+    desc: t('system.engine.registerPanel.types.clickhouse')
+  },
+  {
+    value: 'mongodb',
+    icon: '🍃',
+    label: 'MongoDB',
+    desc: t('system.engine.registerPanel.types.mongodb')
+  },
+  {
+    value: 'minio',
+    icon: '🪣',
+    label: 'MinIO',
+    desc: t('system.engine.registerPanel.types.minio')
+  },
+  {
+    value: 'neo4j',
+    icon: '🕸️',
+    label: 'Neo4j',
+    desc: t('system.engine.registerPanel.types.neo4j')
+  },
+  {
+    value: 'nfs',
+    icon: '📁',
+    label: t('system.engine.typeNfs'),
+    desc: t('system.engine.registerPanel.types.nfs')
+  },
+  {
+    value: 'spark',
+    icon: '✨',
+    label: 'Apache Spark',
+    desc: t('system.engine.registerPanel.types.spark')
+  },
+  {
+    value: 'spatialite',
+    icon: '💾',
+    label: 'SpatiaLite/SQLite',
+    desc: t('system.engine.registerPanel.types.spatialite')
+  }
+]))
+
+const visibleStorageEngineTypeOptions = computed(() => {
+  if (!isEdit.value) {
+    return storageEngineTypeOptions.value
+  }
+
+  return storageEngineTypeOptions.value.filter(item => item.value === form.value.engine_type)
+})
+
 // 过滤后的引擎列表
 const filteredEngines = computed(() => {
   if (selectedCategories.value.length === 0) {
@@ -500,7 +619,7 @@ const parseCapabilities = (capabilitiesJSON) => {
 
 const handleFilterChange = () => {}
 
-const engineTypeMap = {
+const engineTypeMap = computed(() => ({
   'postgresql': 'PostgreSQL',
   'mysql': 'MySQL',
   'doris': 'Apache Doris',
@@ -508,15 +627,15 @@ const engineTypeMap = {
   'mongodb': 'MongoDB',
   'minio': 'MinIO',
   'neo4j': 'Neo4j',
-  'nfs': 'NFS 文件系统',
+  'nfs': t('system.engine.typeNfs'),
   'spark': 'Apache Spark',
   'spatialite': 'SpatiaLite/SQLite',
   'database': 'Database',
   'compute_engine': 'Compute Engine'
-}
+}))
 
 const getEngineTypeLabel = (type) => {
-  return engineTypeMap[type] || type
+  return engineTypeMap.value[type] || type
 }
 
 const getEngineTypeColor = (type) => {
@@ -590,11 +709,25 @@ const loadEngines = async () => {
   }
 }
 
+const selectStorageEngineType = (engineType) => {
+  if (isEdit.value) return
+  if (form.value.engine_type === engineType) return
+
+  form.value = {
+    ...form.value,
+    engine_type: engineType
+  }
+}
+
 const showAddStorageDialog = () => {
   isEdit.value = false
   editId.value = null
   selectedEngineCategory.value = 'storage'
   resetForm()
+  form.value = {
+    ...form.value,
+    engine_type: 'postgresql'
+  }
   dialogVisible.value = true
 }
 
@@ -855,7 +988,7 @@ onMounted(() => {
   align-items: center;
   padding: 16px 0;
   margin-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--addp-border-color-light);
 }
 
 .filter-label {
@@ -864,13 +997,115 @@ onMounted(() => {
   color: var(--addp-text-secondary);
 }
 
+/* 标准引擎注册双栏布局 */
+.storage-layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.engine-type-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 10px;
+  background: var(--addp-bg-secondary);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.sidebar-subtitle {
+  margin-top: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+}
+
+.engine-type-list {
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.engine-type-item {
+  width: 100%;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  background: var(--addp-bg-primary);
+  color: inherit;
+  text-align: center;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.engine-type-item:hover {
+  border-color: var(--el-color-primary);
+  transform: translateY(-1px);
+}
+
+.engine-type-item.is-active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.engine-type-item.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.engine-type-item.is-disabled:hover {
+  transform: none;
+}
+
+.engine-type-icon {
+  font-size: 40px;
+  line-height: 1;
+  width: 56px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.engine-type-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+  line-height: 1.2;
+}
+
+.sidebar-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--el-color-warning);
+}
+
+.storage-form-panel {
+  flex: 1;
+  min-width: 0;
+}
+
 /* 内置引擎行样式 */
 :deep(.builtin-engine-row) {
   background-color: var(--addp-bg-secondary);
 }
 
 :deep(.builtin-engine-row:hover) {
-  background-color: #ebeef5 !important;
+  background-color: var(--addp-bg-primary) !important;
 }
 
 /* 连接状态图标样式 */

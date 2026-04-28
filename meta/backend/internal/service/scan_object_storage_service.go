@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonParquet "github.com/addp/common/format/parquet"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -1013,9 +1014,9 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		// 湖表的逻辑名称去掉扩展名，与 NFS 保持一致
 		itemType := "object"
 		itemName := objectName
-		if isLakeTableFormat(meta.FileType) {
+		if commonParquet.IsLakeTableFileType(meta.FileType) {
 			itemType = "lake_table"
-			itemName = logicalLakeTableName(objectName)
+			itemName = commonParquet.LogicalLakeTableName(objectName)
 		}
 
 		// 构建基础属性
@@ -1036,7 +1037,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		// 湖表使用逻辑名称（去掉扩展名）计算 fullName，与 NFS 保持一致
 		logicalName := name
 		if itemType == "lake_table" {
-			logicalName = logicalLakeTableName(name)
+			logicalName = commonParquet.LogicalLakeTableName(name)
 		}
 		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, logicalName)
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
@@ -1318,23 +1319,3 @@ func getBoolFromConn(info commonModels.ConnectionInfo, key string) bool {
 	return false
 }
 
-func isLakeTableFormat(fileType string) bool {
-	switch strings.ToLower(strings.TrimSpace(fileType)) {
-	case "parquet", "orc", "avro":
-		return true
-	default:
-		return false
-	}
-}
-
-func logicalLakeTableName(fileName string) string {
-	ext := filepath.Ext(fileName)
-	if ext == "" {
-		return fileName
-	}
-	base := strings.TrimSuffix(fileName, ext)
-	if strings.TrimSpace(base) == "" {
-		return fileName
-	}
-	return base
-}

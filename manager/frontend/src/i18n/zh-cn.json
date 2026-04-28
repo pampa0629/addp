@@ -184,6 +184,8 @@
       "fileTypePdf": "PDF 文档",
       "fileTypeJson": "JSON 文件",
       "fileTypeText": "文本文件",
+      "mdRaw": "原始文本",
+      "mdRendered": "MD 渲染",
       "fileTypeVideo": "视频",
       "fileTypeAudio": "音频",
       "fileTypeExt": "{ext} 文件",

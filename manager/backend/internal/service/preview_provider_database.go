@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -181,14 +182,15 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		req.Schema, tableName, geometryColumns, srid, extent)
 
 	return &models.TablePreview{
-		Mode:            PreviewModeTable,
-		Columns:         columnNames,
-		ColumnMetadata:  columnMetadata,
-		Rows:            rows,
-		Total:           int(totalCount),
-		Page:            page,
-		PageSize:        pageSize,
-		GeometryColumns: geometryColumns,
+		Mode:                  PreviewModeTable,
+		Columns:               columnNames,
+		ColumnMetadata:        columnMetadata,
+		Rows:                  rows,
+		Total:                 int(totalCount),
+		Page:                  page,
+		PageSize:              pageSize,
+		GeometryColumns:       geometryColumns,
+		RenderGeometryColumns: buildDatabaseRenderGeometryColumns(geometryColumns, rows),
 		// MVT preview metadata (for frontend decision-making)
 		EngineID:   req.Engine.ID,
 		Schema:     req.Schema,
@@ -219,16 +221,17 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	switch strings.ToLower(engineType) {
 	case "postgresql":
 		// PostgreSQL: 处理空间字段（ST_AsText 转为 WKT 格式，更易读）
-		selectColumns := make([]string, len(columns))
-		for i, col := range columns {
+		selectColumns := make([]string, 0, len(columns)*2)
+		for _, col := range columns {
 			if p.isSpatialType(col.DataType) {
 				// 空间字段：转换为 WKT 格式（如 MULTIPOLYGON (((120.175...）））
-				selectColumns[i] = fmt.Sprintf("ST_AsText(\"%s\") AS \"%s\"", col.ColumnName, col.ColumnName)
+				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewWKTExpr(col), col.ColumnName))
+				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewRenderExpr(col), renderGeometryColumnName(col.ColumnName)))
 				// 调试日志：记录空间字段转换
 				fmt.Printf("[DEBUG] 检测到空间列: %s, 类型: %s, 使用 ST_AsText 转换\n", col.ColumnName, col.DataType)
 			} else {
 				// 普通字段：列名加双引号，确保大小写敏感
-				selectColumns[i] = fmt.Sprintf("\"%s\"", col.ColumnName)
+				selectColumns = append(selectColumns, fmt.Sprintf("\"%s\"", col.ColumnName))
 			}
 		}
 		query = fmt.Sprintf("SELECT %s FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",
@@ -261,6 +264,61 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	return rows, nil
 }
 
+func renderGeometryColumnName(column string) string {
+	return "__render_geojson_" + column
+}
+
+func databasePreviewWKTExpr(col plugin.ColumnInfo) string {
+	if isGeographyType(col.DataType) {
+		return fmt.Sprintf("ST_AsText(\"%s\"::geometry)", col.ColumnName)
+	}
+	return fmt.Sprintf("ST_AsText(\"%s\")", col.ColumnName)
+}
+
+func databasePreviewRenderExpr(col plugin.ColumnInfo) string {
+	if isGeographyType(col.DataType) {
+		return fmt.Sprintf("CASE WHEN \"%s\" IS NULL THEN NULL ELSE ST_AsGeoJSON(\"%s\"::geometry) END", col.ColumnName, col.ColumnName)
+	}
+	return fmt.Sprintf("CASE WHEN \"%s\" IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform(\"%s\", 4326)) END", col.ColumnName, col.ColumnName)
+}
+
+func buildDatabaseRenderGeometryColumns(geometryColumns []string, rows []map[string]interface{}) map[string]string {
+	if len(geometryColumns) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(geometryColumns))
+	for _, column := range geometryColumns {
+		renderColumn := renderGeometryColumnName(column)
+		if rowsContainColumn(rows, renderColumn) {
+			result[column] = renderColumn
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func rowsContainColumn(rows []map[string]interface{}, column string) bool {
+	for _, row := range rows {
+		value, exists := row[column]
+		if !exists || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			var payload interface{}
+			if json.Unmarshal([]byte(typed), &payload) == nil {
+				return true
+			}
+		case map[string]interface{}:
+			return true
+		}
+	}
+	return false
+}
+
 // detectGeometryColumns 检测几何列（仅 PostgreSQL + PostGIS）
 func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, columns []plugin.ColumnInfo) []string {
 	if strings.ToLower(engineType) != "postgresql" {
@@ -287,6 +345,11 @@ func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 		strings.HasPrefix(dataTypeLower, "geometry(") ||
 		strings.HasPrefix(dataTypeLower, "geography(") ||
 		dataTypeLower == "user-defined" // PostGIS 几何类型有时显示为 USER-DEFINED
+}
+
+func isGeographyType(dataType string) bool {
+	dataTypeLower := strings.ToLower(dataType)
+	return dataTypeLower == "geography" || strings.HasPrefix(dataTypeLower, "geography(")
 }
 
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）
@@ -360,7 +423,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 		columnMetadata[i] = models.ColumnMetadata{
 			ColumnName:   field.Name,
 			DataType:     dataType,
-			IsNullable:   true,  // Meta 当前不存储 nullable 信息，默认为 true
+			IsNullable:   true, // Meta 当前不存储 nullable 信息，默认为 true
 			IsPrimaryKey: field.IsPrimaryKey,
 			Comment:      "", // Meta 当前不存储 comment 信息
 		}

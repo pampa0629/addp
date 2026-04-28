@@ -102,16 +102,17 @@ type MetaItemLite struct {
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
-	Mode            string                   `json:"mode"`
-	Columns         []string                 `json:"columns"`
-	ColumnMetadata  []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
-	Rows            []map[string]interface{} `json:"rows"`
-	Total           int                      `json:"total"`
-	Page            int                      `json:"page"`
-	PageSize        int                      `json:"page_size"`
-	GeometryColumns []string                 `json:"geometry_columns"`
-	Object          *ObjectPreview           `json:"object,omitempty"`
-	ItemMeta        *ItemMetadata            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
+	Mode                  string                   `json:"mode"`
+	Columns               []string                 `json:"columns"`
+	ColumnMetadata        []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
+	Rows                  []map[string]interface{} `json:"rows"`
+	Total                 int                      `json:"total"`
+	Page                  int                      `json:"page"`
+	PageSize              int                      `json:"page_size"`
+	GeometryColumns       []string                 `json:"geometry_columns"`
+	RenderGeometryColumns map[string]string        `json:"render_geometry_columns,omitempty"` // 原几何列 -> 地图渲染列
+	Object                *ObjectPreview           `json:"object,omitempty"`
+	ItemMeta              *ItemMetadata            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
@@ -207,17 +208,17 @@ type MetaScanTask struct {
 
 // MetaScanTaskRequest 创建或更新扫描任务时的表单
 type MetaScanTaskRequest struct {
-	Name           string   `json:"name" binding:"required"`
-	Description    string   `json:"description"`
-	EngineID       uint     `json:"engine_id"`
-	SchemaNames    []string `json:"schema_names"`
-	ObjectPaths    []string `json:"object_paths"`
-	ScanDepth      string   `json:"scan_depth"`
-	ScheduleType   string   `json:"schedule_type" binding:"required"`
-	ScheduleTime   string   `json:"schedule_time"`
-	ScheduleValue  []int    `json:"schedule_value"`
-	Schedule       string   `json:"schedule"`
-	Enabled        bool     `json:"enabled"`
+	Name          string   `json:"name" binding:"required"`
+	Description   string   `json:"description"`
+	EngineID      uint     `json:"engine_id"`
+	SchemaNames   []string `json:"schema_names"`
+	ObjectPaths   []string `json:"object_paths"`
+	ScanDepth     string   `json:"scan_depth"`
+	ScheduleType  string   `json:"schedule_type" binding:"required"`
+	ScheduleTime  string   `json:"schedule_time"`
+	ScheduleValue []int    `json:"schedule_value"`
+	Schedule      string   `json:"schedule"`
+	Enabled       bool     `json:"enabled"`
 }
 
 // MetaScanTaskRun 表示一次具体的扫描运行

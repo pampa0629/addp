@@ -115,9 +115,11 @@ const pagedItems = computed(() => {
 })
 
 const typeLabel = computed(() => {
-  const key = props.selectedNode?.typeLabel || `engine.term.${props.selectedNode?.type || ''}`
+  const nodeType = props.selectedNode?.type
+  const key = props.selectedNode?.typeLabel || (nodeType ? `engine.term.${nodeType}` : '')
+  if (!key) return '-'
   const result = t(key)
-  return result === key ? (props.selectedNode?.type || '-') : result
+  return result === key ? (nodeType || '-') : result
 })
 
 const fullName = computed(() => {
@@ -148,9 +150,11 @@ const scanStatusLabel = computed(() => {
 const scannedAt = computed(() => props.selectedNode?.metadata?.scanned_at || '-')
 
 const resolveTypeLabel = (row) => {
-  const key = row?.typeLabel || `engine.term.${row?.type || ''}`
+  const rowType = row?.type
+  const key = row?.typeLabel || (rowType ? `engine.term.${rowType}` : '')
+  if (!key) return '-'
   const translated = t(key)
-  return translated === key ? (row?.type || '-') : translated
+  return translated === key ? (rowType || '-') : translated
 }
 
 const openNode = (row) => {

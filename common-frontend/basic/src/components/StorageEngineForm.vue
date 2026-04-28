@@ -4,9 +4,10 @@
     :model="formState"
     :rules="computedRules"
     :label-width="labelWidth"
+    :validate-on-rule-change="false"
   >
     <el-form-item
-      v-if="typeOptions && typeOptions.length"
+      v-if="showTypeSelector && typeOptions && typeOptions.length"
       :label="t('storageEngine.type')"
       prop="engine_type"
     >
@@ -14,10 +15,11 @@
         v-model="formState.engine_type"
         :placeholder="t('storageEngine.typePlaceholder')"
         :disabled="isEdit && disableTypeChange"
+        :validate-event="false"
         @change="handleTypeChange"
       >
         <el-option
-          v-for="option in typeOptions"
+          v-for="option in effectiveTypeOptions"
           :key="option.value"
           :label="option.label"
           :value="option.value"
@@ -218,8 +220,8 @@
       </el-form-item>
       <el-form-item :label="t('storageEngine.nfsAccessMode')">
         <el-select v-model="formState.connection_info.access_mode">
-          <el-option label="读写 (rw)" value="rw" />
-          <el-option label="只读 (ro)" value="ro" />
+          <el-option :label="t('storageEngine.nfsAccessModeRw')" value="rw" />
+          <el-option :label="t('storageEngine.nfsAccessModeRo')" value="ro" />
         </el-select>
       </el-form-item>
       <el-form-item :label="t('storageEngine.nfsVersion')">
@@ -459,6 +461,10 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  showTypeSelector: {
+    type: Boolean,
+    default: true
+  },
   labelWidth: {
     type: String,
     default: '120px'
@@ -466,6 +472,12 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'type-change'])
+
+const effectiveTypeOptions = computed(() =>
+  props.typeOptions.map(opt =>
+    opt.value === 'nfs' ? { ...opt, label: t('storageEngine.typeNfs') } : opt
+  )
+)
 
 const formRef = ref(null)
 const hasStoredPassword = ref(false)
@@ -829,6 +841,7 @@ const computedRules = computed(() => {
 const handleTypeChange = (type) => {
   ensureConnectionDefaults(formState)
   applySensitiveHints()
+  nextTick(() => formRef.value?.clearValidate())
   emit('type-change', type)
 }
 

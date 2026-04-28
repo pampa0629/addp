@@ -264,12 +264,25 @@ export const useExplorerStore = defineStore('explorer', {
      */
     collapseNode(locator) {
       // 使用替换 Set 的方式确保响应式更新
-      // 同时移除所有以该 locator 为前缀的子节点，避免父节点折叠时子节点仍然保留展开状态
+      // 同时移除当前节点及其所有子节点的展开状态
+      const normalizeLocatorPath = (value) => {
+        if (!value || typeof value !== 'string') return ''
+        return value.split('?')[0] || ''
+      }
+
+      const targetPath = normalizeLocatorPath(locator)
+      if (!targetPath) {
+        this.expandedLocators = new Set(this.expandedLocators)
+        return
+      }
+
       const newSet = new Set()
       for (const key of this.expandedLocators) {
-        // 仅保留与 locator 无关的展开键
         if (!key || typeof key !== 'string') continue
-        if (!key.startsWith(locator)) {
+
+        const currentPath = normalizeLocatorPath(key)
+        // 仅保留不在目标节点子树内的展开键
+        if (!currentPath.startsWith(targetPath)) {
           newSet.add(key)
         }
       }

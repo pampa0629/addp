@@ -4,7 +4,7 @@
       <template #header>
         <div class="meta-header" @click="metaExpanded = !metaExpanded">
           <span>{{ t('meta.additionalAttributes') }}</span>
-          <el-button text>{{ metaExpanded ? '收起' : '展开' }}</el-button>
+          <el-button text>{{ metaExpanded ? t('manager.explorer.collapse') : t('manager.explorer.expand') }}</el-button>
         </div>
       </template>
       <el-descriptions v-show="metaExpanded" :column="1" border size="small">
@@ -62,9 +62,13 @@ watch(() => props.selectedNode?.locator, () => {
 const itemMeta = computed(() => props.previewData?.item_meta)
 
 const itemTypeLabel = computed(() => {
-  const key = itemMeta.value?.item_type_i18n_key || `engine.term.${itemMeta.value?.item_type || ''}`
+  const typeI18nKey = itemMeta.value?.item_type_i18n_key
+  const itemType = itemMeta.value?.item_type
+  const key = typeI18nKey || (itemType ? `engine.term.${itemType}` : '')
+  if (!key) return '-'
+
   const translated = t(key)
-  return translated === key ? (itemMeta.value?.item_type || '-') : translated
+  return translated === key ? (itemType || '-') : translated
 })
 
 const formatValue = (v) => {

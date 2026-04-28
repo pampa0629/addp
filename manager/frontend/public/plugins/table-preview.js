@@ -21,14 +21,22 @@
     canHandle: (data = {}) => {
       const mode = (data.mode || '').toLowerCase()
       const object = data.object || {}
-      const nodeType = (object.node_type || '').toLowerCase()
+      const attrs = object.attributes || {}
+      const fileType = String(attrs.file_type || '').toLowerCase()
+      const kind = String(object?.content?.kind || '').toLowerCase()
+      const hasTabularData = Array.isArray(data.rows) && data.rows.length > 0
+      const hasGeometryColumns = Array.isArray(data.geometry_columns) && data.geometry_columns.length > 0
 
-      // 处理表数据
       if (mode === 'table') {
         return true
       }
 
-      return false
+      const isShapefile =
+        fileType.includes('shp') ||
+        fileType.includes('shapefile') ||
+        kind === 'shapefile'
+
+      return isShapefile && hasTabularData && hasGeometryColumns
     },
     priority: 100
   })

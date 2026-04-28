@@ -411,7 +411,12 @@ func parsePath(fullName string, nodeType string) []string {
 	case "bucket", "prefix", "directory", "object", "root", "dir", "file", "lake_table":
 		// MinIO/S3: bucket/prefix/object/lake_table 使用斜杠分隔
 		// 文件系统: root/dir/file/lake_table 使用斜杠分隔
-		return strings.Split(fullName, "/")
+		// 注意：文件系统 full_name 可能以 "/" 开头，需去掉首尾斜杠，避免产生空路径段
+		trimmed := strings.Trim(fullName, "/")
+		if trimmed == "" {
+			return []string{}
+		}
+		return strings.Split(trimmed, "/")
 	default:
 		// 默认：尝试斜杠分隔
 		return strings.Split(fullName, "/")

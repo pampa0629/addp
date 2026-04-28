@@ -184,6 +184,8 @@
       "fileTypePdf": "PDF Document",
       "fileTypeJson": "JSON File",
       "fileTypeText": "Text File",
+      "mdRaw": "Raw Text",
+      "mdRendered": "Rendered MD",
       "fileTypeVideo": "Video",
       "fileTypeAudio": "Audio",
       "fileTypeExt": "{ext} File",

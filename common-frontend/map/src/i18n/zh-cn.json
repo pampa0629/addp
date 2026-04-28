@@ -16,6 +16,13 @@
     "maxRows": "最多展示前 50 行数据",
     "unknown": "未知",
     "noData": "暂无数据",
-    "noFieldData": "暂无可展示字段"
+    "noFieldData": "暂无可展示字段",
+    "features": "个要素",
+    "noGeometryData": "暂无几何数据",
+    "shapefileAttributes": "Shapefile 属性信息",
+    "transformEngine": "转换引擎",
+    "mapSuppressedUnknownCRS": "源坐标系未知，已跳过地图渲染",
+    "mapSuppressedUnsupportedCRS": "当前无法可靠完成坐标转换，已跳过地图渲染",
+    "mapSuppressedNonWGS84": "当前预览数据未转换到 EPSG:4326，已跳过地图渲染"
   }
 }

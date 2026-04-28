@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,8 @@ var reservedObjectSegments = map[string]struct{}{
 	"__bucket__": {},
 	".minio.sys": {},
 }
+
+const shapefileGeometryColumn = "__geometry__"
 
 func mergeJSONMaps(maps ...models.JSONMap) models.JSONMap {
 	var merged models.JSONMap
@@ -286,9 +289,9 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		Columns:  []string{},
 		Rows:     []map[string]interface{}{},
 		Object: &models.ObjectPreview{
-			Bucket:     bucket,
-			Path:       displayPath,
-			NodeType:   nodeType,
+			Bucket:   bucket,
+			Path:     displayPath,
+			NodeType: nodeType,
 			EngineID: resource.ID,
 		},
 		GeometryColumns: []string{},
@@ -464,6 +467,27 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
+	if shouldBuildShapefileTablePreview(preview) {
+		if cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(preview.Object.Content); ok {
+			preview.Columns = cols
+			preview.Rows = rows
+			preview.GeometryColumns = geomCols
+			preview.RenderGeometryColumns = renderCols
+			if srid > 0 {
+				preview.SRID = srid
+			}
+			if total, ok := resolveShapefilePreviewTotal(preview.Object.Content, len(rows)); ok {
+				preview.Total = total
+			} else {
+				preview.Total = len(rows)
+			}
+			preview.Page = 1
+			if preview.Total > 0 {
+				preview.PageSize = preview.Total
+			}
+		}
+	}
+
 	// Manager不做任何元数据解析，只负责原样传递Meta存储的attributes
 	// 前端会根据attributes中的内容自动识别和显示元数据
 
@@ -485,6 +509,172 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 
 	return preview, nil
+}
+
+func shouldBuildShapefileTablePreview(preview *models.TablePreview) bool {
+	if preview == nil || preview.Object == nil || preview.Object.Content == nil {
+		return false
+	}
+	if isShapefileFileType(preview.Object.Attributes) {
+		return true
+	}
+	return strings.EqualFold(preview.Object.Content.Kind, "shapefile")
+}
+
+func isShapefileFileType(attrs models.JSONMap) bool {
+	if len(attrs) == 0 {
+		return false
+	}
+	raw, ok := attrs["file_type"]
+	if !ok {
+		return false
+	}
+	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
+	if value == "" {
+		return false
+	}
+	return strings.Contains(value, "shp") || strings.Contains(value, "shapefile")
+}
+
+func buildShapefileTableRows(content *models.ObjectPreviewContent) ([]string, []map[string]interface{}, []string, map[string]string, int, bool) {
+	if content == nil || content.GeoJSON == nil {
+		return nil, nil, nil, nil, 0, false
+	}
+
+	geojson, ok := content.GeoJSON.(map[string]interface{})
+	if !ok {
+		return nil, nil, nil, nil, 0, false
+	}
+
+	rawFeatures, exists := geojson["features"]
+	if !exists {
+		return nil, nil, nil, nil, 0, false
+	}
+
+	// 兼容两种类型：[]map[string]interface{} 和 []interface{}
+	var featureMaps []map[string]interface{}
+	switch v := rawFeatures.(type) {
+	case []map[string]interface{}:
+		featureMaps = v
+	case []interface{}:
+		featureMaps = make([]map[string]interface{}, 0, len(v))
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				featureMaps = append(featureMaps, m)
+			}
+		}
+	default:
+		return nil, nil, nil, nil, 0, false
+	}
+
+	if len(featureMaps) == 0 {
+		return nil, nil, nil, nil, 0, false
+	}
+
+	columnsSet := make(map[string]struct{})
+	rows := make([]map[string]interface{}, 0, len(featureMaps))
+	renderGeometryColumn := renderGeometryColumnName(shapefileGeometryColumn)
+
+	for _, feature := range featureMaps {
+		row := make(map[string]interface{})
+		if props, ok := feature["properties"].(map[string]interface{}); ok {
+			for k, v := range props {
+				row[k] = v
+				columnsSet[k] = struct{}{}
+			}
+		}
+		if geom, exists := feature["geometry"]; exists {
+			row[shapefileGeometryColumn] = geom
+			row[renderGeometryColumn] = geom
+		}
+		rows = append(rows, row)
+	}
+
+	if len(rows) == 0 {
+		return nil, nil, nil, nil, 0, false
+	}
+
+	columns := make([]string, 0, len(columnsSet)+2)
+	for col := range columnsSet {
+		columns = append(columns, col)
+	}
+	sort.Strings(columns)
+	columns = append(columns, shapefileGeometryColumn)
+	columns = append(columns, renderGeometryColumn)
+
+	renderColumns := map[string]string{
+		shapefileGeometryColumn: renderGeometryColumn,
+	}
+
+	return columns, rows, []string{shapefileGeometryColumn}, renderColumns, resolveShapefilePreviewSRID(content), true
+}
+
+func resolveShapefilePreviewTotal(content *models.ObjectPreviewContent, fallback int) (int, bool) {
+	if content == nil || content.Metadata == nil {
+		return fallback, fallback > 0
+	}
+	raw, ok := content.Metadata["preview_feature_count"]
+	if !ok {
+		return fallback, fallback > 0
+	}
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return fallback, fallback > 0
+		}
+		return int(n), true
+	case string:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fallback, fallback > 0
+		}
+		return n, true
+	default:
+		return fallback, fallback > 0
+	}
+}
+
+func resolveShapefilePreviewSRID(content *models.ObjectPreviewContent) int {
+	if content == nil || content.Metadata == nil {
+		return 0
+	}
+	raw, ok := content.Metadata["source_srid"]
+	if !ok {
+		return 0
+	}
+	switch v := raw.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0
+		}
+		return int(n)
+	case string:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0
+		}
+		return n
+	default:
+		return 0
+	}
 }
 
 // tryExtractMetadataFromMeta 尝试从Meta模块提取元数据

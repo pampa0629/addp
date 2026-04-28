@@ -150,8 +150,8 @@ export function useOpenLayersMap(config) {
         view: new OlView({
           center: fromLonLat(initialCenter),
           zoom: initialZoom,
-          maxZoom: 18,
-          minZoom: 3
+          maxZoom: 22,
+          minZoom: 1
         })
       })
 
@@ -218,10 +218,16 @@ export function useOpenLayersMap(config) {
       features
     }
 
-    const olFeatures = geoJSONFormat.readFeatures(featureCollection, {
-      dataProjection: 'EPSG:4326',
-      featureProjection: 'EPSG:3857'
-    })
+    let olFeatures = []
+    try {
+      olFeatures = geoJSONFormat.readFeatures(featureCollection, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857'
+      })
+    } catch (error) {
+      console.warn('OpenLayers 解析 GeoJSON 失败，已跳过本次渲染', error)
+      return
+    }
 
     if (olFeatures.length === 0) {
       mapInstance.value.getView().setCenter(fromLonLat(DEFAULT_CENTER))
@@ -229,7 +235,18 @@ export function useOpenLayersMap(config) {
       return
     }
 
+    const validFeatures = []
     olFeatures.forEach((feature, index) => {
+      const geometry = feature.getGeometry?.()
+      if (!geometry || typeof geometry.getExtent !== 'function') {
+        console.warn('OpenLayers 跳过无效几何对象', {
+          index,
+          feature,
+          geometry
+        })
+        return
+      }
+
       const originalFeature = features[index]
       feature.set('originalFeature', originalFeature)
       const rowData = originalFeature?.properties || {}
@@ -249,16 +266,22 @@ export function useOpenLayersMap(config) {
           original: originalFeature
         })
       }
+      validFeatures.push(feature)
     })
 
-    vectorSource.value.addFeatures(olFeatures)
+    if (validFeatures.length === 0) {
+      console.warn('OpenLayers 未找到可渲染的有效要素')
+      return
+    }
+
+    vectorSource.value.addFeatures(validFeatures)
 
     const extent = vectorSource.value.getExtent()
     if (extent && isFinite(extent[0])) {
       if (!options.preserveView) {
         mapInstance.value.getView().fit(extent, {
           padding: [20, 20, 20, 20],
-          maxZoom: 14,
+          maxZoom: 18,
           duration: 300
         })
         setTimeout(updateViewState, 0)
@@ -303,7 +326,9 @@ export function useOpenLayersMap(config) {
     if (!record) return false
     const { feature, row } = record
     const geometry = feature.getGeometry()
-    if (!geometry) return false
+    if (!geometry || typeof geometry.getExtent !== 'function') {
+      return false
+    }
 
     const shouldFit = options.fit !== false
     const padding = options.padding || [40, 40, 40, 40]

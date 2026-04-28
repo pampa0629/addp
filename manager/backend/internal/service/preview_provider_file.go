@@ -155,6 +155,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 
 	// 检测几何列（用于空间数据）
 	geometryColumns := p.detectGeometryColumns(tableInfo)
+	spatialInfo := tableInfo.GetSpatialInfo()
+	srid := 0
+	if spatialInfo != nil {
+		srid = spatialInfo.SRID
+	}
 
 	return &models.TablePreview{
 		Mode:            PreviewModeObject,
@@ -164,6 +169,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		Page:            req.Page,
 		PageSize:        pageSize,
 		GeometryColumns: geometryColumns,
+		SRID:            srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        req.Table,
@@ -190,6 +196,10 @@ func (p *FileTablePreviewProvider) previewShapefile(
 		return nil, fmt.Errorf("failed to download shapefile: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+
+	if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
+		opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
+	}
 
 	// 打开主文件
 	shpFile, err := os.Open(basePath + ".shp")
@@ -238,6 +248,11 @@ func (p *FileTablePreviewProvider) previewShapefile(
 
 	// 检测几何列
 	geometryColumns := p.detectGeometryColumns(tableInfo)
+	spatialInfo := tableInfo.GetSpatialInfo()
+	srid := 0
+	if spatialInfo != nil {
+		srid = spatialInfo.SRID
+	}
 
 	return &models.TablePreview{
 		Mode:            PreviewModeObject,
@@ -247,6 +262,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 		Page:            req.Page,
 		PageSize:        pageSize,
 		GeometryColumns: geometryColumns,
+		SRID:            srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        req.Table,

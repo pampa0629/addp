@@ -13,9 +13,10 @@ export default defineConfig({
       '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
-      'element-plus': resolve(__dirname, 'node_modules/element-plus')
+      'element-plus': resolve(__dirname, 'node_modules/element-plus'),
+      'mermaid': resolve(__dirname, 'node_modules/mermaid')
     },
-    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
+    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'mermaid', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [

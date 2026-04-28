@@ -170,6 +170,9 @@
     "nfsServer": "NFS Server",
     "nfsExportPath": "Export Path",
     "nfsAccessMode": "Access Mode",
+    "nfsAccessModeRw": "Read-Write (rw)",
+    "nfsAccessModeRo": "Read-Only (ro)",
+    "typeNfs": "NFS Filesystem",
     "nfsVersion": "NFS Version",
     "protocol": "Protocol",
     "description": "Description",
@@ -293,6 +296,10 @@
     "rowCount": "{count} rows"
   },
   "objectStorage": {
+    "bucket": "Bucket",
+    "rootDir": "Root Directory",
+    "schema": "Schema",
+    "database": "Database",
     "path": "Path",
     "type": "Type",
     "size": "Size",

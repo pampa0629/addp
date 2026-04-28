@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/manager/internal/models"
+)
 
 func TestInferContentType(t *testing.T) {
 	testcases := []struct {
@@ -92,5 +96,122 @@ func TestObjectContentMatcherWPS(t *testing.T) {
 	}
 	if !matcher.matches(req) {
 		t.Fatalf("expected matcher to accept WPS content type")
+	}
+}
+
+func TestShouldBuildShapefileTablePreview(t *testing.T) {
+	t.Parallel()
+	preview := &models.TablePreview{
+		Object: &models.ObjectPreview{
+			Attributes: models.JSONMap{"file_type": "shp"},
+			Content: &models.ObjectPreviewContent{
+				Kind: "text",
+			},
+		},
+	}
+	if !shouldBuildShapefileTablePreview(preview) {
+		t.Fatalf("expected shapefile detection by file_type")
+	}
+
+	preview = &models.TablePreview{
+		Object: &models.ObjectPreview{
+			Attributes: models.JSONMap{},
+			Content: &models.ObjectPreviewContent{
+				Kind: "shapefile",
+			},
+		},
+	}
+	if !shouldBuildShapefileTablePreview(preview) {
+		t.Fatalf("expected shapefile detection by content kind")
+	}
+}
+
+func TestBuildShapefileTableRows(t *testing.T) {
+	t.Parallel()
+	content := &models.ObjectPreviewContent{
+		GeoJSON: map[string]interface{}{
+			"type": "FeatureCollection",
+			"features": []interface{}{
+				map[string]interface{}{
+					"type": "Feature",
+					"geometry": map[string]interface{}{
+						"type":        "Point",
+						"coordinates": []interface{}{120.1, 30.2},
+					},
+					"properties": map[string]interface{}{
+						"name": "A",
+						"code": 1,
+					},
+				},
+			},
+		},
+	}
+
+	cols, rows, geomCols, renderCols, srid, ok := buildShapefileTableRows(content)
+	if !ok {
+		t.Fatalf("expected buildShapefileTableRows success")
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if len(geomCols) != 1 || geomCols[0] != shapefileGeometryColumn {
+		t.Fatalf("unexpected geometry columns: %+v", geomCols)
+	}
+	if renderCols[shapefileGeometryColumn] != renderGeometryColumnName(shapefileGeometryColumn) {
+		t.Fatalf("unexpected render geometry columns: %+v", renderCols)
+	}
+	if srid != 0 {
+		t.Fatalf("expected srid 0 by default, got %d", srid)
+	}
+	if _, exists := rows[0][shapefileGeometryColumn]; !exists {
+		t.Fatalf("expected geometry field in row")
+	}
+	if _, exists := rows[0][renderGeometryColumnName(shapefileGeometryColumn)]; !exists {
+		t.Fatalf("expected render geometry field in row")
+	}
+
+	hasName := false
+	hasGeometry := false
+	hasRenderGeometry := false
+	for _, c := range cols {
+		if c == "name" {
+			hasName = true
+		}
+		if c == shapefileGeometryColumn {
+			hasGeometry = true
+		}
+		if c == renderGeometryColumnName(shapefileGeometryColumn) {
+			hasRenderGeometry = true
+		}
+	}
+	if !hasName || !hasGeometry || !hasRenderGeometry {
+		t.Fatalf("expected columns include name and geometry, got %+v", cols)
+	}
+}
+
+func TestBuildShapefileTableRowsFallbackWhenNoFeatures(t *testing.T) {
+	t.Parallel()
+	content := &models.ObjectPreviewContent{
+		Text: "Shapefile 文件较大，已跳过全量下载",
+	}
+	_, rows, _, _, _, ok := buildShapefileTableRows(content)
+	if ok {
+		t.Fatalf("expected buildShapefileTableRows fallback when no features")
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected no rows when no features")
+	}
+}
+
+func TestResolveShapefilePreviewSRID(t *testing.T) {
+	t.Parallel()
+
+	content := &models.ObjectPreviewContent{
+		Metadata: map[string]interface{}{
+			"source_srid": 3857,
+		},
+	}
+	if got := resolveShapefilePreviewSRID(content); got != 3857 {
+		t.Fatalf("expected 3857, got %d", got)
 	}
 }

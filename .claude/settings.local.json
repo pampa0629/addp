@@ -751,7 +751,13 @@
       "Bash(launchctl list:*)",
       "Bash(jobs)",
       "Bash(go vet *)",
-      "Bash(sudo lsof *)"
+      "Bash(sudo lsof *)",
+      "Bash(git -C /Users/pampa/code/addp status --short)",
+      "Bash(npm --prefix \"/Users/pampa/code/addp/system/frontend\" run build)",
+      "Bash(gofmt -w /Users/pampa/code/addp/manager/backend/internal/service/object_preview.go /Users/pampa/code/addp/manager/backend/internal/service/object_preview_test.go)",
+      "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run -s lint)",
+      "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run lint)",
+      "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run build)"
     ],
     "deny": [],
     "ask": [],

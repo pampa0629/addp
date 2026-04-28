@@ -18,7 +18,20 @@
   register({
     name: 'shapefile',
     component,
-    canHandle: (data = {}) => (data.object?.content?.kind || '').toLowerCase() === 'shapefile',
+    canHandle: (data = {}) => {
+      const kind = (data.object?.content?.kind || '').toLowerCase()
+      if (kind !== 'shapefile') {
+        return false
+      }
+
+      const hasTabularData = Array.isArray(data.rows) && data.rows.length > 0
+      const hasGeometryColumns = Array.isArray(data.geometry_columns) && data.geometry_columns.length > 0
+      if (hasTabularData && hasGeometryColumns) {
+        return false
+      }
+
+      return true
+    },
     priority: 75
   })
 

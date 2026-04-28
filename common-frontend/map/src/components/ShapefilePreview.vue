@@ -1,5 +1,6 @@
 <template>
   <div class="shapefile-preview">
+    <!-- 警告信息（大文件跳过等） -->
     <el-alert
       v-if="message"
       :title="message"
@@ -8,88 +9,79 @@
       class="alert-message"
     />
 
-    <div class="summary">
-      <div class="summary-item">
-        <span class="label">{{ t('map.geometryType') }}</span>
-        <span class="value">{{ geometryType }}</span>
+    <!-- 顶部紧凑信息栏 -->
+    <div class="info-bar">
+      <div class="info-tags">
+        <el-tag size="small" type="success" effect="plain">{{ geometryType }}</el-tag>
+        <el-tooltip v-if="featureCount !== null" :content="t('map.featureCount')" placement="top">
+          <el-tag size="small" effect="plain">{{ featureCount }} {{ t('map.features') }}</el-tag>
+        </el-tooltip>
+        <el-tooltip v-if="truncated" :content="t('map.shapefileTruncated')" placement="top">
+          <el-tag size="small" type="warning" effect="plain">{{ t('map.truncated') }}</el-tag>
+        </el-tooltip>
+        <el-tooltip v-if="codePage" :content="t('map.encoding')" placement="top">
+          <el-tag size="small" type="info" effect="plain">{{ codePage }}</el-tag>
+        </el-tooltip>
+        <el-tooltip v-if="transformEngine" :content="t('map.transformEngine')" placement="top">
+          <el-tag size="small" type="info" effect="plain">{{ transformEngine }}</el-tag>
+        </el-tooltip>
       </div>
-      <div v-if="featureCount !== null" class="summary-item">
-        <span class="label">{{ t('map.featureCount') }}</span>
-        <span class="value">{{ featureCount }}</span>
-      </div>
-      <div v-if="previewCount !== null" class="summary-item">
-        <span class="label">{{ t('map.previewCount') }}</span>
-        <span class="value">{{ previewCount }}</span>
-      </div>
-      <div v-if="codePage" class="summary-item">
-        <span class="label">{{ t('map.encoding') }}</span>
-        <span class="value">{{ codePage }}</span>
+      <div class="info-actions">
+        <!-- Bbox tooltip -->
+        <el-tooltip v-if="bboxText" :content="bboxText" placement="bottom" raw-content>
+          <el-button size="small" text type="info">BBox</el-button>
+        </el-tooltip>
+        <!-- 投影 tooltip -->
+        <el-tooltip v-if="projection" :content="projection" placement="bottom">
+          <el-button size="small" text type="info">CRS</el-button>
+        </el-tooltip>
+        <!-- 底图选择 -->
+        <el-select v-if="hasGeoJSON" v-model="baseMapType" size="small" class="base-map-select">
+          <el-option
+            v-for="item in baseMapOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
       </div>
     </div>
 
-    <div v-if="bboxRows.length" class="bbox-panel">
-      <div class="section-title">{{ t('map.bboxTitle') }}</div>
-      <div class="bbox-grid">
-        <div v-for="item in bboxRows" :key="item.label" class="bbox-item">
-          <span class="label">{{ item.label }}</span>
-          <span class="value">{{ item.value }}</span>
-        </div>
+    <!-- 地图区域（优先展示） -->
+    <div class="map-area">
+      <MapContainer
+        v-if="hasGeoJSON && geoFeatures.length > 0"
+        :features="geoFeatures"
+        :base-map-type="baseMapType"
+        height="100%"
+      />
+      <div v-else-if="!message" class="map-placeholder">
+        <el-empty :description="mapStatusMessage || t('map.noGeometryData')" :image-size="60" />
       </div>
     </div>
 
-    <div v-if="projection || truncated" class="meta-hints">
-      <el-tag v-if="projection" size="small" effect="plain" type="info" class="proj-tag">
-        {{ projection }}
-      </el-tag>
-      <el-tag v-if="truncated" size="small" type="warning" effect="plain">
-        {{ t('map.shapefileTruncated') }}
-      </el-tag>
-    </div>
-
-    <div v-if="fields.length" class="fields-table">
-      <div class="section-title">{{ t('map.fieldsTitle') }}</div>
-      <el-table :data="fields" height="220" size="small" stripe class="table">
-        <el-table-column prop="name" :label="t('map.fieldName')" min-width="140" />
-        <el-table-column prop="type" :label="t('map.fieldType')" width="120" />
-        <el-table-column prop="size" :label="t('map.fieldLength')" width="80" />
-        <el-table-column prop="precision" :label="t('map.fieldPrecision')" width="80" />
+    <!-- 字段信息（可折叠） -->
+    <div v-if="fields.length" class="fields-section">
+      <div class="section-header" @click="fieldsExpanded = !fieldsExpanded">
+        <span class="section-title">{{ t('map.fieldsTitle') }} ({{ fields.length }})</span>
+        <el-icon class="toggle-icon" :class="{ rotated: fieldsExpanded }"><ArrowDown /></el-icon>
+      </div>
+      <el-table v-if="fieldsExpanded" :data="fields" height="160" size="small" stripe class="fields-table">
+        <el-table-column prop="name" :label="t('map.fieldName')" min-width="120" />
+        <el-table-column prop="type" :label="t('map.fieldType')" width="100" />
+        <el-table-column prop="size" :label="t('map.fieldLength')" width="70" />
+        <el-table-column prop="precision" :label="t('map.fieldPrecision')" width="70" />
       </el-table>
     </div>
-
-    <div v-if="hasGeoJSON" class="controls">
-      <div class="toggle-wrapper">
-        <span>{{ t('map.preview') }}</span>
-        <el-switch v-model="showMap" size="small" />
-      </div>
-      <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
-        <el-option
-          v-for="item in baseMapOptions"
-          :key="item.value"
-          :label="item.label"
-          :value="item.value"
-        />
-      </el-select>
-    </div>
-
-    <MapContainer
-      v-if="showMap && geoFeatures.length > 0"
-      :features="geoFeatures"
-      :base-map-type="baseMapType"
-      height="360px"
-    />
-
-    <pre v-if="hasGeoJSON" class="json-content" :class="{ collapsed: showMap }">
-{{ formattedJson }}
-    </pre>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { useMapConfig } from '../composables/useMapConfig'
 import MapContainer from './map/MapContainer.vue'
-import { safeStringify } from '../utils/formatters'
 
 const { t } = useI18n()
 
@@ -100,30 +92,43 @@ const props = defineProps({
   }
 })
 
+const fieldsExpanded = ref(false)
+
 const content = computed(() => props.data?.object?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
+const transformStatus = computed(() => {
+  const value = metadata.value?.transform_status
+  return typeof value === 'string' ? value : ''
+})
+const transformEngine = computed(() => {
+  const value = metadata.value?.transform_engine
+  return typeof value === 'string' ? value : ''
+})
+const transformMessage = computed(() => {
+  const value = metadata.value?.transform_message || metadata.value?.transform_error
+  return typeof value === 'string' ? value : ''
+})
+const sourceSRID = computed(() => Number(metadata.value?.source_srid || 0))
 
 const geometryType = computed(() => metadata.value?.geometry_type || t('map.unknown'))
 const featureCount = computed(() => {
   const value = metadata.value?.feature_count
   return Number.isFinite(value) ? value : null
 })
-const previewCount = computed(() => {
-  const value = metadata.value?.preview_feature_count
-  return Number.isFinite(value) ? value : null
-})
 
-const bboxRows = computed(() => {
+const bboxText = computed(() => {
   const raw = metadata.value?.bbox
-  if (!Array.isArray(raw) || raw.length !== 4) return []
-  const labels = ['Min X', 'Min Y', 'Max X', 'Max Y']
-  return raw.map((value, index) => ({
-    label: labels[index],
-    value: formatNumber(value)
-  }))
+  if (!Array.isArray(raw) || raw.length !== 4) return ''
+  const [minX, minY, maxX, maxY] = raw
+  return `Min X: ${formatNumber(minX)}<br>Min Y: ${formatNumber(minY)}<br>Max X: ${formatNumber(maxX)}<br>Max Y: ${formatNumber(maxY)}`
 })
 
-const projection = computed(() => metadata.value?.projection_wkt || '')
+const projection = computed(() => {
+  const wkt = metadata.value?.projection_wkt || ''
+  if (!wkt) return ''
+  // 截断过长的投影字符串
+  return wkt.length > 200 ? wkt.slice(0, 200) + '...' : wkt
+})
 const codePage = computed(() => metadata.value?.code_page || '')
 const fields = computed(() => {
   const raw = metadata.value?.fields
@@ -143,7 +148,32 @@ const message = computed(() => {
   return ''
 })
 
-const hasGeoJSON = computed(() => Boolean(content.value?.geojson || content.value?.GeoJSON))
+const shouldSuppressMap = computed(() => {
+  if (transformStatus.value === 'unknown_crs' || transformStatus.value === 'unsupported_crs') {
+    return true
+  }
+  return sourceSRID.value > 0 && sourceSRID.value !== 4326 && !metadata.value?.render_bbox
+})
+
+const mapStatusMessage = computed(() => {
+  if (!shouldSuppressMap.value) return ''
+  if (transformMessage.value) return transformMessage.value
+  if (transformStatus.value === 'unknown_crs') {
+    return t('map.mapSuppressedUnknownCRS')
+  }
+  if (transformStatus.value === 'unsupported_crs') {
+    return t('map.mapSuppressedUnsupportedCRS')
+  }
+  if (sourceSRID.value > 0 && sourceSRID.value !== 4326) {
+    return t('map.mapSuppressedNonWGS84')
+  }
+  return ''
+})
+
+const hasGeoJSON = computed(() => {
+  if (shouldSuppressMap.value) return false
+  return Boolean(content.value?.geojson || content.value?.GeoJSON)
+})
 const truncated = computed(() => {
   if (typeof content.value?.truncated === 'boolean') return content.value.truncated
   return Boolean(props.data?.object?.truncated)
@@ -153,32 +183,21 @@ const geojsonData = computed(() => content.value?.geojson || content.value?.GeoJ
 
 const geoFeatures = computed(() => {
   if (!geojsonData.value) return []
-
   try {
     if (geojsonData.value.type === 'FeatureCollection') {
       return geojsonData.value.features || []
     } else if (geojsonData.value.type === 'Feature') {
       return [geojsonData.value]
     } else if (geojsonData.value.type && geojsonData.value.coordinates) {
-      return [
-        {
-          type: 'Feature',
-          geometry: geojsonData.value,
-          properties: {}
-        }
-      ]
+      return [{ type: 'Feature', geometry: geojsonData.value, properties: {} }]
     }
   } catch (error) {
     console.warn('Shapefile 预览: GeoJSON 解析失败', error)
   }
-
   return []
 })
 
-const formattedJson = computed(() => safeStringify(geojsonData.value))
-
 const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
-const showMap = ref(hasGeoJSON.value)
 const baseMapType = ref('')
 
 watch(
@@ -195,23 +214,10 @@ onMounted(() => {
   loadMapConfig()
 })
 
-watch(
-  hasGeoJSON,
-  (value) => {
-    if (!value) {
-      showMap.value = false
-    }
-  },
-  { immediate: true }
-)
-
 function formatNumber(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return '-'
-  if (Math.abs(num) >= 1000) {
-    return num.toFixed(2)
-  }
-  return num.toFixed(6)
+  return Math.abs(num) >= 1000 ? num.toFixed(2) : num.toFixed(6)
 }
 </script>
 
@@ -219,139 +225,96 @@ function formatNumber(value) {
 .shapefile-preview {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   height: 100%;
+  overflow: hidden;
 }
 
 .alert-message {
-  margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
-.summary {
+.info-bar {
+  flex-shrink: 0;
   display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  background: var(--el-fill-color);
-  border-radius: 6px;
-}
-
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 120px;
-}
-
-.summary-item .label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.summary-item .value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.bbox-panel {
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  padding: 12px 16px;
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: var(--el-text-color-primary);
-}
-
-.bbox-grid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-}
-
-.bbox-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-}
-
-.bbox-item .label {
-  color: var(--el-text-color-secondary);
-}
-
-.bbox-item .value {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-  color: var(--el-text-color-primary);
-}
-
-.meta-hints {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.proj-tag {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fields-table {
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  padding: 12px 16px;
-}
-
-.table {
-  --el-table-header-bg-color: var(--el-fill-color-dark);
-}
-
-.controls {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px;
-  background: var(--el-fill-color);
-  border-radius: 4px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
 }
 
-.toggle-wrapper {
+.info-tags {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  flex-wrap: wrap;
+}
+
+.info-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .base-map-select {
-  min-width: 160px;
+  width: 130px;
 }
 
-.json-content {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--el-text-color-primary);
-  padding: 12px;
+.map-area {
+  flex: 1;
+  min-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+}
+
+.map-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--el-fill-color-lighter);
+}
+
+.fields-section {
+  flex-shrink: 0;
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
-  overflow: auto;
-  max-height: 360px;
+  overflow: hidden;
 }
 
-.json-content.collapsed {
-  max-height: 200px;
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  cursor: pointer;
+  background: var(--el-fill-color);
+  user-select: none;
+}
+
+.section-header:hover {
+  background: var(--el-fill-color-dark);
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.toggle-icon {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.2s;
+}
+
+.toggle-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.fields-table {
+  --el-table-header-bg-color: var(--el-fill-color-dark);
 }
 </style>

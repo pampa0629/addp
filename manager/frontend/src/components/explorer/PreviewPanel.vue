@@ -50,6 +50,17 @@
           </div>
         </div>
         <div class="panel-actions">
+          <!-- Markdown 渲染/原文切换按钮 -->
+          <el-button
+            v-if="isMarkdownContent"
+            size="small"
+            :type="markdownRawMode ? 'default' : 'primary'"
+            @click="markdownRawMode = !markdownRawMode"
+          >
+            <el-icon><component :is="markdownRawMode ? View : Document" /></el-icon>
+            {{ markdownRawMode ? t('manager.explorer.mdRendered') : t('manager.explorer.mdRaw') }}
+          </el-button>
+
           <!-- Schema 图按钮（仅图数据库引擎显示） -->
           <el-button
             v-if="isGraphEngine"
@@ -161,6 +172,7 @@
         :is="previewComponent"
         :key="componentKey"
         :data="previewData"
+        v-bind="previewComponentProps"
         :loading="loading"
         @page-change="handlePageChange"
         @navigate="handleNavigate"
@@ -182,7 +194,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { MagicStick, Download, Location, Collection, Upload, Share, DataBoard } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Share, DataBoard, Document, View } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import { GraphSchemaView } from '@addp/common-frontend/graph'
@@ -450,6 +462,12 @@ const activePlugin = computed(() => {
 
 const previewComponent = computed(() => activePlugin.value?.component ?? null)
 const previewPluginName = computed(() => activePlugin.value?.name ?? '')
+const previewComponentProps = computed(() => {
+  if (isMarkdownContent.value) {
+    return { rawMode: markdownRawMode.value }
+  }
+  return {}
+})
 
 // 检查是否有可用的预览组件
 const hasPreviewComponent = computed(() => Boolean(previewComponent.value))
@@ -748,6 +766,7 @@ watch(
     showGraphSchema.value = false
     graphSchemaData.value = null
     focusedSchemaLabel.value = null
+    markdownRawMode.value = false
   }
 )
 
@@ -955,6 +974,12 @@ const showObjectInfo = computed(() => {
   return (previewMode.value === 'object' || previewMode.value === 'node') &&
          props.previewData?.object &&
          props.previewData.object.node_type === 'object'
+})
+
+// Markdown 切换
+const markdownRawMode = ref(false)
+const isMarkdownContent = computed(() => {
+  return (props.previewData?.object?.content?.kind || '').toLowerCase() === 'markdown'
 })
 
 const objectSizeBytes = computed(() => {
@@ -1229,14 +1254,15 @@ const objectLastModified = computed(() => {
 
   try {
     const date = new Date(lastModified)
-    return date.toLocaleString('zh-CN', {
+    return new Intl.DateTimeFormat(undefined, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
-    })
+      second: '2-digit',
+      hour12: false
+    }).format(date)
   } catch (e) {
     return null
   }

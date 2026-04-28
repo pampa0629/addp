@@ -6,10 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/addp/common/format"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -119,13 +119,13 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 		spatialInfo := &format.SpatialInfo{
 			GeometryColumn: geometryField,
 			GeometryType:   geomType,
-			SRID:           4326, // Shapefile 默认 WGS84
-			Dimension:      2,    // Shapefile 默认 2D
+			SRID:           0, // 未明确识别前不假定为 WGS84
+			Dimension:      2, // Shapefile 默认 2D
 		}
 
 		// 如果在 options 中指定了空间参考系统，解析 SRID
 		if opts.SpatialRefSys != "" {
-			if srid := parseSRID(opts.SpatialRefSys); srid > 0 {
+			if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
 				spatialInfo.SRID = srid
 			}
 		}
@@ -240,6 +240,7 @@ func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit
 
 	return records, nil
 }
+
 // mapShapefileTypeToFieldType 将 Shapefile 字段类型映射到 FieldType
 func mapShapefileTypeToFieldType(shpType string) format.FieldType {
 	switch shpType {
@@ -343,24 +344,6 @@ func determineShapefileGeometryType(shapeType shp.ShapeType) string {
 	default:
 		return "Geometry"
 	}
-}
-
-// parseSRID 从空间参考系统字符串中解析 SRID
-// 例如: "EPSG:4326" -> 4326
-func parseSRID(srsStr string) int {
-	if srsStr == "" {
-		return 0
-	}
-
-	// 处理 "EPSG:xxxx" 格式
-	if strings.HasPrefix(strings.ToUpper(srsStr), "EPSG:") {
-		sridStr := strings.TrimPrefix(strings.ToUpper(srsStr), "EPSG:")
-		if srid, err := strconv.Atoi(sridStr); err == nil {
-			return srid
-		}
-	}
-
-	return 0
 }
 
 func init() {

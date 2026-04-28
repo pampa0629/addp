@@ -226,8 +226,12 @@ func (p *fileSystemPreviewProvider) previewFile(
 // schema = locator path[0]，table = locator path[1:] 的 join
 // 转换规则：NFS物理路径 = "/" + schema + "/" + table
 func nfsPhysicalPath(schema, table string) string {
-	if schema == "" {
+	if schema == "" && table == "" {
 		return "/"
+	}
+	if schema == "" {
+		// 根目录下的文件：table 就是文件名
+		return "/" + table
 	}
 	if table == "" {
 		return "/" + schema

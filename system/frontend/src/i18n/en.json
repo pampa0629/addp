@@ -117,6 +117,7 @@
     },
     "engine": {
       "title": "Engine Management",
+      "typeNfs": "NFS Filesystem",
       "addStorage": "Register Standard Engine",
       "addCompute": "Register Extension Engine",
       "filter": "Filter:",
@@ -172,8 +173,8 @@
       },
       "typeSelection": {
         "title": "Select Engine Type",
-        "storage": "Storage Engine",
-        "storageDesc": "Database, object storage and other data storage services",
+        "storage": "Standard Engine",
+        "storageDesc": "Database, object storage and other standard data engine services",
         "compute": "Compute Engine",
         "computeDesc": "Services providing computing capabilities"
       },
@@ -188,7 +189,7 @@
       },
       "dialog": {
         "add": "New Engine",
-        "addStorage": "New Storage Engine",
+        "addStorage": "New Standard Engine",
         "addCompute": "New Compute Engine",
         "edit": "Edit Engine",
         "details": "Engine Details - {name}",
@@ -232,6 +233,23 @@
           "depth": "(Depth: {depth})",
           "yes": "Yes",
           "no": "No"
+        }
+      },
+      "registerPanel": {
+        "title": "Select standard engine type",
+        "subtitle": "Choose engine on the left and fill connection details on the right",
+        "editLockedHint": "Engine type cannot be changed in edit mode",
+        "types": {
+          "postgresql": "Enterprise relational database",
+          "mysql": "General-purpose relational database",
+          "doris": "MPP analytical database",
+          "clickhouse": "Columnar analytical database",
+          "mongodb": "Document database",
+          "minio": "S3-compatible object storage",
+          "neo4j": "Graph database",
+          "nfs": "Network file system",
+          "spark": "Distributed compute engine",
+          "spatialite": "Lightweight local file database"
         }
       },
       "msg": {

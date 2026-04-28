@@ -227,7 +227,7 @@ func (s *FileSystemScanService) scanDirectory(
 	// 未匹配到任何 detector，逐文件处理（模式 B + 普通文件）
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Name))
-		if isLakeTableFile(ext) {
+		if commonParquet.IsLakeTableExt(ext) {
 			// 模式 B：单个结构化文件识别为 lake_table
 			info, err := commonParquet.ExtractSingleFileInfo(ctx, fsPlugin, connInfo, file.Path, file.Size)
 			if err != nil {
@@ -356,11 +356,3 @@ func inferItemName(dirPath string) (name, fullName string) {
 	return
 }
 
-// isLakeTableFile 判断文件扩展名是否为湖表格式
-func isLakeTableFile(ext string) bool {
-	switch ext {
-	case ".parquet", ".orc", ".avro":
-		return true
-	}
-	return false
-}

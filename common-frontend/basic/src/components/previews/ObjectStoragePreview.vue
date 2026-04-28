@@ -3,8 +3,8 @@
     <!-- 元数据区域 -->
     <div class="object-meta">
       <div class="meta-row">
-        <span class="meta-label">Bucket</span>
-        <span class="meta-value">{{ objectData.bucket || '-' }}</span>
+        <span class="meta-label">{{ bucketLabel }}</span>
+        <span class="meta-value">{{ rootDisplayValue }}</span>
       </div>
       <div class="meta-row">
         <span class="meta-label">{{ t('objectStorage.path') }}</span>
@@ -109,6 +109,7 @@ import { formatBytes, formatDateTime, getObjectNodeTypeLabel } from '../../utils
 import ImagePreview from '../ImagePreview.vue'
 import JsonPreview from './JsonPreview.vue'
 import TextPreview from './TextPreview.vue'
+import MarkdownPreview from './MarkdownPreview.vue'
 import ExtractedMetadata from '../ExtractedMetadata.vue'
 
 const props = defineProps({
@@ -140,6 +141,20 @@ const parseMaybeJSON = (value) => {
 }
 
 const objectData = computed(() => props.data?.object || {})
+
+const bucketLabel = computed(() => {
+  const type = (objectData.value.node_type || '').toLowerCase()
+  if (type === 'bucket') return t('objectStorage.bucket')
+  if (type === 'schema') return t('objectStorage.schema')
+  if (type === 'database') return t('objectStorage.database')
+  return t('objectStorage.rootDir')
+})
+
+const rootDisplayValue = computed(() => {
+  const value = objectData.value.bucket
+  if (value === null || value === undefined || value === '') return '/'
+  return value
+})
 
 const isDirectory = computed(() => {
   const type = (objectData.value.node_type || '').toLowerCase()
@@ -233,6 +248,8 @@ const contentPreview = computed(() => {
       return props.geojsonPreviewComponent || JsonPreview
     case 'json':
       return JsonPreview
+    case 'markdown':
+      return MarkdownPreview
     default:
       return TextPreview
   }

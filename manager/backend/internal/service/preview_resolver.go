@@ -315,15 +315,27 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 	schema := ""
 	table := ""
 
-	// 对于对象存储类型和文件系统类型，schema 是根名称，table 是完整的子路径
+	// 对于对象存储类型，schema 是根名称，table 是完整的子路径
+	// 对于文件系统类型，根目录下文件需要映射为 schema="" + table="文件名"，避免被识别为目录
 	// 对于关系型数据库，schema 是第一个组件，table 是第二个组件
-	if isObjectStorageType(req.Engine.EngineType) || isFileSystemType(req.Engine.EngineType) {
-		// 对象存储/文件系统: path = [rootName, ...subPath]
-		// schema = rootName, table = subPath (joined)
+	if isObjectStorageType(req.Engine.EngineType) {
+		// 对象存储: path = [bucket, ...subPath]
 		if len(req.Locator.Path) >= 1 {
-			schema = req.Locator.Path[0] // bucket / 根目录名
+			schema = req.Locator.Path[0]
 			if len(req.Locator.Path) > 1 {
-				// 将剩余路径组件合并为完整子路径
+				table = strings.Join(req.Locator.Path[1:], "/")
+			}
+		}
+	} else if isFileSystemType(req.Engine.EngineType) {
+		// 文件系统:
+		// 1) 目录节点: path=[rootName,...subPath] -> schema=rootName, table=subPath
+		// 2) 根目录下文件: path=[fileName] -> schema="", table=fileName
+		nodeType := strings.ToLower(string(req.Locator.Type))
+		if len(req.Locator.Path) == 1 && (nodeType == "file" || nodeType == "object" || nodeType == "lake_table") {
+			table = req.Locator.Path[0]
+		} else if len(req.Locator.Path) >= 1 {
+			schema = req.Locator.Path[0]
+			if len(req.Locator.Path) > 1 {
 				table = strings.Join(req.Locator.Path[1:], "/")
 			}
 		}

@@ -12,11 +12,13 @@ import (
 
 	"github.com/addp/common/format/shapefile"
 	"github.com/addp/common/logger"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 )
 
 const (
 	defaultShapefilePreviewFeatures = 200
+	maxShapefilePreviewBytes        = 50 * 1024 * 1024 // 50MB：超过此大小跳过全量下载
 )
 
 type shapefileContentHandler struct {
@@ -33,6 +35,21 @@ func (h *shapefileContentHandler) Handle(ctx context.Context, req *ObjectContent
 }
 
 func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req *ObjectContentRequest, baseStreamer ObjectStreamProvider, siblingProvider ObjectSiblingStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+	// 大文件保护：超过阈值时跳过全量下载，仅返回元数据提示
+	if req.Size > maxShapefilePreviewBytes {
+		sizeMB := float64(req.Size) / (1024 * 1024)
+		return &models.ObjectPreviewContent{
+			Kind: "shapefile",
+			Text: fmt.Sprintf("Shapefile 文件较大（%.1f MB），已跳过全量下载。如需预览请下载后在本地查看。", sizeMB),
+			Metadata: map[string]interface{}{
+				"size_bytes":  req.Size,
+				"size_mb":     sizeMB,
+				"skipped":     true,
+				"skip_reason": "file_too_large",
+			},
+		}, false, nil
+	}
+
 	tmpDir, err := os.MkdirTemp("", "shapefile-preview-*")
 	if err != nil {
 		return nil, false, fmt.Errorf("创建 shapefile 临时目录失败: %w", err)
@@ -155,6 +172,38 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		"features": features,
 	}
 
+	sourceSRID := commonSpatial.ParseSRID(strings.TrimSpace(prjText))
+	if sourceSRID > 0 {
+		metadata["source_srid"] = sourceSRID
+		metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", sourceSRID)
+	}
+
+	transformResult, transformErr := commonSpatial.TransformGeoJSONToWGS84(ctx, geojson, sourceSRID, strings.TrimSpace(prjText))
+	if transformErr != nil {
+		logger.L().Warn("Shapefile 预览: 坐标转换失败", "path", req.Path+req.Name, "error", transformErr)
+		metadata["transform_status"] = string(commonSpatial.TransformStatusUnsupportedCRS)
+		metadata["transform_error"] = transformErr.Error()
+	} else if transformResult != nil {
+		metadata["transform_status"] = string(transformResult.Status)
+		if transformResult.Engine != "" {
+			metadata["transform_engine"] = transformResult.Engine
+		}
+		if transformResult.Message != "" {
+			metadata["transform_message"] = transformResult.Message
+		}
+		if bbox := transformResult.BoundingBox; len(bbox) == 4 {
+			metadata["render_bbox"] = bbox
+		}
+		metadata["render_srid"] = commonSpatial.SRIDWGS84
+
+		switch transformResult.Status {
+		case commonSpatial.TransformStatusNoop, commonSpatial.TransformStatusTransformed:
+			if transformResult.GeoJSON != nil {
+				geojson = toGeoJSONMap(transformResult.GeoJSON)
+			}
+		}
+	}
+
 	content := &models.ObjectPreviewContent{
 		Kind:      "shapefile",
 		GeoJSON:   geojson,
@@ -163,6 +212,14 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 
 	return content, truncated, nil
+}
+
+func toGeoJSONMap(value interface{}) map[string]interface{} {
+	result, ok := value.(map[string]interface{})
+	if ok {
+		return result
+	}
+	return nil
 }
 
 func downloadObjectToFile(opener func() (io.ReadCloser, error), target string) (int64, error) {
