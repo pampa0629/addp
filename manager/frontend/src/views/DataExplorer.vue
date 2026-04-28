@@ -221,6 +221,54 @@ onMounted(async () => {
 
       // 设置展开状态
       store.expandedLocators = new Set(engineLocators)
+
+      // 暴露一个临时检查函数到 window，便于在浏览器控制台对所有引擎执行折叠校验
+      // 用法（在浏览器控制台执行）：window.__checkExplorerCollapse()
+      try {
+        // eslint-disable-next-line no-undef
+        window.__checkExplorerCollapse = async () => {
+          const results = []
+          // 遍历每个已加载的引擎
+          for (const engine of store.engines) {
+            const engineLocator = `addp://engine/${engine.id}/path/?type=database`
+
+            // 收集该引擎树所有节点的 locator（用于模拟深度展开）
+            const tree = store.engineTrees[engine.id]
+            const collect = (node, acc, depth = 0) => {
+              if (!node) return
+              if (node.locator) acc.push({ locator: node.locator, depth })
+              if (node.children && node.children.length > 0) {
+                for (const c of node.children) collect(c, acc, depth + 1)
+              }
+            }
+
+            const allNodes = []
+            collect(tree, allNodes)
+
+            // 人为设置：将 engine 本身和其深度>=2 的节点设为展开
+            const toExpand = new Set([engineLocator])
+            for (const n of allNodes) {
+              if (n.depth >= 2) toExpand.add(n.locator)
+            }
+
+            store.expandedLocators = new Set([...store.expandedLocators, ...toExpand])
+
+            // 调用 collapseNode 折叠引擎节点
+            store.collapseNode(engineLocator)
+
+            // 检查是否仍有以 engineLocator 为前缀的展开键残留
+            const leftover = Array.from(store.expandedLocators).filter(k => typeof k === 'string' && k.startsWith(engineLocator))
+
+            results.push({ engineId: engine.id, engineName: engine.name, leftOverCount: leftover.length, leftover })
+          }
+
+          // 输出并返回结果
+          console.table(results.map(r => ({ engineId: r.engineId, engineName: r.engineName, leftOverCount: r.leftOverCount })))
+          return results
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   } catch (error) {
     ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
