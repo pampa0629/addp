@@ -1,5 +1,4 @@
-# Use Docker Hub for multi-arch support
-FROM nginx:alpine
+FROM localhost:5001/nginx:alpine
 
 # 复制 nginx 配置
 COPY nginx.conf /etc/nginx/nginx.conf

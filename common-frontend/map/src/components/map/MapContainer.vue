@@ -107,13 +107,14 @@ defineExpose({ focusFeature, showPopup, hidePopup })
   padding: 8px 12px;
   max-width: 280px;
   font-size: 12px;
-  color: var(--el-text-color-primary);
+  color: #1f2937;
 }
 
 :deep(.map-popup-content) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  color: #1f2937;
 }
 
 :deep(.map-popup-row) {
@@ -121,17 +122,18 @@ defineExpose({ focusFeature, showPopup, hidePopup })
   justify-content: space-between;
   gap: 8px;
   line-height: 1.4;
+  color: #1f2937;
 }
 
 :deep(.map-popup-label) {
   font-weight: 600;
-  color: var(--el-text-color-secondary);
+  color: #4b5563;
 }
 
 :deep(.map-popup-value) {
   flex: 1;
   text-align: right;
-  color: var(--el-text-color-primary);
+  color: #111827;
   word-break: break-all;
 }
 </style>

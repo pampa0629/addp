@@ -598,11 +598,60 @@ build_service() {
     fi
 }
 
+# Pull base images and push to local registry so Dockerfiles can use localhost:5001/ prefix
+seed_base_images() {
+    echo -e "${YELLOW}Seeding base images to local registry...${NC}"
+
+    local arch
+    arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+
+    local base_images=(
+        "alpine:latest"
+        "nginx:alpine"
+        "node:18.20.5-alpine"
+        "node:20-alpine"
+        "python:3.11-slim"
+        "python:3.12-slim"
+        "python:3.11-bullseye"
+    )
+
+    local any_failed=false
+    for img in "${base_images[@]}"; do
+        local img_name="${img%%:*}"
+        local img_tag="${img#*:}"
+        local local_img="${REGISTRY}/${img}"
+
+        local tags_response
+        tags_response=$(curl -s "http://${REGISTRY}/v2/${img_name}/tags/list" 2>/dev/null)
+        if echo "$tags_response" | grep -q "\"${img_tag}\""; then
+            echo -e "${GREEN}✓ ${img} already in registry${NC}"
+            continue
+        fi
+
+        echo -e "${YELLOW}Pulling ${img} (linux/${arch})...${NC}"
+        if docker pull --platform "linux/${arch}" "${img}" \
+            && docker tag "${img}" "${local_img}" \
+            && docker push "${local_img}"; then
+            echo -e "${GREEN}✓ Seeded ${img}${NC}"
+        else
+            echo -e "${RED}✗ Failed to seed ${img} — builds using this image will fail${NC}"
+            any_failed=true
+        fi
+    done
+
+    if [ "$any_failed" = true ]; then
+        echo -e "${RED}Some base images could not be seeded. Check network/mirror config.${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}✓ All base images ready${NC}"
+}
+
 # Main build process
 main() {
     check_docker_config
     check_buildx
     check_registry
+    seed_base_images
 
     # Define services to build
     local services=(

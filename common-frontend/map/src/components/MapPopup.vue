@@ -27,6 +27,7 @@ defineExpose({ popupEl })
 .ol-popup {
   position: absolute;
   background-color: white;
+  color: #333;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   padding: 0;
   border-radius: 8px;

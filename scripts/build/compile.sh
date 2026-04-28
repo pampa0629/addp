@@ -217,6 +217,13 @@ SERVICES=(
     "orchestrator-backend:orchestrator/backend"
     "develop-backend:develop/backend"
     "service-backend:service/backend"
+    "monitor-backend:monitor/backend"
+    "standard-backend:standard/backend"
+    "model-backend:model/backend"
+    "quality-backend:quality/backend"
+    "asset-backend:asset/backend"
+    "portal-backend:portal/backend"
+    "graph-backend:graph/backend"
     "gateway:gateway"
 )
 failed=()

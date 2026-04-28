@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM localhost:5001/alpine:latest
 
 RUN apk --no-cache add ca-certificates tzdata curl
 

@@ -1,6 +1,6 @@
 # Spark Spark 工作流引擎 Dockerfile
 # 使用 Debian Bullseye + Python 3.11 (避免 Trixie 的网络问题)
-FROM python:3.11-bullseye
+FROM localhost:5001/python:3.11-bullseye
 
 # 安装系统依赖 (Bullseye 中的 OpenJDK 17 稳定可用)
 RUN apt-get update && \

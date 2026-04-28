@@ -1,5 +1,5 @@
 # Python Workflow Engine Dockerfile
-FROM python:3.11-slim
+FROM localhost:5001/python:3.11-slim
 
 # Install system dependencies for Python Workflow Engine (including build tools)
 RUN apt-get update && apt-get install -y \

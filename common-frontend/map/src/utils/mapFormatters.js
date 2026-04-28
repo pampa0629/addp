@@ -94,9 +94,9 @@ export function formatFeatureProperties(properties, geomColumn = 'geom') {
       displayValue = value.substring(0, 80) + '...'
     }
 
-    html += '<div class="attribute-item">'
-    html += `<span class="attr-key">${key}:</span> `
-    html += `<span class="attr-value">${displayValue}</span>`
+    html += '<div class="attribute-item" style="color:#333">'
+    html += `<span class="attr-key" style="color:#555;font-weight:600">${key}:</span> `
+    html += `<span class="attr-value" style="color:#111">${displayValue}</span>`
     html += '</div>'
 
     attributeCount++
