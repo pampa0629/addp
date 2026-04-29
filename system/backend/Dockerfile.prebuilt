@@ -1,4 +1,6 @@
-FROM localhost:5001/alpine:latest
+FROM localhost:5001/debian-slim:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 
 # Build arguments for precise binary selection
 ARG BUILD_ARCH=amd64

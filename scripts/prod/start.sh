@@ -21,6 +21,9 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
+# 初始化 .env（若不存在则从 .env.example 自动生成随机密钥）
+bash scripts/prod/setup-env.sh
+
 # 第一步：启动基础设施层
 echo -e "${YELLOW}[1/4] 启动基础设施层 (PostgreSQL, Redis, MinIO, Meilisearch)...${NC}"
 docker compose -f docker-compose.infra.yml up -d
@@ -58,6 +61,15 @@ docker compose -f docker-compose.yml up -d \
   orchestrator-backend \
   develop-backend \
   service-backend \
+  copilot-backend \
+  monitor-backend \
+  standard-backend \
+  graph-backend \
+  agent-backend \
+  model-backend \
+  quality-backend \
+  asset-backend \
+  portal-backend \
   python-workflow-engine \
   spark-workflow-engine \
   jupyter-engine \
@@ -75,6 +87,15 @@ services=(
   "orchestrator-backend:8084"
   "develop-backend:8085"
   "service-backend:8086"
+  "copilot-backend:8087"
+  "monitor-backend:8100"
+  "standard-backend:8110"
+  "graph-backend:8186"
+  "agent-backend:8190"
+  "model-backend:8181"
+  "quality-backend:8182"
+  "asset-backend:8183"
+  "portal-backend:8184"
   "jupyter-engine:8097"
   "spark-workflow-engine:8098"
   "python-workflow-engine:8099"
@@ -116,6 +137,15 @@ docker compose -f docker-compose.yml up -d \
   transfer-frontend \
   orchestrator-frontend \
   develop-frontend \
+  service-frontend \
+  monitor-frontend \
+  standard-frontend \
+  graph-frontend \
+  agent-frontend \
+  model-frontend \
+  quality-frontend \
+  asset-frontend \
+  portal-frontend \
   console \
   nginx
 
@@ -164,6 +194,13 @@ echo -e "  Transfer Backend:       http://localhost:8083"
 echo -e "  Orchestrator Backend:   http://localhost:8084"
 echo -e "  Develop Backend:        http://localhost:8085"
 echo -e "  Service Backend:        http://localhost:8086"
+echo -e "  Copilot Backend:        http://localhost:8087"
+echo -e "  Monitor Backend:        http://localhost:8100"
+echo -e "  Standard Backend:       http://localhost:8110"
+echo -e "  Model Backend:          http://localhost:8181"
+echo -e "  Quality Backend:        http://localhost:8182"
+echo -e "  Asset Backend:          http://localhost:8183"
+echo -e "  Portal Backend:         http://localhost:8184"
 echo -e "  Python Workflow Engine: http://localhost:8099"
 echo -e "  Spark Spark 工作流引擎:    http://localhost:8098"
 echo -e "  Gateway API:            http://localhost:8000"
@@ -179,6 +216,13 @@ echo -e "  - Meta Frontend:        http://localhost:8092"
 echo -e "  - Transfer Frontend:    http://localhost:8093"
 echo -e "  - Orchestrator Frontend: http://localhost:8094"
 echo -e "  - Develop Frontend:     http://localhost:8095"
+echo -e "  - Service Frontend:     http://localhost:8096"
+echo -e "  - Standard Frontend:    http://localhost:8112"
+echo -e "  - Model Frontend:       http://localhost:8111"
+echo -e "  - Quality Frontend:     http://localhost:8113"
+echo -e "  - Asset Frontend:       http://localhost:8114"
+echo -e "  - Portal Frontend:      http://localhost:8115"
+echo -e "  - Monitor Frontend:     http://localhost:8116"
 
 echo ""
 echo -e "${YELLOW}常用命令:${NC}"

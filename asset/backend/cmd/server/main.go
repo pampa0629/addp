@@ -5,13 +5,14 @@ import (
 	"log"
 	"time"
 
-	commonClient "github.com/addp/common/client"
+	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/api"
 	"github.com/addp/asset/internal/config"
-	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/models"
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/utils"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -132,7 +133,9 @@ func main() {
 	}()
 
 	// 模块注册 + 心跳
-	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("asset")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	systemClient.RegisterAndHeartbeat("asset", serviceURL, "/asset")
 
 	select {}

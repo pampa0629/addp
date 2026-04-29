@@ -32,6 +32,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-system-backend:${IMAGE_TAG:-latest}
     container_name: system-backend
     environment:
+      - SERVICE_HOST=system-backend
       - SERVER_ADDR=:8180  # System Backend 端口
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -59,7 +60,7 @@ services:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8180/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8180'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -82,13 +83,14 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-manager-backend:${IMAGE_TAG:-latest}
     container_name: manager-backend
     environment:
+      - SERVICE_HOST=manager-backend
       - PORT=8081
       - DB_SCHEMA=manager
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
@@ -102,7 +104,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8081'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -124,11 +126,11 @@ services:
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=manager
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -177,13 +179,14 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
     container_name: meta-backend
     environment:
+      - SERVICE_HOST=meta-backend
       - PORT=8082
       - DB_SCHEMA=metadata
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -200,7 +203,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8082'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -222,11 +225,11 @@ services:
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=metadata
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -271,13 +274,14 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
     container_name: transfer-backend
     environment:
+      - SERVICE_HOST=transfer-backend
       - PORT=8083
       - DB_SCHEMA=transfer
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -294,7 +298,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8083'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -316,11 +320,11 @@ services:
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=transfer
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -365,13 +369,14 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-backend:${IMAGE_TAG:-latest}
     container_name: orchestrator-backend
     environment:
+      - SERVICE_HOST=orchestrator-backend
       - PORT=8084
       - DB_SCHEMA=orchestrator
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_NAME=${POSTGRES_DB:-addp}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -388,7 +393,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8084'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -411,6 +416,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
     container_name: develop-backend
     environment:
+      - SERVICE_HOST=develop-backend
       - PORT=8085
       - ENV=production
       - SYSTEM_SERVICE_URL=http://system-backend:8180
@@ -436,7 +442,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8085'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -459,6 +465,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-service-backend:${IMAGE_TAG:-latest}
     container_name: service-backend
     environment:
+      - SERVICE_HOST=service-backend
       - PORT=8086
       - ENV=production
       - SYSTEM_SERVICE_URL=http://system-backend:8180
@@ -484,11 +491,120 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8086'"]
       interval: 10s
       timeout: 5s
       retries: 30
       start_period: 60s
+
+  service-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-service-frontend:${IMAGE_TAG:-latest}
+    container_name: service-frontend
+    ports:
+      - "8096:80"
+    networks:
+      - addp-network
+    depends_on:
+      - service-backend
+    restart: unless-stopped
+
+  # ==================== Monitor 模块 ====================
+
+  monitor-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-monitor-backend:${IMAGE_TAG:-latest}
+    container_name: monitor-backend
+    environment:
+      - SERVICE_HOST=monitor-backend
+      - MONITOR_BACKEND_PORT=8100
+      - SYSTEM_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    ports:
+      - "8100:8100"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8100'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  monitor-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-monitor-frontend:${IMAGE_TAG:-latest}
+    container_name: monitor-frontend
+    ports:
+      - "8116:80"
+    networks:
+      - addp-network
+    depends_on:
+      - monitor-backend
+    restart: unless-stopped
+
+  # ==================== Standard 模块 ====================
+
+  standard-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-standard-backend:${IMAGE_TAG:-latest}
+    container_name: standard-backend
+    environment:
+      - SERVICE_HOST=standard-backend
+      - STANDARD_BACKEND_PORT=8110
+      - SYSTEM_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+    ports:
+      - "8110:8110"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8110'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  standard-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-standard-frontend:${IMAGE_TAG:-latest}
+    container_name: standard-frontend
+    ports:
+      - "8112:80"
+    networks:
+      - addp-network
+    depends_on:
+      - standard-backend
+    restart: unless-stopped
 
   # ==================== Copilot 模块 (AI 助手) ====================
 
@@ -499,6 +615,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-copilot-backend:${IMAGE_TAG:-latest}
     container_name: copilot-backend
     environment:
+      - SERVICE_HOST=copilot-backend
       - PORT=8087
       - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
@@ -523,7 +640,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8087'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -535,8 +652,11 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-model-backend:${IMAGE_TAG:-latest}
     container_name: model-backend
     environment:
+      - SERVICE_HOST=model-backend
       - PORT=8181
       - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
+      - STANDARD_SERVICE_URL=http://standard-backend:8110
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -557,9 +677,11 @@ services:
     depends_on:
       system-backend:
         condition: service_started
+      standard-backend:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8181'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -580,6 +702,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-quality-backend:${IMAGE_TAG:-latest}
     container_name: quality-backend
     environment:
+      - SERVICE_HOST=quality-backend
       - QUALITY_BACKEND_PORT=8182
       - SYSTEM_URL=http://system-backend:8180
       - STANDARD_URL=http://standard-backend:8110
@@ -603,9 +726,13 @@ services:
     depends_on:
       system-backend:
         condition: service_started
+      standard-backend:
+        condition: service_started
+      meta-backend:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8182/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8182'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -629,8 +756,15 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-asset-backend:${IMAGE_TAG:-latest}
     container_name: asset-backend
     environment:
+      - SERVICE_HOST=asset-backend
       - ASSET_BACKEND_PORT=8183
       - SYSTEM_URL=http://system-backend:8180
+      - META_SERVICE_URL=http://meta-backend:8082
+      - SERVICE_SERVICE_URL=http://service-backend:8086
+      - STANDARD_SERVICE_URL=http://standard-backend:8110
+      - DEVELOP_SERVICE_URL=http://develop-backend:8085
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -650,9 +784,11 @@ services:
     depends_on:
       system-backend:
         condition: service_started
+      standard-backend:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8183/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8183'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -695,7 +831,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8184/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8184'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -711,6 +847,119 @@ services:
     depends_on:
       - portal-backend
     restart: unless-stopped
+
+  # ==================== Graph 模块 ====================
+
+  graph-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-graph-backend:${IMAGE_TAG:-latest}
+    container_name: graph-backend
+    environment:
+      - SERVICE_HOST=graph-backend
+      - GRAPH_BACKEND_PORT=8186
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - MODEL_SERVICE_URL=http://model-backend:8181
+      - COPILOT_SERVICE_URL=http://copilot-backend:8087
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=graph
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - MINIO_SYSTEM_ENDPOINT=http://minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "8186:8186"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+      model-backend:
+        condition: service_started
+      copilot-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8186'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  graph-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-graph-frontend:${IMAGE_TAG:-latest}
+    container_name: graph-frontend
+    ports:
+      - "8118:80"
+    networks:
+      - addp-network
+    depends_on:
+      - graph-backend
+    restart: unless-stopped
+
+  # ==================== Agent 模块 ====================
+
+  agent-backend:
+    build:
+      context: .
+      dockerfile: agent/backend/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-agent-backend:${IMAGE_TAG:-latest}
+    container_name: agent-backend
+    environment:
+      - SERVICE_HOST=agent-backend
+      - AGENT_BACKEND_PORT=8190
+      - AGENT_DB_SCHEMA=agent
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - COPILOT_SERVICE_URL=http://copilot-backend:8087
+      - GRAPH_SERVICE_URL=http://graph-backend:8186
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    ports:
+      - "8190:8190"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+      copilot-backend:
+        condition: service_started
+      graph-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8190/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  agent-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-agent-frontend:${IMAGE_TAG:-latest}
+    container_name: agent-frontend
+    ports:
+      - "8117:80"
+    networks:
+      - addp-network
+    depends_on:
+      - agent-backend
+    restart: unless-stopped
   # ==================== Jupyter Engine (Notebook 开发引擎) ====================
 
   jupyter-engine:
@@ -723,6 +972,9 @@ services:
       - JUPYTER_PORT=8088
       - API_PORT=8097
       - JUPYTER_ENABLE_LAB=yes
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -781,7 +1033,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8099/health', timeout=3)\""]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -837,10 +1089,14 @@ services:
       - DEVELOP_SERVICE_URL=http://develop-backend:8085
       - SERVICE_SERVICE_URL=http://service-backend:8086
       - COPILOT_SERVICE_URL=http://copilot-backend:8087
+      - MONITOR_SERVICE_URL=http://monitor-backend:8100
+      - STANDARD_SERVICE_URL=http://standard-backend:8110
       - MODEL_SERVICE_URL=http://model-backend:8181
       - QUALITY_SERVICE_URL=http://quality-backend:8182
       - ASSET_SERVICE_URL=http://asset-backend:8183
       - PORTAL_SERVICE_URL=http://portal-backend:8184
+      - AGENT_SERVICE_URL=http://agent-backend:8190
+      - GRAPH_SERVICE_URL=http://graph-backend:8186
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:
@@ -852,7 +1108,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8000'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -884,9 +1140,11 @@ services:
       - console
       - gateway
       - system-frontend
+      - agent-frontend
+      - graph-frontend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
       interval: 10s
       timeout: 5s
       retries: 3

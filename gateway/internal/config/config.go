@@ -16,6 +16,7 @@ type Config struct {
 	DevelopServiceURL  string
 	ServiceServiceURL  string
 	CopilotServiceURL  string
+	MonitorServiceURL  string
 	StandardServiceURL string
 	ModelServiceURL    string
 	QualityServiceURL  string
@@ -42,8 +43,8 @@ type Config struct {
 	InternalAPIKey string
 
 	// 模块发现配置
-	ModuleRegistryEnabled  bool          // 是否启用模块注册
-	ModuleRefreshInterval  time.Duration // 刷新间隔
+	ModuleRegistryEnabled bool          // 是否启用模块注册
+	ModuleRefreshInterval time.Duration // 刷新间隔
 }
 
 func Load() *Config {
@@ -62,6 +63,7 @@ func Load() *Config {
 		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8084"),
 		ServiceServiceURL:  getEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
 		CopilotServiceURL:  getEnv("COPILOT_SERVICE_URL", "http://localhost:8087"),
+		MonitorServiceURL:  getEnv("MONITOR_SERVICE_URL", "http://localhost:8100"),
 		StandardServiceURL: getEnv("STANDARD_SERVICE_URL", "http://localhost:8110"),
 		ModelServiceURL:    getEnv("MODEL_SERVICE_URL", "http://localhost:8181"),
 		QualityServiceURL:  getEnv("QUALITY_SERVICE_URL", "http://localhost:8182"),

@@ -132,7 +132,6 @@ bash scripts/prod/start.sh
       - `build-images.sh` - 构建 Docker 镜像 (docker build)
       - `package.sh` - 打包部署工件 (docker save/push)
       - `push-images.sh` - 推送镜像到仓库
-      - `push-images-batched.sh` - 批量推送镜像 (并行上传)
     - [`scripts/local/`](scripts/local/) - 本地 Docker Compose 部署
       - `start.sh` - 通过 Docker Compose 启动完整平台
       - `stop.sh` - 停止 Docker 服务

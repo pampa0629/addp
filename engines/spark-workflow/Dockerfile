@@ -38,6 +38,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # 复制应用代码
 COPY *.py .
+COPY operators ./operators
 
 # 暴露 Flask API 端口
 EXPOSE 8098

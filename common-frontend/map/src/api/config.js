@@ -2,11 +2,11 @@
  * 默认配置 API（占位实现）
  *
  * 注意：这是 common-frontend/map 的默认实现，仅返回空配置。
- * 各业务模块应该使用自己的 useMapConfig 实现来调用实际的后端 API。
+ * 各业务模块应该通过 setMapConfigAPI 注入自己的后端 API。
  *
  * 例如：
- * - manager/frontend/src/composables/useMapConfig.js
- * - develop/frontend/src/composables/useMapConfig.js
+ * - manager/frontend/src/main.js 中调用 setMapConfigAPI(configAPI)
+ * - 其他业务模块启动时注入对应的 config API
  */
 
 export const configAPI = {

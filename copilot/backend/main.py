@@ -25,11 +25,12 @@ async def lifespan(app: FastAPI):
     from services.module_registry import register_module_on_startup
 
     # 注册模块（非阻塞，失败不影响启动）
+    public_base_url = f"http://{settings.service_host}:{settings.port}"
     registry = await register_module_on_startup(
         module_name="copilot",
-        module_url=f"http://localhost:{settings.port}",
+        module_url=public_base_url,
         route_prefix="/copilot",
-        health_check_url=f"http://localhost:{settings.port}/health"
+        health_check_url=f"{public_base_url}/health"
     )
 
     print("✅ Copilot Backend 启动完成")

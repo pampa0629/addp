@@ -27,11 +27,13 @@ RUN pip install --no-cache-dir \
     nbconvert==7.12.0 \
     flask==3.0.0 \
     flask-cors==4.0.0 \
+    python-dotenv==1.0.0 \
     requests==2.31.0
 
 # 复制配置文件和 API 服务器
 COPY jupyter_notebook_config.py /root/.jupyter/
 COPY api_server.py /app/
+COPY config.py /app/
 COPY startup.sh /app/
 COPY ipython_startup_00_addp_datasources.py /app/
 RUN chmod +x /app/startup.sh

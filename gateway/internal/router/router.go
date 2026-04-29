@@ -97,13 +97,14 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				"develop":  cfg.DevelopServiceURL,
 				"service":  cfg.ServiceServiceURL,
 				"copilot":  cfg.CopilotServiceURL,
+				"monitor":  cfg.MonitorServiceURL,
 				"standard": cfg.StandardServiceURL,
 				"model":    cfg.ModelServiceURL,
 				"quality":  cfg.QualityServiceURL,
-			"asset":    cfg.AssetServiceURL,
-			"portal":   cfg.PortalServiceURL,
-			"agent":    cfg.AgentServiceURL,
-			"graph":    cfg.GraphServiceURL,
+				"asset":    cfg.AssetServiceURL,
+				"portal":   cfg.PortalServiceURL,
+				"agent":    cfg.AgentServiceURL,
+				"graph":    cfg.GraphServiceURL,
 			}
 			response["module_discovery"] = "disabled"
 		}
@@ -119,6 +120,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	developProxy := proxy.NewServiceProxy(cfg.DevelopServiceURL)
 	serviceProxy := proxy.NewServiceProxy(cfg.ServiceServiceURL)
 	copilotProxy := proxy.NewServiceProxy(cfg.CopilotServiceURL)
+	monitorProxy := proxy.NewServiceProxy(cfg.MonitorServiceURL)
 	standardProxy := proxy.NewServiceProxy(cfg.StandardServiceURL)
 	modelProxy := proxy.NewServiceProxy(cfg.ModelServiceURL)
 	qualityProxy := proxy.NewServiceProxy(cfg.QualityServiceURL)
@@ -330,9 +332,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 
 	// ============ 受保护的路由（需要 API Key 鉴权）============
 	api := router.Group("/api/v1")
-	api.Use(apiKeyAuthMiddleware.Handler())      // API Key 验证
-	api.Use(rateLimiterMiddleware.Handler())     // 限流
-	api.Use(accessLoggerMiddleware.Handler())    // 访问日志
+	api.Use(apiKeyAuthMiddleware.Handler())   // API Key 验证
+	api.Use(rateLimiterMiddleware.Handler())  // 限流
+	api.Use(accessLoggerMiddleware.Handler()) // 访问日志
 	{
 		// 如果启用了模块发现，使用动态路由
 		if moduleDiscovery != nil {
@@ -361,6 +363,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						serviceProxy.Handle(c)
 					case "copilot":
 						copilotProxy.Handle(c)
+					case "monitor":
+						monitorProxy.Handle(c)
 					case "standard":
 						standardProxy.Handle(c)
 					case "model":
@@ -371,6 +375,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						assetProxy.Handle(c)
 					case "portal":
 						portalProxy.Handle(c)
+					case "agent":
+						agentProxy.Handle(c)
 					case "graph":
 						graphProxy.Handle(c)
 					default:
@@ -406,6 +412,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						serviceProxy.Handle(c)
 					case "copilot":
 						copilotProxy.Handle(c)
+					case "monitor":
+						monitorProxy.Handle(c)
 					case "standard":
 						standardProxy.Handle(c)
 					case "model":
@@ -416,6 +424,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						assetProxy.Handle(c)
 					case "portal":
 						portalProxy.Handle(c)
+					case "agent":
+						agentProxy.Handle(c)
 					case "graph":
 						graphProxy.Handle(c)
 					default:
@@ -472,6 +482,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			// Copilot 模块
 			api.Any("/copilot", copilotProxy.Handle)
 			api.Any("/copilot/*path", copilotProxy.Handle)
+
+			// Monitor 模块
+			api.Any("/monitor", monitorProxy.Handle)
+			api.Any("/monitor/*path", monitorProxy.Handle)
 
 			// Standard 模块
 			api.Any("/standard", standardProxy.Handle)

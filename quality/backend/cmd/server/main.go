@@ -5,12 +5,13 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/utils"
+	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
 	"github.com/addp/quality/internal/config"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
-	_ "github.com/addp/quality/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -90,7 +91,9 @@ func main() {
 		}
 	}()
 
-	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("quality")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	systemClient.RegisterAndHeartbeat("quality", serviceURL, "/quality")
 
 	select {}

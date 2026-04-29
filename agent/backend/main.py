@@ -85,7 +85,7 @@ async def _register_module():
         "X-Internal-API-Key": settings.INTERNAL_API_KEY,
         "Content-Type": "application/json",
     }
-    service_url = f"http://localhost:{settings.AGENT_BACKEND_PORT}"
+    service_url = f"http://{settings.SERVICE_HOST}:{settings.AGENT_BACKEND_PORT}"
     register_url = f"{settings.get_system_url()}/api/v1/internal/modules/register"
     heartbeat_url = f"{settings.get_system_url()}/api/v1/internal/modules/heartbeat"
     register_payload = {

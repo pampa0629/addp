@@ -10,12 +10,12 @@ ARG GOOS=linux
 WORKDIR /app
 
 # 复制本地编译好的二进制文件（从扁平化 dist/ 目录）
-# 路径: dist/{build}-{os}-{arch}/orchestrator
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/orchestrator ./server
+# 路径: dist/{build}-{os}-{arch}/monitor
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/monitor ./server
 RUN chmod +x ./server
 
 # 暴露端口
-EXPOSE 8084
+EXPOSE 8100
 
 # 运行
 CMD ["./server"]

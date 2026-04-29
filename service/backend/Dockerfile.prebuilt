@@ -1,6 +1,6 @@
-FROM localhost:5001/alpine:latest
+FROM localhost:5001/ubuntu24:latest
 
-RUN apk --no-cache add ca-certificates tzdata curl
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

@@ -5,6 +5,7 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/utils"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
 	"github.com/addp/standard/internal/models"
@@ -138,7 +139,9 @@ func main() {
 		}
 	}()
 
-	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("standard")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	systemClient.RegisterAndHeartbeat("standard", serviceURL, "/standard")
 
 	select {}

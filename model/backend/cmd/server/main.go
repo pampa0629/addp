@@ -5,12 +5,13 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/utils"
+	_ "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/api"
 	"github.com/addp/model/internal/config"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
-	_ "github.com/addp/model/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -110,7 +111,9 @@ func main() {
 	}()
 
 	// 启动模块注册和心跳
-	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("model")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	systemClient.RegisterAndHeartbeat("model", serviceURL, "/model")
 
 	// 阻塞主 goroutine

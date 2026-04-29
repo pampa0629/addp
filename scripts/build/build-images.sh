@@ -359,6 +359,36 @@ check_service_changed() {
     local comparison_time=0
 
     case "$service" in
+        copilot-backend|agent-backend)
+            # Python 后端依赖 common-python，两者都需要检查变更
+            local python_backend_time
+            python_backend_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "SKILL.md" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            local common_time
+            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
+                -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            comparison_time=$(( python_backend_time > common_time ? python_backend_time : common_time ))
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
+        python-workflow-engine|spark-workflow-engine|jupyter-engine)
+            # Python service: compare source file time (Dockerfile + Python source files)
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
         *-backend|gateway|*-worker)
             # Backend/Worker services: compare binary file time
             local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
@@ -382,10 +412,9 @@ check_service_changed() {
             comparison_time=$(stat -f "%m" "$binary_path" 2>/dev/null || echo "0")
             ;;
 
-        *-frontend|console|nginx)
-            # Frontend services: compare source file time (Dockerfile + source files)
-            comparison_time=$(find "$service_dir" -type f '(' -name "*.vue" -o -name "*.js" -o -name "*.ts" -o -name "Dockerfile" -o -name "nginx.conf" ')' \
-                -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null | \
+        nginx)
+            # Nginx: compare config and Dockerfile
+            comparison_time=$(find "$service_dir" -type f \( -name "*.conf" -o -name "Dockerfile" \) 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
 
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
@@ -394,10 +423,10 @@ check_service_changed() {
             fi
             ;;
 
-        python-workflow|spark-workflow-engine|jupyter-engine|copilot-backend)
-            # Python service: compare source file time (Dockerfile + Python source files)
-            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
-                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+        *-frontend|console)
+            # Frontend services: compare source file time (Vue/JS/TS/HTML + package.json)
+            comparison_time=$(find "$service_dir" -type f \( -name "*.vue" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "package.json" -o -name "Dockerfile" \) \
+                -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
 
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
@@ -470,8 +499,19 @@ build_service() {
             fi
             ;;
 
-        python-workflow|spark-workflow-engine|jupyter-engine|copilot-backend)
-            # Python Engine: Python service built from source (Python Workflow, Spark Sedona, Jupyter, or Copilot)
+        copilot-backend|agent-backend)
+            # Python 后端需要访问项目根目录的 common-python，使用根目录作为构建上下文
+            build_context="."
+            dockerfile_path="${service_dir}/Dockerfile"
+
+            if [ ! -f "${service_dir}/Dockerfile" ]; then
+                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
+                return 1
+            fi
+            ;;
+
+        python-workflow-engine|spark-workflow-engine|jupyter-engine)
+            # Python Engine: Python service built from source
             build_context="${service_dir}"
             dockerfile_path="${service_dir}/Dockerfile"
 
@@ -508,15 +548,21 @@ build_service() {
             fi
             ;;
 
-        *-frontend|console|nginx)
-            # Frontends: system-frontend, transfer-frontend, and orchestrator-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ] || [ "$service" = "orchestrator-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
+        nginx)
+            # Nginx Dockerfile copies files relative to nginx/ directory.
+            build_context="nginx"
+            dockerfile_path="nginx/Dockerfile"
+
+            if [ ! -f "$dockerfile_path" ]; then
+                echo -e "${RED}Error: Dockerfile not found in nginx${NC}"
+                return 1
             fi
+            ;;
+
+        *-frontend|console)
+            # All frontends use root context to access common-frontend
+            build_context="."
+            dockerfile_path="${service_dir}/Dockerfile"
 
             if [ ! -f "${service_dir}/Dockerfile" ]; then
                 echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
@@ -548,7 +594,11 @@ build_service() {
             -f ${dockerfile_path}"
 
         if [ -n "$USE_CACHE" ]; then
-            build_cmd="$build_cmd --cache-from type=registry,ref=${image_name}"
+            if docker manifest inspect "${image_name}" > /dev/null 2>&1; then
+                build_cmd="$build_cmd --cache-from type=registry,ref=${image_name}"
+            else
+                echo -e "${YELLOW}Cache image not found for ${service}, building without cache-from${NC}"
+            fi
         fi
 
         build_cmd="$build_cmd ${build_context}"
@@ -563,7 +613,11 @@ build_service() {
             -f ${dockerfile_path}"
 
         if [ -n "$USE_CACHE" ]; then
-            build_cmd="$build_cmd --cache-from ${image_name}"
+            if docker image inspect "${image_name}" > /dev/null 2>&1; then
+                build_cmd="$build_cmd --cache-from ${image_name}"
+            else
+                echo -e "${YELLOW}Cache image not found for ${service}, building without cache-from${NC}"
+            fi
         fi
 
         build_cmd="$build_cmd ${build_context}"
@@ -613,28 +667,36 @@ seed_base_images() {
         "python:3.11-slim"
         "python:3.12-slim"
         "python:3.11-bullseye"
+        "debian:bookworm-slim=debian-slim:latest"
+        "ubuntu:24.04=ubuntu24:latest"
     )
 
     local any_failed=false
     for img in "${base_images[@]}"; do
-        local img_name="${img%%:*}"
-        local img_tag="${img#*:}"
-        local local_img="${REGISTRY}/${img}"
+        local source_img="${img%%=*}"
+        local target_img="${img#*=}"
+        if [ "$source_img" = "$target_img" ]; then
+            target_img="$source_img"
+        fi
+
+        local img_name="${target_img%%:*}"
+        local img_tag="${target_img#*:}"
+        local local_img="${REGISTRY}/${target_img}"
 
         local tags_response
         tags_response=$(curl -s "http://${REGISTRY}/v2/${img_name}/tags/list" 2>/dev/null)
         if echo "$tags_response" | grep -q "\"${img_tag}\""; then
-            echo -e "${GREEN}✓ ${img} already in registry${NC}"
+            echo -e "${GREEN}✓ ${target_img} already in registry${NC}"
             continue
         fi
 
-        echo -e "${YELLOW}Pulling ${img} (linux/${arch})...${NC}"
-        if docker pull --platform "linux/${arch}" "${img}" \
-            && docker tag "${img}" "${local_img}" \
+        echo -e "${YELLOW}Pulling ${source_img} (linux/${arch})...${NC}"
+        if docker pull --platform "linux/${arch}" "${source_img}" \
+            && docker tag "${source_img}" "${local_img}" \
             && docker push "${local_img}"; then
-            echo -e "${GREEN}✓ Seeded ${img}${NC}"
+            echo -e "${GREEN}✓ Seeded ${target_img}${NC}"
         else
-            echo -e "${RED}✗ Failed to seed ${img} — builds using this image will fail${NC}"
+            echo -e "${RED}✗ Failed to seed ${target_img} — builds using this image will fail${NC}"
             any_failed=true
         fi
     done
@@ -662,8 +724,16 @@ main() {
         "orchestrator-backend:orchestrator/backend"
         "develop-backend:develop/backend"
         "service-backend:service/backend"
+        "monitor-backend:monitor/backend"
+        "standard-backend:standard/backend"
         "copilot-backend:copilot"
-        "python-workflow:engines/python-workflow"
+        "agent-backend:agent/backend"
+        "model-backend:model/backend"
+        "quality-backend:quality/backend"
+        "asset-backend:asset/backend"
+        "portal-backend:portal/backend"
+        "graph-backend:graph/backend"
+        "python-workflow-engine:engines/python-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"
@@ -677,6 +747,15 @@ main() {
         "transfer-frontend:transfer/frontend"
         "orchestrator-frontend:orchestrator/frontend"
         "develop-frontend:develop/frontend"
+        "service-frontend:service/frontend"
+        "monitor-frontend:monitor/frontend"
+        "standard-frontend:standard/frontend"
+        "agent-frontend:agent/frontend"
+        "model-frontend:model/frontend"
+        "quality-frontend:quality/frontend"
+        "asset-frontend:asset/frontend"
+        "portal-frontend:portal/frontend"
+        "graph-frontend:graph/frontend"
         "nginx:nginx"
     )
 

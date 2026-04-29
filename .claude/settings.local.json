@@ -758,7 +758,14 @@
       "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run -s lint)",
       "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run lint)",
       "Bash(npm --prefix \"/Users/pampa/code/addp/manager/frontend\" run build)",
-      "Bash(docker version *)"
+      "Bash(docker version *)",
+      "Bash(docker push *)",
+      "Bash(networksetup -getsecurewebproxy Wi-Fi)",
+      "Bash(rg \"Dockerfile$|copilot/backend/Dockerfile\")",
+      "Bash(rg \"Dockerfile.prebuilt|Dockerfile$\")",
+      "Bash([ -f \"$d/frontend/nginx.conf\" ])",
+      "Bash(read f *)",
+      "Bash(docker tag *)"
     ],
     "deny": [],
     "ask": [],

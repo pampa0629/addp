@@ -156,28 +156,55 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 
 ### 构建的服务列表
 
-**后端服务**:
+**后端服务** (17 个):
 - `system-backend` - System 后端
 - `manager-backend` - Manager 后端
 - `meta-backend` - Meta 后端
 - `transfer-backend` - Transfer 后端
 - `orchestrator-backend` - Orchestrator 后端
 - `develop-backend` - Develop 后端
+- `service-backend` - Service 后端
+- `monitor-backend` - Monitor 后端
+- `standard-backend` - Standard 后端
+- `copilot-backend` - Copilot 后端
+- `agent-backend` - Agent 后端
+- `model-backend` - Model 后端
+- `quality-backend` - Quality 后端
+- `asset-backend` - Asset 后端
+- `portal-backend` - Portal 后端
+- `graph-backend` - Graph 后端
 - `gateway` - API Gateway
 
-**Worker 服务**:
+**Worker 服务** (3 个):
 - `meta-worker` - Meta Worker
 - `transfer-worker` - Transfer Worker
 - `manager-worker` - Manager Worker
 
-**前端服务**:
-- `console-frontend` - Console 前端
+**Engine 服务** (3 个):
+- `python-workflow-engine` - Python Workflow Engine
+- `spark-workflow-engine` - Spark Workflow Engine
+- `jupyter-engine` - Jupyter Engine
+
+**前端服务** (16 个):
+- `console` - Console 前端
 - `system-frontend` - System 前端
 - `manager-frontend` - Manager 前端
 - `meta-frontend` - Meta 前端
 - `transfer-frontend` - Transfer 前端
 - `orchestrator-frontend` - Orchestrator 前端
 - `develop-frontend` - Develop 前端
+- `service-frontend` - Service 前端
+- `monitor-frontend` - Monitor 前端
+- `standard-frontend` - Standard 前端
+- `agent-frontend` - Agent 前端
+- `model-frontend` - Model 前端
+- `quality-frontend` - Quality 前端
+- `asset-frontend` - Asset 前端
+- `portal-frontend` - Portal 前端
+- `graph-frontend` - Graph 前端
+
+**基础设施服务** (1 个):
+- `nginx` - 反向代理
 
 ### 前置条件
 
@@ -279,7 +306,7 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 |------|------|------|
 | `--registry` | URL | **必填**，目标 Registry 地址（如 `docker.io/USERNAME`、`registry.com/namespace`） |
 | `--tag` | 版本号 | 镜像标签（默认：`latest`） |
-| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 18 个服务） |
+| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 41 个镜像，包含 postgres） |
 | `--dry-run` | - | 干运行模式，仅显示将推送的镜像，不实际推送 |
 | `--source-registry` | URL | 源 Registry 地址（默认：`localhost:5001`） |
 
@@ -324,15 +351,25 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 
 ### 推送的镜像列表
 
-脚本会推送以下 18 个镜像（当使用 `--services all` 或不指定时）：
+脚本会推送以下 41 个镜像（当使用 `--services all` 或不指定时，包含 postgres）：
 
-**后端服务** (7 个):
+**后端服务** (17 个):
 - `addp-system-backend`
 - `addp-manager-backend`
 - `addp-meta-backend`
 - `addp-transfer-backend`
 - `addp-orchestrator-backend`
 - `addp-develop-backend`
+- `addp-service-backend`
+- `addp-monitor-backend`
+- `addp-standard-backend`
+- `addp-copilot-backend`
+- `addp-agent-backend`
+- `addp-model-backend`
+- `addp-quality-backend`
+- `addp-asset-backend`
+- `addp-portal-backend`
+- `addp-graph-backend`
 - `addp-gateway`
 
 **Worker 服务** (3 个):
@@ -340,16 +377,30 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-transfer-worker`
 - `addp-manager-worker`
 
-**前端服务** (6 个):
+**Engine 服务** (3 个):
+- `addp-python-workflow-engine`
+- `addp-spark-workflow-engine`
+- `addp-jupyter-engine`
+
+**前端服务** (16 个):
+- `addp-console`
 - `addp-system-frontend`
 - `addp-manager-frontend`
 - `addp-meta-frontend`
 - `addp-transfer-frontend`
 - `addp-orchestrator-frontend`
 - `addp-develop-frontend`
+- `addp-service-frontend`
+- `addp-monitor-frontend`
+- `addp-standard-frontend`
+- `addp-agent-frontend`
+- `addp-model-frontend`
+- `addp-quality-frontend`
+- `addp-asset-frontend`
+- `addp-portal-frontend`
+- `addp-graph-frontend`
 
-**Console + Nginx** (2 个):
-- `addp-console`
+**基础设施服务** (1 个):
 - `addp-nginx`
 
 ### 前置条件
@@ -422,7 +473,7 @@ docker login harbor.example.com:5001
 | **Harbor** | `harbor.example.com:5001/PROJECT` | 企业级私有镜像仓库 |
 | **私有 Registry** | `registry.company.com:5000` | 自建 Docker Registry |
 | **GitHub Container Registry** | `ghcr.io/USERNAME` | GitHub 提供的容器镜像服务 |
-| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 18 个服务完全够用 |
+| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 41 个镜像仓库完全够用 |
 | **阿里云 ACR 企业版** | `registry.cn-hangzhou.aliyuncs.com/NAMESPACE` | 企业版无仓库数量限制 |
 
 **说明**:
@@ -487,17 +538,17 @@ Next steps:
 ./scripts/build/push-images.sh \
   --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
 
-# 结果：18 个独立仓库
+# 结果：41 个独立仓库
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-meta-backend:latest
-# ... (共 18 个仓库)
+# ... (共 41 个仓库)
 ```
 
 ### 注意事项
 
 1. **登录验证**: 推送前必须登录目标 Registry（`docker login`）
-2. **网络依赖**: 推送所有 18 个镜像需要稳定的网络（总大小约 2-5GB）
+2. **网络依赖**: 推送所有 41 个镜像需要稳定的网络（总大小约 5-10GB）
 3. **权限要求**: 确保 Docker Hub 或 Registry 账号有推送权限
 4. **命名规范**: 镜像名称保持 `addp-` 前缀不变
 5. **版本管理**: 生产环境建议使用明确的版本标签（如 `v1.0.0`），避免 `latest`
@@ -589,15 +640,15 @@ error writing blob: insufficient_storage
 
 | 参数 | 值 | 说明 |
 |------|------|------|
-| `--mode` | `offline` \| `registry` | 部署模式（默认：`offline`） |
+| `--mode` | `images` \| `registry` | 部署模式（默认：`images`） |
 | `--registry` | URL | Registry 地址（默认：`localhost:5001`） |
 | `--server` | `user@host` | 自动传输到远程服务器 |
 
 ### 两种部署模式
 
-#### Offline Mode（离线部署）
+#### Images Mode（离线镜像部署）
 
-**适用场景**：服务器无法访问镜像仓库，需要在服务器上本地构建
+**适用场景**：服务器无法访问镜像仓库，将镜像打包为 tar 文件传输
 
 **包含内容**：
 - 所有配置文件（docker-compose, .env, nginx）
@@ -619,8 +670,8 @@ error writing blob: insufficient_storage
 - ✅ 完全自包含
 
 **缺点**：
-- ⚠️ 部署时间较长（需要编译）
-- ⚠️ 服务器需要 Go 和 Docker 构建环境
+- ⚠️ 包体积大（~5-10GB，含所有镜像 tar 文件）
+- ⚠️ 传输时间较长
 
 #### Registry Mode（镜像仓库部署）
 
@@ -651,24 +702,23 @@ error writing blob: insufficient_storage
 
 ### 生成的包结构
 
-**Offline Mode**:
+**Images Mode**:
 ```
-dist/package-offline-{timestamp}/
+dist/package-images-{timestamp}/
 ├── docker-compose.infra.yml       # 基础设施配置
 ├── docker-compose.yml        # 应用服务配置
 ├── .env.example                   # 环境变量模板
+├── images/                        # 预构建 Docker 镜像（40 个 tar 文件，~5-10GB）
+├── load-images.sh                 # 镜像加载脚本
 ├── scripts/
 │   ├── infra/                     # 基础设施初始化（含 init-db.sql）
-│   ├── prod/                      # 生产启动脚本
-│   └── build/                     # 构建脚本（仅离线模式）
-│       ├── compile.sh
-│       └── build-images.sh
+│   └── prod/                      # 生产启动脚本
 ├── business/                      # 业务基础设施
 ├── nginx/                         # Nginx 配置
 ├── README.md                      # 离线部署说明
 └── DEPLOY_INFO.txt                # 部署包元信息
 
-Tarball: dist/addp-deploy-offline-{timestamp}.tar.gz
+Tarball: dist/addp-deploy-images-{timestamp}.tar.gz
 ```
 
 **Registry Mode**:
@@ -691,18 +741,27 @@ dist/package-registry-{timestamp}/
 ### 示例
 
 ```bash
-# 场景 1: 离线部署打包
-./scripts/build/package.sh --mode offline
+# 场景 1: 镜像离线打包（默认，将镜像导出为 tar 文件）
+./scripts/build/package.sh --mode images
 
-# 场景 2: 镜像仓库部署打包
+# 场景 2: Docker Hub 镜像仓库部署包
+./scripts/build/package.sh --mode registry --registry docker.io/pampa0629
+
+# 场景 3: Harbor 私有仓库部署包
 ./scripts/build/package.sh --mode registry --registry harbor.example.com:5001
 
-# 场景 3: 离线部署并传输到服务器
+# 场景 4: 离线打包并自动传输到服务器
 ./scripts/build/package.sh \
-  --mode offline \
+  --mode images \
   --server ubuntu@192.168.1.100
 
-# 场景 4: 私有仓库部署
+# 场景 5: Docker Hub 部署包并传输到服务器
+./scripts/build/package.sh \
+  --mode registry \
+  --registry docker.io/pampa0629 \
+  --server ubuntu@production-server
+
+# 场景 6: 私有仓库部署包并传输到服务器
 ./scripts/build/package.sh \
   --mode registry \
   --registry myregistry.com:5001 \
@@ -795,7 +854,7 @@ jobs:
       - name: Package deployment
         run: |
           ./scripts/build/package.sh \
-            --output ./release-${{ github.ref_name }} \
+            --mode registry \
             --registry ghcr.io/${{ github.repository }}
 
       - name: Upload artifact

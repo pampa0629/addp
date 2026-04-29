@@ -31,38 +31,24 @@ src/
 ├── views/
 │   └── DataExplorer.vue          162行 ✨ 主组件(精简90%代码)
 │
-├── composables/                  可复用逻辑层
-│   ├── useMapConfig.js           地图配置
-│   ├── useGaodeMap.js            高德地图
-│   ├── useOpenLayersMap.js       OpenLayers
-│   └── useResizable.js           拖拽调整
-│
 ├── components/
-│   ├── map/                      地图组件层
-│   │   ├── MapContainer.vue      地图容器
-│   │   ├── GaodeMapRenderer.vue  高德渲染器
-│   │   └── OpenLayersRenderer.vue  OL渲染器
+│   ├── map/
+│   │   └── VectorTilePreview.vue 空间瓦片预览
 │   │
-│   ├── previews/                 预览组件层
-│   │   ├── TablePreview.vue      表格+地图预览
-│   │   ├── ObjectStoragePreview.vue  对象存储
-│   │   ├── GeoJsonPreview.vue    GeoJSON+地图
-│   │   ├── ImagePreview.vue      图片
-│   │   ├── JsonPreview.vue       JSON
-│   │   └── TextPreview.vue       文本
+│   ├── explorer/                 基础组件层
+│   │   ├── EnginePanel.vue       引擎面板
+│   │   ├── ExplorerTree.vue      资源树
+│   │   ├── PreviewPanel.vue      预览面板
+│   │   └── Splitter.vue          分隔器
 │   │
-│   └── explorer/                 基础组件层
-│       ├── ResourceTree.vue      资源树
-│       ├── PreviewPanel.vue      预览面板
-│       └── Splitter.vue          分隔器
-│
 ├── plugins/previews/             插件系统 🔌
-│   └── index.js                  自动路由到合适的预览组件
+│   ├── index.js                  注册内置预览组件
+│   └── manifestLoader.js         加载 public/plugins 运行时插件
 │
-└── utils/
-    ├── formatters.js             格式化工具
-    └── treeTransform.js          树转换
+└── api/                          Manager 后端接口
 ```
+
+通用预览组件（表格、对象存储、GeoJSON、Shapefile、地图容器等）集中在 `common-frontend/` 维护，Manager 通过 `@common-ui` 和 `@common-ui-map` 引入。
 
 ---
 
@@ -167,14 +153,15 @@ register({
 **新版**: 直接修改对应组件
 
 ```bash
-# 修改表格预览
-vim src/components/previews/TablePreview.vue
+# 修改 Manager 预览面板编排
+vim src/components/explorer/PreviewPanel.vue
 
-# 修改地图渲染
-vim src/components/map/GaodeMapRenderer.vue
+# 修改共享表格/地图预览
+vim ../../common-frontend/map/src/components/TablePreview.vue
+vim ../../common-frontend/map/src/components/map/MapContainer.vue
 
-# 修改格式化工具
-vim src/utils/formatters.js
+# 修改 Manager 专属空间瓦片预览
+vim src/components/map/VectorTilePreview.vue
 ```
 
 ### 添加新功能
@@ -300,11 +287,11 @@ console.log('能否处理:', plugin.canHandle(testData))
 ### 进阶开发路径
 
 1. **深入理解 Composables** (2小时)
-   - 阅读 `useGaodeMap.js` 源码
-   - 理解地图状态管理
+   - 阅读 `common-frontend/map/src/composables/useGaodeMap.js` 源码
+   - 理解共享地图状态管理
 
 2. **创建复杂预览组件** (4小时)
-   - 参考 `TablePreview.vue`
+   - 参考 `common-frontend/map/src/components/TablePreview.vue`
    - 创建带交互的预览组件
 
 3. **优化性能** (半天)

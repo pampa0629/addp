@@ -12,12 +12,12 @@ COPY common-python/ /tmp/common-python/
 RUN pip install --no-cache-dir /tmp/common-python && rm -rf /tmp/common-python
 
 # 安装其他依赖（过滤掉本地路径引用，本地开发时 requirements.txt 保留该行）
-COPY copilot/backend/requirements.txt .
+COPY agent/backend/requirements.txt .
 RUN grep -v "common-python" requirements.txt | pip install --no-cache-dir -r /dev/stdin
 
 # 复制代码
-COPY copilot/backend/ .
+COPY agent/backend/ .
 
-EXPOSE 8087
+EXPOSE 8190
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8087"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8190"]
