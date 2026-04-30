@@ -45,7 +45,7 @@ func LoadConfig() (*Config, error) {
 		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
 
-		StandardURL: commonConfig.GetEnv("STANDARD_SERVICE_URL", "http://localhost:8110"),
+		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
 	}
 
 	// 从 System 服务加载共享配置（带降级）

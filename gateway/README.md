@@ -89,13 +89,13 @@ Gateway 根据 URL 路径前缀自动路由请求：
 PORT=8000
 
 # 后端服务地址（7 个服务）
-SYSTEM_SERVICE_URL=http://localhost:8180
-MANAGER_SERVICE_URL=http://localhost:8081
-META_SERVICE_URL=http://localhost:8082
-TRANSFER_SERVICE_URL=http://localhost:8083
-DEVELOP_SERVICE_URL=http://localhost:8084
-SERVICE_SERVICE_URL=http://localhost:8086
-COPILOT_SERVICE_URL=http://localhost:8087
+SYSTEM_URL=http://localhost:8180
+MANAGER_URL=http://localhost:8081
+META_URL=http://localhost:8082
+TRANSFER_URL=http://localhost:8083
+DEVELOP_URL=http://localhost:8084
+SERVICE_URL=http://localhost:8086
+COPILOT_URL=http://localhost:8087
 
 # 数据库配置（用于访问日志）
 POSTGRES_HOST=localhost
@@ -214,7 +214,7 @@ Gateway 完整保留并转发：
 
 检查：
 - 目标后端服务是否启动
-- 服务地址配置是否正确（`SYSTEM_SERVICE_URL` 等）
+- 服务地址配置是否正确（`SYSTEM_URL` 等）
 - 网络连接是否正常
 
 ### 3. CORS 错误？

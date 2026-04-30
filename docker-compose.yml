@@ -45,14 +45,18 @@ services:
       - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-SuperAdmin}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-20251001#SuperAdmin}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-superadmin@addp.com}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
       # 内置引擎服务 URL（Docker 环境使用服务名）
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - META_SERVICE_URL=http://meta-backend:8082
-      - TRANSFER_SERVICE_URL=http://transfer-backend:8083
-      - MANAGER_SERVICE_URL=http://manager-backend:8081
-      - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
-      - DEVELOP_SERVICE_URL=http://develop-backend:8085
-      - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_URL=http://transfer-backend:8083
+      - MANAGER_URL=http://manager-backend:8081
+      - ORCHESTRATOR_URL=http://orchestrator-backend:8084
+      - DEVELOP_URL=http://develop-backend:8085
+      - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
       - GIN_MODE=release
     ports:
       - "8180:8180"
@@ -91,9 +95,20 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_URL=http://transfer-backend:8083
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
+      - ENABLE_META_INTEGRATION=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
       - GIN_MODE=release
     ports:
       - "8081:8081"
@@ -134,7 +149,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - REDIS_DB=0
+      - META_MINIO_ENDPOINT=minio:9000
+      - META_MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - META_MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - META_MINIO_USE_SSL=false
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
+      - MEILISEARCH_ASSET_INDEX=${MEILISEARCH_ASSET_INDEX:-assets}
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10
@@ -190,7 +213,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - REDIS_DB=0
+      - META_MINIO_ENDPOINT=minio:9000
+      - META_MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - META_MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - META_MINIO_USE_SSL=false
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
+      - MEILISEARCH_ASSET_INDEX=${MEILISEARCH_ASSET_INDEX:-assets}
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -233,7 +264,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10
@@ -285,7 +316,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -328,7 +359,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=15
@@ -380,7 +411,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -419,9 +450,12 @@ services:
       - SERVICE_HOST=develop-backend
       - PORT=8085
       - ENV=production
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
-      - JUPYTER_ENGINE_URL=http://jupyter-engine:8097
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_URL=http://transfer-backend:8083
+      - MANAGER_URL=http://manager-backend:8081
+      - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
+      - JUPYTER_URL=http://jupyter-engine:8097
       - ENABLE_SERVICE_INTEGRATION=true
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -468,10 +502,18 @@ services:
       - SERVICE_HOST=service-backend
       - PORT=8086
       - ENV=production
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - MANAGER_SERVICE_URL=http://manager-backend:8081
-      - META_SERVICE_URL=http://meta-backend:8082
+      - SYSTEM_URL=http://system-backend:8180
+      - MANAGER_URL=http://manager-backend:8081
+      - META_URL=http://meta-backend:8082
       - ENABLE_SERVICE_INTEGRATION=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -617,7 +659,10 @@ services:
     environment:
       - SERVICE_HOST=copilot-backend
       - PORT=8087
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
+      - MANAGER_URL=http://manager-backend:8081
+      - META_URL=http://meta-backend:8082
+      - DEVELOP_URL=http://develop-backend:8085
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -654,9 +699,8 @@ services:
     environment:
       - SERVICE_HOST=model-backend
       - PORT=8181
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - SYSTEM_URL=http://system-backend:8180
-      - STANDARD_SERVICE_URL=http://standard-backend:8110
+      - STANDARD_URL=http://standard-backend:8110
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -759,10 +803,10 @@ services:
       - SERVICE_HOST=asset-backend
       - ASSET_BACKEND_PORT=8183
       - SYSTEM_URL=http://system-backend:8180
-      - META_SERVICE_URL=http://meta-backend:8082
-      - SERVICE_SERVICE_URL=http://service-backend:8086
-      - STANDARD_SERVICE_URL=http://standard-backend:8110
-      - DEVELOP_SERVICE_URL=http://develop-backend:8085
+      - META_URL=http://meta-backend:8082
+      - SERVICE_URL=http://service-backend:8086
+      - STANDARD_URL=http://standard-backend:8110
+      - DEVELOP_URL=http://develop-backend:8085
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
@@ -856,9 +900,9 @@ services:
     environment:
       - SERVICE_HOST=graph-backend
       - GRAPH_BACKEND_PORT=8186
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - MODEL_SERVICE_URL=http://model-backend:8181
-      - COPILOT_SERVICE_URL=http://copilot-backend:8087
+      - SYSTEM_URL=http://system-backend:8180
+      - MODEL_URL=http://model-backend:8181
+      - COPILOT_URL=http://copilot-backend:8087
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -913,9 +957,13 @@ services:
       - SERVICE_HOST=agent-backend
       - AGENT_BACKEND_PORT=8190
       - AGENT_DB_SCHEMA=agent
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - COPILOT_SERVICE_URL=http://copilot-backend:8087
-      - GRAPH_SERVICE_URL=http://graph-backend:8186
+      - GATEWAY_URL=http://gateway:8000
+      - SYSTEM_URL=http://system-backend:8180
+      - MANAGER_URL=http://manager-backend:8081
+      - META_URL=http://meta-backend:8082
+      - DEVELOP_URL=http://develop-backend:8085
+      - COPILOT_URL=http://copilot-backend:8087
+      - GRAPH_URL=http://graph-backend:8186
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -975,7 +1023,7 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
@@ -1013,7 +1061,7 @@ services:
     container_name: python-workflow-engine
     environment:
       - PORT=8099
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
@@ -1047,7 +1095,7 @@ services:
     container_name: spark-workflow-engine
     environment:
       - PORT=8098
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
@@ -1081,22 +1129,22 @@ services:
     container_name: gateway
     environment:
       - PORT=8000
-      - SYSTEM_SERVICE_URL=http://system-backend:8180
-      - MANAGER_SERVICE_URL=http://manager-backend:8081
-      - META_SERVICE_URL=http://meta-backend:8082
-      - TRANSFER_SERVICE_URL=http://transfer-backend:8083
-      - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
-      - DEVELOP_SERVICE_URL=http://develop-backend:8085
-      - SERVICE_SERVICE_URL=http://service-backend:8086
-      - COPILOT_SERVICE_URL=http://copilot-backend:8087
-      - MONITOR_SERVICE_URL=http://monitor-backend:8100
-      - STANDARD_SERVICE_URL=http://standard-backend:8110
-      - MODEL_SERVICE_URL=http://model-backend:8181
-      - QUALITY_SERVICE_URL=http://quality-backend:8182
-      - ASSET_SERVICE_URL=http://asset-backend:8183
-      - PORTAL_SERVICE_URL=http://portal-backend:8184
-      - AGENT_SERVICE_URL=http://agent-backend:8190
-      - GRAPH_SERVICE_URL=http://graph-backend:8186
+      - SYSTEM_URL=http://system-backend:8180
+      - MANAGER_URL=http://manager-backend:8081
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_URL=http://transfer-backend:8083
+      - ORCHESTRATOR_URL=http://orchestrator-backend:8084
+      - DEVELOP_URL=http://develop-backend:8085
+      - SERVICE_URL=http://service-backend:8086
+      - COPILOT_URL=http://copilot-backend:8087
+      - MONITOR_URL=http://monitor-backend:8100
+      - STANDARD_URL=http://standard-backend:8110
+      - MODEL_URL=http://model-backend:8181
+      - QUALITY_URL=http://quality-backend:8182
+      - ASSET_URL=http://asset-backend:8183
+      - PORTAL_URL=http://portal-backend:8184
+      - AGENT_URL=http://agent-backend:8190
+      - GRAPH_URL=http://graph-backend:8186
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:

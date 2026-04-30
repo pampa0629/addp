@@ -15,6 +15,25 @@ echo -e "${GREEN}ADDP 生产环境启动脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+connect_business_network() {
+  local network="${BUSINESS_DOCKER_NETWORK:-business_business-network}"
+
+  if ! docker network inspect "$network" > /dev/null 2>&1; then
+    echo -e "${YELLOW}ℹ️  未检测到 Business 网络 ${network}，跳过业务引擎直连网络配置${NC}"
+    return 0
+  fi
+
+  echo -e "${YELLOW}连接 ADDP 服务到 Business 网络 (${network})...${NC}"
+  for container in $(docker compose -f docker-compose.yml ps -q 2>/dev/null); do
+    if docker inspect "$container" --format '{{json .NetworkSettings.Networks}}' | grep -q "\"${network}\""; then
+      continue
+    fi
+
+    docker network connect "$network" "$container" > /dev/null 2>&1 || true
+  done
+  echo -e "${GREEN}✓ Business 网络连接已处理${NC}"
+}
+
 # 检查 docker 是否运行
 if ! docker info > /dev/null 2>&1; then
     echo -e "${RED}错误: Docker 未运行${NC}"
@@ -166,6 +185,8 @@ else
   echo -e "${YELLOW}⚠️  Nginx 启动失败或未找到镜像${NC}"
   all_healthy=false
 fi
+
+connect_business_network
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

@@ -28,33 +28,33 @@ class Settings(BaseSettings):
 
     # 服务 URL（优先使用环境变量，否则自动构建）
     GATEWAY_URL: Optional[str] = None
-    SYSTEM_SERVICE_URL: Optional[str] = None
-    MANAGER_SERVICE_URL: Optional[str] = None
-    META_SERVICE_URL: Optional[str] = None
-    DEVELOP_SERVICE_URL: Optional[str] = None
-    COPILOT_SERVICE_URL: Optional[str] = None
-    GRAPH_SERVICE_URL: Optional[str] = None
+    SYSTEM_URL: Optional[str] = None
+    MANAGER_URL: Optional[str] = None
+    META_URL: Optional[str] = None
+    DEVELOP_URL: Optional[str] = None
+    COPILOT_URL: Optional[str] = None
+    GRAPH_URL: Optional[str] = None
 
     def get_gateway_url(self) -> str:
         return self.GATEWAY_URL or f"http://{self.SERVICE_HOST}:{self.GATEWAY_PORT}"
 
     def get_system_url(self) -> str:
-        return self.SYSTEM_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.SYSTEM_BACKEND_PORT}"
+        return self.SYSTEM_URL or f"http://{self.SERVICE_HOST}:{self.SYSTEM_BACKEND_PORT}"
 
     def get_manager_url(self) -> str:
-        return self.MANAGER_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.MANAGER_BACKEND_PORT}"
+        return self.MANAGER_URL or f"http://{self.SERVICE_HOST}:{self.MANAGER_BACKEND_PORT}"
 
     def get_meta_url(self) -> str:
-        return self.META_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.META_BACKEND_PORT}"
+        return self.META_URL or f"http://{self.SERVICE_HOST}:{self.META_BACKEND_PORT}"
 
     def get_develop_url(self) -> str:
-        return self.DEVELOP_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.DEVELOP_BACKEND_PORT}"
+        return self.DEVELOP_URL or f"http://{self.SERVICE_HOST}:{self.DEVELOP_BACKEND_PORT}"
 
     def get_copilot_url(self) -> str:
-        return self.COPILOT_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.COPILOT_BACKEND_PORT}"
+        return self.COPILOT_URL or f"http://{self.SERVICE_HOST}:{self.COPILOT_BACKEND_PORT}"
 
     def get_graph_url(self) -> str:
-        return self.GRAPH_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.GRAPH_BACKEND_PORT}"
+        return self.GRAPH_URL or f"http://{self.SERVICE_HOST}:{self.GRAPH_BACKEND_PORT}"
 
     INTERNAL_API_KEY: str = ""
     ENABLE_SERVICE_INTEGRATION: bool = True

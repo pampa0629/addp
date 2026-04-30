@@ -71,10 +71,10 @@ fi
 
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
-        local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
+        local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_URL"
         local port_val="${!port_var}"
         if [ -n "$port_val" ]; then
             export ${url_var}="http://${SERVICE_HOST}:${port_val}"
@@ -83,7 +83,10 @@ generate_service_urls() {
 
     # 特殊服务
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
-    export GEOPANDAS_ENGINE_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
+    [ -n "$PYTHON_WORKFLOW_PORT" ] && export PYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
+    [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
+    [ -n "$JUPYTER_API_PORT" ] && export JUPYTER_URL="http://${SERVICE_HOST}:${JUPYTER_API_PORT}"
+    export GEOPANDAS_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
 }
 
 generate_service_urls
@@ -1246,7 +1249,7 @@ if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
 
   # 设置环境变量
   export PORT=$PYTHON_WORKFLOW_PORT
-  # SYSTEM_SERVICE_URL 已由 generate_service_urls() 自动生成
+  # SYSTEM_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export POSTGRES_HOST=localhost
   export POSTGRES_PORT=15432
@@ -1354,7 +1357,7 @@ if check_service_running "math-workflow-engine" "$MATH_WORKFLOW_PORT"; then
 
   # 设置环境变量
   export PORT=$MATH_WORKFLOW_PORT
-  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:${SYSTEM_BACKEND_PORT}"}
+  export SYSTEM_URL=${SYSTEM_URL:-"http://localhost:${SYSTEM_BACKEND_PORT}"}
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python
@@ -1486,7 +1489,7 @@ if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
 
   # 设置环境变量
   export PORT=$SPARK_WORKFLOW_PORT
-  # SERVICE_URL 已由 generate_service_urls() 自动生成
+  # SYSTEM_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python（无需 activate）
@@ -1619,7 +1622,7 @@ if check_service_running "jupyter-engine" "$JUPYTER_LAB_PORT"; then
   # 设置环境变量
   export API_PORT=$JUPYTER_API_PORT
   export JUPYTER_PORT=$JUPYTER_LAB_PORT
-  # SYSTEM_SERVICE_URL 已由 generate_service_urls() 自动生成
+  # SYSTEM_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export TENANT_ID=${DEFAULT_TENANT_ID:-1}  # Jupyter Notebook 数据源自动注入需要此环境变量
 
@@ -1687,7 +1690,7 @@ if check_service_running "jupyter-engine" "$JUPYTER_LAB_PORT"; then
   cd engines/jupyter
   if [ -f "register.py" ]; then
     export SYSTEM_API_URL=http://localhost:${SYSTEM_BACKEND_PORT}
-    export JUPYTER_ENGINE_URL=http://localhost:${JUPYTER_API_PORT}
+    export JUPYTER_URL=${JUPYTER_URL:-"http://localhost:${JUPYTER_API_PORT}"}
     export JUPYTER_LAB_URL=http://localhost:${JUPYTER_LAB_PORT}/lab
     export INTERNAL_API_KEY=${INTERNAL_API_KEY}
     ./venv/bin/python register.py > /dev/null 2>&1
@@ -1778,7 +1781,7 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
 
   # 设置环境变量
   export PORT=$COPILOT_BACKEND_PORT
-  # SERVICE_URL 已由 generate_service_urls() 自动生成
+  # SYSTEM_URL 已由 generate_service_urls() 自动生成
   export DATABASE_URL=postgresql://addp:addp_password@localhost:${POSTGRES_PORT}/addp
 
   # 直接使用虚拟环境的 Python

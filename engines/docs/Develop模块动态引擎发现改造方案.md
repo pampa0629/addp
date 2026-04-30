@@ -286,21 +286,21 @@ func (s *OperatorDiscoveryService) GetOperatorsByEngine(ctx context.Context, eng
 **当前代码**:
 ```go
 operatorDiscoveryService := service.NewOperatorDiscoveryService(
-	os.Getenv("PYTHON_WORKFLOW_ENGINE_URL"),  // ❌ 移除
-	os.Getenv("SPARK_WORKFLOW_ENGINE_URL"),   // ❌ 移除
-	os.Getenv("META_SERVICE_URL"),
-	os.Getenv("TRANSFER_SERVICE_URL"),
-	os.Getenv("MANAGER_SERVICE_URL"),
+	os.Getenv("PYTHON_WORKFLOW_URL"),  // ❌ 移除
+	os.Getenv("SPARK_WORKFLOW_URL"),   // ❌ 移除
+	os.Getenv("META_URL"),
+	os.Getenv("TRANSFER_URL"),
+	os.Getenv("MANAGER_URL"),
 )
 ```
 
 **修改为**:
 ```go
 operatorDiscoveryService := service.NewOperatorDiscoveryService(
-	os.Getenv("SYSTEM_SERVICE_URL"),  // ✅ 新增
-	os.Getenv("META_SERVICE_URL"),
-	os.Getenv("TRANSFER_SERVICE_URL"),
-	os.Getenv("MANAGER_SERVICE_URL"),
+	os.Getenv("SYSTEM_URL"),  // ✅ 新增
+	os.Getenv("META_URL"),
+	os.Getenv("TRANSFER_URL"),
+	os.Getenv("MANAGER_URL"),
 )
 ```
 
@@ -310,13 +310,13 @@ operatorDiscoveryService := service.NewOperatorDiscoveryService(
 
 **移除**:
 ```bash
-PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8090  # ❌ 移除
-SPARK_WORKFLOW_ENGINE_URL=http://spark-workflow-engine:8098    # ❌ 移除
+PYTHON_WORKFLOW_URL=http://python-workflow-engine:8090  # ❌ 移除
+SPARK_WORKFLOW_URL=http://spark-workflow-engine:8098    # ❌ 移除
 ```
 
 **添加**:
 ```bash
-SYSTEM_SERVICE_URL=http://system-backend:8180  # ✅ 新增
+SYSTEM_URL=http://system-backend:8180  # ✅ 新增
 ```
 
 ---

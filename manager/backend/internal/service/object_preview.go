@@ -698,7 +698,7 @@ func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
 	client *minio.Client,
 ) map[string]interface{} {
 	// 获取Meta服务URL和token（从环境变量或配置）
-	metaURL := getEnvOrDefault("META_SERVICE_URL", "http://localhost:8082")
+	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
 	token := getTokenFromContext(ctx) // 从context获取JWT token
 
 	if token == "" {

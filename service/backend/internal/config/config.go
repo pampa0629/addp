@@ -39,9 +39,9 @@ type Config struct {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
-	managerURL := commonConfig.GetEnv("MANAGER_SERVICE_URL", "http://localhost:8081")
-	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
+	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
+	managerURL := commonConfig.GetEnv("MANAGER_URL", "http://localhost:8081")
+	metaURL := commonConfig.GetEnv("META_URL", "http://localhost:8082")
 
 	cfg := &Config{
 		Port:              commonConfig.GetEnv("SERVICE_BACKEND_PORT", "8086"),
@@ -86,7 +86,7 @@ func Load() *Config {
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// 定时任务配置
-	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")       // 默认每小时
+	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")         // 默认每小时
 	cfg.MetadataRefreshCron = commonConfig.GetEnv("SERVICE_METADATA_REFRESH_CRON", "0 2 * * *") // 默认每天凌晨2点
 
 	return cfg

@@ -506,12 +506,12 @@ MODULE_REGISTRY_ENABLED=true                 # 启用动态路由发现
 MODULE_REFRESH_INTERVAL=30s                  # 模块列表刷新间隔
 
 # System 模块配置（用于获取注册信息）
-SYSTEM_SERVICE_URL=http://system-backend:8180
+SYSTEM_URL=http://system-backend:8180
 INTERNAL_API_KEY=your_internal_api_key_here  # 服务间调用认证
 
 # Fallback 硬编码路由（模块发现失败时使用）
-MANAGER_SERVICE_URL=http://manager-backend:8081
-META_SERVICE_URL=http://meta-backend:8082
+MANAGER_URL=http://manager-backend:8081
+META_URL=http://meta-backend:8082
 # ... 其他模块
 ```
 
@@ -520,7 +520,7 @@ META_SERVICE_URL=http://meta-backend:8082
 ```bash
 # 启用与 System 集成
 ENABLE_INTEGRATION=true
-SYSTEM_SERVICE_URL=http://system-backend:8180
+SYSTEM_URL=http://system-backend:8180
 INTERNAL_API_KEY=your_internal_api_key_here
 ```
 

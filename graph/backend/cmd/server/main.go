@@ -15,9 +15,9 @@ package main
 import (
 	"os"
 
+	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonLogger "github.com/addp/common/logger"
-	commonClient "github.com/addp/common/client"
 	commonRepo "github.com/addp/common/repository"
 	commonStorage "github.com/addp/common/storage"
 	"github.com/addp/common/utils"
@@ -82,7 +82,7 @@ func main() {
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, minioClient, cfg.CopilotServiceURL)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 
-	// 初始化 Model 导入服务（如果配置了 MODEL_SERVICE_URL）
+	// 初始化 Model 导入服务（如果配置了 MODEL_URL）
 	var modelImportSvc *service.ModelImportService
 	if cfg.ModelServiceURL != "" && cfg.InternalAPIKey != "" {
 		modelClient := commonClient.NewModelClientWithInternalKey(cfg.ModelServiceURL, cfg.InternalAPIKey)

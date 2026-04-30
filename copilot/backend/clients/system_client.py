@@ -110,17 +110,17 @@ def create_system_client_from_env() -> Optional[SystemClient]:
     从环境变量创建 System 客户端
 
     需要的环境变量:
-    - SYSTEM_SERVICE_URL: System 服务地址
+    - SYSTEM_URL: System 服务地址
     - INTERNAL_API_KEY: 内部 API Key
 
     Returns:
         SystemClient 实例，如果环境变量不完整则返回 None
     """
-    system_url = os.getenv('SYSTEM_SERVICE_URL')
+    system_url = os.getenv('SYSTEM_URL')
     internal_key = os.getenv('INTERNAL_API_KEY')
 
     if not system_url or not internal_key:
-        print("⚠️  缺少环境变量 SYSTEM_SERVICE_URL 或 INTERNAL_API_KEY，跳过模块注册")
+        print("⚠️  缺少环境变量 SYSTEM_URL 或 INTERNAL_API_KEY，跳过模块注册")
         return None
 
     return SystemClient(system_url, internal_key)

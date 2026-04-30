@@ -93,9 +93,9 @@ KERNEL_DISPLAY_NAME="Python 3 (租户 ${TENANT_ID})"
 # 设置 IPYTHONDIR 环境变量，让 Kernel 使用租户独立的 IPython 配置
 IPYTHON_DIR="${TENANT_DIR}/.ipython"
 
-# 从环境变量读取 INTERNAL_API_KEY 和 SYSTEM_SERVICE_URL
+# 从环境变量读取 INTERNAL_API_KEY 和 SYSTEM_URL
 INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
-SYSTEM_SERVICE_URL="${SYSTEM_SERVICE_URL:-http://localhost:8180}"
+SYSTEM_URL="${SYSTEM_URL:-http://localhost:8180}"
 
 "$TENANT_VENV_PATH/bin/python" -m ipykernel install \
     --name "$KERNEL_NAME" \
@@ -105,7 +105,7 @@ SYSTEM_SERVICE_URL="${SYSTEM_SERVICE_URL:-http://localhost:8180}"
     --env ADDP_API_BASE "$ADDP_API_BASE" \
     --env IPYTHONDIR "$IPYTHON_DIR" \
     --env INTERNAL_API_KEY "$INTERNAL_API_KEY" \
-    --env SYSTEM_SERVICE_URL "$SYSTEM_SERVICE_URL"
+    --env SYSTEM_URL "$SYSTEM_URL"
 
 echo "✅ Kernel 注册成功: $KERNEL_NAME"
 
@@ -155,7 +155,7 @@ echo ""
 echo "   环境变量:"
 echo "     - TENANT_ID=$TENANT_ID"
 echo "     - ADDP_API_BASE=$ADDP_API_BASE"
-echo "     - SYSTEM_SERVICE_URL=$SYSTEM_SERVICE_URL"
+echo "     - SYSTEM_URL=$SYSTEM_URL"
 echo "     - INTERNAL_API_KEY=${INTERNAL_API_KEY:0:20}..."
 echo ""
 echo "🚀 租户可以在 Jupyter Lab 中选择此 Kernel 开始使用"

@@ -8,15 +8,15 @@ import (
 	"syscall"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dbbridge"
-	"github.com/addp/common/utils"
 	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
-	commonClient "github.com/addp/common/client"
-	commonConfig "github.com/addp/common/config"
 )
 
 // @title           ADDP Develop API
@@ -164,8 +164,8 @@ func main() {
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Develop 服务的外部访问 URL（供 Orchestrator 调用）
 	developServiceURL := fmt.Sprintf("http://develop-backend:%s", cfg.ServerAddr)
-	if os.Getenv("DEVELOP_SERVICE_URL") != "" {
-		developServiceURL = os.Getenv("DEVELOP_SERVICE_URL")
+	if os.Getenv("DEVELOP_URL") != "" {
+		developServiceURL = os.Getenv("DEVELOP_URL")
 	}
 
 	engineRegistry := service.NewEngineRegistryService(

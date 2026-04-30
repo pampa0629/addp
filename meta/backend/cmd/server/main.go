@@ -214,8 +214,8 @@ func main() {
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）
 	metaServiceURL := fmt.Sprintf("http://meta-backend:%s", cfg.ServerPort)
-	if os.Getenv("META_SERVICE_URL") != "" {
-		metaServiceURL = os.Getenv("META_SERVICE_URL")
+	if os.Getenv("META_URL") != "" {
+		metaServiceURL = os.Getenv("META_URL")
 	}
 
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

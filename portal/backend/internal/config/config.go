@@ -27,7 +27,7 @@ func LoadConfig() *Config {
 		Port:           commonConfig.GetEnv("PORTAL_BACKEND_PORT", "8184"),
 		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		AssetURL:       commonConfig.GetEnv("ASSET_URL", "http://localhost:8183"),
-		ServiceURL:     commonConfig.GetEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
+		ServiceURL:     commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
 		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),

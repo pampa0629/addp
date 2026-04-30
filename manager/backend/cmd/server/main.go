@@ -87,7 +87,13 @@ func main() {
 
 	log.Printf("🔍 [DEBUG] cfg.EnableMetaIntegration=%v, cfg.InternalAPIKey=%s, cfg.MetaServiceURL=%s",
 		cfg.EnableMetaIntegration,
-		func() string { if cfg.InternalAPIKey != "" { return "***set***" } else { return "empty" } }(),
+		func() string {
+			if cfg.InternalAPIKey != "" {
+				return "***set***"
+			} else {
+				return "empty"
+			}
+		}(),
 		cfg.MetaServiceURL,
 	)
 	log.Println("🔍 [DEBUG] 即将输出 Manager 配置加载完成日志...")
@@ -244,8 +250,8 @@ func main() {
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）
 	managerServiceURL := fmt.Sprintf("http://manager-backend:%s", cfg.Port)
-	if os.Getenv("MANAGER_SERVICE_URL") != "" {
-		managerServiceURL = os.Getenv("MANAGER_SERVICE_URL")
+	if os.Getenv("MANAGER_URL") != "" {
+		managerServiceURL = os.Getenv("MANAGER_URL")
 	}
 
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
@@ -337,4 +343,3 @@ func buildProviderDirSpec(dirs []string) string {
 	}
 	return strings.Join(providerDirs, ",")
 }
-

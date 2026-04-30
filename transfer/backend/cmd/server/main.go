@@ -10,9 +10,9 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
-	commonRepo "github.com/addp/common/repository"
 	commonModels "github.com/addp/common/models"
+	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/utils"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
@@ -75,7 +75,6 @@ func main() {
 	}
 	logger.L().Info("端口检查通过", "port", cfg.Port)
 
-
 	// 连接数据库
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -83,7 +82,7 @@ func main() {
 	}
 
 	// 初始化 Repository 层
-	_ = repository.NewMappingRepository(db) // mappingRepo unused for now
+	_ = repository.NewMappingRepository(db)                        // mappingRepo unused for now
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
@@ -109,9 +108,9 @@ func main() {
 	// }
 
 	// 初始化 Service 层（传入 taskQueue 和 redisClient）
-	taskService := service.NewTaskService(db, nil, cfg, taskQueue) // engine 传 nil（暂不执行任务）
+	taskService := service.NewTaskService(db, nil, cfg, taskQueue)         // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
-	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
+	taskService.SetExecutionService(executionService)                      // 注入执行服务（避免循环依赖）
 	localEngineService := service.NewLocalEngineService(db, cfg, redisClient)
 	objectStorageService := service.NewObjectStorageService(localEngineService)
 
@@ -137,8 +136,8 @@ func main() {
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Transfer 服务的外部访问 URL（供 Orchestrator 调用）
 	transferServiceURL := fmt.Sprintf("http://transfer-backend:%s", cfg.Port)
-	if os.Getenv("TRANSFER_SERVICE_URL") != "" {
-		transferServiceURL = os.Getenv("TRANSFER_SERVICE_URL")
+	if os.Getenv("TRANSFER_URL") != "" {
+		transferServiceURL = os.Getenv("TRANSFER_URL")
 	}
 
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

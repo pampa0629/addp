@@ -48,10 +48,10 @@ func LoadConfig() (*Config, error) {
 		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
 
-		MetaURL:     commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082"),
-		ServiceURL:  commonConfig.GetEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
-		StandardURL: commonConfig.GetEnv("STANDARD_SERVICE_URL", "http://localhost:8110"),
-		DevelopURL:  commonConfig.GetEnv("DEVELOP_SERVICE_URL", "http://localhost:8185"),
+		MetaURL:     commonConfig.GetEnv("META_URL", "http://localhost:8082"),
+		ServiceURL:  commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
+		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
+		DevelopURL:  commonConfig.GetEnv("DEVELOP_URL", "http://localhost:8185"),
 
 		MeilisearchURL:        os.Getenv("MEILISEARCH_URL"),
 		MeilisearchMasterKey:  os.Getenv("MEILISEARCH_MASTER_KEY"),

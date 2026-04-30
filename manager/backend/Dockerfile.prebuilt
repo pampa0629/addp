@@ -12,7 +12,10 @@ WORKDIR /app
 # 复制本地编译好的二进制文件（从扁平化 dist/ 目录）
 # 路径: dist/{build}-{os}-{arch}/manager
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/manager ./server
+COPY manager/backend/plugins ./manager/backend/plugins
 RUN chmod +x ./server
+
+ENV PROJECT_ROOT=/app
 
 # 暴露端口
 EXPOSE 8081

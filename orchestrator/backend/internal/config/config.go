@@ -51,12 +51,12 @@ func LoadConfig() *Config {
 		DBName:     getEnv("POSTGRES_DB", "addp"),
 		DBSchema:   "orchestrator",
 
-		SystemServiceURL: getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
+		SystemServiceURL: getEnv("SYSTEM_URL", "http://localhost:8180"),
 		InternalAPIKey:   getEnv("INTERNAL_API_KEY", ""),
 
-		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
-		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
-		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
+		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
+		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
+		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
 		RedisPort:     getEnv("REDIS_PORT", "6379"),

@@ -62,7 +62,7 @@ connStr, err := commonModels.BuildConnectionString(engine)
 # Manager/Meta/Transfer .env
 PORT=8081                          # 模块特定端口
 DB_SCHEMA=manager                  # 模块特定 schema
-SYSTEM_SERVICE_URL=http://localhost:8180
+SYSTEM_URL=http://localhost:8180
 ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
 
 # 共享配置 (JWT_SECRET, DB 连接) 从 System 获取
@@ -92,7 +92,13 @@ MINIO_SYSTEM_ROOT_USER=minioadmin
 MINIO_SYSTEM_ROOT_PASSWORD=minioadmin
 
 # MinIO - 业务数据 (部署在 business/docker-compose.yml)
-BUSINESS_MINIO_ENDPOINT=host.docker.internal:9002
+# 注意：Business 引擎连接信息由 ADDP 容器内服务使用，生产 Docker 部署请使用 business 网络服务名，不要写 localhost。
+BUSINESS_PG_HOST=business-postgres
+BUSINESS_PG_PORT=5432
+BUSINESS_PG_USER=business
+BUSINESS_PG_PASSWORD=business_password
+BUSINESS_PG_DB=business
+BUSINESS_MINIO_ENDPOINT=business-minio:9000
 BUSINESS_MINIO_ACCESS_KEY=minioadmin
 BUSINESS_MINIO_SECRET_KEY=minioadmin
 

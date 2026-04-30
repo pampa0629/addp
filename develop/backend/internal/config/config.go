@@ -22,10 +22,10 @@ type Config struct {
 	DBSchema         string // develop schema
 
 	// System 服务配置（用于获取资源配置和认证）
-	SystemServiceURL             string
-	EnableServiceIntegration     bool
-	EncryptionKey                []byte
-	InternalAPIKey               string
+	SystemServiceURL         string
+	EnableServiceIntegration bool
+	EncryptionKey            []byte
+	InternalAPIKey           string
 
 	// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
 	JupyterEngineURL string
@@ -71,22 +71,22 @@ func Load() *Config {
 		DBSchema:         "develop",
 
 		// System 服务集成
-		SystemServiceURL:         getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
+		SystemServiceURL:         getEnv("SYSTEM_URL", "http://localhost:8180"),
 		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
 		EncryptionKey:            encryptionKey,
 		InternalAPIKey:           internalAPIKey,
 
 		// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
-		JupyterEngineURL: getEnv("JUPYTER_ENGINE_URL", "http://localhost:8097"),
+		JupyterEngineURL: getEnv("JUPYTER_URL", "http://localhost:8097"),
 
 		// 其他模块服务配置
-		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
-		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
-		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
+		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
+		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
+		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 
 		// SQL 执行配置
-		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30),  // 30秒
-		MaxQueryTimeout:     getEnvAsInt("MAX_QUERY_TIMEOUT", 300),     // 5分钟
+		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30), // 30秒
+		MaxQueryTimeout:     getEnvAsInt("MAX_QUERY_TIMEOUT", 300),    // 5分钟
 	}
 }
 

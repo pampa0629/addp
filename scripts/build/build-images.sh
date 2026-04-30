@@ -410,6 +410,17 @@ check_service_changed() {
             fi
 
             comparison_time=$(stat -f "%m" "$binary_path" 2>/dev/null || echo "0")
+
+            # Manager backend image also packages declarative preview/content plugins.
+            # Rebuild the image when plugin JSON/Dockerfile changes even if the Go binary is cached.
+            if [ "$service" = "manager-backend" ]; then
+                local manager_packaged_time
+                manager_packaged_time=$(find "$service_dir" -type f \( -name "Dockerfile" -o -name "Dockerfile.prebuilt" -o -path "*/plugins/*" \) 2>/dev/null | \
+                    xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+                if [ -n "$manager_packaged_time" ] && [ "$manager_packaged_time" -gt "$comparison_time" ]; then
+                    comparison_time="$manager_packaged_time"
+                fi
+            fi
             ;;
 
         nginx)

@@ -21,9 +21,9 @@ type Config struct {
 	DeepScanBatchSize int
 
 	// 扫描性能优化配置
-	ScanConcurrency      int // 并发扫描数（表级别）
-	LargeTableThreshold  int // 大表行数阈值，超过此值使用采样
-	ExtentSamplePercent  int // Extent 计算采样百分比（1-100）
+	ScanConcurrency     int // 并发扫描数（表级别）
+	LargeTableThreshold int // 大表行数阈值，超过此值使用采样
+	ExtentSamplePercent int // Extent 计算采样百分比（1-100）
 
 	// Meilisearch 配置
 	MeilisearchURL        string
@@ -53,7 +53,7 @@ func resolveMeilisearchURL() string {
 }
 
 func LoadConfig() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
+	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
 
 	cfg := &Config{
 		ServerPort:        commonConfig.GetEnv("META_BACKEND_PORT", "8082"),

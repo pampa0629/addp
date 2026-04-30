@@ -58,6 +58,7 @@ make ports-validate
 - 同机运行 System 与 Business：
   - 先启动 Business：`cd business && ./scripts/start.sh`
   - 再启动 System 基础设施：`bash scripts/infra-up.sh` 或 `make up-infra`
+  - 注册到 ADDP 的 Business 引擎地址应使用容器可访问地址，例如 `business-postgres:5432`、`business-minio:9000`；不要使用 `localhost`，因为连接测试由 ADDP 容器内服务发起。
 - 如遇端口冲突：
   - 参考本文件调整 `business/.env` 或根目录 `.env`
   - 重新启动对应容器：`docker-compose down && docker-compose up -d`
@@ -213,4 +214,3 @@ make ports-validate
 2. **Standard Frontend (5181)** 和 **Model Frontend (5182)** 开发端口不得冲突
 3. 所有端口配置必须在 `.env`、`vite.config.js`、`docker-compose.yml` 中保持一致
 4. Gateway 需要正确配置 Standard 和 Model 服务的路由映射
-

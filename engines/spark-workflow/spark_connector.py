@@ -20,7 +20,7 @@ class SparkConnector:
 
     def __init__(self):
         self.sessions: Dict[int, SparkSession] = {}  # {engine_id: SparkSession}
-        self.system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
+        self.system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
 
     def get_engine_from_system(self, engine_id: int) -> dict:
         """从System Backend获取资源信息"""

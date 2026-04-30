@@ -79,8 +79,8 @@ func resolveMeilisearchURL() string {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
-	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
+	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
+	metaURL := commonConfig.GetEnv("META_URL", "http://localhost:8082")
 
 	rawPluginDir := commonConfig.GetEnv("PREVIEW_PLUGIN_DIR", "")
 	builtinPluginDir := commonConfig.ResolveFromRoot("manager", "backend", "plugins")
@@ -161,7 +161,7 @@ func Load() *Config {
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// Transfer 服务配置
-	cfg.TransferServiceURL = commonConfig.GetEnv("TRANSFER_SERVICE_URL", "http://localhost:8083")
+	cfg.TransferServiceURL = commonConfig.GetEnv("TRANSFER_URL", "http://localhost:8083")
 
 	// MVT 预缓存配置
 	concurrency := commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10)

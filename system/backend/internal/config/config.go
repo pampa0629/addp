@@ -40,13 +40,13 @@ type Config struct {
 	RedisDB       int
 
 	// 内置引擎服务 URL（用于 extension_api_config.base_url）
-	SystemServiceURL      string
-	MetaServiceURL        string
-	TransferServiceURL    string
-	ManagerServiceURL     string
+	SystemServiceURL       string
+	MetaServiceURL         string
+	TransferServiceURL     string
+	ManagerServiceURL      string
 	OrchestratorServiceURL string
-	DevelopServiceURL     string
-	GeopandasEngineURL    string
+	DevelopServiceURL      string
+	GeopandasURL           string
 
 	// 日志归档配置
 	LogRetentionDays int    // 日志保留天数
@@ -146,19 +146,19 @@ func Load() *Config {
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 
 		// 内置引擎服务 URL
-		SystemServiceURL:      getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
-		MetaServiceURL:        getEnv("META_SERVICE_URL", "http://localhost:8082"),
-		TransferServiceURL:    getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
-		ManagerServiceURL:     getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
-		OrchestratorServiceURL: getEnv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8084"),
-		DevelopServiceURL:     getEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
-		GeopandasEngineURL:    getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8090"),
+		SystemServiceURL:       getEnv("SYSTEM_URL", "http://localhost:8180"),
+		MetaServiceURL:         getEnv("META_URL", "http://localhost:8082"),
+		TransferServiceURL:     getEnv("TRANSFER_URL", "http://localhost:8083"),
+		ManagerServiceURL:      getEnv("MANAGER_URL", "http://localhost:8081"),
+		OrchestratorServiceURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8084"),
+		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8085"),
+		GeopandasURL:           getEnv("GEOPANDAS_URL", "http://localhost:8090"),
 
 		// 日志归档配置
-		LogRetentionDays: getEnvAsInt("LOG_RETENTION_DAYS", 30),             // 默认保留30天
-		LogArchiveEnable: getEnvAsBool("LOG_ARCHIVE_ENABLE", false),         // 默认不启用归档
-		LogCleanupEnable: getEnvAsBool("LOG_CLEANUP_ENABLE", true),          // 默认启用清理
-		LogArchiveCron:   getEnv("LOG_ARCHIVE_CRON", "0 2 * * *"),           // 每天凌晨2点执行
+		LogRetentionDays: getEnvAsInt("LOG_RETENTION_DAYS", 30),     // 默认保留30天
+		LogArchiveEnable: getEnvAsBool("LOG_ARCHIVE_ENABLE", false), // 默认不启用归档
+		LogCleanupEnable: getEnvAsBool("LOG_CLEANUP_ENABLE", true),  // 默认启用清理
+		LogArchiveCron:   getEnv("LOG_ARCHIVE_CRON", "0 2 * * *"),   // 每天凌晨2点执行
 
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,

@@ -80,7 +80,7 @@ generate_service_urls() {
         fi
     done
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
-    export GEOPANDAS_ENGINE_URL="http://${SERVICE_HOST}:8099"
+    export GEOPANDAS_URL="http://${SERVICE_HOST}:8099"
 }
 
 generate_service_urls

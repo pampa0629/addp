@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 配置
 SYSTEM_API_URL = os.getenv("SYSTEM_API_URL", "http://system-backend:8180")
-JUPYTER_ENGINE_URL = os.getenv("JUPYTER_ENGINE_URL", "http://jupyter-engine:8097")
+JUPYTER_URL = os.getenv("JUPYTER_URL", "http://jupyter-engine:8097")
 JUPYTER_LAB_URL = os.getenv("JUPYTER_LAB_URL", "http://localhost:8088/lab")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 MAX_RETRIES = 10
@@ -24,10 +24,10 @@ RETRY_INTERVAL = 5  # 秒
 def register_engine():
     """向 System 模块注册 Jupyter Engine"""
 
-    # 从 JUPYTER_ENGINE_URL 解析 host 和 port
-    # JUPYTER_ENGINE_URL 格式: http://jupyter-engine:8097 或 http://localhost:8097
+    # 从 JUPYTER_URL 解析 host 和 port
+    # JUPYTER_URL 格式: http://jupyter-engine:8097 或 http://localhost:8097
     import urllib.parse
-    parsed_url = urllib.parse.urlparse(JUPYTER_ENGINE_URL)
+    parsed_url = urllib.parse.urlparse(JUPYTER_URL)
     host = parsed_url.hostname or "localhost"
     port = parsed_url.port or 8097
     protocol = parsed_url.scheme or "http"
@@ -57,7 +57,7 @@ def register_engine():
 
     logger.info(f"开始注册 Jupyter Engine 到 System 模块...")
     logger.info(f"System API URL: {SYSTEM_API_URL}")
-    logger.info(f"Jupyter Engine URL: {JUPYTER_ENGINE_URL}")
+    logger.info(f"Jupyter Engine URL: {JUPYTER_URL}")
 
     # 重试逻辑（等待 System 模块启动）
     for attempt in range(1, MAX_RETRIES + 1):

@@ -27,7 +27,7 @@ class Config:
     MINIO_BUCKET = 'develop'  # Notebook 专用 bucket
 
     # System 服务配置
-    SYSTEM_SERVICE_URL = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8180')
+    SYSTEM_URL = os.getenv('SYSTEM_URL', 'http://localhost:8180')
     INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
 
     # 日志配置
@@ -60,7 +60,7 @@ class Config:
         print(f"  MINIO_ENDPOINT: {cls.MINIO_ENDPOINT}")
         print(f"  MINIO_BUCKET: {cls.MINIO_BUCKET}")
         print(f"  MINIO_USE_SSL: {cls.MINIO_USE_SSL}")
-        print(f"  SYSTEM_SERVICE_URL: {cls.SYSTEM_SERVICE_URL}")
+        print(f"  SYSTEM_URL: {cls.SYSTEM_URL}")
         print(f"  LOG_LEVEL: {cls.LOG_LEVEL}")
         print(f"  WORKSPACE_DIR: {cls.WORKSPACE_DIR}")
         print(f"  DEFAULT_TENANT_ID: {cls.DEFAULT_TENANT_ID}")

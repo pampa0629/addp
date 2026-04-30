@@ -147,7 +147,7 @@ dev-python-workflow: ## 开发模式运行 Python Workflow Engine
 		./venv/bin/pip install --quiet -r requirements.txt; \
 	fi && \
 	export PORT=8099 && \
-	export SYSTEM_SERVICE_URL=http://localhost:8180 && \
+	export SYSTEM_URL=http://localhost:8180 && \
 	export POSTGRES_HOST=localhost && \
 	export POSTGRES_PORT=5432 && \
 	export POSTGRES_USER=addp && \
@@ -623,4 +623,3 @@ prod-health: ## 检查所有服务健康状态
 prod-start: prod-up  ## 别名：启动生产环境
 prod-stop: prod-down ## 别名：停止生产环境
 prod-logs: prod-logs-addp ## 别名：查看应用日志
-

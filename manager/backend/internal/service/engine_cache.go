@@ -35,7 +35,7 @@ type EngineCacheService struct {
 func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Client) *EngineCacheService {
 	// 默认从环境变量读取
 	if systemURL == "" {
-		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
+		systemURL = os.Getenv("SYSTEM_URL")
 		if systemURL == "" {
 			systemURL = "http://localhost:8180"
 		}
@@ -48,7 +48,7 @@ func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Cli
 		systemURL:   systemURL,
 		engineCache: make(map[uint]*engineCacheEntry),
 		cacheTTL:    3 * time.Minute, // Manager 使用 3 分钟 TTL
-		log:           logger.With("component", "engine_cache_service"),
+		log:         logger.With("component", "engine_cache_service"),
 	}
 
 	if internalKey != "" {

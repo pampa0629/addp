@@ -64,7 +64,7 @@ def load_addp_datasources():
 
         # 优先使用 System Backend 直连（开发环境）
         # 格式: http://localhost:8180/api/v1/internal/engines?tenant_id=1
-        system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8180')
+        system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
         api_url = f'{system_url}/api/v1/internal/engines'
 
         response = requests.get(

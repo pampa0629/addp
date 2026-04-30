@@ -34,22 +34,22 @@ class Settings(BaseSettings):
     develop_backend_port: int = 8185
 
     # 外部服务 URL（优先使用环境变量，否则自动构建）
-    system_service_url: Optional[str] = None
-    manager_service_url: Optional[str] = None
-    meta_service_url: Optional[str] = None
-    develop_service_url: Optional[str] = None
+    system_url: Optional[str] = None
+    manager_url: Optional[str] = None
+    meta_url: Optional[str] = None
+    develop_url: Optional[str] = None
 
     def get_system_url(self) -> str:
-        return self.system_service_url or f"http://{self.service_host}:{self.system_backend_port}"
+        return self.system_url or f"http://{self.service_host}:{self.system_backend_port}"
 
     def get_manager_url(self) -> str:
-        return self.manager_service_url or f"http://{self.service_host}:{self.manager_backend_port}"
+        return self.manager_url or f"http://{self.service_host}:{self.manager_backend_port}"
 
     def get_meta_url(self) -> str:
-        return self.meta_service_url or f"http://{self.service_host}:{self.meta_backend_port}"
+        return self.meta_url or f"http://{self.service_host}:{self.meta_backend_port}"
 
     def get_develop_url(self) -> str:
-        return self.develop_service_url or f"http://{self.service_host}:{self.develop_backend_port}"
+        return self.develop_url or f"http://{self.service_host}:{self.develop_backend_port}"
 
     # LLM 默认配置
     default_llm_provider: str = "dashscope"

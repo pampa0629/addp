@@ -25,15 +25,15 @@ type Config struct {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
+	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
 
 	cfg := &Config{
 		Port:              commonConfig.GetEnv("GRAPH_BACKEND_PORT", "8186"),
 		DBSchema:          "graph",
 		SystemServiceURL:  systemURL,
 		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
-		ModelServiceURL:   commonConfig.GetEnv("MODEL_SERVICE_URL", "http://localhost:8181"),
-		CopilotServiceURL: commonConfig.GetEnv("COPILOT_SERVICE_URL", "http://localhost:8085"),
+		ModelServiceURL:   commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
+		CopilotServiceURL: commonConfig.GetEnv("COPILOT_URL", "http://localhost:8085"),
 		MinioEndpoint:     commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", "http://localhost:"+commonConfig.GetEnv("MINIO_API_PORT", "19000"))),
 		MinioAccessKey:    commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))),
 		MinioSecretKey:    commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))),

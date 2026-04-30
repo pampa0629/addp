@@ -5,21 +5,42 @@ let loadingPromise = null
 
 const DEFAULT_MANIFEST = '/plugins/manifest.json'
 
+function withBasePath(path) {
+  if (!path || typeof path !== 'string') return path
+  if (/^(https?:)?\/\//.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path
+  }
+
+  const base = import.meta.env?.BASE_URL || '/'
+  if (!base || base === '/') {
+    return path
+  }
+
+  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
+  if (path.startsWith(normalizedBase + '/')) {
+    return path
+  }
+  if (path.startsWith('/')) {
+    return normalizedBase + path
+  }
+  return `${normalizedBase}/${path}`
+}
+
 function resolveManifestUrl(manualUrl) {
-  if (manualUrl) return manualUrl
+  if (manualUrl) return withBasePath(manualUrl)
   if (typeof window !== 'undefined' && window.__DATA_EXPLORER_PLUGIN_MANIFEST__) {
-    return window.__DATA_EXPLORER_PLUGIN_MANIFEST__
+    return withBasePath(window.__DATA_EXPLORER_PLUGIN_MANIFEST__)
   }
   if (import.meta.env && import.meta.env.VITE_DATA_EXPLORER_PLUGIN_MANIFEST) {
-    return import.meta.env.VITE_DATA_EXPLORER_PLUGIN_MANIFEST
+    return withBasePath(import.meta.env.VITE_DATA_EXPLORER_PLUGIN_MANIFEST)
   }
-  return DEFAULT_MANIFEST
+  return withBasePath(DEFAULT_MANIFEST)
 }
 
 async function injectScript(src) {
   return new Promise((resolve) => {
     const script = document.createElement('script')
-    script.src = src
+    script.src = withBasePath(src)
     script.async = true
     script.onload = () => resolve(src)
     script.onerror = () => {

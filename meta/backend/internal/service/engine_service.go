@@ -31,11 +31,11 @@ type EngineService struct {
 	systemURL       string
 	internalClient  *commonClient.SystemClient
 	cacheMu         sync.RWMutex
-	engineCache   map[uint]*engineCacheEntry // 改为存储带过期时间的条目
-	cacheTTL        time.Duration                // 缓存生存时间，默认 5 分钟
+	engineCache     map[uint]*engineCacheEntry // 改为存储带过期时间的条目
+	cacheTTL        time.Duration              // 缓存生存时间，默认 5 分钟
 	log             *slog.Logger
 	eventSubscriber *events.EngineEventSubscriber // Redis 事件订阅器
-	taskService     ScanTaskServiceInterface        // 扫描任务服务（用于处理 ScanConfig）
+	taskService     ScanTaskServiceInterface      // 扫描任务服务（用于处理 ScanConfig）
 }
 
 // ScanTaskServiceInterface 扫描任务服务接口（避免循环依赖）
@@ -48,7 +48,7 @@ type ScanTaskServiceInterface interface {
 func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *EngineService {
 	// 默认从环境变量读取，便于本地降级
 	if systemURL == "" {
-		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
+		systemURL = os.Getenv("SYSTEM_URL")
 		if systemURL == "" {
 			systemURL = "http://localhost:8180"
 		}
@@ -58,11 +58,11 @@ func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *r
 	}
 
 	service := &EngineService{
-		db:            db,
-		systemURL:     systemURL,
+		db:          db,
+		systemURL:   systemURL,
 		engineCache: make(map[uint]*engineCacheEntry),
-		cacheTTL:      5 * time.Minute, // 默认 5 分钟 TTL
-		log:           logger.With("component", "engine_service"),
+		cacheTTL:    5 * time.Minute, // 默认 5 分钟 TTL
+		log:         logger.With("component", "engine_service"),
 	}
 
 	if internalKey != "" {
@@ -397,7 +397,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	type countRow struct {
 		EngineID uint
-		Count int64
+		Count    int64
 	}
 	var totals []countRow
 	if err := s.db.Table("metadata.meta_node").
@@ -465,13 +465,13 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		}
 
 		result = append(result, &models.ResourceWithStats{
-			EngineID:       res.ID,
+			EngineID:         res.ID,
 			ResourceName:     res.Name,
 			ResourceType:     res.EngineType,
 			TotalSchemas:     totalSchemas,
 			ScannedSchemas:   scannedSchemas,
 			UnscannedSchemas: totalSchemas - scannedSchemas,
-			ScannedAt:       lastScanAt,
+			ScannedAt:        lastScanAt,
 			ConnectionStatus: res.ConnectionStatus,
 			LastCheckAt:      lastCheckAt,
 			CheckMessage:     res.CheckMessage,
@@ -602,9 +602,9 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 
 	// 构建扫描请求（不再使用 SchemaNames 和 ObjectPaths，系统自动过滤）
 	req := &models.ScanRequest{
-		EngineID: resource.ID,
-		ScanDepth:  scanDepth,
-		ScanType:   "auto", // 标记为自动扫描
+		EngineID:  resource.ID,
+		ScanDepth: scanDepth,
+		ScanType:  "auto", // 标记为自动扫描
 	}
 
 	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）

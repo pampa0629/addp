@@ -241,7 +241,7 @@ Body: {
 
 **配置**（`graph/backend/internal/config/config.go` 新增）：
 ```go
-ModelServiceURL string `mapstructure:"MODEL_SERVICE_URL"` // 默认 http://localhost:8181
+ModelServiceURL string `mapstructure:"MODEL_URL"` // 默认 http://localhost:8181
 ```
 
 **前端**（两步向导对话框，800px）：
@@ -389,7 +389,7 @@ type ConstraintDefinition struct {
 
 1. **Neo4j 约束 DDL**：`CREATE CONSTRAINT` 为 DDL，需确认 `dbbridge.ExecuteGraphQuery` 是否支持 DDL 语句。如不支持，需在 Neo4jService 中增加直接通过 Neo4j Go driver 执行 DDL 的方法。
 
-2. **model.go 跨服务调用**：认证使用 `X-Internal-API-Key` 头（与现有 meta.go 模式完全一致），配置项通过 `MODEL_SERVICE_URL` + `INTERNAL_API_KEY`（已有环境变量，无需新增 key）。
+2. **model.go 跨服务调用**：认证使用 `X-Internal-API-Key` 头（与现有 meta.go 模式完全一致），配置项通过 `MODEL_URL` + `INTERNAL_API_KEY`（已有环境变量，无需新增 key）。
 
 3. **Schema 推导性能**：大型图库的属性 key 提取可能耗时，设置 30s 超时，前端展示加载状态。优先尝试 APOC `apoc.meta.schema()`，检测不可用时降级为逐标签 Cypher 查询。
 

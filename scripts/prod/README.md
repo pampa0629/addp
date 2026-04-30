@@ -470,7 +470,7 @@ docker logs <container-id> --tail=100
 docker-compose -f docker-compose.yml restart manager-backend
 
 # 检查配置
-docker exec <container-id> env | grep SYSTEM_SERVICE_URL
+docker exec <container-id> env | grep SYSTEM_URL
 ```
 
 ### 问题 4: 数据丢失
