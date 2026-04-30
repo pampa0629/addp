@@ -1,34 +1,137 @@
 # ADDP 引擎体系图
 
-本文档展示 ADDP 平台的引擎系统架构、分类体系和能力声明机制。
+本文档描述 ADDP 当前实际使用的引擎抽象、插件接口、模块调用链和能力声明机制。这里的“引擎”覆盖数据源、文件系统语义存储、对象存储、图数据库、查询引擎、工作流计算引擎和 Notebook 运行环境。
+
+本文档重点说明当前实现状态，后续架构优化应以本文档作为讨论基线。
 
 ---
 
 ## 目录
 
-1. [引擎概念](#引擎概念)
-2. [引擎插件三层接口架构](#引擎插件三层接口架构)
-3. [引擎分类体系](#引擎分类体系)
-4. [支持的引擎列表](#支持的引擎列表)
-5. [引擎能力声明](#引擎能力声明)
+1. [核心概念](#核心概念)
+2. [全局架构](#全局架构)
+3. [插件接口体系](#插件接口体系)
+4. [模块调用链](#模块调用链)
+5. [当前支持的引擎](#当前支持的引擎)
+6. [能力声明](#能力声明)
+7. [注册、缓存与事件](#注册缓存与事件)
+8. [预览体系](#预览体系)
+9. [当前待统一的问题](#当前待统一的问题)
+10. [相关代码与文档](#相关代码与文档)
 
 ---
 
-## 引擎概念
+## 核心概念
 
-**引擎 (Engine)** 是 ADDP 平台中所有数据源和计算资源的统一抽象。引擎代表一个可以存储数据或执行计算的外部系统(数据库、对象存储)或内部模块(空间计算引擎)。
+**引擎 (Engine)** 是 ADDP 对外部数据系统、内部计算运行时和数据访问能力的统一登记对象。引擎配置存储在 `system.engines` 表中，其他模块通过 System 内部 API 获取解密后的连接信息。
 
-**核心属性**:
-- **引擎类型** (EngineType): 如 `postgresql`、`mongodb`、`python_workflow`
-- **引擎分类** (EngineCategory): `standard` 或 `extension`
-- **连接信息** (ConnectionInfo): 数据库连接串、API 端点等
-- **能力声明** (Capabilities): 引擎支持的功能列表(JSONB 格式)
+核心字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 引擎实例 ID，作为跨模块引用主键 |
+| `tenant_id` | 租户 ID；内置平台级引擎通常为空 |
+| `name` | 用户可见名称 |
+| `engine_type` | 引擎类型，如 `postgresql`、`minio`、`neo4j`、`python_workflow` |
+| `engine_category` | `standard` 或 `extension` |
+| `connection_info` | 连接信息 JSON，敏感字段由 System 加密保存 |
+| `capabilities` | 能力声明 JSON，用于过滤和前端功能入口判断 |
+| `scan_config` | 元数据扫描配置 |
+| `connection_status` | 连接状态缓存：`online`、`offline`、`unknown`、`checking` |
+| `is_builtin` | 是否内置引擎 |
+
+需要区分两组概念：
+
+- **引擎实例**：用户或系统注册到 `system.engines` 的一条连接配置。
+- **引擎插件**：`common/engine/plugins/<engine_type>` 下的 Go 实现，提供连接测试、元数据枚举、查询、文件读取等能力。
 
 ---
 
-## 引擎插件三层接口架构
+## 全局架构
 
-ADDP 采用三层接口架构实现引擎插件化,支持灵活扩展:
+```mermaid
+graph TB
+    subgraph System["System 模块：引擎登记与连接管理"]
+        EngineTable[(system.engines)]
+        EngineAPI[引擎 CRUD / 内部 API]
+        ConnTest[连接测试与状态缓存]
+        EngineEvents[engine:changed / engine:deleted]
+    end
+
+    subgraph Common["Common 共享层"]
+        DBBridge[common/dbbridge]
+        PluginRegistry[common/engine/plugin Registry]
+        Plugins[common/engine/plugins/*]
+        CapModel[common/models.Capability]
+    end
+
+    subgraph Meta["Meta 模块：元数据扫描"]
+        MetaEngineCache[引擎连接缓存]
+        ScanRouter[扫描路由]
+        RelScan[关系型扫描]
+        NoSQLScan[文档/图扫描]
+        ObjectScan[对象存储扫描]
+        FSScan[文件系统/湖表扫描]
+        ScanEvents[meta:scan_completed]
+    end
+
+    subgraph Manager["Manager 模块：数据探查与预览"]
+        PreviewResolver[PreviewResolver]
+        PreviewRegistry[PreviewProvider Registry]
+        DataPreview[表/对象/图/湖表预览]
+        ManagerCache[引擎缓存]
+    end
+
+    subgraph Develop["Develop / Orchestrator：计算与开发"]
+        QueryWorkbench[查询开发]
+        WorkflowEditor[工作流开发]
+        NotebookDev[Notebook 开发]
+        ComputeRuntime[工作流引擎 HTTP API]
+    end
+
+    EngineAPI --> EngineTable
+    ConnTest --> DBBridge
+    DBBridge --> PluginRegistry
+    PluginRegistry --> Plugins
+    EngineAPI --> EngineEvents
+
+    MetaEngineCache --> EngineAPI
+    EngineEvents --> MetaEngineCache
+    ScanRouter --> PluginRegistry
+    ScanRouter --> RelScan
+    ScanRouter --> NoSQLScan
+    ScanRouter --> ObjectScan
+    ScanRouter --> FSScan
+    MetaStore[(metadata.meta_node / meta_item)]
+    ScanRouter --> MetaStore
+    MetaStore --> ScanEvents
+
+    ManagerCache --> EngineAPI
+    EngineEvents --> ManagerCache
+    PreviewResolver --> PreviewRegistry
+    PreviewRegistry --> DataPreview
+    DataPreview --> PluginRegistry
+    ScanEvents --> ManagerCache
+
+    QueryWorkbench --> CapModel
+    WorkflowEditor --> CapModel
+    NotebookDev --> CapModel
+    WorkflowEditor --> ComputeRuntime
+```
+
+模块分工：
+
+- **System** 是引擎配置的事实来源，负责权限、加密、能力声明、连接状态和事件发布。
+- **Common** 提供插件接口、插件注册表、连接池、DSN 构建和跨模块模型。
+- **Meta** 通过插件扫描元数据，构建 `meta_node` / `meta_item` 目录树。
+- **Manager** 通过 Meta 元数据和插件能力进行数据预览、空间快显、对象浏览。
+- **Develop / Orchestrator** 主要消费 `capabilities.compute`，对接查询、工作流和 Notebook 运行时。
+
+---
+
+## 插件接口体系
+
+当前插件接口集中在 `common/engine/plugin/interfaces.go` 和 `common/engine/plugin/filesystem.go`。
 
 ```mermaid
 classDiagram
@@ -38,8 +141,12 @@ classDiagram
         +DisplayName() string
         +EngineCategory() string
         +DefaultPort() int
-        +TestConnection(info) error
-        +BuildConnectionString(info) string
+        +RequiredFields() []string
+        +SensitiveFields() []string
+        +GenerateCapabilities() string
+        +ValidateConnectionInfo(connInfo) error
+        +BuildConnectionString(connInfo) string
+        +TestConnection(ctx, connInfo) error
     }
 
     class StoragePlugin {
@@ -49,503 +156,481 @@ classDiagram
 
     class ComputePlugin {
         <<interface>>
-        +GetSupportedOperators() []Operator
+        +GetSupportedOperators() []string
         +HealthCheckEndpoint() string
-    }
-
-    class NoSQLPlugin {
-        <<interface>>
-        +ListDatabases(client) []string
-        +ListCollections(client, db) []string
-        +GetCollectionStats(client, db, coll) Stats
-        +IsSystemDatabase(db) bool
-        +CreateClient(info) Client
-        +CloseClient(client)
-    }
-
-    class RelationalDBPlugin {
-        <<interface>>
-        +ListSchemas(pool) []string
-        +ListTables(pool, schema) []string
-        +ListColumns(pool, schema, table) []Column
-        +GetTableRowCount(pool, schema, table) int64
-        +IsSystemSchema(schema) bool
-    }
-
-    class ObjectStoragePlugin {
-        <<interface>>
-        +ListBuckets(client) []Bucket
-        +ListObjects(client, bucket) []Object
-        +GetObjectMetadata(client, bucket, key) Metadata
-        +InferContentType(key) string
     }
 
     class ConnectionPoolPlugin {
         <<interface>>
-        +CreateConnectionPool(info) Pool
+        +CreateConnectionPool(connInfo, poolConfig) *gorm.DB
         +GetDialect() string
+    }
+
+    class RelationalDBPlugin {
+        <<interface>>
+        +ListSchemas(ctx, db) []SchemaInfo
+        +ListTables(ctx, db, schema) []TableInfo
+        +ListColumns(ctx, db, schema, table) []ColumnInfo
+        +GetTableRowCount(ctx, db, schema, table) int64
+        +IsSystemSchema(schema) bool
+        +SchemaNodeType() string
+    }
+
+    class NoSQLPlugin {
+        <<interface>>
+        +ListDatabases(ctx, connInfo) []DatabaseInfo
+        +IsSystemDatabase(database) bool
+        +CreateClient(ctx, connInfo) any
+        +CloseClient(ctx, client) error
+    }
+
+    class DocumentDBPlugin {
+        <<interface>>
+        +ListCollections(ctx, connInfo, database) []CollectionInfo
+        +GetCollectionStats(ctx, connInfo, database, collection) CollectionStats
+    }
+
+    class GraphDBPlugin {
+        <<interface>>
+        +ListNodeLabels(ctx, connInfo, database) []NodeLabelInfo
+        +ListRelationshipTypes(ctx, connInfo, database) []RelationshipTypeInfo
+        +GetGraphSchema(ctx, connInfo, database) GraphSchema
+    }
+
+    class QueryablePlugin {
+        <<interface>>
+        +ExecuteQuery(ctx, connInfo, query) QueryResult
+        +GenerateSampleQuery(ctx, connInfo) query
+    }
+
+    class GraphQueryPlugin {
+        <<interface>>
+        +ExecuteGraphQuery(ctx, connInfo, query) GraphQueryResult
+    }
+
+    class FileSystemPlugin {
+        <<interface>>
+        +ListRoots(ctx, connInfo) []RootEntry
+        +ListDirectory(ctx, connInfo, path) files, dirs
+        +ReadFile(ctx, connInfo, path) ReadCloser
+        +GetFileMetadata(ctx, connInfo, path) FileMetadata
+    }
+
+    class ObjectStoragePlugin {
+        <<interface>>
+        +ListBuckets(ctx, connInfo) []BucketInfo
+        +ListObjects(ctx, connInfo, bucket, prefix, recursive) []ObjectInfo
+        +GetObjectMetadata(ctx, connInfo, bucket, key) ObjectInfo
+        +InferContentType(objectKey) string
+        +DefaultBucket() string
+        +SupportsSSL() bool
+    }
+
+    class TermI18nProvider {
+        <<interface>>
+        +TermI18nKey(term) string
     }
 
     EnginePlugin <|-- StoragePlugin
     EnginePlugin <|-- ComputePlugin
-    StoragePlugin <|-- NoSQLPlugin
     StoragePlugin <|-- RelationalDBPlugin
-    StoragePlugin <|-- ObjectStoragePlugin
-    RelationalDBPlugin <|-- ConnectionPoolPlugin
-
-    class PostgreSQLPlugin {
-        实现: EnginePlugin
-        实现: StoragePlugin
-        实现: RelationalDBPlugin
-        实现: ConnectionPoolPlugin
-    }
-
-    class MongoDBPlugin {
-        实现: EnginePlugin
-        实现: StoragePlugin
-        实现: NoSQLPlugin
-    }
-
-    class MinIOPlugin {
-        实现: EnginePlugin
-        实现: StoragePlugin
-        实现: ObjectStoragePlugin
-    }
-
-    class PythonWorkflowPlugin {
-        实现: EnginePlugin
-        实现: ComputePlugin
-    }
-
-    EnginePlugin <|.. PostgreSQLPlugin
-    StoragePlugin <|.. PostgreSQLPlugin
-    RelationalDBPlugin <|.. PostgreSQLPlugin
-    ConnectionPoolPlugin <|.. PostgreSQLPlugin
-
-    EnginePlugin <|.. MongoDBPlugin
-    StoragePlugin <|.. MongoDBPlugin
-    NoSQLPlugin <|.. MongoDBPlugin
-
-    EnginePlugin <|.. MinIOPlugin
-    StoragePlugin <|.. MinIOPlugin
-    ObjectStoragePlugin <|.. MinIOPlugin
-
-    EnginePlugin <|.. PythonWorkflowPlugin
-    ComputePlugin <|.. PythonWorkflowPlugin
+    ConnectionPoolPlugin <|-- RelationalDBPlugin
+    StoragePlugin <|-- NoSQLPlugin
+    NoSQLPlugin <|-- DocumentDBPlugin
+    NoSQLPlugin <|-- GraphDBPlugin
+    QueryablePlugin <|-- GraphQueryPlugin
+    StoragePlugin <|-- FileSystemPlugin
+    FileSystemPlugin <|-- ObjectStoragePlugin
 ```
 
-**架构说明**:
+接口组合示例：
 
-**第一层:EnginePlugin (引擎基础接口)**
-- 所有引擎必须实现的基础接口
-- 定义引擎的基本信息和连接测试能力
-
-**第二层:按功能分类的标记接口**
-- **StoragePlugin**: 存储引擎标记(支持元数据查询)
-- **ComputePlugin**: 计算引擎标记(支持算子/查询)
-
-**第三层:按存储类型细分的功能接口**
-- **RelationalDBPlugin**: 关系型数据库(PostgreSQL、MySQL、Doris、ClickHouse)
-- **NoSQLPlugin**: NoSQL 数据库(MongoDB)
-- **ObjectStoragePlugin**: 对象存储(MinIO、S3)
-- **ConnectionPoolPlugin**: 连接池管理(用于关系型数据库)
-
-**接口组合示例**:
-- **PostgreSQL**: EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
-- **MongoDB**: EnginePlugin + StoragePlugin + NoSQLPlugin
-- **MinIO**: EnginePlugin + StoragePlugin + ObjectStoragePlugin
-- **Python Workflow**: EnginePlugin + ComputePlugin
+| 引擎 | 主要接口组合 |
+| --- | --- |
+| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `StoragePlugin` + `RelationalDBPlugin` + `ConnectionPoolPlugin` |
+| MongoDB | `EnginePlugin` + `StoragePlugin` + `NoSQLPlugin` + `DocumentDBPlugin` + `QueryablePlugin` |
+| Neo4j | `EnginePlugin` + `StoragePlugin` + `NoSQLPlugin` + `GraphDBPlugin` + `QueryablePlugin` + `GraphQueryPlugin` |
+| MinIO / S3 | `EnginePlugin` + `StoragePlugin` + `FileSystemPlugin` + `ObjectStoragePlugin` |
+| NFS | `EnginePlugin` + `StoragePlugin` + `FileSystemPlugin` |
+| Python Workflow / Spark Workflow / Math Workflow | `EnginePlugin` + `ComputePlugin` |
+| Jupyter | 当前主要实现 `EnginePlugin`，通过能力声明暴露 Notebook 能力 |
 
 ---
 
-## 引擎分类体系
+## 模块调用链
 
-ADDP 从多个维度对引擎进行分类,不同分类之间存在交叉。
+### System：连接测试和登记
 
-### 1. 按功能分类
+```mermaid
+sequenceDiagram
+    participant User
+    participant SystemAPI as System Engine API
+    participant EngineSvc as EngineService
+    participant StorageSvc as StorageEngineService
+    participant DBBridge as common/dbbridge
+    participant Plugin as EnginePlugin
+    participant Engine as 外部引擎
+
+    User->>SystemAPI: 创建/更新/测试引擎
+    SystemAPI->>EngineSvc: 权限校验、敏感字段加密/解密
+    SystemAPI->>StorageSvc: TestConnection(engine)
+    alt standard 引擎
+        StorageSvc->>DBBridge: TestConnection
+        DBBridge->>Plugin: TestConnection(ctx, connInfo)
+        Plugin->>Engine: 认证操作，如 SELECT 1 / ListBuckets
+    else extension 引擎
+        StorageSvc->>Engine: HTTP health check
+    end
+    EngineSvc->>SystemAPI: 更新 connection_status
+```
+
+System 还会发布 `engine:changed` / `engine:deleted` 事件，通知 Meta 和 Manager 清理缓存或处理扫描配置。
+
+### Meta：元数据扫描
+
+```mermaid
+flowchart TB
+    Start[扫描请求 / 定时任务 / immediate_scan] --> LoadEngine[从 System 获取解密引擎信息]
+    LoadEngine --> GetPlugin[plugin.Get(engine_type)]
+    GetPlugin --> Route{接口类型}
+
+    Route -->|RelationalDBPlugin| Rel[关系型扫描<br/>schema/database -> table -> field]
+    Route -->|DocumentDBPlugin| Doc[文档库扫描<br/>database -> collection -> sampled fields]
+    Route -->|GraphDBPlugin| Graph[图数据库扫描<br/>database -> label / relationship]
+    Route -->|ObjectStoragePlugin| Obj[对象存储扫描<br/>bucket -> prefix -> object]
+    Route -->|FileSystemPlugin| FS[文件系统扫描<br/>root -> dir -> file/lake_table]
+
+    FS --> Detector[CompositeItemDetector<br/>识别目录型湖表]
+    Obj --> MetaStore[(metadata.meta_node / meta_item)]
+    Rel --> MetaStore
+    Doc --> MetaStore
+    Graph --> MetaStore
+    Detector --> MetaStore
+    MetaStore --> Search[Meilisearch 索引]
+    MetaStore --> Event[meta:scan_completed]
+```
+
+Meta 当前扫描分支：
+
+| 分支 | 入口服务 | 主要数据结构 |
+| --- | --- | --- |
+| 关系型数据库 | `DatabaseScanService` | `schema/database` 节点，`table` item，字段属性 |
+| 文档数据库 | `NoSQLScanService` | `database` 节点，`collection` item，采样字段 |
+| 图数据库 | `NoSQLScanService` | `database` 节点，`label` / `relationship` item |
+| 对象存储 | `ObjectStorageScanService` | `bucket` / `prefix` 节点，`object` item |
+| 文件系统 | `FileSystemScanService` | `root` / `dir` 节点，`file` / `lake_table` item |
+
+### Manager：数据预览
+
+```mermaid
+flowchart TB
+    Request[ResourceLocator / Preview API] --> Resolver[PreviewResolver]
+    Resolver --> Engine[从 System 获取引擎]
+    Resolver --> Meta[可选：从 Meta 获取节点或 item 元数据]
+    Resolver --> LegacyReq[转换为 PreviewRequest]
+    LegacyReq --> Registry[PreviewRegistry.Resolve]
+    Registry --> Providers{PreviewProvider}
+
+    Providers --> DB[database-table]
+    Providers --> Doc[doc-collection]
+    Providers --> Graph[graph-label / graph-relationship]
+    Providers --> Lake[lake-table]
+    Providers --> FileTable[file-table]
+    Providers --> Obj[object-storage]
+    Providers --> FS[filesystem]
+    Providers --> Schema[schema-node]
+
+    DB --> Result[TablePreview]
+    Doc --> Result
+    Graph --> Result
+    Lake --> Result
+    FileTable --> Result
+    Obj --> Result
+    FS --> Result
+    Schema --> Result
+```
+
+Manager 后端预览 Provider 负责把不同引擎的数据转换成统一的 `TablePreview` / `ObjectPreview` 响应；前端再通过内容预览插件选择具体渲染组件。
+
+---
+
+## 当前支持的引擎
+
+当前插件注册集中在 `common/dbbridge/bridge.go`，插件实现位于 `common/engine/plugins/*`。
+
+| 引擎类型 | 分类 | 默认端口 | 主要接口 | system 连接测试 | meta 扫描 | manager 预览 |
+| --- | --- | ---: | --- | --- | --- | --- |
+| `postgresql` | 标准 / 关系型 / SQL 查询 | 5432 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | schema/table/field，PostGIS 空间元数据 | 表格、空间字段、MVT |
+| `mysql` | 标准 / 关系型 / SQL 查询 | 3306 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
+| `doris` | 标准 / HTAP / SQL 查询 | 9030 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
+| `clickhouse` | 标准 / OLAP / SQL 查询 | 9000 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
+| `spark_sql` | 标准 / 分布式 SQL 查询 | 10000 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件连接测试 | database/table/field | 表格能力取决于 Provider 兼容情况 |
+| `mongodb` | 标准 / 文档数据库 / MQL 查询 | 27017 | `DocumentDBPlugin`、`QueryablePlugin` | 插件认证命令 | database/collection/字段采样 | 集合表格预览 |
+| `neo4j` | 标准 / 图数据库 / Cypher 查询 | 7687 | `GraphDBPlugin`、`GraphQueryPlugin` | 插件认证命令 | database/label/relationship | 标签/关系预览、图 Schema |
+| `minio` | 标准 / 对象存储 / 文件语义 | 9000 | `ObjectStoragePlugin`、`FileSystemPlugin` | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
+| `s3` | 标准 / 对象存储 / 文件语义 | 443 | `ObjectStoragePlugin`、`FileSystemPlugin` | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
+| `nfs` | 标准 / 文件系统语义存储 | 2049 | `FileSystemPlugin` | 文件系统访问检查 | root/dir/file/lake_table | 目录、文件、湖表 |
+| `python_workflow` | 扩展 / 工作流计算 | 8099 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `spark_workflow` | 扩展 / 工作流计算 | 8098 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `math_workflow` | 扩展 / 工作流计算 | 8089 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `jupyter` | 扩展 / Notebook | 8097 | `EnginePlugin` + Notebook 能力声明 | HTTP health 或插件 health | 不参与存储扫描 | Notebook 开发入口 |
+
+按能力维度可分为：
 
 ```mermaid
 graph TB
-    Engine[引擎 Engine]
+    Engine[Engine]
 
-    Engine --> Storage[存储引擎<br/>Storage Engine]
-    Engine --> Compute[计算引擎<br/>Compute Engine]
-    Engine --> Both[存储+计算<br/>Hybrid Engine]
+    Engine --> Storage[存储能力]
+    Engine --> Query[查询能力]
+    Engine --> File[文件语义能力]
+    Engine --> Metadata[元数据扫描能力]
+    Engine --> Preview[数据预览能力]
+    Engine --> Compute[计算/开发能力]
 
-    Storage --> StorageEx[PostgreSQL<br/>MySQL<br/>MinIO<br/>S3<br/>MongoDB]
+    Storage --> RelDB[关系型<br/>PostgreSQL/MySQL/Doris/ClickHouse/Spark SQL]
+    Storage --> DocDB[文档库<br/>MongoDB]
+    Storage --> GraphDB[图数据库<br/>Neo4j]
+    Storage --> ObjectStore[对象存储<br/>MinIO/S3]
+    Storage --> FSStore[文件系统<br/>NFS]
 
-    Compute --> SQLCompute[SQL查询计算<br/>PostgreSQL<br/>MySQL<br/>Doris<br/>ClickHouse]
-    Compute --> OperatorCompute[算子工作流计算<br/>Python Workflow<br/>Spark Workflow]
-    Compute --> NotebookCompute[Notebook计算<br/>Jupyter]
+    Query --> SQL[SQL]
+    Query --> MQL[MQL]
+    Query --> Cypher[Cypher]
 
-    Both --> HybridEx[PostgreSQL<br/>Doris<br/>ClickHouse<br/>MongoDB]
+    File --> ObjectFS[ObjectStoragePlugin 继承 FileSystemPlugin]
+    File --> NativeFS[NFS FileSystemPlugin]
 
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef category fill:#e1f5ff,stroke:#01579b
-    classDef example fill:#f3e5f5,stroke:#4a148c
-
-    class Engine root
-    class Storage,Compute,Both category
-    class StorageEx,SQLCompute,OperatorCompute,NotebookCompute,HybridEx example
+    Compute --> Workflow[Python/Spark/Math Workflow]
+    Compute --> Notebook[Jupyter]
 ```
-
-**分类说明**:
-- **存储引擎**: 提供数据存储能力(PostgreSQL、MinIO、MongoDB 等)
-- **计算引擎**: 提供数据处理和分析能力
-  - **SQL 查询计算**: 执行 SQL/MQL 查询
-  - **算子工作流计算**: 执行空间和非空间算子工作流
-  - **Notebook 计算**: Jupyter Notebook 交互式开发
-- **存储+计算**: 同时提供存储和计算能力(PostgreSQL、Doris 等)
-
-### 2. 按标准/扩展分类
-
-```mermaid
-graph LR
-    Engine[引擎分类]
-
-    Engine --> Standard[标准引擎<br/>Standard Engine]
-    Engine --> Extension[扩展引擎<br/>Extension Engine]
-
-    Standard --> StandardDB[(通过数据库/对象存储等<br/>标准协议访问)]
-    StandardDB --> PG[PostgreSQL]
-    StandardDB --> MySQL[MySQL]
-    StandardDB --> Mongo[MongoDB]
-    StandardDB --> Minio[MinIO/S3]
-    StandardDB --> Others[Doris<br/>ClickHouse<br/>Spark SQL...]
-
-    Extension --> ExtensionAPI[通过ADDP自定义<br/>HTTP API调用]
-    ExtensionAPI --> PyWF[Python Workflow]
-    ExtensionAPI --> SparkWF[Spark Workflow]
-    ExtensionAPI --> JupyterWF[Jupyter]
-
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef category fill:#e1f5ff,stroke:#01579b
-    classDef standard fill:#e8f5e9,stroke:#1b5e20
-    classDef extension fill:#f3e5f5,stroke:#4a148c
-
-    class Engine root
-    class Standard,Extension category
-    class StandardDB,PG,MySQL,Mongo,Minio,Others standard
-    class ExtensionAPI,PyWF,SparkWF,JupyterWF extension
-```
-
-**分类说明**:
-- **标准引擎**: 通过标准协议(JDBC、S3、MongoDB Wire Protocol)访问的数据库/对象存储等
-  - 类型命名: 直接使用数据库名称(如 `postgresql`、`mysql`、`mongodb`)
-  - 一般由用户手动注册,需要填写连接信息
-- **扩展引擎**: 通过ADDP自定义的 HTTP API 调用
-  - 类型命名: 使用引擎名称(如 `python_workflow`、`spark_workflow`、`jupyter`)
-  - 当前均为系统engines下几个模块自动注册,也可由用户自定义注册
-
-### 3. 按注册方式分类
-
-```mermaid
-stateDiagram-v2
-    引擎分类 --> 注册引擎: 用户手动创建
-    引擎分类 --> 内置引擎: 系统启动自注册
-
-    注册引擎 --> 关联到特定租户:tenant_id!=null
-    注册引擎 --> 非内置:is_builtin = false
-    注册引擎 --> 用户可删除/修改
-
-    内置引擎 --> 全局可见 :tenant_id = null
-    内置引擎 --> 内置: is_builtin = true
-    内置引擎 --> 不可删除/修改
-    内置引擎 --> 有全局唯一标识符<br/>unique_identifier
-```
-
-**分类说明**:
-- **注册引擎 (Registered Engine)**:
-  - 由用户通过前端表单或 API 手动创建
-  - 关联到特定租户 (`tenant_id != null`)
-  - 可被用户删除或修改
-  - `is_builtin = false`
-- **内置引擎 (Builtin Engine)**:
-  - 由系统启动时自动注册
-  - 不属于任何租户 (`tenant_id = null`),全局可见
-  - 不可删除或修改核心配置(防止误操作)
-  - `is_builtin = true`
-  - 具有全局唯一标识符 (`unique_identifier`,如 `python_workflow`)
 
 ---
 
-## 支持的引擎列表
+## 能力声明
 
-ADDP 平台当前支持 **11 种**数据引擎:
+`capabilities` 是 System 存储的 JSONB 字段，用于模块过滤和前端功能入口判断。当前 Go 结构定义在 `common/models/capability.go`。
 
-```mermaid
-graph TB
-    subgraph "标准引擎 (8种)"
-        PG[PostgreSQL<br/>关系型+空间<br/>:5432]
-        MySQL[MySQL<br/>关系型<br/>:3306]
-        Doris[Apache Doris<br/>HTAP实时分析<br/>:9030]
-        CH[ClickHouse<br/>列式OLAP<br/>:9000]
-        Mongo[MongoDB<br/>文档型NoSQL<br/>:27017]
-        Spark[Spark SQL<br/>分布式查询<br/>:10000]
-        Minio[MinIO<br/>对象存储<br/>:9000]
-        S3[Amazon S3<br/>云对象存储<br/>:443]
-    end
+当前结构：
 
-    subgraph "扩展引擎 (3种)"
-        PyWF[Python Workflow<br/>python_workflow<br/>单节点工作流]
-        SparkWF[Spark Workflow<br/>spark_workflow<br/>分布式工作流]
-        Jupyter[Jupyter<br/>jupyter<br/>Notebook开发]
-    end
+```go
+type Capability struct {
+    Storage []StorageCapability `json:"storage,omitempty"`
+    Compute []ComputeCapability `json:"compute,omitempty"`
+}
 
-    subgraph "插件接口实现"
-        PG --> RDCP[RelationalDB<br/>ConnectionPool]
-        MySQL --> RDCP
-        Doris --> RDCP
-        CH --> RDCP
+type StorageCapability struct {
+    Type string `json:"type,omitempty"`
+}
 
-        Mongo --> NoSQL[NoSQL<br/>Plugin]
-
-        Minio --> OS[ObjectStorage<br/>Plugin]
-        S3 --> OS
-
-        PyWF --> Compute[Compute<br/>Plugin]
-        SparkWF --> Compute
-        Jupyter --> Compute
-    end
-
-    classDef standard fill:#e8f5e9,stroke:#1b5e20
-    classDef extension fill:#fff9c4,stroke:#f57f17
-    classDef interface fill:#e1f5ff,stroke:#01579b
-
-    class PG,MySQL,Doris,CH,Mongo,Spark,Minio,S3 standard
-    class PyWF,SparkWF,Jupyter extension
-    class RDCP,NoSQL,OS,Compute interface
+type ComputeCapability struct {
+    SupportedSources []string               `json:"supported_sources,omitempty"`
+    SupportedFormats []string               `json:"supported_formats,omitempty"`
+    DevModes         []string               `json:"dev_modes,omitempty"`
+    Features         []string               `json:"features,omitempty"`
+    APIEndpoints     map[string]interface{} `json:"api_endpoints,omitempty"`
+}
 ```
 
-### 标准引擎详情
+常见能力字段：
 
-| 引擎 | 类型 | 默认端口 | 插件接口 | 主要能力 |
-|------|------|---------|---------|---------|
-| **PostgreSQL** | 关系型数据库 | 5432 | RelationalDB + ConnectionPool | SQL 查询,支持 PostGIS 空间扩展 |
-| **MySQL** | 关系型数据库 | 3306 | RelationalDB + ConnectionPool | SQL 查询 |
-| **Apache Doris** | HTAP 分析数据库 | 9030 | RelationalDB + ConnectionPool | 实时分析,OLAP 查询 |
-| **ClickHouse** | 列式 OLAP 数据库 | 9000 | RelationalDB + ConnectionPool | 高性能分析查询 |
-| **MongoDB** | 文档型 NoSQL | 27017 | NoSQL | MQL 查询,采样推断 Schema |
-| **Spark SQL** | 分布式 SQL 引擎 | 10000 | Compute | 大规模 SQL 查询 |
-| **MinIO** | 对象存储 | 9000 | ObjectStorage | S3 兼容,文件存储 |
-| **Amazon S3** | 云对象存储 | 443 | ObjectStorage | AWS 云存储 |
+| 字段 | 用途 |
+| --- | --- |
+| `storage[].type` | Meta 和 System 内部 API 按存储类型过滤，如 `relational_db`、`nosql_db`、`graph_db`、`object_storage`、`filesystem`、`generic` |
+| `compute[].dev_modes` | Develop 前端选择查询、工作流或 Notebook 入口，取值通常为 `query`、`workflow`、`notebook` |
+| `compute[].supported_sources` | 工作流或计算引擎支持的数据源类型 |
+| `compute[].supported_formats` | 工作流或计算引擎支持的数据格式 |
+| `compute[].features` | 功能标签，如 `distributed`、`async`、`dag` |
+| `compute[].api_endpoints` | 工作流引擎 HTTP API 路径，如 operators、execute、workflow |
 
-### 扩展引擎详情
+示例：
 
-| 引擎 | 类型 | 能力 | 适用场景 |
-|------|------|------|---------|
-| **Python Workflow** | 工作流计算 | 21 个空间算子 | 中小规模数据分析(< 100 万行) |
-| **Spark Workflow** | 分布式工作流 | 空间与非空间算子 | 大规模数据分析(> 100 万行) |
-| **Jupyter** | Notebook 开发 | Python/Shell 交互式开发 | 数据探索,变量传递 |
-
----
-
-## 引擎能力声明
-
-引擎的 `capabilities` 字段是 JSONB 格式,声明引擎支持的功能。
-
-### 能力结构
-
-```mermaid
-classDiagram
-    class Capabilities {
-        +storage[] StorageCapability
-        +compute[] ComputeCapability
-    }
-
-    class StorageCapability {
-        +type string
-        +formats[] string
-    }
-
-    class ComputeCapability {
-        +dev_modes[] string
-        +supported_sources[] string
-        +features[] string
-        +description string
-    }
-
-    Capabilities "1" --> "*" StorageCapability
-    Capabilities "1" --> "*" ComputeCapability
-
-    class DevModes {
-        <<enumeration>>
-        query: 查询开发
-        workflow: 可视化工作流
-        notebook: Notebook开发
-    }
-
-    class Features {
-        <<enumeration>>
-        incremental: 增量处理
-        scheduled: 定时调度
-        parallel: 并行处理
-        async: 异步执行
-        retry: 失败重试
-    }
-
-    ComputeCapability --> DevModes
-    ComputeCapability --> Features
-```
-
-### 能力示例
-
-**PostgreSQL 引擎** (存储+计算):
 ```json
 {
   "storage": [
     {
       "type": "relational_db",
-      "formats": ["sql", "csv", "parquet"]
+      "engine": "postgresql",
+      "supports_query": true
     }
   ],
   "compute": [
     {
       "dev_modes": ["query"],
-      "supported_sources": ["postgresql"],
-      "features": ["incremental", "scheduled"],
       "description": "SQL查询"
     }
   ]
 }
 ```
 
-**Python Workflow 引擎** (纯计算):
-```json
-{
-  "compute": [
-    {
-      "dev_modes": ["workflow"],
-      "supported_formats": ["geojson", "shapefile", "wkt"],
-      "features": ["dag", "memory_efficient", "batch"],
-      "description": "空间数据分析工作流"
-    }
-  ]
-}
-```
-
-**MongoDB 引擎** (存储+计算):
 ```json
 {
   "storage": [
     {
-      "type": "document_db",
-      "formats": ["json", "bson"]
+      "type": "graph_db",
+      "engine": "neo4j",
+      "supports_query": true
     }
   ],
   "compute": [
     {
       "dev_modes": ["query"],
-      "supported_sources": ["mongodb"],
-      "features": ["aggregation", "flexible_schema"],
-      "description": "MQL查询和聚合"
+      "description": "图数据库查询（Cypher）",
+      "features": ["graph_algorithms", "knowledge_graph", "cypher_query", "property_graph"]
     }
   ]
 }
 ```
 
-### 开发方式 详解
-
-**dev_modes 是引擎能力的核心字段**,声明引擎在 Develop 模块中提供的开发界面类型:
-
-```mermaid
-graph LR
-    DevModes[dev_modes]
-
-    DevModes --> Query[query<br/>查询开发]
-    DevModes --> Workflow[workflow<br/>可视化工作流]
-    DevModes --> Notebook[notebook<br/>Notebook开发]
-
-    Query --> QueryUI[查询工作台界面<br/>Monaco编辑器<br/>SQL/MQL执行]
-    Workflow --> WorkflowUI[工作流编辑器<br/>算子拖拽<br/>DAG可视化]
-    Notebook --> NotebookUI[Notebook编辑器<br/>Jupyter界面<br/>交互式开发]
-
-    QueryUI --> QueryEngine[PostgreSQL<br/>MySQL<br/>Doris<br/>ClickHouse<br/>MongoDB<br/>Spark SQL]
-    WorkflowUI --> WorkflowEngine[Python Workflow<br/>Spark Workflow]
-    NotebookUI --> NotebookEngine[Jupyter]
-
-    classDef mode fill:#fff9c4,stroke:#f57f17
-    classDef ui fill:#e1f5ff,stroke:#01579b
-    classDef engine fill:#e8f5e9,stroke:#1b5e20
-
-    class DevModes,Query,Workflow,Notebook mode
-    class QueryUI,WorkflowUI,NotebookUI ui
-    class QueryEngine,WorkflowEngine,NotebookEngine engine
+```json
+{
+  "compute": [
+    {
+      "dev_modes": ["workflow"],
+      "api_endpoints": {
+        "operators": "/api/operators",
+        "execute": "/api/operators/:name/execute",
+        "workflow": "/api/workflow"
+      },
+      "features": ["dag", "async"]
+    }
+  ]
+}
 ```
 
-**dev_modes 说明**:
-- **query**: 查询开发,对应查询工作台界面,支持 SQL、MQL 等查询语言
-- **workflow**: 可视化工作流,对应工作流编辑器,支持算子拖拽和 DAG 编排
-- **notebook**: Notebook 开发,对应 Jupyter Notebook 编辑器,支持 Python 和 Shell
+注意：当前各插件返回的能力 JSON 尚未完全规范化，后续需要统一字段 schema 和校验逻辑。
 
 ---
 
-## 引擎插件系统
+## 注册、缓存与事件
 
-ADDP 采用插件化架构支持新引擎扩展:
+### 插件注册
+
+Go 插件通过包导入触发 `init()` 注册：
 
 ```mermaid
-graph TB
-    subgraph "插件开发"
-        Dev[开发新插件] --> Impl[实现对应接口<br/>EnginePlugin + 功能接口]
-        Impl --> Register[在 dbbridge 中注册]
-        Register --> Test[构建测试]
-    end
-
-    subgraph "插件位置"
-        Plugins[common/engine/plugins/]
-        Plugins --> PGPlugin[postgresql/]
-        Plugins --> MongoPlugin[mongodb/]
-        Plugins --> MinioPlugin[minio/]
-        Plugins --> Custom[custom_engine/]
-    end
-
-    subgraph "接口定义"
-        Interfaces[common/engine/plugin/interfaces.go]
-        Interfaces --> EP[EnginePlugin]
-        Interfaces --> SP[StoragePlugin]
-        Interfaces --> CP[ComputePlugin]
-        Interfaces --> Others[NoSQL/RelationalDB/...]
-    end
-
-    subgraph "桥接层"
-        Bridge[common/dbbridge/bridge.go]
-        Bridge --> Import[导入所有插件]
-        Bridge --> Auto[自动注册]
-    end
-
-    Dev --> Plugins
-    Impl --> Interfaces
-    Register --> Bridge
-
-    classDef dev fill:#fff9c4,stroke:#f57f17
-    classDef location fill:#e8f5e9,stroke:#1b5e20
-    classDef interface fill:#e1f5ff,stroke:#01579b
-    classDef bridge fill:#f3e5f5,stroke:#4a148c
-
-    class Dev,Impl,Register,Test dev
-    class Plugins,PGPlugin,MongoPlugin,MinioPlugin,Custom location
-    class Interfaces,EP,SP,CP,Others interface
-    class Bridge,Import,Auto bridge
+flowchart LR
+    Bridge[common/dbbridge/bridge.go] --> Import[import _ common/engine/plugins/*]
+    Import --> Init[插件 init()]
+    Init --> Register[plugin.Register]
+    Register --> Registry[全局 Registry]
 ```
 
-**新增引擎流程**(3 步):
-1. 在 `common/engine/plugins/<enginetype>/` 创建插件,实现对应接口
-2. 在 `common/dbbridge/bridge.go` 添加导入语句
-3. 构建测试和功能验证
+新增插件的一般步骤：
 
-**详细指南**: 参考 [ADDP 数据引擎扩展指南](../addp数据引擎扩展指南.md)
+1. 在 `common/engine/plugins/<engine_type>/` 实现 `EnginePlugin` 和需要的功能接口。
+2. 在 `common/dbbridge/bridge.go` 添加匿名导入。
+3. 更新能力声明、前端表单和必要的预览 Provider。
+4. 验证 System 连接测试、Meta 扫描、Manager 预览。
+
+### 引擎实例注册
+
+```mermaid
+stateDiagram-v2
+    [*] --> 用户注册引擎
+    [*] --> 内置引擎自注册
+
+    用户注册引擎 --> tenant_id非空
+    用户注册引擎 --> is_builtin_false
+    用户注册引擎 --> 可更新删除
+
+    内置引擎自注册 --> tenant_id为空
+    内置引擎自注册 --> is_builtin_true
+    内置引擎自注册 --> 全租户可见
+    内置引擎自注册 --> 核心配置受保护
+```
+
+### 缓存与事件
+
+| 事件 | 发布方 | 订阅方 | 用途 |
+| --- | --- | --- | --- |
+| `engine:changed` | System | Meta、Manager | 引擎创建/更新后清理连接缓存；Meta 处理 scan_config |
+| `engine:deleted` | System | Meta、Manager | 引擎删除后清理缓存和扫描任务 |
+| `meta:scan_completed` | Meta | Manager | 扫描完成后清理目录和预览相关缓存 |
+
+Meta 和 Manager 都会缓存从 System 获取的解密连接信息，并通过事件主动失效。
 
 ---
 
-## 相关文档
+## 预览体系
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
-- [ADDP 数据引擎扩展指南](../addp数据引擎扩展指南.md)
-- [ADDP 各模块简要介绍](addp各模块功能介绍.md)
+Manager 后端预览使用 `PreviewProvider` 注册表，与 `common/engine/plugin` 是两套不同层次的扩展点：
+
+- `common/engine/plugin` 解决“如何连接和读取某类引擎”。
+- `manager PreviewProvider` 解决“如何把某类资源转换成统一预览响应”。
+- 前端预览插件解决“如何把响应渲染为文本、表格、地图、图片、视频、PDF 等组件”。
+
+当前内置 Provider：
+
+| Provider | 处理场景 |
+| --- | --- |
+| `database-table` | 关系型数据库表预览 |
+| `doc-collection` | MongoDB 等文档集合预览 |
+| `graph-label` | Neo4j 节点标签预览 |
+| `graph-relationship` | Neo4j 关系类型预览 |
+| `object-storage` | MinIO/S3 对象和目录预览 |
+| `filesystem` | NFS 等文件系统目录和文件预览 |
+| `file-table` | CSV、Excel、Shapefile、GeoJSON 等文件表格预览 |
+| `lake-table` | Parquet/湖表预览 |
+| `schema-node` | Schema / Database / Bucket 等节点预览 |
+
+对象、文件和湖表预览还会复用 `common/format` 中的格式检测和解析能力。
 
 ---
 
-**文档版本**: v1.0
-**创建日期**: 2026-02-16
-**作者**: ADDP 开发团队
+## 当前待统一的问题
+
+以下是当前实现中已经暴露出来、需要后续讨论优化的点。它们不是本文档的规范结论，而是后续架构评审的输入。
+
+1. **能力声明 schema 不够统一**
+   各插件手写 `GenerateCapabilities()` JSON，字段存在不一致。建议后续改为结构化构造并集中校验。
+
+2. **接口能力和 capabilities 可能不一致**
+   某些引擎实现了元数据扫描接口，但能力声明没有明确表达对应 storage 类型，可能影响按能力过滤。
+
+3. **连接检测路径需要收敛**
+   手动测试和异步检测对 `extension` 引擎的路径并不完全一致，建议统一到一个 System 内部入口。
+
+4. **Manager 仍有硬编码类型判断**
+   `isObjectStorageType`、`isFileSystemType`、部分 MinIO/GORM 构造和 PostgreSQL 空间处理还没有完全沉到插件抽象。
+
+5. **文件语义和对象存储语义需要更清楚的边界**
+   `ObjectStoragePlugin` 继承 `FileSystemPlugin` 是合理方向，但扫描和预览中仍存在对象存储专属逻辑与通用文件系统逻辑交叉。
+
+6. **数据源引擎和计算引擎复用同一张 engines 表**
+   当前可行，但文档和代码需要持续明确“实例登记”和“能力维度”的区别，避免只靠 `standard` / `extension` 二分承载所有语义。
+
+7. **Resource / Engine / StorageEngine 术语需要收敛**
+   多个模块中仍混用资源、引擎、数据源等名称，建议后续统一术语或明确兼容别名。
+
+---
+
+## 相关代码与文档
+
+关键代码：
+
+- `common/engine/plugin/interfaces.go`：插件接口定义。
+- `common/engine/plugin/filesystem.go`：文件系统语义接口。
+- `common/engine/plugins/*`：各类引擎插件实现。
+- `common/dbbridge/bridge.go`：插件导入、连接池和查询桥接。
+- `common/models/engine.go`：引擎模型和扫描配置。
+- `common/models/capability.go`：能力声明模型。
+- `system/backend/internal/service/engine_service.go`：引擎 CRUD、权限、加密、能力声明和连接状态。
+- `system/backend/internal/service/storage_engine_service.go`：连接测试入口。
+- `meta/backend/internal/service/scan_service.go`：Meta 扫描总路由。
+- `manager/backend/internal/service/preview_registry.go`：Manager 预览 Provider 注册表。
+- `manager/backend/internal/service/preview_resolver.go`：预览解析入口。
+
+相关文档：
+
+- [ADDP 数据引擎扩展指南](../spec/addp数据引擎扩展指南.md)
+- [ADDP 工作流计算引擎接口规范](../spec/addp工作流计算引擎接口规范.md)
+- [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md)
+- [ADDP 元数据体系图](addp元数据体系图.md)
+- [ADDP 数据开发体系图](addp数据开发体系图.md)
+
+---
+
+**文档版本**：v1.1
+**更新日期**：2026-04-30
+**维护说明**：本文档描述当前实际实现；接口和能力声明优化完成后需要继续更新。

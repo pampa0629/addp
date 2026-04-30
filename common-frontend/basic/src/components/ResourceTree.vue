@@ -90,6 +90,9 @@
                     <el-icon v-else-if="data.type === 'engine' && data.engineType === 'mongodb'">
                       <Coin />
                     </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'neo4j'">
+                      <Share />
+                    </el-icon>
                     <el-icon v-else-if="data.type === 'engine' && data.engineType === 'spark'">
                       <Grid />
                     </el-icon>
@@ -187,6 +190,7 @@ import {
   MagicStick,
   OfficeBuilding,
   Shop,
+  Share,
   Upload
 } from '@element-plus/icons-vue'
 import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
@@ -206,6 +210,7 @@ const actionIconMap = {
   Box,
   OfficeBuilding,
   Shop,
+  Share,
   Upload
 }
 

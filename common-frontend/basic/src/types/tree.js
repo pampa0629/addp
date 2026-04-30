@@ -7,6 +7,7 @@
  */
 export const DEFAULT_NODE_ICONS = {
   resource: 'Collection',
+  neo4j: 'Share',
   schema: 'OfficeBuilding',
   database: 'OfficeBuilding',
   bucket: 'Folder',
