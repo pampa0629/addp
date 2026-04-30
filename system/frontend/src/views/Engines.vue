@@ -799,7 +799,10 @@ const testBeforeCreate = async () => {
 
   testing.value = true
   try {
-    const response = await enginesAPI.testConnection(form.value)
+    const response = isEdit.value
+      ? await enginesAPI.testExistingConnection(editId.value, form.value)
+      : await enginesAPI.testConnection(form.value)
+
     if (response.success) {
       ElMessage.success(t('system.engine.msg.testSuccess'))
     } else {
@@ -809,6 +812,9 @@ const testBeforeCreate = async () => {
     ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     testing.value = false
+    if (isEdit.value) {
+      await loadEngines()
+    }
   }
 }
 

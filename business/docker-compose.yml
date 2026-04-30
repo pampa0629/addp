@@ -160,6 +160,7 @@ services:
     container_name: business-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_ROOT_HOST: '%'
       MYSQL_DATABASE: ${MYSQL_DATABASE:-business}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
@@ -169,7 +170,7 @@ services:
     networks:
       - business-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD:-password} --connect-timeout=5 -e 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 5

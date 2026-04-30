@@ -142,7 +142,7 @@ export function useEngineManagement() {
    */
   const testConnection = async (engineId) => {
     try {
-      const response = await enginesAPI.testConnection(engineId)
+      const response = await enginesAPI.testExistingConnection(engineId)
       if (response.success) {
         ElMessage.success(t('system.engine.msg.testSuccess'))
       } else {

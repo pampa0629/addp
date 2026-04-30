@@ -100,7 +100,7 @@
                       <FolderOpened />
                     </el-icon>
                     <!-- 其他节点类型图标 -->
-                    <el-icon v-else-if="data.type === 'schema'">
+                    <el-icon v-else-if="data.type === 'schema' || data.type === 'database'">
                       <OfficeBuilding />
                     </el-icon>
                     <el-icon v-else-if="data.type === 'bucket'">

@@ -147,16 +147,27 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 }
 
 // TestConnection 测试存储引擎连接（用户手动触发，同步返回结果）
-// POST /api/engines/:id/test-connection
-// 测试完成后同步更新连接状态缓存
+// POST /api/engines/:id/test
+// 请求体可选；编辑弹窗传入 connection_info 时测试当前表单配置。
+// 测试完成后同步更新连接状态缓存。
 func (h *EngineHandler) TestConnection(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
 		return
 	}
 
+	var req models.EngineUpdateRequest
+	var override *models.ConnectionInfo
+	if c.Request.Body != nil && c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		override = req.ConnectionInfo
+	}
+
 	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.GetForConnection(id, userID)
+	engine, err := h.engineService.BuildConnectionTestEngine(id, userID, override)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return

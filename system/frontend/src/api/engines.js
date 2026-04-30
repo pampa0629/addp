@@ -27,7 +27,14 @@ export const enginesAPI = {
     return client.post('/system/engines/test-connection', data)
   },
 
-  testExistingConnection: (id) => {
+  testConnectionBeforeCreate: (data) => {
+    return client.post('/system/engines/test-connection', data)
+  },
+
+  testExistingConnection: (id, data = null) => {
+    if (data) {
+      return client.post(`/system/engines/${id}/test`, data)
+    }
     return client.post(`/system/engines/${id}/test`)
   }
 }

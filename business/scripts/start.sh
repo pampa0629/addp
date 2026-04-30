@@ -519,7 +519,7 @@ fi
 
 if [ "$ENABLE_MYSQL" = true ]; then
     for i in {1..30}; do
-        if docker exec business-mysql mysqladmin ping -h localhost -u root -p"${MYSQL_ROOT_PASSWORD:-password}" --silent >/dev/null 2>&1; then
+        if docker exec business-mysql mysql -h127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD:-password}" --connect-timeout=5 -e "SELECT 1" >/dev/null 2>&1; then
             echo -e "${GREEN}✓ MySQL 就绪${NC}"
             break
         fi

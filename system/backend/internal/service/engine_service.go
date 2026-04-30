@@ -431,12 +431,32 @@ func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.E
 	return &engineCopy, nil
 }
 
+// BuildConnectionTestEngine 返回带解密连接信息的资源副本，并用可选的当前表单配置覆盖。
+// 用于编辑弹窗测试未保存的配置，同时复用已有资源的权限、类型与状态更新链路。
+func (s *EngineService) BuildConnectionTestEngine(id uint, currentUserID uint, override *models.ConnectionInfo) (*models.Engine, error) {
+	engine, err := s.GetForConnection(id, currentUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	if override != nil {
+		mergedConnInfo := s.mergeConnectionInfo(engine.ConnectionInfo, *override)
+		engine.ConnectionInfo = s.stripConnectionInfoMetaFields(mergedConnInfo)
+	}
+
+	return engine, nil
+}
+
 // mergeConnectionInfo 合并连接信息，识别前端掩码占位并保留原始敏感值
 func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
 	merged := make(models.ConnectionInfo)
 
 	// 先复制原始字段，并对敏感字段做解密，得到可操作的明文值
 	for k, v := range original {
+		if s.isConnectionInfoMetaField(k) {
+			continue
+		}
+
 		if !s.isSensitiveField(k) {
 			merged[k] = v
 			continue
@@ -458,6 +478,10 @@ func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionI
 
 	// 再合并更新字段，对于敏感字段，需要判断是否仍为掩码占位
 	for k, v := range updated {
+		if s.isConnectionInfoMetaField(k) {
+			continue
+		}
+
 		if !s.isSensitiveField(k) {
 			merged[k] = v
 			continue
@@ -479,6 +503,21 @@ func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionI
 	}
 
 	return merged
+}
+
+func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
+	cleaned := make(models.ConnectionInfo)
+	for k, v := range connInfo {
+		if s.isConnectionInfoMetaField(k) {
+			continue
+		}
+		cleaned[k] = v
+	}
+	return cleaned
+}
+
+func (s *EngineService) isConnectionInfoMetaField(field string) bool {
+	return strings.HasPrefix(field, "_")
 }
 
 // isMaskedPlaceholder 判断用户输入是否为掩码占位，而非真实敏感值
@@ -913,4 +952,3 @@ func (s *EngineService) CreateEngine(engine *models.Engine) error {
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
 	return s.repo.Update(engine)
 }
-

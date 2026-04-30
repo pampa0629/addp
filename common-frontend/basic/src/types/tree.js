@@ -7,7 +7,8 @@
  */
 export const DEFAULT_NODE_ICONS = {
   resource: 'Collection',
-  schema: 'Folder',
+  schema: 'OfficeBuilding',
+  database: 'OfficeBuilding',
   bucket: 'Folder',
   directory: 'Folder',
   table: 'Document',

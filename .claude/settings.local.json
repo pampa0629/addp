@@ -765,7 +765,10 @@
       "Bash(rg \"Dockerfile.prebuilt|Dockerfile$\")",
       "Bash([ -f \"$d/frontend/nginx.conf\" ])",
       "Bash(read f *)",
-      "Bash(docker tag *)"
+      "Bash(docker tag *)",
+      "Bash(grep -i mysql_root_password .env)",
+      "Bash(grep -i mysql .env)",
+      "Bash(cat business/.env)"
     ],
     "deny": [],
     "ask": [],

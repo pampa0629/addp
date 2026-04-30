@@ -469,6 +469,8 @@ Content-Type: application/json
 POST /api/engines/:id/test
 ```
 
+请求体可选。编辑页面可传入当前表单中的 `connection_info`，用于测试尚未保存的连接配置；接口仍会同步更新该引擎的 `connection_status`、`last_check_at` 和 `check_message`。
+
 ---
 
 ### 5.2 内部 API（服务间调用）
