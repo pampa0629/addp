@@ -261,7 +261,7 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 	tenantID := c.Query("tenant_id") // 可选，按租户过滤
 
 	// 新增：能力过滤参数
-	storageType := c.Query("storage_type") // 可选：如 "relational_db,object_storage"
+	storageType := c.Query("storage_type") // 可选：如 "tabular,object"
 
 	// 内部调用返回所有资源（或按 tenant_id 过滤）
 	var tenantIDUint uint

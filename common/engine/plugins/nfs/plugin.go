@@ -19,10 +19,10 @@ func init() {
 	plugin.Register(&NFSPlugin{})
 }
 
-func (p *NFSPlugin) Type() string        { return "nfs" }
-func (p *NFSPlugin) DisplayName() string { return "NFS 文件系统" }
+func (p *NFSPlugin) Type() string           { return "nfs" }
+func (p *NFSPlugin) DisplayName() string    { return "NFS 文件系统" }
 func (p *NFSPlugin) EngineCategory() string { return "standard" }
-func (p *NFSPlugin) DefaultPort() int    { return 2049 }
+func (p *NFSPlugin) DefaultPort() int       { return 2049 }
 
 func (p *NFSPlugin) RequiredFields() []string {
 	return []string{"server", "export_path"}
@@ -32,8 +32,37 @@ func (p *NFSPlugin) SensitiveFields() []string {
 	return []string{} // NFS 基于 IP 访问控制，无密钥
 }
 
-func (p *NFSPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"filesystem","engine":"nfs"}]}`
+func (p *NFSPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewFileCapabilities(p.Type())
+}
+
+func (p *NFSPlugin) StoreSemantics() plugin.StoreSemantics {
+	capabilities := p.Capabilities()
+	return plugin.StoreSemantics{
+		Families:     capabilities.Storage.Families,
+		Semantics:    capabilities.Storage.Semantics,
+		NotSupported: capabilities.Storage.NotSupported,
+	}
+}
+
+func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.FileCatalogModel()
+}
+
+func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListFileSystemCatalogChildren(ctx, p, connInfo, parent.EngineID, parent, plugin.CatalogTermRoot, opts)
+}
+
+func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveFileSystemCatalogPath(ctx, p, connInfo, path.EngineID, path, plugin.CatalogTermRoot)
+}
+
+func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeFileSystemItem(ctx, p, connInfo, path.EngineID, path)
+}
+
+func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	return p.ReadFile(ctx, connInfo, path.StringPath())
 }
 
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -53,9 +82,6 @@ func (p *NFSPlugin) TestConnection(ctx context.Context, connInfo plugin.Connecti
 	_, err := p.ListRoots(ctx, connInfo)
 	return err
 }
-
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-func (p *NFSPlugin) SupportsMetadataQuery() bool { return true }
 
 // === FileSystemPlugin 接口实现 ===
 

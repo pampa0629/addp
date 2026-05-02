@@ -19,19 +19,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// EngineCapabilities 引擎能力声明结构（用于解析 JSONB）
-type EngineCapabilities struct {
-	Compute []ComputeCapability `json:"compute"`
-}
-
-// ComputeCapability 计算能力定义
-type ComputeCapability struct {
-	DevModes     []string               `json:"dev_modes"`
-	APIEndpoints map[string]interface{} `json:"api_endpoints"`
-	Features     []string               `json:"features,omitempty"`
-	Description  string                 `json:"description,omitempty"`
-}
-
 // WorkflowEngineService 工作流执行引擎服务
 // 支持动态发现的工作流引擎，通过引擎的 capabilities 配置调用相应的 API
 type WorkflowEngineService struct {
@@ -57,41 +44,17 @@ type WorkflowRequest struct {
 
 // WorkflowResponse 工作流执行响应
 type WorkflowResponse struct {
-	Status        string                   `json:"status"`
-	ExecutionID   string                   `json:"execution_id"`
-	FinalResult   string                   `json:"final_result,omitempty"` // GeoJSON 字符串
-	AllResults    map[string]string        `json:"all_results,omitempty"`  // 所有中间结果
-	Error         string                   `json:"error,omitempty"`
-	Logs          []map[string]interface{} `json:"logs,omitempty"`      // 执行日志
-	Traceback     string                   `json:"traceback,omitempty"` // 详细堆栈信息
+	Status      string                   `json:"status"`
+	ExecutionID string                   `json:"execution_id"`
+	FinalResult string                   `json:"final_result,omitempty"` // GeoJSON 字符串
+	AllResults  map[string]string        `json:"all_results,omitempty"`  // 所有中间结果
+	Error       string                   `json:"error,omitempty"`
+	Logs        []map[string]interface{} `json:"logs,omitempty"`      // 执行日志
+	Traceback   string                   `json:"traceback,omitempty"` // 详细堆栈信息
 }
 
-// getAPIEndpoint 从引擎的 capabilities 中提取 API 端点
-// 如果未配置，返回默认值（向后兼容旧版本引擎）
+// getAPIEndpoint 返回 ADDP 工作流运行时标准 API 端点
 func getAPIEndpoint(engine *commonModels.Engine, endpointType string) string {
-	// 检查 Capabilities 是否为空
-	if engine.Capabilities == nil || *engine.Capabilities == "" {
-		log.Printf("⚠️  引擎 %s 的 capabilities 为空，使用默认路径", engine.Name)
-		return getDefaultEndpoint(endpointType)
-	}
-
-	// 解析 JSONB 字符串
-	var caps EngineCapabilities
-	if err := json.Unmarshal([]byte(*engine.Capabilities), &caps); err != nil {
-		log.Printf("⚠️  引擎 %s 的 capabilities 解析失败: %v，使用默认路径", engine.Name, err)
-		return getDefaultEndpoint(endpointType)
-	}
-
-	// 尝试从 Compute[0].APIEndpoints 中获取
-	if len(caps.Compute) > 0 && caps.Compute[0].APIEndpoints != nil {
-		compute := caps.Compute[0]
-		if endpoint, ok := compute.APIEndpoints[endpointType].(string); ok && endpoint != "" {
-			return endpoint
-		}
-	}
-
-	// 未配置，返回默认路径
-	log.Printf("⚠️  引擎 %s 未配置 api_endpoints.%s，使用默认路径（建议更新引擎配置）", engine.Name, endpointType)
 	return getDefaultEndpoint(endpointType)
 }
 

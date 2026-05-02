@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dbbridge"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
@@ -743,32 +744,18 @@ func (s *EngineService) validateCapabilities(capabilitiesPtr *string) error {
 		return nil // 空能力声明是允许的
 	}
 
-	capabilities, err := commonutils.ParseCapabilities(capabilitiesPtr)
+	structured, err := engineplugin.ParseEngineCapabilities(*capabilitiesPtr)
 	if err != nil {
 		return fmt.Errorf("能力声明 JSON 格式错误: %w", err)
 	}
-
-	// 验证计算能力
-	if len(capabilities.Compute) > 0 {
-		validDevModes := map[string]bool{
-			"query":    true,
-			"workflow": true,
-			"notebook": true,
-		}
-
-		for i, compute := range capabilities.Compute {
-			// 检查是否至少声明了一个开发模式
-			if len(compute.DevModes) == 0 {
-				return fmt.Errorf("计算能力 [%d] 必须声明至少一个 dev_mode", i)
-			}
-
-			// 验证每个 dev_mode 的值是否有效
-			for _, mode := range compute.DevModes {
-				if !validDevModes[mode] {
-					return fmt.Errorf("计算能力 [%d] 包含无效的 dev_mode: %s (有效值: query, workflow, notebook)", i, mode)
-				}
-			}
-		}
+	if structured == nil {
+		return fmt.Errorf("能力声明不能为空")
+	}
+	if structured.SchemaVersion == "" {
+		return fmt.Errorf("结构化能力声明必须包含 schema_version")
+	}
+	if structured.EngineType == "" {
+		return fmt.Errorf("结构化能力声明必须包含 engine_type")
 	}
 
 	return nil
@@ -784,17 +771,27 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 
 	// 降级：对于API引擎等非数据库类型，使用硬编码
 	engineTypeLower := strings.ToLower(engineType)
+	var caps engineplugin.EngineCapabilities
 	switch engineTypeLower {
 	case "python_workflow":
-		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","csv","parquet"],"features":["dag","memory_efficient","batch","pandas","numpy","scipy"],"description":"Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"}]}`
+		caps = engineplugin.NewWorkflowCapabilities(engineTypeLower, "addp.workflow/v1")
 
 	case "spark_workflow":
-		return `{"compute":[{"dev_modes":["workflow"],"engine":"spark","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
+		caps = engineplugin.NewWorkflowCapabilities(engineTypeLower, "addp.workflow/v1")
 
 	default:
-		// 未知类型，生成通用 storage 能力
-		return `{"storage":[{"type":"generic"}]}`
+		caps = engineplugin.EngineCapabilities{
+			SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
+			EngineType:    engineTypeLower,
+			EngineFamily:  "unknown",
+		}
 	}
+
+	capabilitiesJSON, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		return "{}"
+	}
+	return capabilitiesJSON
 }
 
 // checkDuplicateResource 检查是否存在重复资源

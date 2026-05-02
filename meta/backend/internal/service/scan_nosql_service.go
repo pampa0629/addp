@@ -35,16 +35,11 @@ func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer,
 	}
 }
 
-// ScanDatabase 扫描 NoSQL 数据库及其所有对象
-//
-// 根据插件类型分流：
-//   - DocumentDBPlugin：扫描 Collection
-//   - GraphDBPlugin：扫描 NodeLabel + RelationshipType
-//
-// 返回：(database数量, 对象数量, 字段数量, error)
+// ScanDatabase 扫描 NoSQL 数据库及其所有对象。
+// CatalogProvider 负责列出真实数据库、集合、标签和关系；DocumentDBPlugin 仅在深度扫描时用于文档 schema 推断。
 func (s *NoSQLScanService) ScanDatabase(
 	ctx context.Context,
-	nosqlPlugin plugin.NoSQLPlugin,
+	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
 	databaseName string,
@@ -52,6 +47,11 @@ func (s *NoSQLScanService) ScanDatabase(
 ) (int, int, int, error) {
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
+	docPlugin, _ := enginePlugin.(plugin.DocumentDBPlugin)
 
 	// 1. 创建/更新 Database 节点
 	dbNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "database", databaseName, nil, nil)
@@ -65,19 +65,7 @@ func (s *NoSQLScanService) ScanDatabase(
 
 	var totalObjects, totalFields int
 
-	// 2. 按插件类型分流
-	switch p := nosqlPlugin.(type) {
-	case plugin.DocumentDBPlugin:
-		totalObjects, totalFields, err = s.scanCollections(ctx, p, connInfo, resource, tenantID, dbNode, databaseName, scanDepth)
-	case plugin.GraphDBPlugin:
-		totalObjects, err = s.scanNodeLabels(ctx, p, connInfo, resource, tenantID, dbNode, databaseName)
-		if err == nil {
-			s.scanRelationshipTypes(ctx, p, connInfo, resource, tenantID, dbNode, databaseName)
-		}
-	default:
-		s.repo.FinalizeNodeState(dbNode, "pending", 0, 0, "unsupported NoSQL plugin type")
-		return 0, 0, 0, fmt.Errorf("unsupported NoSQL plugin type for engine %s", resource.EngineType)
-	}
+	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, docPlugin, connInfo, resource, tenantID, dbNode, databaseName, scanDepth)
 
 	if err != nil {
 		s.repo.FinalizeNodeState(dbNode, "pending", 0, 0, err.Error())
@@ -99,9 +87,9 @@ func (s *NoSQLScanService) ScanDatabase(
 	return 1, totalObjects, totalFields, nil
 }
 
-// scanCollections 扫描文档型数据库的集合（DocumentDBPlugin 专用）
-func (s *NoSQLScanService) scanCollections(
+func (s *NoSQLScanService) scanCatalogItems(
 	ctx context.Context,
+	catalogProvider plugin.CatalogProvider,
 	docPlugin plugin.DocumentDBPlugin,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
@@ -110,40 +98,63 @@ func (s *NoSQLScanService) scanCollections(
 	databaseName string,
 	scanDepth string,
 ) (int, int, error) {
-	isDeepScan := strings.EqualFold(scanDepth, "deep")
-
-	collections, err := docPlugin.ListCollections(ctx, connInfo, databaseName)
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []plugin.CatalogSegment{{
+			Term: plugin.CatalogTermDatabase,
+			Kind: plugin.CatalogKindNamespace,
+			Name: databaseName,
+		}},
+	}, plugin.ListOptions{})
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list collections: %w", err)
+		return 0, 0, fmt.Errorf("failed to list catalog items: %w", err)
 	}
 
-	s.log.Info("扫描到的集合", "database", databaseName, "collections_count", len(collections))
+	s.log.Info("扫描到的 NoSQL catalog item", "database", databaseName, "item_count", len(nodes))
 
 	existingCollectionMap := getExistingCollectionMap(s.db, tenantID, resource.ID, dbNode.ID)
-	totalCollections := 0
+	scannedByType := map[string]map[string]bool{
+		"collection":   {},
+		"label":        {},
+		"relationship": {},
+	}
+	totalItems := 0
 	totalFields := 0
-	scannedCollections := make(map[string]bool)
 
-	for i, collInfo := range collections {
-		s.log.Info(fmt.Sprintf("处理第 %d/%d 个集合", i+1, len(collections)),
-			"collection_name", collInfo.Name,
-			"document_count", collInfo.DocumentCount,
+	for i, node := range nodes {
+		itemType := noSQLItemType(node)
+		if itemType == "" {
+			continue
+		}
+		count, _ := int64Stat(node.Stats, countStatKey(itemType))
+		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
+		collInfo := plugin.CollectionInfo{
+			Name:          node.Name,
+			DocumentCount: count,
+			SizeBytes:     sizeBytes,
+		}
+
+		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 NoSQL catalog item", i+1, len(nodes)),
+			"item_name", node.Name,
+			"item_type", itemType,
+			"count", count,
 		)
 
-		scannedCollections[collInfo.Name] = true
+		scannedByType[itemType][node.Name] = true
 
 		existingItem := existingCollectionMap[collInfo.Name]
 		needsUpdate := shouldUpdateCollection(existingItem, collInfo)
 
-		if !isDeepScan && existingItem != nil && !needsUpdate {
-			totalCollections++
+		if !strings.EqualFold(scanDepth, "deep") && existingItem != nil && !needsUpdate {
+			totalItems++
 			continue
 		}
 
 		var tableInfo *format.TableInfo
 		var attrs models.JSONMap
 
-		if isDeepScan {
+		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && docPlugin != nil {
 			parser, err := format.GetDocCollectionParser(resource.EngineType)
 			if err != nil {
 				s.log.Warn("未找到 Parser，跳过 Schema 推断", "engine_type", resource.EngineType, "error", err)
@@ -169,65 +180,35 @@ func (s *NoSQLScanService) scanCollections(
 		if attrs == nil {
 			attrs = models.JSONMap{}
 		}
-		attrs["document_count"] = collInfo.DocumentCount
-		attrs["size_bytes"] = collInfo.SizeBytes
+		for k, v := range node.Attributes {
+			attrs[k] = v
+		}
+		if itemType == "relationship" {
+			attrs["count"] = count
+		} else {
+			attrs["document_count"] = count
+		}
+		attrs["size_bytes"] = sizeBytes
 
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
-		docCount := collInfo.DocumentCount
-		sizeBytes := collInfo.SizeBytes
+		rowCount := count
 
-		_, err = s.repo.UpsertItem(tenantID, resource.ID, dbNode, "collection", collInfo.Name, fullName, attrs, &docCount, &sizeBytes, nil)
+		_, err = s.repo.UpsertItem(tenantID, resource.ID, dbNode, itemType, collInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil)
 		if err != nil {
-			s.log.Warn("保存集合元数据失败", "database", databaseName, "collection", collInfo.Name, "error", err)
+			s.log.Warn("保存 NoSQL item 元数据失败", "database", databaseName, "item", collInfo.Name, "item_type", itemType, "error", err)
 			continue
 		}
 
-		totalCollections++
+		totalItems++
 	}
 
-	s.softDeleteMissingCollections(tenantID, resource.ID, dbNode.ID, scannedCollections)
-	return totalCollections, totalFields, nil
-}
-
-// scanNodeLabels 扫描图数据库的节点标签（GraphDBPlugin 专用）
-func (s *NoSQLScanService) scanNodeLabels(
-	ctx context.Context,
-	graphPlugin plugin.GraphDBPlugin,
-	connInfo plugin.ConnectionInfo,
-	resource *commonModels.Engine,
-	tenantID uint,
-	dbNode *models.MetaNode,
-	databaseName string,
-) (int, error) {
-	labels, err := graphPlugin.ListNodeLabels(ctx, connInfo, databaseName)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list node labels: %w", err)
-	}
-
-	s.log.Info("扫描到的节点标签", "database", databaseName, "labels_count", len(labels))
-
-	scannedLabels := make(map[string]bool)
-	total := 0
-
-	for _, label := range labels {
-		scannedLabels[label.Name] = true
-
-		attrs := models.JSONMap{
-			"document_count": label.Count,
-		}
-		fullName := fmt.Sprintf("%s.%s", databaseName, label.Name)
-		count := label.Count
-
-		_, err := s.repo.UpsertItem(tenantID, resource.ID, dbNode, "label", label.Name, fullName, attrs, &count, nil, nil)
-		if err != nil {
-			s.log.Warn("保存节点标签元数据失败", "database", databaseName, "label", label.Name, "error", err)
+	for itemType, scanned := range scannedByType {
+		if len(scanned) == 0 {
 			continue
 		}
-		total++
+		s.softDeleteMissingItemsByType(tenantID, resource.ID, dbNode.ID, itemType, scanned)
 	}
-
-	s.softDeleteMissingItemsByType(tenantID, resource.ID, dbNode.ID, "label", scannedLabels)
-	return total, nil
+	return totalItems, totalFields, nil
 }
 
 // buildDocCollectionAttributes 构建文档集合的属性
@@ -269,10 +250,10 @@ func buildDocFieldAttributes(fields []format.FieldInfo) []map[string]interface{}
 	result := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		fieldAttr := map[string]interface{}{
-			"name":          field.Name,
-			"type":          string(field.Type),
-			"original_type": field.OriginalType,
-			"nullable":      field.Nullable,
+			"name":           field.Name,
+			"type":           string(field.Type),
+			"original_type":  field.OriginalType,
+			"nullable":       field.Nullable,
 			"is_primary_key": field.IsPrimaryKey,
 		}
 
@@ -317,11 +298,6 @@ func abs64(n int64) int64 {
 	return n
 }
 
-// softDeleteMissingCollections 软删除不存在的集合（MongoDB）
-func (s *NoSQLScanService) softDeleteMissingCollections(tenantID, engineID, dbNodeID uint, scannedCollections map[string]bool) {
-	s.softDeleteMissingItemsByType(tenantID, engineID, dbNodeID, "collection", scannedCollections)
-}
-
 // softDeleteMissingItemsByType 按 item_type 软删除不存在的数据项
 func (s *NoSQLScanService) softDeleteMissingItemsByType(tenantID, engineID, dbNodeID uint, itemType string, scanned map[string]bool) {
 	var items []models.MetaItem
@@ -362,49 +338,22 @@ func getCollectionItems(db *gorm.DB, tenantID, engineID, dbNodeID uint) []models
 	return items
 }
 
-// scanRelationshipTypes 扫描图数据库的关系类型并持久化为 MetaItem（item_type="relationship"）
-func (s *NoSQLScanService) scanRelationshipTypes(
-	ctx context.Context,
-	graphPlugin plugin.GraphDBPlugin,
-	connInfo plugin.ConnectionInfo,
-	resource *commonModels.Engine,
-	tenantID uint,
-	dbNode *models.MetaNode,
-	databaseName string,
-) {
-	relTypes, err := graphPlugin.ListRelationshipTypes(ctx, connInfo, databaseName)
-	if err != nil {
-		s.log.Warn("扫描关系类型失败", "database", databaseName, "error", err)
-		return
+func noSQLItemType(node plugin.CatalogNode) string {
+	switch node.Kind {
+	case plugin.CatalogKindCollection:
+		return "collection"
+	case plugin.CatalogKindLabel:
+		return "label"
+	case plugin.CatalogKindRelationship:
+		return "relationship"
+	default:
+		return ""
 	}
+}
 
-	s.log.Info("扫描到的关系类型", "database", databaseName, "count", len(relTypes))
-
-	scannedRelTypes := make(map[string]bool)
-	for _, rel := range relTypes {
-		scannedRelTypes[rel.Name] = true
-
-		attrs := models.JSONMap{
-			"count":       rel.Count,
-			"from_labels": rel.FromLabels,
-			"to_labels":   rel.ToLabels,
-		}
-
-		fullName := fmt.Sprintf("%s.%s", databaseName, rel.Name)
-		count := rel.Count
-		_, err := s.repo.UpsertItem(tenantID, resource.ID, dbNode, "relationship", rel.Name, fullName, attrs, &count, nil, nil)
-		if err != nil {
-			s.log.Warn("保存关系类型元数据失败", "database", databaseName, "rel_type", rel.Name, "error", err)
-		}
+func countStatKey(itemType string) string {
+	if itemType == "relationship" {
+		return "count"
 	}
-
-	// 软删除不再存在的关系类型
-	var existingRels []models.MetaItem
-	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, resource.ID, dbNode.ID, "relationship").Find(&existingRels)
-	for _, item := range existingRels {
-		if !scannedRelTypes[item.Name] {
-			s.db.Delete(&item)
-		}
-	}
+	return "document_count"
 }

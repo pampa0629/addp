@@ -48,9 +48,88 @@ func (p *Neo4jPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-// GenerateCapabilities 生成资源能力描述
-func (p *Neo4jPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"graph_db","engine":"neo4j","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"图数据库查询（Cypher）","features":["graph_algorithms","knowledge_graph","cypher_query","property_graph"]}]}`
+func (p *Neo4jPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    p.Type(),
+		EngineFamily:  "graph",
+		Storage: &plugin.StorageCapabilities{
+			Families: []string{"graph"},
+			CatalogModel: &plugin.CatalogModelSpec{
+				PathVersion: plugin.CatalogPathVersion,
+				RootTerm:    "server",
+				Levels: []plugin.CatalogLevelSpec{
+					{Term: "database", Kinds: []string{"namespace"}, Container: true},
+					{Term: "label", Kinds: []string{"label", "relationship"}, Item: true},
+				},
+			},
+			Catalog: &plugin.CatalogCapability{
+				Supported:       true,
+				RealTime:        true,
+				SystemFiltering: true,
+				NodeKinds:       []string{"namespace", "label", "relationship"},
+			},
+			Metadata: &plugin.MetadataCapability{
+				Supported:      true,
+				FieldSchema:    true,
+				Statistics:     true,
+				NativeMetadata: true,
+			},
+			Store: &plugin.StoreCapability{
+				Read:       true,
+				Write:      true,
+				BatchRead:  true,
+				BatchWrite: true,
+			},
+		},
+		Compute: &plugin.ComputeCapabilities{
+			Query: &plugin.QueryCapability{
+				Supported:       true,
+				Languages:       []string{"cypher"},
+				DefaultLanguage: "cypher",
+				ResultKinds:     []string{"table", "graph"},
+				SupportsExplain: true,
+			},
+		},
+		Preview: &plugin.PreviewCapabilities{
+			Supported:    true,
+			Modes:        []string{"graph_sample", "tabular_rows"},
+			MaxRows:      1000,
+			UsesComposer: true,
+		},
+	}
+}
+
+func (p *Neo4jPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.GraphCatalogModel()
+}
+
+func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListGraphCatalogChildren(ctx, p, parent.EngineID, connInfo, parent, opts)
+}
+
+func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveGraphCatalogPath(ctx, p, path.EngineID, connInfo, path)
+}
+
+func (p *Neo4jPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeGraphItem(ctx, p, path.EngineID, connInfo, path, opts)
+}
+
+func (p *Neo4jPlugin) QueryLanguages() []string {
+	return []string{"cypher"}
+}
+
+func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return p.generateSampleQuery(ctx, connInfo)
+}
+
+func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.executeQuery(ctx, connInfo, req.Query)
+}
+
+func (p *Neo4jPlugin) ExecuteRuntimeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
+	return p.executeGraphQuery(ctx, connInfo, cypher)
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -97,11 +176,6 @@ func (p *Neo4jPlugin) TestConnection(ctx context.Context, connInfo plugin.Connec
 	}
 
 	return nil
-}
-
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-func (p *Neo4jPlugin) SupportsMetadataQuery() bool {
-	return true
 }
 
 // createDriver 创建 Neo4j driver（内部辅助方法）
@@ -346,10 +420,8 @@ func (p *Neo4jPlugin) GetGraphSchema(ctx context.Context, connInfo plugin.Connec
 	return &plugin.GraphSchema{NodeLabels: labels, Relationships: rels}, nil
 }
 
-// ============ GraphQueryPlugin 接口实现 ============
-
-// ExecuteGraphQuery 实现 GraphQueryPlugin 接口 - 执行 Cypher 查询并提取图数据
-func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.GraphQueryResult, error) {
+// executeGraphQuery 执行 Cypher 查询并提取图数据。
+func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.GraphQueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -501,9 +573,8 @@ func (p *Neo4jPlugin) CloseClient(ctx context.Context, client interface{}) error
 	return driver.Close(ctx)
 }
 
-// GenerateSampleQuery 实现 QueryablePlugin 接口
 // 查询数据库中第一个 Node Label，生成可执行的 Cypher 查询
-func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
+func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
 	const fallback = "MATCH (n)\nRETURN n\nLIMIT 10"
 
 	driver, err := p.createDriver(ctx, connInfo)
@@ -539,9 +610,10 @@ func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.C
 
 	return fmt.Sprintf("MATCH (n:%s)\nRETURN n\nLIMIT 10", label), "cypher"
 }
+
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
 // 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
-func (p *Neo4jPlugin) ExecuteQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -675,4 +747,3 @@ func convertNeo4jValue(v interface{}) interface{} {
 		return val
 	}
 }
-

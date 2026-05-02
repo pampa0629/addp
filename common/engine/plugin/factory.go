@@ -48,15 +48,15 @@ func ValidateConnectionInfo(engineType string, connInfo ConnectionInfo) error {
 	return plugin.ValidateConnectionInfo(connInfo)
 }
 
-// GenerateCapabilities 统一入口：生成引擎能力描述
-// 自动查找对应类型的插件并调用其 GenerateCapabilities 方法
+// GenerateCapabilities 统一入口：生成结构化引擎能力声明 JSON
+// 自动查找对应类型的插件并序列化其 Capabilities 结构
 func GenerateCapabilities(engineType string) (string, error) {
 	plugin, err := Get(engineType)
 	if err != nil {
 		return "", err
 	}
 
-	return plugin.GenerateCapabilities(), nil
+	return MarshalEngineCapabilities(plugin.Capabilities())
 }
 
 // GetRequiredFields 获取指定类型的必填字段列表
@@ -161,70 +161,139 @@ func GetOrCreatePoolFromFactory(engine *Engine, config *PoolConfig) (*gorm.DB, e
 
 // === 元数据查询相关方法 ===
 
-// ListSchemas 列出所有Schema（供Meta模块使用）
+// ListSchemas 列出所有第一层命名空间（Schema/Database）。
+// db 参数保留用于旧调用方兼容；实际查询统一走 CatalogProvider。
 func ListSchemas(ctx context.Context, resource *Engine, db *gorm.DB) ([]SchemaInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
-	if db == nil {
-		return nil, fmt.Errorf("database connection cannot be nil")
-	}
 
-	plugin, err := Get(resource.EngineType)
+	enginePlugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(RelationalDBPlugin)
+	catalogProvider, ok := enginePlugin.(CatalogProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", resource.EngineType)
 	}
 
-	return metaPlugin.ListSchemas(ctx, db)
+	nodes, err := catalogProvider.ListChildren(ctx, resource.ConnectionInfo, CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: resource.ID,
+	}, ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	schemas := make([]SchemaInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsContainer {
+			continue
+		}
+		tableCount := 0
+		if count, ok := int64Stat(node.Stats, "table_count"); ok {
+			tableCount = int(count)
+		}
+		schemas = append(schemas, SchemaInfo{
+			Name:       node.Name,
+			TableCount: tableCount,
+		})
+	}
+	return schemas, nil
 }
 
-// ListTables 列出指定Schema下的所有表（供Meta模块使用）
+// ListTables 列出指定命名空间下的表。
+// db 参数保留用于旧调用方兼容；实际查询统一走 CatalogProvider。
 func ListTables(ctx context.Context, resource *Engine, db *gorm.DB, schema string) ([]TableInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
-	if db == nil {
-		return nil, fmt.Errorf("database connection cannot be nil")
-	}
 
-	plugin, err := Get(resource.EngineType)
+	enginePlugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(RelationalDBPlugin)
+	catalogProvider, ok := enginePlugin.(CatalogProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", resource.EngineType)
 	}
 
-	return metaPlugin.ListTables(ctx, db, schema)
+	nodes, err := catalogProvider.ListChildren(ctx, resource.ConnectionInfo, CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []CatalogSegment{{
+			Term: namespaceTermForPlugin(enginePlugin),
+			Kind: CatalogKindNamespace,
+			Name: schema,
+		}},
+	}, ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	tables := make([]TableInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsItem {
+			continue
+		}
+		rowCount, _ := int64Stat(node.Stats, "row_count")
+		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
+		tables = append(tables, TableInfo{
+			Schema:    schema,
+			TableName: node.Name,
+			RowCount:  rowCount,
+			SizeBytes: sizeBytes,
+		})
+	}
+	return tables, nil
 }
 
-// ListColumns 列出指定表的所有列（供Meta模块使用）
+// ListColumns 列出指定表的所有列。
+// db 参数保留用于旧调用方兼容；实际查询统一走 ItemMetadataProvider。
 func ListColumns(ctx context.Context, resource *Engine, db *gorm.DB, schema, table string) ([]ColumnInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
-	if db == nil {
-		return nil, fmt.Errorf("database connection cannot be nil")
-	}
 
-	plugin, err := Get(resource.EngineType)
+	enginePlugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(RelationalDBPlugin)
+	metadataProvider, ok := enginePlugin.(ItemMetadataProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not implement ItemMetadataProvider", resource.EngineType)
 	}
 
-	return metaPlugin.ListColumns(ctx, db, schema, table)
+	item, err := metadataProvider.DescribeItem(ctx, resource.ConnectionInfo, CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []CatalogSegment{
+			{Term: namespaceTermForPlugin(enginePlugin), Kind: CatalogKindNamespace, Name: schema},
+			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: table},
+		},
+	}, MetadataOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	columns := make([]ColumnInfo, 0, len(item.Fields))
+	for _, field := range item.Fields {
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		columns = append(columns, ColumnInfo{
+			ColumnName:   field.Name,
+			DataType:     dataType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
+		})
+	}
+	return columns, nil
 }
 
 // GetTableRowCount 获取表的行数（供Meta模块使用）
@@ -269,6 +338,37 @@ func SupportsMetadataQuery(engineType string) bool {
 		return false
 	}
 
-	_, ok := plugin.(RelationalDBPlugin)
-	return ok
+	capabilities := plugin.Capabilities()
+	return capabilities.Storage != nil &&
+		capabilities.Storage.Metadata != nil &&
+		capabilities.Storage.Metadata.Supported
+}
+
+func namespaceTermForPlugin(p EnginePlugin) string {
+	if relPlugin, ok := p.(RelationalDBPlugin); ok {
+		return relPlugin.SchemaNodeType()
+	}
+	if modelProvider, ok := p.(CatalogModelProvider); ok {
+		model := modelProvider.CatalogModel()
+		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
+			return model.Levels[0].Term
+		}
+	}
+	return CatalogTermDatabase
+}
+
+func int64Stat(stats map[string]interface{}, key string) (int64, bool) {
+	if stats == nil {
+		return 0, false
+	}
+	switch v := stats[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	default:
+		return 0, false
+	}
 }

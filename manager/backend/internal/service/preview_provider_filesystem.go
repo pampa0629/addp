@@ -38,7 +38,7 @@ func (p *fileSystemPreviewProvider) Supports(req *PreviewRequest) bool {
 	if req == nil || req.Engine == nil {
 		return false
 	}
-	// 支持所有实现了 FileSystemPlugin 的引擎（nfs 等）
+	// 目录列举与文件元数据暂时仍依赖 FileSystemPlugin；文件内容读取优先消费新的 ContentReadableProvider。
 	pl, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return false
@@ -64,6 +64,7 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement FileSystemPlugin", engine.EngineType)
 	}
+	contentReader, _ := pl.(plugin.ContentReadableProvider)
 
 	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
 
@@ -94,7 +95,7 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}
 
 	// 文件预览
-	return p.previewFile(ctx, fsPlugin, connInfo, engine, rootName, fullPath, preview)
+	return p.previewFile(ctx, fsPlugin, contentReader, connInfo, engine, rootName, fullPath, preview)
 }
 
 func (p *fileSystemPreviewProvider) previewDirectory(
@@ -143,6 +144,7 @@ func (p *fileSystemPreviewProvider) previewDirectory(
 func (p *fileSystemPreviewProvider) previewFile(
 	ctx context.Context,
 	fsPlugin plugin.FileSystemPlugin,
+	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
 	rootName, filePath string,
@@ -181,10 +183,10 @@ func (p *fileSystemPreviewProvider) previewFile(
 		if handler != nil {
 			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
+					return openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
 				}
 				siblingProvider := func(path string) (io.ReadCloser, error) {
-					return readFileSystemSibling(ctxTimeout, fsPlugin, connInfo, path)
+					return readFileSystemSibling(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, path)
 				}
 				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, contentReq, streamer, siblingProvider)
 				if err != nil {
@@ -199,7 +201,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 				}
 			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
+					return openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
 				}
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, streamer)
 				if err != nil {
@@ -217,7 +219,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 					if limit <= 0 {
 						limit = maxTextPreviewBytes
 					}
-					rc, err := fsPlugin.ReadFile(ctxTimeout, connInfo, filePath)
+					rc, err := openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
 					if err != nil {
 						return nil, false, err
 					}
@@ -244,13 +246,23 @@ func (p *fileSystemPreviewProvider) previewFile(
 	return preview, nil
 }
 
-func readFileSystemSibling(ctx context.Context, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func openFileSystemContent(ctx context.Context, contentReader plugin.ContentReadableProvider, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
+	if contentReader != nil {
+		return contentReader.OpenContent(ctx, connInfo, fileSystemCatalogPath(engineID, path), plugin.ReadOptions{})
+	}
+	if fsPlugin != nil {
+		return fsPlugin.ReadFile(ctx, connInfo, path)
+	}
+	return nil, fs.ErrNotExist
+}
+
+func readFileSystemSibling(ctx context.Context, contentReader plugin.ContentReadableProvider, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
 	if fsPlugin == nil {
 		return nil, fs.ErrNotExist
 	}
 	var lastErr error
 	for _, candidate := range candidateSiblingPathVariants(path) {
-		reader, err := fsPlugin.ReadFile(ctx, connInfo, candidate)
+		reader, err := openFileSystemContent(ctx, contentReader, fsPlugin, connInfo, engineID, candidate)
 		if err == nil {
 			return reader, nil
 		}
@@ -266,6 +278,18 @@ func readFileSystemSibling(ctx context.Context, fsPlugin plugin.FileSystemPlugin
 		return nil, fs.ErrNotExist
 	}
 	return nil, lastErr
+}
+
+func fileSystemCatalogPath(engineID uint, path string) plugin.CatalogPath {
+	return plugin.CatalogPath{
+		Version:  "engine.catalog.path/v1",
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{{
+			Term: "path",
+			Kind: "file",
+			Name: path,
+		}},
+	}
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径

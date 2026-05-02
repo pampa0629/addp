@@ -17,12 +17,12 @@ import (
 // DatabaseScanService 数据库扫描服务
 // 职责：扫描关系型数据库（PostgreSQL、MySQL等）的Schema、Table、Field
 type DatabaseScanService struct {
-	db               *gorm.DB
-	log              *slog.Logger
-	indexer          *search.Indexer
-	repo             *ScanRepository // 数据访问层
-	spatialService   *SpatialMetadataService // 空间元数据扫描服务
-	indexerService   *IndexerService         // 索引服务
+	db             *gorm.DB
+	log            *slog.Logger
+	indexer        *search.Indexer
+	repo           *ScanRepository         // 数据访问层
+	spatialService *SpatialMetadataService // 空间元数据扫描服务
+	indexerService *IndexerService         // 索引服务
 }
 
 // NewDatabaseScanService 创建数据库扫描服务
@@ -63,24 +63,19 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	// 2. 类型断言为 RelationalDBPlugin
-	relPlugin, ok := p.(plugin.RelationalDBPlugin)
+	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
+	metadataProvider, ok := p.(plugin.ItemMetadataProvider)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement ItemMetadataProvider", resource.EngineType)
 	}
 
-	// 3. 获取连接池
-	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, nil)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create connection pool: %w", err)
-	}
+	db := s.tryOpenConnectionPool(resource)
 
-	// 4. 创建/更新 Schema 节点
-	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, relPlugin.SchemaNodeType(), schemaName, nil, nil)
+	// 2. 创建/更新 Schema/Database 节点
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, namespaceTermForPlugin(p), schemaName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -89,8 +84,8 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 		return 0, 0, 0, err
 	}
 
-	// 5. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, relPlugin, db, tenantID, engineID, schemaNode, schemaName, scanDepth)
+	// 3. 扫描表
+	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
@@ -115,7 +110,8 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 func (s *DatabaseScanService) scanTables(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	relPlugin plugin.RelationalDBPlugin,
+	catalogProvider plugin.CatalogProvider,
+	metadataProvider plugin.ItemMetadataProvider,
 	db *gorm.DB,
 	tenantID, engineID uint,
 	schemaNode *models.MetaNode,
@@ -135,8 +131,7 @@ func (s *DatabaseScanService) scanTables(
 		"existing_tables", len(existingTableMap),
 	)
 
-	// 扫描表列表（直接调用 RelationalDBPlugin）
-	pluginTables, err := relPlugin.ListTables(ctx, db, schemaName)
+	pluginTables, err := s.listTables(ctx, resource, catalogProvider, schemaName)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -187,7 +182,7 @@ func (s *DatabaseScanService) scanTables(
 		}
 
 		// 扫描表字段和元数据
-		fields, attrs, err := s.scanTableDetails(ctx, resource, relPlugin, db, schemaName, tableInfo, existingItem, isDeepScan)
+		fields, attrs, err := s.scanTableDetails(ctx, resource, metadataProvider, db, schemaName, tableInfo, existingItem, isDeepScan)
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
@@ -238,11 +233,70 @@ func (s *DatabaseScanService) scanTables(
 	return totalTables, totalFields, nil
 }
 
+func (s *DatabaseScanService) listTables(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	schemaName string,
+) ([]plugin.TableInfo, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []plugin.CatalogSegment{{
+			Term: namespaceTermForPlugin(catalogProvider),
+			Kind: plugin.CatalogKindNamespace,
+			Name: schemaName,
+		}},
+	}, plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]plugin.TableInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsItem {
+			continue
+		}
+		rowCount, _ := int64Stat(node.Stats, "row_count")
+		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
+		tables = append(tables, plugin.TableInfo{
+			Schema:    schemaName,
+			TableName: node.Name,
+			RowCount:  rowCount,
+			SizeBytes: sizeBytes,
+		})
+	}
+	return tables, nil
+}
+
+func (s *DatabaseScanService) tryOpenConnectionPool(resource *commonModels.Engine) *gorm.DB {
+	p, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return nil
+	}
+	if _, ok := p.(plugin.ConnectionPoolPlugin); !ok {
+		return nil
+	}
+	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+		ID:             resource.ID,
+		EngineType:     resource.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}, nil)
+	if err != nil {
+		s.log.Warn("创建连接池失败，跳过连接池增强元数据",
+			"engine_id", resource.ID,
+			"engine_type", resource.EngineType,
+			"error", err,
+		)
+		return nil
+	}
+	return db
+}
+
 // scanTableDetails 扫描表的详细信息（字段、空间元数据等）
 func (s *DatabaseScanService) scanTableDetails(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	relPlugin plugin.RelationalDBPlugin,
+	metadataProvider plugin.ItemMetadataProvider,
 	db *gorm.DB,
 	schemaName string,
 	tableInfo format.ScannerTableInfo,
@@ -253,8 +307,7 @@ func (s *DatabaseScanService) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		// 扫描字段（直接调用 RelationalDBPlugin）
-		pluginColumns, err := relPlugin.ListColumns(ctx, db, schemaName, tableInfo.Name)
+		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
@@ -275,36 +328,34 @@ func (s *DatabaseScanService) scanTableDetails(
 			"table", tableInfo.Name,
 			"field_count", len(fields),
 		)
-	// 提取主键信息
-	primaryKeyColumns := []string{}
-	for _, field := range fields {
-		if field.IsPrimaryKey {
-			primaryKeyColumns = append(primaryKeyColumns, field.Name)
+		// 提取主键信息
+		primaryKeyColumns := []string{}
+		for _, field := range fields {
+			if field.IsPrimaryKey {
+				primaryKeyColumns = append(primaryKeyColumns, field.Name)
+			}
 		}
-	}
 
-	// 如果有主键，查询主键约束名
-	var primaryKeyName string
-	if len(primaryKeyColumns) > 0 {
-		primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
-	}
-
-
+		// 如果有主键，查询主键约束名
+		var primaryKeyName string
+		if len(primaryKeyColumns) > 0 && db != nil {
+			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
+		}
 
 		attrs = models.JSONMap{
 			"schema":        schemaName,
 			"table_type":    tableInfo.Type,
 			"table_comment": tableInfo.Comment,
 			"fields":        buildFieldAttributes(fields),
-		"table_metadata": map[string]interface{}{
-			"primary_key":      primaryKeyColumns,
-			"primary_key_name": primaryKeyName,
-			"has_primary_key":  len(primaryKeyColumns) > 0,
-		},
+			"table_metadata": map[string]interface{}{
+				"primary_key":      primaryKeyColumns,
+				"primary_key_name": primaryKeyName,
+				"has_primary_key":  len(primaryKeyColumns) > 0,
+			},
 		}
 
 		// 扫描空间元数据（仅 PostgreSQL）
-		if resource.EngineType == "postgresql" {
+		if resource.EngineType == "postgresql" && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
 				attrs["spatial_metadata"] = spatialMeta
@@ -331,6 +382,41 @@ func (s *DatabaseScanService) scanTableDetails(
 	}
 
 	return fields, attrs, nil
+}
+
+func (s *DatabaseScanService) listColumns(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	metadataProvider plugin.ItemMetadataProvider,
+	schemaName string,
+	tableName string,
+) ([]plugin.ColumnInfo, error) {
+	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []plugin.CatalogSegment{
+			{Term: namespaceTermForPlugin(metadataProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
+			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
+		},
+	}, plugin.MetadataOptions{})
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]plugin.ColumnInfo, 0, len(item.Fields))
+	for _, field := range item.Fields {
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		columns = append(columns, plugin.ColumnInfo{
+			ColumnName:   field.Name,
+			DataType:     dataType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
+		})
+	}
+	return columns, nil
 }
 
 // scanSpatialMetadata 扫描PostGIS空间元数据

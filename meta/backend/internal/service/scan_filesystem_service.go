@@ -16,7 +16,7 @@ import (
 )
 
 // FileSystemScanService 文件系统扫描服务
-// 职责：扫描 FileSystemPlugin 类型的存储引擎，识别湖表等复合数据项
+// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 FileSystemPlugin 读取内容识别湖表等复合数据项
 type FileSystemScanService struct {
 	db      *gorm.DB
 	log     *slog.Logger
@@ -55,11 +55,15 @@ func (s *FileSystemScanService) ScanPaths(
 	if !ok {
 		return 0, 0, fmt.Errorf("engine %s does not implement FileSystemPlugin", resource.EngineType)
 	}
+	catalogProvider, _ := p.(plugin.CatalogProvider)
+	if catalogProvider == nil {
+		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
 	// 始终先获取根节点列表，建立 path→name 映射
-	allRoots, err := fsPlugin.ListRoots(context.Background(), connInfo)
+	allRoots, err := s.listRoots(context.Background(), resource, catalogProvider, connInfo)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list roots: %w", err)
 	}
@@ -114,7 +118,7 @@ func (s *FileSystemScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), fsPlugin, connInfo, resource, tenantID, rootPath, rootNode, true)
+		items, scanErr := s.scanDirectory(context.Background(), fsPlugin, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -136,6 +140,7 @@ func (s *FileSystemScanService) ScanPaths(
 func (s *FileSystemScanService) scanDirectory(
 	ctx context.Context,
 	fsPlugin plugin.FileSystemPlugin,
+	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -143,7 +148,7 @@ func (s *FileSystemScanService) scanDirectory(
 	parentNode *models.MetaNode,
 	isBucketRoot bool,
 ) (int, error) {
-	files, subdirs, err := fsPlugin.ListDirectory(ctx, connInfo, dirPath)
+	files, subdirs, err := s.listDirectory(ctx, resource, fsPlugin, catalogProvider, connInfo, dirPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
@@ -308,7 +313,7 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, fsPlugin, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
+		items, scanErr := s.scanDirectory(ctx, fsPlugin, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
@@ -319,6 +324,104 @@ func (s *FileSystemScanService) scanDirectory(
 	}
 
 	return totalItems, nil
+}
+
+func (s *FileSystemScanService) listRoots(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	connInfo plugin.ConnectionInfo,
+) ([]plugin.RootEntry, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+	}, plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	roots := make([]plugin.RootEntry, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsContainer {
+			continue
+		}
+		rootPath := node.Path.StringPath()
+		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+			rootPath = raw
+		}
+		roots = append(roots, plugin.RootEntry{
+			Name: node.Name,
+			Path: rootPath,
+		})
+	}
+	return roots, nil
+}
+
+func (s *FileSystemScanService) listDirectory(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	fsPlugin plugin.FileSystemPlugin,
+	catalogProvider plugin.CatalogProvider,
+	connInfo plugin.ConnectionInfo,
+	dirPath string,
+) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	files := make([]plugin.FileEntry, 0, len(nodes))
+	subdirs := make([]plugin.DirEntry, 0, len(nodes))
+	for _, node := range nodes {
+		nodePath := node.Path.StringPath()
+		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+			nodePath = raw
+		}
+		if node.IsContainer {
+			subdirs = append(subdirs, plugin.DirEntry{
+				Name: node.Name,
+				Path: nodePath,
+			})
+			continue
+		}
+		if !node.IsItem {
+			continue
+		}
+		size, _ := int64Stat(node.Stats, "size_bytes")
+		contentType, _ := node.Attributes["content_type"].(string)
+		files = append(files, plugin.FileEntry{
+			Name:        node.Name,
+			Path:        nodePath,
+			Size:        size,
+			ContentType: contentType,
+		})
+	}
+	return files, subdirs, nil
+}
+
+func fileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {
+	path := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{{
+			Term: plugin.CatalogTermRoot,
+			Kind: plugin.CatalogKindRoot,
+			Name: "/",
+		}},
+	}
+	trimmed := strings.Trim(rawPath, "/")
+	if trimmed == "" || trimmed == "." {
+		return path
+	}
+	for _, part := range strings.Split(trimmed, "/") {
+		if part == "" {
+			continue
+		}
+		path.Segments = append(path.Segments, plugin.CatalogSegment{
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindPrefix,
+			Name: part,
+		})
+	}
+	return path
 }
 
 // joinFSPath 拼接文件系统路径
@@ -355,4 +458,3 @@ func inferItemName(dirPath string) (name, fullName string) {
 	fullName = cleaned
 	return
 }
-

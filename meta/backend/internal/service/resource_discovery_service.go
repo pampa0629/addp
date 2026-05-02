@@ -78,112 +78,34 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	// 3. 尝试关系型数据库插件
-	if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
-		return s.listRelationalSchemas(engineID, resource, relPlugin)
+	// 3. 优先使用统一 CatalogProvider 获取第一层真实节点
+	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
+		return s.listCatalogSchemas(engineID, resource, catalogProvider)
 	}
 
-	// 4. 尝试 NoSQL 数据库插件
-	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
-		return s.listNoSQLSchemas(engineID, resource, nosqlPlugin)
-	}
-
-	// 5. 尝试文件系统插件（NFS/NAS 等）
-	if fsPlugin, ok := p.(plugin.FileSystemPlugin); ok {
-		return s.listFileSystemRoots(engineID, resource, fsPlugin)
-	}
-
-	return nil, fmt.Errorf("engine %s does not implement RelationalDBPlugin, NoSQLPlugin or FileSystemPlugin", resource.EngineType)
+	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 }
 
-// listRelationalSchemas 列出关系型数据库的 Schema
-func (s *ResourceDiscoveryService) listRelationalSchemas(engineID uint, resource *commonModels.Engine, relPlugin plugin.RelationalDBPlugin) ([]*models.SchemaInfo, error) {
-	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, nil)
+func (s *ResourceDiscoveryService) listCatalogSchemas(engineID uint, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]*models.SchemaInfo, error) {
+	nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+	}, plugin.ListOptions{})
 	if err != nil {
-		// 连接失败：触发System刷新状态（异步，不阻塞）
 		s.engineService.TriggerConnectionCheck(engineID)
 		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
 			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
 		}
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
-	}
-
-	// 获取Schema列表
-	schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
-	if err != nil {
-		// 连接成功但查询失败，也触发刷新
-		s.engineService.TriggerConnectionCheck(engineID)
 		return nil, err
 	}
 
-	// 成功：如果之前是offline，触发刷新状态为online
 	if resource.ConnectionStatus == "offline" {
 		s.engineService.TriggerConnectionCheck(engineID)
 	}
 
-	// 转换并返回
-	var result []*models.SchemaInfo
-	for _, info := range schemasInfo {
-		result = append(result, &models.SchemaInfo{
-			Name: info.Name,
-		})
-	}
-	return result, nil
-}
-
-// listNoSQLSchemas 列出 NoSQL 数据库的 Database（作为 Schema）
-func (s *ResourceDiscoveryService) listNoSQLSchemas(engineID uint, resource *commonModels.Engine, nosqlPlugin plugin.NoSQLPlugin) ([]*models.SchemaInfo, error) {
-	// 对于 NoSQL，Database 对应 Schema
-	databases, err := nosqlPlugin.ListDatabases(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
-	if err != nil {
-		// 连接失败：触发System刷新状态（异步，不阻塞）
-		s.engineService.TriggerConnectionCheck(engineID)
-		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
-			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
-		}
-		return nil, fmt.Errorf("failed to list databases: %w", err)
-	}
-
-	// 成功：如果之前是offline，触发刷新状态为online
-	if resource.ConnectionStatus == "offline" {
-		s.engineService.TriggerConnectionCheck(engineID)
-	}
-
-	// 转换并返回
-	var result []*models.SchemaInfo
-	for _, db := range databases {
-		result = append(result, &models.SchemaInfo{
-			Name: db.Name,
-		})
-	}
-
-	return result, nil
-}
-
-// listFileSystemRoots 列出文件系统根节点（NFS/NAS 挂载点）作为 Schema
-func (s *ResourceDiscoveryService) listFileSystemRoots(engineID uint, resource *commonModels.Engine, fsPlugin plugin.FileSystemPlugin) ([]*models.SchemaInfo, error) {
-	roots, err := fsPlugin.ListRoots(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
-	if err != nil {
-		s.engineService.TriggerConnectionCheck(engineID)
-		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
-			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
-		}
-		return nil, fmt.Errorf("failed to list NFS roots: %w", err)
-	}
-
-	if resource.ConnectionStatus == "offline" {
-		s.engineService.TriggerConnectionCheck(engineID)
-	}
-
-	var result []*models.SchemaInfo
-	for _, root := range roots {
-		result = append(result, &models.SchemaInfo{
-			Name: root.Name,
-		})
+	result := make([]*models.SchemaInfo, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, &models.SchemaInfo{Name: node.Name})
 	}
 	return result, nil
 }
@@ -199,119 +121,139 @@ func (s *ResourceDiscoveryService) ListObjectStorageNodes(engineID, tenantID uin
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	// ObjectStoragePlugin（MinIO、S3）：用 ListBuckets + ListObjects
-	if objPlugin, ok := p.(plugin.ObjectStoragePlugin); ok {
-		return s.listObjectStorageNodes(resource, objPlugin, path)
+	// CatalogProvider：统一浏览真实 catalog 节点
+	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
+		return s.listCatalogObjectNodes(resource, catalogProvider, path)
 	}
 
-	// FileSystemPlugin（NFS 等）：用 ListRoots + ListDirectory
-	if fsPlugin, ok := p.(plugin.FileSystemPlugin); ok {
-		return s.listFileSystemNodes(resource, fsPlugin, path)
-	}
-
-	return nil, fmt.Errorf("engine %s does not support file/object browsing", resource.EngineType)
+	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 }
 
-func (s *ResourceDiscoveryService) listObjectStorageNodes(resource *commonModels.Engine, objPlugin plugin.ObjectStoragePlugin, path string) ([]*models.ObjectNode, error) {
-	bucket, prefix := splitObjectPath(path)
-
-	if bucket == "" {
-		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
-		if err != nil {
-			return nil, fmt.Errorf("failed to list buckets: %w", err)
-		}
-		var result []*models.ObjectNode
-		for _, b := range buckets {
-			result = append(result, &models.ObjectNode{
-				Name: b.Name,
-				Path: b.Name,
-				Type: "bucket",
-			})
-		}
-		return result, nil
-	}
-
-	objects, err := objPlugin.ListObjects(
-		context.Background(),
-		plugin.ConnectionInfo(resource.ConnectionInfo),
-		bucket,
-		prefix,
-		false,
-	)
+func (s *ResourceDiscoveryService) listCatalogObjectNodes(resource *commonModels.Engine, catalogProvider plugin.CatalogProvider, path string) ([]*models.ObjectNode, error) {
+	parent := catalogPathFromBrowserPath(resource.ID, path, storageFamily(catalogProvider))
+	nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), parent, plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*models.ObjectNode
-	for _, obj := range objects {
-		relativePath := strings.TrimPrefix(obj.Key, prefix)
-		if relativePath == "" {
-			continue
-		}
-		nodeType := "object"
-		name := filepath.Base(obj.Key)
-		if strings.HasSuffix(obj.Key, "/") {
-			nodeType = "prefix"
-			name = strings.TrimSuffix(name, "/")
+	result := make([]*models.ObjectNode, 0, len(nodes))
+	for _, node := range nodes {
+		nodePath := node.Path.StringPath()
+		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+			nodePath = raw
 		}
 		item := &models.ObjectNode{
-			Name:        name,
-			Path:        obj.Key,
-			Type:        nodeType,
-			SizeBytes:   obj.Size,
-			FileType:    filepath.Ext(obj.Key),
-			ObjectCount: 1,
+			Name: node.Name,
+			Path: nodePath,
+			Type: catalogNodeBrowserType(node),
 		}
-		if !obj.LastModified.IsZero() {
-			item.LastModified = obj.LastModified.Format("2006-01-02 15:04:05")
+		if size, ok := int64Stat(node.Stats, "size_bytes"); ok {
+			item.SizeBytes = size
+		}
+		if item.Type == "file" || item.Type == "object" {
+			item.FileType = filepath.Ext(node.Name)
 		}
 		result = append(result, item)
 	}
 	return result, nil
 }
 
-func (s *ResourceDiscoveryService) listFileSystemNodes(resource *commonModels.Engine, fsPlugin plugin.FileSystemPlugin, path string) ([]*models.ObjectNode, error) {
-	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+func catalogPathFromBrowserPath(engineID uint, path, family string) plugin.CatalogPath {
+	if family == "file" {
+		return catalogPathFromFileBrowserPath(engineID, path)
+	}
+	return catalogPathFromObjectBrowserPath(engineID, path)
+}
 
-	// 路径为空：列出根节点
+func catalogPathFromFileBrowserPath(engineID uint, path string) plugin.CatalogPath {
+	catalogPath := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+	}
+	trimmed := strings.Trim(path, "/")
 	if path == "" {
-		roots, err := fsPlugin.ListRoots(context.Background(), connInfo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list roots: %w", err)
-		}
-		var result []*models.ObjectNode
-		for _, r := range roots {
-			result = append(result, &models.ObjectNode{
-				Name: r.Name,
-				Path: r.Path,
-				Type: "root",
-			})
-		}
-		return result, nil
+		return catalogPath
 	}
-
-	// 列出指定目录内容
-	files, dirs, err := fsPlugin.ListDirectory(context.Background(), connInfo, path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list directory %s: %w", path, err)
+	catalogPath.Segments = append(catalogPath.Segments, plugin.CatalogSegment{
+		Term: plugin.CatalogTermRoot,
+		Kind: plugin.CatalogKindRoot,
+		Name: "/",
+	})
+	if trimmed == "" || trimmed == "." {
+		return catalogPath
 	}
-
-	var result []*models.ObjectNode
-	for _, d := range dirs {
-		result = append(result, &models.ObjectNode{
-			Name: d.Name,
-			Path: d.Path,
-			Type: "dir",
+	for _, part := range strings.Split(trimmed, "/") {
+		if part == "" {
+			continue
+		}
+		catalogPath.Segments = append(catalogPath.Segments, plugin.CatalogSegment{
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindPrefix,
+			Name: part,
 		})
 	}
-	for _, f := range files {
-		result = append(result, &models.ObjectNode{
-			Name:      f.Name,
-			Path:      f.Path,
-			Type:      "file",
-			SizeBytes: f.Size,
-			FileType:  filepath.Ext(f.Name),
+	return catalogPath
+}
+
+func catalogPathFromObjectBrowserPath(engineID uint, path string) plugin.CatalogPath {
+	catalogPath := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+	}
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return catalogPath
+	}
+
+	parts := strings.Split(trimmed, "/")
+	for i, part := range parts {
+		term := plugin.CatalogTermPrefix
+		kind := plugin.CatalogKindPrefix
+		if i == 0 {
+			term = plugin.CatalogTermBucket
+			kind = plugin.CatalogKindBucket
+		}
+		catalogPath.Segments = append(catalogPath.Segments, plugin.CatalogSegment{
+			Term: term,
+			Kind: kind,
+			Name: part,
 		})
 	}
-	return result, nil
+	return catalogPath
+}
+
+func catalogNodeBrowserType(node plugin.CatalogNode) string {
+	switch node.Kind {
+	case plugin.CatalogKindBucket:
+		return "bucket"
+	case plugin.CatalogKindRoot:
+		return "root"
+	case plugin.CatalogKindPrefix:
+		return "prefix"
+	case plugin.CatalogKindObject:
+		return "object"
+	case plugin.CatalogKindFile:
+		return "file"
+	default:
+		if node.IsContainer {
+			return "prefix"
+		}
+		return "object"
+	}
+}
+
+func int64Stat(stats map[string]interface{}, key string) (int64, bool) {
+	if stats == nil {
+		return 0, false
+	}
+	switch v := stats[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	default:
+		return 0, false
+	}
 }

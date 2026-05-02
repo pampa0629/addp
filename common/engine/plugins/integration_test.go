@@ -110,8 +110,12 @@ func TestPluginCapabilities(t *testing.T) {
 				tc.category, tc.dbType, p.EngineCategory())
 		}
 
-		// 验证能力字符串不为空
-		capabilities := p.GenerateCapabilities()
+		// 验证能力声明不为空
+		capabilities, err := plugin.GenerateCapabilities(tc.dbType)
+		if err != nil {
+			t.Errorf("Plugin '%s' failed to generate capabilities: %v", tc.dbType, err)
+			continue
+		}
 		if capabilities == "" {
 			t.Errorf("Plugin '%s' returned empty capabilities", tc.dbType)
 		}

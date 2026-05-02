@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/addp/common/engine/plugin"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/addp/common/engine/plugin"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -50,9 +50,49 @@ func (p *ClickHousePlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-// GenerateCapabilities 生成资源能力描述
-func (p *ClickHousePlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"clickhouse","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"OLAP分析查询","features":["columnar","distributed","real_time"]}]}`
+func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+		Write:           true,
+		BulkWrite:       true,
+		SupportsExplain: true,
+		WriterConnector: "jdbc",
+	})
+}
+
+func (p *ClickHousePlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.TabularCatalogModel(p.SchemaNodeType())
+}
+
+func (p *ClickHousePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+}
+
+func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+}
+
+func (p *ClickHousePlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+}
+
+func (p *ClickHousePlugin) QueryLanguages() []string {
+	return []string{"sql"}
+}
+
+func (p *ClickHousePlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return "SELECT *\nFROM your_database.your_table\nLIMIT 10", "sql"
+}
+
+func (p *ClickHousePlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+}
+
+func (p *ClickHousePlugin) SQLDialect() string {
+	return p.GetDialect()
+}
+
+func (p *ClickHousePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -83,7 +123,7 @@ func (p *ClickHousePlugin) BuildConnectionString(connInfo plugin.ConnectionInfo)
 
 	// ClickHouse DSN 格式：tcp://host:port?username=xxx&password=xxx&database=xxx
 	return plugin.ClickHouseStyleDSN(user, password, host, port, database, map[string]string{
-		"dial_timeout":      "10s",
+		"dial_timeout":       "10s",
 		"max_execution_time": "60",
 	}), nil
 }

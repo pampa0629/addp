@@ -41,8 +41,8 @@ func (p *JupyterPlugin) SensitiveFields() []string {
 	return []string{} // Jupyter 引擎通常不需要敏感字段
 }
 
-func (p *JupyterPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"dev_modes":["notebook"],"features":["interactive","parametrized","async"],"supported_languages":["python","shell"]}]}`
+func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook"}, []string{"python", "shell"})
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

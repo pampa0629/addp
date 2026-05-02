@@ -45,8 +45,47 @@ func (p *SparkSQLPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-func (p *SparkSQLPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"dev_modes":["query"],"description":"Apache Spark查询","features":["distributed","big_data"]}]}`
+func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+		Write:           false,
+		SupportsExplain: true,
+	})
+}
+
+func (p *SparkSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.TabularCatalogModel(p.SchemaNodeType())
+}
+
+func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+}
+
+func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+}
+
+func (p *SparkSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+}
+
+func (p *SparkSQLPlugin) QueryLanguages() []string {
+	return []string{"sql"}
+}
+
+func (p *SparkSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return "SELECT 1", "sql"
+}
+
+func (p *SparkSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+}
+
+func (p *SparkSQLPlugin) SQLDialect() string {
+	return "spark_sql"
+}
+
+func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return executeSparkSQL(ctx, connInfo, sql)
 }
 
 func (p *SparkSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -232,6 +271,73 @@ func (p *SparkSQLPlugin) GetDialect() string {
 	return "mysql" // Apache Spark 使用MySQL兼容协议
 }
 
+func executeSparkSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
+	port := plugin.GetInt(connInfo, "port")
+	if port == 0 {
+		port = (&SparkSQLPlugin{}).DefaultPort()
+	}
+
+	database := plugin.GetString(connInfo, "database")
+	if database == "" {
+		database = "default"
+	}
+	user := plugin.GetString(connInfo, "user")
+	password := plugin.GetString(connInfo, "password")
+
+	if host == "" {
+		return nil, fmt.Errorf("Spark 引擎缺少 host 配置")
+	}
+
+	configuration := gohive.NewConnectConfiguration()
+	if user != "" {
+		configuration.Username = user
+		if password != "" {
+			configuration.Password = password
+		}
+	}
+	configuration.ConnectTimeout = 30 * time.Second
+	configuration.SocketTimeout = 30 * time.Second
+
+	connection, err := gohive.Connect(host, port, "NONE", configuration)
+	if err != nil {
+		return nil, fmt.Errorf("连接 Spark Thrift Server 失败：%w", err)
+	}
+	defer connection.Close()
+
+	cursor := connection.Cursor()
+
+	if database != "default" && database != "" {
+		cursor.Exec(ctx, fmt.Sprintf("USE `%s`", database))
+		if cursor.Err != nil {
+			return nil, fmt.Errorf("切换数据库失败：%w", cursor.Err)
+		}
+	}
+
+	cursor.Exec(ctx, query)
+	if cursor.Err != nil {
+		return nil, fmt.Errorf("执行 Spark SQL 失败：%w", cursor.Err)
+	}
+
+	var resultRows []map[string]interface{}
+	var columns []string
+
+	for cursor.HasMore(ctx) {
+		row := cursor.RowMap(ctx)
+		if cursor.Err != nil {
+			return nil, fmt.Errorf("读取 Spark 结果失败：%w", cursor.Err)
+		}
+		if len(columns) == 0 {
+			for k := range row {
+				columns = append(columns, k)
+			}
+		}
+		resultRows = append(resultRows, row)
+	}
+
+	return &plugin.QueryResult{Columns: columns, Rows: resultRows}, nil
+}
+
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Schema（Apache Spark 中对应Database）
@@ -380,6 +486,16 @@ func (p *SparkSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, sche
 
 	return count, nil
 }
+
+func (p *SparkSQLPlugin) IsSystemSchema(schemaName string) bool {
+	systemSchemas := map[string]bool{
+		"information_schema": true,
+		"sys":                true,
+	}
+	return systemSchemas[strings.ToLower(schemaName)]
+}
+
+func (p *SparkSQLPlugin) SchemaNodeType() string { return "database" }
 
 // quoteSparkIdentifier 为 Spark SQL 标识符添加反引号以保留大小写
 func quoteSparkIdentifier(identifier string) string {

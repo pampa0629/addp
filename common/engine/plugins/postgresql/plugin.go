@@ -35,11 +35,6 @@ func (p *PostgreSQLPlugin) EngineCategory() string {
 	return "standard"
 }
 
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-func (p *PostgreSQLPlugin) SupportsMetadataQuery() bool {
-	return true
-}
-
 // DefaultPort 返回默认端口
 func (p *PostgreSQLPlugin) DefaultPort() int {
 	return 5432
@@ -55,9 +50,52 @@ func (p *PostgreSQLPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-// GenerateCapabilities 生成资源能力描述
-func (p *PostgreSQLPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"SQL查询"}]}`
+func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
+		Write:           true,
+		BulkWrite:       true,
+		Transactions:    true,
+		SpatialMetadata: true,
+		SupportsExplain: true,
+		SupportsCancel:  true,
+		WriterConnector: "postgres_copy",
+	})
+}
+
+func (p *PostgreSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.TabularCatalogModel(p.SchemaNodeType())
+}
+
+func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+}
+
+func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+}
+
+func (p *PostgreSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+}
+
+func (p *PostgreSQLPlugin) QueryLanguages() []string {
+	return []string{"sql"}
+}
+
+func (p *PostgreSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return "SELECT *\nFROM your_schema.your_table\nLIMIT 10", "sql"
+}
+
+func (p *PostgreSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+}
+
+func (p *PostgreSQLPlugin) SQLDialect() string {
+	return p.GetDialect()
+}
+
+func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
 // ValidateConnectionInfo 验证连接信息

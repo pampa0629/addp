@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package plugin_test
@@ -44,14 +45,14 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 			// 2. 按类别验证
 			switch category {
 			case "standard":
-				storagePlugin, ok := p.(plugin.StoragePlugin)
-				if !ok {
-					t.Errorf("standard engine should implement StoragePlugin")
+				capabilities := p.Capabilities()
+				if capabilities.Storage == nil || len(capabilities.Storage.Families) == 0 {
+					t.Errorf("standard engine should declare storage capabilities")
 					return
 				}
 
-				// 如果支持元数据查询，验证具体接口
-				if storagePlugin.SupportsMetadataQuery() {
+				// 如果支持元数据，验证具体接口
+				if capabilities.Storage.Metadata != nil && capabilities.Storage.Metadata.Supported {
 					// 检查是关系型DB还是对象存储
 					if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
 						t.Logf("%s implements RelationalDBPlugin ✓", dbType)
@@ -91,12 +92,12 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 				}
 
 			case "extension":
-				_, ok := p.(plugin.ComputePlugin)
-				if !ok {
-					t.Errorf("extension engine should implement ComputePlugin")
+				capabilities := p.Capabilities()
+				if capabilities.Compute == nil {
+					t.Errorf("extension engine should declare compute capabilities")
 					return
 				}
-				t.Logf("%s implements ComputePlugin ✓", dbType)
+				t.Logf("%s declares compute capabilities ✓", dbType)
 
 			default:
 				t.Errorf("unknown EngineCategory: %s", category)
@@ -121,13 +122,8 @@ func TestRelationalDBPlugins(t *testing.T) {
 				t.Errorf("expected category 'standard', got '%s'", p.EngineCategory())
 			}
 
-			// 类型断言
-			storagePlugin, ok := p.(plugin.StoragePlugin)
-			if !ok {
-				t.Fatalf("%s should implement StoragePlugin", dbType)
-			}
-
-			if !storagePlugin.SupportsMetadataQuery() {
+			capabilities := p.Capabilities()
+			if capabilities.Storage == nil || capabilities.Storage.Metadata == nil || !capabilities.Storage.Metadata.Supported {
 				t.Errorf("%s should support metadata query", dbType)
 			}
 
@@ -180,13 +176,8 @@ func TestObjectStoragePlugins(t *testing.T) {
 				t.Errorf("expected category 'standard', got '%s'", p.EngineCategory())
 			}
 
-			// 类型断言
-			storagePlugin, ok := p.(plugin.StoragePlugin)
-			if !ok {
-				t.Fatalf("%s should implement StoragePlugin", storageType)
-			}
-
-			if !storagePlugin.SupportsMetadataQuery() {
+			capabilities := p.Capabilities()
+			if capabilities.Storage == nil || capabilities.Storage.Metadata == nil || !capabilities.Storage.Metadata.Supported {
 				t.Errorf("%s should support metadata query", storageType)
 			}
 

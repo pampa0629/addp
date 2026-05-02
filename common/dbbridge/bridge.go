@@ -18,10 +18,10 @@ import (
 	_ "github.com/addp/common/engine/plugins/jupyter"
 	_ "github.com/addp/common/engine/plugins/math_workflow"
 	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/nfs"
 	_ "github.com/addp/common/engine/plugins/mongodb"
 	_ "github.com/addp/common/engine/plugins/mysql"
 	_ "github.com/addp/common/engine/plugins/neo4j"
+	_ "github.com/addp/common/engine/plugins/nfs"
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	_ "github.com/addp/common/engine/plugins/python_workflow"
 	_ "github.com/addp/common/engine/plugins/s3"
@@ -33,7 +33,7 @@ import (
 func BuildConnectionString(engine *models.Engine) (string, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
@@ -44,14 +44,14 @@ func BuildConnectionString(engine *models.Engine) (string, error) {
 func TestConnection(ctx context.Context, engine *models.Engine) error {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
 	return plugin.TestConnection(ctx, pluginEngine)
 }
 
-// GenerateCapabilities 使用插件系统生成能力描述
+// GenerateCapabilities 使用插件系统生成结构化能力声明 JSON
 func GenerateCapabilities(engineType string) (string, error) {
 	return plugin.GenerateCapabilities(engineType)
 }
@@ -83,12 +83,12 @@ func GetAllPlugins() map[string]PluginInfo {
 
 	for dbType, p := range plugins {
 		result[dbType] = PluginInfo{
-			Type:             p.Type(),
-			DisplayName:      p.DisplayName(),
-			Category:         p.EngineCategory(),
-			DefaultPort:      p.DefaultPort(),
-			RequiredFields:   p.RequiredFields(),
-			SensitiveFields:  p.SensitiveFields(),
+			Type:            p.Type(),
+			DisplayName:     p.DisplayName(),
+			Category:        p.EngineCategory(),
+			DefaultPort:     p.DefaultPort(),
+			RequiredFields:  p.RequiredFields(),
+			SensitiveFields: p.SensitiveFields(),
 		}
 	}
 
@@ -112,7 +112,7 @@ type PluginInfo struct {
 func GetOrCreatePool(engine *models.Engine, config *plugin.PoolConfig) (*gorm.DB, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.GetOrCreatePoolFromFactory(pluginEngine, config)
@@ -146,7 +146,7 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 func ListSchemas(ctx context.Context, engine *models.Engine, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListSchemas(ctx, pluginEngine, db)
@@ -156,7 +156,7 @@ func ListSchemas(ctx context.Context, engine *models.Engine, db *gorm.DB) ([]plu
 func ListTables(ctx context.Context, engine *models.Engine, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListTables(ctx, pluginEngine, db, schema)
@@ -166,7 +166,7 @@ func ListTables(ctx context.Context, engine *models.Engine, db *gorm.DB, schema 
 func ListColumns(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListColumns(ctx, pluginEngine, db, schema, table)
@@ -176,7 +176,7 @@ func ListColumns(ctx context.Context, engine *models.Engine, db *gorm.DB, schema
 func GetTableRowCount(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) (int64, error) {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
-		EngineType:   engine.EngineType,
+		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.GetTableRowCount(ctx, pluginEngine, db, schema, table)
@@ -196,20 +196,28 @@ func SupportsMetadataQuery(engineType string) bool {
 
 // ============ 统一查询执行 ============
 
-// SupportsDirectQuery 检查引擎是否实现了 QueryablePlugin（MongoDB/Neo4j 等）
+// SupportsDirectQuery 检查引擎是否实现了非 SQL 原生查询运行时（MongoDB/Neo4j 等）
 func SupportsDirectQuery(engineType string) bool {
 	p, err := plugin.Get(engineType)
 	if err != nil {
 		return false
 	}
-	_, ok := p.(plugin.QueryablePlugin)
-	return ok
+	if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
+		return false
+	}
+	if _, ok := p.(plugin.DocumentQueryRuntimeProvider); ok {
+		return true
+	}
+	if _, ok := p.(plugin.GraphQueryRuntimeProvider); ok {
+		return true
+	}
+	return false
 }
 
 // GenerateSampleQuery 生成该引擎一个可直接执行的样例查询
 //
 // 路由规则：
-//  1. 实现了 QueryablePlugin（MongoDB/Neo4j）→ 委托给插件的 GenerateSampleQuery，返回真实集合/Label
+//  1. 实现了 QueryRuntimeProvider（MongoDB/Neo4j）→ 委托给插件生成真实集合/Label 样例
 //  2. 实现了 RelationalDBPlugin（PostgreSQL/MySQL/Doris 等）→ 通过 GORM 查第一张表
 //  3. 其他（Spark/未知）→ 返回 "SELECT 1"
 func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query string, language string) {
@@ -220,9 +228,9 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 
 	p, err := plugin.Get(engineType)
 	if err == nil {
-		// NoSQL 引擎：插件自带 GenerateSampleQuery
-		if qp, ok := p.(plugin.QueryablePlugin); ok {
-			return qp.GenerateSampleQuery(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo))
+		// 原生查询引擎：插件自带 GenerateSampleQuery
+		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
+			return qp.GenerateSampleQuery(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.SampleQueryOptions{})
 		}
 
 		// SQL 关系型引擎：通过 GORM 连接池查第一张非系统表
@@ -252,17 +260,27 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 // ExecuteQuery 统一查询执行入口（适用于所有引擎类型）
 //
 // 路由规则（按优先级）：
-//  1. 引擎实现了 QueryablePlugin（MongoDB/Neo4j）→ 委托给插件原生执行
+//  1. 引擎实现了 QueryRuntimeProvider（MongoDB/Neo4j）→ 委托给插件原生执行
 //  2. engineType == "spark" → gohive Thrift 协议执行
 //  3. 其他 SQL 引擎（PostgreSQL/MySQL/Doris/ClickHouse）→ GORM 连接池执行
 func ExecuteQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
 	engineType := strings.ToLower(engine.EngineType)
+	queryOptions := plugin.QueryOptions{
+		EngineID:   engine.ID,
+		EngineType: engine.EngineType,
+	}
 
-	// 1. NoSQL 原生查询（MongoDB MQL、Neo4j Cypher）
+	// 1. 原生查询运行时（MongoDB MQL、Neo4j Cypher 等）
 	p, err := plugin.Get(engineType)
 	if err == nil {
-		if qp, ok := p.(plugin.QueryablePlugin); ok {
-			return qp.ExecuteQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query)
+		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
+			if _, isSQLRuntime := qp.(plugin.SQLQueryRuntimeProvider); !isSQLRuntime {
+				return qp.ExecuteRuntimeQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+					Language: firstQueryLanguage(qp.QueryLanguages()),
+					Query:    query,
+					Options:  queryOptions,
+				})
+			}
 		}
 	}
 
@@ -271,20 +289,30 @@ func ExecuteQuery(ctx context.Context, engine *models.Engine, query string) (*pl
 		return executeSparkQuery(ctx, engine, query)
 	}
 
-	// 3. 标准 SQL（GORM 连接池）
+	// 3. 标准 SQL 运行时。当前通过 QueryOptions 传入 engine 上下文，以便复用连接池。
+	if p != nil {
+		if sqlRuntime, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
+			return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, queryOptions)
+		}
+	}
+
+	// 4. 标准 SQL 兜底（GORM 连接池）
 	return executeSQLQuery(ctx, engine, query)
 }
 
 // ExecuteGraphQuery 统一图查询执行入口
-// 对支持 GraphQueryPlugin 的引擎（Neo4j 等）同时返回表格数据和图结构数据（节点/关系）
+// 对支持 GraphQueryRuntimeProvider 的引擎（Neo4j 等）同时返回表格数据和图结构数据（节点/关系）
 // 对其他引擎回退到 ExecuteQuery 并包装结果（GraphData 为 nil）
 func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.GraphQueryResult, error) {
 	engineType := strings.ToLower(engine.EngineType)
 
 	p, err := plugin.Get(engineType)
 	if err == nil {
-		if gqp, ok := p.(plugin.GraphQueryPlugin); ok {
-			return gqp.ExecuteGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query)
+		if gqp, ok := p.(plugin.GraphQueryRuntimeProvider); ok {
+			return gqp.ExecuteRuntimeGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
+				EngineID:   engine.ID,
+				EngineType: engine.EngineType,
+			})
 		}
 	}
 
@@ -354,6 +382,13 @@ func executeSQLQuery(ctx context.Context, engine *models.Engine, query string) (
 	}
 
 	return &plugin.QueryResult{Columns: columns, Rows: resultRows}, nil
+}
+
+func firstQueryLanguage(languages []string) string {
+	if len(languages) == 0 {
+		return ""
+	}
+	return languages[0]
 }
 
 // executeSparkQuery 通过 gohive Thrift 协议执行 Spark SQL

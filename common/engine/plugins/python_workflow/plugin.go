@@ -41,8 +41,8 @@ func (p *PythonWorkflowPlugin) SensitiveFields() []string {
 	return []string{} // 工作流引擎通常不需要敏感字段
 }
 
-func (p *PythonWorkflowPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"type":"spatial","engine":"geopandas"},{"type":"general","engine":"pandas"}]}`
+func (p *PythonWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
 }
 
 func (p *PythonWorkflowPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -104,23 +104,4 @@ func (p *PythonWorkflowPlugin) TestConnection(ctx context.Context, connInfo plug
 
 	fmt.Printf("[PythonWorkflowPlugin] ✅ 连接测试成功\n")
 	return nil
-}
-
-// === ComputePlugin 接口实现 ===
-
-// GetSupportedOperators 获取支持的算子列表
-func (p *PythonWorkflowPlugin) GetSupportedOperators() []string {
-	return []string{
-		// 空间算子
-		"buffer", "intersection", "union", "difference", "dissolve",
-		"clip", "overlay", "spatial_join", "centroid", "convex_hull",
-		// 数据处理算子
-		"filter", "select", "groupby", "join", "aggregate",
-		"sort", "rename", "drop", "fillna", "dropna",
-	}
-}
-
-// HealthCheckEndpoint 健康检查端点
-func (p *PythonWorkflowPlugin) HealthCheckEndpoint() string {
-	return "/health"
 }

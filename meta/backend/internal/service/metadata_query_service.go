@@ -207,24 +207,12 @@ func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName 
 		return nil, fmt.Errorf("获取插件失败: %w", err)
 	}
 
-	// 3. 检查是否是关系型数据库插件
-	relPlugin, ok := p.(plugin.RelationalDBPlugin)
+	metadataProvider, ok := p.(plugin.ItemMetadataProvider)
 	if !ok {
-		return nil, fmt.Errorf("引擎 %s 不支持关系型数据库查询", resource.EngineType)
+		return nil, fmt.Errorf("引擎 %s 不支持 item 元数据描述", resource.EngineType)
 	}
 
-	// 4. 获取数据库连接
-	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, nil)
-	if err != nil {
-		s.log.Error("创建数据库连接失败", "error", err)
-		return nil, fmt.Errorf("创建数据库连接失败: %w", err)
-	}
-
-	// 5. 解析表名（支持 schema.table 格式）
+	// 3. 解析表名（支持 schema.table 格式）
 	schemaName, tablePart := parseTableName(tableName)
 	if schemaName == "" {
 		schemaName = "public" // 默认 schema
@@ -232,41 +220,71 @@ func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName 
 
 	s.log.Info("解析表名", "原始表名", tableName, "schema", schemaName, "table", tablePart)
 
-	// 6. 查询字段信息
-	pluginColumns, err := relPlugin.ListColumns(context.Background(), db, schemaName, tablePart)
+	fieldInfos, err := s.queryFieldsFromMetadataProvider(context.Background(), resource, metadataProvider, p, schemaName, tablePart)
 	if err != nil {
 		s.log.Error("查询字段失败", "schema", schemaName, "table", tablePart, "error", err)
 		return nil, fmt.Errorf("查询表字段失败: %w", err)
 	}
+	s.log.Info("从 ItemMetadataProvider 查询到字段", "count", len(fieldInfos))
+	return fieldInfos, nil
+}
 
-	s.log.Info("从数据库查询到字段", "count", len(pluginColumns))
-
-	// 7. 转换为 FieldInfo 格式
-	fieldInfos := make([]commonModels.FieldInfo, 0, len(pluginColumns))
-	for _, col := range pluginColumns {
-		info := commonModels.FieldInfo{
-			Name:         col.ColumnName,
-			DataType:     col.DataType,
-			IsNullable:   col.IsNullable,
-			IsPrimaryKey: col.IsPrimaryKey,
-			Comment:      col.Comment,
-			// ← 关键: 根据 DataType 判断是否为空间字段
-			IsSpatial:    isSpatialDataType(col.DataType),
-		}
-
-		// 如果是空间字段且为 PostgreSQL,尝试从数据库获取详细信息
-		if info.IsSpatial && resource.EngineType == "postgresql" {
-			spatialInfo := s.detectSpatialInfo(db, schemaName, tablePart, col.ColumnName)
-			if spatialInfo != nil {
-				info.GeometryType = spatialInfo.GeometryType
-				info.SRID = spatialInfo.SRID
-			}
-		}
-
-		fieldInfos = append(fieldInfos, info)
+func (s *MetadataQueryService) queryFieldsFromMetadataProvider(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	metadataProvider plugin.ItemMetadataProvider,
+	enginePlugin plugin.EnginePlugin,
+	schemaName string,
+	tableName string,
+) ([]commonModels.FieldInfo, error) {
+	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []plugin.CatalogSegment{
+			{Term: namespaceTermForPlugin(enginePlugin), Kind: plugin.CatalogKindNamespace, Name: schemaName},
+			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
+		},
+	}, plugin.MetadataOptions{})
+	if err != nil {
+		return nil, err
 	}
 
+	fieldInfos := make([]commonModels.FieldInfo, 0, len(item.Fields))
+	for _, field := range item.Fields {
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		info := commonModels.FieldInfo{
+			Name:         field.Name,
+			DataType:     dataType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
+			IsSpatial:    isSpatialDataType(dataType),
+		}
+		if geometryType, ok := field.Attributes["geometry_type"].(string); ok {
+			info.GeometryType = geometryType
+		}
+		if srid, ok := int64Stat(field.Attributes, "srid"); ok {
+			info.SRID = int(srid)
+		}
+		fieldInfos = append(fieldInfos, info)
+	}
 	return fieldInfos, nil
+}
+
+func namespaceTermForPlugin(p plugin.EnginePlugin) string {
+	if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
+		return relPlugin.SchemaNodeType()
+	}
+	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
+		model := modelProvider.CatalogModel()
+		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
+			return model.Levels[0].Term
+		}
+	}
+	return plugin.CatalogTermDatabase
 }
 
 // parseTableName 解析表名，支持 schema.table 格式

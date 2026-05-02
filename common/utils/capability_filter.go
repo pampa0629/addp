@@ -1,30 +1,25 @@
 package utils
 
 import (
-	"encoding/json"
 	"strings"
 
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 )
 
 // CapabilityFilter 能力过滤器
 type CapabilityFilter struct {
-	StorageTypes []string // 存储能力类型：relational_db, object_storage, generic
+	StorageTypes []string // 存储能力族：tabular, document, graph, object, file
 	RequireBoth  bool     // 预留字段，当前仅支持存储能力过滤
 }
 
-// ParseCapabilities 解析资源的 capabilities JSON
-func ParseCapabilities(capabilitiesJSON *string) (*models.Capability, error) {
+// ParseCapabilities 解析资源的结构化 capabilities JSON
+func ParseCapabilities(capabilitiesJSON *string) (*engineplugin.EngineCapabilities, error) {
 	if capabilitiesJSON == nil || *capabilitiesJSON == "" {
 		return nil, nil
 	}
 
-	var cap models.Capability
-	if err := json.Unmarshal([]byte(*capabilitiesJSON), &cap); err != nil {
-		return nil, err
-	}
-
-	return &cap, nil
+	return engineplugin.ParseEngineCapabilities(*capabilitiesJSON)
 }
 
 // HasStorageCapability 检查资源是否具有存储能力
@@ -34,7 +29,7 @@ func HasStorageCapability(resource *models.Engine) bool {
 		return false
 	}
 
-	return len(cap.Storage) > 0
+	return cap.Storage != nil && len(cap.Storage.Families) > 0
 }
 
 // HasStorageType 检查资源是否具有指定类型的存储能力
@@ -44,23 +39,17 @@ func HasStorageType(resource *models.Engine, storageType string) bool {
 		return false
 	}
 
-	for _, storage := range cap.Storage {
-		if storage.Type == storageType {
-			return true
-		}
-	}
-
-	return false
+	return hasStorageFamily(cap, storageType)
 }
 
-// IsRelationalDatabase 检查资源是否为关系型数据库
+// IsRelationalDatabase 检查资源是否为表格型数据库
 func IsRelationalDatabase(resource *models.Engine) bool {
-	return HasStorageType(resource, "relational_db")
+	return HasStorageType(resource, "tabular")
 }
 
 // IsObjectStorage 检查资源是否为对象存储
 func IsObjectStorage(resource *models.Engine) bool {
-	return HasStorageType(resource, "object_storage")
+	return HasStorageType(resource, "object")
 }
 
 // MatchesStorageTypes 检查资源是否匹配任一存储类型
@@ -74,11 +63,9 @@ func MatchesStorageTypes(resource *models.Engine, storageTypes []string) bool {
 		return false
 	}
 
-	for _, storage := range cap.Storage {
-		for _, targetType := range storageTypes {
-			if storage.Type == targetType {
-				return true
-			}
+	for _, targetType := range storageTypes {
+		if hasStorageFamily(cap, targetType) {
+			return true
 		}
 	}
 
@@ -138,16 +125,7 @@ func SupportsDevMode(resource *models.Engine, devMode string) bool {
 		return false
 	}
 
-	// 检查所有计算能力
-	for _, compute := range cap.Compute {
-		for _, mode := range compute.DevModes {
-			if mode == devMode {
-				return true
-			}
-		}
-	}
-
-	return false
+	return supportsDevMode(cap, devMode)
 }
 
 // GetSupportedDevModes 获取资源支持的所有开发模式
@@ -157,20 +135,55 @@ func GetSupportedDevModes(resource *models.Engine) []string {
 		return []string{}
 	}
 
-	// 使用map去重
-	modeSet := make(map[string]bool)
-	for _, compute := range cap.Compute {
-		for _, mode := range compute.DevModes {
-			modeSet[mode] = true
+	return devModes(cap)
+}
+
+func hasStorageFamily(capabilities *engineplugin.EngineCapabilities, storageType string) bool {
+	if capabilities == nil || capabilities.Storage == nil {
+		return false
+	}
+
+	for _, family := range capabilities.Storage.Families {
+		if family == storageType {
+			return true
 		}
 	}
 
-	// 转换为数组
-	modes := make([]string, 0, len(modeSet))
-	for mode := range modeSet {
-		modes = append(modes, mode)
+	return false
+}
+
+func supportsDevMode(capabilities *engineplugin.EngineCapabilities, devMode string) bool {
+	if capabilities == nil || capabilities.Compute == nil {
+		return false
 	}
 
+	switch devMode {
+	case "query", "sql":
+		return capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported
+	case "workflow":
+		return capabilities.Compute.Workflow != nil && capabilities.Compute.Workflow.Supported
+	case "notebook", "script":
+		return capabilities.Compute.Script != nil && capabilities.Compute.Script.Supported
+	default:
+		return false
+	}
+}
+
+func devModes(capabilities *engineplugin.EngineCapabilities) []string {
+	if capabilities == nil || capabilities.Compute == nil {
+		return []string{}
+	}
+
+	modes := make([]string, 0, 3)
+	if capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported {
+		modes = append(modes, "query")
+	}
+	if capabilities.Compute.Workflow != nil && capabilities.Compute.Workflow.Supported {
+		modes = append(modes, "workflow")
+	}
+	if capabilities.Compute.Script != nil && capabilities.Compute.Script.Supported {
+		modes = append(modes, "notebook")
+	}
 	return modes
 }
 

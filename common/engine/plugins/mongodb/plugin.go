@@ -52,9 +52,95 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-// GenerateCapabilities 生成资源能力描述
-func (p *MongoDBPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"nosql_db","engine":"mongodb","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"文档型数据库查询（MQL）","features":["flexible_schema","json_native"]}]}`
+func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    p.Type(),
+		EngineFamily:  "document",
+		Storage: &plugin.StorageCapabilities{
+			Families: []string{"document"},
+			CatalogModel: &plugin.CatalogModelSpec{
+				PathVersion: plugin.CatalogPathVersion,
+				RootTerm:    "server",
+				Levels: []plugin.CatalogLevelSpec{
+					{Term: "database", Kinds: []string{"namespace"}, Container: true},
+					{Term: "collection", Kinds: []string{"collection"}, Item: true},
+				},
+			},
+			Catalog: &plugin.CatalogCapability{
+				Supported:       true,
+				RealTime:        true,
+				SystemFiltering: true,
+				NodeKinds:       []string{"namespace", "collection"},
+			},
+			Metadata: &plugin.MetadataCapability{
+				Supported:      true,
+				FieldSchema:    true,
+				Statistics:     true,
+				Indexes:        true,
+				Sampling:       true,
+				NativeMetadata: true,
+			},
+			Store: &plugin.StoreCapability{
+				Read:       true,
+				Write:      true,
+				BatchRead:  true,
+				BatchWrite: true,
+				Formats:    []string{"document", "json"},
+			},
+		},
+		Compute: &plugin.ComputeCapabilities{
+			Query: &plugin.QueryCapability{
+				Supported:       true,
+				Languages:       []string{"mql"},
+				DefaultLanguage: "mql",
+				ResultKinds:     []string{"table", "document"},
+			},
+		},
+		Transfer: &plugin.TransferCapabilities{
+			Read:             true,
+			Write:            true,
+			SupportedFormats: []string{"document", "json"},
+		},
+		Preview: &plugin.PreviewCapabilities{
+			Supported:    true,
+			Modes:        []string{"document_samples", "tabular_rows"},
+			MaxRows:      1000,
+			UsesComposer: true,
+		},
+	}
+}
+
+func (p *MongoDBPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.DocumentCatalogModel()
+}
+
+func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListDocumentCatalogChildren(ctx, p, parent.EngineID, connInfo, parent, opts)
+}
+
+func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveDocumentCatalogPath(ctx, p, path.EngineID, connInfo, path)
+}
+
+func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeDocumentItem(ctx, p, path.EngineID, connInfo, path, opts)
+}
+
+func (p *MongoDBPlugin) QueryLanguages() []string {
+	return []string{"mql"}
+}
+
+func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return p.generateSampleQuery(ctx, connInfo)
+}
+
+func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.executeQuery(ctx, connInfo, req.Query)
+}
+
+func (p *MongoDBPlugin) ExecuteDocumentQuery(ctx context.Context, connInfo plugin.ConnectionInfo, command string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return p.executeQuery(ctx, connInfo, command)
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -130,9 +216,8 @@ func (p *MongoDBPlugin) createClient(ctx context.Context, connInfo plugin.Connec
 	return client, nil
 }
 
-// GenerateSampleQuery 实现 QueryablePlugin 接口
 // 查询数据库中第一个集合名称，生成可执行的 find 命令
-func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
+func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
 	const fallback = `{"find": "collection_name", "filter": {}, "limit": 10}`
 
 	client, err := p.createClient(ctx, connInfo)
@@ -150,16 +235,9 @@ func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin
 	return fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": 10}`, names[0]), "json"
 }
 
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-// MongoDB 支持元数据扫描
-func (p *MongoDBPlugin) SupportsMetadataQuery() bool {
-	return true
-}
-
-// ExecuteQuery 实现 QueryablePlugin 接口
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径
 // 示例：{"find":"users","filter":{"age":{"$gt":18}},"limit":10}
-func (p *MongoDBPlugin) ExecuteQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
 	// 解析 JSON 命令
 	var cmd map[string]interface{}
 	if err := json.Unmarshal([]byte(query), &cmd); err != nil {

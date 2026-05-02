@@ -26,22 +26,22 @@ import (
 // ScanService 统一扫描服务
 type ScanService struct {
 	db                       *gorm.DB
-	repo                     *ScanRepository               // 数据访问层
-	dbScanService            *DatabaseScanService          // 数据库扫描服务
-	nosqlScanService         *NoSQLScanService             // NoSQL 数据库扫描服务
-	objectScanService        *ObjectStorageScanService     // 对象存储扫描服务
-	fsScanService            *FileSystemScanService        // 文件系统扫描服务（湖表检测）
-	metadataQueryService     *MetadataQueryService         // 元数据查询服务（独立）
-	resourceDiscoveryService *ResourceDiscoveryService     // 资源发现服务（独立）
+	repo                     *ScanRepository           // 数据访问层
+	dbScanService            *DatabaseScanService      // 数据库扫描服务
+	nosqlScanService         *NoSQLScanService         // NoSQL 数据库扫描服务
+	objectScanService        *ObjectStorageScanService // 对象存储扫描服务
+	fsScanService            *FileSystemScanService    // 文件系统扫描服务（湖表检测）
+	metadataQueryService     *MetadataQueryService     // 元数据查询服务（独立）
+	resourceDiscoveryService *ResourceDiscoveryService // 资源发现服务（独立）
 	engineService            *EngineService
 	config                   *config.Config
 	log                      *slog.Logger
 	indexer                  *search.Indexer
-	indexerService           *IndexerService               // 索引服务（独立）
-	spatialService           *SpatialMetadataService       // 空间元数据服务（独立）
-	scanEventPublisher       *events.ScanEventPublisher    // 扫描事件发布器
-	metadataExtractor        *MetadataExtractor            // 元数据提取器
-	dedupService             *ScanDedupService             // 扫描去重服务（可选）
+	indexerService           *IndexerService                     // 索引服务（独立）
+	spatialService           *SpatialMetadataService             // 空间元数据服务（独立）
+	scanEventPublisher       *events.ScanEventPublisher          // 扫描事件发布器
+	metadataExtractor        *MetadataExtractor                  // 元数据提取器
+	dedupService             *ScanDedupService                   // 扫描去重服务（可选）
 	taskExecutionRepo        *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 }
 
@@ -61,7 +61,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	log := logger.With("component", "scan_service")
 
 	// 创建独立的服务（消除循环依赖）
-	indexerService := NewIndexerService(nil, log) // indexer 稍后通过 SetIndexer 注入
+	indexerService := NewIndexerService(nil, log)         // indexer 稍后通过 SetIndexer 注入
 	spatialService := NewSpatialMetadataService(nil, log) // config 稍后通过 SetConfig 注入
 	metadataExtractor := NewMetadataExtractor(db)
 
@@ -245,7 +245,7 @@ func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary
 		}
 
 		event := events.ScanCompletedEvent{
-			EngineID:        engineID,
+			EngineID:          engineID,
 			TenantID:          tenantID,
 			ScanType:          scanType,
 			ScannedNodes:      scannedNodes,
@@ -476,17 +476,23 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	// 根据插件类型路由到对应的扫描服务
-	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
-		// NoSQL 扫描（MongoDB、CouchDB 等）
-		schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(nosqlPlugin, resource, tenantID, schemaNames, scanDepth, reporter)
-	} else if _, ok := p.(plugin.ObjectStoragePlugin); ok {
+	family := storageFamily(p)
+
+	// 根据能力族路由到对应的扫描服务
+	if family == "document" || family == "graph" {
+		if _, ok := p.(plugin.CatalogProvider); !ok {
+			err = fmt.Errorf("engine %s declares %s storage but does not implement CatalogProvider", resource.EngineType, family)
+		} else {
+			// NoSQL 扫描（MongoDB、CouchDB 等）
+			schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(p, resource, tenantID, schemaNames, scanDepth, reporter)
+		}
+	} else if family == "object" {
 		// 对象存储扫描（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
 		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, nil, scanDepth, reporter)
-	} else if _, ok := p.(plugin.FileSystemPlugin); ok {
+	} else if family == "file" {
 		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/lake_table 语义节点
 		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
-	} else if _, ok := p.(plugin.RelationalDBPlugin); ok {
+	} else if family == "tabular" {
 		// 关系型数据库扫描（PostgreSQL、MySQL 等）
 		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, 0, scanDepth, reporter)
 	} else {
@@ -610,7 +616,9 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	if _, ok := p0.(plugin.ObjectStoragePlugin); ok {
+	family := storageFamily(p0)
+
+	if family == "object" {
 		// 对象存储类型（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
 		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, nil, "deep", nil)
 		if err != nil {
@@ -623,28 +631,20 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return buckets, objects, 0, nil
 	}
 
-	if _, ok := p0.(plugin.FileSystemPlugin); ok {
+	if family == "file" {
 		// 文件系统类型（NFS 等）—— 写入 root/dir/file/lake_table 语义节点
-		// 注意：ObjectStoragePlugin 也实现了 FileSystemPlugin，但已在上方分支处理
-		fsPlugin := p0.(plugin.FileSystemPlugin)
-
-		roots, err := fsPlugin.ListRoots(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		paths, err := s.listFileSystemRootPaths(resource, p0)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("failed to list roots: %w", err)
 		}
 
-		if len(roots) == 0 {
+		if len(paths) == 0 {
 			s.log.Info("文件系统资源无可扫描根节点，跳过扫描", startFields...)
 			return 0, 0, 0, nil
 		}
-
-		var paths []string
-		for _, r := range roots {
-			paths = append(paths, r.Path)
-		}
 		sort.Strings(paths)
 
-		s.log.Info("文件系统资源扫描开始", cloneLogFields(startFields, "root_count", len(roots), "roots", paths)...)
+		s.log.Info("文件系统资源扫描开始", cloneLogFields(startFields, "root_count", len(paths), "roots", paths)...)
 
 		totalRoots, totalItems, err := s.fsScanService.ScanPaths(resource, tenantID, paths, nil)
 		if err != nil {
@@ -658,27 +658,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return totalRoots, totalItems, 0, nil
 	}
 
-	// 数据库扫描：直接使用 RelationalDBPlugin
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
-	}
-
-	relPlugin, ok := p.(plugin.RelationalDBPlugin)
-	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
-	}
-
-	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, nil)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create connection pool: %w", err)
-	}
-
-	schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
+	schemasInfo, err := s.listSchemaInfos(resource, p0)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to list schemas: %w", err)
 	}
@@ -693,12 +673,6 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	scannedSchemas := make(map[string]bool)
 
 	for _, schemaInfo := range schemasInfo {
-		// 过滤系统 schema
-		if relPlugin.IsSystemSchema(schemaInfo.Name) {
-			s.log.Debug("跳过系统 schema", "schema", schemaInfo.Name)
-			continue
-		}
-
 		scannedSchemas[schemaInfo.Name] = true
 
 		var node models.MetaNode
@@ -775,6 +749,53 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	return totalSchemas, totalTables, totalFields, nil
 }
 
+func (s *ScanService) listFileSystemRootPaths(resource *commonModels.Engine, p plugin.EnginePlugin) ([]string, error) {
+	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
+		nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: resource.ID,
+		}, plugin.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		paths := make([]string, 0, len(nodes))
+		for _, node := range nodes {
+			if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+				paths = append(paths, raw)
+				continue
+			}
+			paths = append(paths, node.Path.StringPath())
+		}
+		return paths, nil
+	}
+	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+}
+
+func (s *ScanService) listSchemaInfos(resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.SchemaInfo, error) {
+	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
+		nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: resource.ID,
+		}, plugin.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		schemas := make([]plugin.SchemaInfo, 0, len(nodes))
+		for _, node := range nodes {
+			tableCount := 0
+			if count, ok := int64Stat(node.Stats, "table_count"); ok {
+				tableCount = int(count)
+			}
+			schemas = append(schemas, plugin.SchemaInfo{
+				Name:       node.Name,
+				TableCount: tableCount,
+			})
+		}
+		return schemas, nil
+	}
+	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+}
+
 // scanResourceSchemas 扫描资源的指定Schema列表
 func (s *ScanService) scanResourceSchemas(resource *commonModels.Engine, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string) (int, int, int, error) {
 	return s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLogID, scanDepth, nil)
@@ -804,31 +825,12 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 
-		relPlugin, ok := p.(plugin.RelationalDBPlugin)
-		if !ok {
-			return 0, 0, 0, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
-		}
-
-		db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-			ID:             resource.ID,
-			EngineType:     resource.EngineType,
-			ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-		}, nil)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to create connection pool: %w", err)
-		}
-
-		schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
+		schemasInfo, err := s.listSchemaInfos(resource, p)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
 		for _, info := range schemasInfo {
-			// 使用插件的 IsSystemSchema 方法过滤系统 schema
-			if relPlugin.IsSystemSchema(info.Name) {
-				s.log.Debug("跳过系统 schema", "schema", info.Name)
-				continue
-			}
 			schemaNames = append(schemaNames, info.Name)
 		}
 
@@ -928,7 +930,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 
 // scanNoSQLResourceWithReporter 扫描 NoSQL 资源的指定数据库列表（带进度报告）
 func (s *ScanService) scanNoSQLResourceWithReporter(
-	nosqlPlugin plugin.NoSQLPlugin,
+	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
 	databaseNames []string,
@@ -937,8 +939,11 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 ) (int, int, int, error) {
 
 	resourceID := resource.ID
-	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	ctx := context.Background()
+	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
 
 	startFields := append(connectionLogFields(resource),
 		"mode", "manual",
@@ -951,17 +956,12 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 			reporter.Message("列出所有数据库...")
 		}
 
-		databasesInfo, err := nosqlPlugin.ListDatabases(ctx, connInfo)
+		databasesInfo, err := s.listNoSQLDatabases(ctx, resource, catalogProvider)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		// 过滤系统数据库
 		for _, info := range databasesInfo {
-			if nosqlPlugin.IsSystemDatabase(info.Name) {
-				s.log.Debug("跳过系统数据库", "database", info.Name)
-				continue
-			}
 			databaseNames = append(databaseNames, info.Name)
 		}
 
@@ -1007,7 +1007,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 
 		// 扫描数据库
 		databases, collections, fields, err := s.nosqlScanService.ScanDatabase(
-			ctx, nosqlPlugin, resource, tenantID, databaseName, scanDepth,
+			ctx, enginePlugin, resource, tenantID, databaseName, scanDepth,
 		)
 
 		// 扫描完成后清理锁
@@ -1051,6 +1051,28 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 	return totalDatabases, totalCollections, totalFields, nil
 }
 
+func (s *ScanService) listNoSQLDatabases(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+	}, plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	databases := make([]plugin.DatabaseInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsContainer {
+			continue
+		}
+		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
+		databases = append(databases, plugin.DatabaseInfo{
+			Name:      node.Name,
+			SizeBytes: sizeBytes,
+		})
+	}
+	return databases, nil
+}
+
 // scanSingleSchema 扫描单个Schema（表+字段）
 func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
 	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
@@ -1071,43 +1093,15 @@ func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonMode
 		scanDepth = "deep"
 	}
 
-	// ✅ 重构后：直接使用 ObjectStoragePlugin
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
-	}
-
-	objPlugin, ok := p.(plugin.ObjectStoragePlugin)
-	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
-	}
-
 	// 准备扫描路径
 	var paths []string
 	if len(objectPaths) > 0 {
 		paths = objectPaths
 	} else if len(fallback) > 0 {
 		paths = fallback
-	} else {
-		// 如果未指定路径，列出所有 buckets
-		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to list buckets: %w", err)
-		}
-		for _, b := range buckets {
-			paths = append(paths, b.Name)
-		}
 	}
 
-	if len(paths) == 0 {
-		if reporter != nil {
-			reporter.Message("未检测到可扫描的对象路径")
-			reporter.SetTotal(0)
-		}
-		return 0, 0, 0, nil
-	}
-
-	if reporter != nil {
+	if reporter != nil && len(paths) > 0 {
 		reporter.SetTotal(len(paths))
 	}
 
@@ -1344,4 +1338,22 @@ func (s *ScanService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLi
 // GetItemByID 按 ID 查询 MetaItem
 func (s *ScanService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
 	return s.metadataQueryService.GetItemByID(tenantID, itemID)
+}
+
+func storageFamily(p plugin.EnginePlugin) string {
+	if p == nil {
+		return ""
+	}
+	caps := p.Capabilities()
+	if caps.Storage == nil {
+		return ""
+	}
+	for _, family := range caps.Storage.Families {
+		normalized := strings.ToLower(family)
+		switch normalized {
+		case "object", "file", "tabular", "document", "graph":
+			return normalized
+		}
+	}
+	return ""
 }

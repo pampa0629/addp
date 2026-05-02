@@ -46,8 +46,37 @@ func (p *MinIOPlugin) SensitiveFields() []string {
 	return []string{"access_key", "secret_key"}
 }
 
-func (p *MinIOPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"object_storage","engine":"minio"}]}`
+func (p *MinIOPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewObjectCapabilities(p.Type())
+}
+
+func (p *MinIOPlugin) StoreSemantics() plugin.StoreSemantics {
+	capabilities := p.Capabilities()
+	return plugin.StoreSemantics{
+		Families:     capabilities.Storage.Families,
+		Semantics:    capabilities.Storage.Semantics,
+		NotSupported: capabilities.Storage.NotSupported,
+	}
+}
+
+func (p *MinIOPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.ObjectCatalogModel()
+}
+
+func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListFileSystemCatalogChildren(ctx, p, connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
+}
+
+func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveFileSystemCatalogPath(ctx, p, connInfo, path.EngineID, path, plugin.CatalogTermBucket)
+}
+
+func (p *MinIOPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeFileSystemItem(ctx, p, connInfo, path.EngineID, path)
+}
+
+func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	return p.ReadFile(ctx, connInfo, path.StringPath())
 }
 
 func (p *MinIOPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -146,11 +175,6 @@ func (p *MinIOPlugin) SupportsSSL() bool {
 }
 
 // === ObjectStoragePlugin 接口实现 ===
-
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-func (p *MinIOPlugin) SupportsMetadataQuery() bool {
-	return true
-}
 
 // ListBuckets 列出所有 Bucket
 func (p *MinIOPlugin) ListBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {

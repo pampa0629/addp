@@ -13,16 +13,21 @@ type MockPlugin struct {
 	DefaultPortValue     int
 	RequiredFieldsValue  []string
 	SensitiveFieldsValue []string
-	CapabilitiesValue    string
 }
 
-func (m *MockPlugin) Type() string               { return m.TypeValue }
-func (m *MockPlugin) DisplayName() string        { return m.DisplayNameValue }
-func (m *MockPlugin) EngineCategory() string     { return m.EngineCategoryValue }
-func (m *MockPlugin) DefaultPort() int           { return m.DefaultPortValue }
-func (m *MockPlugin) RequiredFields() []string   { return m.RequiredFieldsValue }
-func (m *MockPlugin) SensitiveFields() []string  { return m.SensitiveFieldsValue }
-func (m *MockPlugin) GenerateCapabilities() string { return m.CapabilitiesValue }
+func (m *MockPlugin) Type() string              { return m.TypeValue }
+func (m *MockPlugin) DisplayName() string       { return m.DisplayNameValue }
+func (m *MockPlugin) EngineCategory() string    { return m.EngineCategoryValue }
+func (m *MockPlugin) DefaultPort() int          { return m.DefaultPortValue }
+func (m *MockPlugin) RequiredFields() []string  { return m.RequiredFieldsValue }
+func (m *MockPlugin) SensitiveFields() []string { return m.SensitiveFieldsValue }
+func (m *MockPlugin) Capabilities() EngineCapabilities {
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    m.TypeValue,
+		EngineFamily:  "test",
+	}
+}
 func (m *MockPlugin) TestConnection(ctx context.Context, connInfo ConnectionInfo) error {
 	return nil
 }

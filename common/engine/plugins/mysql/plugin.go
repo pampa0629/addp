@@ -43,8 +43,50 @@ func (p *MySQLPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
-func (p *MySQLPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"SQL查询"}]}`
+func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+		Write:           true,
+		Transactions:    true,
+		SupportsExplain: true,
+		SupportsCancel:  true,
+		WriterConnector: "jdbc",
+	})
+}
+
+func (p *MySQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.TabularCatalogModel(p.SchemaNodeType())
+}
+
+func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+}
+
+func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+}
+
+func (p *MySQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+}
+
+func (p *MySQLPlugin) QueryLanguages() []string {
+	return []string{"sql"}
+}
+
+func (p *MySQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return "SELECT *\nFROM your_database.your_table\nLIMIT 10", "sql"
+}
+
+func (p *MySQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+}
+
+func (p *MySQLPlugin) SQLDialect() string {
+	return p.GetDialect()
+}
+
+func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
 func (p *MySQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -255,11 +297,6 @@ func (p *MySQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	}
 
 	return count, nil
-}
-
-// SupportsMetadataQuery 实现 StoragePlugin 接口
-func (p *MySQLPlugin) SupportsMetadataQuery() bool {
-	return true
 }
 
 // IsSystemSchema 判断是否为系统 Schema

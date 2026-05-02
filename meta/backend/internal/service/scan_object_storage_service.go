@@ -26,9 +26,9 @@ import (
 type ObjectStorageScanService struct {
 	db                *gorm.DB
 	log               *slog.Logger
-	repo              *ScanRepository     // 数据访问层
-	metadataExtractor *MetadataExtractor  // 元数据提取器
-	indexer           *IndexerService     // 索引服务
+	repo              *ScanRepository    // 数据访问层
+	metadataExtractor *MetadataExtractor // 元数据提取器
+	indexer           *IndexerService    // 索引服务
 	objectClients     map[uint]*minio.Client
 	objectClientMu    sync.Mutex
 }
@@ -70,15 +70,14 @@ func (s *ObjectStorageScanService) ScanPaths(
 		scanDepth = "deep"
 	}
 
-	// 获取 ObjectStoragePlugin
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	objPlugin, ok := p.(plugin.ObjectStoragePlugin)
+	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
+		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 
 	// 确定扫描路径
@@ -89,7 +88,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 
 	// 如果仍然没有路径，列出所有 buckets
 	if len(paths) == 0 {
-		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		buckets, err := s.listBuckets(resource, catalogProvider)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
 		}
@@ -110,7 +109,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePathsWithPlugin(resource, tenantID, resourceID, objPlugin, paths, scanDepth, reporter)
+	buckets, objects, err := s.scanObjectStoragePathsWithCatalog(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -122,16 +121,16 @@ func (s *ObjectStorageScanService) ScanPaths(
 // 核心扫描方法
 // ============================================================================
 
-// scanObjectStoragePathsWithPlugin 使用 ObjectStoragePlugin 扫描对象存储路径
-func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
+// scanObjectStoragePathsWithCatalog 使用 CatalogProvider 扫描对象存储路径
+func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
-	objPlugin plugin.ObjectStoragePlugin,
+	catalogProvider plugin.CatalogProvider,
 	paths []string,
 	scanDepth string,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
-	s.log.Info("🔍 进入scanObjectStoragePathsWithPlugin函数",
+	s.log.Info("进入 scanObjectStoragePathsWithCatalog",
 		"engine_id", engineID,
 		"tenant_id", tenantID,
 		"paths_count", len(paths),
@@ -168,14 +167,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 			continue
 		}
 
-		// 直接使用 plugin 列出对象
-		objects, err := objPlugin.ListObjects(
-			context.Background(),
-			plugin.ConnectionInfo(resource.ConnectionInfo),
-			bucketName,
-			prefix,
-			isDeepScan, // 深度扫描时递归
-		)
+		objects, err := s.listObjects(resource, catalogProvider, bucketName, prefix, isDeepScan)
 		if err != nil {
 			s.log.Warn("对象存储路径扫描失败",
 				"engine_id", engineID,
@@ -356,6 +348,87 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 	return totalBuckets, totalObjects, nil
 }
 
+func (s *ObjectStorageScanService) listBuckets(resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.BucketInfo, error) {
+	nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+	}, plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	buckets := make([]plugin.BucketInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Kind == plugin.CatalogKindBucket {
+			buckets = append(buckets, plugin.BucketInfo{Name: node.Name})
+		}
+	}
+	return buckets, nil
+}
+
+func (s *ObjectStorageScanService) listObjects(resource *commonModels.Engine, catalogProvider plugin.CatalogProvider, bucketName, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
+	nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), objectCatalogPath(resource.ID, bucketName, prefix), plugin.ListOptions{Recursive: recursive})
+	if err != nil {
+		return nil, err
+	}
+	objects := make([]plugin.ObjectInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsItem {
+			continue
+		}
+		key := strings.TrimPrefix(node.Path.StringPath(), bucketName+"/")
+		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+			_, parsedKey := splitObjectPath(raw)
+			key = parsedKey
+		}
+		size, _ := int64Stat(node.Stats, "size_bytes")
+		contentType, _ := node.Attributes["content_type"].(string)
+		object := plugin.ObjectInfo{
+			Bucket:      bucketName,
+			Key:         key,
+			Size:        size,
+			ContentType: contentType,
+		}
+		if modifiedAt, ok := node.Attributes["modified_at"].(time.Time); ok {
+			object.LastModified = modifiedAt
+		}
+		if etag, ok := node.Attributes["etag"].(string); ok {
+			object.ETag = etag
+		}
+		objects = append(objects, object)
+	}
+	return objects, nil
+}
+
+func objectCatalogPath(engineID uint, bucketName, prefix string) plugin.CatalogPath {
+	path := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+	}
+	if bucketName == "" {
+		return path
+	}
+	path.Segments = append(path.Segments, plugin.CatalogSegment{
+		Term: plugin.CatalogTermBucket,
+		Kind: plugin.CatalogKindBucket,
+		Name: bucketName,
+	})
+	trimmed := strings.Trim(prefix, "/")
+	if trimmed == "" {
+		return path
+	}
+	for _, part := range strings.Split(trimmed, "/") {
+		if part == "" {
+			continue
+		}
+		path.Segments = append(path.Segments, plugin.CatalogSegment{
+			Term: plugin.CatalogTermPrefix,
+			Kind: plugin.CatalogKindPrefix,
+			Name: part,
+		})
+	}
+	return path
+}
+
 // convertToObjectMetadata 将 plugin.ObjectInfo 转换为 format.ObjectMetadata
 func (s *ObjectStorageScanService) convertToObjectMetadata(
 	objects []plugin.ObjectInfo,
@@ -375,7 +448,7 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 		// 重要：Path 字段保存对象的完整Key（相对于bucket的路径）
 		meta := format.ObjectMetadata{
 			Bucket:       bucket,
-			Path:         obj.Key,        // ✅ 只保存相对路径，不包含 bucket
+			Path:         obj.Key, // ✅ 只保存相对路径，不包含 bucket
 			NodeType:     "object",
 			FileType:     ext,
 			SizeBytes:    obj.Size,
@@ -1318,4 +1391,3 @@ func getBoolFromConn(info commonModels.ConnectionInfo, key string) bool {
 	}
 	return false
 }
-

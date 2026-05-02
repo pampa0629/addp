@@ -377,24 +377,24 @@ func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes []str
 
 // ListRelationalDatabases 快捷方法：获取所有关系型数据库
 func (c *SystemClient) ListRelationalDatabases(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"relational_db"})
+	return c.ListEnginesByCapability(tenantID, []string{"tabular"})
 }
 
 // ListObjectStorages 快捷方法：获取所有对象存储
 func (c *SystemClient) ListObjectStorages(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"object_storage"})
+	return c.ListEnginesByCapability(tenantID, []string{"object"})
 }
 
 // ListScannableResources 快捷方法：获取所有可扫描的资源（元数据模块使用）
 func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"relational_db", "object_storage", "generic"})
+	return c.ListEnginesByCapability(tenantID, []string{"tabular", "document", "graph", "object", "file"})
 }
 
 // ListSQLQueryEngines 快捷方法：获取所有支持查询开发的引擎（开发模块使用）
-// 包含关系型数据库（relational_db）、NoSQL 数据库（nosql_db）、图数据库（graph_db）
+// 包含表格型、文档型、图数据库
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, error) {
-	// 获取所有支持查询的存储引擎类型（含 NoSQL 和图数据库）
-	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db", "nosql_db", "graph_db"})
+	// 获取所有支持查询的存储引擎类型
+	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"tabular", "document", "graph"})
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +481,7 @@ type SchemaInfo struct {
 type TableInfo struct {
 	Name        string `json:"name"`
 	Schema      string `json:"schema"`
-	Type        string `json:"type,omitempty"`        // TABLE, VIEW等
+	Type        string `json:"type,omitempty"` // TABLE, VIEW等
 	Description string `json:"description,omitempty"`
 }
 
@@ -969,4 +969,3 @@ func (c *SystemClient) GetModule(moduleName string) (*ModuleInfo, error) {
 
 	return &module, nil
 }
-

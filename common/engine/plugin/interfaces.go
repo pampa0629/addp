@@ -64,33 +64,20 @@ type EnginePlugin interface {
 	// 例如: ["password", "access_key", "secret_key", "token"]
 	SensitiveFields() []string
 
-	// GenerateCapabilities 生成引擎能力描述（JSON 字符串）
-	// 返回 Capability 结构的 JSON 表示
-	GenerateCapabilities() string
+	// Capabilities 返回结构化引擎能力声明
+	Capabilities() EngineCapabilities
 }
 
-// ============ 第二层：按功能分类 ============
-
-// StoragePlugin 存储引擎接口（数据库、对象存储）
+// StoragePlugin 存储引擎标记接口。
+// 具体能力由 Capabilities、CatalogProvider、ItemMetadataProvider、StoreProvider 等表达。
 type StoragePlugin interface {
 	EnginePlugin
-
-	// SupportsMetadataQuery 是否支持元数据扫描
-	// 返回 true 表示该存储引擎可以被 Meta 模块扫描
-	SupportsMetadataQuery() bool
 }
 
-// ComputePlugin 计算引擎接口（工作流引擎）
+// ComputePlugin 计算引擎标记接口。
+// 具体能力由 Capabilities、QueryRuntimeProvider、WorkflowRuntimeProvider、ScriptRuntimeProvider 等表达。
 type ComputePlugin interface {
 	EnginePlugin
-
-	// GetSupportedOperators 获取支持的算子列表
-	// 返回算子名称列表，例如: ["filter", "transform", "aggregate"]
-	GetSupportedOperators() []string
-
-	// HealthCheckEndpoint 健康检查端点
-	// 返回健康检查的 HTTP 端点路径，例如: "/health"
-	HealthCheckEndpoint() string
 }
 
 // ============ 第三层：存储引擎细分 ============
@@ -161,7 +148,6 @@ type RelationalDBPlugin interface {
 	// PostgreSQL 返回 "schema"，MySQL/Doris/ClickHouse 返回 "database"
 	SchemaNodeType() string
 }
-
 
 // ObjectStoragePlugin 对象存储插件
 // 继承 FileSystemPlugin，同时提供对象存储特有的操作能力
@@ -278,11 +264,11 @@ type TableInfo struct {
 
 // ColumnInfo 列信息
 type ColumnInfo struct {
-	ColumnName   string `gorm:"column:column_name"`   // 列名
-	DataType     string `gorm:"column:data_type"`     // 原生数据类型（如 varchar, int4, geometry, geography）
-	IsNullable   bool   `gorm:"column:is_nullable"`   // 是否可为空
+	ColumnName   string `gorm:"column:column_name"`    // 列名
+	DataType     string `gorm:"column:data_type"`      // 原生数据类型（如 varchar, int4, geometry, geography）
+	IsNullable   bool   `gorm:"column:is_nullable"`    // 是否可为空
 	IsPrimaryKey bool   `gorm:"column:is_primary_key"` // 是否主键
-	Comment      string `gorm:"column:comment"`       // 列注释
+	Comment      string `gorm:"column:comment"`        // 列注释
 }
 
 // DatabaseInfo Database 信息（NoSQL）
@@ -332,37 +318,10 @@ type ObjectInfo struct {
 	ETag         string    // ETag（可选）
 }
 
-// ============ 统一查询结果 ============
-
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）
-// 供 QueryablePlugin 和 dbbridge.ExecuteQuery 使用
 type QueryResult struct {
 	Columns []string                 // 有序列名列表
 	Rows    []map[string]interface{} // 每行：列名 → 值
-}
-
-// ============ 原生查询引擎接口 ============
-
-// QueryablePlugin 支持原生查询执行的引擎接口（可选实现）
-//
-// 实现者：MongoDB（MQL）、Neo4j（Cypher）等 NoSQL 引擎
-// 非实现者：PostgreSQL/MySQL/Doris/ClickHouse（这类引擎由 dbbridge 通过 GORM 连接池统一执行）
-//
-// dbbridge.ExecuteQuery 会先检查引擎是否实现此接口，是则委托，否则走 GORM/Spark 路径。
-type QueryablePlugin interface {
-	// ExecuteQuery 执行引擎原生查询语言并返回列式结果
-	//
-	// MongoDB：query 为 JSON 命令字符串，如 {"find":"users","filter":{},"limit":10}
-	// Neo4j：query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
-	ExecuteQuery(ctx context.Context, connInfo ConnectionInfo, query string) (*QueryResult, error)
-
-	// GenerateSampleQuery 基于引擎实际数据生成一个可执行的样例查询
-	//
-	// 返回值：
-	//   - query：可直接执行的查询语句（如有真实集合/Label，优先使用；否则返回通用模板）
-	//   - language：编辑器语言标识（"json" / "cypher" 等）
-	// 实现要求：此方法不应向调用方暴露错误，出错时返回 fallback 模板。
-	GenerateSampleQuery(ctx context.Context, connInfo ConnectionInfo) (query string, language string)
 }
 
 // ============ 图数据库插件 ============
@@ -383,7 +342,7 @@ type RelationshipTypeInfo struct {
 
 // GraphSchema 图数据库 Schema 信息（节点标签 + 关系类型）
 type GraphSchema struct {
-	NodeLabels    []NodeLabelInfo       `json:"node_labels"`
+	NodeLabels    []NodeLabelInfo        `json:"node_labels"`
 	Relationships []RelationshipTypeInfo `json:"relationships"`
 }
 
@@ -411,7 +370,7 @@ type GraphData struct {
 
 // GraphQueryResult 图查询结果（同时包含表格数据和图数据）
 type GraphQueryResult struct {
-	QueryResult           // 嵌入表格结果（向后兼容）
+	QueryResult            // 嵌入表格结果（向后兼容）
 	GraphData   *GraphData `json:"graph_data,omitempty"`
 }
 
@@ -432,17 +391,6 @@ type GraphDBPlugin interface {
 	// GetGraphSchema 获取图数据库完整 Schema（节点标签 + 关系类型 + 连接关系）
 	// 供图可视化和元数据展示使用
 	GetGraphSchema(ctx context.Context, connInfo ConnectionInfo, database string) (*GraphSchema, error)
-}
-
-// GraphQueryPlugin 图查询插件接口
-// 在 QueryablePlugin 之上增加图结构化结果返回能力
-// 实现此接口的引擎在查询时会同时返回表格数据和图节点/关系数据
-type GraphQueryPlugin interface {
-	QueryablePlugin
-
-	// ExecuteGraphQuery 执行图查询并返回包含图数据的结果
-	// 除标准表格结果外，还会提取结果中的节点和关系对象供图可视化渲染
-	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, query string) (*GraphQueryResult, error)
 }
 
 // ============ 术语 i18n 接口 ============

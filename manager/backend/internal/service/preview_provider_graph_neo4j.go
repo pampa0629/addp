@@ -11,7 +11,7 @@ import (
 )
 
 // GraphLabelPreviewProvider Neo4j label 预览
-// 使用 GraphQueryPlugin 采样节点属性，输出表格预览
+// 使用 GraphQueryRuntimeProvider 采样节点属性，输出表格预览
 // 优先级高于通用数据库预览，避免被 database-table provider 抢占
 type GraphLabelPreviewProvider struct {
 	priority int
@@ -39,13 +39,16 @@ func (p *GraphLabelPreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	graphPlugin, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
+	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
 	if err != nil {
 		return nil, err
 	}
 
 	query := fmt.Sprintf("MATCH (n:`%s`) RETURN n LIMIT 50", escapeCypherIdentifier(targetName))
-	result, err := graphPlugin.ExecuteGraphQuery(ctx, connInfo, query)
+	result, err := graphRuntime.ExecuteRuntimeGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
+		EngineID:   req.Engine.ID,
+		EngineType: req.Engine.EngineType,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to preview label: %w", err)
 	}
@@ -56,22 +59,22 @@ func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}
 
 	return &models.TablePreview{
-		Mode:           PreviewModeTable,
-		Columns:        columns,
-		Rows:           rows,
-		Total:          len(rows),
-		Page:           maxInt(req.Page, 1),
-		PageSize:       normalizePageSize(req.PageSize),
+		Mode:            PreviewModeTable,
+		Columns:         columns,
+		Rows:            rows,
+		Total:           len(rows),
+		Page:            maxInt(req.Page, 1),
+		PageSize:        normalizePageSize(req.PageSize),
 		GeometryColumns: []string{},
-		EngineID:       req.Engine.ID,
-		Schema:         database,
-		Table:          req.Table,
-		EngineType:     req.Engine.EngineType,
+		EngineID:        req.Engine.ID,
+		Schema:          database,
+		Table:           req.Table,
+		EngineType:      req.Engine.EngineType,
 	}, nil
 }
 
 // GraphRelationshipPreviewProvider Neo4j relationship 预览
-// 使用 GraphQueryPlugin 采样关系属性，输出表格预览
+// 使用 GraphQueryRuntimeProvider 采样关系属性，输出表格预览
 type GraphRelationshipPreviewProvider struct {
 	priority int
 }
@@ -98,13 +101,16 @@ func (p *GraphRelationshipPreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	graphPlugin, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
+	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
 	if err != nil {
 		return nil, err
 	}
 
 	query := fmt.Sprintf("MATCH ()-[r:`%s`]->() RETURN r LIMIT 50", escapeCypherIdentifier(targetName))
-	result, err := graphPlugin.ExecuteGraphQuery(ctx, connInfo, query)
+	result, err := graphRuntime.ExecuteRuntimeGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
+		EngineID:   req.Engine.ID,
+		EngineType: req.Engine.EngineType,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to preview relationship: %w", err)
 	}
@@ -115,21 +121,21 @@ func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *Pre
 	}
 
 	return &models.TablePreview{
-		Mode:           PreviewModeTable,
-		Columns:        columns,
-		Rows:           rows,
-		Total:          len(rows),
-		Page:           maxInt(req.Page, 1),
-		PageSize:       normalizePageSize(req.PageSize),
+		Mode:            PreviewModeTable,
+		Columns:         columns,
+		Rows:            rows,
+		Total:           len(rows),
+		Page:            maxInt(req.Page, 1),
+		PageSize:        normalizePageSize(req.PageSize),
 		GeometryColumns: []string{},
-		EngineID:       req.Engine.ID,
-		Schema:         database,
-		Table:          req.Table,
-		EngineType:     req.Engine.EngineType,
+		EngineID:        req.Engine.ID,
+		Schema:          database,
+		Table:           req.Table,
+		EngineType:      req.Engine.EngineType,
 	}, nil
 }
 
-func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryPlugin, plugin.ConnectionInfo, string, string, error) {
+func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryRuntimeProvider, plugin.ConnectionInfo, string, string, error) {
 	if req == nil || req.Engine == nil {
 		return nil, nil, "", "", fmt.Errorf("invalid preview request")
 	}
@@ -139,9 +145,9 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryPlugin, plugi
 		return nil, nil, "", "", fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 
-	graphPlugin, ok := plug.(plugin.GraphQueryPlugin)
+	graphRuntime, ok := plug.(plugin.GraphQueryRuntimeProvider)
 	if !ok {
-		return nil, nil, "", "", fmt.Errorf("engine %s does not implement GraphQueryPlugin", req.Engine.EngineType)
+		return nil, nil, "", "", fmt.Errorf("engine %s does not implement GraphQueryRuntimeProvider", req.Engine.EngineType)
 	}
 
 	database := req.Schema
@@ -163,7 +169,7 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryPlugin, plugi
 	}
 	connInfo["database"] = database
 
-	return graphPlugin, connInfo, database, targetName, nil
+	return graphRuntime, connInfo, database, targetName, nil
 }
 
 func flattenGraphEntityRows(source []map[string]interface{}, key string) ([]string, []map[string]interface{}) {

@@ -41,8 +41,8 @@ func (p *MathWorkflowPlugin) SensitiveFields() []string {
 	return []string{} // 工作流引擎通常不需要敏感字段
 }
 
-func (p *MathWorkflowPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"type":"math","dev_modes":["workflow"],"features":["math_operations","workflow_execution"]}]}`
+func (p *MathWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
 }
 
 func (p *MathWorkflowPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
