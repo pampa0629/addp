@@ -92,7 +92,7 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 	// 自动生成 capabilities（如果请求中未提供）
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(req.EngineType)
-		engine.Capabilities = &capabilities
+		engine.Capabilities = toJSONStringPtr(capabilities)
 	}
 
 	// 验证能力声明
@@ -151,7 +151,7 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 	// 自动生成 capabilities（如果请求中未提供）
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(req.EngineType)
-		engine.Capabilities = &capabilities
+		engine.Capabilities = toJSONStringPtr(capabilities)
 	}
 
 	if err := s.validateCapabilities(engine.Capabilities); err != nil {
@@ -750,12 +750,12 @@ func (s *EngineService) validateScanConfig(config *models.ScanConfig) error {
 }
 
 // validateCapabilities 验证引擎能力声明的有效性
-func (s *EngineService) validateCapabilities(capabilitiesPtr *string) error {
+func (s *EngineService) validateCapabilities(capabilitiesPtr *models.JSONString) error {
 	if capabilitiesPtr == nil || *capabilitiesPtr == "" {
 		return nil // 空能力声明是允许的
 	}
 
-	structured, err := engineplugin.ParseEngineCapabilities(*capabilitiesPtr)
+	structured, err := engineplugin.ParseEngineCapabilities(string(*capabilitiesPtr))
 	if err != nil {
 		return fmt.Errorf("能力声明 JSON 格式错误: %w", err)
 	}
@@ -770,6 +770,11 @@ func (s *EngineService) validateCapabilities(capabilitiesPtr *string) error {
 	}
 
 	return nil
+}
+
+func toJSONStringPtr(value string) *models.JSONString {
+	jsonValue := models.JSONString(value)
+	return &jsonValue
 }
 
 // generateDefaultCapabilities 根据资源类型生成默认 capabilities
@@ -816,13 +821,14 @@ func (s *EngineService) RefreshAllEngineCapabilities() error {
 	for i := range engines {
 		engine := engines[i]
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
-		if err := s.validateCapabilities(&capabilities); err != nil {
+		capabilitiesJSON := toJSONStringPtr(capabilities)
+		if err := s.validateCapabilities(capabilitiesJSON); err != nil {
 			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
 		}
-		if engine.Capabilities != nil && *engine.Capabilities == capabilities {
+		if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
 			continue
 		}
-		engine.Capabilities = &capabilities
+		engine.Capabilities = capabilitiesJSON
 		if err := s.repo.Update(&engine); err != nil {
 			return fmt.Errorf("刷新引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
 		}
@@ -981,7 +987,7 @@ func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *ui
 func (s *EngineService) CreateEngine(engine *models.Engine) error {
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
-		engine.Capabilities = &capabilities
+		engine.Capabilities = toJSONStringPtr(capabilities)
 	}
 	if err := s.validateCapabilities(engine.Capabilities); err != nil {
 		return fmt.Errorf("能力声明验证失败: %w", err)
@@ -993,7 +999,7 @@ func (s *EngineService) CreateEngine(engine *models.Engine) error {
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
-		engine.Capabilities = &capabilities
+		engine.Capabilities = toJSONStringPtr(capabilities)
 	}
 	if err := s.validateCapabilities(engine.Capabilities); err != nil {
 		return fmt.Errorf("能力声明验证失败: %w", err)

@@ -11,7 +11,7 @@
 **核心特性**：
 - 微服务架构，模块化设计
 - 多租户隔离，资源独立管理
-- 插件化引擎系统，支持 11 种数据引擎
+- 插件化引擎系统，通过 provider 和 `engine.capabilities/v1` 声明能力
 - 统一认证和权限管理（JWT + RBAC）
 - 可视化工作流编排
 
@@ -44,7 +44,7 @@
 **核心能力**：
 - 用户和租户管理（SuperAdmin / Tenant Admin / Regular User）
 - RBAC 权限控制（角色与权限绑定）
-- 引擎（数据源）注册管理（支持 11 种数据引擎）
+- 引擎注册管理（统一保存连接配置、状态和结构化能力声明）
 - JWT Token 认证与授权
 - 审计日志记录（操作、登录、API 调用）
 - 系统配置和全局参数管理
@@ -81,7 +81,7 @@
 **职责定位**：数据预览、对象存储管理
 
 **核心能力**：
-- 数据源目录树展示（关系型/NoSQL/对象存储）
+- 数据源目录树展示（关系型/文档型/图数据库/对象存储/文件系统）
 - 多类型数据预览：
   - 表格数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB）
   - 空间数据（GeoJSON、Shapefile、PostGIS、MVT 瓦片快显）
@@ -105,10 +105,10 @@
 **职责定位**：元数据扫描、索引、搜索和管理
 
 **核心能力**：
-- 元数据扫描（关系型数据库、NoSQL、对象存储）：
-  - 关系型：ListSchemas() → ListTables() → ListColumns()
-  - NoSQL（MongoDB）：采样推断 Schema，支持混合类型字段
-  - 对象存储：ListBuckets() → ListObjects()，深度文件解析
+- 元数据扫描（统一通过 `CatalogProvider` 和 `ItemMetadataProvider`）：
+  - 关系型：schema/database → table/view → field
+  - 文档/图数据库：database → collection/label/relationship
+  - 对象存储/文件系统：bucket/root → prefix/dir → object/file
 - 全文检索索引（Meilisearch，支持中文分词）
 - 定时扫描（Cron 表达式配置）
 - 事件驱动自动扫描（System 注册引擎触发 Meta 扫描）

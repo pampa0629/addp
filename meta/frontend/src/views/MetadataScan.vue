@@ -45,17 +45,17 @@
                     </el-tooltip>
                   </div>
 
-                  <!-- 第三行：Schema统计（tooltip显示） -->
+                  <!-- 第三行：命名空间统计（tooltip显示） -->
                   <el-tooltip placement="top">
                     <template #content>
-                      {{ t('meta.scan.totalCount', { n: row.total_schemas || 0 }) }}<br>
-                      {{ t('meta.scan.scannedCount', { n: row.scanned_schemas || 0 }) }}<br>
-                      {{ t('meta.scan.unscannedCount', { n: row.unscanned_schemas || 0 }) }}
+                      {{ t('meta.scan.totalCount', { n: row.total_namespaces || row.total_schemas || 0 }) }}<br>
+                      {{ t('meta.scan.scannedCount', { n: row.scanned_namespaces || row.scanned_schemas || 0 }) }}<br>
+                      {{ t('meta.scan.unscannedCount', { n: row.unscanned_namespaces || row.unscanned_schemas || 0 }) }}
                     </template>
                     <div class="engine-stats">
-                      {{ row.total_schemas || 0 }}{{ getSchemaTerminology(row.resource_type) }}
-                      <span class="stat-scanned" v-if="row.scanned_schemas">({{ row.scanned_schemas }}{{ t('meta.scan.scannedSuffix', { n: '' }).replace('{n}', '') }})</span>
-                      <span class="stat-unscanned" v-if="row.unscanned_schemas">/{{ row.unscanned_schemas }}{{ t('meta.scan.unscannedSuffix', { n: '' }).replace('{n}', '') }}</span>
+                      {{ row.total_namespaces || row.total_schemas || 0 }}{{ getSchemaTerminology(row.resource_type) }}
+                      <span class="stat-scanned" v-if="row.scanned_namespaces || row.scanned_schemas">({{ row.scanned_namespaces || row.scanned_schemas }}{{ t('meta.scan.scannedSuffix', { n: '' }).replace('{n}', '') }})</span>
+                      <span class="stat-unscanned" v-if="row.unscanned_namespaces || row.unscanned_schemas">/{{ row.unscanned_namespaces || row.unscanned_schemas }}{{ t('meta.scan.unscannedSuffix', { n: '' }).replace('{n}', '') }}</span>
                     </div>
                   </el-tooltip>
                 </div>
@@ -254,8 +254,8 @@
           :title="scanResult.status === 'success' ? t('meta.scan.scanComplete') : t('meta.scan.scanFailed')"
         >
           <template #sub-title>
-            <div>{{ t('meta.scan.scannedSchemas', { n: scanResult.schemas_scanned }) }}</div>
-            <div>{{ t('meta.scan.foundTables', { n: scanResult.tables_scanned }) }}</div>
+            <div>{{ t('meta.scan.scannedNamespaces', { n: scanResult.namespaces_scanned }) }}</div>
+            <div>{{ t('meta.scan.foundItems', { n: scanResult.items_scanned }) }}</div>
             <div>{{ t('meta.scan.scannedFields', { n: scanResult.fields_scanned }) }}</div>
             <div>{{ t('meta.scan.duration', { n: scanResult.duration_ms }) }}</div>
           </template>
@@ -873,15 +873,15 @@ const handleBatchScan = async () => {
     scanMessage.value = t('meta.scan.scanningMsg')
     scanResult.value = null
 
-    let schemaNames = null
+    let namespaces = null
     let objectPaths = null
 
     if (isObjectStorage) {
       // 对象存储：传递路径列表
       objectPaths = selectedSchemas.value.map(item => item.path || item.name)
     } else {
-      // 关系型数据库：传递Schema名称列表
-      schemaNames = selectedSchemas.value.map(item => item.schema_name || item.name)
+      // 结构化存储：传递命名空间列表
+      namespaces = selectedSchemas.value.map(item => item.schema_name || item.name)
     }
 
     // 模拟进度
@@ -891,7 +891,7 @@ const handleBatchScan = async () => {
       }
     }, 500)
 
-    const res = await metaApi.scanEngine(selectedResource.value.id, schemaNames, objectPaths)
+    const res = await metaApi.scanEngine(selectedResource.value.id, namespaces, objectPaths)
     clearInterval(progressInterval)
     scanProgress.value = 100
 

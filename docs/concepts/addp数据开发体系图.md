@@ -10,13 +10,13 @@
 2. [查询开发 (Query)](#查询开发-query)
 3. [算子工作流 (Workflow)](#算子工作流-workflow)
 4. [Notebook 开发](#notebook-开发)
-5. [dev_modes 与开发界面映射](#dev_modes-与开发界面映射)
+5. [能力声明与开发界面映射](#能力声明与开发界面映射)
 
 ---
 
 ## 三种开发方式概述
 
-ADDP 的 Develop 模块提供三种数据开发方式,由引擎的 `dev_modes` 能力决定:
+ADDP 的 Develop 模块提供三种数据开发方式，由引擎的 `capabilities.compute` 能力决定：
 
 ```mermaid
 graph TB
@@ -51,7 +51,7 @@ graph TB
 
 | 维度 | 查询开发 (Query) | 算子工作流 (Workflow) | Notebook 开发 |
 |------|-----------------|---------------------|--------------|
-| **dev_mode** | `query` | `workflow` | `notebook` |
+| **能力字段** | `compute.query.supported` | `compute.workflow.supported` | `compute.script.supported` |
 | **界面** | 查询工作台 | 工作流编辑器 | Notebook 编辑器 |
 | **编辑器** | Monaco (SQL/MQL) | 算子拖拽 + DAG 可视化 | Jupyter Notebook |
 | **执行方式** | SQL/MQL 执行 | DAG 工作流执行 | Cell 逐个执行 |
@@ -264,9 +264,9 @@ graph TB
 
 ---
 
-## dev_modes 与开发界面映射
+## 能力声明与开发界面映射
 
-用户先选择开发界面，系统根据界面需求筛选支持该 dev_mode 的引擎:
+用户先选择开发界面，系统根据界面需求筛选支持对应 compute 能力的引擎:
 
 ```mermaid
 sequenceDiagram
@@ -275,10 +275,10 @@ sequenceDiagram
     participant System as System 模块
 
     User->>Develop: 1. 选择开发界面<br/>(查询工作台/工作流编辑器/Notebook)
-    Develop->>Develop: 2. 确定需要的 dev_mode<br/>(query/workflow/notebook)
+    Develop->>Develop: 2. 确定需要的 compute 能力<br/>(query/workflow/script)
     Develop->>System: 3. GET /api/system/engines
     System-->>Develop: 4. 返回所有引擎<br/>(含 capabilities)
-    Develop->>Develop: 5. 筛选支持该 dev_mode 的引擎<br/>过滤 capabilities.compute[].dev_modes
+    Develop->>Develop: 5. 筛选支持对应能力的引擎<br/>读取 capabilities.compute
 
     alt 选择了查询工作台
         Develop-->>User: 6. 显示支持 "query" 的引擎列表<br/>(PostgreSQL, MySQL, MongoDB等)
@@ -298,23 +298,25 @@ sequenceDiagram
 
 ### 开发界面与引擎筛选规则
 
-| 用户选择的界面 | 需要的 dev_mode | 筛选后的引擎示例 | 编辑器组件 |
+| 用户选择的界面 | 需要的能力 | 筛选后的引擎示例 | 编辑器组件 |
 |--------------|----------------|----------------|-----------|
-| 查询工作台 | `query` | PostgreSQL, MySQL, MongoDB, ClickHouse, Doris, Spark SQL | Monaco Editor |
-| 工作流编辑器 | `workflow` | Python Workflow, Spark Workflow, Math Workflow | 算子拖拽 + DAG Canvas |
-| Notebook 编辑器 | `notebook` | Jupyter | Jupyter Notebook |
+| 查询工作台 | `compute.query.supported=true` | PostgreSQL, MySQL, MongoDB, Neo4j, ClickHouse, Doris, Spark SQL | Monaco Editor |
+| 工作流编辑器 | `compute.workflow.supported=true` | Python Workflow, Spark Workflow, Math Workflow | 算子拖拽 + DAG Canvas |
+| Notebook 编辑器 | `compute.script.supported=true` | Jupyter | Jupyter Notebook |
 
 ### 引擎能力声明示例
 
 **PostgreSQL 引擎**:
 ```json
 {
-  "compute": [
-    {
-      "dev_modes": ["query"],
-      "description": "SQL查询"
+  "schema_version": "engine.capabilities/v1",
+  "compute": {
+    "query": {
+      "supported": true,
+      "languages": ["sql"],
+      "default_language": "sql"
     }
-  ]
+  }
 }
 ```
 → 当用户选择**查询工作台**时，PostgreSQL 会出现在可用引擎列表中
@@ -322,12 +324,14 @@ sequenceDiagram
 **Python Workflow 引擎**:
 ```json
 {
-  "compute": [
-    {
-      "dev_modes": ["workflow"],
-      "description": "空间数据分析工作流"
+  "schema_version": "engine.capabilities/v1",
+  "compute": {
+    "workflow": {
+      "supported": true,
+      "runtime_api": "addp.workflow/v1",
+      "dynamic_operators": true
     }
-  ]
+  }
 }
 ```
 → 当用户选择**工作流编辑器**时，Python Workflow 会出现在可用引擎列表中
@@ -335,12 +339,14 @@ sequenceDiagram
 **Jupyter 引擎**:
 ```json
 {
-  "compute": [
-    {
-      "dev_modes": ["notebook"],
-      "description": "交互式 Notebook 开发"
+  "schema_version": "engine.capabilities/v1",
+  "compute": {
+    "script": {
+      "supported": true,
+      "modes": ["notebook"],
+      "languages": ["python"]
     }
-  ]
+  }
 }
 ```
 → 当用户选择**Notebook 编辑器**时，Jupyter 会出现在可用引擎列表中
@@ -348,12 +354,11 @@ sequenceDiagram
 **组合能力引擎** (理论示例):
 ```json
 {
-  "compute": [
-    {
-      "dev_modes": ["query", "workflow"],
-      "description": "支持查询和工作流"
-    }
-  ]
+  "schema_version": "engine.capabilities/v1",
+  "compute": {
+    "query": {"supported": true, "languages": ["sql"]},
+    "workflow": {"supported": true, "runtime_api": "addp.workflow/v1", "dynamic_operators": true}
+  }
 }
 ```
 → 该引擎会同时出现在**查询工作台**和**工作流编辑器**的引擎列表中

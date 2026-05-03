@@ -26,9 +26,9 @@ func TestGenerateDefaultCapabilitiesUsesStructuredPluginSchema(t *testing.T) {
 
 func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
-	legacy := `{"storage":[{"type":"relational_db","engine":"postgresql"}]}`
+	legacy := toJSONStringPtr(`{"storage":[{"type":"relational_db","engine":"postgresql"}]}`)
 
-	if err := service.validateCapabilities(&legacy); err == nil {
+	if err := service.validateCapabilities(legacy); err == nil {
 		t.Fatal("expected legacy capabilities without schema_version to be rejected")
 	}
 }

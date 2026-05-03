@@ -325,7 +325,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 
 	// 从 ExecutionConfig 中恢复参数
 	var engineID uint
-	var schemaNames, objectPaths []string
+	var namespaces, objectPaths []string
 	var scanDepth, token, storageType string
 
 	if exec.ExecutionConfig != nil {
@@ -340,7 +340,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		storageType, _ = exec.ExecutionConfig["storage_type"].(string)
 		scanDepth, _ = exec.ExecutionConfig["scan_depth"].(string)
 		token, _ = exec.ExecutionConfig["token"].(string)
-		schemaNames = extractSliceFromInterface(exec.ExecutionConfig["namespaces"])
+		namespaces = extractSliceFromInterface(exec.ExecutionConfig["namespaces"])
 		objectPaths = extractSliceFromInterface(exec.ExecutionConfig["object_paths"])
 	}
 
@@ -383,7 +383,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	reporter := newExecProgressReporter(s, executionID, exec.TenantID)
 	reporter.Message("任务开始执行")
 
-	resp, scanErr := s.scanService.ScanEngineWithDepth(engineID, uint(exec.TenantID), schemaNames, objectPaths, token, scanDepth, reporter)
+	resp, scanErr := s.scanService.ScanEngineWithDepth(engineID, uint(exec.TenantID), namespaces, objectPaths, token, scanDepth, reporter)
 	completeTime := time.Now()
 	durationMs := completeTime.Sub(start).Milliseconds()
 
@@ -406,10 +406,10 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	}
 
 	metadata := commonModels.JSONMap{
-		"schemas_scanned": resp.SchemasScanned,
-		"tables_scanned":  resp.TablesScanned,
-		"fields_scanned":  resp.FieldsScanned,
-		"storage_type":    storageType,
+		"namespaces_scanned": resp.NamespacesScanned,
+		"items_scanned":      resp.ItemsScanned,
+		"fields_scanned":     resp.FieldsScanned,
+		"storage_type":       storageType,
 	}
 
 	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{

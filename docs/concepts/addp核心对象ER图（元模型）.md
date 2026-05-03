@@ -49,12 +49,12 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文         | 英文标识符        | 对应插件接口            | 使用该能力的模块               |
 | ------------ | ----------------- | ----------------------- | ------------------------------ |
-| 关系型存储   | RelationalStorage | RelationalDBPlugin      | Meta / Manager / Transfer / Develop |
-| NoSQL 存储   | NoSQLStorage      | NoSQLPlugin             | Meta / Manager / Transfer / Develop |
-| 对象存储     | ObjectStorage     | ObjectStoragePlugin     | Meta / Manager / Transfer      |
-| SQL 查询计算 | SQLCompute        | ComputePlugin (query)   | Develop                        |
-| 工作流计算   | WorkflowCompute   | ComputePlugin (workflow)| Develop                        |
-| Notebook计算 | NotebookCompute   | ComputePlugin (notebook)| Develop                        |
+| 目录发现       | CatalogCapability  | CatalogProvider          | Meta / Manager / Console        |
+| 叶子元数据     | MetadataCapability | ItemMetadataProvider     | Meta / Manager / Service        |
+| 内容读取       | ContentRead        | ContentReadableProvider  | Manager / Meta / Transfer       |
+| 查询计算       | QueryCompute       | QueryRuntimeProvider     | Develop / Service / Manager     |
+| 工作流计算     | WorkflowCompute    | WorkflowRuntimeProvider  | Develop / Orchestrator          |
+| Notebook计算   | ScriptCompute      | ScriptRuntimeProvider    | Develop                         |
 
 ---
 

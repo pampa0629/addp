@@ -614,7 +614,7 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 		// 但为了避免循环导入，直接在这里实现过滤逻辑
 		if r.IsActive && r.Capabilities != nil && *r.Capabilities != "" {
 			// 简单的 JSON 字符串匹配（临时方案，更好的做法是导入 utils）
-			if strings.Contains(*r.Capabilities, "\"workflow\"") {
+			if strings.Contains(string(*r.Capabilities), "\"workflow\"") {
 				filtered = append(filtered, r)
 			}
 		}

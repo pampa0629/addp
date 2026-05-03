@@ -14,12 +14,12 @@ type CapabilityFilter struct {
 }
 
 // ParseCapabilities 解析资源的结构化 capabilities JSON
-func ParseCapabilities(capabilitiesJSON *string) (*engineplugin.EngineCapabilities, error) {
+func ParseCapabilities(capabilitiesJSON *models.JSONString) (*engineplugin.EngineCapabilities, error) {
 	if capabilitiesJSON == nil || *capabilitiesJSON == "" {
 		return nil, nil
 	}
 
-	return engineplugin.ParseEngineCapabilities(*capabilitiesJSON)
+	return engineplugin.ParseEngineCapabilities(string(*capabilitiesJSON))
 }
 
 // HasStorageCapability 检查资源是否具有存储能力

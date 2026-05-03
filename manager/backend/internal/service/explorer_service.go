@@ -19,9 +19,9 @@ import (
 // 2. 调用 PreviewResolver 提供数据预览
 // 3. 管理节点刷新
 type ExplorerService struct {
-	systemClient *commonClient.SystemClient
-	metaClient   *commonClient.MetaClient
-	treeBuilder  *resource.TreeBuilder
+	systemClient    *commonClient.SystemClient
+	metaClient      *commonClient.MetaClient
+	treeBuilder     *resource.TreeBuilder
 	previewResolver *PreviewResolver
 }
 
@@ -118,20 +118,20 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		s.metaClient.SetTenantID(tenantID)
 
 		// 根据节点类型决定扫描范围
-		var schemaNames []string
+		var namespaces []string
 
 		switch loc.Type {
 		case resource.TypeTable:
-			// 表节点：扫描该表所在的 schema
+			// 表节点：扫描该表所在的命名空间
 			if len(loc.Path) > 0 {
-				schemaNames = []string{loc.Path[0]}
-				logger.L().Info("触发 Schema 级扫描（表节点）", "engine_id", loc.EngineID, "schema", loc.Path[0])
+				namespaces = []string{loc.Path[0]}
+				logger.L().Info("触发命名空间级扫描（表节点）", "engine_id", loc.EngineID, "namespace", loc.Path[0])
 			}
 		case resource.TypeSchema:
-			// Schema 节点：扫描该 schema
+			// Schema/namespace 节点：扫描该命名空间
 			if len(loc.Path) > 0 {
-				schemaNames = []string{loc.Path[0]}
-				logger.L().Info("触发 Schema 级扫描（Schema 节点）", "engine_id", loc.EngineID, "schema", loc.Path[0])
+				namespaces = []string{loc.Path[0]}
+				logger.L().Info("触发命名空间级扫描（Schema 节点）", "engine_id", loc.EngineID, "namespace", loc.Path[0])
 			}
 		default:
 			// 其他类型（数据库、引擎根节点、对象存储等）：扫描整个引擎
@@ -139,11 +139,11 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		}
 
 		// 调用 Meta 扫描 API
-		if err := s.metaClient.TriggerScanEngine(loc.EngineID, schemaNames); err != nil {
+		if err := s.metaClient.TriggerScanEngine(loc.EngineID, namespaces); err != nil {
 			// 扫描失败不中断流程，只记录警告
 			logger.L().Warn("触发 Meta 扫描失败", "error", err)
 		} else {
-			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID, "schemas", schemaNames)
+			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID, "namespaces", namespaces)
 		}
 	}
 
@@ -775,9 +775,9 @@ func convertManagerEngineToCommon(managerEngine *models.Engine) *commonModels.En
 		CreatedAt:      managerEngine.CreatedAt,
 		UpdatedAt:      managerEngine.UpdatedAt,
 		// Common 的 Engine 有额外字段，使用默认值
-		EngineCategory:   "standard",           // 默认为标准引擎
-		ScanConfig:       nil,                  // Manager 不维护扫描配置
-		ConnectionStatus: "unknown",            // 默认未知状态
+		EngineCategory:   "standard", // 默认为标准引擎
+		ScanConfig:       nil,        // Manager 不维护扫描配置
+		ConnectionStatus: "unknown",  // 默认未知状态
 		LastCheckAt:      nil,
 		CheckMessage:     "",
 	}

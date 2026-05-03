@@ -444,15 +444,15 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	result := make([]*models.ResourceWithStats, 0, len(engines))
 	for _, res := range engines {
-		totalSchemas := 0
-		scannedSchemas := 0
+		totalNamespaces := 0
+		scannedNamespaces := 0
 		lastScanAt := ""
 
 		if cnt, ok := totalCount[res.ID]; ok {
-			totalSchemas = int(cnt)
+			totalNamespaces = int(cnt)
 		}
 		if cnt, ok := scannedCount[res.ID]; ok {
-			scannedSchemas = int(cnt)
+			scannedNamespaces = int(cnt)
 		}
 		if ts, ok := lastScanByRes[res.ID]; ok && ts != nil {
 			lastScanAt = ts.Format("2006-01-02 15:04:05")
@@ -465,16 +465,16 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		}
 
 		result = append(result, &models.ResourceWithStats{
-			EngineID:         res.ID,
-			ResourceName:     res.Name,
-			ResourceType:     res.EngineType,
-			TotalSchemas:     totalSchemas,
-			ScannedSchemas:   scannedSchemas,
-			UnscannedSchemas: totalSchemas - scannedSchemas,
-			ScannedAt:        lastScanAt,
-			ConnectionStatus: res.ConnectionStatus,
-			LastCheckAt:      lastCheckAt,
-			CheckMessage:     res.CheckMessage,
+			EngineID:            res.ID,
+			ResourceName:        res.Name,
+			ResourceType:        res.EngineType,
+			TotalNamespaces:     totalNamespaces,
+			ScannedNamespaces:   scannedNamespaces,
+			UnscannedNamespaces: totalNamespaces - scannedNamespaces,
+			ScannedAt:           lastScanAt,
+			ConnectionStatus:    res.ConnectionStatus,
+			LastCheckAt:         lastCheckAt,
+			CheckMessage:        res.CheckMessage,
 		})
 	}
 

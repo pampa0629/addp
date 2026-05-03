@@ -4,7 +4,7 @@
 
 Meta 模块是 ADDP 平台的**元数据管理中枢**，负责以下核心功能：
 
-1. **元数据扫描** - 自动扫描存储引擎（数据库、对象存储）的元数据信息（Schema、Table、Object），构建数据目录树
+1. **元数据扫描** - 自动扫描存储引擎（数据库、对象存储、文件系统等）的目录节点和数据项元数据，构建数据目录树
 2. **定时调度** - 支持定时扫描任务（基于 Cron 表达式），自动更新元数据
 3. **元数据存储** - 将扫描结果存储到 `metadata.meta_node`（层级节点）和 `metadata.meta_item`（数据项）表
 4. **全文检索索引** - 将元数据同步到 Meilisearch，支持全文搜索
@@ -28,28 +28,16 @@ ScanTaskService (任务管理)
   ↓
 ScanService (扫描执行器)
   ├─ 验证租户权限（verifyResourceAccess）
-  ├─ 判断存储引擎类型（数据库 vs 对象存储）
-  ├─ 数据库扫描流程（DatabaseScanService）
-  │  ├─ 🔌 获取插件: plugin.Get(engineType) → RelationalDBPlugin
-  │  ├─ 创建连接池: plugin.GetOrCreatePoolFromFactory()
-  │  ├─ 列出 Schema: relPlugin.ListSchemas(ctx, db)
-  │  ├─ 过滤系统 Schema: relPlugin.IsSystemSchema(schemaName)
-  │  ├─ 创建/更新 MetaNode（Schema 节点）
-  │  ├─ 列出表: relPlugin.ListTables(ctx, db, schemaName)
-  │  ├─ 创建/更新 MetaItem（Table 数据项）
-  │  ├─ 列出字段: relPlugin.ListColumns(ctx, db, schemaName, tableName)
-  │  ├─ 提取表 Schema（字段、类型、注释）
-  │  ├─ 空间元数据提取（ST_Extent、SRID、几何类型）
-  │  └─ 索引到 Meilisearch
-  └─ 对象存储扫描流程（ObjectStorageScanService）
-     ├─ 🔌 获取插件: plugin.Get(engineType) → ObjectStoragePlugin
-     ├─ 列出 Bucket: objPlugin.ListBuckets(ctx, connInfo)
-     ├─ 创建/更新 MetaNode（Bucket）
-     ├─ 列出对象: objPlugin.ListObjects(ctx, connInfo, bucket, prefix, recursive)
-     ├─ 创建/更新 MetaItem（Object）
-     ├─ 提取文件元数据（扩展名、MIME、文件大小）
-     ├─ 文档内容嵌入（可选，需配置 Embedding Service）
-     └─ 索引到 Meilisearch
+  ├─ 获取插件: plugin.Get(engineType) → EnginePlugin
+  ├─ 校验能力声明: engine.capabilities/v1
+  ├─ 目录扫描: CatalogProvider.ListChildren()
+  │  ├─ 创建/更新 MetaNode（容器节点，如 schema/database/bucket/prefix/directory）
+  │  └─ 创建/更新 MetaItem（叶子数据项，如 table/view/collection/object/file）
+  ├─ 叶子元数据: ItemMetadataProvider.DescribeItem()
+  │  ├─ 提取字段、统计、索引、约束、空间信息和原生属性
+  │  └─ 文档型数据库可通过 DocumentMetadataSamplingProvider 采样推断结构
+  ├─ 文档内容嵌入（可选，需配置 Embedding Service）
+  └─ 索引到 Meilisearch
   ↓
 元数据持久化（PostgreSQL metadata schema）
   ├─ meta_node 表（层级节点）
@@ -66,32 +54,32 @@ ScanService (扫描执行器)
   └─ meta:events:scan_completed
 ```
 
-### 插件系统架构（v0.0.20 重构）
+### 插件系统架构
 
-Meta 模块通过 `common/database/plugin` 三层插件架构直接访问存储引擎：
+Meta 模块通过 `common/engine/plugin` 的 Provider 化接口访问存储引擎：
 
 ```
 Meta 模块 (internal/service)
   ↓ 调用
 plugin.Get(engineType) → EnginePlugin
-  ↓ 类型断言
-RelationalDBPlugin (数据库)          ObjectStoragePlugin (对象存储)
-  ├─ ListSchemas()                   ├─ ListBuckets()
-  ├─ ListTables()                    ├─ ListObjects()
-  ├─ ListColumns()                   └─ GetObjectMetadata()
-  ├─ IsSystemSchema()
-  └─ GetTableMetadata()
+  ↓ 能力判断和类型断言
+CatalogProvider
+  ├─ ListChildren()
+  └─ ResolvePath()
+ItemMetadataProvider
+  └─ DescribeItem()
+DocumentMetadataSamplingProvider（可选）
+  └─ SampleDocuments()
   ↓ 实现
-PostgreSQL / MySQL / Doris          MinIO / S3
-ClickHouse / MongoDB
+PostgreSQL / MySQL / Doris / ClickHouse / MongoDB / Neo4j / MinIO / S3 / NFS
 ```
 
-**重构优势**（v0.0.20）：
-- ✅ **调用链简化**: 从 5 层缩减为 2 层（ScanService → Plugin → 数据库）
-- ✅ **代码复用**: DatabaseScanService 和 ObjectStorageScanService 直接复用 common 插件
-- ✅ **减少维护成本**: 删除 1200+ 行冗余 Scanner 适配层代码
-- ✅ **统一接口**: Meta、Manager、Transfer 等模块使用相同的插件接口
-- ✅ **扩展性强**: 新增存储引擎只需实现 common 插件接口
+**关键约束**：
+- 上层模块不得直接依赖旧的 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 接口。
+- 目录发现统一走 `CatalogProvider.ListChildren()`。
+- 叶子数据项元数据统一走 `ItemMetadataProvider.DescribeItem()`。
+- 插件必须返回结构化 `engine.capabilities/v1` 能力声明。
+- 详细规范见 `docs/spec/addp引擎插件接口规范.md` 和 `docs/spec/addp引擎能力声明规范.md`。
 
 ## 数据库文档
 

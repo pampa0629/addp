@@ -1,6 +1,6 @@
 # ADDP 元数据体系图
 
-本文档展示 ADDP 平台的元数据管理体系,包括层次结构、Parser 体系和统一数据结构。
+本文档展示 ADDP 平台的元数据管理体系，包括层次结构和扫描流程。引擎目录和元数据能力统一来自 `CatalogProvider` 与 `ItemMetadataProvider`，接口规范见 [../spec/addp引擎插件接口规范.md](../spec/addp引擎插件接口规范.md)。
 
 ---
 
@@ -31,7 +31,7 @@
 
 ## 元数据层次结构
 
-ADDP 将不同类型存储引擎的层次结构统一抽象为**数据节点**和**数据项**:
+ADDP 将不同类型存储引擎的层次结构统一抽象为**数据节点**和**数据项**。真实层级由插件的 Catalog Model 声明。
 
 ### 2.1 关系型数据库层次结构
 
@@ -81,7 +81,7 @@ graph TB
     OBJ[对象存储<br/>MinIO/S3<br/>Engine]
     OBJ --> OBJNODE1[Bucket<br/>存储桶 - Node]
     OBJNODE1 --> OBJNODE2[Folder<br/>文件夹 - Node]
-    OBJNODE2 --> OBJITEM[Object/File<br/>对象/文件 - Item]
+    OBJNODE2 --> OBJITEM[Object<br/>对象 - Item]
     OBJITEM --> OBJMETA[Metadata<br/>文件元数据]
 
     classDef engine fill:#fff9c4,stroke:#f57f17
@@ -99,15 +99,16 @@ graph TB
 
 | 存储类型 | 层级1 (Engine) | 层级2 (Node) | 层级3 (Node) | 层级4 (Item) | 层级5 (Metadata) |
 |---------|---------------|-------------|-------------|------------|-----------------|
-| **关系型数据库** | PostgreSQL/MySQL | Database | Schema | Table | Column |
-| **NoSQL 数据库** | MongoDB | Database | - | Collection | Field |
-| **对象存储** | MinIO/S3 | Bucket | Folder | Object | File Metadata |
+| **PostgreSQL** | PostgreSQL | Schema | - | Table/View | Column |
+| **MySQL/Doris/ClickHouse** | 引擎 | Database | - | Table/View | Column |
+| **MongoDB** | MongoDB | Database | - | Collection | Field |
+| **Neo4j** | Neo4j | Database | - | Label/Relationship | Property |
+| **对象存储** | MinIO/S3 | Bucket | Prefix | Object | Object Metadata |
 | **NFS** | NFS Engine | Root (`""`) | Dir | File | File Metadata |
-| **本地文件系统** | Local FS Engine | Root (`"/"` 或 `"C:/"`) | Dir | File | File Metadata |
 
 **抽象规则**:
 - **Node**: 层次结构的容器,用于组织数据(Database、Schema、Bucket、Folder、Root、Dir)
-- **Item**: 可查询的数据单元,是元数据扫描的目标(Table、Collection、File)
+- **Item**: 可描述、预览或读取的数据单元，是元数据扫描的目标（Table、Collection、Label、Relationship、Object、File）
 - **Metadata**: Item 的详细描述信息(Column、Field、File Metadata)
 
 **文件系统 vs 对象存储的 Node 类型区别**:
@@ -427,23 +428,23 @@ sequenceDiagram
     participant DB as PostgreSQL<br/>(metadata schema)
     participant Search as Meilisearch
 
-    Meta->>Plugin: 1. 选择插件<br/>(根据引擎类型)
-    Meta->>Plugin: 2. ListSchemas/ListDatabases/ListBuckets
-    Plugin->>Storage: 3. 查询层次结构
+    Meta->>Plugin: 1. 选择插件<br/>(根据引擎类型和 capabilities)
+    Meta->>Plugin: 2. CatalogProvider.ListChildren(root)
+    Plugin->>Storage: 3. 查询真实目录
     Storage-->>Plugin: 4. 返回 Node 列表
     Plugin-->>Meta: 5. 返回 Node 列表
 
     loop 遍历每个 Item (表/集合/文件)
-        Meta->>Plugin: 6. ListTables/ListCollections/ListObjects
-        Plugin->>Storage: 7. 查询 Item 列表
+        Meta->>Plugin: 6. CatalogProvider.ListChildren(node)
+        Plugin->>Storage: 7. 查询子节点和 Item 列表
         Storage-->>Plugin: 8. 返回 Item 列表
         Plugin-->>Meta: 9. 返回 Item 列表
 
-        Meta->>Parser: 10. 选择 Parser<br/>(根据数据类型)
-        Parser->>Storage: 11. 提取元数据<br/>(ParseTableInfo/ParseObjectInfo)
-        Storage-->>Parser: 12. 返回原始数据
-        Parser->>Parser: 13. 解析并统一为 TableInfo
-        Parser-->>Meta: 14. 返回 TableInfo
+        Meta->>Plugin: 10. ItemMetadataProvider.DescribeItem()
+        Plugin->>Storage: 11. 提取字段/统计/空间/原生元数据
+        Storage-->>Plugin: 12. 返回原始元数据
+        Plugin-->>Meta: 13. 返回统一 ItemMetadata
+        Meta->>Parser: 14. 必要时选择 Parser<br/>(文件内容解析/嵌入)
 
         Meta->>DB: 15. 保存元数据<br/>(metadata.meta_node 和 metadata.meta_item 表)
         Meta->>Search: 16. 索引到 Meilisearch<br/>(assets 统一索引)
@@ -455,18 +456,18 @@ sequenceDiagram
 ### 扫描流程说明
 
 **步骤 1-5**: 获取数据节点(Node)
-- Meta 模块根据引擎类型选择对应的插件
-- 调用插件的 `ListSchemas`/`ListDatabases`/`ListBuckets` 方法
-- 获取层次结构的容器节点(Database、Schema、Bucket)
+- Meta 模块根据引擎类型和 `engine.capabilities/v1` 选择对应插件
+- 调用 `CatalogProvider.ListChildren(root)`
+- 获取层次结构的容器节点(Database、Schema、Bucket、Prefix、Directory 等)
 
 **步骤 6-9**: 获取数据项(Item)
-- 遍历每个 Node,调用 `ListTables`/`ListCollections`/`ListObjects` 方法
-- 获取可查询的数据单元列表(Table、Collection、File)
+- 遍历每个 Node，继续调用 `CatalogProvider.ListChildren(node)`
+- 获取统一数据项列表(Table、Collection、Object、File 等)
 
 **步骤 10-14**: 解析元数据
-- Meta 模块根据数据类型选择对应的 Parser
-- Parser 提取详细的元数据信息
-- 统一返回 TableInfo 结构(包含字段定义、行数、扩展信息)
+- Meta 模块通过 `ItemMetadataProvider.DescribeItem()` 获取详细元数据
+- 插件返回统一的 ItemMetadata，包含字段、统计、索引、约束、空间信息和原生属性
+- 文件内容解析、文档嵌入等增强流程再按数据类型选择 Parser
 
 **步骤 15-16**: 存储和索引
 - 将 Node 数据保存到 PostgreSQL `metadata.meta_node` 表

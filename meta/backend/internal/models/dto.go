@@ -18,24 +18,24 @@ type ScanRequest struct {
 
 // ScanResponse 扫描响应
 type ScanResponse struct {
-	Status         string `json:"status"` // success/failed
-	Message        string `json:"message"`
-	SchemasScanned int    `json:"schemas_scanned"`
-	TablesScanned  int    `json:"tables_scanned"`
-	FieldsScanned  int    `json:"fields_scanned"`
-	DurationMs     int64  `json:"duration_ms"`
-	StartedAt      string `json:"started_at"`
+	Status            string `json:"status"` // success/failed
+	Message           string `json:"message"`
+	NamespacesScanned int    `json:"namespaces_scanned"`
+	ItemsScanned      int    `json:"items_scanned"`
+	FieldsScanned     int    `json:"fields_scanned"`
+	DurationMs        int64  `json:"duration_ms"`
+	StartedAt         string `json:"started_at"`
 }
 
 // ResourceWithStats 资源及其扫描统计
 type ResourceWithStats struct {
-	EngineID         uint   `json:"id"`   // 前端期待 id
-	ResourceName     string `json:"name"` // 前端期待 name
-	ResourceType     string `json:"resource_type"`
-	TotalSchemas     int    `json:"total_schemas"`
-	ScannedSchemas   int    `json:"scanned_schemas"`
-	UnscannedSchemas int    `json:"unscanned_schemas"`
-	ScannedAt        string `json:"scanned_at,omitempty"`
+	EngineID            uint   `json:"id"`   // 前端期待 id
+	ResourceName        string `json:"name"` // 前端期待 name
+	ResourceType        string `json:"resource_type"`
+	TotalNamespaces     int    `json:"total_namespaces"`
+	ScannedNamespaces   int    `json:"scanned_namespaces"`
+	UnscannedNamespaces int    `json:"unscanned_namespaces"`
+	ScannedAt           string `json:"scanned_at,omitempty"`
 	// 连接状态相关字段
 	ConnectionStatus string `json:"connection_status,omitempty"` // online/offline/unknown/checking
 	LastCheckAt      string `json:"last_check_at,omitempty"`     // 最后检测时间

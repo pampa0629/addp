@@ -14,7 +14,8 @@ func TestStructuredCapabilitiesStorageFilter(t *testing.T) {
 		"storage":{"families":["tabular"]},
 		"compute":{"query":{"supported":true,"languages":["sql"]}}
 	}`
-	engine := &models.Engine{Capabilities: &caps}
+	capabilities := models.JSONString(caps)
+	engine := &models.Engine{Capabilities: &capabilities}
 
 	if !HasStorageCapability(engine) {
 		t.Fatal("expected structured capabilities to expose storage capability")
@@ -34,7 +35,8 @@ func TestStructuredCapabilitiesDevModes(t *testing.T) {
 		"engine_family":"script",
 		"compute":{"script":{"supported":true,"modes":["notebook"],"languages":["python"]}}
 	}`
-	engine := &models.Engine{Capabilities: &caps}
+	capabilities := models.JSONString(caps)
+	engine := &models.Engine{Capabilities: &capabilities}
 
 	if !SupportsDevMode(engine, "notebook") {
 		t.Fatal("expected script capability to support notebook dev mode")

@@ -472,13 +472,16 @@ def register_to_system():
             "port": 8097
         },
         "capabilities": json.dumps({
-            "compute": [{
-                "dev_modes": ["workflow"],
-                "api_endpoints": {
-                    "operators": "/api/operators",
-                    "workflow": "/api/workflow"
+            "schema_version": "engine.capabilities/v1",
+            "engine_type": "math_workflow",
+            "engine_family": "workflow",
+            "compute": {
+                "workflow": {
+                    "supported": True,
+                    "runtime_api": "addp.workflow/v1",
+                    "dynamic_operators": True
                 }
-            }]
+            }
         })
     }
 

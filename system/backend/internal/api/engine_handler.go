@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +14,11 @@ import (
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+type engineResponse struct {
+	models.Engine
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+}
 
 type EngineHandler struct {
 	engineService        *service.EngineService
@@ -51,7 +57,7 @@ func (h *EngineHandler) Create(c *gin.Context) {
 		return
 	}
 
-	commonapi.RespondCreated(c, engine)
+	commonapi.RespondCreated(c, toEngineResponse(engine))
 }
 
 // List godoc
@@ -77,7 +83,7 @@ func (h *EngineHandler) List(c *gin.Context) {
 		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
-	commonapi.RespondPaginated(c, engines, total, page, pageSize)
+	commonapi.RespondPaginated(c, toEngineResponses(engines), total, page, pageSize)
 }
 
 func (h *EngineHandler) GetByID(c *gin.Context) {
@@ -93,7 +99,7 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	commonapi.RespondSuccess(c, engine)
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
 func (h *EngineHandler) Update(c *gin.Context) {
@@ -115,7 +121,7 @@ func (h *EngineHandler) Update(c *gin.Context) {
 		return
 	}
 
-	commonapi.RespondSuccess(c, engine)
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
 func (h *EngineHandler) Delete(c *gin.Context) {
@@ -250,7 +256,7 @@ func (h *EngineHandler) CreateInternal(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, engine)
+	c.JSON(http.StatusCreated, toEngineResponse(engine))
 }
 
 // ============ 内部 API（服务间调用）============
@@ -284,7 +290,7 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, engines)
+		c.JSON(http.StatusOK, toEngineResponses(engines))
 		return
 	}
 
@@ -295,7 +301,7 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, engines)
+	c.JSON(http.StatusOK, toEngineResponses(engines))
 }
 
 // parseCommaSeparated 解析逗号分隔的字符串
@@ -329,7 +335,23 @@ func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
 		return
 	}
 
-	commonapi.RespondSuccess(c, engine)
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
+}
+
+func toEngineResponses(engines []models.Engine) []engineResponse {
+	responses := make([]engineResponse, 0, len(engines))
+	for i := range engines {
+		responses = append(responses, toEngineResponse(&engines[i]))
+	}
+	return responses
+}
+
+func toEngineResponse(engine *models.Engine) engineResponse {
+	response := engineResponse{Engine: *engine}
+	if engine.Capabilities != nil && *engine.Capabilities != "" {
+		response.Capabilities = json.RawMessage(*engine.Capabilities)
+	}
+	return response
 }
 
 // ListNamespaces 列出指定引擎的 catalog 命名空间。

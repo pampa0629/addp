@@ -34,7 +34,9 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | Go/前端依赖版本 | `docs/spec/addp技术栈规约.md` |
 | 共享模块使用 | `docs/concepts/addp共享模块介绍.md` |
 | 创建新模块 | `docs/spec/addp新模块开发指南.md` |
-| 新增存储引擎/数据库 | `docs/spec/addp数据引擎扩展指南.md` |
+| 引擎体系、插件接口、Provider 边界 | `docs/concepts/addp引擎体系图.md`、`docs/spec/addp引擎插件接口规范.md` |
+| 引擎能力声明、capabilities | `docs/spec/addp引擎能力声明规范.md` |
+| 新增存储引擎/数据库 | `docs/spec/addp数据引擎扩展指南.md`、`docs/spec/addp引擎插件接口规范.md`、`docs/spec/addp引擎能力声明规范.md` |
 | 新增数据类型/数据格式 | `docs/spec/addp数据格式扩展指南.md` |
 | 故障和问题修复 | `docs/addp常见故障排查.md` |
 | 核心概念与全局视图 | `docs/addp核心概念关系图.md` |
@@ -43,6 +45,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | 存储路径和指纹 | `docs/spec/addp存储引擎路径体系规范.md`、`docs/spec/addp路径统一和指纹计算.md` |
 | 登录认证 | `docs/spec/addp登录认证的统一要求.md`、`docs/concepts/addp登录认证的原理说明.md` |
 | 工作流计算引擎 | `docs/spec/addp工作流计算引擎接口规范.md` |
+| Transfer 引擎插件迁移后续事项 | `docs/next/engine-plugin-transfer后续事项.md` |
 
 模块相关问题优先阅读模块自己的 `CLAUDE.md` 或模块文档：
 

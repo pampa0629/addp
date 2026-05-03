@@ -175,7 +175,8 @@ ADDP 平台提供 **4 种** Parser 接口,覆盖不同数据源的元数据提�
     ┌─────────────────────────────────────────────────────┐
     │ 1. 引擎识别 (common/engine/plugin)                 │
     │    - 引擎类型: "mongodb"                           │
-    │    - 实现接口: NoSQLPlugin                         │
+    │    - 实现接口: CatalogProvider + ItemMetadataProvider│
+    │    - 查询能力: DocumentQueryRuntimeProvider         │
     │    - 创建客户端: mongo.Connect(ctx, options)       │
     └─────────────────────────────────────────────────────┘
               │            │            │
@@ -581,7 +582,9 @@ Step 1: 实现引擎插件
 │ 实现接口:                                      │
 │   - EnginePlugin（基础接口）                  │
 │   - StoragePlugin（存储引擎标记）             │
-│   - NoSQLPlugin（NoSQL 专用接口）             │
+│   - CatalogProvider（目录发现）               │
+│   - ItemMetadataProvider（数据项元数据）      │
+│   - DocumentQueryRuntimeProvider（文档查询）  │
 │                                                │
 │ 文件: common/engine/plugins/couchdb/plugin.go │
 └────────────────────────────────────────────────┘

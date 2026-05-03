@@ -20,7 +20,9 @@
 | Go/前端依赖版本      | docs/spec/addp技术栈规约.md            | 依赖、版本、升级、库              |
 | 共享模块使用         | docs/concepts/addp共享模块介绍.md          | common、共享代码、复用            |
 | 创建新模块           | docs/spec/addp新模块开发指南.md        | 新模块、脚手架、模板              |
-| 新增存储引擎/数据库   | docs/spec/addp数据引擎扩展指南.md      | 新数据库、存储引擎 |
+| 引擎体系、插件接口、Provider 边界 | docs/concepts/addp引擎体系图.md、docs/spec/addp引擎插件接口规范.md | 引擎插件、Provider、Catalog、Metadata、Store、QueryRuntime |
+| 引擎能力声明、capabilities | docs/spec/addp引擎能力声明规范.md | capabilities、能力声明、engine.capabilities/v1 |
+| 新增存储引擎/数据库   | docs/spec/addp数据引擎扩展指南.md、docs/spec/addp引擎插件接口规范.md、docs/spec/addp引擎能力声明规范.md      | 新数据库、存储引擎 |
 | 新增数据类型/数据格式  | docs/spec/addp数据格式扩展指南.md     | 新数据类型、新数据格式 |
 | 故障和问题修复        | docs/addp常见故障排查.md        | 出错、修复、问题                  |
 | 理解核心概念关系     | docs/addp核心概念关系图.md        | 概念关系、架构、全局视图                  |

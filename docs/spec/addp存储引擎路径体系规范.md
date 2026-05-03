@@ -5,17 +5,17 @@
 
 当前已支持的存储引擎（按插件类型分类）：
 
-| 引擎类型标识 | 显示名称 | 插件接口 |
+| 引擎类型标识 | 显示名称 | 主要 Provider |
 |------------|---------|---------|
-| `postgresql` | PostgreSQL | RelationalDBPlugin |
-| `mysql` | MySQL | RelationalDBPlugin |
-| `doris` | Apache Doris | RelationalDBPlugin |
-| `clickhouse` | ClickHouse | RelationalDBPlugin |
-| `mongodb` | MongoDB | NoSQLPlugin |
-| `neo4j` | Neo4j | NoSQLPlugin（GraphDBPlugin） |
-| `minio` | MinIO | ObjectStoragePlugin（继承 FileSystemPlugin） |
-| `s3` | Amazon S3 | ObjectStoragePlugin（继承 FileSystemPlugin） |
-| `nfs` | NFS 文件系统 | FileSystemPlugin |
+| `postgresql` | PostgreSQL | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
+| `mysql` | MySQL | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
+| `doris` | Apache Doris | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
+| `clickhouse` | ClickHouse | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
+| `mongodb` | MongoDB | CatalogProvider + ItemMetadataProvider + DocumentQueryRuntimeProvider |
+| `neo4j` | Neo4j | CatalogProvider + GraphQueryRuntimeProvider |
+| `minio` | MinIO | CatalogProvider + ContentReadableProvider |
+| `s3` | Amazon S3 | CatalogProvider + ContentReadableProvider |
+| `nfs` | NFS 文件系统 | CatalogProvider + ContentReadableProvider |
 
 ---
 
@@ -230,7 +230,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ### NFS 扫描流程
 
-1. `ListRoots()` 返回唯一根节点，`Name = "."`，`Path = "/"`
+1. 通过 `CatalogProvider.ListChildren(root)` 返回唯一根节点，`Name = "."`，`Path = "/"`
 2. 创建 root `meta_node`，`full_name = ""`
 3. 递归扫描 `/` 下的所有目录和文件
 4. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`
@@ -238,19 +238,19 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ### 关系型数据库扫描流程
 
-1. 通过 `RelationalDBPlugin.ListSchemas()` 获取列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
-2. 过滤系统 schema/database（`IsSystemSchema()`）
+1. 通过 `CatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
+2. 插件负责过滤系统 schema/database，或通过 `CatalogCapability.system_filtering` 声明过滤能力
 3. 为每个 schema 或 database 创建 `meta_node`
-4. 通过 `ListTables()` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
+4. 通过 `CatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
 5. `meta_item.full_name` 使用 `<schema|database>.<table>`
 
 ### MongoDB / Neo4j 扫描流程
 
-1. 通过 `NoSQLPlugin.ListDatabases()` 获取 database 列表
+1. 通过 `CatalogProvider.ListChildren(root)` 获取 database 列表
 2. 为每个 database 创建 `meta_node`（`node_type = database`，`full_name = database`）
-3. 通过 `ListCollections()` 获取集合/label，创建 `meta_item`（MongoDB: `item_type = collection`；Neo4j label: `item_type = label`）
+3. 通过 `CatalogProvider.ListChildren(database)` 获取 collection/label/relationship，创建 `meta_item`
 4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.label` / `database.relationship`）
-5. Neo4j 额外通过 `GraphDBPlugin` 扫描关系类型（relationship），以 `item_type = relationship` 落库
+5. Neo4j 节点标签使用 `item_type = label`，关系类型使用 `item_type = relationship`
 
 ---
 

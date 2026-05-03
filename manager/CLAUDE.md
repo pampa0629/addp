@@ -163,21 +163,17 @@ Layer 3: 实时生成 (MVTService)
 Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 管理：
 
 ```go
-// 数据库连接通过 common/database 插件系统统一管理
-// 支持的插件类型：
-- PostgreSQL (github.com/addp/common/database/plugins/postgresql)
-- MySQL (github.com/addp/common/database/plugins/mysql)
-- MongoDB (github.com/addp/common/database/plugins/mongodb)
-- ClickHouse (github.com/addp/common/database/plugins/clickhouse)
-- Doris (github.com/addp/common/database/plugins/doris)
-- Apache Spark (github.com/addp/common/database/plugins/spark_sql)
-- MinIO (github.com/addp/common/database/plugins/minio)
-- S3 (github.com/addp/common/database/plugins/s3)
+// 数据库和存储连接通过 common/engine/plugin 插件系统统一管理
+// 插件位于 common/engine/plugins/<engine_type>，并通过 capabilities 声明可用能力：
+- PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL: CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider
+- MongoDB: CatalogProvider + ItemMetadataProvider + DocumentQueryRuntimeProvider
+- Neo4j: CatalogProvider + ItemMetadataProvider + GraphQueryRuntimeProvider
+- MinIO / S3 / NFS: CatalogProvider + ItemMetadataProvider + ContentReadableProvider
 
 // 连接流程：
 // 1. MetadataRepository.DecryptConnectionInfo() 解密存储引擎配置
-// 2. 通过插件系统创建数据库客户端
-// 3. 执行查询（表预览/数据采样/MVT 生成）
+// 2. 通过插件能力选择 ItemMetadataProvider、ContentReadableProvider 或 QueryRuntimeProvider
+// 3. 执行预览、采样或 MVT 生成
 // 4. 连接池自动管理（由插件内部实现）
 ```
 
@@ -528,7 +524,7 @@ manager/
 
 - Manager 需要连接**用户配置的多个数据库**，不是自己的数据库
 - 连接信息加密存储在 `system.engines` 表中，解密需要统一的 `ENCRYPTION_KEY`
-- 所有数据库连接必须通过 `common/database` 插件系统统一管理，不要直接使用 GORM/SQL
+- 所有用户数据源连接必须通过 `common/engine/plugin` 插件系统和对应 Provider 统一管理，不要在 Manager 内直接硬编码 GORM/SQL/对象存储客户端
 - **重要**：预览服务不做数据缓存，每次请求都实时连接目标数据库（MVT 除外，有三层缓存）
 
 ### 2. 预览插件优先级设计

@@ -23,17 +23,17 @@
 
 以下为目标态（与 `docs/spec/addp存储引擎路径体系规范.md` 对齐，阶段一已完成）：
 
-| 引擎 | 插件接口 | Node Type（层级） | Item Type |
+| 引擎 | 目录/预览能力 | Node Type（层级） | Item Type |
 |------|---------|-----------------|-----------|
-| PostgreSQL | RelationalDBPlugin | `schema` | `table` / `view` |
-| MySQL | RelationalDBPlugin | `database` | `table` / `view` |
-| Doris | RelationalDBPlugin | `database` | `table` / `view` |
-| ClickHouse | RelationalDBPlugin | `database` | `table` / `view` |
-| MongoDB | DocumentDBPlugin | `database` | `collection` |
-| Neo4j | GraphDBPlugin | `database` | `label` / `relationship` |
-| MinIO | ObjectStoragePlugin | `bucket` / `prefix` | `object` / `lake_table` |
-| S3 | ObjectStoragePlugin | `bucket` / `prefix` | `object` / `lake_table` |
-| NFS | FileSystemPlugin | `root`（透明）/ `dir` | `file` / `lake_table` |
+| PostgreSQL | Catalog/Metadata/SQLRuntime | `schema` | `table` / `view` |
+| MySQL | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
+| Doris | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
+| ClickHouse | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
+| MongoDB | Catalog/MetadataSampling/DocumentRuntime | `database` | `collection` |
+| Neo4j | Catalog/Metadata/GraphRuntime | `database` | `label` / `relationship` |
+| MinIO | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `lake_table` |
+| S3 | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `lake_table` |
+| NFS | Catalog/Metadata/ContentReadable | `root`（透明）/ `dir` | `file` / `lake_table` |
 
 代码与规范已对齐（NoSQL 接口分拆 + Neo4j node type 修订均已完成）。
 

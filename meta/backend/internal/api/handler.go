@@ -501,15 +501,35 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 	return token, token != ""
 }
 
+func (h *Handler) effectiveTenantIDForEngine(c *gin.Context, engineID uint) (uint, error) {
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID != 0 {
+		return tenantID, nil
+	}
+
+	token, _ := extractBearerToken(c)
+	engine, err := h.engineService.GetResourceByID(engineID, tenantID, token)
+	if err != nil {
+		return 0, err
+	}
+	if engine.TenantID != nil && *engine.TenantID > 0 {
+		return *engine.TenantID, nil
+	}
+	return tenantID, nil
+}
+
 // ListEngineItems 获取引擎下已扫描的数据项列表。
 // GET /api/v1/meta/engines/:engine_id/items?namespace=public
 func (h *Handler) ListEngineItems(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -531,8 +551,6 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 // GetItemFieldsByName 按 engine/namespace/name 获取数据项字段。
 // GET /api/v1/meta/engines/:engine_id/items/fields?namespace=public&name=users
 func (h *Handler) GetItemFieldsByName(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
 	engineIDStr := c.Param("engine_id")
 	namespace := c.Query("namespace")
 	itemName := c.Query("name")
@@ -546,6 +564,11 @@ func (h *Handler) GetItemFieldsByName(c *gin.Context) {
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -796,12 +819,15 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 // GetItemSpatialMetadataByName 按 engine/namespace/name 获取数据项空间元数据。
 // GET /api/v1/meta/engines/:engine_id/items/spatial?namespace=public&name=users
 func (h *Handler) GetItemSpatialMetadataByName(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

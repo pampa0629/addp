@@ -40,16 +40,16 @@ mindmap
         spark_workflow
         jupyter
     引擎体系
-      引擎插件三层接口
+      Provider 化引擎插件接口
         EnginePlugin 基础
-        StoragePlugin/ComputePlugin
-        RelationalDB/NoSQL/ObjectStorage
+        CatalogProvider
+        ItemMetadataProvider
+        QueryRuntimeProvider
       引擎分类
         按功能: 存储/计算/兼备
         按类型: 标准/扩展
         按来源: 注册/内置
-      支持的11种引擎
-      引擎能力声明
+      engine.capabilities/v1
     账号与权限
       用户类型
         SuperAdmin 系统级
@@ -74,7 +74,7 @@ mindmap
       FieldType 统一类型
       TypeMapper 类型映射
     数据开发
-      开发方式（dev_modes）
+      开发方式（capabilities.compute）
         Query → 查询工作台
         Workflow → 工作流编辑器
         Notebook 开发 → Notebook编辑器
@@ -135,10 +135,10 @@ mindmap
 
 **引擎系统架构、分类体系和能力声明机制**
 
-- 引擎插件三层接口架构 (EnginePlugin、StoragePlugin/ComputePlugin、RelationalDB/NoSQL/ObjectStorage)
+- Provider 化引擎插件架构 (EnginePlugin、CatalogProvider、ItemMetadataProvider、StoreProvider、QueryRuntimeProvider)
 - 引擎分类体系 (按功能、按来源、按注册方式)
-- 支持的 11 种引擎列表
-- 引擎能力声明 (capabilities、dev_modes)
+- 当前支持的引擎列表
+- 结构化能力声明 (`engine.capabilities/v1`)
 - 引擎插件系统
 
 📄 **[阅读完整文档 →](concepts/addp引擎体系图.md)**
@@ -193,7 +193,7 @@ mindmap
 - 查询开发 (Query) - SQL/MQL 查询
 - 算子工作流 (Workflow) - 可视化 DAG 工作流
 - Notebook 开发 - Jupyter Notebook 交互式开发
-- dev_modes 与开发界面映射
+- capabilities.compute 与开发界面映射
 
 📄 **[阅读完整文档 →](concepts/addp数据开发体系图.md)**
 

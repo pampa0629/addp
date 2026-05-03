@@ -11,6 +11,74 @@ import (
 // ConnectionInfo 定义连接信息类型，支持 GORM JSONB 序列化
 type ConnectionInfo map[string]interface{}
 
+// JSONString accepts either a JSON object/array or a JSON string, then stores it
+// as a compact JSON string. It is used for JSONB-backed fields whose HTTP shape
+// may be structured while older callers still send strings.
+type JSONString string
+
+func (j *JSONString) StringPtr() *string {
+	if j == nil {
+		return nil
+	}
+	value := string(*j)
+	return &value
+}
+
+func (j JSONString) MarshalJSON() ([]byte, error) {
+	if j == "" {
+		return []byte("null"), nil
+	}
+	if json.Valid([]byte(j)) {
+		return []byte(j), nil
+	}
+	return json.Marshal(string(j))
+}
+
+func (j *JSONString) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(data, &asString); err == nil {
+		*j = JSONString(asString)
+		return nil
+	}
+
+	var raw json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	compact, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	*j = JSONString(compact)
+	return nil
+}
+
+func (j JSONString) Value() (driver.Value, error) {
+	if j == "" {
+		return nil, nil
+	}
+	return string(j), nil
+}
+
+func (j *JSONString) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case []byte:
+		*j = JSONString(v)
+	case string:
+		*j = JSONString(v)
+	default:
+		return fmt.Errorf("unsupported JSONString scan type: %T", value)
+	}
+	return nil
+}
+
 // Value 实现 driver.Valuer 接口，用于 GORM 写入数据库
 func (c ConnectionInfo) Value() (driver.Value, error) {
 	return json.Marshal(c)
@@ -77,9 +145,9 @@ func (s *ScanConfig) Scan(value interface{}) error {
 // Engine 引擎信息（对应 system.engines 表）
 type Engine struct {
 	ID             uint           `gorm:"column:id" json:"id"`
-	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"` // 租户ID，SuperAdmin创建的引擎为null
-	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"` // 显示名称（原 display_name）
-	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"` // 引擎类型（postgresql, mysql, python_workflow等）
+	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                                   // 租户ID，SuperAdmin创建的引擎为null
+	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"`                           // 显示名称（原 display_name）
+	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                      // 引擎类型（postgresql, mysql, python_workflow等）
 	EngineCategory string         `gorm:"column:engine_category;not null;default:'standard'" json:"engine_category"` // 引擎分类：standard（标准引擎）或 extension（扩展引擎）
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
@@ -88,8 +156,8 @@ type Engine struct {
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
 	// 扩展引擎字段
-	IsBuiltin    bool    `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`        // 是否为内置引擎（内置引擎不可删除）
-	Capabilities *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
+	IsBuiltin    bool        `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`      // 是否为内置引擎（内置引擎不可删除）
+	Capabilities *JSONString `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
 
 	// 连接状态缓存（优化扫描性能）
 	ConnectionStatus string     `gorm:"column:connection_status;size:20;default:'unknown';index" json:"connection_status"` // online/offline/unknown/checking
@@ -97,8 +165,8 @@ type Engine struct {
 	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）
 
 	// 时间戳字段
-	CreatedAt time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 // BuildConnectionString 根据引擎信息构建连接字符串

@@ -103,7 +103,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		Description:    req.Description,
 		ConnectionInfo: connectionInfo,
 		IsBuiltin:      req.IsBuiltin,
-		Capabilities:   capabilitiesJSON,
+		Capabilities:   toJSONStringPtrFromString(capabilitiesJSON),
 		IsActive:       true,
 		TenantID:       nil, // 能力注册不属于特定租户
 	}
@@ -113,6 +113,14 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	return resource.ID, nil
+}
+
+func toJSONStringPtrFromString(value *string) *localModels.JSONString {
+	if value == nil {
+		return nil
+	}
+	jsonValue := localModels.JSONString(*value)
+	return &jsonValue
 }
 
 // ListCapabilities 查询能力列表（支持过滤）
