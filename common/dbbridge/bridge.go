@@ -31,24 +31,12 @@ import (
 
 // BuildConnectionString 使用插件系统构建连接字符串
 func BuildConnectionString(engine *models.Engine) (string, error) {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-
-	return plugin.BuildConnectionString(pluginEngine)
+	return plugin.BuildConnectionString(toPluginEngine(engine))
 }
 
 // TestConnection 使用插件系统测试连接
 func TestConnection(ctx context.Context, engine *models.Engine) error {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-
-	return plugin.TestConnection(ctx, pluginEngine)
+	return plugin.TestConnection(ctx, toPluginEngine(engine))
 }
 
 // GenerateCapabilities 使用插件系统生成结构化能力声明 JSON
@@ -110,12 +98,7 @@ type PluginInfo struct {
 // GetOrCreatePool 获取或创建连接池
 // 这是推荐的获取连接池的方式，会自动管理连接池的生命周期
 func GetOrCreatePool(engine *models.Engine, config *plugin.PoolConfig) (*gorm.DB, error) {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-	return plugin.GetOrCreatePoolFromFactory(pluginEngine, config)
+	return plugin.GetOrCreatePoolFromFactory(toPluginEngine(engine), config)
 }
 
 // DefaultPoolConfig 返回默认连接池配置
@@ -140,46 +123,40 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 	return plugin.GetPoolStats()
 }
 
-// === 元数据查询方法（供Meta模块使用）===
+// === Catalog / metadata 查询方法 ===
 
-// ListSchemas 列出所有Schema/Database
-func ListSchemas(ctx context.Context, engine *models.Engine, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func toPluginEngine(engine *models.Engine) *plugin.Engine {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.ListSchemas(ctx, pluginEngine, db)
+	return pluginEngine
 }
 
-// ListTables 列出指定Schema下的所有表
-func ListTables(ctx context.Context, engine *models.Engine, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-	return plugin.ListTables(ctx, pluginEngine, db, schema)
+// ListNamespaces 列出引擎 catalog 的第一层命名空间。
+func ListNamespaces(ctx context.Context, engine *models.Engine) ([]plugin.CatalogNode, error) {
+	return plugin.ListNamespaces(ctx, toPluginEngine(engine))
 }
 
-// ListColumns 列出指定表的所有列
-func ListColumns(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-	return plugin.ListColumns(ctx, pluginEngine, db, schema, table)
+// ListItems 列出指定命名空间下的叶子数据项。
+func ListItems(ctx context.Context, engine *models.Engine, namespace string) ([]plugin.CatalogNode, error) {
+	return plugin.ListItems(ctx, toPluginEngine(engine), namespace)
 }
 
-// GetTableRowCount 获取表的行数
-func GetTableRowCount(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) (int64, error) {
-	pluginEngine := &plugin.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
-	}
-	return plugin.GetTableRowCount(ctx, pluginEngine, db, schema, table)
+// DescribeItem 描述 catalog 叶子数据项。
+func DescribeItem(ctx context.Context, engine *models.Engine, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeItem(ctx, toPluginEngine(engine), path, opts)
+}
+
+// DescribeNamedItem 描述指定命名空间下的具名 tabular 数据项。
+func DescribeNamedItem(ctx context.Context, engine *models.Engine, namespace, item string, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	return plugin.DescribeNamedItem(ctx, toPluginEngine(engine), namespace, item, opts)
+}
+
+// CountItemRows 获取 tabular 数据项行数。
+func CountItemRows(ctx context.Context, engine *models.Engine, namespace, item string) (int64, error) {
+	return plugin.CountItemRows(ctx, toPluginEngine(engine), namespace, item)
 }
 
 // === 辅助方法 ===
@@ -215,11 +192,6 @@ func SupportsDirectQuery(engineType string) bool {
 }
 
 // GenerateSampleQuery 生成该引擎一个可直接执行的样例查询
-//
-// 路由规则：
-//  1. 实现了 QueryRuntimeProvider（MongoDB/Neo4j）→ 委托给插件生成真实集合/Label 样例
-//  2. 实现了 RelationalDBPlugin（PostgreSQL/MySQL/Doris 等）→ 通过 GORM 查第一张表
-//  3. 其他（Spark/未知）→ 返回 "SELECT 1"
 func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query string, language string) {
 	engineType := strings.ToLower(engine.EngineType)
 
@@ -233,24 +205,27 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 			return qp.GenerateSampleQuery(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.SampleQueryOptions{})
 		}
 
-		// SQL 关系型引擎：通过 GORM 连接池查第一张非系统表
-		if rp, ok := p.(plugin.RelationalDBPlugin); ok {
-			db, poolErr := GetOrCreatePool(engine, DefaultPoolConfig())
-			if poolErr == nil {
-				schemas, schemaErr := rp.ListSchemas(sampleCtx, db)
-				if schemaErr == nil {
-					for _, schema := range schemas {
-						if rp.IsSystemSchema(schema.Name) {
-							continue
-						}
-						tables, tableErr := rp.ListTables(sampleCtx, db, schema.Name)
-						if tableErr == nil && len(tables) > 0 {
-							return fmt.Sprintf("SELECT *\nFROM %s.%s\nLIMIT 10", schema.Name, tables[0].TableName), "sql"
+		// 兜底样例仍通过 CatalogProvider 发现第一张可查询表，避免上层直接依赖旧 ListSchemas/ListTables。
+		if cp, ok := p.(plugin.CatalogProvider); ok {
+			namespaces, catalogErr := cp.ListChildren(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.CatalogPath{
+				Version:  plugin.CatalogPathVersion,
+				EngineID: engine.ID,
+			}, plugin.ListOptions{})
+			if catalogErr == nil {
+				for _, namespace := range namespaces {
+					if !namespace.IsContainer {
+						continue
+					}
+					items, itemErr := cp.ListChildren(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), namespace.Path, plugin.ListOptions{})
+					if itemErr == nil && len(items) > 0 {
+						for _, item := range items {
+							if item.IsItem {
+								return fmt.Sprintf("SELECT *\nFROM %s.%s\nLIMIT 10", namespace.Name, item.Name), "sql"
+							}
 						}
 					}
 				}
 			}
-			return "SELECT *\nFROM your_schema.your_table\nLIMIT 10", "sql"
 		}
 	}
 
