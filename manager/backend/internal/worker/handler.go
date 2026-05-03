@@ -3,13 +3,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -26,8 +27,8 @@ type TaskHandler struct {
 	repo             *repository.QuickViewRepository
 	quickViewService *mvt.QuickViewService
 	cfg              *config.Config
-	redisClient      *redis.Client // Redis 客户端用于进度跟踪
-	resourceService  mvt.ResourceService // 资源服务（用于获取引擎配置）
+	redisClient      *redis.Client            // Redis 客户端用于进度跟踪
+	resourceService  mvt.ResourceService      // 资源服务（用于获取引擎配置）
 	metaClient       *commonClient.MetaClient // Meta 客户端（用于获取空间元数据）
 }
 
@@ -162,7 +163,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 			if err := h.repo.UpdateStatusOnly(preCheckQV.ID, "failed", errMsg); err != nil {
 				logger.L().Error("Failed to update status to failed", "error", err)
 			}
-			return fmt.Errorf(errMsg)
+			return errors.New(errMsg)
 		}
 	}
 
@@ -214,7 +215,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		if err := h.repo.UpdateStatusOnly(preCheckQV.ID, "failed", errMsg); err != nil {
 			logger.L().Error("Failed to update status to failed", "error", err)
 		}
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	// 如果 QueryInfo 已存在，直接使用
@@ -232,7 +233,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 			if err := h.repo.UpdateStatusOnly(preCheckQV.ID, "failed", errMsg); err != nil {
 				logger.L().Error("Failed to update status to failed", "error", err)
 			}
-			return fmt.Errorf(errMsg)
+			return errors.New(errMsg)
 		}
 		logger.L().Info("✅ 从检查结果推导出 QueryInfo",
 			"materialized_view_exists", queryInfo.MaterializedViewExists,
@@ -270,7 +271,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		// 判断是否是取消错误
 		errMsg := err.Error()
 		isCancelError := strings.Contains(errMsg, "cancelled by user") ||
-		                 strings.Contains(errMsg, "task cancelled")
+			strings.Contains(errMsg, "task cancelled")
 
 		if isCancelError {
 			// 用户取消：更新状态为 cancelled，不清除 Redis 标志，返回 nil（Asynq 不会重试）
@@ -374,7 +375,7 @@ func (h *TaskHandler) HandlePrepareForCreateMVTTask(ctx context.Context, task *a
 
 			// 获取空间元数据（从 Meta 模块）
 			h.metaClient.SetTenantID(&payload.TenantID)
-			spatialMeta, err := h.metaClient.GetTableSpatialMetadata(payload.EngineID, payload.SchemaName, payload.TableName)
+			spatialMeta, err := h.metaClient.GetItemSpatialMetadata(payload.EngineID, payload.SchemaName, payload.TableName)
 			if err != nil {
 				logger.L().Error("Failed to get spatial metadata from Meta",
 					"engine_id", payload.EngineID,
@@ -678,7 +679,7 @@ func (h *TaskHandler) updateQuickViewStatus(
 			// 记录不存在，创建新记录
 			qv = models.QuickView{
 				TenantID:    payload.TenantID,
-				EngineID:  payload.EngineID,
+				EngineID:    payload.EngineID,
 				SchemaName:  payload.SchemaName,
 				Table:       payload.TableName,
 				Status:      status,

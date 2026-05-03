@@ -50,6 +50,12 @@ func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.
 	return engines, total, err
 }
 
+func (r *EngineRepository) ListAll() ([]models.Engine, error) {
+	var engines []models.Engine
+	err := r.db.Find(&engines).Error
+	return engines, err
+}
+
 // ListByTenant 查询指定租户的资源列表（包含内置资源）
 func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engineType string) ([]models.Engine, int64, error) {
 	var engines []models.Engine
@@ -84,6 +90,7 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 func (r *EngineRepository) Delete(id uint) error {
 	return r.db.Delete(&models.Engine{}, id).Error
 }
+
 // FindByUniqueIdentifier 根据 unique_identifier 查询资源（包括软删除的记录）
 func (r *EngineRepository) FindByUniqueIdentifier(ctx context.Context, identifier string) (*models.Engine, error) {
 	var engine models.Engine

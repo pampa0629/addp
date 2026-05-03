@@ -144,10 +144,18 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 		CreatedBy:      createdBy,
 	}
 
+	if req.Capabilities != nil {
+		engine.Capabilities = req.Capabilities
+	}
+
 	// 自动生成 capabilities（如果请求中未提供）
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(req.EngineType)
 		engine.Capabilities = &capabilities
+	}
+
+	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+		return nil, fmt.Errorf("能力声明验证失败: %w", err)
 	}
 
 	if err := s.repo.Create(engine); err != nil {
@@ -280,6 +288,9 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	}
 	if req.Capabilities != nil {
 		engine.Capabilities = req.Capabilities
+	}
+	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+		return nil, fmt.Errorf("能力声明验证失败: %w", err)
 	}
 
 	if err := s.repo.Update(engine); err != nil {
@@ -794,6 +805,32 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	return capabilitiesJSON
 }
 
+// RefreshAllEngineCapabilities 将已注册引擎的能力声明统一刷新为当前插件体系结构。
+// ADDP 当前不保留旧 capabilities 结构；未知插件类型保留为 unknown 族的新结构。
+func (s *EngineService) RefreshAllEngineCapabilities() error {
+	engines, err := s.repo.ListAll()
+	if err != nil {
+		return err
+	}
+
+	for i := range engines {
+		engine := engines[i]
+		capabilities := s.generateDefaultCapabilities(engine.EngineType)
+		if err := s.validateCapabilities(&capabilities); err != nil {
+			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
+		}
+		if engine.Capabilities != nil && *engine.Capabilities == capabilities {
+			continue
+		}
+		engine.Capabilities = &capabilities
+		if err := s.repo.Update(&engine); err != nil {
+			return fmt.Errorf("刷新引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
+		}
+	}
+
+	return nil
+}
+
 // checkDuplicateResource 检查是否存在重复资源
 func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, tenantID uint) error {
 	// 检查 1: 同名资源
@@ -942,10 +979,24 @@ func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *ui
 
 // CreateEngine 创建引擎
 func (s *EngineService) CreateEngine(engine *models.Engine) error {
+	if engine.Capabilities == nil || *engine.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(engine.EngineType)
+		engine.Capabilities = &capabilities
+	}
+	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+		return fmt.Errorf("能力声明验证失败: %w", err)
+	}
 	return s.repo.Create(engine)
 }
 
 // UpdateEngine 更新引擎
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
+	if engine.Capabilities == nil || *engine.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(engine.EngineType)
+		engine.Capabilities = &capabilities
+	}
+	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+		return fmt.Errorf("能力声明验证失败: %w", err)
+	}
 	return s.repo.Update(engine)
 }

@@ -8,15 +8,15 @@ import (
 	"github.com/addp/common/middleware/audit"
 	auth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/meta/docs"
+	_ "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
-	_ "github.com/addp/meta/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/meta/docs"
+	"gorm.io/gorm"
 )
 
 func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
@@ -64,9 +64,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 资源相关
 		api.GET("/engines", handler.GetEngines)
 
-		// Schema相关
-		api.GET("/engines/:engine_id/schemas", handler.GetSchemas)
-		api.GET("/engines/:engine_id/schemas/available", handler.ListAvailableSchemas)
 		api.GET("/engines/:engine_id/storage/nodes", handler.ListObjectStorageNodes)
 
 		// 扫描相关
@@ -85,8 +82,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 元数据相关
 		api.GET("/metadata/object", handler.GetObjectMetadata)
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
-		api.GET("/metadata/tables", handler.GetTables)
-		api.GET("/metadata/fields", handler.GetTableFields)
+		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
+		api.GET("/engines/:engine_id/items/fields", handler.GetItemFieldsByName)
+		api.GET("/engines/:engine_id/items/spatial", handler.GetItemSpatialMetadataByName)
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", handler.GetMetadataTree)
@@ -95,8 +93,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
 		api.GET("/nodes/by-path", handler.QueryNodeByPath)
 		api.GET("/items/by-path", handler.QueryItemByPath)
+		api.GET("/items/:item_id/fields", handler.GetItemFieldsByID)
+		api.GET("/items/:item_id/spatial", handler.GetItemSpatialMetadataByID)
 		api.GET("/items/:item_id", handler.GetItemByID)
-		api.GET("/metadata/tables/spatial", handler.GetTableSpatialMetadata)
 
 		// 统计接口
 		api.GET("/stats", func(c *gin.Context) {

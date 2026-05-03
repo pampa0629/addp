@@ -600,7 +600,7 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 		scanDepth = "basic" // 默认使用基础扫描
 	}
 
-	// 构建扫描请求（不再使用 SchemaNames 和 ObjectPaths，系统自动过滤）
+	// 构建扫描请求（不限制 namespaces/object_paths，系统自动过滤）
 	req := &models.ScanRequest{
 		EngineID:  resource.ID,
 		ScanDepth: scanDepth,

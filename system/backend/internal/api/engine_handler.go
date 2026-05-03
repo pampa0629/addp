@@ -332,14 +332,14 @@ func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
 	commonapi.RespondSuccess(c, engine)
 }
 
-// ListSchemas 列出指定资源的所有Schema/Database
-// @Summary 列出 Schema 列表 | List schemas
+// ListNamespaces 列出指定引擎的 catalog 命名空间。
+// @Summary 列出命名空间列表 | List namespaces
 // @Tags Resources
 // @Produce json
 // @Param id path int true "资源ID | Engine ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /engines/:id/schemas [get]
-func (h *EngineHandler) ListSchemas(c *gin.Context) {
+// @Router /engines/:id/namespaces [get]
+func (h *EngineHandler) ListNamespaces(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
 		return
@@ -354,34 +354,33 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 		return
 	}
 
-	// 调用 StorageEngineService 列出 schemas
-	schemas, err := h.storageEngineService.ListSchemas(engine)
+	namespaces, err := h.storageEngineService.ListNamespaces(engine)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	commonapi.RespondSuccess(c, gin.H{
-		"status":  "success",
-		"schemas": schemas,
+		"status":     "success",
+		"namespaces": namespaces,
 	})
 }
 
-// ListTables 列出指定资源和Schema下的所有表
-// @Summary 列出表列表 | List tables
+// ListCatalogItems 列出指定命名空间下的 catalog 叶子数据项。
+// @Summary 列出数据项列表 | List catalog items
 // @Tags Resources
 // @Produce json
 // @Param id path int true "资源ID | Engine ID"
-// @Param schema query string false "Schema名称(默认public) | Schema name (default: public)"
+// @Param namespace query string false "命名空间名称 | Namespace name"
 // @Success 200 {object} map[string]interface{}
-// @Router /engines/:id/tables [get]
-func (h *EngineHandler) ListTables(c *gin.Context) {
+// @Router /engines/:id/items [get]
+func (h *EngineHandler) ListCatalogItems(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
 		return
 	}
 
-	schema := c.DefaultQuery("schema", "public")
+	namespace := c.Query("namespace")
 	userID, _ := commonapi.GetCurrentUserID(c)
 
 	// 获取资源(验证权限)
@@ -391,8 +390,7 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 		return
 	}
 
-	// 调用 StorageEngineService 列出表
-	tables, err := h.storageEngineService.ListTables(engine, schema)
+	items, err := h.storageEngineService.ListCatalogItems(engine, namespace)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -400,7 +398,7 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 
 	commonapi.RespondSuccess(c, gin.H{
 		"status": "success",
-		"tables": tables,
+		"items":  items,
 	})
 }
 
@@ -466,8 +464,7 @@ type RegisterEngineRequest struct {
 	Name           string                 `json:"name" binding:"required"`
 	Description    string                 `json:"description"`
 	ConnectionInfo map[string]interface{} `json:"connection_info" binding:"required"`
-	Capabilities   string                 `json:"capabilities"` // JSON 字符串
-	IsBuiltin      bool                   `json:"is_builtin"`   // 是否为内置引擎（对所有租户可见）
+	IsBuiltin      bool                   `json:"is_builtin"` // 是否为内置引擎（对所有租户可见）
 }
 
 // RegisterEngineInternal 内部API：引擎自注册（创建或更新引擎记录并触发连接检查）
@@ -505,7 +502,6 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 			EngineCategory:   "extension", // 工作流引擎都是扩展引擎
 			Description:      req.Description,
 			ConnectionInfo:   req.ConnectionInfo,
-			Capabilities:     &req.Capabilities,
 			IsActive:         true,
 			IsBuiltin:        req.IsBuiltin, // 使用请求中的 is_builtin 值
 			TenantID:         nil,           // 平台级引擎
@@ -525,7 +521,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 		existingEngine.Name = req.Name
 		existingEngine.Description = req.Description
 		existingEngine.ConnectionInfo = req.ConnectionInfo
-		existingEngine.Capabilities = &req.Capabilities
+		existingEngine.Capabilities = nil
 		existingEngine.IsBuiltin = req.IsBuiltin // 更新 is_builtin 字段
 
 		if err := h.engineService.UpdateEngine(existingEngine); err != nil {

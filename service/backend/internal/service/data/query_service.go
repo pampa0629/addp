@@ -9,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/service/internal/models"
 )
 
@@ -41,10 +42,11 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 3. 获取列信息
-	columnsInfo, err := dbbridge.ListColumns(ctx, engine, db, req.Schema, req.Table)
+	metadata, err := dbbridge.DescribeNamedItem(ctx, engine, req.Schema, req.Table, plugin.MetadataOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
+	columnsInfo := columnInfosFromMetadata(metadata)
 
 	if len(columnsInfo) == 0 {
 		return nil, fmt.Errorf("table %s.%s not found or has no columns", req.Schema, req.Table)
@@ -358,20 +360,15 @@ func (s *QueryService) GetTableStructure(ctx context.Context, engineID uint, sch
 		return nil, fmt.Errorf("获取引擎失败: %w", err)
 	}
 
-	// 2. 获取数据库连接池
-	db, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
-	if err != nil {
-		return nil, fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-
-	// 3. 获取列信息
-	columnsInfo, err := dbbridge.ListColumns(ctx, engine, db, schema, table)
+	// 2. 获取列信息：dbbridge 内部走 ItemMetadataProvider。
+	metadata, err := dbbridge.DescribeNamedItem(ctx, engine, schema, table, plugin.MetadataOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("表 %s.%s 不存在", schema, table)
 		}
 		return nil, fmt.Errorf("获取列信息失败: %w", err)
 	}
+	columnsInfo := columnInfosFromMetadata(metadata)
 
 	if len(columnsInfo) == 0 {
 		return nil, fmt.Errorf("表 %s.%s 没有列或不存在", schema, table)
@@ -401,6 +398,27 @@ func needsQuoting(columnName string) bool {
 		}
 	}
 	return false
+}
+
+func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []plugin.ColumnInfo {
+	if metadata == nil {
+		return nil
+	}
+	columns := make([]plugin.ColumnInfo, 0, len(metadata.Fields))
+	for _, field := range metadata.Fields {
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		columns = append(columns, plugin.ColumnInfo{
+			ColumnName:   field.Name,
+			DataType:     dataType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
+		})
+	}
+	return columns
 }
 
 // Close 关闭所有数据库连接

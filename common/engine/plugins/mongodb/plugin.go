@@ -115,12 +115,21 @@ func (p *MongoDBPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.DocumentCatalogModel()
 }
 
+func (p *MongoDBPlugin) documentCatalogAdapter() plugin.DocumentCatalogAdapter {
+	return plugin.DocumentCatalogAdapter{
+		Plugin:               p,
+		ListDatabasesFunc:    p.listDatabases,
+		ListCollectionsFunc:  p.listCollections,
+		IsSystemDatabaseFunc: p.IsSystemDatabase,
+	}
+}
+
 func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListDocumentCatalogChildren(ctx, p, parent.EngineID, connInfo, parent, opts)
+	return plugin.ListDocumentCatalogChildren(ctx, p.documentCatalogAdapter(), parent.EngineID, connInfo, parent, opts)
 }
 
 func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveDocumentCatalogPath(ctx, p, path.EngineID, connInfo, path)
+	return plugin.ResolveDocumentCatalogPath(ctx, p.documentCatalogAdapter(), path.EngineID, connInfo, path)
 }
 
 func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {

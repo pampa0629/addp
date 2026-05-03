@@ -26,6 +26,12 @@ type ItemMetadataProvider interface {
 	DescribeItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
 }
 
+// DocumentMetadataSamplingProvider samples document items to infer dynamic field schema.
+type DocumentMetadataSamplingProvider interface {
+	EnginePlugin
+	SampleDocumentMetadata(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
+}
+
 // StoreProvider is a marker for item content access capabilities.
 type StoreProvider interface {
 	EnginePlugin

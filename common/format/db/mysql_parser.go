@@ -15,6 +15,12 @@ type MySQLTableParser struct {
 	typeMapper format.TypeMapper
 }
 
+type mySQLMetadataHelper interface {
+	plugin.CatalogModelProvider
+	DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error)
+	Type() string
+}
+
 // NewMySQLTableParser 创建 MySQL 表解析器
 func NewMySQLTableParser() *MySQLTableParser {
 	return &MySQLTableParser{
@@ -24,38 +30,43 @@ func NewMySQLTableParser() *MySQLTableParser {
 
 // ParseTableInfo 从 MySQL 表中提取 TableInfo
 func (p *MySQLTableParser) ParseTableInfo(ctx context.Context, db *gorm.DB, enginePlugin interface{}, schema, table string) (*format.TableInfo, error) {
-	// 类型断言：确保 enginePlugin 是 RelationalDBPlugin
-	mysqlPlugin, ok := enginePlugin.(plugin.RelationalDBPlugin)
+	metadataHelper, ok := enginePlugin.(mySQLMetadataHelper)
 	if !ok {
-		return nil, fmt.Errorf("enginePlugin must be plugin.RelationalDBPlugin, got %T", enginePlugin)
+		return nil, fmt.Errorf("enginePlugin must provide MySQL metadata helpers, got %T", enginePlugin)
 	}
 
-	// 1. 使用 plugin.ListColumns 获取列信息
-	columns, err := mysqlPlugin.ListColumns(ctx, db, schema, table)
+	item, err := metadataHelper.DescribeItem(ctx, plugin.ConnectionInfo{}, dbParserCatalogPath(metadataHelper, schema, table), plugin.MetadataOptions{
+		IncludeStatistics: true,
+		IncludeIndexes:    true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list columns: %w", err)
+		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
 
 	// 2. 转换为 FieldInfo
-	fields := make([]format.FieldInfo, len(columns))
+	fields := make([]format.FieldInfo, len(item.Fields))
 	var primaryKeys []string
 
-	for i, col := range columns {
+	for i, field := range item.Fields {
 		// 使用 TypeMapper 转换类型
-		fieldType := p.typeMapper.ToCommon(col.DataType)
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		fieldType := p.typeMapper.ToCommon(dataType)
 
 		fields[i] = format.FieldInfo{
-			Name:         col.ColumnName,
+			Name:         field.Name,
 			Type:         fieldType,
-			OriginalType: col.DataType,
-			Nullable:     col.IsNullable,
-			IsPrimaryKey: col.IsPrimaryKey,
-			Comment:      col.Comment,
+			OriginalType: dataType,
+			Nullable:     field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
 		}
 
 		// 收集主键
-		if col.IsPrimaryKey {
-			primaryKeys = append(primaryKeys, col.ColumnName)
+		if field.PrimaryKey {
+			primaryKeys = append(primaryKeys, field.Name)
 		}
 	}
 
@@ -67,10 +78,9 @@ func (p *MySQLTableParser) ParseTableInfo(ctx context.Context, db *gorm.DB, engi
 	}
 
 	// 4. 获取表统计信息
-	rowCount, err := mysqlPlugin.GetTableRowCount(ctx, db, schema, table)
-	if err != nil {
-		// 行数获取失败不影响整体解析，记录日志即可
-		rowCount = 0
+	rowCount := int64(0)
+	if value, ok := dbParserInt64Stat(item.Stats, "row_count"); ok {
+		rowCount = value
 	}
 
 	// 5. 构建 TableInfo
@@ -131,8 +141,8 @@ func (p *MySQLTableParser) detectSpatialInfo(ctx context.Context, db *gorm.DB, s
 		return &format.SpatialInfo{
 			GeometryColumn: geometryField.Name,
 			GeometryType:   "Geometry", // 默认类型
-			SRID:           4326,        // WGS84 默认
-			Dimension:      2,           // 2D 默认
+			SRID:           4326,       // WGS84 默认
+			Dimension:      2,          // 2D 默认
 		}
 	}
 

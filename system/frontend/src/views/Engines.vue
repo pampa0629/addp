@@ -316,34 +316,112 @@
 
           <!-- 能力声明标签页 -->
           <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="selectedEngine.capabilities">
-            <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 20px">
-              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">{{ t('system.engine.dialog.capabilities.storageCapabilities') }}</div>
-              <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
-                <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="150">
-                  <template #default="{ row }">
-                    {{ getStorageTypeLabel(row.type) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="engine" :label="t('system.engine.dialog.capabilities.engine')" />
-              </el-table>
-            </div>
-            <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
-              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">{{ t('system.engine.dialog.capabilities.computeCapabilities') }}</div>
-              <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
-                <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="150">
-                  <template #default="{ row }">
-                    {{ getComputeTypeLabel(row.type) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="dev_modes" :label="t('system.engine.dialog.capabilities.devModes')" width="150">
-                  <template #default="{ row }">
-                    <el-tag v-for="mode in row.dev_modes" :key="mode" size="small" style="margin: 2px">
-                      {{ mode }}
+            <div class="capability-detail">
+              <el-descriptions :column="2" border size="small" style="margin-bottom: 20px">
+                <el-descriptions-item :label="t('system.engine.dialog.capabilities.schemaVersion')">
+                  {{ parsedSelectedCapabilities.schema_version || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('system.engine.dialog.capabilities.engineFamily')">
+                  {{ getCapabilityFamilyLabel(parsedSelectedCapabilities.engine_family) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('system.engine.dialog.capabilities.engineType')">
+                  {{ parsedSelectedCapabilities.engine_type || selectedEngine.engine_type }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('system.engine.dialog.capabilities.sections')">
+                  <el-tag
+                    v-for="section in getCapabilitySections(parsedSelectedCapabilities)"
+                    :key="section"
+                    size="small"
+                    effect="plain"
+                    style="margin: 2px"
+                  >
+                    {{ section }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+
+              <div v-if="hasStorageCapability(parsedSelectedCapabilities)" class="capability-section">
+                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.storageCapabilities') }}</div>
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.families')" :span="2">
+                    <el-tag
+                      v-for="family in parsedSelectedCapabilities.storage.families"
+                      :key="family"
+                      size="small"
+                      style="margin: 2px"
+                    >
+                      {{ getStorageTypeLabel(family) }}
                     </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="description" :label="t('system.engine.dialog.capabilities.description')" />
-              </el-table>
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.catalogModel')" :span="2">
+                    {{ getCatalogModelSummary(parsedSelectedCapabilities.storage.catalog_model) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.catalog')">
+                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.catalog) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.metadata')">
+                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.metadata) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.store')" :span="2">
+                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.store) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item v-if="parsedSelectedCapabilities.storage.semantics?.length" :label="t('system.engine.dialog.capabilities.semantics')" :span="2">
+                    {{ joinCapabilityValues(parsedSelectedCapabilities.storage.semantics) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item v-if="parsedSelectedCapabilities.storage.not_supported?.length" :label="t('system.engine.dialog.capabilities.notSupported')" :span="2">
+                    {{ joinCapabilityValues(parsedSelectedCapabilities.storage.not_supported) }}
+                  </el-descriptions-item>
+                </el-descriptions>
+              </div>
+
+              <div v-if="hasComputeCapability(parsedSelectedCapabilities)" class="capability-section">
+                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.computeCapabilities') }}</div>
+                <el-table :data="getComputeCapabilityRows(parsedSelectedCapabilities)" border size="small">
+                  <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="130">
+                    <template #default="{ row }">
+                      {{ getComputeTypeLabel(row.type) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="languages" :label="t('system.engine.dialog.capabilities.languages')" min-width="160">
+                    <template #default="{ row }">
+                      {{ joinCapabilityValues(row.languages) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="modes" :label="t('system.engine.dialog.capabilities.modes')" min-width="160">
+                    <template #default="{ row }">
+                      {{ joinCapabilityValues(row.modes) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="description" :label="t('system.engine.dialog.capabilities.description')" min-width="220" />
+                </el-table>
+              </div>
+
+              <div v-if="parsedSelectedCapabilities.transfer" class="capability-section">
+                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.transferCapabilities') }}</div>
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.transfer')">
+                    {{ formatCapabilityFlags(parsedSelectedCapabilities.transfer) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.formats')">
+                    {{ joinCapabilityValues(parsedSelectedCapabilities.transfer.supported_formats) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.connectorTypes')" :span="2">
+                    {{ formatKeyValueMap(parsedSelectedCapabilities.transfer.connector_types) }}
+                  </el-descriptions-item>
+                </el-descriptions>
+              </div>
+
+              <div v-if="parsedSelectedCapabilities.preview" class="capability-section">
+                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.previewCapabilities') }}</div>
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.preview')">
+                    {{ formatCapabilityFlags(parsedSelectedCapabilities.preview) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.modes')">
+                    {{ joinCapabilityValues(parsedSelectedCapabilities.preview.modes) }}
+                  </el-descriptions-item>
+                </el-descriptions>
+              </div>
             </div>
           </el-tab-pane>
 
@@ -399,7 +477,7 @@ const pageSize = ref(10)
 const total = ref(0)
 
 // 能力过滤
-const selectedCategories = ref(['storage', 'compute', 'standard', 'extension']) // 默认选中所有，不选中内置
+const selectedCategories = ref(['storage', 'compute', 'standard', 'extension', 'builtin']) // 默认显示全部引擎
 
 // 引擎类型选择对话框
 const typeSelectionVisible = ref(false)
@@ -515,6 +593,10 @@ const visibleStorageEngineTypeOptions = computed(() => {
   return storageEngineTypeOptions.value.filter(item => item.value === form.value.engine_type)
 })
 
+const parsedSelectedCapabilities = computed(() => {
+  return parseCapabilitiesJSON(selectedEngine.value?.capabilities)
+})
+
 // 过滤后的引擎列表
 const filteredEngines = computed(() => {
   if (selectedCategories.value.length === 0) {
@@ -523,8 +605,8 @@ const filteredEngines = computed(() => {
 
   return engines.value.filter(engine => {
     const caps = parseCapabilitiesJSON(engine.capabilities)
-    const hasStorage = caps.storage?.length > 0
-    const hasCompute = caps.compute?.length > 0
+    const hasStorage = hasStorageCapability(caps)
+    const hasCompute = hasComputeCapability(caps)
     const isBuiltin = engine.is_builtin
     const engineCategory = engine.engine_category
 
@@ -584,10 +666,153 @@ const sortedConnectionInfo = computed(() => {
 // 解析 capabilities JSON 为对象
 const parseCapabilitiesJSON = (capabilitiesJSON) => {
   try {
+    if (typeof capabilitiesJSON === 'object' && capabilitiesJSON !== null) {
+      return capabilitiesJSON
+    }
     return JSON.parse(capabilitiesJSON || '{}')
   } catch {
     return {}
   }
+}
+
+const hasStorageCapability = (caps) => {
+  return caps.schema_version === 'engine.capabilities/v1' &&
+    Array.isArray(caps.storage?.families) &&
+    caps.storage.families.length > 0
+}
+
+const hasComputeCapability = (caps) => {
+  if (caps.schema_version !== 'engine.capabilities/v1' || !caps.compute) {
+    return false
+  }
+
+  return Boolean(
+    caps.compute.query?.supported ||
+    caps.compute.workflow?.supported ||
+    caps.compute.script?.supported
+  )
+}
+
+const joinCapabilityValues = (values) => {
+  return Array.isArray(values) && values.length > 0 ? values.join(', ') : '-'
+}
+
+const formatBoolean = (value) => {
+  if (value === true) return t('system.engine.dialog.capabilities.yes')
+  if (value === false) return t('system.engine.dialog.capabilities.no')
+  return String(value)
+}
+
+const formatCapabilityFlags = (capability) => {
+  if (!capability || typeof capability !== 'object') {
+    return '-'
+  }
+
+  const entries = Object.entries(capability)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '' && !Array.isArray(value) && typeof value !== 'object')
+    .map(([key, value]) => `${key}: ${formatBoolean(value)}`)
+
+  return entries.length > 0 ? entries.join(', ') : '-'
+}
+
+const formatKeyValueMap = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return '-'
+  }
+
+  const entries = Object.entries(value).map(([key, item]) => `${key}: ${item}`)
+  return entries.length > 0 ? entries.join(', ') : '-'
+}
+
+const getCatalogModelSummary = (model) => {
+  if (!model) {
+    return '-'
+  }
+
+  const levels = Array.isArray(model.levels)
+    ? model.levels.map(level => {
+      const markers = [
+        level.container ? t('system.engine.dialog.capabilities.container') : null,
+        level.item ? t('system.engine.dialog.capabilities.item') : null,
+        level.optional ? t('system.engine.dialog.capabilities.optional') : null
+      ].filter(Boolean)
+      return `${level.term}${markers.length ? `(${markers.join('/')})` : ''}`
+    })
+    : []
+
+  return [
+    `${t('system.engine.dialog.capabilities.rootTerm')}: ${model.root_term || '-'}`,
+    `${t('system.engine.dialog.capabilities.pathVersion')}: ${model.path_version || '-'}`,
+    `${t('system.engine.dialog.capabilities.levels')}: ${levels.length ? levels.join(' -> ') : '-'}`
+  ].join('; ')
+}
+
+const getCapabilitySections = (caps) => {
+  const sections = []
+  if (hasStorageCapability(caps)) sections.push(t('system.engine.dialog.capabilities.storageCapabilities'))
+  if (hasComputeCapability(caps)) sections.push(t('system.engine.dialog.capabilities.computeCapabilities'))
+  if (caps.transfer) sections.push(t('system.engine.dialog.capabilities.transferCapabilities'))
+  if (caps.preview) sections.push(t('system.engine.dialog.capabilities.previewCapabilities'))
+  if (caps.limits) sections.push(t('system.engine.dialog.capabilities.limits'))
+  if (caps.extensions) sections.push(t('system.engine.dialog.capabilities.extensions'))
+  return sections.length > 0 ? sections : [t('system.engine.capabilities.none')]
+}
+
+const getCapabilityFamilyLabel = (family) => {
+  if (!family) {
+    return '-'
+  }
+  if (['tabular', 'object', 'file', 'document', 'graph'].includes(family)) {
+    return getStorageTypeLabel(family)
+  }
+  return getComputeTypeLabel(family)
+}
+
+const getComputeCapabilityRows = (caps) => {
+  if (!hasComputeCapability(caps)) {
+    return []
+  }
+
+  const rows = []
+  const query = caps.compute.query
+  if (query?.supported) {
+    rows.push({
+      type: 'query',
+      languages: query.languages || [],
+      modes: [
+        query.default_language ? `${t('system.engine.dialog.capabilities.defaultLanguage')}: ${query.default_language}` : null,
+        query.read_only ? 'read_only' : null,
+        query.supports_explain ? 'explain' : null,
+        query.supports_cancel ? 'cancel' : null
+      ].filter(Boolean),
+      description: joinCapabilityValues(query.result_kinds)
+    })
+  }
+
+  const workflow = caps.compute.workflow
+  if (workflow?.supported) {
+    rows.push({
+      type: 'workflow',
+      languages: [],
+      modes: workflow.supported_operator_mode || [],
+      description: [
+        workflow.runtime_api ? `${t('system.engine.dialog.capabilities.runtimeApi')}: ${workflow.runtime_api}` : null,
+        workflow.dynamic_operators ? 'dynamic_operators' : null
+      ].filter(Boolean).join(', ') || '-'
+    })
+  }
+
+  const script = caps.compute.script
+  if (script?.supported) {
+    rows.push({
+      type: 'script',
+      languages: script.languages || [],
+      modes: script.modes || [],
+      description: joinCapabilityValues(script.languages)
+    })
+  }
+
+  return rows
 }
 
 // 解析 capabilities 为标签数组（用于显示）
@@ -595,26 +820,27 @@ const parseCapabilities = (capabilitiesJSON) => {
   const caps = parseCapabilitiesJSON(capabilitiesJSON)
   const tags = []
 
-  if (caps.storage) {
-    caps.storage.forEach(s => {
-      if (s.type) {
-        tags.push(getStorageTypeLabel(s.type))
-      }
-      if (s.engine) tags.push(s.engine)
+  if (hasStorageCapability(caps)) {
+    caps.storage.families.forEach(family => {
+      tags.push(getStorageTypeLabel(family))
     })
   }
 
-  if (caps.compute) {
-    caps.compute.forEach(c => {
-      if (c.type) {
-        tags.push(getComputeTypeLabel(c.type))
-      }
-      if (c.description) tags.push(c.description)
-      if (c.category) tags.push(c.category)
-    })
+  if (hasComputeCapability(caps)) {
+    if (caps.compute.query?.supported) {
+      tags.push(getComputeTypeLabel('query'))
+      ;(caps.compute.query.languages || []).forEach(language => tags.push(language))
+    }
+    if (caps.compute.workflow?.supported) {
+      tags.push(getComputeTypeLabel('workflow'))
+    }
+    if (caps.compute.script?.supported) {
+      tags.push(getComputeTypeLabel('script'))
+      ;(caps.compute.script.languages || []).forEach(language => tags.push(language))
+    }
   }
 
-  return tags.length > 0 ? tags : [t('system.engine.capabilities.none')]
+  return tags.length > 0 ? [...new Set(tags)] : [t('system.engine.capabilities.none')]
 }
 
 const handleFilterChange = () => {}
@@ -920,9 +1146,12 @@ const viewEngineDetails = async (row) => {
 // 获取存储类型标签
 const getStorageTypeLabel = (type) => {
   const typeMap = {
-    'relational_db': t('system.engine.capabilities.relationalDb'),
-    'object_storage': t('system.engine.capabilities.objectStorage'),
-    'graph_db': t('system.engine.capabilities.graphDb')
+    'tabular': t('system.engine.capabilities.tabular'),
+    'object': t('system.engine.capabilities.objectStorage'),
+    'file': t('system.engine.capabilities.file'),
+    'document': t('system.engine.capabilities.document'),
+    'graph': t('system.engine.capabilities.graphDb'),
+    'formats': t('system.engine.capabilities.formats')
   }
   return typeMap[type] || type
 }
@@ -930,11 +1159,9 @@ const getStorageTypeLabel = (type) => {
 // 获取计算类型标签
 const getComputeTypeLabel = (type) => {
   const typeMap = {
-    'sql_query': t('system.engine.capabilities.sqlQuery'),
-    'spatial': t('system.engine.capabilities.spatial'),
-    'tile_cache': t('system.engine.capabilities.tileCache'),
-    'scan': t('system.engine.capabilities.scan'),
-    'workflow': t('system.engine.capabilities.workflow')
+    'query': t('system.engine.capabilities.query'),
+    'workflow': t('system.engine.capabilities.workflow'),
+    'script': t('system.engine.capabilities.script')
   }
   return typeMap[type] || type
 }
@@ -1103,6 +1330,24 @@ onMounted(() => {
 .storage-form-panel {
   flex: 1;
   min-width: 0;
+}
+
+.capability-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.capability-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.capability-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
 }
 
 /* 内置引擎行样式 */

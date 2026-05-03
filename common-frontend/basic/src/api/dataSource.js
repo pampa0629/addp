@@ -327,13 +327,16 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
 export async function detectTableMetadata(apiBaseUrl, params) {
   try {
     // 根据 API 基础 URL 选择正确的端点
-    // Meta 模块: /api/meta/metadata/tables/spatial
+    // Meta 模块: /api/v1/meta/engines/:engine_id/items/spatial
     // Service 模块: /api/service/tables/spatial-metadata
     const isMeta = apiBaseUrl.includes('/meta')
-    const endpoint = isMeta ? '/metadata/tables/spatial' : '/tables/spatial-metadata'
+    const endpoint = isMeta ? `/engines/${params.engine_id}/items/spatial` : '/tables/spatial-metadata'
     const url = `${apiBaseUrl}${endpoint}`
+    const requestParams = isMeta
+      ? { namespace: params.schema, name: params.table }
+      : params
 
-    const response = await authenticatedAxios.get(url, { params })
+    const response = await authenticatedAxios.get(url, { params: requestParams })
 
     // 按照 ADDP API 规范,响应格式为 { data: {...} }
     const data = response.data.data || response.data

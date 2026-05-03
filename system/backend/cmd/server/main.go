@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/dbbridge"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
@@ -79,6 +79,17 @@ func main() {
 	}
 
 	// 注释：MigrateExistingEnginesDisplayName 已删除（display_name 字段已移除）
+
+	// 统一刷新引擎能力声明。旧 capabilities 结构不再保留，Meta/Develop 等消费端只读取新结构。
+	{
+		userRepo := repository.NewUserRepository(db)
+		engineRepo := repository.NewEngineRepository(db)
+		engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, nil)
+		if err := engineService.RefreshAllEngineCapabilities(); err != nil {
+			logger.L().Error("刷新引擎能力声明失败", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	// 初始化超级管理员用户
 	if err := repository.InitSuperAdmin(db); err != nil {

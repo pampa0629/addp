@@ -173,6 +173,7 @@ type ResourceLocator struct {
 |--------|---------|---------------------|
 | 对象存储 | bucket + path + name | `["bucket", "path_segment", ..., "name"]` |
 | 数据库表 | schema + table | `["schema", "table"]` |
+| 图数据库 label/relationship | database + label/relationship | `["database", "label_or_relationship"]` |
 | 文件系统 | path + name | `["path_segment", ..., "name"]` |
 
 ### 5.3 为什么 Path 包含 bucket/schema？
@@ -237,15 +238,43 @@ ResourceLocator{
 
 **URI**: `addp://engine/8/path/public/users?type=table&meta_id=123`
 
+#### 图数据库 (Neo4j)
+
+Neo4j 的 database 作为路径第一段，label 或 relationship 作为路径第二段；locator 的 `Type` 必须保留图数据库语义，不能转换为 `collection`。
+
+**label ResourceLocator**:
+```go
+ResourceLocator{
+    EngineID: 25,
+    Path:     []string{"neo4j", "Project"},  // database + label
+    Type:     "label",
+    MetaID:   &100578,
+}
+```
+
+**label URI**: `addp://engine/25/path/neo4j/Project?type=label&meta_id=100578`
+
+**relationship ResourceLocator**:
+```go
+ResourceLocator{
+    EngineID: 25,
+    Path:     []string{"neo4j", "WORKS_FOR"},  // database + relationship
+    Type:     "relationship",
+    MetaID:   &100579,
+}
+```
+
+**relationship URI**: `addp://engine/25/path/neo4j/WORKS_FOR?type=relationship&meta_id=100579`
+
 #### 文件系统
 
 **数据库存储**:
 ```json
 {
-  "full_name": "/data/image/users.csv",
+  "full_name": "data/image/users.csv",
   "name": "users.csv",
   "attributes": {
-    "path": "/data/image/",
+    "path": "data/image/",
     "name": "users.csv"
   }
 }
@@ -256,12 +285,12 @@ ResourceLocator{
 ResourceLocator{
     EngineID: 3,
     Path:     []string{"data", "image", "users.csv"},  // 完整路径
-    Type:     "object",
+    Type:     "file",
     MetaID:   &789,
 }
 ```
 
-**URI**: `addp://engine/3/path/data/image/users.csv?type=object&meta_id=789`
+**URI**: `addp://engine/3/path/data/image/users.csv?type=file&meta_id=789`
 
 ### 5.5 Path 构建规则
 
@@ -280,6 +309,7 @@ path := parsePath(fullName, "table")
 `parsePath` 函数根据资源类型使用不同的分隔符：
 - 对象存储：使用 `/` 分隔
 - 数据库表：使用 `.` 分隔
+- 图数据库 label/relationship：使用 `.` 分隔，ResourceLocator.Type 保持 `label` / `relationship`
 
 ### 5.6 对比总结
 

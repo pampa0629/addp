@@ -367,8 +367,8 @@ frontend/src/
 - `DELETE /api/v1/system/engines/:id` - 删除引擎
 - `POST /api/v1/system/engines/:id/test` - 测试已有引擎连接
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
-- `GET /api/v1/system/engines/:id/schemas` - 列出数据库 schemas
-- `GET /api/v1/system/engines/:id/tables` - 列出数据库表
+- `GET /api/v1/system/engines/:id/namespaces` - 列出 catalog 命名空间
+- `GET /api/v1/system/engines/:id/items?namespace=public` - 列出指定命名空间下的 catalog 数据项
 
 ### 应用管理（需认证）
 - `POST /api/v1/system/applications` - 创建应用

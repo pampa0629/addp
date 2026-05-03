@@ -14,10 +14,10 @@ import (
 
 // RuleEngineService 负责规则的加载和字段自动映射
 type RuleEngineService struct {
-	standardClient  *commonClient.StandardClient
-	metaClient      *commonClient.MetaClient
-	ruleAppRepo     *repository.RuleApplicationRepository
-	checkTaskRepo   *repository.CheckTaskRepository
+	standardClient *commonClient.StandardClient
+	metaClient     *commonClient.MetaClient
+	ruleAppRepo    *repository.RuleApplicationRepository
+	checkTaskRepo  *repository.CheckTaskRepository
 }
 
 func NewRuleEngineService(
@@ -94,7 +94,7 @@ func (s *RuleEngineService) DeleteRuleApplication(id, tenantID int64) error {
 // AutoMap 自动映射：从 Meta 获取表字段，按字段名匹配 Standard 数据元 code，批量创建 rule_applications
 func (s *RuleEngineService) AutoMap(ctx context.Context, tenantID, engineID int64, schemaName, tableName string, userID int64) (int, error) {
 	// 获取表字段列表
-	fields, err := s.metaClient.GetTableFields(uint(engineID), schemaName, tableName, false)
+	fields, err := s.metaClient.GetItemFields(uint(engineID), schemaName, tableName, false)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get table fields: %w", err)
 	}

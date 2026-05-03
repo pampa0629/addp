@@ -55,42 +55,40 @@ class EngineTool(BaseTool):
 
 
 class SchemaTableTool(BaseTool):
-    """获取 Schema 和 Table 列表 Tool"""
-    name: str = "get_schema_tables"
+    """获取 catalog 命名空间和数据项列表 Tool"""
+    name: str = "get_catalog_items"
     description: str = """
-获取指定关系数据库引擎的 Schema 和 Table 列表。
+获取指定关系数据库引擎的 catalog 命名空间和数据项列表。
 仅适用于关系数据库类型（PostgreSQL、MySQL、Doris、ClickHouse）。
-使用方式：输入 engine_id（整数），可选 schema（字符串），返回 Schema/Table 列表
+使用方式：输入 engine_id（整数），可选 namespace（字符串），返回命名空间和数据项列表
 """
 
-    async def _arun(self, engine_id: int, schema: Optional[str] = None) -> Dict:
+    async def _arun(self, engine_id: int, namespace: Optional[str] = None) -> Dict:
         """异步执行"""
-        print(f"[SchemaTableTool] 获取引擎 {engine_id} 的 Schema/Table 列表（schema={schema}）")
+        print(f"[SchemaTableTool] 获取引擎 {engine_id} 的 catalog 列表（namespace={namespace}）")
 
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
-                result = {"schemas": [], "tables": []}
+                result = {"namespaces": [], "items": []}
 
-                # 获取 Schema 列表
-                schemas = await client.list_schemas(engine_id)
-                result["schemas"] = schemas
-                print(f"[SchemaTableTool] ✅ 获取到 {len(schemas)} 个 Schema")
+                namespaces = await client.list_namespaces(engine_id)
+                result["namespaces"] = namespaces
+                print(f"[SchemaTableTool] ✅ 获取到 {len(namespaces)} 个命名空间")
 
-                # 获取 Table 列表
-                target_schema = schema or "public"
-                tables = await client.list_tables(engine_id, target_schema)
-                result["tables"] = tables
-                print(f"[SchemaTableTool] ✅ 获取到 {len(tables)} 个 Table")
+                target_namespace = namespace or "public"
+                items = await client.list_catalog_items(engine_id, target_namespace)
+                result["items"] = items
+                print(f"[SchemaTableTool] ✅ 获取到 {len(items)} 个数据项")
 
                 return result
         except Exception as e:
-            print(f"[SchemaTableTool] ❌ 获取 Schema/Table 失败: {type(e).__name__}: {e}")
-            return {"schemas": [], "tables": []}
+            print(f"[SchemaTableTool] ❌ 获取 catalog 列表失败: {type(e).__name__}: {e}")
+            return {"namespaces": [], "items": []}
 
-    def _run(self, engine_id: int, schema: Optional[str] = None) -> Dict:
+    def _run(self, engine_id: int, namespace: Optional[str] = None) -> Dict:
         """同步执行（不支持）"""
         raise NotImplementedError("SchemaTableTool only supports async execution")
 
@@ -231,4 +229,3 @@ class OperatorDetailTool(BaseTool):
     def _run(self, operator_name: str) -> Optional[Dict]:
         """同步执行（不支持）"""
         raise NotImplementedError("OperatorDetailTool only supports async execution")
-

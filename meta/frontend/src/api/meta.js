@@ -70,11 +70,6 @@ export default {
     return client.get('/meta/logs', { params })
   },
 
-  // 元数据扫描（旧API，保留兼容）
-  getSchemasOld(engineId) {
-    return client.get(`/meta/scan/schemas/${engineId}`)
-  },
-
   scanMetadata(data) {
     return client.post('/meta/scan', data)
   },
@@ -86,14 +81,34 @@ export default {
     return client.get('/meta/engines')
   },
 
-  // 获取指定引擎的Schema列表
+  // 获取指定引擎已扫描的命名空间列表
   getSchemas(engineId) {
-    return client.get(`/meta/engines/${engineId}/schemas`)
+    return client.get(`/meta/engines/${engineId}/tree`).then(res => {
+      const nodes = Array.isArray(res?.top_nodes) ? res.top_nodes : []
+      return nodes.map(node => ({
+        id: node.id,
+        name: node.name,
+        schema_name: node.name,
+        node_type: node.node_type,
+        path: node.path || node.full_name || node.name,
+        scan_status: node.scan_status,
+        scanned_at: node.scanned_at,
+        table_count: node.item_count || 0,
+        total_size_bytes: node.total_size_bytes || 0
+      }))
+    })
   },
 
-  // 获取指定引擎的可用Schema列表（未扫描的）
+  // 获取指定引擎的实时命名空间列表
   listAvailableSchemas(engineId) {
-    return client.get(`/meta/engines/${engineId}/schemas/available`)
+    return client.get(`/system/engines/${engineId}/namespaces`).then(res => {
+      const namespaces = Array.isArray(res?.namespaces) ? res.namespaces : []
+      return namespaces.map(item => ({
+        ...item,
+        schema_name: item.name || item.schema_name,
+        name: item.name || item.schema_name
+      }))
+    })
   },
 
   // 获取对象存储的节点列表
@@ -109,12 +124,12 @@ export default {
   },
 
   // 扫描指定引擎的指定Schema或对象路径
-  scanEngine(engineId, schemaNames, objectPaths) {
+  scanEngine(engineId, namespaces, objectPaths) {
     const payload = {
       engine_id: engineId
     }
-    if (schemaNames && schemaNames.length > 0) {
-      payload.schema_names = schemaNames
+    if (namespaces && namespaces.length > 0) {
+      payload.namespaces = namespaces
     }
     if (objectPaths && objectPaths.length > 0) {
       payload.object_paths = objectPaths

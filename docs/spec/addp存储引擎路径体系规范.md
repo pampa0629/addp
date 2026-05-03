@@ -203,13 +203,16 @@ addp://engine/{engine_id}/path/{segments}?type={type}
 
 | 引擎类型 | full_name | path segments | 示例 URI |
 |---------|-----------|---------------|---------|
-| 对象存储 | `addp/image/data.jpg` | `["addp","image","data.jpg"]` | `.../path/addp/image/data.jpg` |
-| NFS | `gis-data/sample.csv` | `["gis-data","sample.csv"]` | `.../path/gis-data/sample.csv` |
-| NFS 根 | `""` | `[]` | `.../path/` |
+| 对象存储 | `addp/image/data.jpg` | `["addp","image","data.jpg"]` | `.../path/addp/image/data.jpg?type=object` |
+| NFS | `gis-data/sample.csv` | `["gis-data","sample.csv"]` | `.../path/gis-data/sample.csv?type=file` |
+| NFS 根 | `""` | `[]` | `.../path/?type=root` |
 | 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table` |
-| NoSQL | `mydb.orders` / `neo4j.Person` / `neo4j.WORKS_FOR` | `["mydb","orders"]` / `["neo4j","Person"]` / `["neo4j","WORKS_FOR"]` | `.../path/mydb/orders?type=collection` / `.../path/neo4j/Person?type=collection` / `.../path/neo4j/WORKS_FOR?type=collection` |
+| MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection` |
+| Neo4j label | `neo4j.Person` | `["neo4j","Person"]` | `.../path/neo4j/Person?type=label` |
+| Neo4j relationship | `neo4j.WORKS_FOR` | `["neo4j","WORKS_FOR"]` | `.../path/neo4j/WORKS_FOR?type=relationship` |
 
-数据库/NoSQL 的解析语义：`schema_or_db = path[0]`，`table_or_collection = join(path[1:])`。
+数据库/NoSQL/Graph 的解析语义：`schema_or_db = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
+Neo4j 的节点标签必须使用 `type=label`，关系类型必须使用 `type=relationship`，不得折叠为 `type=collection`。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ---

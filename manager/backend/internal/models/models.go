@@ -211,7 +211,7 @@ type MetaScanTaskRequest struct {
 	Name          string   `json:"name" binding:"required"`
 	Description   string   `json:"description"`
 	EngineID      uint     `json:"engine_id"`
-	SchemaNames   []string `json:"schema_names"`
+	Namespaces    []string `json:"namespaces"`
 	ObjectPaths   []string `json:"object_paths"`
 	ScanDepth     string   `json:"scan_depth"`
 	ScheduleType  string   `json:"schedule_type" binding:"required"`
@@ -251,7 +251,7 @@ type MetaScanTaskRun struct {
 
 // MetaManualScanRequest 发起即时扫描的请求体
 type MetaManualScanRequest struct {
-	SchemaNames []string `json:"schema_names"`
+	Namespaces  []string `json:"namespaces"`
 	ObjectPaths []string `json:"object_paths"`
 	ScanDepth   string   `json:"scan_depth"`
 	ScanType    string   `json:"scan_type"`

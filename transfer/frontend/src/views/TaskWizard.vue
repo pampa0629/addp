@@ -709,10 +709,10 @@ import { useI18n } from 'vue-i18n'
 import { taskAPI } from '@/api/tasks'
 import { localEnginesAPI } from '@/api/localEngines'
 import { systemEnginesAPI } from '@/api/systemEngines'
+import { getTables, getTableFields } from '@/api/meta'
 import FieldMappingEditor from '@/components/FieldMappingEditor.vue'
 import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
 import { StorageEngineForm, ScheduleConfig, describeCron } from '@common-ui'
-import axios from 'axios'
 
 const router = useRouter()
 const route = useRoute()
@@ -1990,13 +1990,9 @@ const handleLoadSourceTables = async () => {
       if (!['postgresql', 'mysql'].includes(sourceConnectorType.value)) {
         return
       }
-      const token = localStorage.getItem('token')
-      const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/tables`, {
-        params: { engine_id: selectedSourceOption.value?.resource?.id },
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (response.data && Array.isArray(response.data)) {
-        availableSourceTables.value = response.data.map(item => item.name || item)
+      const tableList = await getTables(selectedSourceOption.value?.resource?.id)
+      if (Array.isArray(tableList)) {
+        availableSourceTables.value = tableList.map(item => item.name || item)
         ElMessage.success(t('transfer.taskWizard.tablesLoaded', { count: availableSourceTables.value.length }))
       } else {
         ElMessage.warning(t('transfer.taskWizard.noTablesFound'))
@@ -2038,14 +2034,7 @@ const handleLoadTargetTables = async () => {
 
   loadingTargetTables.value = true
   try {
-    const token = localStorage.getItem('token')
-    const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/tables`, {
-      params: { engine_id: selectedTargetOption.value?.resource?.id },
-      headers: { Authorization: `Bearer ${token}` }
-    })
-
-    // 后端返回 { data: [...] }，axios response.data 就是 { data: [...] }
-    const tableList = Array.isArray(response.data?.data) ? response.data.data : (response.data || [])
+    const tableList = await getTables(selectedTargetOption.value?.resource?.id)
     if (Array.isArray(tableList) && tableList.length > 0) {
       availableTargetTables.value = tableList.map(item => item.name || item)
       ElMessage.success(t('transfer.taskWizard.tablesLoaded', { count: availableTargetTables.value.length }))
@@ -2109,15 +2098,8 @@ const handleFetchFields = async (type) => {
   try {
     if (useSystem) {
       // 系统资源: 从 Meta 模块获取字段
-      const token = localStorage.getItem('token')
-      const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/fields`, {
-        params: {
-          engine_id: resourceId,
-          table_name: tableName,
-          include_details: true
-        },
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const data = await getTableFields(resourceId, '', tableName)
+      const response = { data }
 
       if (response.data && Array.isArray(response.data)) {
         if (isSource) {

@@ -10,8 +10,8 @@ type JSONMap = commonModels.JSONMap
 // ScanRequest 扫描请求
 type ScanRequest struct {
 	EngineID    uint     `json:"engine_id" binding:"required"` // 资源ID
-	SchemaNames []string `json:"schema_names"`                 // 要扫描的Schema列表（空则全部）
-	ObjectPaths []string `json:"object_paths"`                 // 对象存储选择的路径
+	Namespaces  []string `json:"namespaces"`                   // 要扫描的命名空间列表（空则全部）
+	ObjectPaths []string `json:"object_paths"`                 // 对象存储/文件系统选择的路径
 	ScanDepth   string   `json:"scan_depth"`                   // basic/deep/full
 	ScanType    string   `json:"scan_type"`                    // manual/auto/scheduled
 }
@@ -42,23 +42,6 @@ type ResourceWithStats struct {
 	CheckMessage     string `json:"check_message,omitempty"`     // 状态详情
 }
 
-// SchemaWithStatus Schema及其状态
-type SchemaWithStatus struct {
-	ID             uint   `json:"id"`
-	SchemaName     string `json:"schema_name"`
-	ScanStatus     string `json:"scan_status"`
-	ScannedAt      string `json:"scanned_at,omitempty"`
-	TableCount     int    `json:"table_count"`
-	TotalSizeBytes int64  `json:"total_size_bytes"`
-	ErrorMessage   string `json:"error_message,omitempty"` // 扫描错误信息
-}
-
-// SchemaInfo Schema信息（用于获取Schema列表）
-type SchemaInfo struct {
-	Name   string   `json:"name"`
-	Tables []string `json:"tables,omitempty"`
-}
-
 // ObjectNode 对象存储节点
 type ObjectNode struct {
 	Name         string `json:"name"`
@@ -75,7 +58,7 @@ type ScanTaskUpsertRequest struct {
 	Name        string   `json:"name" binding:"required"`
 	Description string   `json:"description"`
 	EngineID    uint     `json:"engine_id" binding:"required"`
-	SchemaNames []string `json:"schema_names"`
+	Namespaces  []string `json:"namespaces"`
 	ObjectPaths []string `json:"object_paths"`
 	ScanDepth   string   `json:"scan_depth"`
 	Schedule    string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行
@@ -124,14 +107,14 @@ type MetaItemLite struct {
 
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
 type SpatialMetadataResponse struct {
-	GeometryColumn string                   `json:"geometry_column"`
-	GeometryTypes  []string                 `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
-	SRID           int                      `json:"srid"`
-	ExtentSRID     int                      `json:"extent_srid"`
-	Extent         []float64                `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	PrimaryKey     string                   `json:"primary_key"`
-	Fields         []FieldInfo              `json:"fields"`
-	RowCount       int64                    `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
+	GeometryColumn string      `json:"geometry_column"`
+	GeometryTypes  []string    `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	SRID           int         `json:"srid"`
+	ExtentSRID     int         `json:"extent_srid"`
+	Extent         []float64   `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	PrimaryKey     string      `json:"primary_key"`
+	Fields         []FieldInfo `json:"fields"`
+	RowCount       int64       `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
 }
 
 // FieldInfo 字段信息

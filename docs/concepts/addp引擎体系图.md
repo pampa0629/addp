@@ -131,7 +131,7 @@ graph TB
 
 ## 插件接口体系
 
-当前插件接口集中在 `common/engine/plugin/interfaces.go` 和 `common/engine/plugin/filesystem.go`。
+当前插件接口集中在 `common/engine/plugin/interfaces.go`、`providers.go`、`tabular_catalog.go`、`filesystem_catalog.go`、`nosql_catalog.go` 和各 runtime provider 文件中。基础接口负责插件注册和连接信息，目录、元数据、内容读取、查询运行时等能力由 provider 表达。
 
 ```mermaid
 classDiagram
@@ -143,7 +143,7 @@ classDiagram
         +DefaultPort() int
         +RequiredFields() []string
         +SensitiveFields() []string
-        +GenerateCapabilities() string
+        +Capabilities() EngineCapabilities
         +ValidateConnectionInfo(connInfo) error
         +BuildConnectionString(connInfo) string
         +TestConnection(ctx, connInfo) error
@@ -151,13 +151,10 @@ classDiagram
 
     class StoragePlugin {
         <<interface>>
-        +SupportsMetadataQuery() bool
     }
 
     class ComputePlugin {
         <<interface>>
-        +GetSupportedOperators() []string
-        +HealthCheckEndpoint() string
     }
 
     class ConnectionPoolPlugin {
@@ -168,62 +165,60 @@ classDiagram
 
     class RelationalDBPlugin {
         <<interface>>
-        +ListSchemas(ctx, db) []SchemaInfo
-        +ListTables(ctx, db, schema) []TableInfo
-        +ListColumns(ctx, db, schema, table) []ColumnInfo
-        +GetTableRowCount(ctx, db, schema, table) int64
         +IsSystemSchema(schema) bool
-        +SchemaNodeType() string
     }
 
-    class NoSQLPlugin {
+    class CatalogModelProvider {
         <<interface>>
-        +ListDatabases(ctx, connInfo) []DatabaseInfo
-        +IsSystemDatabase(database) bool
-        +CreateClient(ctx, connInfo) any
-        +CloseClient(ctx, client) error
+        +CatalogModel() CatalogModelSpec
+    }
+
+    class CatalogProvider {
+        <<interface>>
+        +ListChildren(ctx, connInfo, parent, opts) []CatalogNode
+        +ResolvePath(ctx, connInfo, path) CatalogNode
+    }
+
+    class ItemMetadataProvider {
+        <<interface>>
+        +DescribeItem(ctx, connInfo, path, opts) ItemMetadata
+    }
+
+    class ContentReadableProvider {
+        <<interface>>
+        +OpenContent(ctx, connInfo, path, opts) ReadCloser
+    }
+
+    class QueryRuntimeProvider {
+        <<interface>>
+        +QueryLanguages() []string
+        +GenerateSampleQuery(ctx, connInfo, opts) query
+        +ExecuteRuntimeQuery(ctx, connInfo, req) QueryResult
+    }
+
+    class SQLQueryRuntimeProvider {
+        <<interface>>
+        +ExecuteSQL(ctx, connInfo, sql, opts) QueryResult
+    }
+
+    class DocumentQueryRuntimeProvider {
+        <<interface>>
+        +ExecuteDocumentQuery(ctx, connInfo, command, opts) QueryResult
+    }
+
+    class GraphQueryRuntimeProvider {
+        <<interface>>
+        +ExecuteRuntimeGraphQuery(ctx, connInfo, cypher, opts) GraphQueryResult
     }
 
     class DocumentDBPlugin {
         <<interface>>
-        +ListCollections(ctx, connInfo, database) []CollectionInfo
         +GetCollectionStats(ctx, connInfo, database, collection) CollectionStats
     }
 
     class GraphDBPlugin {
         <<interface>>
-        +ListNodeLabels(ctx, connInfo, database) []NodeLabelInfo
-        +ListRelationshipTypes(ctx, connInfo, database) []RelationshipTypeInfo
         +GetGraphSchema(ctx, connInfo, database) GraphSchema
-    }
-
-    class QueryablePlugin {
-        <<interface>>
-        +ExecuteQuery(ctx, connInfo, query) QueryResult
-        +GenerateSampleQuery(ctx, connInfo) query
-    }
-
-    class GraphQueryPlugin {
-        <<interface>>
-        +ExecuteGraphQuery(ctx, connInfo, query) GraphQueryResult
-    }
-
-    class FileSystemPlugin {
-        <<interface>>
-        +ListRoots(ctx, connInfo) []RootEntry
-        +ListDirectory(ctx, connInfo, path) files, dirs
-        +ReadFile(ctx, connInfo, path) ReadCloser
-        +GetFileMetadata(ctx, connInfo, path) FileMetadata
-    }
-
-    class ObjectStoragePlugin {
-        <<interface>>
-        +ListBuckets(ctx, connInfo) []BucketInfo
-        +ListObjects(ctx, connInfo, bucket, prefix, recursive) []ObjectInfo
-        +GetObjectMetadata(ctx, connInfo, bucket, key) ObjectInfo
-        +InferContentType(objectKey) string
-        +DefaultBucket() string
-        +SupportsSSL() bool
     }
 
     class TermI18nProvider {
@@ -235,25 +230,29 @@ classDiagram
     EnginePlugin <|-- ComputePlugin
     StoragePlugin <|-- RelationalDBPlugin
     ConnectionPoolPlugin <|-- RelationalDBPlugin
-    StoragePlugin <|-- NoSQLPlugin
-    NoSQLPlugin <|-- DocumentDBPlugin
-    NoSQLPlugin <|-- GraphDBPlugin
-    QueryablePlugin <|-- GraphQueryPlugin
-    StoragePlugin <|-- FileSystemPlugin
-    FileSystemPlugin <|-- ObjectStoragePlugin
+    EnginePlugin <|-- CatalogModelProvider
+    EnginePlugin <|-- CatalogProvider
+    EnginePlugin <|-- ItemMetadataProvider
+    EnginePlugin <|-- ContentReadableProvider
+    EnginePlugin <|-- QueryRuntimeProvider
+    QueryRuntimeProvider <|-- SQLQueryRuntimeProvider
+    QueryRuntimeProvider <|-- DocumentQueryRuntimeProvider
+    QueryRuntimeProvider <|-- GraphQueryRuntimeProvider
+    StoragePlugin <|-- DocumentDBPlugin
+    StoragePlugin <|-- GraphDBPlugin
 ```
 
 接口组合示例：
 
 | 引擎 | 主要接口组合 |
 | --- | --- |
-| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `StoragePlugin` + `RelationalDBPlugin` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `StoragePlugin` + `NoSQLPlugin` + `DocumentDBPlugin` + `QueryablePlugin` |
-| Neo4j | `EnginePlugin` + `StoragePlugin` + `NoSQLPlugin` + `GraphDBPlugin` + `QueryablePlugin` + `GraphQueryPlugin` |
-| MinIO / S3 | `EnginePlugin` + `StoragePlugin` + `FileSystemPlugin` + `ObjectStoragePlugin` |
-| NFS | `EnginePlugin` + `StoragePlugin` + `FileSystemPlugin` |
-| Python Workflow / Spark Workflow / Math Workflow | `EnginePlugin` + `ComputePlugin` |
-| Jupyter | 当前主要实现 `EnginePlugin`，通过能力声明暴露 Notebook 能力 |
+| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `StoragePlugin` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| MongoDB | `EnginePlugin` + `StoragePlugin` + `CatalogProvider` + `ItemMetadataProvider` + `DocumentMetadataSamplingProvider` + `DocumentQueryRuntimeProvider` |
+| Neo4j | `EnginePlugin` + `StoragePlugin` + `CatalogProvider` + `ItemMetadataProvider` + `GraphDBPlugin` + `GraphQueryRuntimeProvider` |
+| MinIO / S3 | `EnginePlugin` + `StoragePlugin` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
+| NFS | `EnginePlugin` + `StoragePlugin` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
+| Python Workflow / Spark Workflow / Math Workflow | `EnginePlugin` + `ComputePlugin` + `WorkflowRuntimeProvider` |
+| Jupyter | `EnginePlugin` + `ComputePlugin` + `ScriptRuntimeProvider`，通过能力声明暴露 Notebook 能力 |
 
 ---
 
@@ -294,11 +293,11 @@ flowchart TB
     LoadEngine --> GetPlugin[plugin.Get(engine_type)]
     GetPlugin --> Route{接口类型}
 
-    Route -->|RelationalDBPlugin| Rel[关系型扫描<br/>schema/database -> table -> field]
-    Route -->|DocumentDBPlugin| Doc[文档库扫描<br/>database -> collection -> sampled fields]
-    Route -->|GraphDBPlugin| Graph[图数据库扫描<br/>database -> label / relationship]
-    Route -->|ObjectStoragePlugin| Obj[对象存储扫描<br/>bucket -> prefix -> object]
-    Route -->|FileSystemPlugin| FS[文件系统扫描<br/>root -> dir -> file/lake_table]
+    Route -->|CatalogProvider + ItemMetadataProvider| Rel[关系型扫描<br/>schema/database -> table -> field]
+    Route -->|CatalogProvider + DocumentMetadataSamplingProvider| Doc[文档库扫描<br/>database -> collection -> sampled fields]
+    Route -->|CatalogProvider + GraphDBPlugin| Graph[图数据库扫描<br/>database -> label / relationship]
+    Route -->|CatalogProvider + ContentReadableProvider| Obj[对象存储扫描<br/>bucket -> prefix -> object]
+    Route -->|CatalogProvider + ContentReadableProvider| FS[文件系统扫描<br/>root -> dir -> file/lake_table]
 
     FS --> Detector[CompositeItemDetector<br/>识别目录型湖表]
     Obj --> MetaStore[(metadata.meta_node / meta_item)]
@@ -360,20 +359,20 @@ Manager 后端预览 Provider 负责把不同引擎的数据转换成统一的 `
 
 | 引擎类型 | 分类 | 默认端口 | 主要接口 | system 连接测试 | meta 扫描 | manager 预览 |
 | --- | --- | ---: | --- | --- | --- | --- |
-| `postgresql` | 标准 / 关系型 / SQL 查询 | 5432 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | schema/table/field，PostGIS 空间元数据 | 表格、空间字段、MVT |
-| `mysql` | 标准 / 关系型 / SQL 查询 | 3306 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
-| `doris` | 标准 / HTAP / SQL 查询 | 9030 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
-| `clickhouse` | 标准 / OLAP / SQL 查询 | 9000 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件认证查询 | database/table/field | 表格 |
-| `spark_sql` | 标准 / 分布式 SQL 查询 | 10000 | `RelationalDBPlugin`、`ConnectionPoolPlugin` | 插件连接测试 | database/table/field | 表格能力取决于 Provider 兼容情况 |
-| `mongodb` | 标准 / 文档数据库 / MQL 查询 | 27017 | `DocumentDBPlugin`、`QueryablePlugin` | 插件认证命令 | database/collection/字段采样 | 集合表格预览 |
-| `neo4j` | 标准 / 图数据库 / Cypher 查询 | 7687 | `GraphDBPlugin`、`GraphQueryPlugin` | 插件认证命令 | database/label/relationship | 标签/关系预览、图 Schema |
-| `minio` | 标准 / 对象存储 / 文件语义 | 9000 | `ObjectStoragePlugin`、`FileSystemPlugin` | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
-| `s3` | 标准 / 对象存储 / 文件语义 | 443 | `ObjectStoragePlugin`、`FileSystemPlugin` | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
-| `nfs` | 标准 / 文件系统语义存储 | 2049 | `FileSystemPlugin` | 文件系统访问检查 | root/dir/file/lake_table | 目录、文件、湖表 |
-| `python_workflow` | 扩展 / 工作流计算 | 8099 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
-| `spark_workflow` | 扩展 / 工作流计算 | 8098 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
-| `math_workflow` | 扩展 / 工作流计算 | 8089 | `ComputePlugin` | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
-| `jupyter` | 扩展 / Notebook | 8097 | `EnginePlugin` + Notebook 能力声明 | HTTP health 或插件 health | 不参与存储扫描 | Notebook 开发入口 |
+| `postgresql` | 标准 / 关系型 / SQL 查询 | 5432 | Catalog/Metadata/SQLRuntime + ConnectionPool | 插件认证查询 | schema/table/field，PostGIS 空间元数据 | 表格、空间字段、MVT |
+| `mysql` | 标准 / 关系型 / SQL 查询 | 3306 | Catalog/Metadata/SQLRuntime + ConnectionPool | 插件认证查询 | database/table/field | 表格 |
+| `doris` | 标准 / HTAP / SQL 查询 | 9030 | Catalog/Metadata/SQLRuntime + ConnectionPool | 插件认证查询 | database/table/field | 表格 |
+| `clickhouse` | 标准 / OLAP / SQL 查询 | 9000 | Catalog/Metadata/SQLRuntime + ConnectionPool | 插件认证查询 | database/table/field | 表格 |
+| `spark_sql` | 标准 / 分布式 SQL 查询 | 10000 | Catalog/Metadata/SQLRuntime + ConnectionPool | 插件连接测试 | database/table/field | 表格能力取决于 Provider 兼容情况 |
+| `mongodb` | 标准 / 文档数据库 / MQL 查询 | 27017 | Catalog/MetadataSampling/DocumentQueryRuntime | 插件认证命令 | database/collection/字段采样 | 集合表格预览 |
+| `neo4j` | 标准 / 图数据库 / Cypher 查询 | 7687 | Catalog/GraphMetadata/GraphQueryRuntime | 插件认证命令 | database/label/relationship | 标签/关系预览、图 Schema |
+| `minio` | 标准 / 对象存储 / 文件语义 | 9000 | Catalog/Metadata/ContentReadable | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
+| `s3` | 标准 / 对象存储 / 文件语义 | 443 | Catalog/Metadata/ContentReadable | `ListBuckets` 等认证 API | bucket/prefix/object，湖表识别 | 对象、目录、文件表、湖表 |
+| `nfs` | 标准 / 文件系统语义存储 | 2049 | Catalog/Metadata/ContentReadable | 文件系统访问检查 | root/dir/file/lake_table | 目录、文件、湖表 |
+| `python_workflow` | 扩展 / 工作流计算 | 8099 | WorkflowRuntimeProvider | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `spark_workflow` | 扩展 / 工作流计算 | 8098 | WorkflowRuntimeProvider | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `math_workflow` | 扩展 / 工作流计算 | 8089 | WorkflowRuntimeProvider | HTTP health 或插件 health | 不参与存储扫描 | 作为计算运行时使用 |
+| `jupyter` | 扩展 / Notebook | 8097 | ScriptRuntimeProvider + Notebook 能力声明 | HTTP health 或插件 health | 不参与存储扫描 | Notebook 开发入口 |
 
 按能力维度可分为：
 
@@ -398,8 +397,8 @@ graph TB
     Query --> MQL[MQL]
     Query --> Cypher[Cypher]
 
-    File --> ObjectFS[ObjectStoragePlugin 继承 FileSystemPlugin]
-    File --> NativeFS[NFS FileSystemPlugin]
+    File --> ObjectFS[对象存储 ContentReadableProvider]
+    File --> NativeFS[NFS ContentReadableProvider]
 
     Compute --> Workflow[Python/Spark/Math Workflow]
     Compute --> Notebook[Jupyter]
@@ -583,7 +582,7 @@ Manager 后端预览使用 `PreviewProvider` 注册表，与 `common/engine/plug
 以下是当前实现中已经暴露出来、需要后续讨论优化的点。它们不是本文档的规范结论，而是后续架构评审的输入。
 
 1. **能力声明 schema 不够统一**
-   各插件手写 `GenerateCapabilities()` JSON，字段存在不一致。建议后续改为结构化构造并集中校验。
+   各插件已返回结构化 `Capabilities()`，但前端/旧模型中仍存在部分历史字段，建议继续统一 schema 和校验逻辑。
 
 2. **接口能力和 capabilities 可能不一致**
    某些引擎实现了元数据扫描接口，但能力声明没有明确表达对应 storage 类型，可能影响按能力过滤。
@@ -595,7 +594,7 @@ Manager 后端预览使用 `PreviewProvider` 注册表，与 `common/engine/plug
    `isObjectStorageType`、`isFileSystemType`、部分 MinIO/GORM 构造和 PostgreSQL 空间处理还没有完全沉到插件抽象。
 
 5. **文件语义和对象存储语义需要更清楚的边界**
-   `ObjectStoragePlugin` 继承 `FileSystemPlugin` 是合理方向，但扫描和预览中仍存在对象存储专属逻辑与通用文件系统逻辑交叉。
+   当前统一通过 `CatalogProvider` / `ContentReadableProvider` 访问，但对象存储的 bucket/prefix 语义和 NFS 的 root/path 语义仍需要在能力声明和前端交互中表达清楚。
 
 6. **数据源引擎和计算引擎复用同一张 engines 表**
    当前可行，但文档和代码需要持续明确“实例登记”和“能力维度”的区别，避免只靠 `standard` / `extension` 二分承载所有语义。
@@ -610,7 +609,8 @@ Manager 后端预览使用 `PreviewProvider` 注册表，与 `common/engine/plug
 关键代码：
 
 - `common/engine/plugin/interfaces.go`：插件接口定义。
-- `common/engine/plugin/filesystem.go`：文件系统语义接口。
+- `common/engine/plugin/providers.go`：Catalog、Metadata、Content、Query runtime provider 定义。
+- `common/engine/plugin/filesystem.go` / `filesystem_catalog.go`：文件系统语义数据结构和 catalog adapter。
 - `common/engine/plugins/*`：各类引擎插件实现。
 - `common/dbbridge/bridge.go`：插件导入、连接池和查询桥接。
 - `common/models/engine.go`：引擎模型和扫描配置。

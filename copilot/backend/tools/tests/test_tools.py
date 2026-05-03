@@ -58,9 +58,9 @@ class TestDevelopTools:
         result = await tool._arun(engine_id=db_engine["id"])
 
         assert isinstance(result, dict)
-        assert "schemas" in result
-        assert "tables" in result
-        print(f"✅ SchemaTableTool 测试通过：{len(result['schemas'])} schemas, {len(result['tables'])} tables")
+        assert "namespaces" in result
+        assert "items" in result
+        print(f"✅ SchemaTableTool 测试通过：{len(result['namespaces'])} namespaces, {len(result['items'])} items")
 
     @pytest.mark.asyncio
     async def test_operator_discovery_tool(self):

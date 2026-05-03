@@ -44,6 +44,16 @@ func TestConvertNodeType(t *testing.T) {
 			want:         TypeCollection,
 		},
 		{
+			name:         "图节点标签",
+			metaNodeType: "label",
+			want:         TypeLabel,
+		},
+		{
+			name:         "图关系类型",
+			metaNodeType: "relationship",
+			want:         TypeRelationship,
+		},
+		{
 			name:         "对象",
 			metaNodeType: "object",
 			want:         TypeObject,

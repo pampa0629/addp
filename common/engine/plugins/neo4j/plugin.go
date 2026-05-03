@@ -104,12 +104,22 @@ func (p *Neo4jPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.GraphCatalogModel()
 }
 
+func (p *Neo4jPlugin) graphCatalogAdapter() plugin.GraphCatalogAdapter {
+	return plugin.GraphCatalogAdapter{
+		Plugin:                    p,
+		ListDatabasesFunc:         p.listDatabases,
+		ListNodeLabelsFunc:        p.listNodeLabels,
+		ListRelationshipTypesFunc: p.listRelationshipTypes,
+		IsSystemDatabaseFunc:      p.IsSystemDatabase,
+	}
+}
+
 func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListGraphCatalogChildren(ctx, p, parent.EngineID, connInfo, parent, opts)
+	return plugin.ListGraphCatalogChildren(ctx, p.graphCatalogAdapter(), parent.EngineID, connInfo, parent, opts)
 }
 
 func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveGraphCatalogPath(ctx, p, path.EngineID, connInfo, path)
+	return plugin.ResolveGraphCatalogPath(ctx, p.graphCatalogAdapter(), path.EngineID, connInfo, path)
 }
 
 func (p *Neo4jPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
@@ -209,9 +219,9 @@ func getDatabase(connInfo plugin.ConnectionInfo) string {
 	return db
 }
 
-// ListDatabases 实现 NoSQLPlugin 接口 - 列出所有数据库
+// listDatabases lists databases for the catalog adapter.
 // Neo4j CE 只有一个默认数据库 "neo4j"
-func (p *Neo4jPlugin) ListDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
+func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -258,7 +268,7 @@ func (p *Neo4jPlugin) ListDatabases(ctx context.Context, connInfo plugin.Connect
 	return databases, nil
 }
 
-// IsSystemDatabase 实现 NoSQLPlugin 接口 - 判断是否为系统数据库
+// IsSystemDatabase 判断是否为系统数据库
 func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	// Neo4j 系统数据库
 	systemDatabases := []string{"system"}
@@ -272,8 +282,8 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 
 // ============ GraphDBPlugin 接口实现 ============
 
-// ListNodeLabels 实现 GraphDBPlugin 接口 - 列出所有节点标签
-func (p *Neo4jPlugin) ListNodeLabels(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.NodeLabelInfo, error) {
+// listNodeLabels 列出所有节点标签。
+func (p *Neo4jPlugin) listNodeLabels(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.NodeLabelInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -327,8 +337,8 @@ func (p *Neo4jPlugin) ListNodeLabels(ctx context.Context, connInfo plugin.Connec
 	return labels, nil
 }
 
-// ListRelationshipTypes 实现 GraphDBPlugin 接口 - 列出所有关系类型及连接统计
-func (p *Neo4jPlugin) ListRelationshipTypes(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.RelationshipTypeInfo, error) {
+// listRelationshipTypes 列出所有关系类型及连接统计。
+func (p *Neo4jPlugin) listRelationshipTypes(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.RelationshipTypeInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -409,11 +419,11 @@ RETURN from, to, cnt ORDER BY cnt DESC LIMIT 5`, escapeCypherLabel(relType)),
 
 // GetGraphSchema 实现 GraphDBPlugin 接口 - 获取图数据库完整 Schema
 func (p *Neo4jPlugin) GetGraphSchema(ctx context.Context, connInfo plugin.ConnectionInfo, database string) (*plugin.GraphSchema, error) {
-	labels, err := p.ListNodeLabels(ctx, connInfo, database)
+	labels, err := p.listNodeLabels(ctx, connInfo, database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node labels: %w", err)
 	}
-	rels, err := p.ListRelationshipTypes(ctx, connInfo, database)
+	rels, err := p.listRelationshipTypes(ctx, connInfo, database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relationship types: %w", err)
 	}
@@ -539,38 +549,6 @@ func extractGraphElements(v interface{}, nodes map[string]plugin.GraphNode, rels
 			extractGraphElements(elem, nodes, rels)
 		}
 	}
-}
-
-// CreateClient 实现 NoSQLPlugin 接口 - 创建 Neo4j driver 客户端
-func (p *Neo4jPlugin) CreateClient(ctx context.Context, connInfo plugin.ConnectionInfo) (interface{}, error) {
-	driver, err := p.createDriver(ctx, connInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	verifyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	if err := driver.VerifyConnectivity(verifyCtx); err != nil {
-		driver.Close(ctx)
-		return nil, fmt.Errorf("failed to verify Neo4j connectivity: %w", err)
-	}
-
-	return driver, nil
-}
-
-// CloseClient 实现 NoSQLPlugin 接口 - 关闭 Neo4j driver 客户端
-func (p *Neo4jPlugin) CloseClient(ctx context.Context, client interface{}) error {
-	if client == nil {
-		return nil
-	}
-
-	driver, ok := client.(neo4jdriver.DriverWithContext)
-	if !ok {
-		return fmt.Errorf("invalid client type: expected neo4j.DriverWithContext")
-	}
-
-	return driver.Close(ctx)
 }
 
 // 查询数据库中第一个 Node Label，生成可执行的 Cypher 查询

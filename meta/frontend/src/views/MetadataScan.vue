@@ -445,7 +445,7 @@ const getSchemaPlan = (schema) => {
   const task = allScanTasks.value.find(task => {
     if (task.engine_id !== selectedResource.value.id) return false
     const params = task.parameters || {}
-    const schemas = params.schema_names || []
+    const schemas = params.namespaces || []
     const paths = params.object_paths || []
     // 精确匹配：该任务只扫描这一个schema/bucket
     const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
@@ -594,7 +594,7 @@ const stopResizing = () => {
   enforceBounds()
 }
 
-// 判断是否为对象存储/文件系统类型（走 storage/nodes 路径而非 schemas/available）
+// 判断是否为对象存储/文件系统类型（走 storage/nodes 路径而非 catalog namespace）
 const isObjectStorageType = (resourceType) => {
   if (!resourceType) return false
   const type = resourceType.toLowerCase()
@@ -926,7 +926,7 @@ const submitScheduleForm = async () => {
     const payload = {
       name: existing?.name || getAutoScheduleTaskName(),
       description: ensureAutoScheduleDescription(existing?.description || ''),
-      schema_names: existing?.parameters?.schema_names || deriveAutoTaskSchemas(),
+      namespaces: existing?.parameters?.namespaces || deriveAutoTaskSchemas(),
       object_paths: existing?.parameters?.object_paths || [],
       scan_depth: existing?.parameters?.scan_depth || 'deep',
       schedule_type: 'cron',  // 统一使用 cron 类型
@@ -959,7 +959,11 @@ const handleScanSchema = async (schema) => {
   scanningSchemas[key] = true
 
   try {
-    await metaApi.scanEngine(selectedResource.value.id, [schemaName])
+    if (isObjectStorageType(selectedResource.value.resource_type)) {
+      await metaApi.scanEngine(selectedResource.value.id, [], [schema.path || schemaName])
+    } else {
+      await metaApi.scanEngine(selectedResource.value.id, [schemaName])
+    }
     ElMessage.success(t('meta.scan.schemaScanComplete', { name: schemaName }))
 
     // 刷新列表
@@ -982,7 +986,7 @@ const handleSchemaSchedule = async (schema) => {
   currentSchemaTask.value = allScanTasks.value.find(task => {
     if (task.engine_id !== selectedResource.value.id) return false
     const params = task.parameters || {}
-    const schemas = params.schema_names || []
+    const schemas = params.namespaces || []
     const paths = params.object_paths || []
 
     if (isObjectStorage) {
@@ -1020,7 +1024,7 @@ const submitSchemaSchedule = async () => {
     const payload = {
       name: `${selectedResource.value.name} - ${schemaName}`,
       description: `${terminology} ${schemaName} 的定时扫描`,
-      schema_names: isObjectStorage ? [] : [schemaName],
+      namespaces: isObjectStorage ? [] : [schemaName],
       object_paths: isObjectStorage ? [currentSchema.value.path || schemaName] : [],
       scan_depth: schemaScheduleDepth.value,
       schedule_type: 'cron',

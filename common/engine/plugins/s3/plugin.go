@@ -64,20 +64,28 @@ func (p *S3Plugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
+func (p *S3Plugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
+	return plugin.FileSystemCatalogAdapter{
+		ListRootsFunc:       p.listRoots,
+		ListDirectoryFunc:   p.listDirectory,
+		GetFileMetadataFunc: p.getFileMetadata,
+	}
+}
+
 func (p *S3Plugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileSystemCatalogChildren(ctx, p, connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
+	return plugin.ListFileSystemCatalogChildren(ctx, p.fileSystemCatalogAdapter(), connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
 }
 
 func (p *S3Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileSystemCatalogPath(ctx, p, connInfo, path.EngineID, path, plugin.CatalogTermBucket)
+	return plugin.ResolveFileSystemCatalogPath(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path, plugin.CatalogTermBucket)
 }
 
 func (p *S3Plugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileSystemItem(ctx, p, connInfo, path.EngineID, path)
+	return plugin.DescribeFileSystemItem(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.ReadFile(ctx, connInfo, path.StringPath())
+	return p.readFile(ctx, connInfo, path.StringPath())
 }
 
 func (p *S3Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -145,18 +153,18 @@ func (p *S3Plugin) TestConnection(ctx context.Context, connInfo plugin.Connectio
 	return nil
 }
 
-func (p *S3Plugin) DefaultBucket() string {
+func (p *S3Plugin) defaultBucket() string {
 	return ""
 }
 
-func (p *S3Plugin) SupportsSSL() bool {
+func (p *S3Plugin) supportsSSL() bool {
 	return true
 }
 
-// === ObjectStoragePlugin 接口实现 ===
+// === object storage helpers ===
 
 // ListBuckets 列出所有 Bucket
-func (p *S3Plugin) ListBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {
+func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -178,7 +186,7 @@ func (p *S3Plugin) ListBuckets(ctx context.Context, connInfo plugin.ConnectionIn
 }
 
 // ListObjects 列出对象（支持前缀过滤和递归）
-func (p *S3Plugin) ListObjects(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
+func (p *S3Plugin) listObjects(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -200,7 +208,7 @@ func (p *S3Plugin) ListObjects(ctx context.Context, connInfo plugin.ConnectionIn
 			Key:          object.Key,
 			Size:         object.Size,
 			LastModified: object.LastModified,
-			ContentType:  p.InferContentType(object.Key),
+			ContentType:  p.inferContentType(object.Key),
 			ETag:         object.ETag,
 		})
 	}
@@ -209,7 +217,7 @@ func (p *S3Plugin) ListObjects(ctx context.Context, connInfo plugin.ConnectionIn
 }
 
 // GetObjectMetadata 获取单个对象的元数据
-func (p *S3Plugin) GetObjectMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, key string) (*plugin.ObjectInfo, error) {
+func (p *S3Plugin) getObjectMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, key string) (*plugin.ObjectInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -231,7 +239,7 @@ func (p *S3Plugin) GetObjectMetadata(ctx context.Context, connInfo plugin.Connec
 }
 
 // InferContentType 根据对象键推断 MIME 类型
-func (p *S3Plugin) InferContentType(objectKey string) string {
+func (p *S3Plugin) inferContentType(objectKey string) string {
 	ext := strings.ToLower(filepath.Ext(objectKey))
 
 	// 1. 使用标准库
@@ -282,11 +290,11 @@ func (p *S3Plugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Client
 	})
 }
 
-// === FileSystemPlugin 接口实现 ===
+// === 文件系统底层 helper ===
 
-// ListDirectory 列出路径下的直接子内容（非递归）
+// listDirectory 列出路径下的直接子内容（非递归）
 // path 格式：bucket/prefix/
-func (p *S3Plugin) ListDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+func (p *S3Plugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, nil, err
@@ -328,7 +336,7 @@ func (p *S3Plugin) ListDirectory(ctx context.Context, connInfo plugin.Connection
 				Path:        bucket + "/" + obj.Key,
 				Size:        obj.Size,
 				ModifiedAt:  obj.LastModified,
-				ContentType: p.InferContentType(obj.Key),
+				ContentType: p.inferContentType(obj.Key),
 			})
 		}
 	}
@@ -336,9 +344,9 @@ func (p *S3Plugin) ListDirectory(ctx context.Context, connInfo plugin.Connection
 	return files, dirs, nil
 }
 
-// ReadFile 流式读取文件内容
+// readFile 流式读取文件内容
 // path 格式：bucket/key
-func (p *S3Plugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func (p *S3Plugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -356,9 +364,9 @@ func (p *S3Plugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo,
 	return obj, nil
 }
 
-// GetFileMetadata 获取文件元数据
+// getFileMetadata 获取文件元数据
 // path 格式：bucket/key
-func (p *S3Plugin) GetFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+func (p *S3Plugin) getFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -384,8 +392,8 @@ func (p *S3Plugin) GetFileMetadata(ctx context.Context, connInfo plugin.Connecti
 	}, nil
 }
 
-// ListRoots 列出根节点（对象存储 = Bucket 列表）
-func (p *S3Plugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+// listRoots 列出根节点（对象存储 = Bucket 列表）
+func (p *S3Plugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err

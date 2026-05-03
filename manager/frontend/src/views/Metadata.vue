@@ -782,7 +782,7 @@ const populateTaskForm = (task) => {
   taskForm.description = task.description || ''
   taskForm.schedule = task.schedule || ''
   taskForm.enabled = !!task.enabled
-  taskForm.schemaInput = Array.isArray(params.schema_names) ? params.schema_names.join(', ') : ''
+  taskForm.schemaInput = Array.isArray(params.namespaces) ? params.namespaces.join(', ') : ''
   taskForm.objectPathInput = Array.isArray(params.object_paths) ? params.object_paths.join(', ') : ''
   taskForm.scanDepth = typeof params.scan_depth === 'string' ? params.scan_depth : 'deep'
 }
@@ -837,7 +837,7 @@ const buildTaskPayloadFromForm = () => {
   return {
     name: taskForm.name,
     description: taskForm.description,
-    schema_names: schemaNames,
+    namespaces: schemaNames,
     object_paths: objectPaths,
     scan_depth: taskForm.scanDepth || 'deep',
     schedule_type: taskForm.schedule ? 'cron' : 'manual',
@@ -852,7 +852,7 @@ const buildTaskPayloadFromTask = (task, overrides = {}) => {
   return {
     name: overrides.name ?? task.name,
     description: overrides.description ?? task.description ?? '',
-    schema_names: Array.isArray(params.schema_names) ? params.schema_names : [],
+    namespaces: Array.isArray(params.namespaces) ? params.namespaces : [],
     object_paths: Array.isArray(params.object_paths) ? params.object_paths : [],
     scan_depth: typeof params.scan_depth === 'string' ? params.scan_depth : 'deep',
     schedule_type: overrides.schedule !== undefined

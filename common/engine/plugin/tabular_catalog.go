@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"fmt"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -29,22 +31,34 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 	}
 }
 
-// ListTabularCatalogChildren adapts RelationalDBPlugin metadata methods to CatalogProvider.
-func ListTabularCatalogChildren(ctx context.Context, dbPlugin RelationalDBPlugin, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+type TabularMetadataAdapter struct {
+	Plugin        RelationalDBPlugin
+	NamespaceTerm string
+	ListSchemas   func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
+	ListTables    func(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
+	ListColumns   func(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
+	RowCount      func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
+}
+
+// ListTabularCatalogChildren adapts plugin-local tabular metadata helpers to CatalogProvider.
+func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+	if err := adapter.validate(); err != nil {
+		return nil, err
+	}
 	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
 	if err != nil {
 		return nil, fmt.Errorf("获取连接池失败：%w", err)
 	}
 
-	namespaceTerm := dbPlugin.SchemaNodeType()
+	namespaceTerm := adapter.namespaceTerm()
 	if len(parent.Segments) == 0 {
-		schemas, err := dbPlugin.ListSchemas(ctx, db)
+		schemas, err := adapter.ListSchemas(ctx, db)
 		if err != nil {
 			return nil, err
 		}
 		nodes := make([]CatalogNode, 0, len(schemas))
 		for _, schema := range schemas {
-			if dbPlugin.IsSystemSchema(schema.Name) {
+			if adapter.Plugin.IsSystemSchema(schema.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{
@@ -62,7 +76,7 @@ func ListTabularCatalogChildren(ctx context.Context, dbPlugin RelationalDBPlugin
 	}
 
 	namespace := parent.Segments[0].Name
-	tables, err := dbPlugin.ListTables(ctx, db, namespace)
+	tables, err := adapter.ListTables(ctx, db, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +101,10 @@ func ListTabularCatalogChildren(ctx context.Context, dbPlugin RelationalDBPlugin
 }
 
 // ResolveTabularCatalogPath resolves a namespace or table node.
-func ResolveTabularCatalogPath(ctx context.Context, dbPlugin RelationalDBPlugin, engine *Engine, path CatalogPath) (*CatalogNode, error) {
+func ResolveTabularCatalogPath(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, path CatalogPath) (*CatalogNode, error) {
+	if err := adapter.validate(); err != nil {
+		return nil, err
+	}
 	if len(path.Segments) == 0 {
 		return &CatalogNode{
 			Name:        "",
@@ -103,13 +120,13 @@ func ResolveTabularCatalogPath(ctx context.Context, dbPlugin RelationalDBPlugin,
 		return &CatalogNode{
 			Name:        last.Name,
 			Path:        path,
-			Term:        dbPlugin.SchemaNodeType(),
+			Term:        adapter.namespaceTerm(),
 			Kind:        CatalogKindNamespace,
 			IsContainer: true,
 		}, nil
 	}
 
-	item, err := DescribeTabularItem(ctx, dbPlugin, engine, path, MetadataOptions{})
+	item, err := DescribeTabularItem(ctx, adapter, engine, path, MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +140,11 @@ func ResolveTabularCatalogPath(ctx context.Context, dbPlugin RelationalDBPlugin,
 	}, nil
 }
 
-// DescribeTabularItem adapts table columns and table stats to ItemMetadataProvider.
-func DescribeTabularItem(ctx context.Context, dbPlugin RelationalDBPlugin, engine *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+// DescribeTabularItem adapts plugin-local column helpers and table stats to ItemMetadataProvider.
+func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+	if err := adapter.validate(); err != nil {
+		return nil, err
+	}
 	if len(path.Segments) < 2 {
 		return nil, fmt.Errorf("tabular item path requires namespace and table segments")
 	}
@@ -136,7 +156,7 @@ func DescribeTabularItem(ctx context.Context, dbPlugin RelationalDBPlugin, engin
 
 	namespace := path.Segments[0].Name
 	table := path.Segments[len(path.Segments)-1].Name
-	columns, err := dbPlugin.ListColumns(ctx, db, namespace, table)
+	columns, err := adapter.ListColumns(ctx, db, namespace, table)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +174,11 @@ func DescribeTabularItem(ctx context.Context, dbPlugin RelationalDBPlugin, engin
 	}
 
 	stats := map[string]interface{}{}
-	if rowCount, err := dbPlugin.GetTableRowCount(ctx, db, namespace, table); err == nil {
-		stats["row_count"] = rowCount
+	if adapter.RowCount != nil {
+		rowCount, err := adapter.RowCount(ctx, db, namespace, table)
+		if err == nil {
+			stats["row_count"] = rowCount
+		}
 	}
 
 	return &ItemMetadata{
@@ -168,4 +191,21 @@ func DescribeTabularItem(ctx context.Context, dbPlugin RelationalDBPlugin, engin
 			"table":     table,
 		},
 	}, nil
+}
+
+func (a TabularMetadataAdapter) validate() error {
+	if a.Plugin == nil {
+		return fmt.Errorf("tabular metadata adapter plugin cannot be nil")
+	}
+	if a.ListSchemas == nil || a.ListTables == nil || a.ListColumns == nil {
+		return fmt.Errorf("tabular metadata adapter is incomplete")
+	}
+	return nil
+}
+
+func (a TabularMetadataAdapter) namespaceTerm() string {
+	if a.NamespaceTerm != "" {
+		return a.NamespaceTerm
+	}
+	return CatalogTermDatabase
 }

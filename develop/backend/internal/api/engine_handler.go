@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -76,14 +77,14 @@ func (h *EngineHandler) ListNfsEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListSchemas 获取指定引擎的 schema 列表
-// @Summary 获取数据库 schema 列表 | List database schemas
+// ListNamespaces 获取指定引擎的 catalog 命名空间列表。
+// @Summary 获取命名空间列表 | List namespaces
 // @Tags Engines
 // @Produce json
 // @Param id path int true "引擎ID | Engine ID"
-// @Success 200 {object} map[string]interface{} "Schema列表 | Schema list"
-// @Router /engines/:id/schemas [get]
-func (h *EngineHandler) ListSchemas(c *gin.Context) {
+// @Success 200 {object} map[string]interface{} "命名空间列表 | Namespace list"
+// @Router /engines/:id/namespaces [get]
+func (h *EngineHandler) ListNamespaces(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
@@ -91,31 +92,30 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 		return
 	}
 
-	// 使用 SystemClient 获取 schema 列表
-	schemas, err := h.systemClient.ListSchemas(uint(engineID))
+	namespaces, err := h.systemClient.ListNamespacesWithToken(uint(engineID), bearerToken(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取 schema 列表失败",
+			"error":   "获取命名空间列表失败",
 			"details": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"schemas": schemas,
+		"status":     "success",
+		"namespaces": namespaces,
 	})
 }
 
-// ListTables 获取指定引擎的表列表
-// @Summary 获取数据库表列表 | List database tables
+// ListCatalogItems 获取指定命名空间下的 catalog 数据项列表。
+// @Summary 获取数据项列表 | List catalog items
 // @Tags Engines
 // @Produce json
 // @Param id path int true "引擎ID | Engine ID"
-// @Param schema query string false "Schema名称 | Schema name"
-// @Success 200 {object} map[string]interface{} "表列表 | Table list"
-// @Router /engines/:id/tables [get]
-func (h *EngineHandler) ListTables(c *gin.Context) {
+// @Param namespace query string false "命名空间名称 | Namespace name"
+// @Success 200 {object} map[string]interface{} "数据项列表 | Catalog item list"
+// @Router /engines/:id/items [get]
+func (h *EngineHandler) ListCatalogItems(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
@@ -123,16 +123,11 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 		return
 	}
 
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public" // 默认 schema
-	}
-
-	// 使用 SystemClient 获取表列表
-	tables, err := h.systemClient.ListTables(uint(engineID), schema)
+	namespace := c.Query("namespace")
+	items, err := h.systemClient.ListCatalogItemsWithToken(uint(engineID), namespace, bearerToken(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取表列表失败",
+			"error":   "获取数据项列表失败",
 			"details": err.Error(),
 		})
 		return
@@ -140,8 +135,16 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
-		"tables": tables,
+		"items":  items,
 	})
+}
+
+func bearerToken(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+		return authHeader[7:]
+	}
+	return ""
 }
 
 // ListWorkflowEngines 获取工作流引擎列表

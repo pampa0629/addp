@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/dbbridge"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
@@ -121,26 +120,66 @@ func maskString(value interface{}) string {
 	return "****"
 }
 
-// ListSchemas 列出指定资源的所有Schema/Database
-func (s *StorageEngineService) ListSchemas(resource *models.Engine) ([]plugin.SchemaInfo, error) {
-	// 获取或创建连接池
-	db, err := dbbridge.GetOrCreatePool(resource, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// 使用 dbbridge 列出 schemas
-	return dbbridge.ListSchemas(context.Background(), resource, db)
+// NamespaceInfo 表示 catalog 第一层命名空间。
+type NamespaceInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
-// ListTables 列出指定资源和Schema下的所有表
-func (s *StorageEngineService) ListTables(resource *models.Engine, schema string) ([]plugin.TableInfo, error) {
-	// 获取或创建连接池
-	db, err := dbbridge.GetOrCreatePool(resource, nil)
+// CatalogItemInfo 表示 catalog 叶子数据项。
+type CatalogItemInfo struct {
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// ListNamespaces 列出指定资源的 catalog 命名空间。
+func (s *StorageEngineService) ListNamespaces(resource *models.Engine) ([]NamespaceInfo, error) {
+	nodes, err := dbbridge.ListNamespaces(context.Background(), resource)
 	if err != nil {
 		return nil, err
 	}
+	namespaces := make([]NamespaceInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsContainer {
+			continue
+		}
+		namespaces = append(namespaces, NamespaceInfo{
+			Name:        node.Name,
+			Description: stringAttribute(node.Attributes, "description"),
+		})
+	}
+	return namespaces, nil
+}
 
-	// 使用 dbbridge 列出表
-	return dbbridge.ListTables(context.Background(), resource, db, schema)
+// ListCatalogItems 列出指定命名空间下的 catalog 叶子数据项。
+func (s *StorageEngineService) ListCatalogItems(resource *models.Engine, namespace string) ([]CatalogItemInfo, error) {
+	nodes, err := dbbridge.ListItems(context.Background(), resource, namespace)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]CatalogItemInfo, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.IsItem {
+			continue
+		}
+		items = append(items, CatalogItemInfo{
+			Name:        node.Name,
+			Namespace:   namespace,
+			Type:        node.Kind,
+			Description: stringAttribute(node.Attributes, "description"),
+		})
+	}
+	return items, nil
+}
+
+func stringAttribute(attributes map[string]interface{}, key string) string {
+	if attributes == nil {
+		return ""
+	}
+	if value, ok := attributes[key].(string); ok {
+		return value
+	}
+	return ""
 }

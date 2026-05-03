@@ -17,15 +17,15 @@ import (
 
 type Handler struct {
 	engineService *service.EngineService
-	scanService     *service.ScanService
-	taskService     *service.ScanTaskService
+	scanService   *service.ScanService
+	taskService   *service.ScanTaskService
 }
 
 func NewHandler(engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService) *Handler {
 	return &Handler{
 		engineService: engineService,
-		scanService:     scanService,
-		taskService:     taskService,
+		scanService:   scanService,
+		taskService:   taskService,
 	}
 }
 
@@ -95,80 +95,6 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, engines)
-}
-
-// GetSchemas 获取资源的Schema列表
-// GET /api/meta/schemas/:engine_id
-// @Summary 获取Schema列表 | Get schema list
-// @Description 获取指定存储引擎已扫描的Schema列表 | Get scanned schema list for a specific engine
-// @Tags Meta
-// @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Success 200 {object} map[string]interface{} "Schema列表 | Schema list"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /schemas/{engine_id} [get]
-// @Security BearerAuth
-func (h *Handler) GetSchemas(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Param("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	schemas, err := h.scanService.GetSchemasByResource(uint(engineID), tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, schemas)
-}
-
-// ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
-// GET /api/meta/schemas/:engine_id/available
-// @Summary 列出可用Schema | List available schemas
-// @Description 从数据库实时查询可用的Schema列表（非缓存）| Query available schemas from database in real-time (non-cached)
-// @Tags Meta
-// @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Success 200 {object} map[string]interface{} "可用Schema列表 | Available schema list"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /schemas/{engine_id}/available [get]
-// @Security BearerAuth
-func (h *Handler) ListAvailableSchemas(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Param("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	// 从请求头中提取JWT token，传递给System API
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-	// 去掉 "Bearer " 前缀
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
-	schemas, err := h.scanService.ListAvailableSchemas(uint(engineID), tenantID, token)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, schemas)
 }
 
 // ListObjectStorageNodes 分级列出对象存储节点
@@ -511,7 +437,7 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 	// 注意：不强制要求 token，服务间调用通过 X-Internal-API-Key 认证（middleware 已处理）
 	// tenantID 已从 middleware 提取（line 494），用于多租户数据过滤
 
-	result, err := h.scanService.ScanEngine(req.EngineID, tenantID, req.SchemaNames, req.ObjectPaths, token)
+	result, err := h.scanService.ScanEngine(req.EngineID, tenantID, req.Namespaces, req.ObjectPaths, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -575,98 +501,45 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 	return token, token != ""
 }
 
-// GetTables 获取资源的表列表（用于Transfer模块字段选择）
-// GET /api/metadata/tables?engine_id=1&schema=public
-func (h *Handler) GetTables(c *gin.Context) {
+// ListEngineItems 获取引擎下已扫描的数据项列表。
+// GET /api/v1/meta/engines/:engine_id/items?namespace=public
+func (h *Handler) ListEngineItems(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	engineIDStr := c.Query("engine_id")
-	if engineIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing engine_id"})
-		return
-	}
-
+	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
 		return
 	}
 
-	schema := c.Query("schema") // 可选的 schema 参数
-
-	// 获取表列表（支持按 schema 过滤）
-	var tables []models.MetaItem
-	if schema != "" {
-		// 按 schema 过滤
-		tables, err = h.scanService.GetTablesBySchema(uint(engineID), tenantID, schema)
+	namespace := c.Query("namespace")
+	var items []models.MetaItemLite
+	if namespace != "" {
+		items, err = h.scanService.ListItemsByNamespace(uint(engineID), tenantID, namespace)
 	} else {
-		// 获取该资源下的所有表
-		tables, err = h.scanService.GetTablesByResource(uint(engineID), tenantID)
+		items, err = h.scanService.ListItemsByEngine(uint(engineID), tenantID)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 调试：打印前3个表的信息到标准输出
-	fmt.Printf("[GetTables] Found %d tables (schema=%s)\n", len(tables), schema)
-	for i, table := range tables {
-		if i < 3 {
-			rowCount := int64(0)
-			if table.RowCount != nil {
-				rowCount = *table.RowCount
-			}
-			fmt.Printf("[GetTables] Table %d: Name=%s, FullName='%s', RowCount=%d\n",
-				i, table.Name, table.FullName, rowCount)
-		}
-	}
-
-	// 返回表详细信息列表（包含行数、大小等元数据）
-	type TableInfo struct {
-		Name      string `json:"name"`
-		FullName  string `json:"full_name,omitempty"`
-		RowCount  int64  `json:"row_count"`
-		SizeBytes int64  `json:"size_bytes"`
-		Comment   string `json:"comment,omitempty"`
-	}
-
-	tableList := make([]TableInfo, len(tables))
-	for i, table := range tables {
-		info := TableInfo{
-			Name:     table.Name,
-			FullName: table.FullName,
-		}
-		if table.RowCount != nil {
-			info.RowCount = *table.RowCount
-		}
-		if table.SizeBytes != nil {
-			info.SizeBytes = *table.SizeBytes
-		}
-		// comment 可能在 Attributes 中
-		if comment, ok := table.Attributes["comment"].(string); ok {
-			info.Comment = comment
-		}
-		tableList[i] = info
-	}
-
-	c.JSON(http.StatusOK, tableList)
+	c.JSON(http.StatusOK, items)
 }
 
-// GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
-// GET /api/metadata/fields?engine_id=1&table_name=users
-func (h *Handler) GetTableFields(c *gin.Context) {
+// GetItemFieldsByName 按 engine/namespace/name 获取数据项字段。
+// GET /api/v1/meta/engines/:engine_id/items/fields?namespace=public&name=users
+func (h *Handler) GetItemFieldsByName(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	engineIDStr := c.Query("engine_id")
-	tableName := c.Query("table_name")
+	engineIDStr := c.Param("engine_id")
+	namespace := c.Query("namespace")
+	itemName := c.Query("name")
 	includeDetails := c.Query("include_details")
 
-	if engineIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing engine_id"})
-		return
-	}
-	if tableName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing table_name"})
+	if itemName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing name"})
 		return
 	}
 
@@ -676,9 +549,8 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	// 获取表字段信息
 	if includeDetails == "true" || includeDetails == "1" {
-		fields, err := h.scanService.GetTableFieldDetails(uint(engineID), tableName, tenantID)
+		fields, err := h.scanService.GetItemFieldDetailsByName(uint(engineID), namespace, itemName, tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -687,13 +559,34 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	names, err := h.scanService.GetTableFields(uint(engineID), tableName, tenantID)
+	names, err := h.scanService.GetItemFieldNames(uint(engineID), namespace, itemName, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, names)
+}
+
+// GetItemFieldsByID 按 item_id 获取数据项字段。
+// GET /api/v1/meta/items/:item_id/fields
+func (h *Handler) GetItemFieldsByID(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+
+	itemIDStr := c.Param("item_id")
+	itemID, err := strconv.ParseUint(itemIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item_id"})
+		return
+	}
+
+	fields, err := h.scanService.GetItemFieldDetailsByID(tenantID, uint(itemID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, fields)
 }
 
 // ClearResourceCache 清除资源缓存
@@ -900,34 +793,47 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
-// GET /api/meta/metadata/tables/spatial?engine_id=X&schema=Y&table=Z
-func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
+// GetItemSpatialMetadataByName 按 engine/namespace/name 获取数据项空间元数据。
+// GET /api/v1/meta/engines/:engine_id/items/spatial?namespace=public&name=users
+func (h *Handler) GetItemSpatialMetadataByName(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	engineIDStr := c.Query("engine_id")
+	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
 		return
 	}
 
-	schema := c.Query("schema")
-	if schema == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing schema parameter"})
+	namespace := c.Query("namespace")
+	itemName := c.Query("name")
+	if itemName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing name parameter"})
 		return
 	}
 
-	table := c.Query("table")
-	if table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing table parameter"})
+	spatialMeta, err := h.scanService.GetItemSpatialMetadataByName(tenantID, uint(engineID), namespace, itemName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	fmt.Printf("🔍 [GetTableSpatialMetadata Handler] tenantID=%d, engineID=%d, schema=%s, table=%s\n",
-		tenantID, engineID, schema, table)
+	c.JSON(http.StatusOK, spatialMeta)
+}
 
-	spatialMeta, err := h.scanService.GetTableSpatialMetadata(tenantID, uint(engineID), schema, table)
+// GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。
+// GET /api/v1/meta/items/:item_id/spatial
+func (h *Handler) GetItemSpatialMetadataByID(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+
+	itemIDStr := c.Param("item_id")
+	itemID, err := strconv.ParseUint(itemIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item_id"})
+		return
+	}
+
+	spatialMeta, err := h.scanService.GetItemSpatialMetadataByID(tenantID, uint(itemID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

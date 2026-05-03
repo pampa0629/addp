@@ -12,18 +12,18 @@ class DevelopClient(BaseClient):
         resp = await self.get("/api/v1/develop/engines")
         return resp if isinstance(resp, list) else resp.get("engines", [])
 
-    async def list_schemas(self, engine_id: int) -> List[str]:
-        """获取数据库 Schema 列表"""
-        resp = await self.get(f"/api/v1/develop/engines/{engine_id}/schemas")
-        return resp.get("schemas", [])
+    async def list_namespaces(self, engine_id: int) -> List[Dict[str, Any]]:
+        """获取 catalog 命名空间列表"""
+        resp = await self.get(f"/api/v1/develop/engines/{engine_id}/namespaces")
+        return resp.get("namespaces", [])
 
-    async def list_tables(self, engine_id: int, schema: str = "public") -> List[Dict[str, Any]]:
-        """获取数据库表列表"""
+    async def list_catalog_items(self, engine_id: int, namespace: str = "") -> List[Dict[str, Any]]:
+        """获取 catalog 数据项列表"""
         resp = await self.get(
-            f"/api/v1/develop/engines/{engine_id}/tables",
-            params={"schema": schema}
+            f"/api/v1/develop/engines/{engine_id}/items",
+            params={"namespace": namespace}
         )
-        return resp.get("tables", [])
+        return resp.get("items", [])
 
     async def list_operators(self, engine_type: str = "python_workflow") -> List[Dict[str, Any]]:
         """获取算子列表"""

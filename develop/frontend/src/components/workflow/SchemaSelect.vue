@@ -23,7 +23,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listSchemas } from '@/api/engines'
+import { listNamespaces } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -51,7 +51,7 @@ const loadSchemas = async (engineId) => {
 
   loading.value = true
   try {
-    const data = await listSchemas(engineId)
+    const data = await listNamespaces(engineId)
     schemas.value = data || []
   } catch (error) {
     console.error('获取 Schema 列表失败:', error)

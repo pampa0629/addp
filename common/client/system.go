@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -469,32 +470,42 @@ func (c *SystemClient) GetTaskProvider(moduleName string) (*models.TaskProvider,
 	return &provider, nil
 }
 
-// ================ 数据库元数据相关方法（新增） ================
+// ================ Catalog 相关方法 ================
 
-// SchemaInfo 表示数据库Schema信息
-type SchemaInfo struct {
+// NamespaceInfo 表示 catalog 第一层命名空间。
+type NamespaceInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
-// TableInfo 表示数据库表信息
-type TableInfo struct {
+// CatalogItemInfo 表示 catalog 叶子数据项。
+type CatalogItemInfo struct {
 	Name        string `json:"name"`
-	Schema      string `json:"schema"`
-	Type        string `json:"type,omitempty"` // TABLE, VIEW等
+	Namespace   string `json:"namespace"`
+	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 }
 
-// ListSchemas 列出指定资源的所有Schema/Database
-func (c *SystemClient) ListSchemas(engineID uint) ([]SchemaInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/system/engines/%d/schemas", c.baseURL, engineID)
+// ListNamespaces 列出指定引擎的 catalog 命名空间。
+func (c *SystemClient) ListNamespaces(engineID uint) ([]NamespaceInfo, error) {
+	return c.ListNamespacesWithToken(engineID, "")
+}
+
+// ListNamespacesWithToken 使用指定用户 JWT 列出 catalog 命名空间。
+// token 为空时使用客户端自身认证配置。
+func (c *SystemClient) ListNamespacesWithToken(engineID uint, token string) ([]NamespaceInfo, error) {
+	url := fmt.Sprintf("%s/api/v1/system/engines/%d/namespaces", c.baseURL, engineID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		c.addAuth(req)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -509,29 +520,39 @@ func (c *SystemClient) ListSchemas(engineID uint) ([]SchemaInfo, error) {
 	}
 
 	var result struct {
-		Status  string       `json:"status"`
-		Schemas []SchemaInfo `json:"schemas"`
+		Status     string          `json:"status"`
+		Namespaces []NamespaceInfo `json:"namespaces"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return result.Schemas, nil
+	return result.Namespaces, nil
 }
 
-// ListTables 列出指定资源和Schema下的所有表
-func (c *SystemClient) ListTables(engineID uint, schema string) ([]TableInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/system/engines/%d/tables", c.baseURL, engineID)
-	if schema != "" {
-		url += "?schema=" + schema
+// ListCatalogItems 列出指定命名空间下的 catalog 叶子数据项。
+func (c *SystemClient) ListCatalogItems(engineID uint, namespace string) ([]CatalogItemInfo, error) {
+	return c.ListCatalogItemsWithToken(engineID, namespace, "")
+}
+
+// ListCatalogItemsWithToken 使用指定用户 JWT 列出 catalog 叶子数据项。
+// token 为空时使用客户端自身认证配置。
+func (c *SystemClient) ListCatalogItemsWithToken(engineID uint, namespace string, token string) ([]CatalogItemInfo, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/system/engines/%d/items", c.baseURL, engineID)
+	if namespace != "" {
+		endpoint += "?namespace=" + url.QueryEscape(namespace)
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		c.addAuth(req)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -546,14 +567,14 @@ func (c *SystemClient) ListTables(engineID uint, schema string) ([]TableInfo, er
 	}
 
 	var result struct {
-		Status string      `json:"status"`
-		Tables []TableInfo `json:"tables"`
+		Status string            `json:"status"`
+		Items  []CatalogItemInfo `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return result.Tables, nil
+	return result.Items, nil
 }
 
 // ================ 工作流引擎相关方法（新增） ================

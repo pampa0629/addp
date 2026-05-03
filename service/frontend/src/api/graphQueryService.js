@@ -42,12 +42,11 @@ export default {
 
   // 获取 Neo4j 引擎的节点标签列表（通过 meta 模块）
   getNodeLabels(engineId, database = 'neo4j') {
-    return client.get('/meta/metadata/tables', {
-      params: { engine_id: engineId, schema: database }
+    return client.get(`/meta/engines/${engineId}/items`, {
+      params: { namespace: database }
     }).then(res => {
-      // extractData=true 时 res 已是 payload（数组或对象）
-      const tables = Array.isArray(res) ? res : (res?.tables || res?.data || [])
-      return tables.map(t => (typeof t === 'string' ? t : t.name || t))
+      const items = Array.isArray(res) ? res : (res?.items || res?.data || [])
+      return items.map(t => (typeof t === 'string' ? t : t.name || t))
     })
   }
 }

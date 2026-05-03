@@ -2950,6 +2950,12 @@ const docTemplate = `{
         "github_com_addp_manager_internal_models.MetaManualScanRequest": {
             "type": "object",
             "properties": {
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "object_paths": {
                     "type": "array",
                     "items": {
@@ -2961,12 +2967,6 @@ const docTemplate = `{
                 },
                 "scan_type": {
                     "type": "string"
-                },
-                "schema_names": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -2988,6 +2988,12 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "object_paths": {
                     "type": "array",
@@ -3011,12 +3017,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "integer"
-                    }
-                },
-                "schema_names": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
                     }
                 }
             }

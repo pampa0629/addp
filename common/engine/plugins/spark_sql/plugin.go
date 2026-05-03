@@ -53,19 +53,30 @@ func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *SparkSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(p.SchemaNodeType())
+	return plugin.TabularCatalogModel("database")
+}
+
+func (p *SparkSQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
+	return plugin.TabularMetadataAdapter{
+		Plugin:        p,
+		NamespaceTerm: "database",
+		ListSchemas:   p.listSchemas,
+		ListTables:    p.listTables,
+		ListColumns:   p.listColumns,
+		RowCount:      p.getTableRowCount,
+	}
 }
 
 func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *SparkSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *SparkSQLPlugin) QueryLanguages() []string {
@@ -341,7 +352,7 @@ func executeSparkSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query 
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Schema（Apache Spark 中对应Database）
-func (p *SparkSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func (p *SparkSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
 	// Apache Spark 使用 SHOW DATABASES 命令
@@ -374,7 +385,7 @@ func (p *SparkSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *SparkSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	var tables []plugin.TableInfo
 
 	// 切换到指定数据库
@@ -421,7 +432,7 @@ func (p *SparkSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema str
 }
 
 // ListColumns 列出指定表的所有列
-func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *SparkSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	var columns []plugin.ColumnInfo
 
 	// 切换到指定数据库
@@ -468,7 +479,7 @@ func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, t
 }
 
 // GetTableRowCount 获取表的行数
-func (p *SparkSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (p *SparkSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 
 	// 切换到指定数据库
@@ -494,8 +505,6 @@ func (p *SparkSQLPlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemSchemas[strings.ToLower(schemaName)]
 }
-
-func (p *SparkSQLPlugin) SchemaNodeType() string { return "database" }
 
 // quoteSparkIdentifier 为 Spark SQL 标识符添加反引号以保留大小写
 func quoteSparkIdentifier(identifier string) string {

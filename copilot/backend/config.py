@@ -1,6 +1,7 @@
 """
 Copilot 模块配置管理
 """
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -11,7 +12,14 @@ class Settings(BaseSettings):
     # 服务配置
     app_name: str = "ADDP Copilot"
     port: int = 8087
-    debug: bool = False
+    debug: bool = Field(default=False, alias="copilot_debug")
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value):
+        if isinstance(value, str) and value.lower() in {"release", "prod", "production"}:
+            return False
+        return value
 
     # 数据库配置（支持环境变量）
     postgres_host: str = "localhost"
@@ -81,6 +89,7 @@ class Settings(BaseSettings):
         env_file = "../../.env"  # 从项目根目录读取 .env
         case_sensitive = False
         extra = "ignore"  # 忽略额外的环境变量
+        populate_by_name = True
 
 
 # 全局配置实例

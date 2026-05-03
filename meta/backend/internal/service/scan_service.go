@@ -488,7 +488,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		}
 	} else if family == "object" {
 		// 对象存储扫描（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
-		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, nil, scanDepth, reporter)
+		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
 	} else if family == "file" {
 		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/lake_table 语义节点
 		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, tenantID, objectPaths, scanDepth, reporter)
@@ -562,7 +562,7 @@ func (s *ScanService) createImmediateExecution(resource *commonModels.Engine, te
 		TriggerType: commonModels.TriggerTypeAPI,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    engineIDInt,
-			"schema_names": schemaNames,
+			"namespaces":   schemaNames,
 			"object_paths": objectPaths,
 		},
 		StartedAt: &startTime,
@@ -620,7 +620,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 
 	if family == "object" {
 		// 对象存储类型（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
-		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, nil, "deep", nil)
+		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, "deep", nil)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("object storage scan failed: %w", err)
 		}
@@ -1074,8 +1074,8 @@ func (s *ScanService) listNoSQLDatabases(ctx context.Context, resource *commonMo
 }
 
 // scanSingleSchema 扫描单个Schema（表+字段）
-func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
-	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
+func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths []string) (int, int, int, error) {
+	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, "deep", nil)
 }
 
 // scanFileSystemResourceWithReporter 扫描文件系统资源（湖表检测 + 对象存储回退）
@@ -1087,29 +1087,21 @@ func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.
 	return roots, items, 0, nil
 }
 
-func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	// 标准化 scanDepth
 	if scanDepth == "" {
 		scanDepth = "deep"
 	}
 
-	// 准备扫描路径
-	var paths []string
-	if len(objectPaths) > 0 {
-		paths = objectPaths
-	} else if len(fallback) > 0 {
-		paths = fallback
-	}
-
-	if reporter != nil && len(paths) > 0 {
-		reporter.SetTotal(len(paths))
+	if reporter != nil && len(objectPaths) > 0 {
+		reporter.SetTotal(len(objectPaths))
 	}
 
 	// 调用 ObjectStorageScanService 进行扫描
 	buckets, objects, err := s.objectScanService.ScanPaths(
 		resource,
 		tenantID,
-		paths,
+		objectPaths,
 		nil,
 		scanDepth,
 		reporter,
@@ -1257,20 +1249,6 @@ func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, buck
 	return nil
 }
 
-// ============================================================================
-// 资源发现接口（委托给 ResourceDiscoveryService）
-// ============================================================================
-
-// GetSchemasByResource 获取资源的所有Schema（用于Manager模块）
-func (s *ScanService) GetSchemasByResource(engineID, tenantID uint) ([]*models.SchemaWithStatus, error) {
-	return s.resourceDiscoveryService.GetSchemasByResource(engineID, tenantID)
-}
-
-// ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
-func (s *ScanService) ListAvailableSchemas(engineID, tenantID uint, token string) ([]*models.SchemaInfo, error) {
-	return s.resourceDiscoveryService.ListAvailableSchemas(engineID, tenantID, token)
-}
-
 // ListObjectStorageNodes 列出对象存储的节点结构（用于Manager模块）
 func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
 	return s.resourceDiscoveryService.ListObjectStorageNodes(engineID, tenantID, path, token)
@@ -1280,24 +1258,29 @@ func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, toke
 // 元数据查询接口（委托给 MetadataQueryService）
 // ============================================================================
 
-// GetTablesByResource 获取资源下所有的表（用于Transfer模块）
-func (s *ScanService) GetTablesByResource(engineID, tenantID uint) ([]models.MetaItem, error) {
-	return s.metadataQueryService.GetTablesByResource(engineID, tenantID)
+// ListItemsByEngine 获取引擎下所有已扫描数据项。
+func (s *ScanService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaItemLite, error) {
+	return s.metadataQueryService.ListItemsByEngine(engineID, tenantID)
 }
 
-// GetTablesBySchema 获取指定 schema 下的表列表（用于Transfer模块）
-func (s *ScanService) GetTablesBySchema(engineID, tenantID uint, schemaName string) ([]models.MetaItem, error) {
-	return s.metadataQueryService.GetTablesBySchema(engineID, tenantID, schemaName)
+// ListItemsByNamespace 获取命名空间下所有已扫描数据项。
+func (s *ScanService) ListItemsByNamespace(engineID, tenantID uint, namespace string) ([]models.MetaItemLite, error) {
+	return s.metadataQueryService.ListItemsByNamespace(engineID, tenantID, namespace)
 }
 
-// GetTableFields 获取表的字段名列表（用于Transfer模块）
-func (s *ScanService) GetTableFields(engineID uint, tableName string, tenantID uint) ([]string, error) {
-	return s.metadataQueryService.GetTableFields(engineID, tableName, tenantID)
+// GetItemFieldNames 获取数据项字段名列表。
+func (s *ScanService) GetItemFieldNames(engineID uint, namespace, itemName string, tenantID uint) ([]string, error) {
+	return s.metadataQueryService.GetItemFieldNames(engineID, namespace, itemName, tenantID)
 }
 
-// GetTableFieldDetails 获取表字段详细信息（支持空间字段识别）
-func (s *ScanService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]commonModels.FieldInfo, error) {
-	return s.metadataQueryService.GetTableFieldDetails(engineID, tableName, tenantID)
+// GetItemFieldDetailsByName 获取数据项字段详细信息（支持空间字段识别）。
+func (s *ScanService) GetItemFieldDetailsByName(engineID uint, namespace, itemName string, tenantID uint) ([]commonModels.FieldInfo, error) {
+	return s.metadataQueryService.GetItemFieldDetailsByName(engineID, namespace, itemName, tenantID)
+}
+
+// GetItemFieldDetailsByID 按 item_id 获取数据项字段详细信息。
+func (s *ScanService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
+	return s.metadataQueryService.GetItemFieldDetailsByID(tenantID, itemID)
 }
 
 // GetMetadataTree 获取资源的完整元数据树（用于Manager模块）
@@ -1325,9 +1308,14 @@ func (s *ScanService) GetNodeItems(tenantID, nodeID uint) ([]models.MetaItemLite
 	return s.metadataQueryService.GetNodeItems(tenantID, nodeID)
 }
 
-// GetTableSpatialMetadata 获取表的空间元数据（用于Manager模块）
-func (s *ScanService) GetTableSpatialMetadata(tenantID, engineID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
-	return s.metadataQueryService.GetTableSpatialMetadata(tenantID, engineID, schema, table)
+// GetItemSpatialMetadataByName 获取数据项空间元数据（用于 Manager/Service）。
+func (s *ScanService) GetItemSpatialMetadataByName(tenantID, engineID uint, namespace, itemName string) (*models.SpatialMetadataResponse, error) {
+	return s.metadataQueryService.GetItemSpatialMetadataByName(tenantID, engineID, namespace, itemName)
+}
+
+// GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。
+func (s *ScanService) GetItemSpatialMetadataByID(tenantID, itemID uint) (*models.SpatialMetadataResponse, error) {
+	return s.metadataQueryService.GetItemSpatialMetadataByID(tenantID, itemID)
 }
 
 // GetMetaNodeByID 获取单个节点详情（用于Manager模块）

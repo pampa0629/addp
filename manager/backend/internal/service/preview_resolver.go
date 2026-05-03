@@ -55,12 +55,12 @@ func NewPreviewResolver(
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
 	Locator      *resource.ResourceLocator // 资源定位符
-	Engine       *commonModels.Engine       // 引擎信息
-	Metadata     *commonModels.MetaNode     // 可选：Meta 节点数据
-	Pagination   *Pagination                // 分页参数
-	TenantID     *uint                      // 租户 ID
-	ItemType     string                     // 数据项类型（如 "lake_table"），来自 MetaItem
-	PhysicalPath string                     // 物理路径（来自 meta_item.attributes.physical_path）
+	Engine       *commonModels.Engine      // 引擎信息
+	Metadata     *commonModels.MetaNode    // 可选：Meta 节点数据
+	Pagination   *Pagination               // 分页参数
+	TenantID     *uint                     // 租户 ID
+	ItemType     string                    // 数据项类型（如 "lake_table"），来自 MetaItem
+	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.physical_path）
 }
 
 // Pagination 分页参数
@@ -84,12 +84,12 @@ type PreviewResult struct {
 
 // PreviewMetadata 预览上下文元数据
 type PreviewMetadata struct {
-	Locator      string `json:"locator"`        // ResourceLocator URI
-	EngineName   string `json:"engine_name"`    // 引擎名称
-	ResourceType string `json:"resource_type"`  // 引擎类型（postgresql/minio）
-	MetaScanned  bool   `json:"meta_scanned"`   // 是否已被 Meta 扫描
-	ItemCount    *int64 `json:"item_count"`     // 项目数（来自 Meta）
-	SizeBytes    *int64 `json:"size_bytes"`     // 大小（来自 Meta）
+	Locator      string `json:"locator"`       // ResourceLocator URI
+	EngineName   string `json:"engine_name"`   // 引擎名称
+	ResourceType string `json:"resource_type"` // 引擎类型（postgresql/minio）
+	MetaScanned  bool   `json:"meta_scanned"`  // 是否已被 Meta 扫描
+	ItemCount    *int64 `json:"item_count"`    // 项目数（来自 Meta）
+	SizeBytes    *int64 `json:"size_bytes"`    // 大小（来自 Meta）
 }
 
 // Preview 执行预览
@@ -258,6 +258,11 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		TenantID: tenantID,
 	}
 
+	locatorType := strings.ToLower(strings.TrimSpace(string(loc.Type)))
+	if isPreviewItemType(locatorType) {
+		req.ItemType = locatorType
+	}
+
 	// 设置元数据（如果有）
 	if metaNode != nil {
 		req.Metadata = metaNode
@@ -291,6 +296,15 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 
 	// 5. 执行预览
 	return r.Preview(ctx, req)
+}
+
+func isPreviewItemType(itemType string) bool {
+	switch itemType {
+	case "table", "view", "materialized_view", "collection", "label", "relationship", "object", "file", "lake_table":
+		return true
+	default:
+		return false
+	}
 }
 
 // DetectPreviewType 检测预览类型

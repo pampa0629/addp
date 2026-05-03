@@ -13,7 +13,7 @@ import (
 // DBTableParser 数据库表解析器
 // 从数据库引擎中提取表的元数据信息（TableInfo）
 //
-// 注意：需要导入 "github.com/addp/common/engine/plugin" 以使用 plugin.RelationalDBPlugin
+// 注意：enginePlugin 应提供 CatalogModelProvider 与 ItemMetadataProvider 能力。
 type DBTableParser interface {
 	// ParseTableInfo 从数据库表中提取 TableInfo
 	// 参数:
@@ -98,7 +98,7 @@ type DocCollectionParser interface {
 	// 通过采样文档推断 Schema，混合类型字段标记为 'mixed'
 	// 参数:
 	//   - ctx: 上下文
-	//   - client: 数据库客户端（由 Plugin.CreateClient() 创建）
+	//   - client: 数据库客户端或 provider 内部采样上下文
 	//   - database: 数据库名称
 	//   - collection: 集合名称
 	//   - options: 解析选项（SampleSize 控制采样数量，默认 100）

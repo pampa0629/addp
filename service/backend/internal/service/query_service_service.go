@@ -80,7 +80,7 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 			dataConfig["lake_mode"] = lakeMode
 		} else {
 			// 关系型表：检测空间字段
-			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetTableSpatialMetadata(engineID, req.SchemaName, req.TableName)
+			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetItemSpatialMetadata(engineID, req.SchemaName, req.TableName)
 			if err != nil {
 				log.Printf("Warning: failed to get spatial metadata for table %s.%s: %v", req.SchemaName, req.TableName, err)
 			} else if spatialMeta != nil && spatialMeta.GeometryColumn != "" {

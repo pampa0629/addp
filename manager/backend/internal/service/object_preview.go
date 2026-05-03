@@ -276,6 +276,8 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	if item == nil {
 		if node != nil {
 			nodeType = strings.ToLower(node.NodeType)
+		} else if req.NodeType != "" {
+			nodeType = strings.ToLower(req.NodeType)
 		} else {
 			nodeType = "directory"
 		}

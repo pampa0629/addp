@@ -63,20 +63,28 @@ func (p *MinIOPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
+func (p *MinIOPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
+	return plugin.FileSystemCatalogAdapter{
+		ListRootsFunc:       p.listRoots,
+		ListDirectoryFunc:   p.listDirectory,
+		GetFileMetadataFunc: p.getFileMetadata,
+	}
+}
+
 func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileSystemCatalogChildren(ctx, p, connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
+	return plugin.ListFileSystemCatalogChildren(ctx, p.fileSystemCatalogAdapter(), connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
 }
 
 func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileSystemCatalogPath(ctx, p, connInfo, path.EngineID, path, plugin.CatalogTermBucket)
+	return plugin.ResolveFileSystemCatalogPath(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path, plugin.CatalogTermBucket)
 }
 
 func (p *MinIOPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileSystemItem(ctx, p, connInfo, path.EngineID, path)
+	return plugin.DescribeFileSystemItem(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.ReadFile(ctx, connInfo, path.StringPath())
+	return p.readFile(ctx, connInfo, path.StringPath())
 }
 
 func (p *MinIOPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -166,18 +174,18 @@ func (p *MinIOPlugin) normalizeEndpoint(endpoint string) string {
 	return endpoint
 }
 
-func (p *MinIOPlugin) DefaultBucket() string {
+func (p *MinIOPlugin) defaultBucket() string {
 	return ""
 }
 
-func (p *MinIOPlugin) SupportsSSL() bool {
+func (p *MinIOPlugin) supportsSSL() bool {
 	return true
 }
 
-// === ObjectStoragePlugin 接口实现 ===
+// === object storage helpers ===
 
 // ListBuckets 列出所有 Bucket
-func (p *MinIOPlugin) ListBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {
+func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -199,7 +207,7 @@ func (p *MinIOPlugin) ListBuckets(ctx context.Context, connInfo plugin.Connectio
 }
 
 // ListObjects 列出对象（支持前缀过滤和递归）
-func (p *MinIOPlugin) ListObjects(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
+func (p *MinIOPlugin) listObjects(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -221,7 +229,7 @@ func (p *MinIOPlugin) ListObjects(ctx context.Context, connInfo plugin.Connectio
 			Key:          object.Key,
 			Size:         object.Size,
 			LastModified: object.LastModified,
-			ContentType:  p.InferContentType(object.Key),
+			ContentType:  p.inferContentType(object.Key),
 			ETag:         object.ETag,
 		})
 	}
@@ -230,7 +238,7 @@ func (p *MinIOPlugin) ListObjects(ctx context.Context, connInfo plugin.Connectio
 }
 
 // GetObjectMetadata 获取单个对象的元数据
-func (p *MinIOPlugin) GetObjectMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, key string) (*plugin.ObjectInfo, error) {
+func (p *MinIOPlugin) getObjectMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, key string) (*plugin.ObjectInfo, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -252,7 +260,7 @@ func (p *MinIOPlugin) GetObjectMetadata(ctx context.Context, connInfo plugin.Con
 }
 
 // InferContentType 根据对象键推断 MIME 类型
-func (p *MinIOPlugin) InferContentType(objectKey string) string {
+func (p *MinIOPlugin) inferContentType(objectKey string) string {
 	ext := strings.ToLower(filepath.Ext(objectKey))
 
 	// 1. 使用标准库
@@ -298,11 +306,9 @@ func (p *MinIOPlugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Cli
 	})
 }
 
-// === FileSystemPlugin 接口实现 ===
-
-// ListDirectory 列出路径下的直接子内容（非递归）
+// listDirectory 列出路径下的直接子内容（非递归）
 // path 格式：bucket/prefix/
-func (p *MinIOPlugin) ListDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, nil, err
@@ -346,7 +352,7 @@ func (p *MinIOPlugin) ListDirectory(ctx context.Context, connInfo plugin.Connect
 				Path:        bucket + "/" + obj.Key,
 				Size:        obj.Size,
 				ModifiedAt:  obj.LastModified,
-				ContentType: p.InferContentType(obj.Key),
+				ContentType: p.inferContentType(obj.Key),
 			})
 		}
 	}
@@ -354,9 +360,9 @@ func (p *MinIOPlugin) ListDirectory(ctx context.Context, connInfo plugin.Connect
 	return files, dirs, nil
 }
 
-// ReadFile 流式读取文件内容
+// readFile 流式读取文件内容
 // path 格式：bucket/key
-func (p *MinIOPlugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func (p *MinIOPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -374,9 +380,9 @@ func (p *MinIOPlugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionIn
 	return obj, nil
 }
 
-// GetFileMetadata 获取文件元数据
+// getFileMetadata 获取文件元数据
 // path 格式：bucket/key
-func (p *MinIOPlugin) GetFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+func (p *MinIOPlugin) getFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -402,8 +408,8 @@ func (p *MinIOPlugin) GetFileMetadata(ctx context.Context, connInfo plugin.Conne
 	}, nil
 }
 
-// ListRoots 列出根节点（对象存储 = Bucket 列表）
-func (p *MinIOPlugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+// listRoots 列出根节点（对象存储 = Bucket 列表）
+func (p *MinIOPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err

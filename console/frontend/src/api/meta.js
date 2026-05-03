@@ -6,18 +6,38 @@ const unwrap = (promise, defaultValue) =>
 export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
 export const getSchemas = engineId =>
-  unwrap(client.get(`/meta/engines/${engineId}/schemas`), [])
+  client.get(`/meta/engines/${engineId}/tree`).then(res => {
+    const nodes = res.data?.top_nodes ?? res.data?.data?.top_nodes ?? []
+    return nodes.map(node => ({
+      id: node.id,
+      name: node.name,
+      schema_name: node.name,
+      node_type: node.node_type,
+      path: node.path || node.full_name || node.name,
+      scan_status: node.scan_status,
+      scanned_at: node.scanned_at,
+      table_count: node.item_count || 0,
+      total_size_bytes: node.total_size_bytes || 0
+    }))
+  })
 
 export const listAvailableSchemas = engineId =>
-  unwrap(client.get(`/meta/engines/${engineId}/schemas/available`), [])
+  client.get(`/system/engines/${engineId}/namespaces`).then(res => {
+    const namespaces = res.data?.namespaces ?? res.data?.data?.namespaces ?? []
+    return namespaces.map(item => ({
+      ...item,
+      schema_name: item.name || item.schema_name,
+      name: item.name || item.schema_name
+    }))
+  })
 
 export const autoScan = () => client.post('/meta/scan/auto').then(res => res.data)
 
-export const scanEngine = (engineId, schemaNames) =>
+export const scanEngine = (engineId, namespaces) =>
   client
     .post('/meta/scan/engine', {
       engine_id: engineId,
-      schema_names: schemaNames
+      namespaces
     })
     .then(res => res.data)
 

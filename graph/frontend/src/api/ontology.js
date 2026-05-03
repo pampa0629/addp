@@ -113,10 +113,10 @@ export const engineAPI = {
       )
     })
   },
-  // 获取指定引擎的数据库列表（Neo4j database 对应 meta schemas）
+  // 获取指定引擎的数据库列表（Neo4j database 对应 catalog namespace）
   getDatabases(engineId) {
-    return client.get(`/meta/engines/${engineId}/schemas`).then(res => {
-      const schemas = Array.isArray(res) ? res : (res?.schemas || res?.data || [])
+    return client.get(`/system/engines/${engineId}/namespaces`).then(res => {
+      const schemas = Array.isArray(res) ? res : (res?.namespaces || res?.data?.namespaces || res?.data || [])
       return schemas.map(s => (typeof s === 'string' ? s : s.name || s.schema_name || s))
     })
   }

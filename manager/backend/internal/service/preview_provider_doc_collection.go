@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -36,17 +36,11 @@ func (p *docCollectionPreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	// 需要有对应 parser，且引擎至少实现 NoSQLPlugin（用于创建/关闭客户端）
-	parser, err := format.GetDocCollectionParser(req.Engine.EngineType)
-	if err != nil || parser == nil {
-		return false
-	}
-
 	pl, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return false
 	}
-	_, ok := pl.(plugin.NoSQLPlugin)
+	_, ok := pl.(plugin.DocumentQueryRuntimeProvider)
 	return ok
 }
 
@@ -57,26 +51,13 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 
-	nosqlPlugin, ok := p_.(plugin.NoSQLPlugin)
+	documentRuntime, ok := p_.(plugin.DocumentQueryRuntimeProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement NoSQLPlugin", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement DocumentQueryRuntimeProvider", req.Engine.EngineType)
 	}
+	metadataProvider, _ := p_.(plugin.ItemMetadataProvider)
 
-	// 2. 获取 Parser
-	parser, err := format.GetDocCollectionParser(req.Engine.EngineType)
-	if err != nil {
-		return nil, fmt.Errorf("no parser found for engine type: %s", req.Engine.EngineType)
-	}
-
-	// 3. 创建客户端
-	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	client, err := nosqlPlugin.CreateClient(ctx, connInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
-	}
-	defer nosqlPlugin.CloseClient(ctx, client)
-
-	// 4. 解析 Schema 和 Table
+	// 2. 解析 Schema 和 Table
 	// req.Schema 是数据库名，req.Table 可能是 "database.collection" 或只是 "collection"
 	database := req.Schema
 	collectionName := req.Table
@@ -86,24 +67,17 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 		collectionName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 5. 获取 Schema 信息（优先从 Meta 模块获取，如果失败则实时解析）
-	var tableInfo *format.TableInfo
-
-	// 实时解析 Schema（简化版，不从 Meta 缓存）
-	options := format.DefaultParseOptions()
-	options.SampleSize = 100
-	tableInfo, err = parser.ParseTableInfo(ctx, client, database, collectionName, options)
-	if err != nil {
-		// Schema 解析失败时，仍然可以读取数据，只是没有字段信息
-		tableInfo = &format.TableInfo{
-			Name:   collectionName,
-			Fields: []format.FieldInfo{},
-		}
+	// 3. 计算分页参数
+	page := req.Page
+	if page < 1 {
+		page = 1
 	}
-
-	// 6. 计算分页参数
-	skip := (req.Page - 1) * req.PageSize
-	limit := req.PageSize
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	skip := (page - 1) * pageSize
+	limit := pageSize
 
 	// 限制最大返回行数
 	const maxRows = 50
@@ -111,43 +85,29 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 		limit = maxRows
 	}
 
-	// 7. 读取预览数据
-	records, err := parser.ReadPreview(ctx, client, database, collectionName, int64(skip), int64(limit), nil)
+	// 4. 读取预览数据。MongoDB runtime 使用 connInfo.database，因此这里按请求的 database 覆盖副本。
+	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
+	runtimeConnInfo := cloneConnectionInfo(connInfo)
+	runtimeConnInfo["database"] = database
+	command, err := buildDocumentFindCommand(collectionName, skip, limit)
+	if err != nil {
+		return nil, err
+	}
+	queryResult, err := documentRuntime.ExecuteDocumentQuery(ctx, runtimeConnInfo, command, plugin.QueryOptions{
+		EngineID:   req.Engine.ID,
+		EngineType: req.Engine.EngineType,
+		Limit:      limit,
+		ReadOnly:   true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read preview: %w", err)
 	}
 
-	// 8. 提取列名（从 TableInfo 或数据中推断）
-	var columns []string
-	if len(tableInfo.Fields) > 0 {
-		// 使用 TableInfo 中的字段顺序
-		columns = make([]string, 0, len(tableInfo.Fields))
-		for _, field := range tableInfo.Fields {
-			columns = append(columns, field.Name)
-		}
-	} else if len(records) > 0 {
-		// 从数据中提取字段名
-		columnsSet := make(map[string]bool)
-		for _, record := range records {
-			for key := range record {
-				columnsSet[key] = true
-			}
-		}
+	columns := queryResult.Columns
 
-		// _id 放在最前面
-		columns = make([]string, 0, len(columnsSet))
-		if columnsSet["_id"] {
-			columns = append(columns, "_id")
-			delete(columnsSet, "_id")
-		}
-		for col := range columnsSet {
-			columns = append(columns, col)
-		}
-	}
-
-	// 9. 转换为行数据（确保字段顺序一致）
-	rows := make([]map[string]interface{}, 0, len(records))
-	for _, record := range records {
+	// 5. 转换为行数据（确保字段顺序一致）
+	rows := make([]map[string]interface{}, 0, len(queryResult.Rows))
+	for _, record := range queryResult.Rows {
 		row := make(map[string]interface{})
 		for _, col := range columns {
 			if val, ok := record[col]; ok {
@@ -159,36 +119,106 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 		rows = append(rows, row)
 	}
 
-	// 10. 获取总数
-	total := int64(0)
-	if tableInfo.RowCount != nil {
-		total = *tableInfo.RowCount
+	// 6. 获取集合统计信息。失败不阻断预览。
+	total := int64(len(rows))
+	if metadataProvider != nil {
+		if item, err := metadataProvider.DescribeItem(ctx, connInfo, documentCollectionCatalogPath(req.Engine.ID, database, collectionName), plugin.MetadataOptions{IncludeStatistics: true}); err == nil {
+			if count := int64Stat(item.Stats, "document_count"); count > 0 {
+				total = count
+			}
+		}
 	}
 
-	// 11. 构建预览结果
+	columnMetadata := buildDocumentColumnMetadata(columns, rows)
+
+	// 7. 构建预览结果
 	preview := &models.TablePreview{
-		Mode:         PreviewModeTable,
-		Columns:      columns,
-		Rows:         rows,
-		Total:        int(total),
-		Page:         req.Page,
-		PageSize:     req.PageSize,
-		EngineID:     req.Engine.ID,
-		Schema:       req.Schema,
-		Table:        req.Table,
-		EngineType:   req.Engine.EngineType,
-	}
-
-	// 12. 添加文档集合特有信息
-	if docInfo := tableInfo.GetDocCollectionInfo(); docInfo != nil {
-		// 可以在预览中添加额外的元数据字段
-		// preview.Metadata = map[string]interface{}{
-		// 	"is_sampled":      docInfo.IsSampled,
-		// 	"sample_size":     docInfo.SampleSize,
-		// 	"schema_type":     docInfo.SchemaType,
-		// 	"total_documents": docInfo.TotalDocuments,
-		// }
+		Mode:           PreviewModeTable,
+		Columns:        columns,
+		ColumnMetadata: columnMetadata,
+		Rows:           rows,
+		Total:          int(total),
+		Page:           page,
+		PageSize:       pageSize,
+		EngineID:       req.Engine.ID,
+		Schema:         req.Schema,
+		Table:          req.Table,
+		EngineType:     req.Engine.EngineType,
 	}
 
 	return preview, nil
+}
+
+func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
+	cloned := make(plugin.ConnectionInfo, len(connInfo))
+	for key, value := range connInfo {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func buildDocumentFindCommand(collection string, skip, limit int) (string, error) {
+	command := map[string]interface{}{
+		"find":   collection,
+		"filter": map[string]interface{}{},
+		"skip":   skip,
+		"limit":  limit,
+	}
+	bytes, err := json.Marshal(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to build document preview query: %w", err)
+	}
+	return string(bytes), nil
+}
+
+func documentCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
+			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: collection},
+		},
+	}
+}
+
+func buildDocumentColumnMetadata(columns []string, rows []map[string]interface{}) []models.ColumnMetadata {
+	metadata := make([]models.ColumnMetadata, 0, len(columns))
+	for _, column := range columns {
+		metadata = append(metadata, models.ColumnMetadata{
+			ColumnName:   column,
+			DataType:     inferDocumentColumnType(column, rows),
+			IsNullable:   true,
+			IsPrimaryKey: column == "_id",
+		})
+	}
+	return metadata
+}
+
+func inferDocumentColumnType(column string, rows []map[string]interface{}) string {
+	for _, row := range rows {
+		value, ok := row[column]
+		if !ok || value == nil {
+			continue
+		}
+		switch value.(type) {
+		case string:
+			return "string"
+		case bool:
+			return "bool"
+		case int, int8, int16, int32, int64:
+			return "integer"
+		case uint, uint8, uint16, uint32, uint64:
+			return "integer"
+		case float32, float64:
+			return "number"
+		case []interface{}:
+			return "array"
+		case map[string]interface{}:
+			return "object"
+		default:
+			return fmt.Sprintf("%T", value)
+		}
+	}
+	return "mixed"
 }

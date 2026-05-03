@@ -135,7 +135,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/engines/:id/schemas": {
+        "/engines/:id/items": {
             "get": {
                 "produces": [
                     "application/json"
@@ -143,36 +143,7 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取数据库 schema 列表 | List database schemas",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Schema列表 | Schema list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/engines/:id/tables": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Engines"
-                ],
-                "summary": "获取数据库表列表 | List database tables",
+                "summary": "获取数据项列表 | List catalog items",
                 "parameters": [
                     {
                         "type": "integer",
@@ -183,14 +154,43 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Schema名称 | Schema name",
-                        "name": "schema",
+                        "description": "命名空间名称 | Namespace name",
+                        "name": "namespace",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "表列表 | Table list",
+                        "description": "数据项列表 | Catalog item list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/:id/namespaces": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Engines"
+                ],
+                "summary": "获取命名空间列表 | List namespaces",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "命名空间列表 | Namespace list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

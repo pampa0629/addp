@@ -37,15 +37,33 @@ func GraphCatalogModel() CatalogModelSpec {
 	}
 }
 
-func ListDocumentCatalogChildren(ctx context.Context, docPlugin DocumentDBPlugin, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+type DocumentCatalogAdapter struct {
+	Plugin               DocumentDBPlugin
+	ListDatabasesFunc    func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
+	ListCollectionsFunc  func(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
+	IsSystemDatabaseFunc func(databaseName string) bool
+}
+
+type GraphCatalogAdapter struct {
+	Plugin                    GraphDBPlugin
+	ListDatabasesFunc         func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
+	ListNodeLabelsFunc        func(ctx context.Context, connInfo ConnectionInfo, database string) ([]NodeLabelInfo, error)
+	ListRelationshipTypesFunc func(ctx context.Context, connInfo ConnectionInfo, database string) ([]RelationshipTypeInfo, error)
+	IsSystemDatabaseFunc      func(databaseName string) bool
+}
+
+func ListDocumentCatalogChildren(ctx context.Context, adapter DocumentCatalogAdapter, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
 	if len(parent.Segments) == 0 {
-		databases, err := docPlugin.ListDatabases(ctx, connInfo)
+		if adapter.ListDatabasesFunc == nil {
+			return nil, fmt.Errorf("document catalog adapter ListDatabasesFunc is nil")
+		}
+		databases, err := adapter.ListDatabasesFunc(ctx, connInfo)
 		if err != nil {
 			return nil, err
 		}
 		nodes := make([]CatalogNode, 0, len(databases))
 		for _, db := range databases {
-			if docPlugin.IsSystemDatabase(db.Name) {
+			if adapter.isSystemDatabase(db.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{
@@ -63,7 +81,10 @@ func ListDocumentCatalogChildren(ctx context.Context, docPlugin DocumentDBPlugin
 	}
 
 	database := parent.Segments[0].Name
-	collections, err := docPlugin.ListCollections(ctx, connInfo, database)
+	if adapter.ListCollectionsFunc == nil {
+		return nil, fmt.Errorf("document catalog adapter ListCollectionsFunc is nil")
+	}
+	collections, err := adapter.ListCollectionsFunc(ctx, connInfo, database)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +106,14 @@ func ListDocumentCatalogChildren(ctx context.Context, docPlugin DocumentDBPlugin
 	return nodes, nil
 }
 
-func ResolveDocumentCatalogPath(ctx context.Context, docPlugin DocumentDBPlugin, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error) {
+func (a DocumentCatalogAdapter) isSystemDatabase(databaseName string) bool {
+	if a.IsSystemDatabaseFunc == nil {
+		return false
+	}
+	return a.IsSystemDatabaseFunc(databaseName)
+}
+
+func ResolveDocumentCatalogPath(ctx context.Context, adapter DocumentCatalogAdapter, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error) {
 	if len(path.Segments) == 0 {
 		return &CatalogNode{Name: "", Path: CatalogPath{Version: CatalogPathVersion, EngineID: engineID}, Term: "server", Kind: "server", IsContainer: true}, nil
 	}
@@ -93,7 +121,7 @@ func ResolveDocumentCatalogPath(ctx context.Context, docPlugin DocumentDBPlugin,
 	if len(path.Segments) == 1 {
 		return &CatalogNode{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, IsContainer: true}, nil
 	}
-	meta, err := DescribeDocumentItem(ctx, docPlugin, engineID, connInfo, path, MetadataOptions{})
+	meta, err := DescribeDocumentItem(ctx, adapter.Plugin, engineID, connInfo, path, MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -131,15 +159,25 @@ func DescribeDocumentItem(ctx context.Context, docPlugin DocumentDBPlugin, engin
 	}, nil
 }
 
-func ListGraphCatalogChildren(ctx context.Context, graphPlugin GraphDBPlugin, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+func (a GraphCatalogAdapter) isSystemDatabase(databaseName string) bool {
+	if a.IsSystemDatabaseFunc == nil {
+		return false
+	}
+	return a.IsSystemDatabaseFunc(databaseName)
+}
+
+func ListGraphCatalogChildren(ctx context.Context, adapter GraphCatalogAdapter, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
 	if len(parent.Segments) == 0 {
-		databases, err := graphPlugin.ListDatabases(ctx, connInfo)
+		if adapter.ListDatabasesFunc == nil {
+			return nil, fmt.Errorf("graph catalog adapter ListDatabasesFunc is nil")
+		}
+		databases, err := adapter.ListDatabasesFunc(ctx, connInfo)
 		if err != nil {
 			return nil, err
 		}
 		nodes := make([]CatalogNode, 0, len(databases))
 		for _, db := range databases {
-			if graphPlugin.IsSystemDatabase(db.Name) {
+			if adapter.isSystemDatabase(db.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{Name: db.Name, Path: appendCatalogSegment(parent, engineID, CatalogTermDatabase, CatalogKindNamespace, db.Name), Term: CatalogTermDatabase, Kind: CatalogKindNamespace, IsContainer: true})
@@ -148,11 +186,17 @@ func ListGraphCatalogChildren(ctx context.Context, graphPlugin GraphDBPlugin, en
 	}
 
 	database := parent.Segments[0].Name
-	labels, err := graphPlugin.ListNodeLabels(ctx, connInfo, database)
+	if adapter.ListNodeLabelsFunc == nil {
+		return nil, fmt.Errorf("graph catalog adapter ListNodeLabelsFunc is nil")
+	}
+	labels, err := adapter.ListNodeLabelsFunc(ctx, connInfo, database)
 	if err != nil {
 		return nil, err
 	}
-	rels, err := graphPlugin.ListRelationshipTypes(ctx, connInfo, database)
+	if adapter.ListRelationshipTypesFunc == nil {
+		return nil, fmt.Errorf("graph catalog adapter ListRelationshipTypesFunc is nil")
+	}
+	rels, err := adapter.ListRelationshipTypesFunc(ctx, connInfo, database)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +210,7 @@ func ListGraphCatalogChildren(ctx context.Context, graphPlugin GraphDBPlugin, en
 	return nodes, nil
 }
 
-func ResolveGraphCatalogPath(ctx context.Context, graphPlugin GraphDBPlugin, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error) {
+func ResolveGraphCatalogPath(ctx context.Context, adapter GraphCatalogAdapter, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error) {
 	if len(path.Segments) == 0 {
 		return &CatalogNode{Name: "", Path: CatalogPath{Version: CatalogPathVersion, EngineID: engineID}, Term: "server", Kind: "server", IsContainer: true}, nil
 	}

@@ -49,20 +49,28 @@ func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
 
+func (p *NFSPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
+	return plugin.FileSystemCatalogAdapter{
+		ListRootsFunc:       p.listRoots,
+		ListDirectoryFunc:   p.listDirectory,
+		GetFileMetadataFunc: p.getFileMetadata,
+	}
+}
+
 func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileSystemCatalogChildren(ctx, p, connInfo, parent.EngineID, parent, plugin.CatalogTermRoot, opts)
+	return plugin.ListFileSystemCatalogChildren(ctx, p.fileSystemCatalogAdapter(), connInfo, parent.EngineID, parent, plugin.CatalogTermRoot, opts)
 }
 
 func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileSystemCatalogPath(ctx, p, connInfo, path.EngineID, path, plugin.CatalogTermRoot)
+	return plugin.ResolveFileSystemCatalogPath(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path, plugin.CatalogTermRoot)
 }
 
 func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileSystemItem(ctx, p, connInfo, path.EngineID, path)
+	return plugin.DescribeFileSystemItem(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.ReadFile(ctx, connInfo, path.StringPath())
+	return p.readFile(ctx, connInfo, path.StringPath())
 }
 
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -77,16 +85,16 @@ func (p *NFSPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (strin
 	return string(bytes), nil
 }
 
-// TestConnection 通过 ListRoots 验证连通性
+// TestConnection 通过 listRoots 验证连通性
 func (p *NFSPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-	_, err := p.ListRoots(ctx, connInfo)
+	_, err := p.listRoots(ctx, connInfo)
 	return err
 }
 
-// === FileSystemPlugin 接口实现 ===
+// === 文件系统底层 helper ===
 
-// ListRoots 返回 NFS 唯一根节点，Name 为空（挂载点透明，不暴露 export_path）
-func (p *NFSPlugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+// listRoots 返回 NFS 唯一根节点，Name 为空（挂载点透明，不暴露 export_path）
+func (p *NFSPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -105,8 +113,8 @@ func (p *NFSPlugin) ListRoots(ctx context.Context, connInfo plugin.ConnectionInf
 	}}, nil
 }
 
-// ListDirectory 列出目录内容（非递归）
-func (p *NFSPlugin) ListDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+// listDirectory 列出目录内容（非递归）
+func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, nil, err
@@ -156,8 +164,8 @@ func (p *NFSPlugin) ListDirectory(ctx context.Context, connInfo plugin.Connectio
 	return files, dirs, nil
 }
 
-// ReadFile 流式读取文件内容
-func (p *NFSPlugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+// readFile 流式读取文件内容
+func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -178,8 +186,8 @@ func (p *NFSPlugin) ReadFile(ctx context.Context, connInfo plugin.ConnectionInfo
 	return rc, nil
 }
 
-// GetFileMetadata 获取文件元数据
-func (p *NFSPlugin) GetFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+// getFileMetadata 获取文件元数据
+func (p *NFSPlugin) getFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -207,7 +215,7 @@ func (p *NFSPlugin) GetFileMetadata(ctx context.Context, connInfo plugin.Connect
 	}, nil
 }
 
-// === 写入方法（不在 FileSystemPlugin 接口中，NFS 插件专有）===
+// === 写入方法（NFS 插件专有）===
 
 // OpenFileForWrite 打开 NFS 文件用于写入（文件不存在则创建，存在则覆盖）
 func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.WriteCloser, error) {

@@ -192,7 +192,7 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 
 // GetTableMetadata 获取表的元数据（用于检测几何列）
 // GET /api/service/tables/metadata?engine_id=1&schema=public&table=users
-// 内部调用：Meta API - GET /api/meta/metadata/fields
+// 内部调用：Meta API - GET /api/v1/meta/engines/:engine_id/items/fields
 func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 	engineIDStr := c.Query("engine_id")
 	if engineIDStr == "" {
@@ -232,7 +232,7 @@ func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
 
 	// 调用 Meta API 获取字段信息
-	fields, err := metaClient.GetTableFields(uint(engineID), schema, table, true)
+	fields, err := metaClient.GetItemFields(uint(engineID), schema, table, true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get table fields: " + err.Error()})
 		return
@@ -267,7 +267,7 @@ func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 
 // GetTableSpatialMetadata 获取表的空间元数据（用于空间服务发布）
 // GET /api/service/tables/spatial-metadata?engine_id=1&schema=public&table=users
-// 内部调用：Meta API - GET /api/meta/metadata/tables/spatial
+// 内部调用：Meta API - GET /api/v1/meta/engines/:engine_id/items/spatial
 func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
 	engineIDStr := c.Query("engine_id")
 	if engineIDStr == "" {
@@ -307,7 +307,7 @@ func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
 	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
 
 	// 调用 Meta API 获取空间元数据
-	spatialMeta, err := metaClient.GetTableSpatialMetadata(uint(engineID), schema, table)
+	spatialMeta, err := metaClient.GetItemSpatialMetadata(uint(engineID), schema, table)
 	if err != nil {
 		// 如果表不是空间表，返回空结果而不是错误
 		c.JSON(http.StatusOK, gin.H{

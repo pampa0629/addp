@@ -45,6 +45,10 @@ definitions:
     type: object
   github_com_addp_manager_internal_models.MetaManualScanRequest:
     properties:
+      namespaces:
+        items:
+          type: string
+        type: array
       object_paths:
         items:
           type: string
@@ -53,10 +57,6 @@ definitions:
         type: string
       scan_type:
         type: string
-      schema_names:
-        items:
-          type: string
-        type: array
     type: object
   github_com_addp_manager_internal_models.MetaScanTaskRequest:
     properties:
@@ -68,6 +68,10 @@ definitions:
         type: integer
       name:
         type: string
+      namespaces:
+        items:
+          type: string
+        type: array
       object_paths:
         items:
           type: string
@@ -83,10 +87,6 @@ definitions:
       schedule_value:
         items:
           type: integer
-        type: array
-      schema_names:
-        items:
-          type: string
         type: array
     required:
     - name

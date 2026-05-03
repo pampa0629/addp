@@ -58,8 +58,9 @@ func (d *LakeTableDetector) Detect(ctx context.Context, files []plugin.FileEntry
 // ExtractItemInfo 提取湖表元信息（读取第一个 Parquet 文件获取 Schema）
 func (d *LakeTableDetector) ExtractItemInfo(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	dirPath string,
 	files []plugin.FileEntry,
 ) (*detector.CompositeItemInfo, error) {
@@ -82,7 +83,7 @@ func (d *LakeTableDetector) ExtractItemInfo(
 	}
 
 	// 读取文件内容
-	rc, err := fsPlugin.ReadFile(ctx, connInfo, firstParquet.Path)
+	rc, err := contentReader.OpenContent(ctx, connInfo, parquetFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
 	}
@@ -129,8 +130,9 @@ func (d *LakeTableDetector) ExtractItemInfo(
 // 目前只有 .parquet 支持 Schema 解析，.orc/.avro 返回基础信息
 func ExtractSingleFileInfo(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	filePath string,
 	fileSize int64,
 ) (*detector.CompositeItemInfo, error) {
@@ -150,7 +152,7 @@ func ExtractSingleFileInfo(
 		}, nil
 	}
 
-	rc, err := fsPlugin.ReadFile(ctx, connInfo, filePath)
+	rc, err := contentReader.OpenContent(ctx, connInfo, parquetFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet file %s: %w", filePath, err)
 	}
@@ -237,50 +239,62 @@ func detectFormat(files []plugin.FileEntry) string {
 	return best
 }
 
-// ReadFirstParquetPreview 从目录中读取第一个 Parquet 文件的预览数据
-// 供 Manager 模块的 LakeTablePreviewProvider 使用
-func ReadFirstParquetPreview(
+// ReadFirstParquetPreviewWithProviders 从 CatalogProvider 列目录，并通过 ContentReadableProvider 读取第一个 Parquet。
+func ReadFirstParquetPreviewWithProviders(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	catalogProvider plugin.CatalogProvider,
+	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	dirPath string,
 	offset, limit int64,
 ) ([]format.FieldInfo, []map[string]interface{}, error) {
-	files, _, err := fsPlugin.ListDirectory(ctx, connInfo, dirPath)
+	if catalogProvider == nil {
+		return nil, nil, fmt.Errorf("catalog provider cannot be nil")
+	}
+	if contentReader == nil {
+		return nil, nil, fmt.Errorf("content readable provider cannot be nil")
+	}
+
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, parquetDirectoryCatalogPath(engineID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
 
-	// 找第一个 parquet 文件
-	var firstParquet *plugin.FileEntry
-	for i := range files {
-		ext := strings.ToLower(filepath.Ext(files[i].Name))
-		if ext == ".parquet" {
-			firstParquet = &files[i]
-			break
+	for _, node := range nodes {
+		if !node.IsItem {
+			continue
+		}
+		path := catalogNodePath(node)
+		if strings.EqualFold(filepath.Ext(path), ".parquet") || strings.EqualFold(filepath.Ext(node.Name), ".parquet") {
+			return ReadParquetFilePreviewWithProvider(ctx, contentReader, connInfo, engineID, path, offset, limit)
 		}
 	}
-	if firstParquet == nil {
-		return nil, nil, fmt.Errorf("no parquet files found in %s", dirPath)
-	}
-
-	return ReadParquetFilePreview(ctx, fsPlugin, connInfo, firstParquet.Path, offset, limit)
+	return nil, nil, fmt.Errorf("no parquet files found in %s", dirPath)
 }
 
-// ReadParquetFilePreview 直接读取单个 Parquet 文件的预览数据（已知物理路径）
-func ReadParquetFilePreview(
+// ReadParquetFilePreviewWithProvider 通过 ContentReadableProvider 读取单个 Parquet 文件预览。
+func ReadParquetFilePreviewWithProvider(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	filePath string,
 	offset, limit int64,
 ) ([]format.FieldInfo, []map[string]interface{}, error) {
-	rc, err := fsPlugin.ReadFile(ctx, connInfo, filePath)
+	if contentReader == nil {
+		return nil, nil, fmt.Errorf("content readable provider cannot be nil")
+	}
+	rc, err := contentReader.OpenContent(ctx, connInfo, parquetFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read parquet file: %w", err)
 	}
 	defer rc.Close()
 
+	return readParquetPreviewFromReader(ctx, rc, offset, limit)
+}
+
+func readParquetPreviewFromReader(ctx context.Context, rc io.Reader, offset, limit int64) ([]format.FieldInfo, []map[string]interface{}, error) {
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -299,4 +313,49 @@ func ReadParquetFilePreview(
 	}
 
 	return tableInfo.Fields, rows, nil
+}
+
+func parquetDirectoryCatalogPath(engineID uint, path string) plugin.CatalogPath {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" || trimmed == "." {
+		return plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: engineID,
+			Segments: []plugin.CatalogSegment{{
+				Term: plugin.CatalogTermRoot,
+				Kind: plugin.CatalogKindRoot,
+				Name: "/",
+			}},
+		}
+	}
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{{
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindPrefix,
+			Name: trimmed,
+		}},
+	}
+}
+
+func parquetFileCatalogPath(engineID uint, path string) plugin.CatalogPath {
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{{
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindFile,
+			Name: path,
+		}},
+	}
+}
+
+func catalogNodePath(node plugin.CatalogNode) string {
+	if node.Attributes != nil {
+		if path, ok := node.Attributes["path"].(string); ok && path != "" {
+			return path
+		}
+	}
+	return node.Path.StringPath()
 }

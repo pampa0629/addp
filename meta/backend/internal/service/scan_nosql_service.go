@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
@@ -36,7 +35,7 @@ func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer,
 }
 
 // ScanDatabase 扫描 NoSQL 数据库及其所有对象。
-// CatalogProvider 负责列出真实数据库、集合、标签和关系；DocumentDBPlugin 仅在深度扫描时用于文档 schema 推断。
+// CatalogProvider 负责列出真实数据库、集合、标签和关系；DocumentMetadataSamplingProvider 用于文档 schema 深度推断。
 func (s *NoSQLScanService) ScanDatabase(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
@@ -51,7 +50,7 @@ func (s *NoSQLScanService) ScanDatabase(
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	docPlugin, _ := enginePlugin.(plugin.DocumentDBPlugin)
+	samplingProvider, _ := enginePlugin.(plugin.DocumentMetadataSamplingProvider)
 
 	// 1. 创建/更新 Database 节点
 	dbNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "database", databaseName, nil, nil)
@@ -65,7 +64,7 @@ func (s *NoSQLScanService) ScanDatabase(
 
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, docPlugin, connInfo, resource, tenantID, dbNode, databaseName, scanDepth)
+	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, samplingProvider, connInfo, resource, tenantID, dbNode, databaseName, scanDepth)
 
 	if err != nil {
 		s.repo.FinalizeNodeState(dbNode, "pending", 0, 0, err.Error())
@@ -90,7 +89,7 @@ func (s *NoSQLScanService) ScanDatabase(
 func (s *NoSQLScanService) scanCatalogItems(
 	ctx context.Context,
 	catalogProvider plugin.CatalogProvider,
-	docPlugin plugin.DocumentDBPlugin,
+	samplingProvider plugin.DocumentMetadataSamplingProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -151,29 +150,20 @@ func (s *NoSQLScanService) scanCatalogItems(
 			continue
 		}
 
-		var tableInfo *format.TableInfo
 		var attrs models.JSONMap
 
-		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && docPlugin != nil {
-			parser, err := format.GetDocCollectionParser(resource.EngineType)
+		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && samplingProvider != nil {
+			itemMetadata, err := samplingProvider.SampleDocumentMetadata(ctx, connInfo, documentCollectionCatalogPath(resource.ID, databaseName, collInfo.Name), plugin.MetadataOptions{
+				IncludeSamples:    true,
+				IncludeStatistics: true,
+				IncludeIndexes:    true,
+				SampleSize:        100,
+			})
 			if err != nil {
-				s.log.Warn("未找到 Parser，跳过 Schema 推断", "engine_type", resource.EngineType, "error", err)
+				s.log.Warn("文档集合 Schema 采样失败", "database", databaseName, "collection", collInfo.Name, "error", err)
 			} else {
-				client, err := docPlugin.CreateClient(ctx, connInfo)
-				if err != nil {
-					s.log.Warn("创建客户端失败，跳过 Schema 推断", "database", databaseName, "collection", collInfo.Name, "error", err)
-				} else {
-					defer docPlugin.CloseClient(ctx, client)
-					options := format.DefaultParseOptions()
-					options.SampleSize = 100
-					tableInfo, err = parser.ParseTableInfo(ctx, client, databaseName, collInfo.Name, options)
-					if err != nil {
-						s.log.Warn("解析 TableInfo 失败", "database", databaseName, "collection", collInfo.Name, "error", err)
-					} else {
-						attrs = buildDocCollectionAttributes(tableInfo)
-						totalFields += len(tableInfo.Fields)
-					}
-				}
+				attrs = buildDocCollectionAttributesFromMetadata(itemMetadata)
+				totalFields += len(itemMetadata.Fields)
 			}
 		}
 
@@ -211,55 +201,63 @@ func (s *NoSQLScanService) scanCatalogItems(
 	return totalItems, totalFields, nil
 }
 
-// buildDocCollectionAttributes 构建文档集合的属性
-func buildDocCollectionAttributes(tableInfo *format.TableInfo) models.JSONMap {
+func documentCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
+			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: collection},
+		},
+	}
+}
+
+// buildDocCollectionAttributesFromMetadata 构建文档集合的属性
+func buildDocCollectionAttributesFromMetadata(itemMetadata *plugin.ItemMetadata) models.JSONMap {
 	attrs := models.JSONMap{}
 
-	// 提取 DocCollectionInfo
-	if docInfo := tableInfo.GetDocCollectionInfo(); docInfo != nil {
-		attrs["is_sampled"] = docInfo.IsSampled
-		attrs["sample_size"] = docInfo.SampleSize
-		attrs["schema_type"] = docInfo.SchemaType
-		attrs["total_documents"] = docInfo.TotalDocuments
-
-		// 索引信息
-		if len(docInfo.Indexes) > 0 {
-			indexes := make([]map[string]interface{}, 0, len(docInfo.Indexes))
-			for _, idx := range docInfo.Indexes {
-				indexes = append(indexes, map[string]interface{}{
-					"name":       idx.Name,
-					"fields":     idx.Fields,
-					"is_unique":  idx.IsUnique,
-					"index_type": idx.IndexType,
-				})
-			}
-			attrs["indexes"] = indexes
-		}
+	if itemMetadata == nil {
+		return attrs
 	}
 
-	// 存储字段信息
-	if len(tableInfo.Fields) > 0 {
-		attrs["fields"] = buildDocFieldAttributes(tableInfo.Fields)
+	for key, value := range itemMetadata.Attributes {
+		attrs[key] = value
+	}
+	if len(itemMetadata.Indexes) > 0 {
+		indexes := make([]map[string]interface{}, 0, len(itemMetadata.Indexes))
+		for _, idx := range itemMetadata.Indexes {
+			indexes = append(indexes, map[string]interface{}{
+				"name":       idx.Name,
+				"fields":     idx.Fields,
+				"is_unique":  idx.IsUnique,
+				"index_type": idx.IndexType,
+			})
+		}
+		attrs["indexes"] = indexes
+	}
+	if len(itemMetadata.Fields) > 0 {
+		attrs["fields"] = buildDocFieldAttributes(itemMetadata.Fields)
 	}
 
 	return attrs
 }
 
 // buildDocFieldAttributes 构建文档字段属性列表
-func buildDocFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+func buildDocFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		fieldAttr := map[string]interface{}{
 			"name":           field.Name,
-			"type":           string(field.Type),
-			"original_type":  field.OriginalType,
+			"type":           field.Type,
+			"original_type":  field.NativeType,
 			"nullable":       field.Nullable,
-			"is_primary_key": field.IsPrimaryKey,
+			"is_primary_key": field.PrimaryKey,
 		}
 
-		// 添加 OccurrenceRate（如果非零）
-		if field.OccurrenceRate > 0 {
-			fieldAttr["occurrence_rate"] = field.OccurrenceRate
+		if field.Attributes != nil {
+			if occurrenceRate, ok := field.Attributes["occurrence_rate"]; ok {
+				fieldAttr["occurrence_rate"] = occurrenceRate
+			}
 		}
 
 		result = append(result, fieldAttr)

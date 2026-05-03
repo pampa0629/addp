@@ -9,14 +9,14 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/develop/backend/docs"
+	_ "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/service"
-	_ "github.com/addp/develop/backend/i18n"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/develop/backend/docs"
+	"gorm.io/gorm"
 )
 
 // internalAPIKeyMiddleware 处理内部 API 认证（X-Internal-API-Key）
@@ -69,10 +69,10 @@ func SetupRouter(
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
 	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理 (Docker 方案,已废弃)
-	jupyterVenvHandler *JupyterVenvHandler,         // Jupyter 虚拟环境管理 (新方案)
-	devTaskService interface{},                     // 添加 devTaskService 参数
-	systemClient *commonClient.SystemClient,        // 用于审计日志
-	duckdbHandler *DuckDBHandler,                   // DuckDB 联邦查询
+	jupyterVenvHandler *JupyterVenvHandler, // Jupyter 虚拟环境管理 (新方案)
+	devTaskService interface{}, // 添加 devTaskService 参数
+	systemClient *commonClient.SystemClient, // 用于审计日志
+	duckdbHandler *DuckDBHandler, // DuckDB 联邦查询
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -108,12 +108,12 @@ func SetupRouter(
 		// ========== 算子发现（公开）==========
 		operators := publicAPI.Group("/operators")
 		{
-			operators.GET("", operatorHandler.ListAllOperators)                                 // 获取所有算子
-			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                          // 获取缓存信息
-			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)            // 按模块获取算子
+			operators.GET("", operatorHandler.ListAllOperators)                                   // 获取所有算子
+			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                            // 获取缓存信息
+			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)              // 按模块获取算子
 			operators.GET("/engine-types/:engineType", operatorHandler.ListOperatorsByEngineType) // 按引擎类型获取算子（新增）
-			operators.GET("/:name", operatorHandler.GetOperatorDetail)                          // 获取算子详情
-			operators.POST("/refresh", operatorHandler.RefreshCache)                            // 刷新缓存（内部使用）
+			operators.GET("/:name", operatorHandler.GetOperatorDetail)                            // 获取算子详情
+			operators.POST("/refresh", operatorHandler.RefreshCache)                              // 刷新缓存（内部使用）
 		}
 	}
 
@@ -139,35 +139,35 @@ func SetupRouter(
 		// ========== 开发项管理 ==========
 		items := api.Group("/items")
 		{
-			items.POST("", devItemHandler.CreateDevItem)                  // 创建开发项
-			items.GET("", devItemHandler.ListDevItems)                    // 查询开发项列表
-			items.GET("/statistics", devItemHandler.GetDevItemStatistics) // 获取统计信息
-			items.GET("/:id", devItemHandler.GetDevItem)                  // 获取开发项详情
-			items.PUT("/:id", devItemHandler.UpdateDevItem)               // 更新开发项
-			items.DELETE("/:id", devItemHandler.DeleteDevItem)            // 删除开发项
-			items.POST("/:id/execute", devExecutionHandler.ExecuteDevItem) // 执行开发项
-		items.POST("/:id/execute-with-params", devExecutionHandler.ExecuteWithParams) // 参数化执行开发项（供 Orchestrator 调用）
+			items.POST("", devItemHandler.CreateDevItem)                                  // 创建开发项
+			items.GET("", devItemHandler.ListDevItems)                                    // 查询开发项列表
+			items.GET("/statistics", devItemHandler.GetDevItemStatistics)                 // 获取统计信息
+			items.GET("/:id", devItemHandler.GetDevItem)                                  // 获取开发项详情
+			items.PUT("/:id", devItemHandler.UpdateDevItem)                               // 更新开发项
+			items.DELETE("/:id", devItemHandler.DeleteDevItem)                            // 删除开发项
+			items.POST("/:id/execute", devExecutionHandler.ExecuteDevItem)                // 执行开发项
+			items.POST("/:id/execute-with-params", devExecutionHandler.ExecuteWithParams) // 参数化执行开发项（供 Orchestrator 调用）
 		}
 
 		// ========== 执行管理 ==========
 		executions := api.Group("/executions")
 		{
-			executions.POST("", devExecutionHandler.ExecuteContent)                 // 执行临时内容
-			executions.GET("", devExecutionHandler.ListExecutions)                  // 查询执行列表
+			executions.POST("", devExecutionHandler.ExecuteContent)                   // 执行临时内容
+			executions.GET("", devExecutionHandler.ListExecutions)                    // 查询执行列表
 			executions.GET("/statistics", devExecutionHandler.GetExecutionStatistics) // 获取执行统计
-			executions.GET("/:id", devExecutionHandler.GetExecution)                // 获取执行详情
-			executions.GET("/:id/logs", devExecutionHandler.GetExecutionLogs)       // 获取执行日志
-			executions.POST("/:id/cancel", devExecutionHandler.CancelExecution)     // 取消执行
-			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)       // 重试执行
+			executions.GET("/:id", devExecutionHandler.GetExecution)                  // 获取执行详情
+			executions.GET("/:id/logs", devExecutionHandler.GetExecutionLogs)         // 获取执行日志
+			executions.POST("/:id/cancel", devExecutionHandler.CancelExecution)       // 取消执行
+			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)         // 重试执行
 		}
 
 		// ========== 引擎管理 ==========
 		engines := api.Group("/engines")
 		{
-			engines.GET("", engineHandler.ListEngines)           // 获取引擎列表
-			engines.GET("/nfs", engineHandler.ListNfsEngines)     // 获取 NFS 引擎列表
-			engines.GET("/:id/schemas", engineHandler.ListSchemas) // 获取 schemas 列表
-			engines.GET("/:id/tables", engineHandler.ListTables)   // 获取表列表
+			engines.GET("", engineHandler.ListEngines)                   // 获取引擎列表
+			engines.GET("/nfs", engineHandler.ListNfsEngines)            // 获取 NFS 引擎列表
+			engines.GET("/:id/namespaces", engineHandler.ListNamespaces) // 获取 catalog 命名空间列表
+			engines.GET("/:id/items", engineHandler.ListCatalogItems)    // 获取 catalog 数据项列表
 		}
 
 		// ========== 工作流引擎管理 ==========
@@ -175,33 +175,33 @@ func SetupRouter(
 		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
 
 		// ========== 查询开发 ==========
-		api.GET("/test/:id", queryHandler.TestConnection)           // 测试数据源连接
+		api.GET("/test/:id", queryHandler.TestConnection)                 // 测试数据源连接
 		api.GET("/engines/:id/sample-query", queryHandler.GetSampleQuery) // 获取样例查询
-		api.POST("/execute", queryHandler.ExecuteQuery)              // 执行查询
+		api.POST("/execute", queryHandler.ExecuteQuery)                   // 执行查询
 
 		// 查询任务管理
 		queryTasks := api.Group("/query/tasks")
 		{
-			queryTasks.POST("", queryHandler.SaveQueryTask)       // 保存查询任务
-			queryTasks.GET("", queryHandler.ListQueryTasks)       // 获取查询任务列表
-			queryTasks.GET("/:id", queryHandler.GetQueryTask)     // 获取查询任务详情
-			queryTasks.PUT("/:id", queryHandler.UpdateQueryTask)  // 更新查询任务
+			queryTasks.POST("", queryHandler.SaveQueryTask)         // 保存查询任务
+			queryTasks.GET("", queryHandler.ListQueryTasks)         // 获取查询任务列表
+			queryTasks.GET("/:id", queryHandler.GetQueryTask)       // 获取查询任务详情
+			queryTasks.PUT("/:id", queryHandler.UpdateQueryTask)    // 更新查询任务
 			queryTasks.DELETE("/:id", queryHandler.DeleteQueryTask) // 删除查询任务
 		}
 
 		// ========== Notebook 开发 ==========
 		notebooks := api.Group("/notebooks")
 		{
-			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL)     // 获取 Jupyter Lab URL
-			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)       // 执行 Notebook（临时）
-			notebooks.GET("/kernels", notebookHandler.ListKernels)            // 列出可用 Kernel
-			notebooks.GET("/health", notebookHandler.HealthCheck)             // 健康检查
+			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL) // 获取 Jupyter Lab URL
+			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)   // 执行 Notebook（临时）
+			notebooks.GET("/kernels", notebookHandler.ListKernels)        // 列出可用 Kernel
+			notebooks.GET("/health", notebookHandler.HealthCheck)         // 健康检查
 
 			// 新增：Notebook 管理 API
-			notebooks.POST("/upload", notebookHandler.UploadNotebook)         // 上传 Notebook
-			notebooks.GET("", notebookHandler.ListNotebooks)                  // 列出 Notebooks
-			notebooks.GET("/:id/download", notebookHandler.DownloadNotebook)  // 下载 Notebook
-			notebooks.DELETE("/:id", notebookHandler.DeleteNotebook)          // 删除 Notebook
+			notebooks.POST("/upload", notebookHandler.UploadNotebook)        // 上传 Notebook
+			notebooks.GET("", notebookHandler.ListNotebooks)                 // 列出 Notebooks
+			notebooks.GET("/:id/download", notebookHandler.DownloadNotebook) // 下载 Notebook
+			notebooks.DELETE("/:id", notebookHandler.DeleteNotebook)         // 删除 Notebook
 		}
 
 		// ========== Jupyter 实例管理 (Docker 方案,已废弃) ==========
@@ -220,12 +220,12 @@ func SetupRouter(
 			jupyter := api.Group("/jupyter")
 			{
 				// 租户虚拟环境管理
-				jupyter.GET("/venv/status", jupyterVenvHandler.GetVenvStatus)       // 获取租户虚拟环境状态
-				jupyter.POST("/venv/init", jupyterVenvHandler.InitVenv)            // 初始化租户虚拟环境
-				jupyter.DELETE("/venv", jupyterVenvHandler.DeleteVenv)             // 删除租户虚拟环境
+				jupyter.GET("/venv/status", jupyterVenvHandler.GetVenvStatus) // 获取租户虚拟环境状态
+				jupyter.POST("/venv/init", jupyterVenvHandler.InitVenv)       // 初始化租户虚拟环境
+				jupyter.DELETE("/venv", jupyterVenvHandler.DeleteVenv)        // 删除租户虚拟环境
 
 				// 管理员接口
-				jupyter.GET("/venvs", jupyterVenvHandler.ListVenvs)                // 列出所有租户虚拟环境
+				jupyter.GET("/venvs", jupyterVenvHandler.ListVenvs)                    // 列出所有租户虚拟环境
 				jupyter.POST("/venv/:tenant_id/init", jupyterVenvHandler.InitVenvByID) // 为指定租户初始化虚拟环境
 
 				// Jupyter Server 状态
@@ -237,10 +237,10 @@ func SetupRouter(
 		if duckdbHandler != nil {
 			duckdb := api.Group("/duckdb")
 			{
-				duckdb.POST("/query", duckdbHandler.ExecuteFederatedQuery)   // 执行联邦查询
-				duckdb.GET("/sources", duckdbHandler.GetFederatedSources)    // 获取可查询数据源
-				duckdb.GET("/test", duckdbHandler.TestConnection)            // 测试 DuckDB 引擎可用性
-				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery)    // 获取样例查询
+				duckdb.POST("/query", duckdbHandler.ExecuteFederatedQuery) // 执行联邦查询
+				duckdb.GET("/sources", duckdbHandler.GetFederatedSources)  // 获取可查询数据源
+				duckdb.GET("/test", duckdbHandler.TestConnection)          // 测试 DuckDB 引擎可用性
+				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery)  // 获取样例查询
 			}
 		}
 	}

@@ -63,19 +63,30 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *PostgreSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(p.SchemaNodeType())
+	return plugin.TabularCatalogModel("schema")
+}
+
+func (p *PostgreSQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
+	return plugin.TabularMetadataAdapter{
+		Plugin:        p,
+		NamespaceTerm: "schema",
+		ListSchemas:   p.listSchemas,
+		ListTables:    p.listTables,
+		ListColumns:   p.listColumns,
+		RowCount:      p.getTableRowCount,
+	}
 }
 
 func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *PostgreSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *PostgreSQLPlugin) QueryLanguages() []string {
@@ -217,7 +228,7 @@ func (p *PostgreSQLPlugin) GetDialect() string {
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Schema
-func (p *PostgreSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func (p *PostgreSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
 	query := `
@@ -241,7 +252,7 @@ func (p *PostgreSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plug
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *PostgreSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	var tables []plugin.TableInfo
 
 	query := `
@@ -310,7 +321,7 @@ func (p *PostgreSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema s
 }
 
 // ListColumns 列出指定表的所有列
-func (p *PostgreSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	var columns []plugin.ColumnInfo
 
 	query := `
@@ -354,7 +365,7 @@ func (p *PostgreSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema,
 }
 
 // GetTableRowCount 获取表的行数
-func (p *PostgreSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 
 	// 使用统计估算（快速）
@@ -395,6 +406,3 @@ func (p *PostgreSQLPlugin) IsSystemSchema(schemaName string) bool {
 
 	return false
 }
-
-// SchemaNodeType 返回第一层节点的类型名
-func (p *PostgreSQLPlugin) SchemaNodeType() string { return "schema" }

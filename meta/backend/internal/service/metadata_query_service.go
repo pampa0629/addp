@@ -38,14 +38,12 @@ func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService
 }
 
 // ============================================================================
-// Transfer 模块查询接口
+// 通用元数据查询接口
 // ============================================================================
 
-func (s *MetadataQueryService) GetTablesByResource(engineID, tenantID uint) ([]models.MetaItem, error) {
-	// 查询该资源下的所有 meta_item（表）
+func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaItemLite, error) {
 	var items []models.MetaItem
 
-	// 先获取该资源下的所有节点ID（schemas/prefixes）
 	var nodeIDs []uint
 	err := s.db.Model(&models.MetaNode{}).
 		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
@@ -55,12 +53,9 @@ func (s *MetadataQueryService) GetTablesByResource(engineID, tenantID uint) ([]m
 	}
 
 	if len(nodeIDs) == 0 {
-		return []models.MetaItem{}, nil
+		return []models.MetaItemLite{}, nil
 	}
 
-	// 查询这些节点下的所有 items（表）
-	// 注意：meta_item 表中的字段名是 node_id，不是 parent_node_id
-	// 使用 Select 明确选择字段，确保 FullName 被加载
 	err = s.db.Select("*").
 		Where("tenant_id = ? AND node_id IN (?) AND deleted_at IS NULL", tenantID, nodeIDs).
 		Order("name").
@@ -69,21 +64,22 @@ func (s *MetadataQueryService) GetTablesByResource(engineID, tenantID uint) ([]m
 		return nil, err
 	}
 
-	return items, nil
+	result := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		result[i] = convertToMetaItemLite(item)
+	}
+	return result, nil
 }
 
-// GetTablesBySchema 获取指定 schema 下的表列表
-func (s *MetadataQueryService) GetTablesBySchema(engineID, tenantID uint, schemaName string) ([]models.MetaItem, error) {
-	// 先查询对应的 schema 节点
+func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, namespace string) ([]models.MetaItemLite, error) {
 	var node models.MetaNode
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL",
-		tenantID, engineID, schemaName).
+		tenantID, engineID, namespace).
 		First(&node).Error
 	if err != nil {
 		return nil, err
 	}
 
-	// 查询该 schema 节点下的所有表
 	var items []models.MetaItem
 	err = s.db.Select("*").
 		Where("tenant_id = ? AND node_id = ? AND deleted_at IS NULL", tenantID, node.ID).
@@ -93,11 +89,15 @@ func (s *MetadataQueryService) GetTablesBySchema(engineID, tenantID uint, schema
 		return nil, err
 	}
 
-	return items, nil
+	result := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		result[i] = convertToMetaItemLite(item)
+	}
+	return result, nil
 }
 
-func (s *MetadataQueryService) GetTableFields(engineID uint, tableName string, tenantID uint) ([]string, error) {
-	fieldInfos, err := s.GetTableFieldDetails(engineID, tableName, tenantID)
+func (s *MetadataQueryService) GetItemFieldNames(engineID uint, namespace, itemName string, tenantID uint) ([]string, error) {
+	fieldInfos, err := s.GetItemFieldDetailsByName(engineID, namespace, itemName, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,46 +111,58 @@ func (s *MetadataQueryService) GetTableFields(engineID uint, tableName string, t
 	return names, nil
 }
 
-func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]commonModels.FieldInfo, error) {
-	s.log.Info("GetTableFieldDetails 开始查询", "engineID", engineID, "tableName", tableName, "tenantID", tenantID)
+func (s *MetadataQueryService) GetItemFieldDetailsByName(engineID uint, namespace, itemName string, tenantID uint) ([]commonModels.FieldInfo, error) {
+	s.log.Info("GetItemFieldDetailsByName 开始查询", "engineID", engineID, "namespace", namespace, "itemName", itemName, "tenantID", tenantID)
 
-	// 1. 先获取该资源下的所有节点ID（schema nodes）
 	var nodeIDs []uint
-	err := s.db.Model(&models.MetaNode{}).
-		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
-		Pluck("id", &nodeIDs).Error
-	if err != nil {
-		s.log.Error("查询节点ID失败", "error", err)
-		return nil, fmt.Errorf("查询节点ID失败: %w", err)
+	if namespace != "" {
+		var node models.MetaNode
+		err := s.db.Where("tenant_id = ? AND engine_id = ? AND (name = ? OR full_name = ?) AND parent_node_id IS NULL",
+			tenantID, engineID, namespace, namespace).
+			First(&node).Error
+		if err != nil {
+			return nil, fmt.Errorf("namespace metadata not found: %w", err)
+		}
+		nodeIDs = []uint{node.ID}
+	} else {
+		err := s.db.Model(&models.MetaNode{}).
+			Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
+			Pluck("id", &nodeIDs).Error
+		if err != nil {
+			s.log.Error("查询节点ID失败", "error", err)
+			return nil, fmt.Errorf("查询节点ID失败: %w", err)
+		}
 	}
-
-	s.log.Info("找到节点ID", "count", len(nodeIDs), "nodeIDs", nodeIDs)
 
 	if len(nodeIDs) == 0 {
 		s.log.Warn("没有找到任何节点")
 		return []commonModels.FieldInfo{}, nil
 	}
 
-	// 2. 查询指定表名的 meta_item
-	// 支持两种格式：带 schema 的全名（如 "products.items"）和不带 schema 的表名（如 "items"）
 	var item models.MetaItem
-	err = s.db.Where("tenant_id = ? AND node_id IN (?) AND (name = ? OR full_name = ?) AND deleted_at IS NULL",
-		tenantID, nodeIDs, tableName, tableName).
+	err := s.db.Where("tenant_id = ? AND node_id IN (?) AND (name = ? OR full_name = ?) AND deleted_at IS NULL",
+		tenantID, nodeIDs, itemName, qualifiedName(namespace, itemName)).
 		First(&item).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			s.log.Info("表未在元数据中找到，尝试从数据库动态查询", "tableName", tableName)
-			// 动态从数据库查询字段信息
-			return s.queryFieldsFromDatabase(engineID, tableName, tenantID)
+			s.log.Info("数据项未在元数据中找到，尝试从引擎动态查询", "namespace", namespace, "itemName", itemName)
+			return s.queryFieldsFromDatabase(engineID, qualifiedName(namespace, itemName), tenantID)
 		}
-		s.log.Error("查询 meta_item 失败", "error", err)
-		return nil, fmt.Errorf("查询表元数据失败: %w", err)
+		return nil, fmt.Errorf("查询数据项元数据失败: %w", err)
 	}
 
-	s.log.Info("找到表", "itemID", item.ID, "name", item.Name, "fullName", item.FullName)
+	return fieldsFromMetaItem(item)
+}
 
-	// 3. 从 Attributes 中提取字段列表
-	// 字段信息存储在 attributes.fields 中，格式为 []map[string]interface{}
+func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
+	var item models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, fmt.Errorf("item metadata not found: %w", err)
+	}
+	return fieldsFromMetaItem(item)
+}
+
+func fieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) {
 	fieldsData, ok := item.Attributes["fields"]
 	if !ok {
 		return []commonModels.FieldInfo{}, nil
@@ -161,7 +173,6 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 		return []commonModels.FieldInfo{}, fmt.Errorf("invalid fields format in metadata")
 	}
 
-	// 4. 构造字段详细信息
 	fieldInfos := make([]commonModels.FieldInfo, 0, len(fieldsList))
 	for _, fieldData := range fieldsList {
 		fieldMap, ok := fieldData.(map[string]interface{})
@@ -275,9 +286,6 @@ func (s *MetadataQueryService) queryFieldsFromMetadataProvider(
 }
 
 func namespaceTermForPlugin(p plugin.EnginePlugin) string {
-	if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
-		return relPlugin.SchemaNodeType()
-	}
 	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
 		model := modelProvider.CatalogModel()
 		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
@@ -294,6 +302,16 @@ func parseTableName(tableName string) (schema, table string) {
 		return parts[0], parts[1]
 	}
 	return "", parts[0]
+}
+
+func qualifiedName(namespace, itemName string) string {
+	if namespace == "" {
+		return itemName
+	}
+	if strings.Contains(itemName, ".") || strings.Contains(itemName, "/") {
+		return itemName
+	}
+	return namespace + "." + itemName
 }
 
 // ============================================================================
@@ -438,22 +456,30 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 	return result, nil
 }
 
-func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
+func (s *MetadataQueryService) GetItemSpatialMetadataByName(tenantID, engineID uint, namespace, itemName string) (*models.SpatialMetadataResponse, error) {
 	var item models.MetaItem
 
-	fmt.Printf("🔍 [GetTableSpatialMetadata Service] Querying with tenantID=%d, engineID=%d, schema=%s, table=%s\n",
-		tenantID, engineID, schema, table)
-
-	// 查询表元数据
-	err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ? AND name = ?", tenantID, engineID, "table", table).
-		Where("attributes->>'schema' = ?", schema).
+	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND deleted_at IS NULL", tenantID, engineID, itemName).
+		Where("(attributes->>'schema' = ? OR attributes->>'namespace' = ? OR full_name = ?)",
+			namespace, namespace, qualifiedName(namespace, itemName)).
 		First(&item).Error
 
 	if err != nil {
-		return nil, fmt.Errorf("table metadata not found: %w", err)
+		return nil, fmt.Errorf("item metadata not found: %w", err)
 	}
 
-	// 提取空间元数据
+	return spatialMetadataFromItem(item)
+}
+
+func (s *MetadataQueryService) GetItemSpatialMetadataByID(tenantID, itemID uint) (*models.SpatialMetadataResponse, error) {
+	var item models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, fmt.Errorf("item metadata not found: %w", err)
+	}
+	return spatialMetadataFromItem(item)
+}
+
+func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataResponse, error) {
 	spatialMeta := &models.SpatialMetadataResponse{
 		Fields: []models.FieldInfo{},
 	}
@@ -490,21 +516,14 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 
 	// 提取 table_metadata
 	if tableMeta, ok := item.Attributes["table_metadata"].(map[string]interface{}); ok {
-		// primary_key 可能是字符串或数组
 		if pk, ok := tableMeta["primary_key"].(string); ok {
-			// 兼容字符串格式
 			spatialMeta.PrimaryKey = pk
-			fmt.Printf("✅ [GetTableSpatialMetadata] 提取主键（字符串格式）: %s\n", pk)
 		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok {
-			// 处理数组格式（取第一个主键列）
 			if len(pkArray) > 0 {
 				if pkStr, ok := pkArray[0].(string); ok {
 					spatialMeta.PrimaryKey = pkStr
-					fmt.Printf("✅ [GetTableSpatialMetadata] 提取主键（数组格式）: %s (从 %d 个主键中取第一个)\n", pkStr, len(pkArray))
 				}
 			}
-		} else {
-			fmt.Printf("⚠️  [GetTableSpatialMetadata] 主键格式未知，类型为: %T\n", tableMeta["primary_key"])
 		}
 	}
 
@@ -526,10 +545,6 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 	if item.RowCount != nil {
 		spatialMeta.RowCount = *item.RowCount
 	}
-
-	// 📝 日志：返回前检查主键
-	fmt.Printf("🔍 [GetTableSpatialMetadata] 即将返回，主键值: '%s', 几何列: '%s', SRID: %d\n",
-		spatialMeta.PrimaryKey, spatialMeta.GeometryColumn, spatialMeta.SRID)
 
 	return spatialMeta, nil
 }

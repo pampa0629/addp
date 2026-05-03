@@ -231,38 +231,6 @@ func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
 	return result, nil
 }
 
-// GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
-func (c *MetaClient) GetTableSpatialMetadata(engineID uint, schema, table string) (*models.SpatialMetadata, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/metadata/tables/spatial?engine_id=%d&schema=%s&table=%s",
-		c.baseURL, engineID, url.QueryEscape(schema), url.QueryEscape(table))
-
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result models.SpatialMetadata
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
-}
-
 // GetMetaNode 获取单个节点详情
 func (c *MetaClient) GetMetaNode(nodeID uint) (*models.MetaNode, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d", c.baseURL, nodeID)
@@ -326,7 +294,7 @@ func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
 }
 
 // TriggerScanEngine 触发引擎元数据扫描
-func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) error {
+func (c *MetaClient) TriggerScanEngine(engineID uint, namespaces []string) error {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/engine", c.baseURL)
 
 	scanReq := map[string]interface{}{
@@ -334,8 +302,8 @@ func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) erro
 		"scan_type":  "auto",
 		"scan_depth": "basic",
 	}
-	if len(schemaNames) > 0 {
-		scanReq["schema_names"] = schemaNames
+	if len(namespaces) > 0 {
+		scanReq["namespaces"] = namespaces
 	}
 
 	body, err := json.Marshal(scanReq)
@@ -365,42 +333,11 @@ func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) erro
 	return nil
 }
 
-// GetSchemas 获取引擎的 schema 列表
-func (c *MetaClient) GetSchemas(engineID uint) ([]models.SchemaWithStatus, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/schemas", c.baseURL, engineID)
-
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result []models.SchemaWithStatus
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return result, nil
-}
-
-// GetTables 获取引擎的表列表（支持按 schema 过滤）
-func (c *MetaClient) GetTables(engineID uint, schema string) ([]models.TableInfo, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/metadata/tables?engine_id=%d", c.baseURL, engineID)
-	if schema != "" {
-		urlStr += "&schema=" + url.QueryEscape(schema)
+// ListItems 获取引擎的已扫描数据项列表，支持按命名空间过滤。
+func (c *MetaClient) ListItems(engineID uint, namespace string) ([]models.MetaItem, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items", c.baseURL, engineID)
+	if namespace != "" {
+		urlStr += "?namespace=" + url.QueryEscape(namespace)
 	}
 
 	req, err := http.NewRequest("GET", urlStr, nil)
@@ -422,7 +359,7 @@ func (c *MetaClient) GetTables(engineID uint, schema string) ([]models.TableInfo
 		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result []models.TableInfo
+	var result []models.MetaItem
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -430,12 +367,12 @@ func (c *MetaClient) GetTables(engineID uint, schema string) ([]models.TableInfo
 	return result, nil
 }
 
-// GetTableFields 获取表的字段列表
-func (c *MetaClient) GetTableFields(engineID uint, schema, tableName string, includeDetails bool) ([]models.FieldInfo, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/metadata/fields?engine_id=%d&table_name=%s",
-		c.baseURL, engineID, url.QueryEscape(tableName))
-	if schema != "" {
-		urlStr += "&schema=" + url.QueryEscape(schema)
+// GetItemFields 获取数据项字段列表。
+func (c *MetaClient) GetItemFields(engineID uint, namespace, itemName string, includeDetails bool) ([]models.FieldInfo, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items/fields?name=%s",
+		c.baseURL, engineID, url.QueryEscape(itemName))
+	if namespace != "" {
+		urlStr += "&namespace=" + url.QueryEscape(namespace)
 	}
 	if includeDetails {
 		urlStr += "&include_details=true"
@@ -466,4 +403,39 @@ func (c *MetaClient) GetTableFields(engineID uint, schema, tableName string, inc
 	}
 
 	return result, nil
+}
+
+// GetItemSpatialMetadata 获取数据项空间元数据。
+func (c *MetaClient) GetItemSpatialMetadata(engineID uint, namespace, itemName string) (*models.SpatialMetadata, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items/spatial?name=%s",
+		c.baseURL, engineID, url.QueryEscape(itemName))
+	if namespace != "" {
+		urlStr += "&namespace=" + url.QueryEscape(namespace)
+	}
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result models.SpatialMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
 }

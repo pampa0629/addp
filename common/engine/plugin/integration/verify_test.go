@@ -51,43 +51,23 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 					return
 				}
 
-				// 如果支持元数据，验证具体接口
+				// 如果支持元数据，验证 provider 能力。
 				if capabilities.Storage.Metadata != nil && capabilities.Storage.Metadata.Supported {
-					// 检查是关系型DB还是对象存储
-					if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
-						t.Logf("%s implements RelationalDBPlugin ✓", dbType)
-
-						// 验证 IsSystemSchema 方法
-						if dbType == "postgresql" {
-							if !relPlugin.IsSystemSchema("pg_catalog") {
-								t.Error("pg_catalog should be system schema")
-							}
-							if relPlugin.IsSystemSchema("public") {
-								t.Error("public should not be system schema")
-							}
-						} else if dbType == "mysql" {
-							if !relPlugin.IsSystemSchema("mysql") {
-								t.Error("mysql should be system schema")
-							}
-							if relPlugin.IsSystemSchema("test") {
-								t.Error("test should not be system schema")
-							}
+					if capabilities.Storage.Catalog != nil && capabilities.Storage.Catalog.Supported {
+						if _, ok := p.(plugin.CatalogProvider); !ok {
+							t.Errorf("%s declares catalog but doesn't implement CatalogProvider", dbType)
 						}
-					} else if objPlugin, ok := p.(plugin.ObjectStoragePlugin); ok {
-						t.Logf("%s implements ObjectStoragePlugin ✓", dbType)
-
-						// 验证 InferContentType 方法
-						contentType := objPlugin.InferContentType("test.geojson")
-						if contentType != "application/geo+json" {
-							t.Errorf("expected application/geo+json, got %s", contentType)
+						if _, ok := p.(plugin.CatalogModelProvider); !ok {
+							t.Errorf("%s declares catalog but doesn't implement CatalogModelProvider", dbType)
 						}
-
-						contentType = objPlugin.InferContentType("test.shp")
-						if contentType != "application/x-shapefile" {
-							t.Errorf("expected application/x-shapefile, got %s", contentType)
+					}
+					if _, ok := p.(plugin.ItemMetadataProvider); !ok {
+						t.Errorf("%s declares metadata but doesn't implement ItemMetadataProvider", dbType)
+					}
+					if capabilities.Storage.Store != nil && capabilities.Storage.Store.StreamRead {
+						if _, ok := p.(plugin.ContentReadableProvider); !ok {
+							t.Errorf("%s declares stream read but doesn't implement ContentReadableProvider", dbType)
 						}
-					} else {
-						t.Errorf("%s supports metadata but doesn't implement specific plugin interface", dbType)
 					}
 				}
 
@@ -106,7 +86,7 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 	}
 }
 
-// TestRelationalDBPlugins 验证关系型数据库插件
+// TestRelationalDBPlugins 验证关系型数据库插件 provider 能力
 func TestRelationalDBPlugins(t *testing.T) {
 	dbTypes := []string{"postgresql", "mysql"}
 
@@ -127,12 +107,22 @@ func TestRelationalDBPlugins(t *testing.T) {
 				t.Errorf("%s should support metadata query", dbType)
 			}
 
-			relPlugin, ok := p.(plugin.RelationalDBPlugin)
-			if !ok {
-				t.Fatalf("%s should implement RelationalDBPlugin", dbType)
+			if _, ok := p.(plugin.CatalogProvider); !ok {
+				t.Fatalf("%s should implement CatalogProvider", dbType)
+			}
+			if _, ok := p.(plugin.ItemMetadataProvider); !ok {
+				t.Fatalf("%s should implement ItemMetadataProvider", dbType)
+			}
+			if _, ok := p.(plugin.SQLQueryRuntimeProvider); !ok {
+				t.Fatalf("%s should implement SQLQueryRuntimeProvider", dbType)
 			}
 
-			// 验证元数据查询方法
+			relPlugin, ok := p.(plugin.RelationalDBPlugin)
+			if !ok {
+				t.Fatalf("%s should implement RelationalDBPlugin for connection pool and system schema checks", dbType)
+			}
+
+			// 验证系统 schema 判断
 			if dbType == "postgresql" {
 				if !relPlugin.IsSystemSchema("information_schema") {
 					t.Error("information_schema should be system schema")
@@ -155,7 +145,7 @@ func TestRelationalDBPlugins(t *testing.T) {
 				}
 			}
 
-			t.Logf("%s: RelationalDBPlugin ✓", dbType)
+			t.Logf("%s: tabular providers ✓", dbType)
 		})
 	}
 }
@@ -181,44 +171,19 @@ func TestObjectStoragePlugins(t *testing.T) {
 				t.Errorf("%s should support metadata query", storageType)
 			}
 
-			objPlugin, ok := p.(plugin.ObjectStoragePlugin)
+			catalogProvider, ok := p.(plugin.CatalogProvider)
 			if !ok {
-				t.Fatalf("%s should implement ObjectStoragePlugin", storageType)
+				t.Fatalf("%s should implement CatalogProvider", storageType)
 			}
+			_ = catalogProvider
 
-			// 验证对象存储操作方法
-			testCases := []struct {
-				filename    string
-				expected    string
-				description string
-			}{
-				{"test.geojson", "application/geo+json", "GeoJSON"},
-				{"test.shp", "application/x-shapefile", "Shapefile"},
-				{"test.kml", "application/vnd.google-earth.kml+xml", "KML"},
-				{"test.json", "application/json", "JSON"},
-				{"test.png", "image/png", "PNG"},
-				{"test.jpg", "image/jpeg", "JPEG"},
-				{"test.txt", "text/plain; charset=utf-8", "Text"},
-				{"test.unknown", "application/octet-stream", "Unknown"},
+			contentReader, ok := p.(plugin.ContentReadableProvider)
+			if !ok {
+				t.Fatalf("%s should implement ContentReadableProvider", storageType)
 			}
+			_ = contentReader
 
-			for _, tc := range testCases {
-				contentType := objPlugin.InferContentType(tc.filename)
-				if contentType != tc.expected {
-					t.Errorf("%s: expected %s, got %s", tc.description, tc.expected, contentType)
-				}
-			}
-
-			// 验证其他方法
-			if objPlugin.DefaultBucket() != "" && storageType != "minio" && storageType != "s3" {
-				t.Logf("%s has default bucket: %s", storageType, objPlugin.DefaultBucket())
-			}
-
-			if !objPlugin.SupportsSSL() {
-				t.Errorf("%s should support SSL", storageType)
-			}
-
-			t.Logf("%s: ObjectStoragePlugin ✓", storageType)
+			t.Logf("%s: object storage providers ✓", storageType)
 		})
 	}
 }

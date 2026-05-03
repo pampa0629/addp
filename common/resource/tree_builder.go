@@ -12,15 +12,15 @@ import (
 // TreeNode 统一的树节点结构
 // 用于在各模块间传递资源树数据（Manager、Meta、Service、Orchestrator）
 type TreeNode struct {
-	ID          string                 `json:"id"`           // 节点唯一标识（使用 locator 的值）
-	Locator     string                 `json:"locator"`      // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
-	Label       string                 `json:"label"`        // 显示标签（节点名称）
-	Type        string                 `json:"type"`         // 节点类型 (schema/table/bucket/directory/object)
-	TypeLabel   string                 `json:"typeLabel"`    // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
-	Icon        string                 `json:"icon"`         // 图标名称
-	Metadata    map[string]interface{} `json:"metadata"`     // 元数据（meta_id、item_count、scanned_at 等）
-	Children    []*TreeNode            `json:"children"`     // 子节点
-	HasChildren bool                   `json:"hasChildren"`  // 是否有子节点（用于显示展开图标）
+	ID          string                 `json:"id"`          // 节点唯一标识（使用 locator 的值）
+	Locator     string                 `json:"locator"`     // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
+	Label       string                 `json:"label"`       // 显示标签（节点名称）
+	Type        string                 `json:"type"`        // 节点类型 (schema/table/bucket/directory/object)
+	TypeLabel   string                 `json:"typeLabel"`   // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
+	Icon        string                 `json:"icon"`        // 图标名称
+	Metadata    map[string]interface{} `json:"metadata"`    // 元数据（meta_id、item_count、scanned_at 等）
+	Children    []*TreeNode            `json:"children"`    // 子节点
+	HasChildren bool                   `json:"hasChildren"` // 是否有子节点（用于显示展开图标）
 }
 
 // TreeBuilder 资源树构建器
@@ -435,8 +435,8 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"dir":          TypeDir,
 		"table":        TypeTable,
 		"collection":   TypeCollection,
-		"label":        TypeCollection,
-		"relationship": TypeCollection,
+		"label":        TypeLabel,
+		"relationship": TypeRelationship,
 		"object":       TypeObject,
 		"file":         TypeFile,
 		"lake_table":   TypeLakeTable,
@@ -476,20 +476,20 @@ func getEngineIcon(engineType string) string {
 // getIconByType 根据节点类型返回图标
 func getIconByType(nodeType string) string {
 	icons := map[string]string{
-		"database":   "Database",
-		"schema":     "Folder",
-		"bucket":     "FolderOpen",
-		"directory":  "Folder",
-		"prefix":     "Folder",
-		"root":       "FolderOpen",
-		"dir":        "Folder",
-		"table":      "Table",
-		"collection": "DocumentText",
-		"label":      "DocumentText",
+		"database":     "Database",
+		"schema":       "Folder",
+		"bucket":       "FolderOpen",
+		"directory":    "Folder",
+		"prefix":       "Folder",
+		"root":         "FolderOpen",
+		"dir":          "Folder",
+		"table":        "Table",
+		"collection":   "DocumentText",
+		"label":        "DocumentText",
 		"relationship": "DocumentText",
-		"object":     "Document",
-		"file":       "Document",
-		"lake_table": "Table",
+		"object":       "Document",
+		"file":         "Document",
+		"lake_table":   "Table",
 	}
 	if icon, ok := icons[nodeType]; ok {
 		return icon

@@ -247,9 +247,9 @@ class DataSourceStage:
                 try:
                     result = await self.schema_table_tool._arun(
                         engine_id=matched_engine.engine_id,
-                        schema=schema
+                        namespace=schema
                     )
-                    tables = result.get("tables", [])
+                    tables = result.get("items", [])
                     table_names = [t.get("name") for t in tables]
                     verified = table in table_names
                     print(f"[DataSourceStage] 表验证: {table} in {schema} -> {'存在' if verified else '不存在'}")

@@ -16,7 +16,7 @@ import (
 )
 
 // FileSystemScanService 文件系统扫描服务
-// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 FileSystemPlugin 读取内容识别湖表等复合数据项
+// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别湖表等复合数据项
 type FileSystemScanService struct {
 	db      *gorm.DB
 	log     *slog.Logger
@@ -51,13 +51,13 @@ func (s *FileSystemScanService) ScanPaths(
 		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	fsPlugin, ok := p.(plugin.FileSystemPlugin)
+	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return 0, 0, fmt.Errorf("engine %s does not implement FileSystemPlugin", resource.EngineType)
-	}
-	catalogProvider, _ := p.(plugin.CatalogProvider)
-	if catalogProvider == nil {
 		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
+	contentReader, ok := p.(plugin.ContentReadableProvider)
+	if !ok {
+		return 0, 0, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
@@ -99,7 +99,7 @@ func (s *FileSystemScanService) ScanPaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", rootPath))
 		}
 
-		// 使用 ListRoots 返回的名称；插件返回空名时保持空字符串（如 NFS，挂载点透明）
+		// 使用 catalog 根节点返回的名称；插件返回空名时保持空字符串（如 NFS，挂载点透明）
 		rootName := pathToName[rootPath]
 
 		// 创建根节点（root）
@@ -118,7 +118,7 @@ func (s *FileSystemScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), fsPlugin, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true)
+		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -139,7 +139,7 @@ func (s *FileSystemScanService) ScanPaths(
 // isBucketRoot=true 时跳过 detector 检测（bucket 根目录不应被整体识别为一张表）
 func (s *FileSystemScanService) scanDirectory(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
@@ -148,7 +148,7 @@ func (s *FileSystemScanService) scanDirectory(
 	parentNode *models.MetaNode,
 	isBucketRoot bool,
 ) (int, error) {
-	files, subdirs, err := s.listDirectory(ctx, resource, fsPlugin, catalogProvider, connInfo, dirPath)
+	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
@@ -164,7 +164,7 @@ func (s *FileSystemScanService) scanDirectory(
 				continue
 			}
 			// 提取元信息
-			info, err := d.ExtractItemInfo(ctx, fsPlugin, connInfo, dirPath, files)
+			info, err := d.ExtractItemInfo(ctx, contentReader, connInfo, resource.ID, dirPath, files)
 			if err != nil {
 				s.log.Warn("提取复合数据项信息失败",
 					"path", dirPath,
@@ -234,7 +234,7 @@ func (s *FileSystemScanService) scanDirectory(
 		ext := strings.ToLower(filepath.Ext(file.Name))
 		if commonParquet.IsLakeTableExt(ext) {
 			// 模式 B：单个结构化文件识别为 lake_table
-			info, err := commonParquet.ExtractSingleFileInfo(ctx, fsPlugin, connInfo, file.Path, file.Size)
+			info, err := commonParquet.ExtractSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 			if err != nil {
 				s.log.Warn("提取单文件湖表信息失败", "path", file.Path, "error", err)
 			}
@@ -313,7 +313,7 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, fsPlugin, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
+		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
@@ -359,7 +359,6 @@ func (s *FileSystemScanService) listRoots(
 func (s *FileSystemScanService) listDirectory(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	fsPlugin plugin.FileSystemPlugin,
 	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,

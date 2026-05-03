@@ -15,8 +15,8 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-// fileSystemPreviewProvider 文件系统类存储引擎预览插件（NFS 等）
-// 使用 FileSystemPlugin 接口读取文件，不依赖 MinIO 客户端
+// fileSystemPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
+// 使用 CatalogProvider / ItemMetadataProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileSystemPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	content      *ObjectContentRegistry
@@ -38,13 +38,17 @@ func (p *fileSystemPreviewProvider) Supports(req *PreviewRequest) bool {
 	if req == nil || req.Engine == nil {
 		return false
 	}
-	// 目录列举与文件元数据暂时仍依赖 FileSystemPlugin；文件内容读取优先消费新的 ContentReadableProvider。
+	if !isObjectStorageType(req.Engine.EngineType) && !isFileSystemType(req.Engine.EngineType) {
+		return false
+	}
 	pl, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return false
 	}
-	_, ok := pl.(plugin.FileSystemPlugin)
-	return ok
+	if _, ok := pl.(plugin.CatalogProvider); ok {
+		return true
+	}
+	return false
 }
 
 func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -60,11 +64,12 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", engine.EngineType)
 	}
-	fsPlugin, ok := pl.(plugin.FileSystemPlugin)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement FileSystemPlugin", engine.EngineType)
-	}
+	catalogProvider, _ := pl.(plugin.CatalogProvider)
+	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
+	if catalogProvider == nil {
+		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", engine.EngineType)
+	}
 
 	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
 
@@ -88,19 +93,21 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		GeometryColumns: []string{},
 	}
 
-	// 目录预览：路径以 / 结尾，或为空，或 NodeType 表明是目录类节点
+	// 目录预览：路径以 / 结尾，或 NodeType 表明是目录类节点。
+	// 根目录下的文件会被转换成 schema="" + table="file"，fullPath 为
+	// "/file" 且 filePath 为空，不能因此误判为根目录。
 	isDirNode := req.NodeType == "prefix" || req.NodeType == "directory" || req.NodeType == "bucket" || req.NodeType == "dir" || req.NodeType == "root"
-	if isDirectoryPath(filePath) || filePath == "" || isDirNode {
-		return p.previewDirectory(ctx, fsPlugin, connInfo, engine, rootName, fullPath, preview)
+	if isDirectoryPath(fullPath) || isDirNode {
+		return p.previewDirectory(ctx, catalogProvider, connInfo, engine, rootName, fullPath, preview)
 	}
 
 	// 文件预览
-	return p.previewFile(ctx, fsPlugin, contentReader, connInfo, engine, rootName, fullPath, preview)
+	return p.previewFile(ctx, metadataProvider, contentReader, connInfo, engine, rootName, fullPath, preview)
 }
 
 func (p *fileSystemPreviewProvider) previewDirectory(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
 	rootName, dirPath string,
@@ -109,32 +116,13 @@ func (p *fileSystemPreviewProvider) previewDirectory(
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	files, subdirs, err := fsPlugin.ListDirectory(ctxTimeout, connInfo, dirPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list directory: %w", err)
-	}
-
 	preview.Mode = PreviewModeNode
 	preview.Object.NodeType = "directory"
 	preview.Object.ContentType = "application/x-directory"
 
-	var children []models.ObjectPreviewChild
-	for _, d := range subdirs {
-		children = append(children, models.ObjectPreviewChild{
-			Name:        d.Name,
-			Path:        d.Path,
-			Type:        "prefix",
-			ContentType: "application/x-directory",
-		})
-	}
-	for _, f := range files {
-		children = append(children, models.ObjectPreviewChild{
-			Name:        f.Name,
-			Path:        f.Path,
-			Type:        "object",
-			SizeBytes:   f.Size,
-			ContentType: f.ContentType,
-		})
+	children, err := listFileSystemPreviewChildren(ctxTimeout, catalogProvider, connInfo, engine, dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list directory via catalog: %w", err)
 	}
 	preview.Object.Children = children
 	preview.Object.ObjectCount = int64(len(children))
@@ -143,7 +131,7 @@ func (p *fileSystemPreviewProvider) previewDirectory(
 
 func (p *fileSystemPreviewProvider) previewFile(
 	ctx context.Context,
-	fsPlugin plugin.FileSystemPlugin,
+	metadataProvider plugin.ItemMetadataProvider,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
@@ -153,7 +141,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	meta, err := fsPlugin.GetFileMetadata(ctxTimeout, connInfo, filePath)
+	meta, err := getFileSystemPreviewMetadata(ctxTimeout, metadataProvider, connInfo, engine, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
@@ -183,10 +171,10 @@ func (p *fileSystemPreviewProvider) previewFile(
 		if handler != nil {
 			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
+					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 				}
 				siblingProvider := func(path string) (io.ReadCloser, error) {
-					return readFileSystemSibling(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, path)
+					return readFileSystemSibling(ctxTimeout, contentReader, connInfo, engine.ID, path)
 				}
 				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, contentReq, streamer, siblingProvider)
 				if err != nil {
@@ -201,7 +189,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 				}
 			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
+					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 				}
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, streamer)
 				if err != nil {
@@ -219,7 +207,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 					if limit <= 0 {
 						limit = maxTextPreviewBytes
 					}
-					rc, err := openFileSystemContent(ctxTimeout, contentReader, fsPlugin, connInfo, engine.ID, filePath)
+					rc, err := openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 					if err != nil {
 						return nil, false, err
 					}
@@ -246,23 +234,20 @@ func (p *fileSystemPreviewProvider) previewFile(
 	return preview, nil
 }
 
-func openFileSystemContent(ctx context.Context, contentReader plugin.ContentReadableProvider, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
+func openFileSystemContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
 	if contentReader != nil {
 		return contentReader.OpenContent(ctx, connInfo, fileSystemCatalogPath(engineID, path), plugin.ReadOptions{})
-	}
-	if fsPlugin != nil {
-		return fsPlugin.ReadFile(ctx, connInfo, path)
 	}
 	return nil, fs.ErrNotExist
 }
 
-func readFileSystemSibling(ctx context.Context, contentReader plugin.ContentReadableProvider, fsPlugin plugin.FileSystemPlugin, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
-	if fsPlugin == nil {
+func readFileSystemSibling(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
+	if contentReader == nil {
 		return nil, fs.ErrNotExist
 	}
 	var lastErr error
 	for _, candidate := range candidateSiblingPathVariants(path) {
-		reader, err := openFileSystemContent(ctx, contentReader, fsPlugin, connInfo, engineID, candidate)
+		reader, err := openFileSystemContent(ctx, contentReader, connInfo, engineID, candidate)
 		if err == nil {
 			return reader, nil
 		}
@@ -282,14 +267,148 @@ func readFileSystemSibling(ctx context.Context, contentReader plugin.ContentRead
 
 func fileSystemCatalogPath(engineID uint, path string) plugin.CatalogPath {
 	return plugin.CatalogPath{
-		Version:  "engine.catalog.path/v1",
+		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
 		Segments: []plugin.CatalogSegment{{
-			Term: "path",
-			Kind: "file",
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindFile,
 			Name: path,
 		}},
 	}
+}
+
+func fileSystemDirectoryCatalogPath(engineID uint, path string) plugin.CatalogPath {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" || trimmed == "." {
+		return plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: engineID,
+			Segments: []plugin.CatalogSegment{{
+				Term: plugin.CatalogTermRoot,
+				Kind: plugin.CatalogKindRoot,
+				Name: "/",
+			}},
+		}
+	}
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{{
+			Term: plugin.CatalogTermPath,
+			Kind: plugin.CatalogKindPrefix,
+			Name: trimmed,
+		}},
+	}
+}
+
+func listFileSystemPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileSystemDirectoryCatalogPath(engine.ID, dirPath), plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	children := make([]models.ObjectPreviewChild, 0, len(nodes))
+	for _, node := range nodes {
+		childType := "object"
+		contentType := stringAttribute(node.Attributes, "content_type")
+		if node.IsContainer {
+			childType = "prefix"
+			contentType = "application/x-directory"
+		}
+		children = append(children, models.ObjectPreviewChild{
+			Name:        node.Name,
+			Path:        catalogNodePhysicalPath(node),
+			Type:        childType,
+			SizeBytes:   int64Stat(node.Stats, "size_bytes"),
+			ContentType: contentType,
+		})
+	}
+	return children, nil
+}
+
+func getFileSystemPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.FileMetadata, error) {
+	if metadataProvider == nil {
+		return nil, fs.ErrNotExist
+	}
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, fileSystemCatalogPath(engine.ID, path), plugin.MetadataOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return itemMetadataToFileMetadata(item, path), nil
+}
+
+func itemMetadataToFileMetadata(item *plugin.ItemMetadata, fallbackPath string) *plugin.FileMetadata {
+	if item == nil {
+		return &plugin.FileMetadata{Name: pathBase(fallbackPath), Path: fallbackPath}
+	}
+	name := stringAttribute(item.Attributes, "name")
+	if name == "" {
+		name = pathBase(fallbackPath)
+	}
+	path := stringAttribute(item.Attributes, "path")
+	if path == "" {
+		path = fallbackPath
+	}
+	updatedAt := time.Time{}
+	if item.UpdatedAt != nil {
+		updatedAt = *item.UpdatedAt
+	}
+	return &plugin.FileMetadata{
+		Name:        name,
+		Path:        path,
+		Size:        int64Stat(item.Stats, "size_bytes"),
+		ModifiedAt:  updatedAt,
+		ContentType: stringAttribute(item.Attributes, "content_type"),
+		ETag:        stringAttribute(item.Attributes, "etag"),
+	}
+}
+
+func catalogNodePhysicalPath(node plugin.CatalogNode) string {
+	if path := stringAttribute(node.Attributes, "path"); path != "" {
+		return path
+	}
+	return node.Path.StringPath()
+}
+
+func stringAttribute(attrs map[string]interface{}, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	if value, ok := attrs[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func int64Stat(stats map[string]interface{}, key string) int64 {
+	if stats == nil {
+		return 0
+	}
+	switch value := stats[key].(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case float32:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+func pathBase(path string) string {
+	trimmed := strings.TrimSuffix(path, "/")
+	if trimmed == "" {
+		return ""
+	}
+	idx := strings.LastIndex(trimmed, "/")
+	if idx < 0 {
+		return trimmed
+	}
+	return trimmed[idx+1:]
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径

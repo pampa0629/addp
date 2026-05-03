@@ -151,10 +151,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				engines.DELETE("/:id", engineHandler.Delete)
 				engines.POST("/:id/test", engineHandler.TestConnection)                    // 测试已有引擎连接
 				engines.POST("/test-connection", engineHandler.TestConnectionBeforeCreate) // 创建前测试连接
-				engines.GET("/:id/schemas", engineHandler.ListSchemas)                     // 列出schemas
-				engines.GET("/:id/tables", engineHandler.ListTables)                       // 列出表
+				engines.GET("/:id/namespaces", engineHandler.ListNamespaces)               // 列出 catalog 命名空间
+				engines.GET("/:id/items", engineHandler.ListCatalogItems)                  // 列出 catalog 数据项
 			}
-
 
 			// 租户管理
 			tenants := protected.Group("/tenants")
@@ -205,10 +204,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		internal.GET("/engines", engineHandler.ListInternal)
 		internal.GET("/engines/:id", engineHandler.GetByIDInternal)
 		internal.POST("/engines", engineHandler.CreateInternal)
-		internal.POST("/engines/register", engineHandler.RegisterEngineInternal)               // 引擎自注册
+		internal.POST("/engines/register", engineHandler.RegisterEngineInternal) // 引擎自注册
 		internal.PUT("/engines/:id/connection-status", engineHandler.UpdateConnectionStatusInternal)
 		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
-
 
 		// 能力注册 API
 		registry := internal.Group("/registry")

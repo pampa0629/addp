@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -109,17 +108,4 @@ func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*commonModels.En
 	}
 
 	return engines, nil
-}
-
-// unmarshalCapability 辅助函数：解析 Capabilities JSON 字符串
-func unmarshalCapability(capabilitiesJSON *string, result *commonModels.Capability) error {
-	if capabilitiesJSON == nil {
-		return fmt.Errorf("capabilities is nil")
-	}
-
-	if err := json.Unmarshal([]byte(*capabilitiesJSON), result); err != nil {
-		return fmt.Errorf("failed to unmarshal capabilities: %w", err)
-	}
-
-	return nil
 }

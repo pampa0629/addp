@@ -303,8 +303,8 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	}
 
 	if req != nil {
-		if len(req.SchemaNames) > 0 {
-			payload["schema_names"] = req.SchemaNames
+		if len(req.Namespaces) > 0 {
+			payload["namespaces"] = req.Namespaces
 		}
 		if len(req.ObjectPaths) > 0 {
 			payload["object_paths"] = req.ObjectPaths
@@ -436,7 +436,7 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 	return &models.Engine{
 		ID:             src.ID,
 		Name:           src.Name,
-		EngineType:   src.EngineType,
+		EngineType:     src.EngineType,
 		ConnectionInfo: connInfo,
 		Description:    src.Description,
 		CreatedBy:      src.CreatedBy,

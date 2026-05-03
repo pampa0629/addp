@@ -20,18 +20,18 @@ import (
 
 // ExecutionEngineService 执行引擎服务，负责任务执行的核心逻辑
 type ExecutionEngineService struct {
-	engine            *pipeline.ExecutionEngine
-	parallelEngine    *pipeline.ParallelExecutionEngine
-	registry          *pipeline.ConnectorRegistry
-	stateManager      *pipeline.StateManager
-	taskRepo          *repository.TaskRepository
-	executionService  *ExecutionService // 使用统一执行表服务
-	mappingRepo       *repository.MappingRepository
-	localEngineRepo   *repository.LocalEngineRepository
-	systemClient      *commonClient.SystemClient
-	metaClient        *commonClient.MetaClient
-	cfg               *config.Config
-	logger            *slog.Logger
+	engine           *pipeline.ExecutionEngine
+	parallelEngine   *pipeline.ParallelExecutionEngine
+	registry         *pipeline.ConnectorRegistry
+	stateManager     *pipeline.StateManager
+	taskRepo         *repository.TaskRepository
+	executionService *ExecutionService // 使用统一执行表服务
+	mappingRepo      *repository.MappingRepository
+	localEngineRepo  *repository.LocalEngineRepository
+	systemClient     *commonClient.SystemClient
+	metaClient       *commonClient.MetaClient
+	cfg              *config.Config
+	logger           *slog.Logger
 }
 
 // NewExecutionEngineService 创建执行引擎服务
@@ -76,8 +76,8 @@ func (s *ExecutionEngineService) SetEngineComponents(
 	// 创建并行引擎
 	parallelConfig := &pipeline.ParallelEngineConfig{
 		EngineConfig: pipeline.DefaultEngineConfig(),
-		NumReaders:   1,  // 单个 Reader
-		NumWriters:   4,  // 4 个并行 Writer（可根据任务配置调整）
+		NumReaders:   1, // 单个 Reader
+		NumWriters:   4, // 4 个并行 Writer（可根据任务配置调整）
 	}
 	s.parallelEngine = pipeline.NewParallelExecutionEngine(
 		registry,
@@ -958,22 +958,21 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask) 
 		return
 	}
 
-	// 提取 schema_names（如果有的话）
-	var schemaNames []string
+	// 提取 namespaces（如果有的话）
+	var namespaces []string
 	if schema, ok := targetConfig["schema"].(string); ok && schema != "" {
-		schemaNames = []string{schema}
+		namespaces = []string{schema}
 	} else if database, ok := targetConfig["database"].(string); ok && database != "" {
-		// 对于某些数据库，database 字段等同于 schema
-		schemaNames = []string{database}
+		namespaces = []string{database}
 	}
 
 	// 调用 Meta 模块的扫描 API
 	s.logger.Info("triggering metadata scan",
 		"task_id", task.ID,
 		"engine_id", engineID,
-		"schema_names", schemaNames)
+		"namespaces", namespaces)
 
-	if err := s.metaClient.TriggerScanEngine(engineID, schemaNames); err != nil {
+	if err := s.metaClient.TriggerScanEngine(engineID, namespaces); err != nil {
 		// 元数据扫描失败不影响任务本身的成功状态
 		s.logger.Error("failed to trigger metadata scan",
 			"error", err,
@@ -1137,9 +1136,9 @@ func (s *ExecutionEngineService) buildPostProcessorConfig(
 	config := postprocessor.PostProcessorConfig{
 		EngineType:       engineType,
 		TableName:        tableName,
-		DB:               writerDB,         // ✅ 优先使用 Writer 连接
-		ConnectionConfig: targetConfig,     // 降级方案（如果 DB 为 nil）
-		Schema:           schema, // ✅ 新增：传递 Schema（供主键提取使用）
+		DB:               writerDB,     // ✅ 优先使用 Writer 连接
+		ConnectionConfig: targetConfig, // 降级方案（如果 DB 为 nil）
+		Schema:           schema,       // ✅ 新增：传递 Schema（供主键提取使用）
 
 		// 默认启用所有任务
 		CreatePrimaryKey:   true,

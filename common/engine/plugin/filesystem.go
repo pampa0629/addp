@@ -1,35 +1,11 @@
 package plugin
 
-import (
-	"context"
-	"io"
-	"time"
-)
-
-// FileSystemPlugin 文件系统语义存储的统一接口
-// 所有基于文件系统语义的存储（对象存储、NAS、HDFS）都应实现此接口
-// ObjectStoragePlugin 继承此接口
-type FileSystemPlugin interface {
-	StoragePlugin
-
-	// ListDirectory 列出路径下的直接子内容（非递归）
-	// path 格式：bucket/prefix/（对象存储），/mount/path/（NAS）
-	ListDirectory(ctx context.Context, connInfo ConnectionInfo, path string) (files []FileEntry, subdirs []DirEntry, err error)
-
-	// ReadFile 流式读取文件内容（调用方负责关闭）
-	ReadFile(ctx context.Context, connInfo ConnectionInfo, path string) (io.ReadCloser, error)
-
-	// GetFileMetadata 获取文件元数据
-	GetFileMetadata(ctx context.Context, connInfo ConnectionInfo, path string) (*FileMetadata, error)
-
-	// ListRoots 列出根节点（对象存储=Bucket，NAS=挂载点，HDFS=根目录）
-	ListRoots(ctx context.Context, connInfo ConnectionInfo) ([]RootEntry, error)
-}
+import "time"
 
 // FileEntry 文件条目
 type FileEntry struct {
 	Name        string
-	Path        string    // 完整路径，供 ReadFile 使用（格式：bucket/prefix/file.parquet）
+	Path        string // 完整路径，供 ContentReadableProvider 使用（格式：bucket/prefix/file.parquet）
 	Size        int64
 	ModifiedAt  time.Time
 	ContentType string

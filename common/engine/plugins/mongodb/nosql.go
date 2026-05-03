@@ -3,26 +3,26 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ListDatabases 实现 NoSQLPlugin 接口 - 列出所有数据库
-func (p *MongoDBPlugin) ListDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
-	client, err := p.CreateClient(ctx, connInfo)
+// listDatabases lists all non-system databases for the catalog adapter.
+func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
+	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
-	defer p.CloseClient(ctx, client)
-
-	mongoClient := client.(*mongo.Client)
+	defer client.Disconnect(ctx) //nolint:errcheck
 
 	// 列出所有数据库
-	databases, err := mongoClient.ListDatabases(ctx, bson.M{})
+	databases, err := client.ListDatabases(ctx, bson.M{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
@@ -44,16 +44,15 @@ func (p *MongoDBPlugin) ListDatabases(ctx context.Context, connInfo plugin.Conne
 	return result, nil
 }
 
-// ListCollections 实现 NoSQLPlugin 接口 - 列出指定数据库下的所有集合
-func (p *MongoDBPlugin) ListCollections(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.CollectionInfo, error) {
-	client, err := p.CreateClient(ctx, connInfo)
+// listCollections lists collections for the catalog adapter.
+func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.CollectionInfo, error) {
+	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
-	defer p.CloseClient(ctx, client)
+	defer client.Disconnect(ctx) //nolint:errcheck
 
-	mongoClient := client.(*mongo.Client)
-	db := mongoClient.Database(database)
+	db := client.Database(database)
 
 	// 列出所有集合
 	collections, err := db.ListCollectionNames(ctx, bson.M{})
@@ -88,16 +87,15 @@ func (p *MongoDBPlugin) ListCollections(ctx context.Context, connInfo plugin.Con
 	return result, nil
 }
 
-// GetCollectionStats 实现 NoSQLPlugin 接口 - 获取集合统计信息
+// GetCollectionStats returns collection statistics.
 func (p *MongoDBPlugin) GetCollectionStats(ctx context.Context, connInfo plugin.ConnectionInfo, database, collection string) (*plugin.CollectionStats, error) {
-	client, err := p.CreateClient(ctx, connInfo)
+	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
-	defer p.CloseClient(ctx, client)
+	defer client.Disconnect(ctx) //nolint:errcheck
 
-	mongoClient := client.(*mongo.Client)
-	coll := mongoClient.Database(database).Collection(collection)
+	coll := client.Database(database).Collection(collection)
 
 	// 使用 $collStats 聚合管道获取统计信息
 	pipeline := mongo.Pipeline{
@@ -151,6 +149,108 @@ func (p *MongoDBPlugin) GetCollectionStats(ctx context.Context, connInfo plugin.
 	}, nil
 }
 
+// SampleDocumentMetadata samples a collection and returns inferred dynamic field schema.
+func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	if len(path.Segments) < 2 {
+		return nil, fmt.Errorf("document item path requires database and collection segments")
+	}
+	database := path.Segments[0].Name
+	collection := path.Segments[len(path.Segments)-1].Name
+
+	client, err := p.createClient(ctx, connInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client: %w", err)
+	}
+	defer client.Disconnect(ctx) //nolint:errcheck
+
+	coll := client.Database(database).Collection(collection)
+	sampleSize := opts.SampleSize
+	if sampleSize <= 0 {
+		sampleSize = 100
+	}
+
+	cursor, err := coll.Find(ctx, bson.M{}, options.Find().SetLimit(int64(sampleSize)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to sample documents: %w", err)
+	}
+	defer cursor.Close(ctx) //nolint:errcheck
+
+	var documents []bson.M
+	if err := cursor.All(ctx, &documents); err != nil {
+		return nil, fmt.Errorf("failed to decode sampled documents: %w", err)
+	}
+
+	fieldStats := make(map[string]*mongoFieldStat)
+	for _, doc := range documents {
+		for key, value := range doc {
+			stat := ensureMongoFieldStat(fieldStats, key)
+			stat.Count++
+			typeStr := detectMongoBSONType(value)
+			if stat.Type == "" {
+				stat.Type = typeStr
+			} else if stat.Type != typeStr && typeStr != "null" {
+				stat.Type = "mixed"
+			}
+		}
+	}
+
+	fields := make([]plugin.FieldInfo, 0, len(fieldStats))
+	for name, stat := range fieldStats {
+		fields = append(fields, plugin.FieldInfo{
+			Name:       name,
+			Type:       mapMongoBSONType(stat.Type),
+			NativeType: stat.Type,
+			Nullable:   true,
+			PrimaryKey: name == "_id",
+			Attributes: map[string]interface{}{
+				"occurrence_rate": float64(stat.Count) / maxFloat64(float64(len(documents)), 1),
+			},
+		})
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		if fields[i].Name == "_id" {
+			return true
+		}
+		if fields[j].Name == "_id" {
+			return false
+		}
+		left, _ := fields[i].Attributes["occurrence_rate"].(float64)
+		right, _ := fields[j].Attributes["occurrence_rate"].(float64)
+		if left == right {
+			return fields[i].Name < fields[j].Name
+		}
+		return left > right
+	})
+
+	stats, err := p.GetCollectionStats(ctx, connInfo, database, collection)
+	if err != nil {
+		count, _ := coll.EstimatedDocumentCount(ctx)
+		stats = &plugin.CollectionStats{DocumentCount: count}
+	}
+
+	attrs := map[string]interface{}{
+		"database":        database,
+		"collection":      collection,
+		"is_sampled":      true,
+		"sample_size":     len(documents),
+		"schema_type":     "dynamic",
+		"total_documents": stats.DocumentCount,
+	}
+	return &plugin.ItemMetadata{
+		Path:    path,
+		Kind:    plugin.CatalogKindCollection,
+		Fields:  fields,
+		Indexes: append([]plugin.IndexInfo{}, stats.Indexes...),
+		Stats: map[string]interface{}{
+			"document_count": stats.DocumentCount,
+			"size_bytes":     stats.SizeBytes,
+			"index_count":    stats.IndexCount,
+			"avg_doc_size":   stats.AvgDocSize,
+		},
+		Attributes: attrs,
+	}, nil
+}
+
 // getIndexes 获取集合的索引信息（内部辅助方法）
 func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) ([]plugin.IndexInfo, error) {
 	cursor, err := coll.Indexes().List(ctx)
@@ -188,7 +288,87 @@ func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) 
 	return indexes, nil
 }
 
-// IsSystemDatabase 实现 NoSQLPlugin 接口 - 判断是否为系统数据库
+type mongoFieldStat struct {
+	Count int
+	Type  string
+}
+
+func ensureMongoFieldStat(stats map[string]*mongoFieldStat, fieldName string) *mongoFieldStat {
+	if stat, exists := stats[fieldName]; exists {
+		return stat
+	}
+	stat := &mongoFieldStat{}
+	stats[fieldName] = stat
+	return stat
+}
+
+func detectMongoBSONType(value interface{}) string {
+	if value == nil {
+		return "null"
+	}
+	switch value.(type) {
+	case string:
+		return "string"
+	case int32, int64, int:
+		return "int64"
+	case float32, float64:
+		return "float64"
+	case bool:
+		return "bool"
+	case primitive.ObjectID:
+		return "objectid"
+	case primitive.DateTime, time.Time:
+		return "datetime"
+	case []interface{}, primitive.A:
+		return "array"
+	case bson.M, map[string]interface{}:
+		return "object"
+	case primitive.Binary:
+		return "binary"
+	case primitive.Decimal128:
+		return "decimal"
+	default:
+		return fmt.Sprintf("unknown(%T)", value)
+	}
+}
+
+func mapMongoBSONType(bsonType string) string {
+	switch bsonType {
+	case "string", "objectid":
+		return "string"
+	case "int64":
+		return "integer"
+	case "float64":
+		return "double"
+	case "bool":
+		return "boolean"
+	case "datetime":
+		return "timestamp"
+	case "array":
+		return "array"
+	case "object":
+		return "json"
+	case "binary":
+		return "bytes"
+	case "decimal":
+		return "decimal"
+	case "mixed":
+		return "mixed"
+	case "null":
+		return "unknown"
+	default:
+		return "unknown"
+	}
+}
+
+func maxFloat64(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// IsSystemDatabase 判断是否为系统数据库
 func (p *MongoDBPlugin) IsSystemDatabase(databaseName string) bool {
 	// MongoDB 系统数据库：admin, local, config
 	systemDatabases := []string{"admin", "local", "config"}
@@ -200,8 +380,7 @@ func (p *MongoDBPlugin) IsSystemDatabase(databaseName string) bool {
 	return false
 }
 
-// CreateClient 实现 NoSQLPlugin 接口 - 创建数据库客户端
-func (p *MongoDBPlugin) CreateClient(ctx context.Context, connInfo plugin.ConnectionInfo) (interface{}, error) {
+func (p *MongoDBPlugin) openClient(ctx context.Context, connInfo plugin.ConnectionInfo) (*mongo.Client, error) {
 	// 构建连接字符串
 	connStr, err := p.BuildConnectionString(connInfo)
 	if err != nil {
@@ -226,22 +405,4 @@ func (p *MongoDBPlugin) CreateClient(ctx context.Context, connInfo plugin.Connec
 	}
 
 	return client, nil
-}
-
-// CloseClient 实现 NoSQLPlugin 接口 - 关闭数据库客户端
-func (p *MongoDBPlugin) CloseClient(ctx context.Context, client interface{}) error {
-	if client == nil {
-		return nil
-	}
-
-	mongoClient, ok := client.(*mongo.Client)
-	if !ok {
-		return fmt.Errorf("invalid client type: expected *mongo.Client")
-	}
-
-	if err := mongoClient.Disconnect(ctx); err != nil {
-		return fmt.Errorf("failed to disconnect MongoDB client: %w", err)
-	}
-
-	return nil
 }

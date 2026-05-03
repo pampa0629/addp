@@ -54,19 +54,30 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *MySQLPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(p.SchemaNodeType())
+	return plugin.TabularCatalogModel("database")
+}
+
+func (p *MySQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
+	return plugin.TabularMetadataAdapter{
+		Plugin:        p,
+		NamespaceTerm: "database",
+		ListSchemas:   p.listSchemas,
+		ListTables:    p.listTables,
+		ListColumns:   p.listColumns,
+		RowCount:      p.getTableRowCount,
+	}
 }
 
 func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *MySQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *MySQLPlugin) QueryLanguages() []string {
@@ -207,7 +218,7 @@ func (p *MySQLPlugin) GetDialect() string {
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Schema（MySQL中对应Database）
-func (p *MySQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func (p *MySQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
 	query := `
@@ -231,7 +242,7 @@ func (p *MySQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.Sc
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *MySQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *MySQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	var tables []plugin.TableInfo
 
 	query := `
@@ -255,7 +266,7 @@ func (p *MySQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string
 }
 
 // ListColumns 列出指定表的所有列
-func (p *MySQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *MySQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	var columns []plugin.ColumnInfo
 
 	query := `
@@ -280,7 +291,7 @@ func (p *MySQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 }
 
 // GetTableRowCount 获取表的行数
-func (p *MySQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (p *MySQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 
 	// 使用information_schema中的统计数据（快速但可能不精确）
@@ -309,6 +320,3 @@ func (p *MySQLPlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemSchemas[schemaName]
 }
-
-// SchemaNodeType 返回第一层节点的类型名
-func (p *MySQLPlugin) SchemaNodeType() string { return "database" }

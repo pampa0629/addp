@@ -355,7 +355,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/engines/:id/schemas": {
+        "/engines/:id/items": {
             "get": {
                 "produces": [
                     "application/json"
@@ -363,7 +363,7 @@ const docTemplate = `{
                 "tags": [
                     "Resources"
                 ],
-                "summary": "列出 Schema 列表 | List schemas",
+                "summary": "列出数据项列表 | List catalog items",
                 "parameters": [
                     {
                         "type": "integer",
@@ -371,6 +371,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间名称 | Namespace name",
+                        "name": "namespace",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -384,7 +390,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/engines/:id/tables": {
+        "/engines/:id/namespaces": {
             "get": {
                 "produces": [
                     "application/json"
@@ -392,7 +398,7 @@ const docTemplate = `{
                 "tags": [
                     "Resources"
                 ],
-                "summary": "列出表列表 | List tables",
+                "summary": "列出命名空间列表 | List namespaces",
                 "parameters": [
                     {
                         "type": "integer",
@@ -400,12 +406,6 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Schema名称(默认public) | Schema name (default: public)",
-                        "name": "schema",
-                        "in": "query"
                     }
                 ],
                 "responses": {

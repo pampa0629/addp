@@ -33,32 +33,23 @@ ADDP 数据引擎基于三层插件化架构：
 └────────────┬──────────────────────────────────────────────┘
              │
 ┌────────────▼──────────────────────────────────────────────┐
-│   三层接口架构 (common/engine/plugin/)                    │
+│   Provider 化接口架构 (common/engine/plugin/)             │
 │                                                            │
-│   第一层：EnginePlugin（所有引擎的基础接口）               │
+│   基础接口：EnginePlugin（所有引擎必须实现）               │
 │   ├─ Type(), DisplayName(), EngineCategory()             │
 │   ├─ TestConnection(), BuildConnectionString()           │
-│   └─ DefaultPort(), RequiredFields(), SensitiveFields()  │
+│   ├─ DefaultPort(), RequiredFields(), SensitiveFields()  │
+│   └─ Capabilities()                                      │
 │                                                            │
-│   第二层：按功能分类的标记接口                             │
-│   ├─ StoragePlugin（存储引擎）                            │
-│   │   └─ SupportsMetadataQuery()                         │
-│   ├─ ComputePlugin（计算引擎）                            │
-│   │   └─ GetSupportedOperators(), HealthCheckEndpoint()  │
-│   └─ NoSQLPlugin（NoSQL 引擎）⭐新增                      │
-│       ├─ ListDatabases(), ListCollections()             │
-│       ├─ GetCollectionStats(), IsSystemDatabase()       │
-│       └─ CreateClient(), CloseClient()                  │
+│   目录与元数据 Provider                                   │
+│   ├─ CatalogModelProvider / CatalogProvider              │
+│   └─ ItemMetadataProvider / DocumentMetadataSampling...  │
 │                                                            │
-│   第三层：按存储类型细分的功能接口                         │
-│   ├─ RelationalDBPlugin（关系型数据库）                   │
-│   │   ├─ ListSchemas(), ListTables(), ListColumns()      │
-│   │   ├─ GetTableRowCount(), IsSystemSchema()            │
-│   │   └─ ConnectionPoolPlugin（连接池管理）              │
-│   └─ ObjectStoragePlugin（对象存储）                      │
-│       ├─ ListBuckets(), ListObjects()                    │
-│       ├─ GetObjectMetadata(), InferContentType()         │
-│       └─ DefaultBucket(), SupportsSSL()                  │
+│   数据访问与查询 Provider                                 │
+│   ├─ ContentReadableProvider / BatchReadableProvider     │
+│   ├─ SQLQueryRuntimeProvider                             │
+│   ├─ DocumentQueryRuntimeProvider / GraphQueryRuntime... │
+│   └─ WorkflowRuntimeProvider / ScriptRuntimeProvider     │
 └───────────────────────────────────────────────────────────┘
              │
 ┌────────────▼──────────────────────────────────────────────┐
@@ -71,8 +62,8 @@ ADDP 数据引擎基于三层插件化架构：
 ```
 
 **关键设计理念**：
-- **三层渐进**：第一层必须实现，第二三层按需选择
-- **接口组合**：一个插件可以实现多个接口（如 PostgreSQL 同时实现 StoragePlugin 和 RelationalDBPlugin）
+- **基础加能力组合**：`EnginePlugin` 必须实现，其余 provider 按目录、元数据、内容、查询、运行时能力组合。
+- **统一目录入口**：Meta、Manager 等上层模块通过 `CatalogProvider` / `ItemMetadataProvider` 获取目录和字段，不直接调用旧 `ListXXX` 方法。
 - **自动注册**：插件通过 `init()` 函数自动注册，零配置使用
 - **解耦合**：Meta、Manager、Transfer 共享 common/engine，无需重复实现
 
@@ -86,23 +77,23 @@ ADDP 数据引擎基于三层插件化架构：
 
 | 数据库 | 类型 | 默认端口 | 接口实现 | 用途 |
 |--------|------|----------|----------|------|
-| **PostgreSQL** | OLTP | 5432 | RelationalDBPlugin + ConnectionPoolPlugin | 系统主数据库，支持 PostGIS 空间扩展 |
-| **MySQL** | OLTP | 3306 | RelationalDBPlugin + ConnectionPoolPlugin | 通用关系型数据库 |
-| **Apache Doris** | HTAP | 9030 | RelationalDBPlugin + ConnectionPoolPlugin | 实时分析数据库，支持 OLAP 查询 |
-| **ClickHouse** | OLAP | 9000 | RelationalDBPlugin + ConnectionPoolPlugin | 高性能列式存储，适合大数据量分析 |
+| **PostgreSQL** | OLTP | 5432 | Catalog/Metadata/SQLRuntime + ConnectionPoolProvider | 系统主数据库，支持 PostGIS 空间扩展 |
+| **MySQL** | OLTP | 3306 | Catalog/Metadata/SQLRuntime + ConnectionPoolProvider | 通用关系型数据库 |
+| **Apache Doris** | HTAP | 9030 | Catalog/Metadata/SQLRuntime + ConnectionPoolProvider | 实时分析数据库，支持 OLAP 查询 |
+| **ClickHouse** | OLAP | 9000 | Catalog/Metadata/SQLRuntime + ConnectionPoolProvider | 高性能列式存储，适合大数据量分析 |
 
 ### NoSQL 数据库 ⭐
 
 | 数据库 | 类型 | 默认端口 | 接口实现 | 用途 |
 |--------|------|----------|----------|------|
-| **MongoDB** | 文档型 | 27017 | NoSQLPlugin | 文档型数据库，灵活 Schema，支持采样推断 |
+| **MongoDB** | 文档型 | 27017 | Catalog/MetadataSampling/DocumentQueryRuntime | 文档型数据库，灵活 Schema，支持采样推断 |
 
 ### 对象存储
 
 | 存储 | 类型 | 默认端口 | 接口实现 | 用途 |
 |------|------|----------|----------|------|
-| **MinIO** | 对象存储 | 9000 | ObjectStoragePlugin | S3 兼容对象存储，存储文件和二进制数据 |
-| **Amazon S3** | 对象存储 | 443 | ObjectStoragePlugin | AWS 云对象存储 |
+| **MinIO** | 对象存储 | 9000 | Catalog/Metadata/ContentReadableProvider | S3 兼容对象存储，存储文件和二进制数据 |
+| **Amazon S3** | 对象存储 | 443 | Catalog/Metadata/ContentReadableProvider | AWS 云对象存储 |
 
 ### 计算引擎
 
@@ -110,7 +101,7 @@ ADDP 数据引擎基于三层插件化架构：
 |------|------|----------|----------|------|
 | **Python Workflow** | 工作流引擎 | 8099 | ComputePlugin | 基于 GeoPandas 的空间工作流计算 |
 | **Spark Workflow** | 工作流引擎 | 8098 | ComputePlugin | 分布式空间工作流计算 |
-| **Spark SQL** | SQL 引擎 | 10000 | RelationalDBPlugin | 大数据分布式查询引擎（Thrift Server，兼容 JDBC/SQL） |
+| **Spark SQL** | SQL 引擎 | 10000 | Catalog/Metadata/SQLRuntime + ConnectionPoolProvider | 大数据分布式查询引擎（Thrift Server，兼容 JDBC/SQL） |
 | **Math Workflow** | 计算引擎 | 8089 | ComputePlugin | 数学计算工作流 |
 | **Jupyter** | Notebook 引擎 | 8097 | EnginePlugin | 交互式 Notebook 开发（Python/Shell） |
 
@@ -128,7 +119,9 @@ ADDP 数据引擎基于三层插件化架构：
 ```
 EnginePlugin（必须）
   + StoragePlugin（必须）
-  + RelationalDBPlugin（必须）
+  + CatalogModelProvider / CatalogProvider（必须）
+  + ItemMetadataProvider（必须）
+  + SQLQueryRuntimeProvider（通常必须）
   + ConnectionPoolPlugin（必须）
 ```
 
@@ -136,14 +129,18 @@ EnginePlugin（必须）
 ```
 EnginePlugin（必须）
   + StoragePlugin（必须）
-  + NoSQLPlugin（必须）
+  + CatalogModelProvider / CatalogProvider（必须）
+  + ItemMetadataProvider / DocumentMetadataSamplingProvider（必须）
+  + DocumentQueryRuntimeProvider（查询预览需要）
 ```
 
 **对象存储**（MinIO、S3）：
 ```
 EnginePlugin（必须）
   + StoragePlugin（必须）
-  + ObjectStoragePlugin（必须）
+  + CatalogModelProvider / CatalogProvider（必须）
+  + ItemMetadataProvider（必须）
+  + ContentReadableProvider（预览/解析需要）
 ```
 
 **计算引擎**（Python Workflow、Spark Workflow）：
@@ -173,33 +170,24 @@ touch plugin.go
 - `DefaultPort() int` - 默认端口
 - `RequiredFields() []string` - 必填字段列表（如 ["host", "user", "database"]）
 - `SensitiveFields() []string` - 敏感字段列表（如 ["password"]，需加密）
-- `GenerateCapabilities() string` - 能力声明（JSON 格式）
+- `Capabilities() EngineCapabilities` - 结构化能力声明
 - `ValidateConnectionInfo(connInfo) error` - 验证连接信息
 - `BuildConnectionString(connInfo) (string, error)` - 构建连接字符串
 - `TestConnection(ctx, connInfo) error` - 测试连接
 
-**RelationalDBPlugin 接口**（关系型数据库实现）：
-- `ListSchemas(ctx, db) ([]SchemaInfo, error)` - 列出所有 Schema/Database
-- `ListTables(ctx, db, schema) ([]TableInfo, error)` - 列出指定 Schema 下的所有表
-- `ListColumns(ctx, db, schema, table) ([]ColumnInfo, error)` - 列出表的所有列
-- `GetTableRowCount(ctx, db, schema, table) (int64, error)` - 获取表行数
-- `IsSystemSchema(schemaName) bool` - 判断是否为系统 Schema
+**CatalogProvider / ItemMetadataProvider**（存储引擎目录和元数据）：
+- `CatalogModel() CatalogModelSpec` - 声明目录层级和术语
+- `ListChildren(ctx, connInfo, parent, opts) ([]CatalogNode, error)` - 列出子节点
+- `ResolvePath(ctx, connInfo, path) (*CatalogNode, error)` - 解析目录路径
+- `DescribeItem(ctx, connInfo, path, opts) (*ItemMetadata, error)` - 获取叶子项字段、索引、统计和扩展属性
 
-**NoSQLPlugin 接口**（NoSQL 数据库实现）⭐：
-- `ListDatabases(ctx, connInfo) ([]DatabaseInfo, error)` - 列出所有 Database
-- `ListCollections(ctx, connInfo, database) ([]CollectionInfo, error)` - 列出 Collection
-- `GetCollectionStats(ctx, connInfo, database, collection) (*CollectionStats, error)` - 获取统计信息
-- `IsSystemDatabase(databaseName) bool` - 判断是否为系统 Database
-- `CreateClient(ctx, connInfo) (interface{}, error)` - 创建客户端
-- `CloseClient(ctx, client) error` - 关闭客户端
+**查询 Runtime Provider**：
+- `SQLQueryRuntimeProvider.ExecuteSQL(...)` - SQL 查询执行
+- `DocumentQueryRuntimeProvider.ExecuteDocumentQuery(...)` - 文档库原生命令查询
+- `GraphQueryRuntimeProvider.ExecuteRuntimeGraphQuery(...)` - 图查询执行
 
-**ObjectStoragePlugin 接口**（对象存储实现）：
-- `ListBuckets(ctx, connInfo) ([]BucketInfo, error)` - 列出所有 Bucket
-- `ListObjects(ctx, connInfo, bucket, prefix, recursive) ([]ObjectInfo, error)` - 列出对象
-- `GetObjectMetadata(ctx, connInfo, bucket, key) (*ObjectInfo, error)` - 获取对象元数据
-- `InferContentType(objectKey) string` - 推断 MIME 类型
-- `DefaultBucket() string` - 默认 Bucket 名称
-- `SupportsSSL() bool` - 是否支持 SSL
+**内容读取 Provider**：
+- `ContentReadableProvider.OpenContent(...)` - 读取文件/对象内容，用于对象预览、文件表解析和湖表预览
 
 **ConnectionPoolPlugin 接口**（关系型数据库连接池）：
 - `CreateConnectionPool(connInfo, poolConfig) (*gorm.DB, error)` - 创建 GORM 连接池
@@ -234,19 +222,19 @@ func init() {
 
 **简单示例：MySQL**
 - 文件：[common/engine/plugins/mysql/plugin.go](../common/engine/plugins/mysql/plugin.go)
-- 实现接口：EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
+- 实现接口：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider + ConnectionPoolPlugin
 - 代码量：~290 行
 
 **复杂示例：MongoDB** ⭐
 - 文件：
   - [common/engine/plugins/mongodb/plugin.go](../common/engine/plugins/mongodb/plugin.go)（基础接口）
-  - [common/engine/plugins/mongodb/nosql.go](../common/engine/plugins/mongodb/nosql.go)（NoSQLPlugin 实现）
-- 实现接口：EnginePlugin + StoragePlugin + NoSQLPlugin
+  - [common/engine/plugins/mongodb/nosql.go](../common/engine/plugins/mongodb/nosql.go)（文档库元数据与采样 helper）
+- 实现接口：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + DocumentMetadataSamplingProvider + DocumentQueryRuntimeProvider
 - 代码量：~380 行
 
 **对象存储示例：MinIO**
 - 文件：[common/engine/plugins/minio/plugin.go](../common/engine/plugins/minio/plugin.go)
-- 实现接口：EnginePlugin + StoragePlugin + ObjectStoragePlugin
+- 实现接口：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + ContentReadableProvider
 - 代码量：~350 行
 
 **计算引擎示例：Python Workflow**
@@ -304,14 +292,14 @@ curl -X POST http://localhost:8180/api/engines/<engine_id>/test \
 ```
 
 **2. 元数据扫描**（自动支持）：
-- **关系型数据库**：Meta 模块自动使用 `RelationalDBPlugin.ListSchemas/ListTables/ListColumns`
-- **NoSQL 数据库**：Meta 模块自动使用 `NoSQLPlugin.ListDatabases/ListCollections` ⭐
-- **对象存储**：Meta 模块自动使用 `ObjectStoragePlugin.ListBuckets/ListObjects`
+- **关系型数据库**：Meta 模块自动使用 `CatalogProvider` 和 `ItemMetadataProvider`
+- **文档/图数据库**：Meta 模块自动使用 `CatalogProvider`，文档字段推断使用 `DocumentMetadataSamplingProvider`
+- **对象存储/文件系统**：Meta 模块自动使用 `CatalogProvider`，文件解析使用 `ContentReadableProvider`
 
 **3. 数据预览**（自动支持）：
-- **关系型数据库**：Manager 模块自动使用 `RelationalDBPlugin` 查询数据
-- **NoSQL 数据库**：Manager 模块自动使用 `NoSQLPlugin` + `DocCollectionParser` ⭐
-- **对象存储**：Manager 模块自动使用 `ObjectStoragePlugin` + `FileTableParser`
+- **关系型数据库**：Manager 模块自动使用 `SQLQueryRuntimeProvider` 查询数据
+- **文档数据库**：Manager 模块自动使用 `DocumentQueryRuntimeProvider` 读取样本
+- **对象存储/文件系统**：Manager 模块自动使用 `ContentReadableProvider` + `FileTableParser`
 
 **4. 跨模块集成**：
 - Transfer 模块：自动支持新引擎作为数据源/目标
@@ -374,20 +362,20 @@ ADDP 提供了统一的类型映射工具，将各数据库的原生类型映射
 ### System 模块
 - **引擎注册**：通过 API 创建引擎实例
 - **连接测试**：调用 `EnginePlugin.TestConnection()`
-- **能力发现**：读取 `GenerateCapabilities()` JSON
+- **能力发现**：读取 `Capabilities()` 结构化能力声明
 
 ### Meta 模块
 - **元数据扫描**：
-  - 关系型数据库：调用 `RelationalDBPlugin.ListSchemas/ListTables/ListColumns`
-  - NoSQL 数据库：调用 `NoSQLPlugin.ListDatabases/ListCollections` ⭐
-  - 对象存储：调用 `ObjectStoragePlugin.ListBuckets/ListObjects`
+  - 关系型数据库：通过 `CatalogProvider` 扫描 schema/database/table，通过 `ItemMetadataProvider` 获取字段
+  - 文档/图数据库：通过 `CatalogProvider` 扫描 database/collection/label/relationship，通过 metadata/sampling provider 获取字段
+  - 对象存储/文件系统：通过 `CatalogProvider` 扫描 bucket/root/prefix/file/object，通过 `ContentReadableProvider` 支持文件解析
 - **索引同步**：自动同步到 Meilisearch 全文搜索引擎
 
 ### Manager 模块
 - **数据预览**：
-  - 关系型数据库：使用 `RelationalDBPlugin` 查询数据
-  - NoSQL 数据库：使用 `NoSQLPlugin` + `DocCollectionParser` 采样推断 ⭐
-  - 对象存储：使用 `ObjectStoragePlugin` + `FileTableParser` 解析文件
+  - 关系型数据库：使用 `SQLQueryRuntimeProvider` 查询数据，字段优先来自 Meta 或 `ItemMetadataProvider`
+  - 文档数据库：使用 `DocumentQueryRuntimeProvider` 读取样本
+  - 对象存储/文件系统：使用 `CatalogProvider` 浏览目录，使用 `ContentReadableProvider` + `common/format` 解析文件
 - **MVT 瓦片**：自动支持 PostGIS 空间数据的矢量瓦片生成
 
 ### Transfer 模块
@@ -405,7 +393,7 @@ ADDP 提供了统一的类型映射工具，将各数据库的原生类型映射
 
 ### 关系型数据库：PostgreSQL
 - **文件**：[common/engine/plugins/postgresql/plugin.go](../common/engine/plugins/postgresql/plugin.go)
-- **实现接口**：EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
+- **实现接口**：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider + ConnectionPoolPlugin
 - **特点**：
   - 使用 GORM 连接池管理
   - 查询 `information_schema` 获取元数据
@@ -416,7 +404,7 @@ ADDP 提供了统一的类型映射工具，将各数据库的原生类型映射
 - **文件**：
   - [common/engine/plugins/mongodb/plugin.go](../common/engine/plugins/mongodb/plugin.go)
   - [common/engine/plugins/mongodb/nosql.go](../common/engine/plugins/mongodb/nosql.go)
-- **实现接口**：EnginePlugin + StoragePlugin + NoSQLPlugin
+- **实现接口**：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + DocumentMetadataSamplingProvider + DocumentQueryRuntimeProvider
 - **特点**：
   - 使用 `mongo-driver` 官方驱动
   - 采样文档推断 Schema（由 `DocCollectionParser` 完成）
@@ -425,7 +413,7 @@ ADDP 提供了统一的类型映射工具，将各数据库的原生类型映射
 
 ### 对象存储：MinIO
 - **文件**：[common/engine/plugins/minio/plugin.go](../common/engine/plugins/minio/plugin.go)
-- **实现接口**：EnginePlugin + StoragePlugin + ObjectStoragePlugin
+- **实现接口**：EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider + ContentReadableProvider
 - **特点**：
   - S3 兼容协议
   - 自动 MIME 类型推断（支持空间数据格式：shapefile、geojson）
@@ -466,7 +454,7 @@ DSN 格式：文件路径
 特殊处理：BuildConnectionString() 返回文件路径，RequiredFields() 包含 "file_path"
 ```
 
-### Redis（NoSQL 缓存数据库）
+### Redis（键值/缓存数据库）
 
 ```
 驱动：github.com/go-redis/redis/v9
@@ -474,9 +462,9 @@ DSN 格式：文件路径
 不支持 GORM，不实现 ConnectionPoolPlugin
 
 实现建议：
-- 实现 EnginePlugin + StoragePlugin + NoSQLPlugin
-- ListDatabases() 返回 Redis 的 16 个默认数据库
-- ListCollections() 使用 SCAN 命令列出 Key 前缀
+- 实现 EnginePlugin + StoragePlugin + CatalogProvider + ItemMetadataProvider
+- 通过 CatalogProvider 暴露 Redis DB 和 Key 前缀
+- 使用 SCAN 命令作为插件内部 helper，避免上层直接依赖 Redis 客户端
 - 注意：Redis 不支持标准 SQL，仅实现元数据扫描
 ```
 
@@ -532,7 +520,7 @@ DSN 格式：文件路径
 **症状**：Meta 模块扫描时报错 "plugin not found" 或 "method not implemented"
 
 **解决方案**：
-1. 确认插件实现了对应接口（`RelationalDBPlugin` 或 `NoSQLPlugin` 或 `ObjectStoragePlugin`）
+1. 确认插件实现了对应 provider（如 `CatalogProvider`、`ItemMetadataProvider`、`ContentReadableProvider`）
 2. 检查接口方法签名是否正确
 3. 重启 Meta Worker：`bash scripts/dev/restart.sh -meta`
 

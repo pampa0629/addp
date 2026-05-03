@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -59,11 +59,11 @@ type TriggerQuickViewParams struct {
 	EngineID           uint
 	SchemaName         string
 	TableName          string
-	MinZoom            *int                                // 必需，用户确认的最小缩放级别
-	MaxZoom            int                                 // 必需，用户确认的最大缩放级别
-	Concurrency        int                                 // 可选，默认从配置读取
-	Priority           string                              // "critical", "default", "low"
-	OptimizationConfig *commonModels.OptimizationConfig    // v2.0 优化配置
+	MinZoom            *int                             // 必需，用户确认的最小缩放级别
+	MaxZoom            int                              // 必需，用户确认的最大缩放级别
+	Concurrency        int                              // 可选，默认从配置读取
+	Priority           string                           // "critical", "default", "low"
+	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
 }
 
 // TriggerQuickView 触发预缓存（第二步，必须先完成准备）
@@ -211,8 +211,8 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 // SpatialMetadataResult 空间元数据结果
 type SpatialMetadataResult struct {
 	GeomColumn  string
-	SRID        int   // 表的原始坐标系
-	ExtentSRID  int   // extent 的坐标系
+	SRID        int // 表的原始坐标系
+	ExtentSRID  int // extent 的坐标系
 	PrimaryKey  string
 	Extent      []float64
 	RecordCount int64 // 表记录数
@@ -232,7 +232,7 @@ func (s *QuickViewService) GetSpatialMetadataFromMeta(
 	s.metaClient.SetTenantID(&tenantID)
 
 	// 通过 Meta API 查询空间元数据
-	spatialMeta, err := s.metaClient.GetTableSpatialMetadata(engineID, schema, table)
+	spatialMeta, err := s.metaClient.GetItemSpatialMetadata(engineID, schema, table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *QuickViewService) GetStatus(
 			fingerprint := calculateFingerprint(engineID, schema, table)
 			return &models.QuickView{
 				TenantID:    tenantID,
-				EngineID:  engineID,
+				EngineID:    engineID,
 				SchemaName:  schema,
 				Table:       table,
 				Status:      "none",
@@ -463,7 +463,7 @@ func (s *QuickViewService) ResumeQuickView(
 	err = s.repo.GetDB().Model(&models.QuickView{}).
 		Where("id = ?", qv.ID).
 		Updates(map[string]interface{}{
-			"status":       "generating",
+			"status":        "generating",
 			"error_message": "",
 			"started_at":    gorm.Expr("NOW()"),
 		}).Error
@@ -487,18 +487,18 @@ func (s *QuickViewService) ResumeQuickView(
 
 	// 6. 重新入队任务（使用原有的配置）
 	payload := worker.QuickViewTaskPayload{
-		TenantID:        tenantID,
-		EngineID:        engineID,
-		SchemaName:      schema,
-		TableName:       table,
-		GeomColumn:      spatialMeta.GeomColumn,
-		SRID:            spatialMeta.SRID,
-		PrimaryKey:      spatialMeta.PrimaryKey,
-		Extent:          spatialMeta.Extent,
-		MinZoom:         *qv.MinZoom,
-		MaxZoom:         qv.MaxZoom,
-		Concurrency:     s.cfg.PreCache.Concurrency,
-		Fingerprint:     qv.Fingerprint,
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		SchemaName:  schema,
+		TableName:   table,
+		GeomColumn:  spatialMeta.GeomColumn,
+		SRID:        spatialMeta.SRID,
+		PrimaryKey:  spatialMeta.PrimaryKey,
+		Extent:      spatialMeta.Extent,
+		MinZoom:     *qv.MinZoom,
+		MaxZoom:     qv.MaxZoom,
+		Concurrency: s.cfg.PreCache.Concurrency,
+		Fingerprint: qv.Fingerprint,
 	}
 
 	if err := s.taskQueue.EnqueueQuickViewTask(ctx, payload); err != nil {
@@ -562,17 +562,17 @@ func (s *QuickViewService) RunPreparationChecks(
 		if !exists {
 			// 创建新记录（包含 preparation_status 和空间范围）
 			qv := models.QuickView{
-				TenantID:           tenantID,
-				EngineID:           engineID,
-				SchemaName:         schema,
-				Table:              table,
-				Status:             "prepared",
-				Fingerprint:        calculateFingerprint(engineID, schema, table),
-				PreparationStatus:  prepStatus,
-				Extent:             models.JSONFloatArray(spatialMeta.Extent),
-				ExtentSRID:         spatialMeta.ExtentSRID,
-				StartedAt:          &time.Time{},
-				CompletedAt:        &time.Time{},
+				TenantID:          tenantID,
+				EngineID:          engineID,
+				SchemaName:        schema,
+				Table:             table,
+				Status:            "prepared",
+				Fingerprint:       calculateFingerprint(engineID, schema, table),
+				PreparationStatus: prepStatus,
+				Extent:            models.JSONFloatArray(spatialMeta.Extent),
+				ExtentSRID:        spatialMeta.ExtentSRID,
+				StartedAt:         &time.Time{},
+				CompletedAt:       &time.Time{},
 			}
 			now := time.Now()
 			qv.StartedAt = &now

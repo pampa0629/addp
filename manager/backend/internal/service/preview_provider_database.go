@@ -7,16 +7,13 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
-	"gorm.io/gorm"
 )
 
 // DatabaseTablePreviewProvider 通用数据库表预览 Provider
-// 自动支持所有实现了 RelationalDBPlugin 的数据库（PostgreSQL、MySQL、ClickHouse、Doris、MongoDB 等）
+// 自动支持所有实现 SQLQueryRuntimeProvider 的表格型数据库。
 type DatabaseTablePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	metaClient   *commonClient.MetaClient
@@ -53,38 +50,54 @@ func (p *DatabaseTablePreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	// 使用 dbbridge 检查是否支持连接池（即是否为关系型数据库）
-	return dbbridge.SupportsConnectionPool(req.Engine.EngineType)
+	plug, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return false
+	}
+	if _, ok := plug.(plugin.SQLQueryRuntimeProvider); !ok {
+		return false
+	}
+	capabilities := plug.Capabilities()
+	return capabilities.Storage != nil && containsString(capabilities.Storage.Families, "tabular")
 }
 
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	const maxRows = 50
 
-	// 转换 Engine 类型到 common models
-	commonResource := &commonModels.Engine{
-		ID:             req.Engine.ID,
-		EngineType:     req.Engine.EngineType,
-		ConnectionInfo: commonModels.ConnectionInfo(req.Engine.ConnectionInfo),
-	}
-
-	// 1. 获取或创建连接池（自动使用正确的 plugin）
-	db, err := dbbridge.GetOrCreatePool(commonResource, dbbridge.DefaultPoolConfig())
+	plug, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection pool: %w", err)
+		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
+	sqlRuntime, ok := plug.(plugin.SQLQueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement SQLQueryRuntimeProvider", req.Engine.EngineType)
+	}
+	metadataProvider, _ := plug.(plugin.ItemMetadataProvider)
+	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 
-	// 2. 处理表名可能包含 schema 前缀的情况
+	// 1. 处理表名可能包含 schema 前缀的情况
 	tableName := req.Table
 	if strings.HasPrefix(req.Table, req.Schema+".") {
 		tableName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 3. 尝试从 Meta 获取列元数据（优先使用 Meta，包含更准确的几何类型）
+	// 2. 从 ItemMetadataProvider 获取字段和统计信息。
+	itemMetadata, columns, err := p.describeDatabaseTable(ctx, metadataProvider, connInfo, req.Engine.ID, plug, req.Schema, tableName)
+	if err != nil {
+		if p.isTableNotFoundError(err) {
+			return nil, &TableNotFoundError{
+				Schema: req.Schema,
+				Table:  tableName,
+			}
+		}
+		return nil, fmt.Errorf("failed to describe table: %w", err)
+	}
+
+	// 3. 尝试从 Meta 获取列元数据（优先用于展示，包含更准确的几何类型）。
 	columnMetadata, geometryColumns, srid, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
 	fmt.Printf("[DEBUG] getColumnMetadataFromMeta 结果: metaErr=%v, columnMetadata_len=%d, geometryColumns=%v, srid=%d\n",
 		metaErr, len(columnMetadata), geometryColumns, srid)
 	var columnNames []string
-	var columns []plugin.ColumnInfo
 
 	if metaErr == nil && len(columnMetadata) > 0 {
 		// Meta 元数据可用，使用 Meta 的数据
@@ -93,34 +106,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		for i, meta := range columnMetadata {
 			columnNames[i] = meta.ColumnName
 		}
-		// 仍需要从数据库获取列信息用于查询构建（必须获取，否则 PostgreSQL 查询会失败）
-		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
-		if err != nil {
-			// 检查是否为表不存在错误
-			if p.isTableNotFoundError(err) {
-				return nil, &TableNotFoundError{
-					Schema: req.Schema,
-					Table:  tableName,
-				}
-			}
-			return nil, fmt.Errorf("failed to list columns for query construction: %w", err)
-		}
 	} else {
-		// Meta 不可用或无数据，回退到数据库插件
-		fmt.Printf("[DEBUG] Meta 不可用，回退到数据库插件检测: schema=%s, table=%s, metaErr=%v\n", req.Schema, tableName, metaErr)
-		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
-		if err != nil {
-			// 检查是否为表不存在错误
-			if p.isTableNotFoundError(err) {
-				return nil, &TableNotFoundError{
-					Schema: req.Schema,
-					Table:  tableName,
-				}
-			}
-			return nil, fmt.Errorf("failed to list columns: %w", err)
-		}
-
-		// 提取列名
+		// Meta 不可用或无数据，回退到 ItemMetadataProvider。
+		fmt.Printf("[DEBUG] Meta 不可用，回退到 ItemMetadataProvider: schema=%s, table=%s, metaErr=%v\n", req.Schema, tableName, metaErr)
 		columnNames = make([]string, len(columns))
 		for i, col := range columns {
 			columnNames[i] = col.ColumnName
@@ -143,16 +131,15 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	// 4. 获取总行数（自动使用正确的 plugin）
-	totalCount, err := dbbridge.GetTableRowCount(ctx, commonResource, db, req.Schema, tableName)
-	if err != nil {
-		// 检查是否为表不存在错误
-		if p.isTableNotFoundError(err) {
-			return nil, &TableNotFoundError{
-				Schema: req.Schema,
-				Table:  tableName,
-			}
+	// 4. 获取总行数，优先使用 ItemMetadataProvider stats，缺失时通过 SQL runtime 查询。
+	totalCount, err := p.resolveTableRowCount(ctx, sqlRuntime, connInfo, req.Engine.ID, req.Engine.EngineType, req.Schema, tableName, itemMetadata)
+	if err != nil && p.isTableNotFoundError(err) {
+		return nil, &TableNotFoundError{
+			Schema: req.Schema,
+			Table:  tableName,
 		}
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to get row count: %w", err)
 	}
 
@@ -173,7 +160,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, db, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
+	rows, err := p.queryData(ctx, sqlRuntime, connInfo, req.Engine.ID, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -205,17 +192,13 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 // queryData 执行分页查询
 func (p *DatabaseTablePreviewProvider) queryData(
 	ctx context.Context,
-	db interface{},
+	sqlRuntime plugin.SQLQueryRuntimeProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	engineType, schema, table string,
 	offset, limit int,
 	columns []plugin.ColumnInfo,
 ) ([]map[string]interface{}, error) {
-	// 获取 GORM DB 实例
-	gormDB, ok := db.(*gorm.DB)
-	if !ok {
-		return nil, fmt.Errorf("invalid database connection type")
-	}
-
 	// 根据引擎类型构建查询
 	var query string
 	switch strings.ToLower(engineType) {
@@ -255,13 +238,16 @@ func (p *DatabaseTablePreviewProvider) queryData(
 			schema, table, limit, offset)
 	}
 
-	// 执行查询
-	var rows []map[string]interface{}
-	if err := gormDB.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
+	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
+		EngineID:   engineID,
+		EngineType: engineType,
+		Limit:      limit,
+		ReadOnly:   true,
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	return rows, nil
+	return result.Rows, nil
 }
 
 func renderGeometryColumnName(column string) string {
@@ -352,6 +338,161 @@ func isGeographyType(dataType string) bool {
 	return dataTypeLower == "geography" || strings.HasPrefix(dataTypeLower, "geography(")
 }
 
+func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
+	ctx context.Context,
+	metadataProvider plugin.ItemMetadataProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	plug plugin.EnginePlugin,
+	schema, table string,
+) (*plugin.ItemMetadata, []plugin.ColumnInfo, error) {
+	if metadataProvider == nil {
+		return nil, nil, fmt.Errorf("engine %s does not implement ItemMetadataProvider", plug.Type())
+	}
+	itemMetadata, err := metadataProvider.DescribeItem(ctx, connInfo, databaseTableCatalogPath(engineID, plug, schema, table), plugin.MetadataOptions{
+		IncludeStatistics: true,
+		IncludeIndexes:    true,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	columns := make([]plugin.ColumnInfo, 0, len(itemMetadata.Fields))
+	for _, field := range itemMetadata.Fields {
+		dataType := field.NativeType
+		if dataType == "" {
+			dataType = field.Type
+		}
+		columns = append(columns, plugin.ColumnInfo{
+			ColumnName:   field.Name,
+			DataType:     dataType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
+			Comment:      field.Comment,
+		})
+	}
+	return itemMetadata, columns, nil
+}
+
+func databaseTableCatalogPath(engineID uint, plug plugin.EnginePlugin, schema, table string) plugin.CatalogPath {
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []plugin.CatalogSegment{
+			{Term: databaseNamespaceTerm(plug), Kind: plugin.CatalogKindNamespace, Name: schema},
+			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
+		},
+	}
+}
+
+func databaseNamespaceTerm(plug plugin.EnginePlugin) string {
+	if modelProvider, ok := plug.(plugin.CatalogModelProvider); ok {
+		model := modelProvider.CatalogModel()
+		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
+			return model.Levels[0].Term
+		}
+	}
+	return plugin.CatalogTermDatabase
+}
+
+func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
+	ctx context.Context,
+	sqlRuntime plugin.SQLQueryRuntimeProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	engineType, schema, table string,
+	itemMetadata *plugin.ItemMetadata,
+) (int64, error) {
+	if itemMetadata != nil {
+		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok {
+			return rowCount, nil
+		}
+		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "document_count"); ok {
+			return rowCount, nil
+		}
+	}
+	query := databasePreviewCountQuery(engineType, schema, table)
+	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
+		EngineID:   engineID,
+		EngineType: engineType,
+		ReadOnly:   true,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if len(result.Rows) == 0 {
+		return 0, nil
+	}
+	for _, value := range result.Rows[0] {
+		return numericToInt64(value), nil
+	}
+	return 0, nil
+}
+
+func databasePreviewCountQuery(engineType, schema, table string) string {
+	switch strings.ToLower(engineType) {
+	case "mysql", "doris", "clickhouse":
+		return fmt.Sprintf("SELECT COUNT(*) AS total FROM `%s`.`%s`", schema, table)
+	default:
+		return fmt.Sprintf("SELECT COUNT(*) AS total FROM \"%s\".\"%s\"", schema, table)
+	}
+}
+
+func databaseInt64Stat(stats map[string]interface{}, key string) (int64, bool) {
+	if stats == nil {
+		return 0, false
+	}
+	value, ok := stats[key]
+	if !ok {
+		return 0, false
+	}
+	return numericToInt64(value), true
+}
+
+func numericToInt64(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case int16:
+		return int64(typed)
+	case int8:
+		return int64(typed)
+	case uint:
+		return int64(typed)
+	case uint64:
+		return int64(typed)
+	case uint32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case []byte:
+		var parsed int64
+		if _, err := fmt.Sscan(string(typed), &parsed); err == nil {
+			return parsed
+		}
+	case string:
+		var parsed int64
+		if _, err := fmt.Sscan(typed, &parsed); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）
 func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	ctx context.Context,
@@ -368,7 +509,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	p.metaClient.SetTenantID(tenantID)
 
 	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
-	spatialMeta, err := p.metaClient.GetTableSpatialMetadata(engineID, schema, table)
+	spatialMeta, err := p.metaClient.GetItemSpatialMetadata(engineID, schema, table)
 	if err != nil {
 		fmt.Printf("[DEBUG] Meta API 调用失败: schema=%s, table=%s, err=%v\n", schema, table, err)
 		return nil, nil, 0, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)

@@ -60,19 +60,30 @@ func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *ClickHousePlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(p.SchemaNodeType())
+	return plugin.TabularCatalogModel("database")
+}
+
+func (p *ClickHousePlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
+	return plugin.TabularMetadataAdapter{
+		Plugin:        p,
+		NamespaceTerm: "database",
+		ListSchemas:   p.listSchemas,
+		ListTables:    p.listTables,
+		ListColumns:   p.listColumns,
+		RowCount:      p.getTableRowCount,
+	}
 }
 
 func (p *ClickHousePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *ClickHousePlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *ClickHousePlugin) QueryLanguages() []string {
@@ -213,7 +224,7 @@ func (p *ClickHousePlugin) GetDialect() string {
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Database
-func (p *ClickHousePlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func (p *ClickHousePlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
 	// ClickHouse 使用 SHOW DATABASES 命令
@@ -237,7 +248,7 @@ func (p *ClickHousePlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plug
 }
 
 // ListTables 列出指定Database下的所有表
-func (p *ClickHousePlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	var tables []plugin.TableInfo
 
 	query := `
@@ -261,7 +272,7 @@ func (p *ClickHousePlugin) ListTables(ctx context.Context, db *gorm.DB, schema s
 }
 
 // ListColumns 列出指定表的所有列
-func (p *ClickHousePlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *ClickHousePlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	var columns []plugin.ColumnInfo
 
 	query := `
@@ -286,7 +297,7 @@ func (p *ClickHousePlugin) ListColumns(ctx context.Context, db *gorm.DB, schema,
 }
 
 // GetTableRowCount 获取表的行数
-func (p *ClickHousePlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (p *ClickHousePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 
 	// 使用 system.tables 中的统计数据（快速）
@@ -314,6 +325,3 @@ func (p *ClickHousePlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemDatabases[schemaName]
 }
-
-// SchemaNodeType 返回第一层节点的类型名
-func (p *ClickHousePlugin) SchemaNodeType() string { return "database" }

@@ -55,19 +55,30 @@ func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *DorisPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(p.SchemaNodeType())
+	return plugin.TabularCatalogModel("database")
+}
+
+func (p *DorisPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
+	return plugin.TabularMetadataAdapter{
+		Plugin:        p,
+		NamespaceTerm: "database",
+		ListSchemas:   p.listSchemas,
+		ListTables:    p.listTables,
+		ListColumns:   p.listColumns,
+		RowCount:      p.getTableRowCount,
+	}
 }
 
 func (p *DorisPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p, &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *DorisPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *DorisPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p, &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *DorisPlugin) QueryLanguages() []string {
@@ -207,7 +218,7 @@ func (p *DorisPlugin) GetDialect() string {
 // === MetadataPlugin 接口实现 ===
 
 // ListSchemas 列出所有Schema（Doris中对应Database）
-func (p *DorisPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func (p *DorisPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
 	// Doris使用与MySQL相同的information_schema
@@ -232,7 +243,7 @@ func (p *DorisPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.Sc
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *DorisPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *DorisPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	var tables []plugin.TableInfo
 
 	// Doris的information_schema与MySQL基本兼容
@@ -257,7 +268,7 @@ func (p *DorisPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string
 }
 
 // ListColumns 列出指定表的所有列
-func (p *DorisPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *DorisPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	var columns []plugin.ColumnInfo
 
 	// Doris的列信息查询与MySQL兼容
@@ -283,7 +294,7 @@ func (p *DorisPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 }
 
 // GetTableRowCount 获取表的行数
-func (p *DorisPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (p *DorisPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 
 	// 使用information_schema中的统计数据（快速但可能不精确）
@@ -314,6 +325,3 @@ func (p *DorisPlugin) IsSystemSchema(schemaName string) bool {
 	}
 	return systemSchemas[schemaName]
 }
-
-// SchemaNodeType 返回第一层节点的类型名
-func (p *DorisPlugin) SchemaNodeType() string { return "database" }

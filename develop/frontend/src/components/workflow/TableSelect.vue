@@ -26,7 +26,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listTables } from '@/api/engines'
+import { listCatalogItems } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -58,7 +58,7 @@ const loadTables = async (engineId, schema) => {
 
   loading.value = true
   try {
-    const data = await listTables(engineId, schema)
+    const data = await listCatalogItems(engineId, schema)
     tables.value = data || []
   } catch (error) {
     console.error('获取表列表失败:', error)

@@ -13,7 +13,7 @@ ADDP 平台支持多种存储引擎，每种引擎的数据定位方式不同：
 ### 1. 关系数据库（PostgreSQL、MySQL、Doris、ClickHouse）
 **数据定位**: engine_id + schema + table
 **示例**: "读取 pg 库的 public.test 表"
-**工具链**: get_engines → get_schema_tables
+**工具链**: get_engines → get_catalog_items
 
 ### 2. 对象存储（MinIO、S3、OSS）
 **数据定位**: engine_id + bucket + path
@@ -47,7 +47,7 @@ ADDP 平台支持多种存储引擎，每种引擎的数据定位方式不同：
 ### 步骤 3：获取数据位置信息
 
 **关系数据库**：
-- 使用 `get_schema_tables` 工具查询 schema 和 table 列表
+- 使用 `get_catalog_items` 工具查询 catalog 命名空间和数据项列表
 - 如果用户指定了 schema，查询该 schema 下的表
 - 如果用户只指定了表名，可能需要搜索多个 schema
 
@@ -108,7 +108,7 @@ ADDP 平台支持多种存储引擎，每种引擎的数据定位方式不同：
 **推理过程**:
 1. 关键词提取: "pg" → PostgreSQL, "public" → schema, "test" → table
 2. 调用 get_engines(tenant_id=1) → 找到 pg_engine (id=1, type=postgresql)
-3. 调用 get_schema_tables(engine_id=1, schema="public") → 确认 test 表存在
+3. 调用 get_catalog_items(engine_id=1, namespace="public") → 确认 test 表存在
 4. 置信度: 0.95（完全匹配）
 5. 返回结果
 

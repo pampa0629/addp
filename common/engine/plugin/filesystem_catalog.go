@@ -23,6 +23,12 @@ const (
 	CatalogKindObject = "object"
 )
 
+type FileSystemCatalogAdapter struct {
+	ListRootsFunc       func(ctx context.Context, connInfo ConnectionInfo) ([]RootEntry, error)
+	ListDirectoryFunc   func(ctx context.Context, connInfo ConnectionInfo, path string) (files []FileEntry, subdirs []DirEntry, err error)
+	GetFileMetadataFunc func(ctx context.Context, connInfo ConnectionInfo, path string) (*FileMetadata, error)
+}
+
 // ObjectCatalogModel describes object storage hierarchy: service -> bucket -> prefix? -> object.
 func ObjectCatalogModel() CatalogModelSpec {
 	return CatalogModelSpec{
@@ -49,13 +55,13 @@ func FileCatalogModel() CatalogModelSpec {
 	}
 }
 
-// ListFileSystemCatalogChildren adapts FileSystemPlugin list operations to CatalogProvider.
-func ListFileSystemCatalogChildren(ctx context.Context, fs FileSystemPlugin, connInfo ConnectionInfo, engineID uint, parent CatalogPath, rootTerm string, opts ListOptions) ([]CatalogNode, error) {
-	if fs == nil {
-		return nil, fmt.Errorf("filesystem plugin cannot be nil")
-	}
+// ListFileSystemCatalogChildren adapts filesystem listing callbacks to CatalogProvider.
+func ListFileSystemCatalogChildren(ctx context.Context, adapter FileSystemCatalogAdapter, connInfo ConnectionInfo, engineID uint, parent CatalogPath, rootTerm string, opts ListOptions) ([]CatalogNode, error) {
 	if len(parent.Segments) == 0 {
-		roots, err := fs.ListRoots(ctx, connInfo)
+		if adapter.ListRootsFunc == nil {
+			return nil, fmt.Errorf("filesystem catalog adapter ListRootsFunc is nil")
+		}
+		roots, err := adapter.ListRootsFunc(ctx, connInfo)
 		if err != nil {
 			return nil, err
 		}
@@ -86,11 +92,14 @@ func ListFileSystemCatalogChildren(ctx context.Context, fs FileSystemPlugin, con
 		itemTerm = CatalogTermObject
 		itemKind = CatalogKindObject
 	}
-	return listFileSystemCatalogChildren(ctx, fs, connInfo, engineID, parent, parent.StringPath(), itemTerm, itemKind, opts)
+	return listFileSystemCatalogChildren(ctx, adapter, connInfo, engineID, parent, parent.StringPath(), itemTerm, itemKind, opts)
 }
 
-func listFileSystemCatalogChildren(ctx context.Context, fs FileSystemPlugin, connInfo ConnectionInfo, engineID uint, parent CatalogPath, listPath, itemTerm, itemKind string, opts ListOptions) ([]CatalogNode, error) {
-	files, dirs, err := fs.ListDirectory(ctx, connInfo, listPath)
+func listFileSystemCatalogChildren(ctx context.Context, adapter FileSystemCatalogAdapter, connInfo ConnectionInfo, engineID uint, parent CatalogPath, listPath, itemTerm, itemKind string, opts ListOptions) ([]CatalogNode, error) {
+	if adapter.ListDirectoryFunc == nil {
+		return nil, fmt.Errorf("filesystem catalog adapter ListDirectoryFunc is nil")
+	}
+	files, dirs, err := adapter.ListDirectoryFunc(ctx, connInfo, listPath)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +117,7 @@ func listFileSystemCatalogChildren(ctx context.Context, fs FileSystemPlugin, con
 			},
 		})
 		if opts.Recursive {
-			childNodes, err := listFileSystemCatalogChildren(ctx, fs, connInfo, engineID, dirPath, dir.Path, itemTerm, itemKind, opts)
+			childNodes, err := listFileSystemCatalogChildren(ctx, adapter, connInfo, engineID, dirPath, dir.Path, itemTerm, itemKind, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -136,7 +145,7 @@ func listFileSystemCatalogChildren(ctx context.Context, fs FileSystemPlugin, con
 }
 
 // ResolveFileSystemCatalogPath resolves a catalog path as a container or file item.
-func ResolveFileSystemCatalogPath(ctx context.Context, fs FileSystemPlugin, connInfo ConnectionInfo, engineID uint, path CatalogPath, rootTerm string) (*CatalogNode, error) {
+func ResolveFileSystemCatalogPath(ctx context.Context, adapter FileSystemCatalogAdapter, connInfo ConnectionInfo, engineID uint, path CatalogPath, rootTerm string) (*CatalogNode, error) {
 	if len(path.Segments) == 0 {
 		return &CatalogNode{
 			Name:        "",
@@ -149,7 +158,10 @@ func ResolveFileSystemCatalogPath(ctx context.Context, fs FileSystemPlugin, conn
 
 	last := path.Segments[len(path.Segments)-1]
 	if last.Kind == CatalogKindFile || last.Kind == CatalogKindObject || last.Term == CatalogTermFile || last.Term == CatalogTermObject {
-		meta, err := fs.GetFileMetadata(ctx, connInfo, path.StringPath())
+		if adapter.GetFileMetadataFunc == nil {
+			return nil, fmt.Errorf("filesystem catalog adapter GetFileMetadataFunc is nil")
+		}
+		meta, err := adapter.GetFileMetadataFunc(ctx, connInfo, path.StringPath())
 		if err != nil {
 			return nil, err
 		}
@@ -168,9 +180,12 @@ func ResolveFileSystemCatalogPath(ctx context.Context, fs FileSystemPlugin, conn
 	}, nil
 }
 
-// DescribeFileSystemItem adapts FileSystemPlugin file metadata to ItemMetadataProvider.
-func DescribeFileSystemItem(ctx context.Context, fs FileSystemPlugin, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*ItemMetadata, error) {
-	meta, err := fs.GetFileMetadata(ctx, connInfo, path.StringPath())
+// DescribeFileSystemItem adapts filesystem metadata callback to ItemMetadataProvider.
+func DescribeFileSystemItem(ctx context.Context, adapter FileSystemCatalogAdapter, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*ItemMetadata, error) {
+	if adapter.GetFileMetadataFunc == nil {
+		return nil, fmt.Errorf("filesystem catalog adapter GetFileMetadataFunc is nil")
+	}
+	meta, err := adapter.GetFileMetadataFunc(ctx, connInfo, path.StringPath())
 	if err != nil {
 		return nil, err
 	}

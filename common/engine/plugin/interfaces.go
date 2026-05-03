@@ -97,133 +97,24 @@ type ConnectionPoolPlugin interface {
 	GetDialect() string
 }
 
-// RelationalDBPlugin 关系型数据库插件
-// 包含连接池管理和元数据查询能力
+// RelationalDBPlugin 关系型数据库插件。
+// 真实目录与字段元数据统一由 CatalogProvider / ItemMetadataProvider 暴露；
+// 该接口仅保留 SQL/tabular 引擎的连接池和系统 schema 判断能力。
 type RelationalDBPlugin interface {
 	StoragePlugin
 	ConnectionPoolPlugin
-
-	// ===== 元数据查询方法（直接定义，不需要单独的 MetadataPlugin 接口）=====
-
-	// ListSchemas 列出所有Schema（PostgreSQL）或Database（MySQL）
-	// 参数:
-	//   - ctx: 上下文
-	//   - db: GORM数据库实例
-	// 返回: Schema列表
-	ListSchemas(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
-
-	// ListTables 列出指定Schema下的所有表
-	// 参数:
-	//   - ctx: 上下文
-	//   - db: GORM数据库实例
-	//   - schema: Schema名称
-	// 返回: 表列表
-	ListTables(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
-
-	// ListColumns 列出指定表的所有列
-	// 参数:
-	//   - ctx: 上下文
-	//   - db: GORM数据库实例
-	//   - schema: Schema名称
-	//   - table: 表名
-	// 返回: 列列表
-	ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
-
-	// GetTableRowCount 获取表的行数（精确或估算）
-	// 参数:
-	//   - ctx: 上下文
-	//   - db: GORM数据库实例
-	//   - schema: Schema名称
-	//   - table: 表名
-	// 返回: 行数
-	GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
 
 	// IsSystemSchema 判断是否为系统 Schema
 	// 不同数据库的系统 Schema 不同，由各插件自己实现
 	// 例如 PostgreSQL: pg_catalog, information_schema
 	//      MySQL: information_schema, mysql, performance_schema
 	IsSystemSchema(schemaName string) bool
-
-	// SchemaNodeType 返回第一层节点的类型名
-	// PostgreSQL 返回 "schema"，MySQL/Doris/ClickHouse 返回 "database"
-	SchemaNodeType() string
 }
 
-// ObjectStoragePlugin 对象存储插件
-// 继承 FileSystemPlugin，同时提供对象存储特有的操作能力
-type ObjectStoragePlugin interface {
-	FileSystemPlugin
-
-	// ===== 对象存储操作方法（直接定义，不需要单独的 ObjectMetadataPlugin 接口）=====
-
-	// ListBuckets 列出所有 Bucket
-	// 参数:
-	//   - ctx: 上下文
-	//   - connInfo: 连接信息
-	// 返回: Bucket列表
-	ListBuckets(ctx context.Context, connInfo ConnectionInfo) ([]BucketInfo, error)
-
-	// ListObjects 列出对象（支持前缀过滤和递归）
-	// 参数:
-	//   - ctx: 上下文
-	//   - connInfo: 连接信息
-	//   - bucket: 存储桶名称
-	//   - prefix: 前缀过滤（可选）
-	//   - recursive: 是否递归列出子目录
-	// 返回: 对象列表
-	ListObjects(ctx context.Context, connInfo ConnectionInfo, bucket, prefix string, recursive bool) ([]ObjectInfo, error)
-
-	// GetObjectMetadata 获取单个对象的元数据
-	// 参数:
-	//   - ctx: 上下文
-	//   - connInfo: 连接信息
-	//   - bucket: 存储桶名称
-	//   - key: 对象键
-	// 返回: 对象信息
-	GetObjectMetadata(ctx context.Context, connInfo ConnectionInfo, bucket, key string) (*ObjectInfo, error)
-
-	// InferContentType 根据对象键推断 MIME 类型
-	// 参数:
-	//   - objectKey: 对象键（文件路径）
-	// 返回: MIME 类型，例如: "application/geo+json", "image/png"
-	InferContentType(objectKey string) string
-
-	// ===== 对象存储特有属性 =====
-
-	// DefaultBucket 返回默认存储桶名称（如果适用）
-	DefaultBucket() string
-
-	// SupportsSSL 是否支持 SSL 连接
-	SupportsSSL() bool
-}
-
-// ============ NoSQL 数据库插件 ============
-
-// NoSQLPlugin NoSQL 数据库插件通用接口（公共基础能力）
-// 仅包含所有 NoSQL 引擎共享的能力；文档/图模型专属能力由子接口承载
-type NoSQLPlugin interface {
-	StoragePlugin
-
-	// ListDatabases 列出所有 Database
-	ListDatabases(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
-
-	// IsSystemDatabase 判断是否为系统 Database
-	IsSystemDatabase(databaseName string) bool
-
-	// CreateClient 创建数据库客户端
-	CreateClient(ctx context.Context, connInfo ConnectionInfo) (interface{}, error)
-
-	// CloseClient 关闭数据库客户端
-	CloseClient(ctx context.Context, client interface{}) error
-}
-
-// DocumentDBPlugin 文档型数据库插件接口（MongoDB 等）
-// 在 NoSQLPlugin 之上增加文档集合查询能力
+// DocumentDBPlugin 文档型数据库专项元数据增强接口。
+// database/collection 列表统一由 CatalogProvider 暴露。
 type DocumentDBPlugin interface {
-	NoSQLPlugin
-
-	// ListCollections 列出指定 Database 下的所有 Collection
-	ListCollections(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
+	StoragePlugin
 
 	// GetCollectionStats 获取 Collection 统计信息
 	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
@@ -374,19 +265,10 @@ type GraphQueryResult struct {
 	GraphData   *GraphData `json:"graph_data,omitempty"`
 }
 
-// GraphDBPlugin 图数据库插件接口
-// 用于支持属性图数据库（Neo4j 及未来的 Amazon Neptune、ArangoDB 等）
-// 在 NoSQLPlugin 之上增加图结构查询能力（关系类型、图 Schema）
+// GraphDBPlugin 图数据库专项元数据增强接口。
+// database/label/relationship 列表统一由 CatalogProvider 暴露。
 type GraphDBPlugin interface {
-	NoSQLPlugin
-
-	// ListNodeLabels 列出图数据库中所有节点标签及统计信息
-	// 等价于 NoSQL 中的 ListCollections，但返回图数据库特有的 NodeLabelInfo 类型
-	ListNodeLabels(ctx context.Context, connInfo ConnectionInfo, database string) ([]NodeLabelInfo, error)
-
-	// ListRelationshipTypes 列出图数据库中所有关系类型及连接统计
-	// 图数据库特有：返回每种关系类型的起始/终止节点标签及数量
-	ListRelationshipTypes(ctx context.Context, connInfo ConnectionInfo, database string) ([]RelationshipTypeInfo, error)
+	StoragePlugin
 
 	// GetGraphSchema 获取图数据库完整 Schema（节点标签 + 关系类型 + 连接关系）
 	// 供图可视化和元数据展示使用

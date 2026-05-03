@@ -294,7 +294,7 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    req.EngineID,
 			"storage_type": normalizeStorageType(resource.EngineType),
-			"schema_names": req.SchemaNames,
+			"namespaces":   req.Namespaces,
 			"object_paths": req.ObjectPaths,
 			"scan_depth":   req.ScanDepth,
 			"token":        token,
@@ -340,7 +340,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		storageType, _ = exec.ExecutionConfig["storage_type"].(string)
 		scanDepth, _ = exec.ExecutionConfig["scan_depth"].(string)
 		token, _ = exec.ExecutionConfig["token"].(string)
-		schemaNames = extractSliceFromInterface(exec.ExecutionConfig["schema_names"])
+		schemaNames = extractSliceFromInterface(exec.ExecutionConfig["namespaces"])
 		objectPaths = extractSliceFromInterface(exec.ExecutionConfig["object_paths"])
 	}
 
@@ -526,7 +526,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 	}
 
 	params := models.JSONMap{
-		"schema_names": req.SchemaNames,
+		"namespaces":   req.Namespaces,
 		"object_paths": req.ObjectPaths,
 		"scan_depth":   req.ScanDepth,
 	}
@@ -572,7 +572,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 	}
 
 	params := models.JSONMap{
-		"schema_names": req.SchemaNames,
+		"namespaces":   req.Namespaces,
 		"object_paths": req.ObjectPaths,
 		"scan_depth":   req.ScanDepth,
 	}
@@ -642,7 +642,7 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    task.EngineID,
 			"storage_type": storageType,
-			"schema_names": extractJSONMapSlice(task.Parameters, "schema_names"),
+			"namespaces":   extractJSONMapSlice(task.Parameters, "namespaces"),
 			"object_paths": extractJSONMapSlice(task.Parameters, "object_paths"),
 			"scan_depth":   extractJSONMapString(task.Parameters, "scan_depth", "deep"),
 		},
@@ -718,7 +718,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    task.EngineID,
 			"storage_type": storageType,
-			"schema_names": targetSchemas,
+			"namespaces":   targetSchemas,
 			"object_paths": targetPaths,
 			"scan_depth":   "deep",
 		},
@@ -754,7 +754,7 @@ func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]stri
 		return []string{}, []string{}
 	}
 
-	allSchemas := extractJSONMapSlice(task.Parameters, "schema_names")
+	allSchemas := extractJSONMapSlice(task.Parameters, "namespaces")
 	allPaths := extractJSONMapSlice(task.Parameters, "object_paths")
 
 	var independentTasks []models.ScanTask
@@ -768,7 +768,7 @@ func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]stri
 	scheduledPaths := make(map[string]bool)
 
 	for _, t := range independentTasks {
-		for _, s := range extractJSONMapSlice(t.Parameters, "schema_names") {
+		for _, s := range extractJSONMapSlice(t.Parameters, "namespaces") {
 			scheduledSchemas[s] = true
 		}
 		for _, p := range extractJSONMapSlice(t.Parameters, "object_paths") {
