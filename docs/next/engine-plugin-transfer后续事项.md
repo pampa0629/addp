@@ -2,7 +2,7 @@
 
 更新时间：2026-05-03 20:30 CST
 
-本文单独记录 Transfer 模块与 engine plugin 接口体系迁移相关的完成情况、已知问题和后续修复建议。非 Transfer 主线继续参考 `docs/next/engine-plugin接口体系迁移计划.md`。
+本文单独记录 Transfer 模块与 engine plugin 接口体系迁移相关的完成情况、已知问题和后续修复建议。非 Transfer 主线迁移已完成，正式规范以 `docs/spec/addp引擎插件接口规范.md` 和 `docs/spec/addp引擎能力声明规范.md` 为准。
 
 ## 已完成内容
 

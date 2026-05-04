@@ -296,9 +296,11 @@ const executeQuery = async () => {
 
     ElMessage.success(t('develop.query.executeSuccess'))
   } catch (error) {
+    const responseError = error.response?.data
+    const errorMessage = responseError?.details || responseError?.detail || responseError?.error || error.message
     executionResult.value = {
       success: false,
-      error: error.response?.data?.error || error.message
+      error: errorMessage
     }
     ElMessage.error(t('develop.query.executeFailed'))
   } finally {

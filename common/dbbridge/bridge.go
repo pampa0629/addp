@@ -221,36 +221,128 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 
 	p, err := plugin.Get(engineType)
 	if err == nil {
-		// 原生查询引擎：插件自带 GenerateSampleQuery
-		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
-			return qp.GenerateSampleQuery(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.SampleQueryOptions{})
+		connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
+
+		// SQL 表格引擎优先通过实时 Catalog 发现真实数据表，避免默认示例生成不可执行的占位 SQL。
+		if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
+			if cp, ok := p.(plugin.CatalogProvider); ok {
+				if q, ok := generateCatalogSampleQuery(sampleCtx, cp, connInfo, engine.ID, engineType); ok {
+					return q, "sql"
+				}
+			}
+			return "SELECT 1", "sql"
 		}
 
-		// 兜底样例仍通过 CatalogProvider 发现第一张可查询表，避免上层直接依赖旧 ListSchemas/ListTables。
+		// 原生查询引擎（MongoDB/Neo4j 等）：插件自带 GenerateSampleQuery。
+		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
+			return qp.GenerateSampleQuery(sampleCtx, connInfo, plugin.SampleQueryOptions{})
+		}
+
+		// 非 QueryRuntime 的表格引擎兜底仍通过 CatalogProvider 发现第一张可查询表。
 		if cp, ok := p.(plugin.CatalogProvider); ok {
-			namespaces, catalogErr := cp.ListChildren(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.CatalogPath{
-				Version:  plugin.CatalogPathVersion,
-				EngineID: engine.ID,
-			}, plugin.ListOptions{})
-			if catalogErr == nil {
-				for _, namespace := range namespaces {
-					if !namespace.IsContainer {
-						continue
-					}
-					items, itemErr := cp.ListChildren(sampleCtx, plugin.ConnectionInfo(engine.ConnectionInfo), namespace.Path, plugin.ListOptions{})
-					if itemErr == nil && len(items) > 0 {
-						for _, item := range items {
-							if item.IsItem {
-								return fmt.Sprintf("SELECT *\nFROM %s.%s\nLIMIT 10", namespace.Name, item.Name), "sql"
-							}
-						}
-					}
-				}
+			if q, ok := generateCatalogSampleQuery(sampleCtx, cp, connInfo, engine.ID, engineType); ok {
+				return q, "sql"
 			}
 		}
 	}
 
 	return "SELECT 1", "sql"
+}
+
+func generateCatalogSampleQuery(ctx context.Context, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, bool) {
+	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+	}, plugin.ListOptions{})
+	if err != nil {
+		return "", false
+	}
+
+	var fallbackNamespace, fallbackItem string
+	for _, namespace := range namespaces {
+		if !namespace.IsContainer {
+			continue
+		}
+
+		items, err := cp.ListChildren(ctx, connInfo, namespace.Path, plugin.ListOptions{})
+		if err != nil {
+			continue
+		}
+
+		for _, item := range items {
+			if !item.IsItem {
+				continue
+			}
+
+			if fallbackItem == "" {
+				fallbackNamespace = namespace.Name
+				fallbackItem = item.Name
+			}
+			if rowCountStat(item.Stats) > 0 {
+				return tableSampleSQL(engineType, namespace.Name, item.Name), true
+			}
+		}
+	}
+
+	if fallbackItem != "" {
+		return tableSampleSQL(engineType, fallbackNamespace, fallbackItem), true
+	}
+	return "", false
+}
+
+func tableSampleSQL(engineType, namespace, table string) string {
+	return fmt.Sprintf("SELECT *\nFROM %s.%s\nLIMIT 10", quoteSQLIdentifier(engineType, namespace), quoteSQLIdentifier(engineType, table))
+}
+
+func quoteSQLIdentifier(engineType, identifier string) string {
+	switch strings.ToLower(engineType) {
+	case "mysql", "doris", "clickhouse", "spark", "spark_sql":
+		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+	default:
+		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+	}
+}
+
+func rowCountStat(stats map[string]interface{}) int64 {
+	if stats == nil {
+		return 0
+	}
+
+	switch value := stats["row_count"].(type) {
+	case int:
+		return int64(value)
+	case int8:
+		return int64(value)
+	case int16:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case int64:
+		return value
+	case uint:
+		return int64(value)
+	case uint8:
+		return int64(value)
+	case uint16:
+		return int64(value)
+	case uint32:
+		return int64(value)
+	case uint64:
+		if value > uint64(^uint64(0)>>1) {
+			return 0
+		}
+		return int64(value)
+	case float32:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case string:
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 // ExecuteQuery 统一查询执行入口（适用于所有引擎类型）
