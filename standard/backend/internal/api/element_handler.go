@@ -25,7 +25,7 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listelements [get]
+// @Router /elements [get]
 // @Security BearerAuth
 func (h *ElementHandler) ListElements(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -75,7 +75,7 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createelement [get]
+// @Router /elements [post]
 // @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
@@ -100,7 +100,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getelement [get]
+// @Router /elements/{id} [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -123,7 +123,7 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updateelement [get]
+// @Router /elements/{id} [put]
 // @Security BearerAuth
 func (h *ElementHandler) UpdateElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -154,7 +154,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deleteelement [get]
+// @Router /elements/{id} [delete]
 // @Security BearerAuth
 func (h *ElementHandler) DeleteElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -176,7 +176,7 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /approveelement [get]
+// @Router /elements/{id}/approve [post]
 // @Security BearerAuth
 func (h *ElementHandler) ApproveElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -200,7 +200,7 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getelementqualityrules [get]
+// @Router /elements/{id}/quality-rules [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

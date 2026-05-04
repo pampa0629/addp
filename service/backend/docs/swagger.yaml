@@ -86,6 +86,148 @@ definitions:
       type:
         type: string
     type: object
+  github_com_addp_service_internal_models.CreateGraphQueryServiceRequest:
+    properties:
+      config_type:
+        enum:
+        - label
+        - cypher
+        type: string
+      cypher_query:
+        type: string
+      data_config:
+        additionalProperties: true
+        type: object
+      database_name:
+        type: string
+      description:
+        type: string
+      engine_id:
+        type: integer
+      keywords:
+        items:
+          type: string
+        type: array
+      max_records:
+        maximum: 5000
+        minimum: 1
+        type: integer
+      node_label:
+        type: string
+      parameters:
+        description: cypher 模式下的参数定义（可选，不传则自动从 Cypher 中提取）
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ParameterDef'
+        type: array
+      public_access:
+        type: boolean
+      service_name:
+        type: string
+      title:
+        type: string
+    required:
+    - config_type
+    - engine_id
+    - service_name
+    - title
+    type: object
+  github_com_addp_service_internal_models.CreateQueryServiceRequest:
+    properties:
+      config_type:
+        description: 配置方式（table 或 sql）
+        enum:
+        - table
+        - sql
+        type: string
+      data_config:
+        additionalProperties: true
+        description: 数据配置（可选，系统会自动检测）
+        type: object
+      description:
+        type: string
+      engine_id:
+        description: 存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）
+        type: integer
+      keywords:
+        items:
+          type: string
+        type: array
+      max_features:
+        maximum: 10000
+        minimum: 1
+        type: integer
+      protocols:
+        additionalProperties: true
+        description: 协议配置（可选，使用默认值）
+        type: object
+      public_access:
+        description: 访问控制
+        type: boolean
+      schema_name:
+        description: 表配置字段（config_type='table'时需要）
+        type: string
+      service_name:
+        type: string
+      sql_query:
+        description: SQL配置字段（config_type='sql'时需要）
+        type: string
+      table_name:
+        type: string
+      title:
+        type: string
+    required:
+    - config_type
+    - service_name
+    - title
+    type: object
+  github_com_addp_service_internal_models.CreateRegisteredServiceRequest:
+    properties:
+      auth_config:
+        additionalProperties: true
+        type: object
+      auth_type:
+        description: 认证配置（可选）
+        enum:
+        - none
+        - basic
+        - bearer
+        - api_key
+        type: string
+      auto_refresh_metadata:
+        description: 是否自动刷新元数据
+        type: boolean
+      description:
+        type: string
+      endpoint_url:
+        description: 服务端点
+        type: string
+      health_check_url:
+        description: 健康检查端点（可选）
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      service_name:
+        type: string
+      service_type:
+        description: 服务类型
+        enum:
+        - wms
+        - wfs
+        - wmts
+        - ogc_api
+        - xyz
+        - rest
+        type: string
+      title:
+        type: string
+    required:
+    - endpoint_url
+    - service_name
+    - service_type
+    - title
+    type: object
   github_com_addp_service_internal_models.CreateTileLayerRequest:
     properties:
       description:
@@ -191,6 +333,171 @@ definitions:
       total_count:
         type: integer
     type: object
+  github_com_addp_service_internal_models.GraphQueryExecuteRequest:
+    properties:
+      page:
+        description: 分页（两种模式均支持）
+        type: integer
+      page_size:
+        type: integer
+      parameters:
+        additionalProperties: true
+        description: |-
+          Cypher 模式：用户提供的参数值（对应 $paramName 占位符）
+          Label 模式：用于过滤的属性条件（属性名 → 值）
+        type: object
+    type: object
+  github_com_addp_service_internal_models.GraphQueryResponse:
+    properties:
+      columns:
+        description: 表格格式（result_type = table | both）
+        items:
+          type: string
+        type: array
+      graph_data:
+        description: 图格式（result_type = graph | both）
+      has_more:
+        type: boolean
+      page:
+        type: integer
+      page_size:
+        type: integer
+      rows:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      rows_count:
+        description: 通用
+        type: integer
+      total_count:
+        description: 分页（label 模式提供）
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.HealthCheckResult:
+    properties:
+      checked_at:
+        type: string
+      message:
+        type: string
+      response_time:
+        description: 响应时间（毫秒）
+        type: integer
+      service_id:
+        type: integer
+      service_name:
+        type: string
+      status:
+        description: healthy, unhealthy, error
+        type: string
+      status_code:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.ParameterDef:
+    properties:
+      default: {}
+      description:
+        type: string
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        description: string | integer | float | boolean
+        type: string
+    type: object
+  github_com_addp_service_internal_models.RefreshMetadataRequest:
+    properties:
+      force:
+        description: 是否强制刷新（即使最近刚刷新过）
+        type: boolean
+    type: object
+  github_com_addp_service_internal_models.RegisteredServiceDTO:
+    properties:
+      auth_type:
+        description: 认证配置（不返回敏感信息）
+        type: string
+      created_at:
+        type: string
+      created_by:
+        description: 审计
+        type: integer
+      description:
+        type: string
+      endpoint_url:
+        type: string
+      endpoints:
+        additionalProperties:
+          type: string
+        description: 服务端点
+        type: object
+      error_message:
+        type: string
+      has_auth_config:
+        description: 是否配置了认证信息
+        type: boolean
+      health_check_url:
+        type: string
+      id:
+        type: integer
+      keywords:
+        items:
+          type: string
+        type: array
+      last_checked_at:
+        type: string
+      layers:
+        description: 图层信息
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.RegisteredServiceLayerDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        description: 元数据
+        type: object
+      service_name:
+        type: string
+      service_type:
+        type: string
+      status:
+        description: 状态
+        type: string
+      tenant_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.RegisteredServiceLayerDTO:
+    properties:
+      bbox:
+        additionalProperties: true
+        type: object
+      created_at:
+        type: string
+      crs:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      geometry_type:
+        type: string
+      id:
+        type: integer
+      layer_name:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      service_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_service_internal_models.TileServiceDTO:
     properties:
       created_at:
@@ -255,6 +562,99 @@ definitions:
       title:
         type: string
       updated_at:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.UpdateGraphQueryServiceRequest:
+    properties:
+      cypher_query:
+        type: string
+      data_config:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      max_records:
+        maximum: 5000
+        minimum: 1
+        type: integer
+      public_access:
+        type: boolean
+      status:
+        enum:
+        - active
+        - inactive
+        - error
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.UpdateQueryServiceRequest:
+    properties:
+      data_config:
+        additionalProperties: true
+        description: 数据配置更新
+        type: object
+      description:
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      max_features:
+        maximum: 10000
+        minimum: 1
+        type: integer
+      protocols:
+        additionalProperties: true
+        description: 协议配置更新
+        type: object
+      public_access:
+        description: 访问控制更新
+        type: boolean
+      status:
+        description: 状态更新
+        enum:
+        - active
+        - inactive
+        - error
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.UpdateRegisteredServiceRequest:
+    properties:
+      auth_config:
+        additionalProperties: true
+        type: object
+      auth_type:
+        description: 认证配置更新
+        enum:
+        - none
+        - basic
+        - bearer
+        - api_key
+        type: string
+      description:
+        type: string
+      health_check_url:
+        description: 健康检查URL更新
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      status:
+        description: 状态更新
+        enum:
+        - active
+        - inactive
+        - error
+        type: string
+      title:
         type: string
     type: object
   github_com_addp_service_internal_models.UpdateTileLayerRequest:
@@ -443,12 +843,157 @@ definitions:
       upperCorner:
         type: string
     type: object
+  internal_api.serviceEndpointResp:
+    properties:
+      endpoints:
+        additionalProperties:
+          type: string
+        type: object
+      service_type:
+        type: string
+      title:
+        type: string
+    type: object
 host: localhost:8086
 info:
   contact: {}
   title: ADDP Service API
   version: "1.0"
 paths:
+  /api/gquery/{serviceName}:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 执行请求 | Execute request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.GraphQueryExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.GraphQueryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行图查询服务 | Execute graph query service
+      tags:
+      - GraphQueryExecution
+  /api/query/{serviceName}:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - default: json
+        description: 返回格式 (json,csv,geojson) | Response format (json,csv,geojson)
+        in: query
+        name: format
+        type: string
+      - description: 过滤条件 | Filter
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行查询服务 | Execute query service
+      tags:
+      - QueryExecution
+  /assets/discoverable:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 列出可发现资产 | List discoverable assets
+      tags:
+      - Service
   /data/aggregate:
     post:
       consumes:
@@ -523,6 +1068,38 @@ paths:
       summary: 获取表结构 | Get table structure
       tags:
       - DataService
+  /endpoints:
+    get:
+      parameters:
+      - description: 服务引用 | Service reference
+        in: query
+        name: ref
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.serviceEndpointResp'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取服务端点 | Get service endpoints
+      tags:
+      - Service
   /engines:
     get:
       produces:
@@ -539,6 +1116,465 @@ paths:
         data services
       tags:
       - Engines
+  /engines/{engine_id}/tree:
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取引擎元数据树 | Get engine metadata tree
+      tags:
+      - 数据源 | Data Sources
+  /graph:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 搜索词 | Search
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 图查询服务列表 | List graph query services
+      tags:
+      - GraphQueryService
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CreateGraphQueryServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建图查询服务 | Create graph query service
+      tags:
+      - GraphQueryService
+  /graph/{id}:
+    delete:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除图查询服务 | Delete graph query service
+      tags:
+      - GraphQueryService
+    get:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取图查询服务 | Get graph query service
+      tags:
+      - GraphQueryService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateGraphQueryServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新图查询服务 | Update graph query service
+      tags:
+      - GraphQueryService
+  /nodes/{node_id}/children:
+    get:
+      parameters:
+      - description: 节点ID | Node ID
+        in: path
+        name: node_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取节点子项 | Get node children
+      tags:
+      - 数据源 | Data Sources
+  /ogc/features/{serviceName}:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Landing Page | Landing Page
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: Not Implemented
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: OGC API Features Landing Page | OGC API Features Landing Page
+      tags:
+      - OGC Features
+  /ogc/features/{serviceName}/collections:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Collections | Collections
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: Not Implemented
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: OGC API Features Collections | OGC API Features Collections
+      tags:
+      - OGC Features
+  /ogc/features/{serviceName}/collections/{collectionId}/items:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 集合ID | Collection ID
+        in: path
+        name: collectionId
+        required: true
+        type: string
+      - default: 10
+        description: 返回数量 | Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: 偏移量 | Offset
+        in: query
+        name: offset
+        type: integer
+      - description: 空间范围 | Bounding box
+        in: query
+        name: bbox
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection | GeoJSON FeatureCollection
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: Not Implemented
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: OGC API Features Items | OGC API Features Items
+      tags:
+      - OGC Features
+  /ogc/features/{serviceName}/collections/{collectionId}/items/{featureId}:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 集合ID | Collection ID
+        in: path
+        name: collectionId
+        required: true
+        type: string
+      - description: 要素ID | Feature ID
+        in: path
+        name: featureId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: GeoJSON Feature | GeoJSON Feature
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: Not Implemented
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: OGC API Features Item | OGC API Features Item
+      tags:
+      - OGC Features
+  /ogc/features/{serviceName}/conformance:
+    get:
+      parameters:
+      - description: 服务名称 | Service name
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Conformance declaration | Conformance declaration
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: Not Implemented
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: OGC API Features Conformance | OGC API Features Conformance
+      tags:
+      - OGC Features
   /ogc/tiles/{serviceName}:
     get:
       parameters:
@@ -682,6 +1718,559 @@ paths:
       summary: 获取单个瓦片 | Get single tile
       tags:
       - OGC Tiles
+  /query:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Limit
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索词 | Search
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询服务列表 | List query services
+      tags:
+      - QueryService
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CreateQueryServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建查询服务 | Create query service
+      tags:
+      - QueryService
+  /query/{id}:
+    delete:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除查询服务 | Delete query service
+      tags:
+      - QueryService
+    get:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取查询服务详情 | Get query service
+      tags:
+      - QueryService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateQueryServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新查询服务 | Update query service
+      tags:
+      - QueryService
+  /registered:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Limit
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索词 | Search
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 注册服务列表 | List registered services
+      tags:
+      - RegisteredService
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CreateRegisteredServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建注册服务 | Create registered service
+      tags:
+      - RegisteredService
+  /registered/{id}:
+    delete:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除注册服务 | Delete registered service
+      tags:
+      - RegisteredService
+    get:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取注册服务详情 | Get registered service
+      tags:
+      - RegisteredService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateRegisteredServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新注册服务 | Update registered service
+      tags:
+      - RegisteredService
+  /registered/{id}/health:
+    post:
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.HealthCheckResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 检查注册服务健康状态 | Check registered service health
+      tags:
+      - RegisteredService
+  /registered/{id}/refresh:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 刷新请求 | Refresh request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.RefreshMetadataRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新注册服务元数据 | Refresh registered service metadata
+      tags:
+      - RegisteredService
+  /sql/spatial-metadata:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: SQL 空间元数据请求 | SQL spatial metadata request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 SQL 空间元数据 | Get SQL spatial metadata
+      tags:
+      - 数据源 | Data Sources
+  /tables/metadata:
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: Schema
+        in: query
+        name: schema
+        required: true
+        type: string
+      - description: 表名 | Table
+        in: query
+        name: table
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取表元数据 | Get table metadata
+      tags:
+      - 数据源 | Data Sources
+  /tables/spatial-metadata:
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: Schema
+        in: query
+        name: schema
+        required: true
+        type: string
+      - description: 表名 | Table
+        in: query
+        name: table
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取表空间元数据 | Get table spatial metadata
+      tags:
+      - 数据源 | Data Sources
   /tile:
     get:
       parameters:
@@ -726,65 +2315,7 @@ paths:
       summary: 创建瓦片服务 | Create tile service
       tags:
       - TileService
-  /tile/{id}:
-    delete:
-      parameters:
-      - description: 服务 ID | Service ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: 删除成功 | Deleted successfully
-      summary: 删除瓦片服务 | Delete tile service
-      tags:
-      - TileService
-    get:
-      parameters:
-      - description: 服务 ID | Service ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 瓦片服务详情 | Tile service details
-          schema:
-            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 获取瓦片服务详情 | Get tile service details
-      tags:
-      - TileService
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: 服务 ID | Service ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 更新瓦片服务请求 | Update tile service request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateTileServiceRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 已更新的瓦片服务 | Updated tile service
-          schema:
-            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
-      summary: 更新瓦片服务 | Update tile service
-      tags:
-      - TileService
-  /tile/{serviceId}/layers:
+  /tile-layers/{serviceId}:
     get:
       parameters:
       - description: 服务 ID | Service ID
@@ -829,7 +2360,7 @@ paths:
       summary: 添加图层 | Add layer
       tags:
       - TileService
-  /tile/{serviceId}/layers/{layerId}:
+  /tile-layers/{serviceId}/{layerId}:
     delete:
       parameters:
       - description: 服务 ID | Service ID
@@ -900,6 +2431,64 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
       summary: 更新图层 | Update layer
+      tags:
+      - TileService
+  /tile/{id}:
+    delete:
+      parameters:
+      - description: 服务 ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 删除成功 | Deleted successfully
+      summary: 删除瓦片服务 | Delete tile service
+      tags:
+      - TileService
+    get:
+      parameters:
+      - description: 服务 ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 瓦片服务详情 | Tile service details
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 获取瓦片服务详情 | Get tile service details
+      tags:
+      - TileService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务 ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新瓦片服务请求 | Update tile service request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateTileServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的瓦片服务 | Updated tile service
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 更新瓦片服务 | Update tile service
       tags:
       - TileService
   /tile/by-name/{serviceName}:

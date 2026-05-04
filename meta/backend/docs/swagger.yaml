@@ -1,10 +1,280 @@
 basePath: /api/v1/meta
+definitions:
+  github_com_addp_meta_internal_models.FieldInfo:
+    properties:
+      data_type:
+        type: string
+      is_primary_key:
+        type: boolean
+      name:
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.MetaItemLite:
+    properties:
+      attributes:
+        additionalProperties: true
+        type: object
+      data_updated_at:
+        type: string
+      engine_id:
+        type: integer
+      full_name:
+        type: string
+      id:
+        type: integer
+      item_type:
+        type: string
+      name:
+        type: string
+      node_id:
+        type: integer
+      row_count:
+        type: integer
+      size_bytes:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
+  github_com_addp_meta_internal_models.MetaNodeLite:
+    properties:
+      attributes:
+        additionalProperties: true
+        type: object
+      depth:
+        type: integer
+      engine_id:
+        type: integer
+      full_name:
+        type: string
+      id:
+        type: integer
+      item_count:
+        type: integer
+      name:
+        type: string
+      node_type:
+        type: string
+      parent_node_id:
+        type: integer
+      path:
+        type: string
+      scan_status:
+        type: string
+      scanned_at:
+        type: string
+      tenant_id:
+        type: integer
+      total_size_bytes:
+        type: integer
+    type: object
+  github_com_addp_meta_internal_models.MetadataTreeResponse:
+    properties:
+      child_nodes:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+        type: array
+      top_nodes:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+        type: array
+    type: object
+  github_com_addp_meta_internal_models.ObjectNode:
+    properties:
+      file_type:
+        type: string
+      last_modified:
+        type: string
+      name:
+        type: string
+      object_count:
+        type: integer
+      path:
+        type: string
+      size_bytes:
+        type: integer
+      type:
+        description: bucket/prefix/object
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.ScanRequest:
+    properties:
+      engine_id:
+        description: 资源ID
+        type: integer
+      namespaces:
+        description: 要扫描的命名空间列表（空则全部）
+        items:
+          type: string
+        type: array
+      object_paths:
+        description: 对象存储/文件系统选择的路径
+        items:
+          type: string
+        type: array
+      scan_depth:
+        description: basic/deep/full
+        type: string
+      scan_type:
+        description: manual/auto/scheduled
+        type: string
+    required:
+    - engine_id
+    type: object
+  github_com_addp_meta_internal_models.ScanResponse:
+    properties:
+      duration_ms:
+        type: integer
+      fields_scanned:
+        type: integer
+      items_scanned:
+        type: integer
+      message:
+        type: string
+      namespaces_scanned:
+        type: integer
+      started_at:
+        type: string
+      status:
+        description: success/failed
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.ScanTaskUpsertRequest:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      name:
+        type: string
+      namespaces:
+        items:
+          type: string
+        type: array
+      object_paths:
+        items:
+          type: string
+        type: array
+      scan_depth:
+        type: string
+      schedule:
+        description: Cron 表达式，空字符串表示手动执行
+        type: string
+    required:
+    - engine_id
+    - name
+    type: object
+  github_com_addp_meta_internal_models.SpatialMetadataResponse:
+    properties:
+      extent:
+        description: '[minLng, minLat, maxLng, maxLat]'
+        items:
+          type: number
+        type: array
+      extent_srid:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.FieldInfo'
+        type: array
+      geometry_column:
+        type: string
+      geometry_types:
+        description: 几何类型列表，如 ["ST_MultiPolygon"]
+        items:
+          type: string
+        type: array
+      primary_key:
+        type: string
+      row_count:
+        description: 表记录数（从 meta_item.row_count 获取）
+        type: integer
+      srid:
+        type: integer
+    type: object
 host: localhost:8082
 info:
   contact: {}
   title: ADDP Meta API
   version: "1.0"
 paths:
+  /assets/discoverable:
+    get:
+      description: 返回当前租户下已扫描完成的数据项，供 Asset 模块自动发现注册 | List scanned metadata items
+        for Asset discovery
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 可发现资产列表 | Discoverable assets
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可发现资产 | List discoverable assets
+      tags:
+      - Meta
+  /cache/engines/{engine_id}:
+    delete:
+      description: 清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache
+      parameters:
+      - description: 存储引擎ID或all | Engine ID or all
+        in: path
+        name: engine_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 清除结果 | Clear result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 清除引擎缓存 | Clear engine cache
+      tags:
+      - Meta Cache
+  /cache/refresh:
+    post:
+      description: 清除并重新预加载资源缓存 | Clear and preload resource cache
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 刷新结果 | Refresh result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新资源缓存 | Refresh resource cache
+      tags:
+      - Meta Cache
   /engines:
     get:
       description: 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for
@@ -25,6 +295,389 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取引擎列表 | Get engine list
+      tags:
+      - Meta
+  /engines/{engine_id}/items:
+    get:
+      description: 获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 命名空间 | Namespace
+        in: query
+        name: namespace
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项列表 | Items
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+            type: array
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出引擎数据项 | List engine items
+      tags:
+      - Meta Query
+  /engines/{engine_id}/items/fields:
+    get:
+      description: 按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and
+        item name
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 命名空间 | Namespace
+        in: query
+        name: namespace
+        type: string
+      - description: 数据项名称 | Item name
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: 是否返回详细字段 | Include details
+        in: query
+        name: include_details
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 字段信息 | Fields
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按名称获取数据项字段 | Get item fields by name
+      tags:
+      - Meta Query
+  /engines/{engine_id}/items/spatial:
+    get:
+      description: 按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace
+        and item name
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 命名空间 | Namespace
+        in: query
+        name: namespace
+        type: string
+      - description: 数据项名称 | Item name
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 空间元数据 | Spatial metadata
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 空间元数据不存在 | Spatial metadata not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按名称获取空间元数据 | Get spatial metadata by name
+      tags:
+      - Meta Query
+  /engines/{engine_id}/storage/nodes:
+    get:
+      description: 迁移期接口：分级列出引擎实时 catalog 节点。新调用方应使用 System /engines/{id}/catalog/children；Meta
+        长期只提供扫描后元数据快照。| Transitional API for live catalog nodes. New callers should
+        use System /engines/{id}/catalog/children.
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: Catalog 路径 | Catalog path
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 节点列表 | Node list
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_meta_internal_models.ObjectNode'
+            type: array
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出实时 catalog 节点（迁移期）| List live catalog nodes (transitional)
+      tags:
+      - Meta
+  /engines/{engine_id}/tree:
+    get:
+      description: 获取指定引擎的完整元数据树 | Get metadata tree for an engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 元数据树 | Metadata tree
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetadataTreeResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取元数据树 | Get metadata tree
+      tags:
+      - Meta Query
+  /items/{item_id}:
+    get:
+      description: 按数据项 ID 获取元数据项详情 | Get metadata item detail by ID
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项详情 | Item detail
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据项不存在 | Item not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据项详情 | Get item detail
+      tags:
+      - Meta Query
+  /items/{item_id}/fields:
+    get:
+      description: 按数据项 ID 获取字段详情 | Get item field details by item ID
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 字段详情 | Field details
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据项不存在 | Item not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按 ID 获取数据项字段 | Get item fields by ID
+      tags:
+      - Meta Query
+  /items/{item_id}/spatial:
+    get:
+      description: 按数据项 ID 获取空间元数据 | Get spatial metadata by item ID
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 空间元数据 | Spatial metadata
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 空间元数据不存在 | Spatial metadata not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按 ID 获取空间元数据 | Get spatial metadata by ID
+      tags:
+      - Meta Query
+  /items/by-path:
+    get:
+      description: 按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and
+        path
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: Bucket或顶层命名空间 | Bucket or namespace
+        in: query
+        name: bucket
+        required: true
+        type: string
+      - description: 数据项路径 | Item path
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项详情 | Item detail
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据项不存在 | Item not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按路径查询数据项 | Query item by path
+      tags:
+      - Meta Query
+  /metadata/extract:
+    post:
+      consumes:
+      - application/octet-stream
+      description: 按需读取请求体内容并提取对象深度元数据 | Extract object metadata from request body
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 对象路径 | Object key
+        in: query
+        name: object_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 对象元数据 | Object metadata
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提取对象元数据 | Extract object metadata
       tags:
       - Meta
   /metadata/object:
@@ -65,25 +718,212 @@ paths:
       summary: 获取对象元数据 | Get object metadata
       tags:
       - Meta
-  /object-storage/{engine_id}/nodes:
+  /nodes/{node_id}:
     get:
-      description: 分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes
-        (Bucket/directory/file)
+      description: 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID
+      parameters:
+      - description: 节点ID | Node ID
+        in: path
+        name: node_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 节点详情 | Node detail
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 节点不存在 | Node not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取节点详情 | Get node detail
+      tags:
+      - Meta Query
+  /nodes/{node_id}/children:
+    get:
+      description: 获取指定节点的直接子节点 | Get direct children of a metadata node
+      parameters:
+      - description: 节点ID | Node ID
+        in: path
+        name: node_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 子节点列表 | Children
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+            type: array
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取子节点 | Get node children
+      tags:
+      - Meta Query
+  /nodes/{node_id}/items:
+    get:
+      description: 获取指定节点下的数据项 | Get metadata items under a node
+      parameters:
+      - description: 节点ID | Node ID
+        in: path
+        name: node_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项列表 | Items
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+            type: array
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取节点数据项 | Get node items
+      tags:
+      - Meta Query
+  /nodes/by-path:
+    get:
+      description: 按引擎和路径查询元数据节点 | Query metadata node by engine and path
       parameters:
       - description: 存储引擎ID | Engine ID
-        in: path
+        in: query
         name: engine_id
         required: true
         type: integer
-      - description: 路径前缀 | Path prefix
+      - description: 节点路径 | Node path
         in: query
         name: path
+        required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: 节点列表 | Node list
+          description: 节点详情 | Node detail
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 节点不存在 | Node not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按路径查询节点 | Query node by path
+      tags:
+      - Meta Query
+  /scan/auto:
+    post:
+      description: 扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned
+        for current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描结果 | Scan result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 自动扫描未扫描资源 | Auto scan unscanned resources
+      tags:
+      - Meta Scan
+  /scan/engine:
+    post:
+      consumes:
+      - application/json
+      description: 对指定引擎执行元数据扫描 | Execute metadata scan for an engine
+      parameters:
+      - description: 扫描请求 | Scan request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描结果 | Scan result
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ScanResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 扫描指定引擎 | Scan engine
+      tags:
+      - Meta Scan
+  /scan/run/manual:
+    post:
+      consumes:
+      - application/json
+      description: 创建一个异步手动扫描执行记录并入队 | Create and enqueue a manual metadata scan run
+      parameters:
+      - description: 扫描请求 | Scan request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 执行记录 | Execution
           schema:
             additionalProperties: true
             type: object
@@ -102,9 +942,353 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
-      summary: 列出对象存储节点 | List object storage nodes
+      summary: 创建手动扫描运行 | Create manual scan run
+      tags:
+      - Meta Scan
+  /scan/runs:
+    get:
+      description: 分页查询当前租户的扫描运行记录 | List scan executions for current tenant
+      parameters:
+      - description: 任务ID | Task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 执行状态 | Execution status
+        in: query
+        name: status
+        type: string
+      - description: 触发类型 | Trigger type
+        in: query
+        name: trigger_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分页执行记录 | Paged executions
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出扫描运行 | List scan runs
+      tags:
+      - Meta Scan
+  /scan/runs/{run_id}:
+    get:
+      description: 按执行 UUID 获取扫描运行详情 | Get scan execution by UUID
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: run_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行详情 | Execution detail
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 执行不存在 | Execution not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取扫描运行详情 | Get scan run
+      tags:
+      - Meta Scan
+  /scan/runs/{run_id}/cancel:
+    post:
+      description: 按执行 UUID 取消扫描运行 | Cancel scan execution by UUID
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: run_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 取消结果 | Cancel result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 取消扫描运行 | Cancel scan run
+      tags:
+      - Meta Scan
+  /scan/tasks:
+    get:
+      description: 列出当前租户的扫描任务 | List scan tasks for current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描任务列表 | Scan tasks
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出扫描任务 | List scan tasks
+      tags:
+      - Meta Scan
+    post:
+      consumes:
+      - application/json
+      description: 创建一个定时或手动扫描任务 | Create a scheduled or manual scan task
+      parameters:
+      - description: 扫描任务请求 | Scan task request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanTaskUpsertRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 扫描任务 | Scan task
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建扫描任务 | Create scan task
+      tags:
+      - Meta Scan
+  /scan/tasks/{task_id}:
+    delete:
+      description: 删除指定扫描任务 | Delete scan task by ID
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果 | Delete result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除扫描任务 | Delete scan task
+      tags:
+      - Meta Scan
+    put:
+      consumes:
+      - application/json
+      description: 更新扫描任务配置 | Update scan task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 扫描任务请求 | Scan task request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanTaskUpsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描任务 | Scan task
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新扫描任务 | Update scan task
+      tags:
+      - Meta Scan
+  /scan/tasks/{task_id}/trigger:
+    post:
+      description: 立即触发指定扫描任务 | Trigger scan task immediately
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行记录 | Execution
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 触发扫描任务 | Trigger scan task
+      tags:
+      - Meta Scan
+  /stats:
+    get:
+      description: 获取当前租户的元数据项总数 | Get metadata item count for current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 统计信息 | Stats
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取元数据统计 | Get metadata stats
       tags:
       - Meta
 securityDefinitions:

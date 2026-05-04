@@ -27,7 +27,7 @@ func NewMetricHandler(svc *service.MetricService) *MetricHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listcategories [get]
+// @Router /metric-categories [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListCategories(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -43,7 +43,7 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createcategory [get]
+// @Router /metric-categories [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMetricCategoryRequest
@@ -65,7 +65,7 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatecategory [get]
+// @Router /metric-categories/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -92,7 +92,7 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletecategory [get]
+// @Router /metric-categories/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -114,7 +114,7 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listmetrics [get]
+// @Router /metrics [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -162,7 +162,7 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getmetric [get]
+// @Router /metrics/{id} [get]
 // @Security BearerAuth
 func (h *MetricHandler) GetMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -196,7 +196,7 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createmetric [get]
+// @Router /metrics [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	var req models.CreateMetricRequest
@@ -218,7 +218,7 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatemetric [get]
+// @Router /metrics/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -245,7 +245,7 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletemetric [get]
+// @Router /metrics/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -265,7 +265,7 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /approvemetric [get]
+// @Router /metrics/{id}/approve [post]
 // @Security BearerAuth
 func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -286,7 +286,7 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deprecatemetric [get]
+// @Router /metrics/{id}/deprecate [post]
 // @Security BearerAuth
 func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

@@ -24,7 +24,16 @@ func NewDataSourceHandler(systemClient resource.SystemClient, metaClient resourc
 }
 
 // GetEngines 获取存储引擎列表
-// GET /api/transfer/engines?engine_types=postgresql,mysql
+// @Summary 获取存储引擎列表 | List engines
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_types query string false "引擎类型列表 | Engine types"
+// @Param data_source_types query string false "数据源类型列表 | Data source types"
+// @Success 200 {array} map[string]interface{}
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /engines [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	if tenantID == 0 {
@@ -58,7 +67,17 @@ func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 }
 
 // GetEngineTree 获取引擎的元数据树
-// GET /api/transfer/engines/:engine_id/tree?expand_depth=1
+// @Summary 获取引擎元数据树 | Get engine metadata tree
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id path int true "引擎ID | Engine ID"
+// @Param expand_depth query int false "展开深度 | Expand depth" default(1)
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /engines/{engine_id}/tree [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -93,7 +112,15 @@ func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 }
 
 // GetNodeChildren 获取节点的子节点（懒加载）
-// GET /api/transfer/nodes/:node_id/children
+// @Summary 获取节点子节点 | Get node children
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {array} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /nodes/{node_id}/children [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 	nodeIDStr := c.Param("node_id")
 	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
@@ -114,7 +141,17 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 }
 
 // DetectTableMetadata 检测表元数据（几何列检测）
-// GET /api/transfer/tables/metadata?engine_id=1&schema=public&table=users
+// @Summary 检测表元数据 | Detect table metadata
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id query int true "引擎ID | Engine ID"
+// @Param schema query string true "Schema"
+// @Param table query string true "表名 | Table"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tables/metadata [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) DetectTableMetadata(c *gin.Context) {
 	engineIDStr := c.Query("engine_id")
 	if engineIDStr == "" {

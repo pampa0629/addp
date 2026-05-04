@@ -27,7 +27,7 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listdocuments [get]
+// @Router /documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -69,7 +69,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getdocument [get]
+// @Router /documents/{id} [get]
 // @Security BearerAuth
 func (h *DocumentHandler) GetDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -90,7 +90,7 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createdocument [get]
+// @Router /documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	var req models.CreateDocumentRequest
@@ -112,7 +112,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatedocument [get]
+// @Router /documents/{id} [put]
 // @Security BearerAuth
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -139,7 +139,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletedocument [get]
+// @Router /documents/{id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -160,7 +160,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /uploadfile [get]
+// @Router /documents/{id}/upload [post]
 // @Security BearerAuth
 func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -206,7 +206,7 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /downloadfile [get]
+// @Router /documents/{id}/download [get]
 // @Security BearerAuth
 func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -236,7 +236,7 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getmappings [get]
+// @Router /documents/{id}/mappings [get]
 // @Security BearerAuth
 func (h *DocumentHandler) GetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -256,7 +256,7 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /setmappings [get]
+// @Router /documents/{id}/mappings [put]
 // @Security BearerAuth
 func (h *DocumentHandler) SetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -282,7 +282,7 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listdocsbyelement [get]
+// @Router /elements/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -302,7 +302,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listdocsbyglossary [get]
+// @Router /glossaries/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -322,7 +322,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listdocsbymetric [get]
+// @Router /metrics/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -344,7 +344,7 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createandlinkelement [get]
+// @Router /elements/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -369,7 +369,7 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createandlinkglossary [get]
+// @Router /glossaries/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -394,7 +394,7 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createandlinkmetric [get]
+// @Router /metrics/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -421,7 +421,7 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /linkdoctoelement [get]
+// @Router /elements/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -447,7 +447,7 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /linkdoctoglossary [get]
+// @Router /glossaries/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -473,7 +473,7 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /linkdoctometric [get]
+// @Router /metrics/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -501,7 +501,7 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /unlinkdocfromelement [get]
+// @Router /elements/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -525,7 +525,7 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /unlinkdocfromglossary [get]
+// @Router /glossaries/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -549,7 +549,7 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /unlinkdocfrommetric [get]
+// @Router /metrics/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)

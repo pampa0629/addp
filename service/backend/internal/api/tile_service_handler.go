@@ -313,7 +313,7 @@ func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param body body models.CreateTileLayerRequest true "创建图层请求 | Create layer request"
 // @Success 201 {object} models.TileServiceLayerDTO "已创建的图层 | Created layer"
-// @Router /tile/{serviceId}/layers [post]
+// @Router /tile-layers/{serviceId} [post]
 func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceIDStr := c.Param("serviceId")
@@ -348,7 +348,7 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 200 {object} models.TileServiceLayerDTO "图层详情 | Layer details"
-// @Router /tile/{serviceId}/layers/{layerId} [get]
+// @Router /tile-layers/{serviceId}/{layerId} [get]
 func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
@@ -375,7 +375,7 @@ func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 // @Produce json
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Success 200 {object} []models.TileServiceLayerDTO "图层列表 | Layer list"
-// @Router /tile/{serviceId}/layers [get]
+// @Router /tile-layers/{serviceId} [get]
 func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceIDStr := c.Param("serviceId")
@@ -405,7 +405,7 @@ func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Param body body models.UpdateTileLayerRequest true "更新图层请求 | Update layer request"
 // @Success 200 {object} models.TileServiceLayerDTO "已更新的图层 | Updated layer"
-// @Router /tile/{serviceId}/layers/{layerId} [put]
+// @Router /tile-layers/{serviceId}/{layerId} [put]
 func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
@@ -440,7 +440,7 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 204 "删除成功 | Deleted successfully"
-// @Router /tile/{serviceId}/layers/{layerId} [delete]
+// @Router /tile-layers/{serviceId}/{layerId} [delete]
 func (h *TileServiceHandler) DeleteLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")

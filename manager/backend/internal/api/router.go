@@ -7,15 +7,15 @@ import (
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/manager/docs"
+	_ "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
-	_ "github.com/addp/manager/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/manager/docs"
 )
 
 func SetupRouter(
@@ -142,12 +142,12 @@ func SetupRouter(
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 
-		api.GET("/engines", explorerHandler.ListEngines)       // 获取可用引擎列表（只读）
+		api.GET("/engines", explorerHandler.ListEngines) // 获取可用引擎列表（只读）
 		api.GET("/tree/:engine_id", explorerHandler.GetTree)
-		api.GET("/tree/:engine_id/node", explorerHandler.GetNodeChildren)    // 增量加载子节点
-		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)      // 搜索节点
+		api.GET("/tree/:engine_id/node", explorerHandler.GetNodeChildren) // 增量加载子节点
+		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)   // 搜索节点
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
-		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema)  // 图数据库 Schema（节点标签 + 关系类型）
+		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema) // 图数据库 Schema（节点标签 + 关系类型）
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/video-stream", explorerHandler.VideoStream)
 
@@ -167,7 +167,7 @@ func SetupRouter(
 		searchGroup := api.Group("/search")
 		{
 			handler := NewSearchHandler(searchService, historyService)
-			searchGroup.GET("", handler.Search)  // 混合检索（全文 + 向量）
+			searchGroup.GET("", handler.Search) // 混合检索（全文 + 向量）
 			searchGroup.GET("/history", handler.ListHistory)
 			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)
 			searchGroup.DELETE("/history", handler.ClearHistory)

@@ -98,12 +98,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.GET("/items/:item_id", handler.GetItemByID)
 
 		// 统计接口
-		api.GET("/stats", func(c *gin.Context) {
-			tenantID := auth.GetTenantID(c)
-			var itemCount int64
-			db.Table("metadata.meta_item").Where("tenant_id = ?", tenantID).Count(&itemCount)
-			c.JSON(200, gin.H{"total": itemCount})
-		})
+		api.GET("/stats", handler.GetStats)
 
 		// 缓存管理
 		api.DELETE("/cache/engines/:engine_id", handler.ClearResourceCache)

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
-	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -238,7 +238,7 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /executions [get]
+// @Router /orchestrations/{id}/executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -274,6 +274,14 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 }
 
 // ListAllExecutions 列出所有执行记录
+// @Summary 获取所有执行列表 | List all executions
+// @Tags Orchestrator
+// @Produce json
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Router /executions [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 	// TODO: 从 JWT 中提取 tenant_id
 	tenantID := uint(1)
@@ -306,7 +314,7 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /executions/{id} [get]
+// @Router /orch-executions/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -329,7 +337,14 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 }
 
 // ListComputeEngines 列出所有任务提供者（从 System 的 task_providers 表获取）
-// GET /api/compute-engines
+// @Summary 列出计算引擎 | List compute engines
+// @Description 从 System 任务提供者注册表获取可用计算引擎 | List compute engines from task provider registry
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /compute-engines [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -344,8 +359,21 @@ func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
 }
 
 // ListModuleTasks 列出指定模块的任务（动态调用）
-// GET /api/tasks/list?module_name=transfer&page=1&page_size=100
-// GET /api/tasks/list?module=transfer (向后兼容)
+// @Summary 列出模块任务 | List module tasks
+// @Description 动态调用目标模块任务列表接口并标准化返回格式 | Proxy and normalize module task list
+// @Tags Orchestrator
+// @Produce json
+// @Param module_name query string false "模块名 | Module name"
+// @Param module query string false "模块名（兼容）| Module name for compatibility"
+// @Param unique_identifier query string false "任务提供者唯一标识 | Task provider identifier"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(100)
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /tasks/list [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 支持 module_name 和 module 参数(向后兼容)
 	moduleName := c.Query("module_name")
@@ -596,4 +624,3 @@ func replaceTemplateVars(template string, c *gin.Context) string {
 
 	return result
 }
-

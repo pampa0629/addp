@@ -31,6 +31,7 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 //   - target_schema: 目标命名空间（默认 public）
 //   - target_table: 目标数据项名称（可选，默认使用文件名）
 //   - encoding: DBF 编码（可选，默认 UTF-8）
+//
 // @Summary 导入数据文件 | Import data file
 // @Description 上传并导入数据文件（如Shapefile ZIP包）到目标数据库 | Upload and import data files (e.g. Shapefile ZIP) to target database
 // @Tags Manager
@@ -43,7 +44,7 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 // @Param encoding formData string false "DBF编码，默认UTF-8 | DBF encoding, default UTF-8"
 // @Success 202 {object} map[string]interface{} "导入任务已创建 | Import task created"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /importdata [post]
+// @Router /import [post]
 // @Security BearerAuth
 func (h *ImportHandler) ImportData(c *gin.Context) {
 	log := logger.L()

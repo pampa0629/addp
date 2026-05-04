@@ -144,6 +144,27 @@ func ListItems(ctx context.Context, engine *models.Engine, namespace string) ([]
 	return plugin.ListItems(ctx, toPluginEngine(engine), namespace)
 }
 
+// ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
+func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	pluginEngine := toPluginEngine(engine)
+	if parent.Version == "" {
+		parent.Version = plugin.CatalogPathVersion
+	}
+	if parent.EngineID == 0 {
+		parent.EngineID = pluginEngine.ID
+	}
+
+	p, err := plugin.Get(pluginEngine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	catalogProvider, ok := p.(plugin.CatalogProvider)
+	if !ok {
+		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", pluginEngine.EngineType)
+	}
+	return catalogProvider.ListChildren(ctx, pluginEngine.ConnectionInfo, parent, opts)
+}
+
 // DescribeItem 描述 catalog 叶子数据项。
 func DescribeItem(ctx context.Context, engine *models.Engine, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
 	return plugin.DescribeItem(ctx, toPluginEngine(engine), path, opts)

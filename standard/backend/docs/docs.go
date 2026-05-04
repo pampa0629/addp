@@ -15,7 +15,43 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/approveelement": {
+        "/assets/discoverable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AssetDiscoverable"
+                ],
+                "summary": "可发现资产列表 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/client.DiscoverableAsset"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/classifications": {
             "get": {
                 "security": [
                     {
@@ -28,7 +64,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "审批数据元 | Approve data element",
+                "summary": "获取数据分类列表 | List data classifications",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -38,185 +74,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/approveglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "审批业务术语 | Approve glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/approvemetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "审批指标 | Approve metric",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/create": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建维度层级 | Create dimension hierarchy",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createandlinkelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建文档并关联到数据元 | Create and link document to element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createandlinkglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建文档并关联到术语 | Create and link document to glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createandlinkmetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建文档并关联到指标 | Create and link document to metric",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createcategory": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建度量类别 | Create measurement category",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createclassification": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -240,8 +99,8 @@ const docTemplate = `{
                 }
             }
         },
-        "/createcodeitem": {
-            "get": {
+        "/classifications/{id}": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -253,7 +112,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建码值项 | Create code item",
+                "summary": "更新数据分类 | Update data classification",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -263,260 +122,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/createcodeset": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建码值集 | Create code set",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createdocument": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建标准文档 | Create standard document",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createdomain": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建业务域 | Create business domain",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建数据元 | Create data element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建业务术语 | Create glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createlevel": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建层次 | Create hierarchy level",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createmetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建指标 | Create metric",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createunit": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建计量单位 | Create unit",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/delete": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "删除维度层级 | Delete dimension hierarchy",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deletecategory": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "删除度量类别 | Delete measurement category",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deleteclassification": {
-            "get": {
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -540,7 +147,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletecodeitem": {
+        "/code-sets": {
             "get": {
                 "security": [
                     {
@@ -553,7 +160,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除码值项 | Delete code item",
+                "summary": "获取码值集列表 | List code sets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建码值集 | Create code set",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -565,8 +195,54 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletecodeset": {
+        "/code-sets/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取码值集详情 | Get code set detail",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新码值集 | Update code set",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -590,7 +266,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletedocument": {
+        "/code-sets/{id}/items": {
             "get": {
                 "security": [
                     {
@@ -603,7 +279,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除标准文档 | Delete standard document",
+                "summary": "获取码值项列表 | List code items",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建码值项 | Create code item",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -615,7 +314,55 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletedomain": {
+        "/code-sets/{id}/items/{iid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新码值项 | Update code item",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除码值项 | Delete code item",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/dimension-hierarchies": {
             "get": {
                 "security": [
                     {
@@ -628,7 +375,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除业务域 | Delete business domain",
+                "summary": "获取维度层级列表 | List dimension hierarchies",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建维度层级 | Create dimension hierarchy",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -640,7 +410,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deleteelement": {
+        "/dimension-hierarchies/{id}": {
             "get": {
                 "security": [
                     {
@@ -653,7 +423,53 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除数据元 | Delete data element",
+                "summary": "获取维度层级详情 | Get dimension hierarchy detail",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新维度层级 | Update dimension hierarchy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除维度层级 | Delete dimension hierarchy",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -665,7 +481,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deleteglossary": {
+        "/dimension-hierarchies/{id}/levels": {
             "get": {
                 "security": [
                     {
@@ -678,7 +494,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除业务术语 | Delete glossary",
+                "summary": "获取维度层级的层次列表 | List hierarchy levels",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建层次 | Create hierarchy level",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -690,8 +529,31 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletelevel": {
-            "get": {
+        "/dimension-hierarchies/{id}/levels/{lid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新层次 | Update hierarchy level",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -715,7 +577,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deletemetric": {
+        "/documents": {
             "get": {
                 "security": [
                     {
@@ -728,7 +590,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除指标 | Delete metric",
+                "summary": "获取标准文档列表 | List standard documents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建标准文档 | Create standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -740,7 +625,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deleteunit": {
+        "/documents/{id}": {
             "get": {
                 "security": [
                     {
@@ -753,7 +638,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除计量单位 | Delete unit",
+                "summary": "获取标准文档详情 | Get standard document detail",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -763,10 +648,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/deprecateglossary": {
-            "get": {
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -778,7 +661,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "废弃业务术语 | Deprecate glossary",
+                "summary": "更新标准文档 | Update standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -788,10 +671,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/deprecatemetric": {
-            "get": {
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -803,7 +684,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "废弃指标 | Deprecate metric",
+                "summary": "删除标准文档 | Delete standard document",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -815,7 +696,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/downloadfile": {
+        "/documents/{id}/download": {
             "get": {
                 "security": [
                     {
@@ -840,7 +721,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/get": {
+        "/documents/{id}/mappings": {
             "get": {
                 "security": [
                     {
@@ -853,7 +734,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取维度层级详情 | Get dimension hierarchy detail",
+                "summary": "获取文档关联映射 | Get document mappings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "设置文档关联映射 | Set document mappings",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -865,7 +769,32 @@ const docTemplate = `{
                 }
             }
         },
-        "/getcodeitems": {
+        "/documents/{id}/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "上传文档文件 | Upload document file",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/domains": {
             "get": {
                 "security": [
                     {
@@ -878,7 +807,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取码值项列表 | List code items",
+                "summary": "获取业务域列表 | List business domains",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -888,10 +817,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/getcodeset": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -903,7 +830,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取码值集详情 | Get code set detail",
+                "summary": "创建业务域 | Create business domain",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -915,32 +842,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/getdocument": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取标准文档详情 | Get standard document detail",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getdomain": {
+        "/domains/{id}": {
             "get": {
                 "security": [
                     {
@@ -963,9 +865,103 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新业务域 | Update business domain",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除业务域 | Delete business domain",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
-        "/getelement": {
+        "/elements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取数据元列表 | List data elements",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建数据元 | Create data element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/elements/{id}": {
             "get": {
                 "security": [
                     {
@@ -988,9 +984,80 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新数据元 | Update data element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除数据元 | Delete data element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
-        "/getelementmappings": {
+        "/elements/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "审批数据元 | Approve data element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/elements/{id}/documents": {
             "get": {
                 "security": [
                     {
@@ -1003,7 +1070,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取术语关联的数据元 | Get element mappings of glossary",
+                "summary": "查询数据元关联的文档 | List documents by element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建文档并关联到数据元 | Create and link document to element",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1015,7 +1105,57 @@ const docTemplate = `{
                 }
             }
         },
-        "/getelementqualityrules": {
+        "/elements/{id}/documents/link": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "关联已有文档到数据元 | Link document to element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/elements/{id}/documents/{doc_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "解除文档与数据元的关联 | Unlink document from element",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/elements/{id}/quality-rules": {
             "get": {
                 "security": [
                     {
@@ -1040,7 +1180,55 @@ const docTemplate = `{
                 }
             }
         },
-        "/getglossary": {
+        "/glossaries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取业务术语列表 | List glossaries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建业务术语 | Create glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/glossaries/{id}": {
             "get": {
                 "security": [
                     {
@@ -1063,9 +1251,105 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新业务术语 | Update glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除业务术语 | Delete glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
-        "/getmappings": {
+        "/glossaries/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "审批业务术语 | Approve glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/glossaries/{id}/deprecate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "废弃业务术语 | Deprecate glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/glossaries/{id}/documents": {
             "get": {
                 "security": [
                     {
@@ -1078,7 +1362,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取文档关联映射 | Get document mappings",
+                "summary": "查询术语关联的文档 | List documents by glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1088,10 +1372,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/getmetric": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1103,7 +1385,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取指标详情 | Get metric detail",
+                "summary": "创建文档并关联到术语 | Create and link document to glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1115,58 +1397,8 @@ const docTemplate = `{
                 }
             }
         },
-        "/getunit": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取计量单位详情 | Get unit detail",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/linkdoctoelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "关联已有文档到数据元 | Link document to element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/linkdoctoglossary": {
-            "get": {
+        "/glossaries/{id}/documents/link": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1190,7 +1422,32 @@ const docTemplate = `{
                 }
             }
         },
-        "/linkdoctometric": {
+        "/glossaries/{id}/documents/{doc_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "解除文档与术语的关联 | Unlink document from glossary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/glossaries/{id}/elements": {
             "get": {
                 "security": [
                     {
@@ -1203,7 +1460,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "关联已有文档到指标 | Link document to metric",
+                "summary": "获取术语关联的数据元 | Get element mappings of glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1213,10 +1470,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/list": {
-            "get": {
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1228,7 +1483,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取维度层级列表 | List dimension hierarchies",
+                "summary": "设置术语关联的数据元 | Set element mappings of glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1240,257 +1495,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/listcategories": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取度量类别列表 | List measurement categories",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listclassifications": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取数据分类列表 | List data classifications",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listcodesets": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取码值集列表 | List code sets",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdocsbyelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "查询数据元关联的文档 | List documents by element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdocsbyglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "查询术语关联的文档 | List documents by glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdocsbymetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "查询指标关联的文档 | List documents by metric",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdocuments": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取标准文档列表 | List standard documents",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdomains": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取业务域列表 | List business domains",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listelements": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取数据元列表 | List data elements",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listglossaries": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取业务术语列表 | List glossaries",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listgradinglevels": {
+        "/grading-levels": {
             "get": {
                 "security": [
                     {
@@ -1515,433 +1520,8 @@ const docTemplate = `{
                 }
             }
         },
-        "/listlevels": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取维度层级的层次列表 | List hierarchy levels",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listmetrics": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取指标列表 | List metrics",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listunits": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取计量单位列表 | List units",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/setelementmappings": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "设置术语关联的数据元 | Set element mappings of glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/setmappings": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "设置文档关联映射 | Set document mappings",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/unlinkdocfromelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "解除文档与数据元的关联 | Unlink document from element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/unlinkdocfromglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "解除文档与术语的关联 | Unlink document from glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/unlinkdocfrommetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "解除文档与指标的关联 | Unlink document from metric",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/update": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新维度层级 | Update dimension hierarchy",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatecategory": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新度量类别 | Update measurement category",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updateclassification": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新数据分类 | Update data classification",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatecodeitem": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新码值项 | Update code item",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatecodeset": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新码值集 | Update code set",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatedocument": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新标准文档 | Update standard document",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatedomain": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新业务域 | Update business domain",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updateelement": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新数据元 | Update data element",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updateglossary": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新业务术语 | Update glossary",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updategradinglevel": {
-            "get": {
+        "/grading-levels/{id}": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1965,7 +1545,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/updatelevel": {
+        "/measurement-categories": {
             "get": {
                 "security": [
                     {
@@ -1978,7 +1558,30 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新层次 | Update hierarchy level",
+                "summary": "获取度量类别列表 | List measurement categories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建度量类别 | Create measurement category",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1990,8 +1593,223 @@ const docTemplate = `{
                 }
             }
         },
-        "/updatemetric": {
+        "/measurement-categories/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新度量类别 | Update measurement category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除度量类别 | Delete measurement category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metric-categories": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取指标分类列表 | List metric categories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建指标分类 | Create metric category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metric-categories/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新指标分类 | Update metric category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除指标分类 | Delete metric category",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取指标列表 | List metrics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建指标 | Create metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取指标详情 | Get metric detail",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -2013,10 +1831,252 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "删除指标 | Delete metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
-        "/updateunit": {
+        "/metrics/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "审批指标 | Approve metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/{id}/deprecate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "废弃指标 | Deprecate metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/{id}/documents": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "查询指标关联的文档 | List documents by metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建文档并关联到指标 | Create and link document to metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/{id}/documents/link": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "关联已有文档到指标 | Link document to metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/{id}/documents/{doc_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "解除文档与指标的关联 | Unlink document from metric",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/units": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取计量单位列表 | List units",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建计量单位 | Create unit",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/units/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取计量单位详情 | Get unit detail",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -2038,10 +2098,8 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/uploadfile": {
-            "get": {
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -2053,7 +2111,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "上传文档文件 | Upload document file",
+                "summary": "删除计量单位 | Delete unit",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2062,6 +2120,25 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "client.DiscoverableAsset": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "description": "描述（可空）",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "资源名称",
+                    "type": "string"
+                },
+                "source_reference": {
+                    "description": "在源模块中的唯一标识",
+                    "type": "string"
                 }
             }
         }

@@ -34,12 +34,12 @@ func NewTileConfigHandler(
 
 // TileConfigResponse 瓦片配置响应
 type TileConfigResponse struct {
-	MinZoom           int       `json:"min_zoom"`                     // 最小 zoom 层级
-	MaxZoom           int       `json:"max_zoom"`                     // 最大 zoom 层级
-	Extent            []float64 `json:"extent,omitempty"`             // 地理范围（可选）
-	SRID              int       `json:"srid,omitempty"`               // 坐标系（可选）
-	RecordCount       int64     `json:"record_count,omitempty"`       // 表记录数
-	EstimatedTiles    int       `json:"estimated_tiles,omitempty"`    // 预估瓦片总数（minZoom-maxZoom）
+	MinZoom           int       `json:"min_zoom"`                       // 最小 zoom 层级
+	MaxZoom           int       `json:"max_zoom"`                       // 最大 zoom 层级
+	Extent            []float64 `json:"extent,omitempty"`               // 地理范围（可选）
+	SRID              int       `json:"srid,omitempty"`                 // 坐标系（可选）
+	RecordCount       int64     `json:"record_count,omitempty"`         // 表记录数
+	EstimatedTiles    int       `json:"estimated_tiles,omitempty"`      // 预估瓦片总数（minZoom-maxZoom）
 	AvgRecordsPerTile float64   `json:"avg_records_per_tile,omitempty"` // maxZoom 层级的平均记录数/瓦片
 }
 
@@ -61,7 +61,7 @@ type TileConfigResponse struct {
 // @Success 200 {object} TileConfigResponse "瓦片配置信息 | Tile configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /gettileconfig [get]
+// @Router /engines/{id}/spatial/{schema}/{table}/tile-config [get]
 // @Security BearerAuth
 func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	// 1. 解析参数
@@ -112,7 +112,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	}
 
 	// 4. 获取 extent（优先从快显记录，回退到数据库查询）
-	minZoom := 6 // 默认值
+	minZoom := 6       // 默认值
 	extentSRID := 4326 // 默认 WGS84
 	extent := []float64{}
 	var recordCount int64 // 表记录数
@@ -280,7 +280,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 		response.SRID = extentSRID
 	} else {
 		// 没有有效的 extent，使用中国大致范围作为降级
-		response.Extent = []float64{73.5, 3.8, 135.1, 53.6}  // 中国大致范围 [minLon, minLat, maxLon, maxLat]
+		response.Extent = []float64{73.5, 3.8, 135.1, 53.6} // 中国大致范围 [minLon, minLat, maxLon, maxLat]
 		response.SRID = 4326
 		logger.L().Warn("No valid extent available, using default China extent",
 			"table", table,

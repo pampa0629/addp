@@ -30,7 +30,15 @@ func NewOGCFeaturesHandler(s *svc.QueryServiceService, executorSvc *svc.QueryExe
 }
 
 // GetLandingPage 获取 OGC API Features Landing Page
-// GET /ogc/features/:serviceName
+// @Summary OGC API Features Landing Page | OGC API Features Landing Page
+// @Tags OGC Features
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "Landing Page | Landing Page"
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 501 {object} map[string]string
+// @Router /ogc/features/{serviceName} [get]
 func (h *OGCFeaturesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
@@ -83,7 +91,15 @@ func (h *OGCFeaturesHandler) GetLandingPage(c *gin.Context) {
 }
 
 // GetConformance 获取 OGC API Features Conformance 声明
-// GET /ogc/features/:serviceName/conformance
+// @Summary OGC API Features Conformance | OGC API Features Conformance
+// @Tags OGC Features
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "Conformance declaration | Conformance declaration"
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 501 {object} map[string]string
+// @Router /ogc/features/{serviceName}/conformance [get]
 func (h *OGCFeaturesHandler) GetConformance(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
@@ -112,7 +128,15 @@ func (h *OGCFeaturesHandler) GetConformance(c *gin.Context) {
 }
 
 // GetCollections 获取 Collections 列表
-// GET /ogc/features/:serviceName/collections
+// @Summary OGC API Features Collections | OGC API Features Collections
+// @Tags OGC Features
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Success 200 {object} map[string]interface{} "Collections | Collections"
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 501 {object} map[string]string
+// @Router /ogc/features/{serviceName}/collections [get]
 func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
@@ -181,7 +205,20 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 }
 
 // GetItems 获取 Collection 中的 Items（即查询数据）
-// GET /ogc/features/:serviceName/collections/:collectionId/items
+// @Summary OGC API Features Items | OGC API Features Items
+// @Tags OGC Features
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param collectionId path string true "集合ID | Collection ID"
+// @Param limit query int false "返回数量 | Limit" default(10)
+// @Param offset query int false "偏移量 | Offset" default(0)
+// @Param bbox query string false "空间范围 | Bounding box"
+// @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection | GeoJSON FeatureCollection"
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Failure 501 {object} map[string]string
+// @Router /ogc/features/{serviceName}/collections/{collectionId}/items [get]
 func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	collectionID := c.Param("collectionId")
@@ -297,7 +334,18 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 }
 
 // GetItem 获取单个 Feature
-// GET /ogc/features/:serviceName/collections/:collectionId/items/:featureId
+// @Summary OGC API Features Item | OGC API Features Item
+// @Tags OGC Features
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param collectionId path string true "集合ID | Collection ID"
+// @Param featureId path string true "要素ID | Feature ID"
+// @Success 200 {object} map[string]interface{} "GeoJSON Feature | GeoJSON Feature"
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Failure 501 {object} map[string]string
+// @Router /ogc/features/{serviceName}/collections/{collectionId}/items/{featureId} [get]
 func (h *OGCFeaturesHandler) GetItem(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	collectionID := c.Param("collectionId")

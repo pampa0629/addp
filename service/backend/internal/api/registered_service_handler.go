@@ -27,7 +27,16 @@ func NewRegisteredServiceHandler(s *svc.RegisteredServiceService) *RegisteredSer
 // ===== 服务管理 API =====
 
 // CreateService 创建新的注册服务
-// POST /api/service/registry
+// @Summary 创建注册服务 | Create registered service
+// @Tags RegisteredService
+// @Accept json
+// @Produce json
+// @Param request body models.CreateRegisteredServiceRequest true "创建请求 | Create request"
+// @Success 201 {object} models.RegisteredServiceDTO
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Router /registered [post]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 	var req models.CreateRegisteredServiceRequest
 
@@ -62,7 +71,17 @@ func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 }
 
 // ListServices 列出租户下的所有注册服务
-// GET /api/service/registry?page=1&limit=20&search=...&service_type=wms
+// @Summary 注册服务列表 | List registered services
+// @Tags RegisteredService
+// @Produce json
+// @Param page query int false "页码 | Page" default(1)
+// @Param limit query int false "每页数量 | Limit" default(20)
+// @Param search query string false "搜索词 | Search"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /registered [get]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) ListServices(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	if tenantID == 0 {
@@ -117,7 +136,15 @@ func (h *RegisteredServiceHandler) ListServices(c *gin.Context) {
 }
 
 // GetService 获取服务详情
-// GET /api/service/registry/:id
+// @Summary 获取注册服务详情 | Get registered service
+// @Tags RegisteredService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} models.RegisteredServiceDTO
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /registered/{id} [get]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) GetService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -140,7 +167,17 @@ func (h *RegisteredServiceHandler) GetService(c *gin.Context) {
 }
 
 // UpdateService 更新服务
-// PUT /api/service/registry/:id
+// @Summary 更新注册服务 | Update registered service
+// @Tags RegisteredService
+// @Accept json
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Param request body models.UpdateRegisteredServiceRequest true "更新请求 | Update request"
+// @Success 200 {object} models.RegisteredServiceDTO
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /registered/{id} [put]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) UpdateService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -169,7 +206,16 @@ func (h *RegisteredServiceHandler) UpdateService(c *gin.Context) {
 }
 
 // DeleteService 删除服务
-// DELETE /api/service/registry/:id
+// @Summary 删除注册服务 | Delete registered service
+// @Tags RegisteredService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /registered/{id} [delete]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) DeleteService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -191,7 +237,18 @@ func (h *RegisteredServiceHandler) DeleteService(c *gin.Context) {
 }
 
 // RefreshMetadata 刷新服务元数据
-// POST /api/service/registry/:id/refresh
+// @Summary 刷新注册服务元数据 | Refresh registered service metadata
+// @Tags RegisteredService
+// @Accept json
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Param request body models.RefreshMetadataRequest false "刷新请求 | Refresh request"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /registered/{id}/refresh [post]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -222,7 +279,16 @@ func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
 }
 
 // HealthCheck 健康检查
-// POST /api/service/registry/:id/health
+// @Summary 检查注册服务健康状态 | Check registered service health
+// @Tags RegisteredService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} models.HealthCheckResult
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /registered/{id}/health [post]
+// @Security BearerAuth
 func (h *RegisteredServiceHandler) HealthCheck(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)

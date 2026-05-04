@@ -97,6 +97,14 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	return s
 }
 
+func (s *ScanService) CountItems(tenantID uint) (int64, error) {
+	var itemCount int64
+	if err := s.db.Table("metadata.meta_item").Where("tenant_id = ?", tenantID).Count(&itemCount).Error; err != nil {
+		return 0, err
+	}
+	return itemCount, nil
+}
+
 // SetIndexer 注入搜索索引器
 func (s *ScanService) SetIndexer(indexer *search.Indexer) {
 	s.indexer = indexer
@@ -1285,7 +1293,8 @@ func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, buck
 	return nil
 }
 
-// ListObjectStorageNodes 列出对象存储的节点结构（用于Manager模块）
+// ListObjectStorageNodes 列出迁移期实时 catalog 节点。
+// Deprecated: 实时 catalog 浏览应迁移到 System /engines/:id/catalog/children。
 func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
 	return s.resourceDiscoveryService.ListObjectStorageNodes(engineID, tenantID, path, token)
 }

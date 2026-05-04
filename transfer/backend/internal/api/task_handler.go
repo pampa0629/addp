@@ -249,7 +249,14 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 }
 
 // PauseTask 暂停任务
-// POST /api/tasks/:id/pause
+// @Summary 暂停任务 | Pause task
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tasks/{id}/pause [post]
+// @Security BearerAuth
 func (h *TaskHandler) PauseTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -267,7 +274,14 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 }
 
 // ResumeTask 恢复任务
-// POST /api/tasks/:id/resume
+// @Summary 恢复任务 | Resume task
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tasks/{id}/resume [post]
+// @Security BearerAuth
 func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -313,7 +327,17 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 // CreateFieldMapping 创建字段映射
-// POST /api/tasks/:id/mappings
+// @Summary 创建字段映射 | Create field mapping
+// @Tags         字段映射 | Field Mapping
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param request body models.CreateFieldMappingRequest true "字段映射请求 | Field mapping request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tasks/{id}/mappings [post]
+// @Security BearerAuth
 func (h *TaskHandler) CreateFieldMapping(c *gin.Context) {
 	taskID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -338,7 +362,14 @@ func (h *TaskHandler) CreateFieldMapping(c *gin.Context) {
 }
 
 // GetTaskMappings 获取任务的字段映射列表
-// GET /api/tasks/:id/mappings
+// @Summary 获取任务字段映射 | Get task mappings
+// @Tags         字段映射 | Field Mapping
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {array} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /tasks/{id}/mappings [get]
+// @Security BearerAuth
 func (h *TaskHandler) GetTaskMappings(c *gin.Context) {
 	taskID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -357,7 +388,14 @@ func (h *TaskHandler) GetTaskMappings(c *gin.Context) {
 }
 
 // DeleteFieldMapping 删除字段映射
-// DELETE /api/mappings/:id
+// @Summary 删除字段映射 | Delete field mapping
+// @Tags         字段映射 | Field Mapping
+// @Produce json
+// @Param id path int true "字段映射ID | Mapping ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /mappings/{id} [delete]
+// @Security BearerAuth
 func (h *TaskHandler) DeleteFieldMapping(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {

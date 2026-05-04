@@ -18,9 +18,15 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 	return &assetDiscoverableHandler{db: db}
 }
 
-// listDiscoverableAssets GET /api/standard/assets/discoverable
-// 返回当前租户下 status='approved' 的指标，供 Asset 模块自动发现。
+// listDiscoverableAssets 返回当前租户下 status='approved' 的指标，供 Asset 模块自动发现。
 // source_reference 格式: "{metric.ID}"
+// @Summary 可发现资产列表 | List discoverable assets
+// @Tags AssetDiscoverable
+// @Produce json
+// @Success 200 {array} commonClient.DiscoverableAsset
+// @Failure 500 {object} map[string]string
+// @Router /assets/discoverable [get]
+// @Security BearerAuth
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
 	tenantID := getTenantID(c)
 

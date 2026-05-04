@@ -16,7 +16,12 @@ func NewTransformHandler() *TransformHandler {
 }
 
 // ListTransforms 列出所有可用的转换器
-// GET /api/transforms
+// @Summary 列出转换器 | List transforms
+// @Tags 转换器 | Transforms
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /transforms [get]
+// @Security BearerAuth
 func (h *TransformHandler) ListTransforms(c *gin.Context) {
 	transforms := pipeline.ListAllTransforms()
 
@@ -27,7 +32,14 @@ func (h *TransformHandler) ListTransforms(c *gin.Context) {
 }
 
 // GetTransformCapability 获取转换器能力描述
-// GET /api/transforms/:name
+// @Summary 获取转换器能力 | Get transform capability
+// @Tags 转换器 | Transforms
+// @Produce json
+// @Param name path string true "转换器名称 | Transform name"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Router /transforms/{name} [get]
+// @Security BearerAuth
 func (h *TransformHandler) GetTransformCapability(c *gin.Context) {
 	name := c.Param("name")
 
@@ -55,7 +67,17 @@ type ValidateTransformConfigResponse struct {
 }
 
 // ValidateTransformConfig 验证转换器配置
-// POST /api/transforms/:name/validate
+// @Summary 验证转换器配置 | Validate transform config
+// @Tags 转换器 | Transforms
+// @Accept json
+// @Produce json
+// @Param name path string true "转换器名称 | Transform name"
+// @Param request body ValidateTransformConfigRequest true "验证请求 | Validation request"
+// @Success 200 {object} ValidateTransformConfigResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /transforms/{name}/validate [post]
+// @Security BearerAuth
 func (h *TransformHandler) ValidateTransformConfig(c *gin.Context) {
 	name := c.Param("name")
 
@@ -107,7 +129,16 @@ type TestTransformResponse struct {
 }
 
 // TestTransform 测试转换器（使用样本数据）
-// POST /api/transforms/:name/test
+// @Summary 测试转换器 | Test transform
+// @Tags 转换器 | Transforms
+// @Accept json
+// @Produce json
+// @Param name path string true "转换器名称 | Transform name"
+// @Param request body TestTransformRequest true "测试请求 | Test request"
+// @Success 200 {object} TestTransformResponse
+// @Failure 400 {object} TestTransformResponse
+// @Router /transforms/{name}/test [post]
+// @Security BearerAuth
 func (h *TransformHandler) TestTransform(c *gin.Context) {
 	name := c.Param("name")
 
@@ -155,7 +186,12 @@ func (h *TransformHandler) TestTransform(c *gin.Context) {
 }
 
 // GetTransformStats 获取转换器统计信息
-// GET /api/transforms/stats
+// @Summary 获取转换器统计 | Get transform stats
+// @Tags 转换器 | Transforms
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /transforms/stats [get]
+// @Security BearerAuth
 func (h *TransformHandler) GetTransformStats(c *gin.Context) {
 	transforms := pipeline.ListAllTransforms()
 
@@ -168,8 +204,8 @@ func (h *TransformHandler) GetTransformStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_transforms":    len(transforms),
-		"supported_types":     typeCount,
+		"total_transforms":     len(transforms),
+		"supported_types":      typeCount,
 		"available_transforms": extractTransformNames(transforms),
 	})
 }

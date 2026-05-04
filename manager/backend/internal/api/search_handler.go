@@ -94,7 +94,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "搜索历史列表 | Search history list"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
-// @Router /listhistory [get]
+// @Router /search/history [get]
 // @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
 	if h.historyService == nil {
@@ -145,7 +145,7 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 // @Success 204 "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
-// @Router /deletehistoryitem [delete]
+// @Router /search/history/{id} [delete]
 // @Security BearerAuth
 func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	if h.historyService == nil {
@@ -182,7 +182,7 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 // @Success 204 "清空成功 | Cleared successfully"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
-// @Router /clearhistory [delete]
+// @Router /search/history [delete]
 // @Security BearerAuth
 func (h *SearchHandler) ClearHistory(c *gin.Context) {
 	if h.historyService == nil {

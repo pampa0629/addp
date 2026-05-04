@@ -15,8 +15,9 @@ import (
 
 // TaskProviderHandler 标准 TaskProvider API 处理器
 // 实现: GET /api/manager/tasks, POST /api/manager/tasks/:task_type/:id/execute
-//       GET /api/manager/tasks/:task_type/:id, GET /api/manager/executions/:execution_id
-//       POST /api/manager/executions/:execution_id/cancel
+//
+//	GET /api/manager/tasks/:task_type/:id, GET /api/manager/executions/:execution_id
+//	POST /api/manager/executions/:execution_id/cancel
 type TaskProviderHandler struct {
 	embeddingTaskSvc *service.EmbeddingTaskService
 	mvtTaskSvc       *service.MvtTaskService
@@ -59,7 +60,9 @@ type TaskListItem struct {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /listtasks [get]
+// @Router /tasks [get]
+// @Router /mvt_tasks [get]
+// @Router /embedding_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -158,7 +161,9 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "任务详情 | Task detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /taskdetail [get]
+// @Router /tasks/{task_type}/{id} [get]
+// @Router /mvt_tasks/{id} [get]
+// @Router /embedding_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -216,7 +221,7 @@ type TaskExecuteRequest struct {
 // @Success 200 {object} map[string]interface{} "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /taskexecute [post]
+// @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -274,7 +279,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{} "执行状态 | Execution status"
 // @Failure 404 {object} map[string]interface{} "执行记录不存在 | Execution not found"
-// @Router /executionstatus [get]
+// @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -301,7 +306,7 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
 // @Failure 400 {object} map[string]interface{} "取消失败 | Cancel failed"
-// @Router /executioncancel [post]
+// @Router /executions/{execution_id}/cancel [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -329,7 +334,7 @@ func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 // @Param body body models.EmbeddingTask true "向量化任务配置 | Embedding task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /createembeddingtask [post]
+// @Router /embedding_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -361,7 +366,7 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /updateembeddingtask [put]
+// @Router /embedding_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -403,7 +408,7 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /deleteembeddingtask [delete]
+// @Router /embedding_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -431,7 +436,7 @@ func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 // @Param body body models.MvtTask true "MVT任务配置 | MVT task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /createmvttask [post]
+// @Router /mvt_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -463,7 +468,7 @@ func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /updatemvttask [put]
+// @Router /mvt_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -505,7 +510,7 @@ func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /deletemvttask [delete]
+// @Router /mvt_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

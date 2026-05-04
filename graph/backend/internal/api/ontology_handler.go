@@ -11,10 +11,10 @@ import (
 )
 
 type OntologyHandler struct {
-	svc                 *service.OntologyService
-	neo4jSvc            *service.Neo4jService
-	modelImportSvc      *service.ModelImportService
-	schemaInferenceSvc  *service.SchemaInferenceService
+	svc                *service.OntologyService
+	neo4jSvc           *service.Neo4jService
+	modelImportSvc     *service.ModelImportService
+	schemaInferenceSvc *service.SchemaInferenceService
 }
 
 func NewOntologyHandler(svc *service.OntologyService, neo4jSvc *service.Neo4jService, modelImportSvc *service.ModelImportService, schemaInferenceSvc *service.SchemaInferenceService) *OntologyHandler {
@@ -189,6 +189,19 @@ func (h *OntologyHandler) CreateEntityType(c *gin.Context) {
 	c.JSON(http.StatusCreated, et)
 }
 
+// UpdateEntityType godoc
+// @Summary      更新实体类型 | Update entity type
+// @Tags         本体管理 | Ontology Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "本体 ID | Ontology ID"
+// @Param        eid     path int true "实体类型 ID | Entity type ID"
+// @Param        request body models.UpdateEntityTypeRequest true "更新实体类型请求 | Update entity type request"
+// @Success      200 {object} models.EntityType
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/entity-types/{eid} [put]
 func (h *OntologyHandler) UpdateEntityType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
 	eid := parseUintParam(c, "eid")
@@ -206,6 +219,16 @@ func (h *OntologyHandler) UpdateEntityType(c *gin.Context) {
 	c.JSON(http.StatusOK, et)
 }
 
+// DeleteEntityType godoc
+// @Summary      删除实体类型 | Delete entity type
+// @Tags         本体管理 | Ontology Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "本体 ID | Ontology ID"
+// @Param        eid path int true "实体类型 ID | Entity type ID"
+// @Success      200 {object} map[string]string
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/entity-types/{eid} [delete]
 func (h *OntologyHandler) DeleteEntityType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
 	eid := parseUintParam(c, "eid")
@@ -269,6 +292,19 @@ func (h *OntologyHandler) CreateRelationType(c *gin.Context) {
 	c.JSON(http.StatusCreated, rt)
 }
 
+// UpdateRelationType godoc
+// @Summary      更新关系类型 | Update relation type
+// @Tags         本体管理 | Ontology Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "本体 ID | Ontology ID"
+// @Param        rid     path int true "关系类型 ID | Relation type ID"
+// @Param        request body models.UpdateRelationTypeRequest true "更新关系类型请求 | Update relation type request"
+// @Success      200 {object} models.RelationType
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/relation-types/{rid} [put]
 func (h *OntologyHandler) UpdateRelationType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
 	rid := parseUintParam(c, "rid")
@@ -286,6 +322,16 @@ func (h *OntologyHandler) UpdateRelationType(c *gin.Context) {
 	c.JSON(http.StatusOK, rt)
 }
 
+// DeleteRelationType godoc
+// @Summary      删除关系类型 | Delete relation type
+// @Tags         本体管理 | Ontology Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "本体 ID | Ontology ID"
+// @Param        rid path int true "关系类型 ID | Relation type ID"
+// @Success      200 {object} map[string]string
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/relation-types/{rid} [delete]
 func (h *OntologyHandler) DeleteRelationType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
 	rid := parseUintParam(c, "rid")
@@ -350,8 +396,20 @@ func (h *OntologyHandler) CreateVersion(c *gin.Context) {
 	c.JSON(http.StatusCreated, v)
 }
 
-// --- SyncConstraints handler ---
-
+// SyncEntityTypeConstraints godoc
+// @Summary      同步实体约束 | Sync entity constraints
+// @Tags         本体管理 | Ontology Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "本体 ID | Ontology ID"
+// @Param        eid     path int true "实体类型 ID | Entity type ID"
+// @Param        request body models.SyncConstraintsRequest true "同步请求 | Sync request"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/entity-types/{eid}/sync-constraints [post]
 func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
 	eid := parseUintParam(c, "eid")
@@ -437,7 +495,15 @@ func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 
 // --- Import from Model handlers ---
 
-// ImportPreviewFromModel GET /ontologies/import-preview/from-model
+// ImportPreviewFromModel godoc
+// @Summary      预览模型导入 | Preview model import
+// @Tags         本体管理 | Ontology Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /ontologies/import-preview/from-model [get]
 func (h *OntologyHandler) ImportPreviewFromModel(c *gin.Context) {
 	if h.modelImportSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "model service not configured"})
@@ -452,7 +518,19 @@ func (h *OntologyHandler) ImportPreviewFromModel(c *gin.Context) {
 	c.JSON(http.StatusOK, preview)
 }
 
-// ImportFromModel POST /ontologies/:id/import-from-model
+// ImportFromModel godoc
+// @Summary      从模型导入 | Import from model
+// @Tags         本体管理 | Ontology Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "本体 ID | Ontology ID"
+// @Param        request body service.ImportFromModelRequest true "导入请求 | Import request"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/import-from-model [post]
 func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 	if h.modelImportSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "model service not configured"})
@@ -480,7 +558,15 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 
 // --- Infer schema from Neo4j engine (no knowledge graph needed) ---
 
-// ListNeo4jEngines GET /ontologies/neo4j-engines
+// ListNeo4jEngines godoc
+// @Summary      列出 Neo4j 引擎 | List Neo4j engines
+// @Tags         本体管理 | Ontology Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {array} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /ontologies/neo4j-engines [get]
 func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "schema inference not available"})
@@ -495,7 +581,18 @@ func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// InferSchemaFromEngine GET /ontologies/infer-schema/from-engine?engine_id=X&ontology_id=Y
+// InferSchemaFromEngine godoc
+// @Summary      从引擎推断 Schema | Infer schema from engine
+// @Tags         本体管理 | Ontology Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        engine_id   query int true  "引擎 ID | Engine ID"
+// @Param        ontology_id query int false "本体 ID | Ontology ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /ontologies/infer-schema/from-engine [get]
 func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "schema inference not available"})
@@ -525,7 +622,19 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	c.JSON(http.StatusOK, preview)
 }
 
-// ApplyInferredSchemaFromEngine POST /ontologies/:id/infer-schema/from-engine/apply
+// ApplyInferredSchemaFromEngine godoc
+// @Summary      应用引擎推断 Schema | Apply inferred schema from engine
+// @Tags         本体管理 | Ontology Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "本体 ID | Ontology ID"
+// @Param        request body service.ApplyInferredSchemaFromEngineRequest true "应用请求 | Apply request"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/infer-schema/from-engine/apply [post]
 func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "schema inference not available"})

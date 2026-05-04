@@ -715,12 +715,48 @@ definitions:
         example: 操作成功
         type: string
     type: object
+  github_com_addp_graph_internal_models.SyncConstraintsRequest:
+    properties:
+      graph_id:
+        type: integer
+    required:
+    - graph_id
+    type: object
   github_com_addp_graph_internal_models.SyncSpatialLayersRequest:
     properties:
       graph_id:
         type: integer
     required:
     - graph_id
+    type: object
+  github_com_addp_graph_internal_models.UpdateEntityTypeRequest:
+    properties:
+      color:
+        type: string
+      constraints:
+        items:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.ConstraintDefinition'
+        type: array
+      description:
+        type: string
+      icon:
+        type: string
+      is_spatial_layer:
+        type: boolean
+      label:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      properties:
+        items:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.PropertyDefinition'
+        type: array
+      sort_order:
+        type: integer
+      spatial_layer_config:
+        $ref: '#/definitions/github_com_addp_graph_internal_models.SpatialLayerConfig'
     type: object
   github_com_addp_graph_internal_models.UpdateKnowledgeGraphRequest:
     properties:
@@ -742,6 +778,85 @@ definitions:
         type: string
       status:
         type: string
+    type: object
+  github_com_addp_graph_internal_models.UpdateRelationTypeRequest:
+    properties:
+      color:
+        type: string
+      constraints:
+        items:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.ConstraintDefinition'
+        type: array
+      description:
+        type: string
+      directed:
+        type: boolean
+      label:
+        type: string
+      name:
+        type: string
+      properties:
+        items:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.PropertyDefinition'
+        type: array
+      sort_order:
+        type: integer
+      source_type_id:
+        type: integer
+      target_type_id:
+        type: integer
+    type: object
+  github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest:
+    properties:
+      conflict:
+        description: '"skip" | "overwrite"'
+        type: string
+      engine_id:
+        type: integer
+      entity_type_names:
+        items:
+          type: string
+        type: array
+      relation_type_names:
+        items:
+          type: string
+        type: array
+    required:
+    - engine_id
+    type: object
+  github_com_addp_graph_internal_service.ApplyInferredSchemaRequest:
+    properties:
+      conflict:
+        description: '"skip" | "overwrite"'
+        type: string
+      entity_type_names:
+        items:
+          type: string
+        type: array
+      ontology_id:
+        type: integer
+      relation_type_names:
+        items:
+          type: string
+        type: array
+    required:
+    - ontology_id
+    type: object
+  github_com_addp_graph_internal_service.ImportFromModelRequest:
+    properties:
+      conflict:
+        description: '"skip" | "overwrite"'
+        type: string
+      entity_ids:
+        description: 选中的 Model entity id 列表
+        items:
+          type: integer
+        type: array
+      relation_ids:
+        description: 选中的 Model relation id 列表
+        items:
+          type: integer
+        type: array
     type: object
 host: localhost:8186
 info:
@@ -1039,6 +1154,227 @@ paths:
       summary: 创建构建任务 | Create build task
       tags:
       - 图谱构建 | Graph Build
+  /graphs/{id}/build/tasks/{tid}:
+    delete:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除构建任务 | Delete build task
+      tags:
+      - 图谱构建 | Graph Build
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.BuildTask'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取构建任务 | Get build task
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/build/tasks/{tid}/cancel:
+    post:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 取消构建任务 | Cancel build task
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/build/tasks/{tid}/materials:
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_graph_internal_models.BuildMaterial'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出构建材料 | List build materials
+      tags:
+      - 图谱构建 | Graph Build
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      - description: 材料文件 | Material files
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_graph_internal_models.BuildMaterial'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 上传构建材料 | Upload build material
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/build/tasks/{tid}/materials/{mid}:
+    delete:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      - description: 材料 ID | Material ID
+        in: path
+        name: mid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除构建材料 | Delete build material
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/build/tasks/{tid}/rerun:
+    post:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 重新运行构建任务 | Rerun build task
+      tags:
+      - 图谱构建 | Graph Build
   /graphs/{id}/build/tasks/{tid}/run:
     post:
       description: 启动知识图谱构建任务 | Start a knowledge graph build task
@@ -1069,6 +1405,31 @@ paths:
       summary: 执行构建任务 | Run build task
       tags:
       - 图谱构建 | Graph Build
+  /graphs/{id}/constraints:
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取图约束 | Get graph constraints
+      tags:
+      - 图谱浏览 | Graph Browse
   /graphs/{id}/expand:
     post:
       consumes:
@@ -1105,6 +1466,72 @@ paths:
       security:
       - BearerAuth: []
       summary: 展开节点邻居 | Expand node neighbors
+      tags:
+      - 图谱浏览 | Graph Browse
+  /graphs/{id}/infer-schema:
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 本体 ID | Ontology ID
+        in: query
+        name: ontology_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 推断图谱 Schema | Infer graph schema
+      tags:
+      - 图谱浏览 | Graph Browse
+  /graphs/{id}/infer-schema/apply:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 应用请求 | Apply request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 应用推断 Schema | Apply inferred schema
       tags:
       - 图谱浏览 | Graph Browse
   /graphs/{id}/overview:
@@ -1170,6 +1597,216 @@ paths:
       summary: 最短路径查询 | Find shortest path
       tags:
       - 图谱浏览 | Graph Browse
+  /graphs/{id}/review:
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务 ID | Task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 项目类型 | Item type
+        in: query
+        name: item_type
+        type: string
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出审核项 | List review items
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/review/{iid}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 审核项 ID | Review item ID
+        in: path
+        name: iid
+        required: true
+        type: integer
+      - description: 修改内容 | Modify content
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 修改审核项 | Modify review item
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/review/{iid}/approve:
+    post:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 审核项 ID | Review item ID
+        in: path
+        name: iid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 通过审核项 | Approve review item
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/review/{iid}/reject:
+    post:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 审核项 ID | Review item ID
+        in: path
+        name: iid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 拒绝审核项 | Reject review item
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/review/batch:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 批量审核请求 | Batch review request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批量审核 | Batch review
+      tags:
+      - 图谱构建 | Graph Build
+  /graphs/{id}/review/pending-count:
+    get:
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 待审核数量 | Pending review count
+      tags:
+      - 图谱构建 | Graph Build
   /graphs/{id}/schema:
     get:
       description: 获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema
@@ -1528,6 +2165,123 @@ paths:
       summary: 创建实体类型 | Create entity type
       tags:
       - 本体管理 | Ontology Management
+  /ontologies/{id}/entity-types/{eid}:
+    delete:
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 实体类型 ID | Entity type ID
+        in: path
+        name: eid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除实体类型 | Delete entity type
+      tags:
+      - 本体管理 | Ontology Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 实体类型 ID | Entity type ID
+        in: path
+        name: eid
+        required: true
+        type: integer
+      - description: 更新实体类型请求 | Update entity type request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.UpdateEntityTypeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.EntityType'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新实体类型 | Update entity type
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/{id}/entity-types/{eid}/sync-constraints:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 实体类型 ID | Entity type ID
+        in: path
+        name: eid
+        required: true
+        type: integer
+      - description: 同步请求 | Sync request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.SyncConstraintsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 同步实体约束 | Sync entity constraints
+      tags:
+      - 本体管理 | Ontology Management
   /ontologies/{id}/entity-types/{eid}/sync-spatial-layer:
     put:
       consumes:
@@ -1575,6 +2329,88 @@ paths:
       security:
       - BearerAuth: []
       summary: 同步空间图层 | Sync spatial layer
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/{id}/import-from-model:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 导入请求 | Import request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_service.ImportFromModelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 从模型导入 | Import from model
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/{id}/infer-schema/from-engine/apply:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 应用请求 | Apply request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 应用引擎推断 Schema | Apply inferred schema from engine
       tags:
       - 本体管理 | Ontology Management
   /ontologies/{id}/relation-types:
@@ -1640,6 +2476,77 @@ paths:
       summary: 创建关系类型 | Create relation type
       tags:
       - 本体管理 | Ontology Management
+  /ontologies/{id}/relation-types/{rid}:
+    delete:
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 关系类型 ID | Relation type ID
+        in: path
+        name: rid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除关系类型 | Delete relation type
+      tags:
+      - 本体管理 | Ontology Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 本体 ID | Ontology ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 关系类型 ID | Relation type ID
+        in: path
+        name: rid
+        required: true
+        type: integer
+      - description: 更新关系类型请求 | Update relation type request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.UpdateRelationTypeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.RelationType'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新关系类型 | Update relation type
+      tags:
+      - 本体管理 | Ontology Management
   /ontologies/{id}/versions:
     get:
       description: 获取本体的所有版本快照 | Get all version snapshots of an ontology
@@ -1701,6 +2608,91 @@ paths:
       security:
       - BearerAuth: []
       summary: 创建版本快照 | Create version snapshot
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/import-preview/from-model:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 预览模型导入 | Preview model import
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/infer-schema/from-engine:
+    get:
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 本体 ID | Ontology ID
+        in: query
+        name: ontology_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 从引擎推断 Schema | Infer schema from engine
+      tags:
+      - 本体管理 | Ontology Management
+  /ontologies/neo4j-engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出 Neo4j 引擎 | List Neo4j engines
       tags:
       - 本体管理 | Ontology Management
 securityDefinitions:

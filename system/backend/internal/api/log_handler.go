@@ -9,9 +9,9 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
-	sysi18n "github.com/addp/system/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -74,6 +74,15 @@ func (h *LogHandler) List(c *gin.Context) {
 	commonapi.RespondPaginated(c, logs, total, page, pageSize)
 }
 
+// GetByID godoc
+// @Summary      获取日志详情 | Get audit log detail
+// @Tags         日志管理 | Log Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "日志ID | Log ID"
+// @Success      200 {object} models.AuditLog
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /logs/{id} [get]
 func (h *LogHandler) GetByID(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -90,6 +99,17 @@ func (h *LogHandler) GetByID(c *gin.Context) {
 }
 
 // Export 导出审计日志
+// @Summary      导出审计日志 | Export audit logs
+// @Tags         日志管理 | Log Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        format query string false "导出格式 csv/json | Export format" default(csv)
+// @Param        start_time query string false "开始时间 | Start time"
+// @Param        end_time query string false "结束时间 | End time"
+// @Param        http_method query string false "HTTP方法 | HTTP method"
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /logs/export [get]
 func (h *LogHandler) Export(c *gin.Context) {
 	format := c.DefaultQuery("format", "csv") // csv 或 json
 
@@ -178,6 +198,7 @@ func (h *LogHandler) Export(c *gin.Context) {
 		}
 	}
 }
+
 // CreateFromInternal 接收来自其他模块的审计日志（内部 API）
 func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	var req models.AuditLogCreateRequest
@@ -221,7 +242,14 @@ func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	commonapi.RespondCreated(c, gin.H{"message": commoni18n.T(c, sysi18n.MsgAuditLogCreated)})
 }
 
-// GetStats 获取日志统计（新增）
+// GetStats 获取日志统计
+// @Summary      获取日志统计 | Get log stats
+// @Tags         日志管理 | Log Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /logs/stats [get]
 func (h *LogHandler) GetStats(c *gin.Context) {
 	currentUserID, _ := commonapi.GetCurrentUserID(c)
 
@@ -234,7 +262,14 @@ func (h *LogHandler) GetStats(c *gin.Context) {
 	commonapi.RespondSuccess(c, stats)
 }
 
-// GetTrends 获取时间趋势（新增）
+// GetTrends 获取时间趋势
+// @Summary      获取日志趋势 | Get log trends
+// @Tags         日志管理 | Log Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /logs/trends [get]
 func (h *LogHandler) GetTrends(c *gin.Context) {
 	currentUserID, _ := commonapi.GetCurrentUserID(c)
 

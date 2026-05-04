@@ -15,99 +15,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/adddimensionrelation": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "添加维度关联 | Add dimension relation",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateTableRelationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的关联 | Created relation",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/addmetric": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "添加事实表指标关联 | Add fact table metric mapping",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateFactMetricMappingRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的关联 | Created mapping",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/approveentity": {
+        "/dw-layers": {
             "get": {
                 "security": [
                     {
@@ -120,75 +28,18 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "审批通过实体 | Approve entity",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
+                "summary": "查询数仓分层列表 | List DW layers",
                 "responses": {
                     "200": {
-                        "description": "审批成功 | Approved successfully",
+                        "description": "数仓分层列表 | DW layer list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     }
                 }
-            }
-        },
-        "/createattribute": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "创建实体属性 | Create entity attribute",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityAttributeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的属性 | Created attribute",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createdwlayer": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -226,15 +77,12 @@ const docTemplate = `{
                 }
             }
         },
-        "/createentity": {
+        "/dw-layers/{id}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "consumes": [
-                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -242,196 +90,71 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "创建实体 | Create entity",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的实体 | Created entity",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createfield": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "创建逻辑表字段 | Create logical table field",
+                "summary": "获取数仓分层详情 | Get DW layer details",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "逻辑表ID | Logical table ID",
+                        "description": "分层ID | DW layer ID",
                         "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateLogicalFieldRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的字段 | Created field",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createlogicaltable": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "创建逻辑表 | Create logical table",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateLogicalTableRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的逻辑表 | Created logical table",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/createrelation": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "创建实体关系 | Create entity relation",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityRelationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的关系 | Created relation",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deleteattribute": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除实体属性 | Delete entity attribute",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "属性ID | Attribute ID",
-                        "name": "aid",
                         "in": "path",
                         "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功 | Deleted successfully",
+                        "description": "分层详情 | DW layer details",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     }
                 }
-            }
-        },
-        "/deletedwlayer": {
-            "get": {
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新数仓分层 | Update DW layer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "分层ID | DW layer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateDWLayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的分层 | Updated DW layer",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -464,477 +187,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/deleteentity": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除实体 | Delete entity",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deletefield": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除逻辑表字段 | Delete logical table field",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "逻辑表ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "字段ID | Field ID",
-                        "name": "fid",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deletelogicaltable": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除逻辑表 | Delete logical table",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "逻辑表ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/deleterelation": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除实体关系 | Delete entity relation",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "关系ID | Relation ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/exportmermaid": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "导出 Mermaid ER 图 | Export Mermaid ER diagram",
-                "responses": {
-                    "200": {
-                        "description": "Mermaid ER 图代码 | Mermaid ER diagram code",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getattributes": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取实体属性列表 | Get entity attributes",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "属性列表 | Attribute list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getdwlayer": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取数仓分层详情 | Get DW layer details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "分层ID | DW layer ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "分层详情 | DW layer details",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getentity": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取实体详情 | Get entity details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "实体详情 | Entity details",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getfields": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取逻辑表字段列表 | Get logical table fields",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "逻辑表ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "字段列表 | Field list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getlogicaltable": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取逻辑表详情 | Get logical table details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "逻辑表ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "逻辑表详情 | Logical table details",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/getrelation": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "获取实体关系详情 | Get entity relation details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "关系ID | Relation ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "关系详情 | Relation details",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/importmermaid": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram",
-                "parameters": [
-                    {
-                        "description": "导入请求 | Import request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "导入结果 | Import result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdimensionrelations": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "查询维度关联列表 | List dimension relations",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "维度关联列表 | Dimension relation list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listdwlayers": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "查询数仓分层列表 | List DW layers",
-                "responses": {
-                    "200": {
-                        "description": "数仓分层列表 | DW layer list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listentities": {
+        "/entities": {
             "get": {
                 "security": [
                     {
@@ -989,9 +242,604 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建实体 | Create entity",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的实体 | Created entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
-        "/listlogicaltables": {
+        "/entities/export-mermaid": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "导出 Mermaid ER 图 | Export Mermaid ER diagram",
+                "responses": {
+                    "200": {
+                        "description": "Mermaid ER 图代码 | Mermaid ER diagram code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/import-mermaid": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram",
+                "parameters": [
+                    {
+                        "description": "导入请求 | Import request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "导入结果 | Import result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取实体详情 | Get entity details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "实体详情 | Entity details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新实体 | Update entity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的实体 | Updated entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除实体 | Delete entity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "审批通过实体 | Approve entity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "审批成功 | Approved successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/{id}/attributes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取实体属性列表 | Get entity attributes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "属性列表 | Attribute list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建实体属性 | Create entity attribute",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityAttributeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的属性 | Created attribute",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/{id}/attributes/{aid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新实体属性 | Update entity attribute",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "属性ID | Attribute ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityAttributeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的属性 | Updated attribute",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除实体属性 | Delete entity attribute",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "属性ID | Attribute ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entity-relations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "查询实体关系列表 | List entity relations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID过滤 | Filter by entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "关系列表 | Relation list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建实体关系 | Create entity relation",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateEntityRelationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的关系 | Created relation",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/entity-relations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取实体关系详情 | Get entity relation details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关系ID | Relation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "关系详情 | Relation details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新实体关系 | Update entity relation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关系ID | Relation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityRelationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的关系 | Updated relation",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除实体关系 | Delete entity relation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关系ID | Relation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/logical-tables": {
             "get": {
                 "security": [
                     {
@@ -1058,14 +906,15 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/listmetrics": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1073,19 +922,21 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "查询事实表关联指标列表 | List fact table metric mappings",
+                "summary": "创建逻辑表 | Create logical table",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "事实表ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateLogicalTableRequest"
+                        }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "指标关联列表 | Metric mapping list",
+                    "201": {
+                        "description": "已创建的逻辑表 | Created logical table",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1094,7 +945,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/listrelations": {
+        "/logical-tables/{id}": {
             "get": {
                 "security": [
                     {
@@ -1107,40 +958,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "查询实体关系列表 | List entity relations",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID过滤 | Filter by entity ID",
-                        "name": "entity_id",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "关系列表 | Relation list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/previewddl": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "预览 DDL | Preview DDL",
+                "summary": "获取逻辑表详情 | Get logical table details",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1152,7 +970,83 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "DDL 预览 | DDL preview",
+                        "description": "逻辑表详情 | Logical table details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新逻辑表 | Update logical table",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateLogicalTableRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的逻辑表 | Updated logical table",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除逻辑表 | Delete logical table",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1161,8 +1055,86 @@ const docTemplate = `{
                 }
             }
         },
-        "/removedimensionrelation": {
+        "/logical-tables/{id}/dimension-relations": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "查询维度关联列表 | List dimension relations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "维度关联列表 | Dimension relation list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "添加维度关联 | Add dimension relation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateTableRelationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的关联 | Created relation",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/logical-tables/{id}/dimension-relations/{rid}": {
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1202,7 +1174,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/removemetric": {
+        "/logical-tables/{id}/fields": {
             "get": {
                 "security": [
                     {
@@ -1215,36 +1187,27 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "删除事实表指标关联 | Remove fact table metric mapping",
+                "summary": "获取逻辑表字段列表 | Get logical table fields",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "事实表ID | Fact table ID",
+                        "description": "逻辑表ID | Logical table ID",
                         "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "关联ID | Mapping ID",
-                        "name": "mid",
                         "in": "path",
                         "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功 | Removed successfully",
+                        "description": "字段列表 | Field list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     }
                 }
-            }
-        },
-        "/updateattribute": {
-            "get": {
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1259,35 +1222,28 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "更新实体属性 | Update entity attribute",
+                "summary": "创建逻辑表字段 | Create logical table field",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "实体ID | Entity ID",
+                        "description": "逻辑表ID | Logical table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "属性ID | Attribute ID",
-                        "name": "aid",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新请求 | Update request",
+                        "description": "创建请求 | Create request",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityAttributeRequest"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateLogicalFieldRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "已更新的属性 | Updated attribute",
+                    "201": {
+                        "description": "已创建的字段 | Created field",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1296,100 +1252,8 @@ const docTemplate = `{
                 }
             }
         },
-        "/updatedwlayer": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "更新数仓分层 | Update DW layer",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "分层ID | DW layer ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新请求 | Update request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateDWLayerRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已更新的分层 | Updated DW layer",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updateentity": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "更新实体 | Update entity",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "实体ID | Entity ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新请求 | Update request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已更新的实体 | Updated entity",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/updatefield": {
-            "get": {
+        "/logical-tables/{id}/fields/{fid}": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1439,17 +1303,12 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/updatelogicaltable": {
-            "get": {
+            },
+            "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "consumes": [
-                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -1457,7 +1316,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "更新逻辑表 | Update logical table",
+                "summary": "删除逻辑表字段 | Delete logical table field",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1467,18 +1326,16 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "更新请求 | Update request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateLogicalTableRequest"
-                        }
+                        "type": "integer",
+                        "description": "字段ID | Field ID",
+                        "name": "fid",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "已更新的逻辑表 | Updated logical table",
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1487,8 +1344,40 @@ const docTemplate = `{
                 }
             }
         },
-        "/updaterelation": {
+        "/logical-tables/{id}/metrics": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "查询事实表关联指标列表 | List fact table metric mappings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "指标关联列表 | Metric mapping list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1503,28 +1392,103 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "更新实体关系 | Update entity relation",
+                "summary": "添加事实表指标关联 | Add fact table metric mapping",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "关系ID | Relation ID",
+                        "description": "事实表ID | Fact table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新请求 | Update request",
+                        "description": "创建请求 | Create request",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateEntityRelationRequest"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateFactMetricMappingRequest"
                         }
                     }
                 ],
                 "responses": {
+                    "201": {
+                        "description": "已创建的关联 | Created mapping",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/logical-tables/{id}/metrics/{mid}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除事实表指标关联 | Remove fact table metric mapping",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "关联ID | Mapping ID",
+                        "name": "mid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
                     "200": {
-                        "description": "已更新的关系 | Updated relation",
+                        "description": "删除成功 | Removed successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/logical-tables/{id}/preview-ddl": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "预览 DDL | Preview DDL",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "DDL 预览 | DDL preview",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

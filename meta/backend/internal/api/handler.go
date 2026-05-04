@@ -36,6 +36,25 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 	c.JSON(statusCode, gin.H{"error": message})
 }
 
+// GetStats 获取元数据统计
+// @Summary 获取元数据统计 | Get metadata stats
+// @Description 获取当前租户的元数据项总数 | Get metadata item count for current tenant
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{} "统计信息 | Stats"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /stats [get]
+// @Security BearerAuth
+func (h *Handler) GetStats(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+	itemCount, err := h.scanService.CountItems(tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"total": itemCount})
+}
+
 // GetObjectMetadata 获取对象的元数据
 // GET /api/meta/metadata/object
 // Query params: engine_id, object_key
@@ -97,18 +116,19 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListObjectStorageNodes 分级列出对象存储节点
-// @Summary 列出对象存储节点 | List object storage nodes
-// @Description 分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes (Bucket/directory/file)
+// ListObjectStorageNodes 分级列出实时 catalog 节点。
+// Deprecated: 该接口为迁移期接口；新调用方应使用 System /engines/{id}/catalog/children。
+// @Summary 列出实时 catalog 节点（迁移期）| List live catalog nodes (transitional)
+// @Description 迁移期接口：分级列出引擎实时 catalog 节点。新调用方应使用 System /engines/{id}/catalog/children；Meta 长期只提供扫描后元数据快照。| Transitional API for live catalog nodes. New callers should use System /engines/{id}/catalog/children.
 // @Tags Meta
 // @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param path query string false "路径前缀 | Path prefix"
-// @Success 200 {object} map[string]interface{} "节点列表 | Node list"
+// @Param engine_id path int true "引擎ID | Engine ID"
+// @Param path query string false "Catalog 路径 | Catalog path"
+// @Success 200 {array} models.ObjectNode "节点列表 | Node list"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /object-storage/{engine_id}/nodes [get]
+// @Router /engines/{engine_id}/storage/nodes [get]
 // @Security BearerAuth
 func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
@@ -141,7 +161,14 @@ func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 }
 
 // AutoScan 自动扫描所有未扫描的资源
-// POST /api/meta/scan/auto
+// @Summary 自动扫描未扫描资源 | Auto scan unscanned resources
+// @Description 扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned for current tenant
+// @Tags Meta Scan
+// @Produce json
+// @Success 200 {object} map[string]interface{} "扫描结果 | Scan result"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/auto [post]
+// @Security BearerAuth
 func (h *Handler) AutoScan(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -155,6 +182,19 @@ func (h *Handler) AutoScan(c *gin.Context) {
 }
 
 // CreateManualScanRun 创建异步扫描运行
+// @Summary 创建手动扫描运行 | Create manual scan run
+// @Description 创建一个异步手动扫描执行记录并入队 | Create and enqueue a manual metadata scan run
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param request body models.ScanRequest true "扫描请求 | Scan request"
+// @Success 201 {object} map[string]interface{} "执行记录 | Execution"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/run/manual [post]
+// @Security BearerAuth
 func (h *Handler) CreateManualScanRun(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -186,6 +226,18 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 }
 
 // GetScanRun 获取执行详情（按 execution UUID）
+// @Summary 获取扫描运行详情 | Get scan run
+// @Description 按执行 UUID 获取扫描运行详情 | Get scan execution by UUID
+// @Tags Meta Scan
+// @Produce json
+// @Param run_id path string true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{} "执行详情 | Execution detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "执行不存在 | Execution not found"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/runs/{run_id} [get]
+// @Security BearerAuth
 func (h *Handler) GetScanRun(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -213,6 +265,17 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 }
 
 // CancelScanRun 取消执行
+// @Summary 取消扫描运行 | Cancel scan run
+// @Description 按执行 UUID 取消扫描运行 | Cancel scan execution by UUID
+// @Tags Meta Scan
+// @Produce json
+// @Param run_id path string true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{} "取消结果 | Cancel result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/runs/{run_id}/cancel [post]
+// @Security BearerAuth
 func (h *Handler) CancelScanRun(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -235,6 +298,21 @@ func (h *Handler) CancelScanRun(c *gin.Context) {
 }
 
 // ListScanRuns 列出执行记录（从 common.task_executions 查询）
+// @Summary 列出扫描运行 | List scan runs
+// @Description 分页查询当前租户的扫描运行记录 | List scan executions for current tenant
+// @Tags Meta Scan
+// @Produce json
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "执行状态 | Execution status"
+// @Param trigger_type query string false "触发类型 | Trigger type"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} map[string]interface{} "分页执行记录 | Paged executions"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/runs [get]
+// @Security BearerAuth
 func (h *Handler) ListScanRuns(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -294,6 +372,18 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 }
 
 // CreateScanTask 创建扫描任务
+// @Summary 创建扫描任务 | Create scan task
+// @Description 创建一个定时或手动扫描任务 | Create a scheduled or manual scan task
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param request body models.ScanTaskUpsertRequest true "扫描任务请求 | Scan task request"
+// @Success 201 {object} map[string]interface{} "扫描任务 | Scan task"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks [post]
+// @Security BearerAuth
 func (h *Handler) CreateScanTask(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -319,6 +409,19 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 }
 
 // UpdateScanTask 更新任务
+// @Summary 更新扫描任务 | Update scan task
+// @Description 更新扫描任务配置 | Update scan task configuration
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param task_id path int true "任务ID | Task ID"
+// @Param request body models.ScanTaskUpsertRequest true "扫描任务请求 | Scan task request"
+// @Success 200 {object} map[string]interface{} "扫描任务 | Scan task"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks/{task_id} [put]
+// @Security BearerAuth
 func (h *Handler) UpdateScanTask(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -351,6 +454,17 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 }
 
 // DeleteScanTask 删除任务
+// @Summary 删除扫描任务 | Delete scan task
+// @Description 删除指定扫描任务 | Delete scan task by ID
+// @Tags Meta Scan
+// @Produce json
+// @Param task_id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除结果 | Delete result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks/{task_id} [delete]
+// @Security BearerAuth
 func (h *Handler) DeleteScanTask(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -375,6 +489,17 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 }
 
 // TriggerScanTask 手动触发任务
+// @Summary 触发扫描任务 | Trigger scan task
+// @Description 立即触发指定扫描任务 | Trigger scan task immediately
+// @Tags Meta Scan
+// @Produce json
+// @Param task_id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "执行记录 | Execution"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks/{task_id}/trigger [post]
+// @Security BearerAuth
 func (h *Handler) TriggerScanTask(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -400,7 +525,16 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 	c.JSON(http.StatusOK, run)
 }
 
-// ListScanTasks 列出台账
+// ListScanTasks 列出扫描任务
+// @Summary 列出扫描任务 | List scan tasks
+// @Description 列出当前租户的扫描任务 | List scan tasks for current tenant
+// @Tags Meta Scan
+// @Produce json
+// @Success 200 {array} map[string]interface{} "扫描任务列表 | Scan tasks"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks [get]
+// @Security BearerAuth
 func (h *Handler) ListScanTasks(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -419,7 +553,17 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 }
 
 // ScanEngine 扫描指定引擎
-// POST /api/meta/scan/engine
+// @Summary 扫描指定引擎 | Scan engine
+// @Description 对指定引擎执行元数据扫描 | Execute metadata scan for an engine
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param request body models.ScanRequest true "扫描请求 | Scan request"
+// @Success 200 {object} models.ScanResponse "扫描结果 | Scan result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/engine [post]
+// @Security BearerAuth
 func (h *Handler) ScanEngine(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -447,9 +591,19 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 }
 
 // ExtractObjectMetadata 按需提取对象的深度元数据
-// POST /api/meta/metadata/extract
-// Query params: engine_id, object_key
-// Body: 对象的二进制内容
+// @Summary 提取对象元数据 | Extract object metadata
+// @Description 按需读取请求体内容并提取对象深度元数据 | Extract object metadata from request body
+// @Tags Meta
+// @Accept octet-stream
+// @Produce json
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param object_key query string true "对象路径 | Object key"
+// @Success 200 {object} map[string]interface{} "对象元数据 | Object metadata"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /metadata/extract [post]
+// @Security BearerAuth
 func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -519,7 +673,17 @@ func (h *Handler) effectiveTenantIDForEngine(c *gin.Context, engineID uint) (uin
 }
 
 // ListEngineItems 获取引擎下已扫描的数据项列表。
-// GET /api/v1/meta/engines/:engine_id/items?namespace=public
+// @Summary 列出引擎数据项 | List engine items
+// @Description 获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param namespace query string false "命名空间 | Namespace"
+// @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /engines/{engine_id}/items [get]
+// @Security BearerAuth
 func (h *Handler) ListEngineItems(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -549,7 +713,19 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 }
 
 // GetItemFieldsByName 按 engine/namespace/name 获取数据项字段。
-// GET /api/v1/meta/engines/:engine_id/items/fields?namespace=public&name=users
+// @Summary 按名称获取数据项字段 | Get item fields by name
+// @Description 按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and item name
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param namespace query string false "命名空间 | Namespace"
+// @Param name query string true "数据项名称 | Item name"
+// @Param include_details query bool false "是否返回详细字段 | Include details"
+// @Success 200 {object} map[string]interface{} "字段信息 | Fields"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /engines/{engine_id}/items/fields [get]
+// @Security BearerAuth
 func (h *Handler) GetItemFieldsByName(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	namespace := c.Query("namespace")
@@ -592,7 +768,16 @@ func (h *Handler) GetItemFieldsByName(c *gin.Context) {
 }
 
 // GetItemFieldsByID 按 item_id 获取数据项字段。
-// GET /api/v1/meta/items/:item_id/fields
+// @Summary 按 ID 获取数据项字段 | Get item fields by ID
+// @Description 按数据项 ID 获取字段详情 | Get item field details by item ID
+// @Tags Meta Query
+// @Produce json
+// @Param item_id path int true "数据项ID | Item ID"
+// @Success 200 {object} map[string]interface{} "字段详情 | Field details"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Router /items/{item_id}/fields [get]
+// @Security BearerAuth
 func (h *Handler) GetItemFieldsByID(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -613,7 +798,15 @@ func (h *Handler) GetItemFieldsByID(c *gin.Context) {
 }
 
 // ClearResourceCache 清除资源缓存
-// DELETE /api/meta/cache/engines/:engine_id
+// @Summary 清除引擎缓存 | Clear engine cache
+// @Description 清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache
+// @Tags Meta Cache
+// @Produce json
+// @Param engine_id path string true "存储引擎ID或all | Engine ID or all"
+// @Success 200 {object} map[string]interface{} "清除结果 | Clear result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /cache/engines/{engine_id} [delete]
+// @Security BearerAuth
 func (h *Handler) ClearResourceCache(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	if engineIDStr == "all" {
@@ -638,7 +831,14 @@ func (h *Handler) ClearResourceCache(c *gin.Context) {
 }
 
 // RefreshResourceCache 刷新资源缓存（先清除再重新加载）
-// POST /api/meta/cache/refresh
+// @Summary 刷新资源缓存 | Refresh resource cache
+// @Description 清除并重新预加载资源缓存 | Clear and preload resource cache
+// @Tags Meta Cache
+// @Produce json
+// @Success 200 {object} map[string]interface{} "刷新结果 | Refresh result"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /cache/refresh [post]
+// @Security BearerAuth
 func (h *Handler) RefreshResourceCache(c *gin.Context) {
 	h.engineService.ClearCache()
 	if err := h.engineService.PreloadResources(); err != nil {
@@ -656,7 +856,16 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 // ========== 新增：用于 Manager 模块的元数据查询接口 ==========
 
 // GetMetadataTree 获取资源的完整元数据树
-// GET /api/meta/engines/:engine_id/tree
+// @Summary 获取元数据树 | Get metadata tree
+// @Description 获取指定引擎的完整元数据树 | Get metadata tree for an engine
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Success 200 {object} models.MetadataTreeResponse "元数据树 | Metadata tree"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /engines/{engine_id}/tree [get]
+// @Security BearerAuth
 func (h *Handler) GetMetadataTree(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -680,7 +889,16 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 }
 
 // GetMetaNodeByID 获取单个节点详情
-// GET /api/meta/nodes/:node_id
+// @Summary 获取节点详情 | Get node detail
+// @Description 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID
+// @Tags Meta Query
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @Router /nodes/{node_id} [get]
+// @Security BearerAuth
 func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -701,7 +919,16 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 }
 
 // GetNodeChildren 获取节点的子节点
-// GET /api/meta/nodes/:node_id/children
+// @Summary 获取子节点 | Get node children
+// @Description 获取指定节点的直接子节点 | Get direct children of a metadata node
+// @Tags Meta Query
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {array} models.MetaNodeLite "子节点列表 | Children"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /nodes/{node_id}/children [get]
+// @Security BearerAuth
 func (h *Handler) GetNodeChildren(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -721,8 +948,17 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 	c.JSON(http.StatusOK, nodes)
 }
 
-// GetNodeItems 获取节点下的项目
-// GET /api/meta/nodes/:node_id/items
+// GetNodeItems 获取节点下的数据项
+// @Summary 获取节点数据项 | Get node items
+// @Description 获取指定节点下的数据项 | Get metadata items under a node
+// @Tags Meta Query
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /nodes/{node_id}/items [get]
+// @Security BearerAuth
 func (h *Handler) GetNodeItems(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -743,7 +979,17 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 }
 
 // QueryNodeByPath 按路径查询节点
-// GET /api/meta/nodes/by-path?engine_id=X&path=Y
+// @Summary 按路径查询节点 | Query node by path
+// @Description 按引擎和路径查询元数据节点 | Query metadata node by engine and path
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param path query string true "节点路径 | Node path"
+// @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @Router /nodes/by-path [get]
+// @Security BearerAuth
 func (h *Handler) QueryNodeByPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -769,8 +1015,19 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 	c.JSON(http.StatusOK, node)
 }
 
-// QueryItemByPath 按路径查询项目（对象存储）
-// GET /api/meta/items/by-path?engine_id=X&bucket=Y&path=Z
+// QueryItemByPath 按路径查询数据项
+// @Summary 按路径查询数据项 | Query item by path
+// @Description 按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and path
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param bucket query string true "Bucket或顶层命名空间 | Bucket or namespace"
+// @Param path query string false "数据项路径 | Item path"
+// @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Router /items/by-path [get]
+// @Security BearerAuth
 func (h *Handler) QueryItemByPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -799,7 +1056,16 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 }
 
 // GetItemByID 按 ID 查询 MetaItem
-// GET /api/meta/items/:item_id
+// @Summary 获取数据项详情 | Get item detail
+// @Description 按数据项 ID 获取元数据项详情 | Get metadata item detail by ID
+// @Tags Meta Query
+// @Produce json
+// @Param item_id path int true "数据项ID | Item ID"
+// @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Router /items/{item_id} [get]
+// @Security BearerAuth
 func (h *Handler) GetItemByID(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -820,7 +1086,19 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 }
 
 // GetItemSpatialMetadataByName 按 engine/namespace/name 获取数据项空间元数据。
-// GET /api/v1/meta/engines/:engine_id/items/spatial?namespace=public&name=users
+// @Summary 按名称获取空间元数据 | Get spatial metadata by name
+// @Description 按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace and item name
+// @Tags Meta Query
+// @Produce json
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param namespace query string false "命名空间 | Namespace"
+// @Param name query string true "数据项名称 | Item name"
+// @Success 200 {object} models.SpatialMetadataResponse "空间元数据 | Spatial metadata"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "空间元数据不存在 | Spatial metadata not found"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /engines/{engine_id}/items/spatial [get]
+// @Security BearerAuth
 func (h *Handler) GetItemSpatialMetadataByName(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -851,7 +1129,16 @@ func (h *Handler) GetItemSpatialMetadataByName(c *gin.Context) {
 }
 
 // GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。
-// GET /api/v1/meta/items/:item_id/spatial
+// @Summary 按 ID 获取空间元数据 | Get spatial metadata by ID
+// @Description 按数据项 ID 获取空间元数据 | Get spatial metadata by item ID
+// @Tags Meta Query
+// @Produce json
+// @Param item_id path int true "数据项ID | Item ID"
+// @Success 200 {object} models.SpatialMetadataResponse "空间元数据 | Spatial metadata"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "空间元数据不存在 | Spatial metadata not found"
+// @Router /items/{item_id}/spatial [get]
+// @Security BearerAuth
 func (h *Handler) GetItemSpatialMetadataByID(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 

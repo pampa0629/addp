@@ -32,7 +32,7 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{} "逻辑表列表 | Logical table list"
-// @Router /listlogicaltables [get]
+// @Router /logical-tables [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -87,7 +87,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateLogicalTableRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的逻辑表 | Created logical table"
-// @Router /createlogicaltable [get]
+// @Router /logical-tables [post]
 // @Security BearerAuth
 func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 	var req models.CreateLogicalTableRequest
@@ -113,7 +113,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "逻辑表详情 | Logical table details"
-// @Router /getlogicaltable [get]
+// @Router /logical-tables/{id} [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -139,7 +139,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.UpdateLogicalTableRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的逻辑表 | Updated logical table"
-// @Router /updatelogicaltable [get]
+// @Router /logical-tables/{id} [put]
 // @Security BearerAuth
 func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -171,7 +171,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /deletelogicaltable [get]
+// @Router /logical-tables/{id} [delete]
 // @Security BearerAuth
 func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -194,7 +194,7 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "字段列表 | Field list"
-// @Router /getfields [get]
+// @Router /logical-tables/{id}/fields [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -220,7 +220,7 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.CreateLogicalFieldRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的字段 | Created field"
-// @Router /createfield [get]
+// @Router /logical-tables/{id}/fields [post]
 // @Security BearerAuth
 func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -253,7 +253,7 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 // @Param fid path int true "字段ID | Field ID"
 // @Param body body models.UpdateLogicalFieldRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的字段 | Updated field"
-// @Router /updatefield [get]
+// @Router /logical-tables/{id}/fields/{fid} [put]
 // @Security BearerAuth
 func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -289,7 +289,7 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param fid path int true "字段ID | Field ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /deletefield [get]
+// @Router /logical-tables/{id}/fields/{fid} [delete]
 // @Security BearerAuth
 func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -317,7 +317,7 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "DDL 预览 | DDL preview"
-// @Router /previewddl [get]
+// @Router /logical-tables/{id}/preview-ddl [post]
 // @Security BearerAuth
 func (h *LogicalTableHandler) PreviewDDL(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)

@@ -665,6 +665,29 @@ info:
   title: ADDP Develop API
   version: "1.0"
 paths:
+  /assets/discoverable:
+    get:
+      description: 返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可发现资产 | List discoverable assets
+      tags:
+      - Develop
   /duckdb/query:
     post:
       consumes:
@@ -785,6 +808,37 @@ paths:
       summary: 获取命名空间列表 | List namespaces
       tags:
       - Engines
+  /engines/{id}/sample-query:
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取样例查询 | Get sample query
+      tags:
+      - Query
   /engines/nfs:
     get:
       produces:
@@ -1230,6 +1284,172 @@ paths:
       summary: 列出所有 Jupyter 实例 | List all Jupyter instances
       tags:
       - Jupyter Instance
+  /jupyter/server/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Jupyter Server 状态 | Get Jupyter server status
+      tags:
+      - Jupyter
+  /jupyter/venv:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除 Jupyter 虚拟环境 | Delete Jupyter venv
+      tags:
+      - Jupyter
+  /jupyter/venv/{tenant_id}/init:
+    post:
+      parameters:
+      - description: 租户ID | Tenant ID
+        in: path
+        name: tenant_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 为指定租户初始化 Jupyter 虚拟环境 | Init Jupyter venv by tenant
+      tags:
+      - Jupyter
+  /jupyter/venv/init:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 初始化 Jupyter 虚拟环境 | Init Jupyter venv
+      tags:
+      - Jupyter
+  /jupyter/venv/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Jupyter 虚拟环境状态 | Get Jupyter venv status
+      tags:
+      - Jupyter
+  /jupyter/venvs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出 Jupyter 虚拟环境 | List Jupyter venvs
+      tags:
+      - Jupyter
   /notebooks:
     get:
       parameters:
@@ -1491,21 +1711,7 @@ paths:
       summary: 刷新算子缓存 | Refresh operator cache
       tags:
       - Operator
-  /spark-runtimes:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Spark运行时列表 | Spark runtime list
-          schema:
-            items:
-              $ref: '#/definitions/models.Engine'
-            type: array
-      summary: 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
-      tags:
-      - Engines
-  /sql/tasks:
+  /query/tasks:
     get:
       parameters:
       - description: 页码 | Page number
@@ -1554,7 +1760,7 @@ paths:
       summary: 保存 SQL 为任务 | Save SQL as task
       tags:
       - Query
-  /sql/tasks/{id}:
+  /query/tasks/{id}:
     delete:
       parameters:
       - description: 任务ID | Task ID
@@ -1614,6 +1820,56 @@ paths:
       summary: 更新查询任务 | Update query task
       tags:
       - Query
+  /spark-runtimes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Spark运行时列表 | Spark runtime list
+          schema:
+            items:
+              $ref: '#/definitions/models.Engine'
+            type: array
+      summary: 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
+      tags:
+      - Engines
+  /tasks/list:
+    get:
+      description: 返回可供 Orchestrator 编排复用的开发任务 | List active develop tasks for Orchestrator
+      parameters:
+      - description: 任务提供者唯一标识 | Task provider identifier
+        in: query
+        name: unique_identifier
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可编排任务 | List orchestratable tasks
+      tags:
+      - Develop
   /test/{id}:
     get:
       consumes:

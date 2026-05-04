@@ -60,6 +60,70 @@ definitions:
     - UserTypeSuperAdmin
     - UserTypeTenantAdmin
     - UserTypeUser
+  github_com_addp_system_internal_models.APIKey:
+    properties:
+      application_id:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      expires_at:
+        type: string
+      id:
+        type: integer
+      key_prefix:
+        description: '"addp_live_" 前缀'
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      plain_text_key:
+        description: 临时字段（仅在创建时返回明文 Key）
+        type: string
+      revoked_at:
+        type: string
+      revoked_by:
+        type: integer
+      status:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.Application:
+    properties:
+      allowed_services:
+        description: 允许访问的服务列表
+        items:
+          type: string
+        type: array
+      api_keys:
+        description: 关联
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIKey'
+        type: array
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        description: 软删除
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      rate_limit_per_minute:
+        description: 每分钟请求数限制
+        type: integer
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_system_internal_models.AuditLog:
     properties:
       created_at:
@@ -117,6 +181,101 @@ definitions:
       username:
         type: string
     type: object
+  github_com_addp_system_internal_models.CatalogListChildrenRequest:
+    properties:
+      filter:
+        additionalProperties: true
+        type: object
+      options:
+        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListOptions'
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
+    type: object
+  github_com_addp_system_internal_models.CatalogListChildrenResponse:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogNode'
+        type: array
+    type: object
+  github_com_addp_system_internal_models.CatalogListOptions:
+    properties:
+      limit:
+        example: 100
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      recursive:
+        example: false
+        type: boolean
+    type: object
+  github_com_addp_system_internal_models.CatalogNode:
+    properties:
+      actions:
+        items:
+          type: string
+        type: array
+      attributes:
+        additionalProperties: true
+        type: object
+      is_container:
+        example: true
+        type: boolean
+      is_item:
+        example: false
+        type: boolean
+      kind:
+        example: namespace
+        type: string
+      name:
+        example: public
+        type: string
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
+      stats:
+        additionalProperties: true
+        type: object
+      term:
+        example: schema
+        type: string
+    type: object
+  github_com_addp_system_internal_models.CatalogPath:
+    properties:
+      engine_id:
+        example: 1
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogSegment'
+        type: array
+      version:
+        example: catalog.path/v1
+        type: string
+    type: object
+  github_com_addp_system_internal_models.CatalogSegment:
+    properties:
+      kind:
+        example: namespace
+        type: string
+      name:
+        example: public
+        type: string
+      term:
+        example: schema
+        type: string
+    type: object
+  github_com_addp_system_internal_models.ChangePasswordRequest:
+    properties:
+      new_password:
+        minLength: 6
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
   github_com_addp_system_internal_models.CleanupTask:
     properties:
       action:
@@ -149,6 +308,28 @@ definitions:
     type: object
   github_com_addp_system_internal_models.ConnectionInfo:
     additionalProperties: true
+    type: object
+  github_com_addp_system_internal_models.CreateAPIKeyRequest:
+    properties:
+      expires_at:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.CreateApplicationRequest:
+    properties:
+      allowed_services:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      name:
+        type: string
+      rate_limit_per_minute:
+        type: integer
+    required:
+    - name
     type: object
   github_com_addp_system_internal_models.Engine:
     properties:
@@ -225,6 +406,25 @@ definitions:
     - engine_type
     - name
     type: object
+  github_com_addp_system_internal_models.EngineUpdateRequest:
+    properties:
+      capabilities:
+        description: 能力声明JSON
+        type: string
+      connection_info:
+        $ref: '#/definitions/github_com_addp_system_internal_models.ConnectionInfo'
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        description: 显示名称
+        type: string
+      scan_config:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_system_internal_models.ScanConfig'
+        description: 扫描配置（可选）
+    type: object
   github_com_addp_system_internal_models.ErrorResponse:
     properties:
       error:
@@ -284,6 +484,12 @@ definitions:
         description: 启用定时扫描（深度固定为 deep）
         type: boolean
     type: object
+  github_com_addp_system_internal_models.SuccessResponse:
+    properties:
+      message:
+        example: 操作成功
+        type: string
+    type: object
   github_com_addp_system_internal_models.TaskProgress:
     properties:
       completed:
@@ -297,6 +503,65 @@ definitions:
       total:
         description: 期望模块数
         type: integer
+    type: object
+  github_com_addp_system_internal_models.Tenant:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.TenantCreateRequest:
+    properties:
+      admin_email:
+        type: string
+      admin_full_name:
+        type: string
+      admin_password:
+        minLength: 6
+        type: string
+      admin_username:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+    required:
+    - admin_password
+    - admin_username
+    - name
+    type: object
+  github_com_addp_system_internal_models.TenantUpdateRequest:
+    properties:
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.UpdateApplicationRequest:
+    properties:
+      allowed_services:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      name:
+        type: string
+      rate_limit_per_minute:
+        type: integer
+      status:
+        type: string
     type: object
   github_com_addp_system_internal_models.User:
     properties:
@@ -365,6 +630,21 @@ definitions:
     - UserTypeSuperAdmin
     - UserTypeTenantAdmin
     - UserTypeUser
+  github_com_addp_system_internal_models.UserUpdateRequest:
+    properties:
+      email:
+        type: string
+      full_name:
+        type: string
+      is_active:
+        type: boolean
+      password:
+        type: string
+      user_type:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_system_internal_models.UserType'
+        description: 用户类型
+    type: object
   internal_api.CreateExecuteTaskRequest:
     properties:
       based_on_scan:
@@ -605,6 +885,218 @@ paths:
       summary: 查询清理任务状态 | Get cleanup task status
       tags:
       - Cleanup
+  /applications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取应用列表 | List applications
+      tags:
+      - 应用管理 | Application Management
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 应用信息 | Application info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CreateApplicationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建应用 | Create application
+      tags:
+      - 应用管理 | Application Management
+  /applications/{id}:
+    delete:
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除应用 | Delete application
+      tags:
+      - 应用管理 | Application Management
+    get:
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取应用详情 | Get application detail
+      tags:
+      - 应用管理 | Application Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 应用更新信息 | Application update info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.UpdateApplicationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新应用 | Update application
+      tags:
+      - 应用管理 | Application Management
+  /applications/{id}/keys:
+    get:
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 API Key 列表 | List API keys
+      tags:
+      - 应用管理 | Application Management
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: API Key 信息 | API key info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CreateAPIKeyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIKey'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 生成 API Key | Generate API key
+      tags:
+      - 应用管理 | Application Management
+  /applications/{id}/keys/{key_id}:
+    delete:
+      parameters:
+      - description: 应用ID | Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: API Key ID
+        in: path
+        name: key_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销 API Key | Revoke API key
+      tags:
+      - 应用管理 | Application Management
   /engines:
     get:
       consumes:
@@ -721,6 +1213,206 @@ paths:
       summary: 列出命名空间列表 | List namespaces
       tags:
       - Resources
+  /engines/{id}:
+    delete:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除引擎 | Delete engine
+      tags:
+      - 引擎管理 | Engine Management
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Engine'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取引擎详情 | Get engine detail
+      tags:
+      - 引擎管理 | Engine Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 引擎更新信息 | Engine update info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Engine'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新引擎 | Update engine
+      tags:
+      - 引擎管理 | Engine Management
+  /engines/{id}/catalog/children:
+    post:
+      consumes:
+      - application/json
+      description: 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog，适用于扫描前选择 schema、bucket、prefix、collection、label
+        等范围。| Browse live engine catalog using System-managed connection information.
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Catalog 路径请求 | Catalog path request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListChildrenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出实时 catalog 子节点 | List live catalog children
+      tags:
+      - 引擎管理 | Engine Management
+  /engines/{id}/test:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 临时连接配置 | Temporary connection info
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 测试已有引擎连接 | Test existing engine connection
+      tags:
+      - 引擎管理 | Engine Management
+  /engines/test-connection:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎信息 | Engine info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建前测试连接 | Test connection before create
+      tags:
+      - 引擎管理 | Engine Management
   /login:
     post:
       consumes:
@@ -808,6 +1500,105 @@ paths:
       summary: 获取日志列表 | List audit logs
       tags:
       - 日志管理 | Log Management
+  /logs/{id}:
+    get:
+      parameters:
+      - description: 日志ID | Log ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.AuditLog'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取日志详情 | Get audit log detail
+      tags:
+      - 日志管理 | Log Management
+  /logs/export:
+    get:
+      parameters:
+      - default: csv
+        description: 导出格式 csv/json | Export format
+        in: query
+        name: format
+        type: string
+      - description: 开始时间 | Start time
+        in: query
+        name: start_time
+        type: string
+      - description: 结束时间 | End time
+        in: query
+        name: end_time
+        type: string
+      - description: HTTP方法 | HTTP method
+        in: query
+        name: http_method
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 导出审计日志 | Export audit logs
+      tags:
+      - 日志管理 | Log Management
+  /logs/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取日志统计 | Get log stats
+      tags:
+      - 日志管理 | Log Management
+  /logs/trends:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取日志趋势 | Get log trends
+      tags:
+      - 日志管理 | Log Management
   /refresh:
     post:
       consumes:
@@ -860,6 +1651,162 @@ paths:
       summary: 用户注册 | User registration
       tags:
       - 认证 | Auth
+  /tenants:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取租户列表 | List tenants
+      tags:
+      - 租户管理 | Tenant Management
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户信息 | Tenant info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.TenantCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建租户 | Create tenant
+      tags:
+      - 租户管理 | Tenant Management
+  /tenants/{id}:
+    delete:
+      parameters:
+      - description: 租户ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除租户 | Delete tenant
+      tags:
+      - 租户管理 | Tenant Management
+    get:
+      parameters:
+      - description: 租户ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取租户详情 | Get tenant detail
+      tags:
+      - 租户管理 | Tenant Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 租户更新信息 | Tenant update info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.TenantUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新租户 | Update tenant
+      tags:
+      - 租户管理 | Tenant Management
   /users:
     get:
       consumes:
@@ -928,6 +1875,132 @@ paths:
       security:
       - BearerAuth: []
       summary: 创建用户 | Create user
+      tags:
+      - 用户管理 | User Management
+  /users/{id}:
+    delete:
+      parameters:
+      - description: 用户ID | User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除用户 | Delete user
+      tags:
+      - 用户管理 | User Management
+    get:
+      parameters:
+      - description: 用户ID | User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取用户详情 | Get user detail
+      tags:
+      - 用户管理 | User Management
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID | User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 用户更新信息 | User update info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.UserUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新用户 | Update user
+      tags:
+      - 用户管理 | User Management
+  /users/{id}/change-password:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID | User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 密码修改请求 | Change password request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 修改用户密码 | Change user password
       tags:
       - 用户管理 | User Management
   /users/me:

@@ -27,6 +27,18 @@ type objectStorageBrowseRequest struct {
 }
 
 // BrowseDirectories 浏览对象存储目录
+// @Summary 浏览对象存储目录 | Browse object storage directories
+// @Tags 对象存储 | Object Storage
+// @Accept json
+// @Produce json
+// @Param request body objectStorageBrowseRequest true "浏览请求 | Browse request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /object-storage/browse [post]
+// @Security BearerAuth
 func (h *ObjectStorageHandler) BrowseDirectories(c *gin.Context) {
 	var req objectStorageBrowseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -57,6 +69,18 @@ func (h *ObjectStorageHandler) BrowseDirectories(c *gin.Context) {
 }
 
 // ListFiles 列出对象存储文件
+// @Summary 列出对象存储文件 | List object storage files
+// @Tags 对象存储 | Object Storage
+// @Accept json
+// @Produce json
+// @Param request body objectStorageBrowseRequest true "文件列表请求 | List files request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /object-storage/list-files [post]
+// @Security BearerAuth
 func (h *ObjectStorageHandler) ListFiles(c *gin.Context) {
 	var req objectStorageBrowseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

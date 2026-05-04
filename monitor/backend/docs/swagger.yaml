@@ -5,8 +5,35 @@ info:
   title: ADDP Monitor API
   version: "1.0"
 paths:
-  /checkallmodules:
+  /executions:
     get:
+      parameters:
+      - description: 模块名 | Module
+        in: query
+        name: module
+        type: string
+      - description: 任务类型 | Task type
+        in: query
+        name: task_type
+        type: string
+      - description: 执行状态 | Status
+        in: query
+        name: status
+        type: string
+      - description: 触发类型 | Trigger type
+        in: query
+        name: trigger_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
@@ -17,26 +44,17 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 检查所有模块健康状态 | Check all modules health
+      summary: 查询执行记录列表 | List execution records
       tags:
       - Monitor
-  /checkmodulehealth:
+  /executions/{id}:
     get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 检查模块健康状态 | Check module health
-      tags:
-      - Monitor
-  /getexecution:
-    get:
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
@@ -50,7 +68,57 @@ paths:
       summary: 获取执行记录详情 | Get execution record detail
       tags:
       - Monitor
-  /getmodules:
+  /executions/stats:
+    get:
+      parameters:
+      - description: 模块名 | Module
+        in: query
+        name: module
+        type: string
+      - default: 24h
+        description: 统计时长 | Duration
+        in: query
+        name: duration
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取统计数据 | Get statistics
+      tags:
+      - Monitor
+  /executions/trend:
+    get:
+      parameters:
+      - description: 模块名 | Module
+        in: query
+        name: module
+        type: string
+      - default: 7
+        description: 天数 | Days
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取趋势数据 | Get trend data
+      tags:
+      - Monitor
+  /modules:
     get:
       produces:
       - application/json
@@ -65,8 +133,14 @@ paths:
       summary: 获取模块列表 | Get module list
       tags:
       - Monitor
-  /getstatistics:
+  /modules/{module}/health:
     get:
+      parameters:
+      - description: 模块名 | Module
+        in: path
+        name: module
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -77,10 +151,10 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取统计数据 | Get statistics
+      summary: 检查模块健康状态 | Check module health
       tags:
       - Monitor
-  /gettrenddata:
+  /modules/health/all:
     get:
       produces:
       - application/json
@@ -92,22 +166,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取趋势数据 | Get trend data
-      tags:
-      - Monitor
-  /listexecutions:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询执行记录列表 | List execution records
+      summary: 检查所有模块健康状态 | Check all modules health
       tags:
       - Monitor
 securityDefinitions:

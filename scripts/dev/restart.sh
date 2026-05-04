@@ -53,6 +53,7 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ORIGINAL_ARGS=("$@")
 
 cd "${ROOT_DIR}"
 
@@ -84,6 +85,34 @@ generate_service_urls() {
 }
 
 generate_service_urls
+
+SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
+
+is_swagger_module() {
+  local module="$1"
+  [[ " ${SWAGGER_MODULES[*]} " == *" $module "* ]]
+}
+
+run_swagger_generate() {
+  local target="$1"
+  if bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" "$target"; then
+    return 0
+  fi
+
+  if [ "${ALLOW_SWAGGER_FAILURE:-0}" = "1" ]; then
+    echo "⚠️ [$target] Swagger 文档生成失败，ALLOW_SWAGGER_FAILURE=1，本次继续"
+    return 0
+  fi
+
+  echo "❌ [$target] Swagger 文档生成失败，已中断重启"
+  echo "   如需临时容忍历史欠账，可使用：ALLOW_SWAGGER_FAILURE=1 $0 ${ORIGINAL_ARGS[*]}"
+  return 1
+}
+
+run_swagger_coverage_check() {
+  local target="$1"
+  SWAGGER_COVERAGE_WARN_ONLY=1 bash "${SCRIPT_DIR}/../swagger/check-route-coverage.sh" "$target"
+}
 
 # 解析参数
 FORCE_BUILD_ALL=false
@@ -206,9 +235,11 @@ if [ "$FORCE_BUILD_ALL" = true ]; then
   # 清理构建缓存
   go clean -cache 2>/dev/null || true
 
-  # 重新生成所有模块的 Swagger 文档
+  # 重新生成并校验所有模块的 Swagger 文档
   echo "📄 重新生成所有模块 Swagger 文档..."
-  bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" all || echo "⚠️ 部分模块 Swagger 文档生成失败，继续"
+  run_swagger_generate all
+  echo "🔎 校验所有模块 Swagger 路由覆盖..."
+  run_swagger_coverage_check all || true
 
   echo "✅ 已标记所有模块需要重新编译"
 
@@ -219,10 +250,10 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
   for module in "${FORCE_BUILD_MODULES[@]}"; do
     echo "  处理 $module 模块..."
 
-    # 生成 Swagger 文档（所有 Go 后端模块，跳过 Python 服务和 gateway）
-    SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
-    if [[ " ${SWAGGER_MODULES[*]} " == *" $module "* ]]; then
-      bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" "$module" || echo "  ⚠️ [$module] Swagger 文档生成失败，跳过"
+    # 生成并校验 Swagger 文档（所有 Go 后端模块，跳过 Python 服务和 gateway）
+    if is_swagger_module "$module"; then
+      run_swagger_generate "$module"
+      run_swagger_coverage_check "$module" || true
     fi
 
     # Touch 指定模块的源文件

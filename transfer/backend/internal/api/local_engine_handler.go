@@ -12,7 +12,7 @@ import (
 
 // LocalEngineHandler 提供本地引擎管理 API
 type LocalEngineHandler struct {
-    service *service.LocalEngineService
+	service *service.LocalEngineService
 }
 
 // NewLocalEngineHandler 构造函数
@@ -23,7 +23,7 @@ func NewLocalEngineHandler(service *service.LocalEngineService) *LocalEngineHand
 // LocalEngineRequest 创建或更新请求体
 type LocalEngineRequest struct {
 	Name           string         `json:"name" binding:"required"`
-	EngineType   string         `json:"engine_type" binding:"required"`
+	EngineType     string         `json:"engine_type" binding:"required"`
 	Description    string         `json:"description"`
 	IsActive       bool           `json:"is_active"`
 	ConnectionInfo models.JSONMap `json:"connection_info" binding:"required"`
@@ -119,6 +119,14 @@ func cloneJSONMap(source models.JSONMap) models.JSONMap {
 }
 
 // List 返回当前租户的资源列表
+// @Summary 获取本地引擎列表 | List local engines
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param engine_type query string false "引擎类型 | Engine type"
+// @Success 200 {array} models.LocalEngine
+// @Failure 500 {object} map[string]string
+// @Router /local-engines [get]
+// @Security BearerAuth
 func (h *LocalEngineHandler) List(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	engineType := c.Query("engine_type")
@@ -133,6 +141,15 @@ func (h *LocalEngineHandler) List(c *gin.Context) {
 }
 
 // ListSystemEngines 返回 System 模块的存储引擎
+// @Summary 获取 System 引擎列表 | List system engines
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param engine_type query string false "引擎类型 | Engine type"
+// @Success 200 {array} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /system-engines [get]
+// @Security BearerAuth
 func (h *LocalEngineHandler) ListSystemEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	engineType := c.Query("engine_type")
@@ -151,6 +168,16 @@ func (h *LocalEngineHandler) ListSystemEngines(c *gin.Context) {
 }
 
 // Create 新建资源
+// @Summary 创建本地引擎 | Create local engine
+// @Tags 本地引擎 | Local Engines
+// @Accept json
+// @Produce json
+// @Param request body LocalEngineRequest true "本地引擎请求 | Local engine request"
+// @Success 201 {object} models.LocalEngine
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /local-engines [post]
+// @Security BearerAuth
 func (h *LocalEngineHandler) Create(c *gin.Context) {
 	var req LocalEngineRequest
 	if !commonAPI.BindJSON(c, &req) {
@@ -163,7 +190,7 @@ func (h *LocalEngineHandler) Create(c *gin.Context) {
 	resource := &models.LocalEngine{
 		TenantID:       tenantID,
 		Name:           req.Name,
-		EngineType:   req.EngineType,
+		EngineType:     req.EngineType,
 		Description:    req.Description,
 		IsActive:       req.IsActive,
 		ConnectionInfo: req.ConnectionInfo,
@@ -179,6 +206,18 @@ func (h *LocalEngineHandler) Create(c *gin.Context) {
 }
 
 // Update 更新资源
+// @Summary 更新本地引擎 | Update local engine
+// @Tags 本地引擎 | Local Engines
+// @Accept json
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Param request body LocalEngineUpdateRequest true "本地引擎更新请求 | Local engine update request"
+// @Success 200 {object} models.LocalEngine
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /local-engines/{id} [put]
+// @Security BearerAuth
 func (h *LocalEngineHandler) Update(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -220,6 +259,14 @@ func (h *LocalEngineHandler) Update(c *gin.Context) {
 }
 
 // Delete 删除资源
+// @Summary 删除本地引擎 | Delete local engine
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /local-engines/{id} [delete]
+// @Security BearerAuth
 func (h *LocalEngineHandler) Delete(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -237,6 +284,15 @@ func (h *LocalEngineHandler) Delete(c *gin.Context) {
 }
 
 // TestBeforeCreate 创建前测试连接
+// @Summary 创建前测试本地引擎连接 | Test local engine before create
+// @Tags 本地引擎 | Local Engines
+// @Accept json
+// @Produce json
+// @Param request body LocalEngineRequest true "本地引擎请求 | Local engine request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Router /local-engines/test-connection [post]
+// @Security BearerAuth
 func (h *LocalEngineHandler) TestBeforeCreate(c *gin.Context) {
 	var req LocalEngineRequest
 	if !commonAPI.BindJSON(c, &req) {
@@ -252,6 +308,13 @@ func (h *LocalEngineHandler) TestBeforeCreate(c *gin.Context) {
 }
 
 // TestExisting 测试已有资源
+// @Summary 测试已有本地引擎 | Test existing local engine
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /local-engines/{id}/test [post]
+// @Security BearerAuth
 func (h *LocalEngineHandler) TestExisting(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -269,6 +332,15 @@ func (h *LocalEngineHandler) TestExisting(c *gin.Context) {
 }
 
 // Sync 推送到 System
+// @Summary 同步本地引擎到 System | Sync local engine to System
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /local-engines/{id}/sync [post]
+// @Security BearerAuth
 func (h *LocalEngineHandler) Sync(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -293,35 +365,57 @@ func (h *LocalEngineHandler) Sync(c *gin.Context) {
 }
 
 // ListTables 列出本地资源下的表（针对文件型或直连数据源）
+// @Summary 列出本地引擎表 | List local engine tables
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Success 200 {array} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /local-engines/{id}/tables [get]
+// @Security BearerAuth
 func (h *LocalEngineHandler) ListTables(c *gin.Context) {
-    id, ok := commonAPI.ParseUintParam(c, "id")
-    if !ok { return }
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
 
-    tenantID := c.GetUint("tenant_id")
-    tables, err := h.service.ListTables(id, tenantID)
-    if err != nil {
-        commonAPI.InternalServerError(c, err.Error())
-        return
-    }
-    c.JSON(http.StatusOK, tables)
+	tenantID := c.GetUint("tenant_id")
+	tables, err := h.service.ListTables(id, tenantID)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, tables)
 }
 
 // ListFields 列出指定表的字段（含类型信息）
+// @Summary 列出本地引擎字段 | List local engine fields
+// @Tags 本地引擎 | Local Engines
+// @Produce json
+// @Param id path int true "本地引擎ID | Local engine ID"
+// @Param table query string true "表名 | Table name"
+// @Success 200 {array} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /local-engines/{id}/fields [get]
+// @Security BearerAuth
 func (h *LocalEngineHandler) ListFields(c *gin.Context) {
-    id, ok := commonAPI.ParseUintParam(c, "id")
-    if !ok { return }
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
 
-    table := c.Query("table")
-    if table == "" {
-        commonAPI.BadRequestError(c, "missing table parameter")
-        return
-    }
+	table := c.Query("table")
+	if table == "" {
+		commonAPI.BadRequestError(c, "missing table parameter")
+		return
+	}
 
-    tenantID := c.GetUint("tenant_id")
-    fields, err := h.service.ListFields(id, tenantID, table)
-    if err != nil {
-        commonAPI.InternalServerError(c, err.Error())
-        return
-    }
-    c.JSON(http.StatusOK, fields)
+	tenantID := c.GetUint("tenant_id")
+	fields, err := h.service.ListFields(id, tenantID, table)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, fields)
 }

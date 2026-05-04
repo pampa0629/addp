@@ -594,7 +594,7 @@ const stopResizing = () => {
   enforceBounds()
 }
 
-// 判断是否为对象存储/文件系统类型（走 storage/nodes 路径而非 catalog namespace）
+// 判断是否为对象存储/文件系统类型（扫描参数使用 object_paths）
 const isObjectStorageType = (resourceType) => {
   if (!resourceType) return false
   const type = resourceType.toLowerCase()
@@ -632,32 +632,16 @@ const loadSchemas = async () => {
   let availableSchemas = []
   let connectionError = null
 
-  // 判断是否为对象存储类型
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
-
   try {
     // 检查引擎连接状态，如果已知离线，直接跳过实际连接
     if (selectedResource.value.connection_status === 'offline') {
       connectionError = new Error(`引擎离线: ${selectedResource.value.check_message || '连接失败'}`)
       console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
     } else {
-      // 引擎在线或状态未知，尝试获取实际命名空间/Bucket列表
+      // 引擎在线或状态未知，统一通过 System 实时 catalog API 获取顶层节点
       try {
-        if (isObjectStorage) {
-          // 对象存储：获取节点列表（buckets）
-          const nodesRes = await metaApi.listObjectStorageNodes(selectedResource.value.id)
-          const nodes = Array.isArray(nodesRes) ? nodesRes : []
-          // 转换为统一节点格式以兼容现有UI状态字段
-          availableSchemas = nodes.map(node => ({
-            name: node.name,
-            node_type: node.node_type,
-            path: node.path || node.name
-          }))
-        } else {
-          // 结构化存储：获取命名空间列表
-          const availableRes = await metaApi.listAvailableNamespaces(selectedResource.value.id)
-          availableSchemas = Array.isArray(availableRes) ? availableRes : []
-        }
+        const availableRes = await metaApi.listCatalogTopNodes(selectedResource.value.id)
+        availableSchemas = Array.isArray(availableRes) ? availableRes : []
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
         connectionError = error

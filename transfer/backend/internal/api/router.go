@@ -10,13 +10,13 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/middleware/logging"
 	"github.com/addp/common/middleware/requestid"
-	"github.com/addp/transfer/internal/service"
+	_ "github.com/addp/transfer/docs"
 	_ "github.com/addp/transfer/i18n"
+	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/transfer/docs"
 )
 
 // extractAuthToken 从请求中提取认证 token
@@ -72,9 +72,7 @@ func SetupRouter(
 	// 公开接口（无需认证）
 	public := api.Group("")
 	{
-		public.GET("/ping", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "pong"})
-		})
+		public.GET("/ping", ping)
 	}
 
 	// 受保护接口（需要 JWT 认证）
@@ -194,4 +192,14 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+// ping 服务连通性检查
+// @Summary Ping
+// @Tags Transfer
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /ping [get]
+func ping(c *gin.Context) {
+	c.JSON(200, gin.H{"message": "pong"})
 }

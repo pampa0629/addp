@@ -24,7 +24,7 @@ func NewDomainHandler(svc *service.DomainService) *DomainHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listdomains [get]
+// @Router /domains [get]
 // @Security BearerAuth
 func (h *DomainHandler) ListDomains(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -41,7 +41,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createdomain [get]
+// @Router /domains [post]
 // @Security BearerAuth
 func (h *DomainHandler) CreateDomain(c *gin.Context) {
 	var req models.CreateDomainRequest
@@ -66,7 +66,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getdomain [get]
+// @Router /domains/{id} [get]
 // @Security BearerAuth
 func (h *DomainHandler) GetDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -89,7 +89,7 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatedomain [get]
+// @Router /domains/{id} [put]
 // @Security BearerAuth
 func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -120,7 +120,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletedomain [get]
+// @Router /domains/{id} [delete]
 // @Security BearerAuth
 func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

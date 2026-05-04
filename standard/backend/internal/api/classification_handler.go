@@ -26,7 +26,7 @@ func NewClassificationHandler(svc *service.ClassificationService) *Classificatio
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listclassifications [get]
+// @Router /classifications [get]
 // @Security BearerAuth
 func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -42,7 +42,7 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createclassification [get]
+// @Router /classifications [post]
 // @Security BearerAuth
 func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 	var req models.CreateClassificationRequest
@@ -64,7 +64,7 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updateclassification [get]
+// @Router /classifications/{id} [put]
 // @Security BearerAuth
 func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -91,7 +91,7 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deleteclassification [get]
+// @Router /classifications/{id} [delete]
 // @Security BearerAuth
 func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -113,7 +113,7 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listgradinglevels [get]
+// @Router /grading-levels [get]
 // @Security BearerAuth
 func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -129,7 +129,7 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updategradinglevel [get]
+// @Router /grading-levels/{id} [put]
 // @Security BearerAuth
 func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

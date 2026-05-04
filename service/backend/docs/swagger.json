@@ -8,6 +8,210 @@
     "host": "localhost:8086",
     "basePath": "/api/v1/service",
     "paths": {
+        "/api/gquery/{serviceName}": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryExecution"
+                ],
+                "summary": "执行图查询服务 | Execute graph query service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "执行请求 | Execute request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.GraphQueryExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.GraphQueryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/query/{serviceName}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryExecution"
+                ],
+                "summary": "执行查询服务 | Execute query service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "json",
+                        "description": "返回格式 (json,csv,geojson) | Response format (json,csv,geojson)",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件 | Filter",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/assets/discoverable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Service"
+                ],
+                "summary": "列出可发现资产 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/data/aggregate": {
             "post": {
                 "consumes": [
@@ -122,6 +326,57 @@
                 }
             }
         },
+        "/endpoints": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Service"
+                ],
+                "summary": "获取服务端点 | Get service endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务引用 | Service reference",
+                        "name": "ref",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.serviceEndpointResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "produces": [
@@ -139,6 +394,711 @@
                             "items": {
                                 "type": "object",
                                 "additionalProperties": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/tree": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取引擎元数据树 | Get engine metadata tree",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/graph": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryService"
+                ],
+                "summary": "图查询服务列表 | List graph query services",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索词 | Search",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryService"
+                ],
+                "summary": "创建图查询服务 | Create graph query service",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateGraphQueryServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/graph/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryService"
+                ],
+                "summary": "获取图查询服务 | Get graph query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryService"
+                ],
+                "summary": "更新图查询服务 | Update graph query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateGraphQueryServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GraphQueryService"
+                ],
+                "summary": "删除图查询服务 | Delete graph query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/nodes/{node_id}/children": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取节点子项 | Get node children",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "节点ID | Node ID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/features/{serviceName}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Features"
+                ],
+                "summary": "OGC API Features Landing Page | OGC API Features Landing Page",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Landing Page | Landing Page",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/features/{serviceName}/collections": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Features"
+                ],
+                "summary": "OGC API Features Collections | OGC API Features Collections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collections | Collections",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/features/{serviceName}/collections/{collectionId}/items": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Features"
+                ],
+                "summary": "OGC API Features Items | OGC API Features Items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "集合ID | Collection ID",
+                        "name": "collectionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "返回数量 | Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "偏移量 | Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "空间范围 | Bounding box",
+                        "name": "bbox",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GeoJSON FeatureCollection | GeoJSON FeatureCollection",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/features/{serviceName}/collections/{collectionId}/items/{featureId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Features"
+                ],
+                "summary": "OGC API Features Item | OGC API Features Item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "集合ID | Collection ID",
+                        "name": "collectionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "要素ID | Feature ID",
+                        "name": "featureId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GeoJSON Feature | GeoJSON Feature",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/features/{serviceName}/conformance": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Features"
+                ],
+                "summary": "OGC API Features Conformance | OGC API Features Conformance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称 | Service name",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Conformance declaration | Conformance declaration",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
@@ -360,6 +1320,872 @@
                 }
             }
         },
+        "/query": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "查询服务列表 | List query services",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索词 | Search",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "创建查询服务 | Create query service",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateQueryServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/query/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "获取查询服务详情 | Get query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "更新查询服务 | Update query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateQueryServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "删除查询服务 | Delete query service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/registered": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "注册服务列表 | List registered services",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索词 | Search",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "创建注册服务 | Create registered service",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateRegisteredServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/registered/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "获取注册服务详情 | Get registered service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "更新注册服务 | Update registered service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateRegisteredServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.RegisteredServiceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "删除注册服务 | Delete registered service",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/registered/{id}/health": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "检查注册服务健康状态 | Check registered service health",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.HealthCheckResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/registered/{id}/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RegisteredService"
+                ],
+                "summary": "刷新注册服务元数据 | Refresh registered service metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "刷新请求 | Refresh request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.RefreshMetadataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/sql/spatial-metadata": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取 SQL 空间元数据 | Get SQL spatial metadata",
+                "parameters": [
+                    {
+                        "description": "SQL 空间元数据请求 | SQL spatial metadata request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tables/metadata": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取表元数据 | Get table metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Schema",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "表名 | Table",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tables/spatial-metadata": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取表空间元数据 | Get table spatial metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Schema",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "表名 | Table",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tile": {
             "get": {
                 "produces": [
@@ -423,6 +2249,185 @@
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
+                    }
+                }
+            }
+        },
+        "/tile-layers/{serviceId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "列出图层 | List layers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "图层列表 | Layer list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "添加图层 | Add layer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建图层请求 | Create layer request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的图层 | Created layer",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/tile-layers/{serviceId}/{layerId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "获取图层详情 | Get layer details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID | Layer ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "图层详情 | Layer details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "更新图层 | Update layer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID | Layer ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新图层请求 | Update layer request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateTileLayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的图层 | Updated layer",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "删除图层 | Delete layer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID | Layer ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功 | Deleted successfully"
                     }
                 }
             }
@@ -576,185 +2581,6 @@
                         "type": "integer",
                         "description": "服务 ID | Service ID",
                         "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "删除成功 | Deleted successfully"
-                    }
-                }
-            }
-        },
-        "/tile/{serviceId}/layers": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TileService"
-                ],
-                "summary": "列出图层 | List layers",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "服务 ID | Service ID",
-                        "name": "serviceId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "图层列表 | Layer list",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
-                            }
-                        }
-                    }
-                }
-            },
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TileService"
-                ],
-                "summary": "添加图层 | Add layer",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "服务 ID | Service ID",
-                        "name": "serviceId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "创建图层请求 | Create layer request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已创建的图层 | Created layer",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
-                        }
-                    }
-                }
-            }
-        },
-        "/tile/{serviceId}/layers/{layerId}": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TileService"
-                ],
-                "summary": "获取图层详情 | Get layer details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "服务 ID | Service ID",
-                        "name": "serviceId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "图层 ID | Layer ID",
-                        "name": "layerId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "图层详情 | Layer details",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TileService"
-                ],
-                "summary": "更新图层 | Update layer",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "服务 ID | Service ID",
-                        "name": "serviceId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "图层 ID | Layer ID",
-                        "name": "layerId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新图层请求 | Update layer request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateTileLayerRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已更新的图层 | Updated layer",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TileService"
-                ],
-                "summary": "删除图层 | Delete layer",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "服务 ID | Service ID",
-                        "name": "serviceId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "图层 ID | Layer ID",
-                        "name": "layerId",
                         "in": "path",
                         "required": true
                     }
@@ -990,6 +2816,201 @@
                 }
             }
         },
+        "github_com_addp_service_internal_models.CreateGraphQueryServiceRequest": {
+            "type": "object",
+            "required": [
+                "config_type",
+                "engine_id",
+                "service_name",
+                "title"
+            ],
+            "properties": {
+                "config_type": {
+                    "type": "string",
+                    "enum": [
+                        "label",
+                        "cypher"
+                    ]
+                },
+                "cypher_query": {
+                    "type": "string"
+                },
+                "data_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "database_name": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_records": {
+                    "type": "integer",
+                    "maximum": 5000,
+                    "minimum": 1
+                },
+                "node_label": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "description": "cypher 模式下的参数定义（可选，不传则自动从 Cypher 中提取）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ParameterDef"
+                    }
+                },
+                "public_access": {
+                    "type": "boolean"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CreateQueryServiceRequest": {
+            "type": "object",
+            "required": [
+                "config_type",
+                "service_name",
+                "title"
+            ],
+            "properties": {
+                "config_type": {
+                    "description": "配置方式（table 或 sql）",
+                    "type": "string",
+                    "enum": [
+                        "table",
+                        "sql"
+                    ]
+                },
+                "data_config": {
+                    "description": "数据配置（可选，系统会自动检测）",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "description": "存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）",
+                    "type": "integer"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_features": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 1
+                },
+                "protocols": {
+                    "description": "协议配置（可选，使用默认值）",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "public_access": {
+                    "description": "访问控制",
+                    "type": "boolean"
+                },
+                "schema_name": {
+                    "description": "表配置字段（config_type='table'时需要）",
+                    "type": "string"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "sql_query": {
+                    "description": "SQL配置字段（config_type='sql'时需要）",
+                    "type": "string"
+                },
+                "table_name": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CreateRegisteredServiceRequest": {
+            "type": "object",
+            "required": [
+                "endpoint_url",
+                "service_name",
+                "service_type",
+                "title"
+            ],
+            "properties": {
+                "auth_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "auth_type": {
+                    "description": "认证配置（可选）",
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "basic",
+                        "bearer",
+                        "api_key"
+                    ]
+                },
+                "auto_refresh_metadata": {
+                    "description": "是否自动刷新元数据",
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoint_url": {
+                    "description": "服务端点",
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "description": "健康检查端点（可选）",
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "service_type": {
+                    "description": "服务类型",
+                    "type": "string",
+                    "enum": [
+                        "wms",
+                        "wfs",
+                        "wmts",
+                        "ogc_api",
+                        "xyz",
+                        "rest"
+                    ]
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.CreateTileLayerRequest": {
             "type": "object",
             "required": [
@@ -1142,6 +3163,243 @@
                 }
             }
         },
+        "github_com_addp_service_internal_models.GraphQueryExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "分页（两种模式均支持）",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "parameters": {
+                    "description": "Cypher 模式：用户提供的参数值（对应 $paramName 占位符）\nLabel 模式：用于过滤的属性条件（属性名 → 值）",
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.GraphQueryResponse": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "表格格式（result_type = table | both）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "graph_data": {
+                    "description": "图格式（result_type = graph | both）"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "rows_count": {
+                    "description": "通用",
+                    "type": "integer"
+                },
+                "total_count": {
+                    "description": "分页（label 模式提供）",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.HealthCheckResult": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "response_time": {
+                    "description": "响应时间（毫秒）",
+                    "type": "integer"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "healthy, unhealthy, error",
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ParameterDef": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "description": "string | integer | float | boolean",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.RefreshMetadataRequest": {
+            "type": "object",
+            "properties": {
+                "force": {
+                    "description": "是否强制刷新（即使最近刚刷新过）",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.RegisteredServiceDTO": {
+            "type": "object",
+            "properties": {
+                "auth_type": {
+                    "description": "认证配置（不返回敏感信息）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "审计",
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoint_url": {
+                    "type": "string"
+                },
+                "endpoints": {
+                    "description": "服务端点",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "has_auth_config": {
+                    "description": "是否配置了认证信息",
+                    "type": "boolean"
+                },
+                "health_check_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "last_checked_at": {
+                    "type": "string"
+                },
+                "layers": {
+                    "description": "图层信息",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.RegisteredServiceLayerDTO"
+                    }
+                },
+                "metadata": {
+                    "description": "元数据",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "service_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "状态",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.RegisteredServiceLayerDTO": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "crs": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "geometry_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "layer_name": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.TileServiceDTO": {
             "type": "object",
             "properties": {
@@ -1236,6 +3494,135 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.UpdateGraphQueryServiceRequest": {
+            "type": "object",
+            "properties": {
+                "cypher_query": {
+                    "type": "string"
+                },
+                "data_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_records": {
+                    "type": "integer",
+                    "maximum": 5000,
+                    "minimum": 1
+                },
+                "public_access": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "error"
+                    ]
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.UpdateQueryServiceRequest": {
+            "type": "object",
+            "properties": {
+                "data_config": {
+                    "description": "数据配置更新",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_features": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 1
+                },
+                "protocols": {
+                    "description": "协议配置更新",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "public_access": {
+                    "description": "访问控制更新",
+                    "type": "boolean"
+                },
+                "status": {
+                    "description": "状态更新",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "error"
+                    ]
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.UpdateRegisteredServiceRequest": {
+            "type": "object",
+            "properties": {
+                "auth_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "auth_type": {
+                    "description": "认证配置更新",
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "basic",
+                        "bearer",
+                        "api_key"
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "description": "健康检查URL更新",
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "description": "状态更新",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "error"
+                    ]
+                },
+                "title": {
                     "type": "string"
                 }
             }
@@ -1523,6 +3910,23 @@
                     "type": "string"
                 },
                 "upperCorner": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.serviceEndpointResp": {
+            "type": "object",
+            "properties": {
+                "endpoints": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "service_type": {
+                    "type": "string"
+                },
+                "title": {
                     "type": "string"
                 }
             }

@@ -15,6 +15,117 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/assets/discoverable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前租户下已扫描完成的数据项，供 Asset 模块自动发现注册 | List scanned metadata items for Asset discovery",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta"
+                ],
+                "summary": "列出可发现资产 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "可发现资产列表 | Discoverable assets",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/cache/engines/{engine_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Cache"
+                ],
+                "summary": "清除引擎缓存 | Clear engine cache",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "存储引擎ID或all | Engine ID or all",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "清除结果 | Clear result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/cache/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "清除并重新预加载资源缓存 | Clear and preload resource cache",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Cache"
+                ],
+                "summary": "刷新资源缓存 | Refresh resource cache",
+                "responses": {
+                    "200": {
+                        "description": "刷新结果 | Refresh result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -33,6 +144,583 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "引擎列表 | Engine list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "列出引擎数据项 | List engine items",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间 | Namespace",
+                        "name": "namespace",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "数据项列表 | Items",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaItemLite"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/items/fields": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and item name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "按名称获取数据项字段 | Get item fields by name",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间 | Namespace",
+                        "name": "namespace",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项名称 | Item name",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否返回详细字段 | Include details",
+                        "name": "include_details",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "字段信息 | Fields",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/items/spatial": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace and item name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "按名称获取空间元数据 | Get spatial metadata by name",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间 | Namespace",
+                        "name": "namespace",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项名称 | Item name",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "空间元数据 | Spatial metadata",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "空间元数据不存在 | Spatial metadata not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/storage/nodes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "迁移期接口：分级列出引擎实时 catalog 节点。新调用方应使用 System /engines/{id}/catalog/children；Meta 长期只提供扫描后元数据快照。| Transitional API for live catalog nodes. New callers should use System /engines/{id}/catalog/children.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta"
+                ],
+                "summary": "列出实时 catalog 节点（迁移期）| List live catalog nodes (transitional)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Catalog 路径 | Catalog path",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "节点列表 | Node list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_meta_internal_models.ObjectNode"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{engine_id}/tree": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取指定引擎的完整元数据树 | Get metadata tree for an engine",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "获取元数据树 | Get metadata tree",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "元数据树 | Metadata tree",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.MetadataTreeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/items/by-path": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and path",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "按路径查询数据项 | Query item by path",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bucket或顶层命名空间 | Bucket or namespace",
+                        "name": "bucket",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项路径 | Item path",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "数据项详情 | Item detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaItemLite"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/items/{item_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按数据项 ID 获取元数据项详情 | Get metadata item detail by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "获取数据项详情 | Get item detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "数据项详情 | Item detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaItemLite"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/items/{item_id}/fields": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按数据项 ID 获取字段详情 | Get item field details by item ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "按 ID 获取数据项字段 | Get item fields by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "字段详情 | Field details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/items/{item_id}/spatial": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按数据项 ID 获取空间元数据 | Get spatial metadata by item ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "按 ID 获取空间元数据 | Get spatial metadata by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "空间元数据 | Spatial metadata",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "空间元数据不存在 | Spatial metadata not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metadata/extract": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按需读取请求体内容并提取对象深度元数据 | Extract object metadata from request body",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta"
+                ],
+                "summary": "提取对象元数据 | Extract object metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "对象路径 | Object key",
+                        "name": "object_key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "对象元数据 | Object metadata",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -104,39 +792,329 @@ const docTemplate = `{
                 }
             }
         },
-        "/object-storage/{engine_id}/nodes": {
+        "/nodes/by-path": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "分级列出对象存储的节点（Bucket/目录/文件）| Hierarchically list object storage nodes (Bucket/directory/file)",
+                "description": "按引擎和路径查询元数据节点 | Query metadata node by engine and path",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Meta"
+                    "Meta Query"
                 ],
-                "summary": "列出对象存储节点 | List object storage nodes",
+                "summary": "按路径查询节点 | Query node by path",
                 "parameters": [
                     {
                         "type": "integer",
                         "description": "存储引擎ID | Engine ID",
                         "name": "engine_id",
-                        "in": "path",
+                        "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "路径前缀 | Path prefix",
+                        "description": "节点路径 | Node path",
                         "name": "path",
-                        "in": "query"
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "节点列表 | Node list",
+                        "description": "节点详情 | Node detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "节点不存在 | Node not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/nodes/{node_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按节点 ID 获取元数据节点详情 | Get metadata node detail by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "获取节点详情 | Get node detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "节点ID | Node ID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "节点详情 | Node detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "节点不存在 | Node not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/nodes/{node_id}/children": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取指定节点的直接子节点 | Get direct children of a metadata node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "获取子节点 | Get node children",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "节点ID | Node ID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "子节点列表 | Children",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/nodes/{node_id}/items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取指定节点下的数据项 | Get metadata items under a node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Query"
+                ],
+                "summary": "获取节点数据项 | Get node items",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "节点ID | Node ID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "数据项列表 | Items",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaItemLite"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/auto": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned for current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "自动扫描未扫描资源 | Auto scan unscanned resources",
+                "responses": {
+                    "200": {
+                        "description": "扫描结果 | Scan result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/engine": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对指定引擎执行元数据扫描 | Execute metadata scan for an engine",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "扫描指定引擎 | Scan engine",
+                "parameters": [
+                    {
+                        "description": "扫描请求 | Scan request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "扫描结果 | Scan result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/run/manual": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建一个异步手动扫描执行记录并入队 | Create and enqueue a manual metadata scan run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "创建手动扫描运行 | Create manual scan run",
+                "parameters": [
+                    {
+                        "description": "扫描请求 | Scan request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "执行记录 | Execution",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -162,7 +1140,822 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
+                }
+            }
+        },
+        "/scan/runs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前租户的扫描运行记录 | List scan executions for current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "列出扫描运行 | List scan runs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "执行状态 | Execution status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "触发类型 | Trigger type",
+                        "name": "trigger_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "分页执行记录 | Paged executions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/runs/{run_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按执行 UUID 获取扫描运行详情 | Get scan execution by UUID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "获取扫描运行详情 | Get scan run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行详情 | Execution detail",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "执行不存在 | Execution not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/runs/{run_id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按执行 UUID 取消扫描运行 | Cancel scan execution by UUID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "取消扫描运行 | Cancel scan run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "取消结果 | Cancel result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出当前租户的扫描任务 | List scan tasks for current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "列出扫描任务 | List scan tasks",
+                "responses": {
+                    "200": {
+                        "description": "扫描任务列表 | Scan tasks",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建一个定时或手动扫描任务 | Create a scheduled or manual scan task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "创建扫描任务 | Create scan task",
+                "parameters": [
+                    {
+                        "description": "扫描任务请求 | Scan task request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanTaskUpsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "扫描任务 | Scan task",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/tasks/{task_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "更新扫描任务配置 | Update scan task configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "更新扫描任务 | Update scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "扫描任务请求 | Scan task request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanTaskUpsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "扫描任务 | Scan task",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除指定扫描任务 | Delete scan task by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "删除扫描任务 | Delete scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果 | Delete result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/tasks/{task_id}/trigger": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "立即触发指定扫描任务 | Trigger scan task immediately",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "触发扫描任务 | Trigger scan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行记录 | Execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取当前租户的元数据项总数 | Get metadata item count for current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta"
+                ],
+                "summary": "获取元数据统计 | Get metadata stats",
+                "responses": {
+                    "200": {
+                        "description": "统计信息 | Stats",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_addp_meta_internal_models.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string"
+                },
+                "is_primary_key": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.MetaItemLite": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "data_updated_at": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "integer"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.MetaNodeLite": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "depth": {
+                    "type": "integer"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_type": {
+                    "type": "string"
+                },
+                "parent_node_id": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "scan_status": {
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "total_size_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.MetadataTreeResponse": {
+            "type": "object",
+            "properties": {
+                "child_nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaItemLite"
+                    }
+                },
+                "top_nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
+                    }
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ObjectNode": {
+            "type": "object",
+            "properties": {
+                "file_type": {
+                    "type": "string"
+                },
+                "last_modified": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "object_count": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "bucket/prefix/object",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanRequest": {
+            "type": "object",
+            "required": [
+                "engine_id"
+            ],
+            "properties": {
+                "engine_id": {
+                    "description": "资源ID",
+                    "type": "integer"
+                },
+                "namespaces": {
+                    "description": "要扫描的命名空间列表（空则全部）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "object_paths": {
+                    "description": "对象存储/文件系统选择的路径",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scan_depth": {
+                    "description": "basic/deep/full",
+                    "type": "string"
+                },
+                "scan_type": {
+                    "description": "manual/auto/scheduled",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanResponse": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "fields_scanned": {
+                    "type": "integer"
+                },
+                "items_scanned": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "namespaces_scanned": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "success/failed",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanTaskUpsertRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "object_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scan_depth": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "description": "Cron 表达式，空字符串表示手动执行",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.SpatialMetadataResponse": {
+            "type": "object",
+            "properties": {
+                "extent": {
+                    "description": "[minLng, minLat, maxLng, maxLat]",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "extent_srid": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.FieldInfo"
+                    }
+                },
+                "geometry_column": {
+                    "type": "string"
+                },
+                "geometry_types": {
+                    "description": "几何类型列表，如 [\"ST_MultiPolygon\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "primary_key": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "description": "表记录数（从 meta_item.row_count 获取）",
+                    "type": "integer"
+                },
+                "srid": {
+                    "type": "integer"
                 }
             }
         }

@@ -24,7 +24,7 @@ func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listcodesets [get]
+// @Router /code-sets [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -58,7 +58,7 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createcodeset [get]
+// @Router /code-sets [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -83,7 +83,7 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getcodeset [get]
+// @Router /code-sets/{id} [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -103,7 +103,7 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatecodeset [get]
+// @Router /code-sets/{id} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -129,7 +129,7 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletecodeset [get]
+// @Router /code-sets/{id} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -148,7 +148,7 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getcodeitems [get]
+// @Router /code-sets/{id}/items [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -168,7 +168,7 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createcodeitem [get]
+// @Router /code-sets/{id}/items [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -194,7 +194,7 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatecodeitem [get]
+// @Router /code-sets/{id}/items/{iid} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
@@ -221,7 +221,7 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletecodeitem [get]
+// @Router /code-sets/{id}/items/{iid} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")

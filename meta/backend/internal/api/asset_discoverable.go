@@ -19,9 +19,15 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 	return &assetDiscoverableHandler{db: db}
 }
 
-// listDiscoverableAssets GET /api/meta/assets/discoverable
-// 返回当前租户下已扫描完成的 MetaItem，供 Asset 模块自动发现注册。
-// source_reference 格式: "{engine_id}:{full_name}"
+// listDiscoverableAssets 返回当前租户下已扫描完成的 MetaItem，供 Asset 模块自动发现注册。
+// @Summary 列出可发现资产 | List discoverable assets
+// @Description 返回当前租户下已扫描完成的数据项，供 Asset 模块自动发现注册 | List scanned metadata items for Asset discovery
+// @Tags Meta
+// @Produce json
+// @Success 200 {array} map[string]interface{} "可发现资产列表 | Discoverable assets"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /assets/discoverable [get]
+// @Security BearerAuth
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 

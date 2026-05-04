@@ -45,7 +45,7 @@ func NewExplorerHandler(
 // @Success 200 {object} map[string]interface{} "资源树 | Resource tree"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /gettree [get]
+// @Router /tree/{engine_id} [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) GetTree(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -98,7 +98,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "刷新后的节点信息 | Refreshed node info"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /refreshnode [post]
+// @Router /tree/{engine_id}/refresh [post]
 // @Security BearerAuth
 func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -212,7 +212,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /listengines [get]
+// @Router /engines [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -246,7 +246,7 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "子节点列表 | Children list"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /getnodechildren [get]
+// @Router /tree/{engine_id}/node [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -312,7 +312,7 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "搜索结果 | Search results"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /searchnodes [get]
+// @Router /tree/{engine_id}/search [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
@@ -374,6 +374,18 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 
 // GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
 // GET /api/manager/graph-schema/:engine_id?database=neo4j
+// @Summary 获取图数据库 Schema | Get graph database schema
+// @Description 获取图数据库的节点标签和关系类型 | Get node labels and relationship types from graph database
+// @Tags Manager
+// @Produce json
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param database query string false "数据库名称 | Database name"
+// @Success 200 {object} map[string]interface{} "图 Schema | Graph schema"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /graph-schema/{engine_id} [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -412,7 +424,7 @@ func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
 // @Success 206 "部分视频流数据 | Partial video stream data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /videostream [get]
+// @Router /video-stream [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) VideoStream(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)

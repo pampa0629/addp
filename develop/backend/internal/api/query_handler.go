@@ -63,7 +63,15 @@ type SaveQueryTaskRequest struct {
 }
 
 // GetSampleQuery 获取引擎的可执行样例查询（切换引擎时自动填充编辑器）
-// GET /engines/:id/sample-query
+// @Summary 获取样例查询 | Get sample query
+// @Tags Query
+// @Produce json
+// @Param id path int true "引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /engines/{id}/sample-query [get]
+// @Security BearerAuth
 func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	idStr := c.Param("id")
 	engineID, err := strconv.ParseUint(idStr, 10, 32)
@@ -219,7 +227,7 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 // @Produce json
 // @Param body body SaveQueryTaskRequest true "保存请求 | Save request"
 // @Success 200 {object} models.DevTask "已保存的任务 | Saved task"
-// @Router /sql/tasks [post]
+// @Router /query/tasks [post]
 func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 	var req SaveQueryTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -280,7 +288,7 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body SaveQueryTaskRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTask "已更新的任务 | Updated task"
-// @Router /sql/tasks/{id} [put]
+// @Router /query/tasks/{id} [put]
 func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -334,7 +342,7 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} models.DevTask "任务详情 | Task details"
-// @Router /sql/tasks/{id} [get]
+// @Router /query/tasks/{id} [get]
 func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -369,7 +377,7 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 // @Param status query string false "状态过滤 | Filter by status"
 // @Param keyword query string false "关键词搜索 | Keyword search"
 // @Success 200 {object} models.ListDevTasksResponse "任务列表 | Task list"
-// @Router /sql/tasks [get]
+// @Router /query/tasks [get]
 func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -409,7 +417,7 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 // @Tags Query
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
-// @Router /sql/tasks/{id} [delete]
+// @Router /query/tasks/{id} [delete]
 func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)

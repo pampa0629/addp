@@ -30,11 +30,11 @@ func NewQuickViewHandler(service *service.QuickViewService, redisClient *redis.C
 
 // TriggerQuickViewRequest 触发快显请求
 type TriggerQuickViewRequest struct {
-	MinZoom            *int                                `json:"min_zoom"`              // 可选
-	MaxZoom            int                                 `json:"max_zoom"`              // 默认18
-	Concurrency        int                                 `json:"concurrency"`           // 默认10
-	Priority           string                              `json:"priority"`              // "critical", "default", "low"
-	OptimizationConfig *commonmodels.OptimizationConfig    `json:"optimization_config,omitempty"` // v2.0 优化配置
+	MinZoom            *int                             `json:"min_zoom"`                      // 可选
+	MaxZoom            int                              `json:"max_zoom"`                      // 默认18
+	Concurrency        int                              `json:"concurrency"`                   // 默认10
+	Priority           string                           `json:"priority"`                      // "critical", "default", "low"
+	OptimizationConfig *commonmodels.OptimizationConfig `json:"optimization_config,omitempty"` // v2.0 优化配置
 }
 
 // UpdatePreferredModeRequest 更新显示模式偏好请求
@@ -56,7 +56,7 @@ type UpdatePreferredModeRequest struct {
 // @Success 200 {object} map[string]interface{} "任务已加入队列 | Task enqueued"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /triggerquickview [post]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/pre-cache [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -134,7 +134,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "快显状态信息 | Quick view status"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /getquickviewstatus [get]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/status [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	// 1. 解析路径参数
@@ -172,25 +172,25 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 
 	// 5. 合并响应
 	response := gin.H{
-		"id":               qv.ID,
-		"engine_id":        qv.EngineID,
-		"schema_name":      qv.SchemaName,
-		"table_name":       qv.Table,
-		"status":           qv.Status,
-		"preferred_mode":   qv.PreferredMode,
-		"error_message":    qv.ErrorMessage,
-		"min_zoom":         qv.MinZoom,
-		"max_zoom":         qv.MaxZoom,
-		"actual_max_zoom":  qv.ActualMaxZoom,
-		"total_tiles":      qv.TotalTiles,
-		"cached_tiles":     qv.CachedTiles,
-		"fingerprint":      qv.Fingerprint,
-		"extent":           qv.Extent,
-		"extent_srid":      qv.ExtentSRID,
-		"started_at":       qv.StartedAt,
-		"completed_at":     qv.CompletedAt,
-		"created_at":       qv.CreatedAt,
-		"updated_at":       qv.UpdatedAt,
+		"id":                 qv.ID,
+		"engine_id":          qv.EngineID,
+		"schema_name":        qv.SchemaName,
+		"table_name":         qv.Table,
+		"status":             qv.Status,
+		"preferred_mode":     qv.PreferredMode,
+		"error_message":      qv.ErrorMessage,
+		"min_zoom":           qv.MinZoom,
+		"max_zoom":           qv.MaxZoom,
+		"actual_max_zoom":    qv.ActualMaxZoom,
+		"total_tiles":        qv.TotalTiles,
+		"cached_tiles":       qv.CachedTiles,
+		"fingerprint":        qv.Fingerprint,
+		"extent":             qv.Extent,
+		"extent_srid":        qv.ExtentSRID,
+		"started_at":         qv.StartedAt,
+		"completed_at":       qv.CompletedAt,
+		"created_at":         qv.CreatedAt,
+		"updated_at":         qv.UpdatedAt,
 		"preparation_status": qv.PreparationStatus, // v4.0 准备阶段状态
 	}
 
@@ -214,7 +214,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "清除成功 | Cleared successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /clearquickview [delete]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view [delete]
 // @Security BearerAuth
 func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -258,7 +258,7 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /cancelquickview [post]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/cancel [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -302,7 +302,7 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "恢复成功 | Resumed successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /resumequickview [post]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/resume [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 	// 1. 解析路径参数
@@ -347,7 +347,7 @@ func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 // @Param engine_id query int false "存储引擎ID过滤 | Filter by engine ID"
 // @Success 200 {object} map[string]interface{} "快显任务列表 | Quick view task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /listquickviewtasks [get]
+// @Router /quick-view/tasks [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	// 1. 解析查询参数
@@ -374,10 +374,10 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 
 	// 3. 查询任务列表
 	params := repository.ListParams{
-		Status:     status,
+		Status:   status,
 		EngineID: engineID,
-		Page:       page,
-		PageSize:   pageSize,
+		Page:     page,
+		PageSize: pageSize,
 	}
 
 	tasks, total, err := h.service.ListAll(c.Request.Context(), tenantID, params)
@@ -388,9 +388,9 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":  tasks,
-		"total": total,
-		"page":  page,
+		"data":      tasks,
+		"total":     total,
+		"page":      page,
 		"page_size": pageSize,
 	})
 }
@@ -403,7 +403,7 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "统计信息 | Statistics"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /getstatistics [get]
+// @Router /quick-view/statistics [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 	// 1. 获取租户ID
@@ -439,7 +439,7 @@ func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "记录不存在 | Record not found"
-// @Router /updatepreferredmode [patch]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/preferred-mode [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	// 1. 解析路径参数
@@ -493,7 +493,7 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Preferred mode updated successfully",
+		"message":        "Preferred mode updated successfully",
 		"preferred_mode": req.PreferredMode,
 	})
 }
@@ -510,7 +510,7 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "准备状态信息 | Preparation status"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /checkpreparation [get]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/check-preparation [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 	// 1. 解析路径参数
@@ -566,7 +566,7 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "准备工作已启动 | Preparation started"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /prepareforcreatemvt [post]
+// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/prepare [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	// 1. 解析路径参数
@@ -608,8 +608,8 @@ func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 
 	// 4. 返回任务信息
 	c.JSON(http.StatusOK, gin.H{
-		"status": "preparing",
-		"message": "准备工作已启动",
+		"status":      "preparing",
+		"message":     "准备工作已启动",
 		"fingerprint": fingerprint,
 	})
 }

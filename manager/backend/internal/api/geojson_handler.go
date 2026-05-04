@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -41,7 +41,7 @@ func NewGeoJSONHandler(systemClient *commonClient.SystemClient) *GeoJSONHandler 
 // @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /getgeojson [get]
+// @Router /engines/{id}/spatial/{schema}/{table}/geojson [get]
 // @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	// 1. 解析路径参数
@@ -172,7 +172,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "元数据信息 | Metadata"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /getgeojsonmetadata [get]
+// @Router /engines/{id}/spatial/{schema}/{table}/geojson/metadata [get]
 // @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	// 1. 解析路径参数

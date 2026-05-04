@@ -22,7 +22,15 @@ func NewJupyterVenvHandler(venvService *service.JupyterVenvService) *JupyterVenv
 }
 
 // GetVenvStatus 获取租户虚拟环境状态
-// GET /api/develop/jupyter/venv/status
+// @Summary 获取 Jupyter 虚拟环境状态 | Get Jupyter venv status
+// @Tags Jupyter
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /jupyter/venv/status [get]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) GetVenvStatus(c *gin.Context) {
 	// 从 JWT token 中获取租户 ID
 	tenantID, exists := c.Get("tenant_id")
@@ -49,7 +57,15 @@ func (h *JupyterVenvHandler) GetVenvStatus(c *gin.Context) {
 }
 
 // InitVenv 初始化租户虚拟环境
-// POST /api/develop/jupyter/venv/init
+// @Summary 初始化 Jupyter 虚拟环境 | Init Jupyter venv
+// @Tags Jupyter
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /jupyter/venv/init [post]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) InitVenv(c *gin.Context) {
 	// 从 JWT token 中获取租户 ID
 	tenantID, exists := c.Get("tenant_id")
@@ -83,7 +99,15 @@ func (h *JupyterVenvHandler) InitVenv(c *gin.Context) {
 }
 
 // DeleteVenv 删除租户虚拟环境
-// DELETE /api/develop/jupyter/venv
+// @Summary 删除 Jupyter 虚拟环境 | Delete Jupyter venv
+// @Tags Jupyter
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /jupyter/venv [delete]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) DeleteVenv(c *gin.Context) {
 	// 从 JWT token 中获取租户 ID
 	tenantID, exists := c.Get("tenant_id")
@@ -112,7 +136,14 @@ func (h *JupyterVenvHandler) DeleteVenv(c *gin.Context) {
 }
 
 // ListVenvs 列出所有租户的虚拟环境 (管理员)
-// GET /api/develop/jupyter/venvs
+// @Summary 列出 Jupyter 虚拟环境 | List Jupyter venvs
+// @Tags Jupyter
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /jupyter/venvs [get]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) ListVenvs(c *gin.Context) {
 	// 检查管理员权限
 	isSuperAdmin, exists := c.Get("is_super_admin")
@@ -136,14 +167,28 @@ func (h *JupyterVenvHandler) ListVenvs(c *gin.Context) {
 }
 
 // GetJupyterServerStatus 获取 Jupyter Server 状态
-// GET /api/develop/jupyter/server/status
+// @Summary 获取 Jupyter Server 状态 | Get Jupyter server status
+// @Tags Jupyter
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /jupyter/server/status [get]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) GetJupyterServerStatus(c *gin.Context) {
 	status := h.venvService.GetJupyterServerStatus(c.Request.Context())
 	c.JSON(http.StatusOK, status)
 }
 
 // InitVenvByID 为指定租户初始化虚拟环境 (管理员)
-// POST /api/develop/jupyter/venv/:tenant_id/init
+// @Summary 为指定租户初始化 Jupyter 虚拟环境 | Init Jupyter venv by tenant
+// @Tags Jupyter
+// @Produce json
+// @Param tenant_id path int true "租户ID | Tenant ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /jupyter/venv/{tenant_id}/init [post]
+// @Security BearerAuth
 func (h *JupyterVenvHandler) InitVenvByID(c *gin.Context) {
 	// 检查管理员权限
 	isSuperAdmin, exists := c.Get("is_super_admin")

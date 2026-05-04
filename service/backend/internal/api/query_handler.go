@@ -31,7 +31,15 @@ func NewQueryServiceHandler(s *svc.QueryServiceService, executorSvc *svc.QueryEx
 // ===== 服务管理 API =====
 
 // CreateService 创建新的查询服务
-// POST /api/service/query
+// @Summary 创建查询服务 | Create query service
+// @Tags QueryService
+// @Accept json
+// @Produce json
+// @Param request body models.CreateQueryServiceRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Router /query [post]
+// @Security BearerAuth
 func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	var req models.CreateQueryServiceRequest
 
@@ -73,7 +81,16 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 }
 
 // ListServices 列出租户下的所有查询服务
-// GET /api/service/query?page=1&limit=20&search=...&config_type=table
+// @Summary 查询服务列表 | List query services
+// @Tags QueryService
+// @Produce json
+// @Param page query int false "页码 | Page" default(1)
+// @Param limit query int false "每页数量 | Limit" default(20)
+// @Param search query string false "搜索词 | Search"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /query [get]
+// @Security BearerAuth
 func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	if tenantID == 0 {
@@ -128,7 +145,14 @@ func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 }
 
 // GetService 获取服务详情
-// GET /api/service/query/:id
+// @Summary 获取查询服务详情 | Get query service
+// @Tags QueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Router /query/{id} [get]
+// @Security BearerAuth
 func (h *QueryServiceHandler) GetService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -151,7 +175,17 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 }
 
 // UpdateService 更新服务
-// PUT /api/service/query/:id
+// @Summary 更新查询服务 | Update query service
+// @Tags QueryService
+// @Accept json
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Param request body models.UpdateQueryServiceRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /query/{id} [put]
+// @Security BearerAuth
 func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -180,7 +214,15 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 }
 
 // DeleteService 删除服务
-// DELETE /api/service/query/:id
+// @Summary 删除查询服务 | Delete query service
+// @Tags QueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /query/{id} [delete]
+// @Security BearerAuth
 func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -204,7 +246,21 @@ func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 // ===== REST 查询 API =====
 
 // QueryData 查询服务数据
-// GET /api/query/:serviceName
+// @Summary 执行查询服务 | Execute query service
+// @Tags QueryExecution
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(50)
+// @Param format query string false "返回格式 (json,csv,geojson) | Response format (json,csv,geojson)" default(json)
+// @Param filter query string false "过滤条件 | Filter"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/query/{serviceName} [get]
 func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 

@@ -455,6 +455,353 @@
                 }
             }
         },
+        "/graphs/{id}/build/tasks/{tid}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "获取构建任务 | Get build task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildTask"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "删除构建任务 | Delete build task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/build/tasks/{tid}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "取消构建任务 | Cancel build task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/build/tasks/{tid}/materials": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "列出构建材料 | List build materials",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildMaterial"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "上传构建材料 | Upload build material",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "材料文件 | Material files",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildMaterial"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/build/tasks/{tid}/materials/{mid}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "删除构建材料 | Delete build material",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "材料 ID | Material ID",
+                        "name": "mid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/build/tasks/{tid}/rerun": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "重新运行构建任务 | Rerun build task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "tid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/graphs/{id}/build/tasks/{tid}/run": {
             "post": {
                 "security": [
@@ -495,6 +842,46 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/constraints": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱浏览 | Graph Browse"
+                ],
+                "summary": "获取图约束 | Get graph constraints",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -543,6 +930,110 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SubgraphResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/infer-schema": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱浏览 | Graph Browse"
+                ],
+                "summary": "推断图谱 Schema | Infer graph schema",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "ontology_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/infer-schema/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱浏览 | Graph Browse"
+                ],
+                "summary": "应用推断 Schema | Apply inferred schema",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "应用请求 | Apply request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -647,6 +1138,335 @@
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "列出审核项 | List review items",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "项目类型 | Item type",
+                        "name": "item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review/batch": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "批量审核 | Batch review",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "批量审核请求 | Batch review request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review/pending-count": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "待审核数量 | Pending review count",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review/{iid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "修改审核项 | Modify review item",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "审核项 ID | Review item ID",
+                        "name": "iid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "修改内容 | Modify content",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review/{iid}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "通过审核项 | Approve review item",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "审核项 ID | Review item ID",
+                        "name": "iid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/graphs/{id}/review/{iid}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "拒绝审核项 | Reject review item",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "审核项 ID | Review item ID",
+                        "name": "iid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
                         }
                     },
                     "500": {
@@ -979,6 +1799,141 @@
                 }
             }
         },
+        "/ontologies/import-preview/from-model": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "预览模型导入 | Preview model import",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/infer-schema/from-engine": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "从引擎推断 Schema | Infer schema from engine",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "ontology_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/neo4j-engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "列出 Neo4j 引擎 | List Neo4j engines",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/ontologies/{id}": {
             "get": {
                 "security": [
@@ -1212,6 +2167,188 @@
                 }
             }
         },
+        "/ontologies/{id}/entity-types/{eid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "更新实体类型 | Update entity type",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "实体类型 ID | Entity type ID",
+                        "name": "eid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新实体类型请求 | Update entity type request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.UpdateEntityTypeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.EntityType"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "删除实体类型 | Delete entity type",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "实体类型 ID | Entity type ID",
+                        "name": "eid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/{id}/entity-types/{eid}/sync-constraints": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "同步实体约束 | Sync entity constraints",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "实体类型 ID | Entity type ID",
+                        "name": "eid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "同步请求 | Sync request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SyncConstraintsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/ontologies/{id}/entity-types/{eid}/sync-spatial-layer": {
             "put": {
                 "security": [
@@ -1277,6 +2414,134 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/{id}/import-from-model": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "从模型导入 | Import from model",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "导入请求 | Import request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_service.ImportFromModelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/{id}/infer-schema/from-engine/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "应用引擎推断 Schema | Apply inferred schema from engine",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "应用请求 | Apply request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1372,6 +2637,117 @@
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ontologies/{id}/relation-types/{rid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "更新关系类型 | Update relation type",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "关系类型 ID | Relation type ID",
+                        "name": "rid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新关系类型请求 | Update relation type request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.UpdateRelationTypeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.RelationType"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "本体管理 | Ontology Management"
+                ],
+                "summary": "删除关系类型 | Delete relation type",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "本体 ID | Ontology ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "关系类型 ID | Relation type ID",
+                        "name": "rid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "500": {
@@ -2532,6 +3908,17 @@
                 }
             }
         },
+        "github_com_addp_graph_internal_models.SyncConstraintsRequest": {
+            "type": "object",
+            "required": [
+                "graph_id"
+            ],
+            "properties": {
+                "graph_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.SyncSpatialLayersRequest": {
             "type": "object",
             "required": [
@@ -2540,6 +3927,50 @@
             "properties": {
                 "graph_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.UpdateEntityTypeRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.ConstraintDefinition"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "icon": {
+                    "type": "string"
+                },
+                "is_spatial_layer": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.PropertyDefinition"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "spatial_layer_config": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.SpatialLayerConfig"
                 }
             }
         },
@@ -2572,6 +4003,124 @@
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.UpdateRelationTypeRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.ConstraintDefinition"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "directed": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.PropertyDefinition"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "source_type_id": {
+                    "type": "integer"
+                },
+                "target_type_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest": {
+            "type": "object",
+            "required": [
+                "engine_id"
+            ],
+            "properties": {
+                "conflict": {
+                    "description": "\"skip\" | \"overwrite\"",
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "entity_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "relation_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_graph_internal_service.ApplyInferredSchemaRequest": {
+            "type": "object",
+            "required": [
+                "ontology_id"
+            ],
+            "properties": {
+                "conflict": {
+                    "description": "\"skip\" | \"overwrite\"",
+                    "type": "string"
+                },
+                "entity_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ontology_id": {
+                    "type": "integer"
+                },
+                "relation_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_graph_internal_service.ImportFromModelRequest": {
+            "type": "object",
+            "properties": {
+                "conflict": {
+                    "description": "\"skip\" | \"overwrite\"",
+                    "type": "string"
+                },
+                "entity_ids": {
+                    "description": "选中的 Model entity id 列表",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "relation_ids": {
+                    "description": "选中的 Model relation id 列表",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         }

@@ -26,8 +26,10 @@ func NewStatisticsHandler(statisticsService *service.StatisticsService) *Statist
 // @Summary 获取统计数据 | Get statistics
 // @Tags Monitor
 // @Produce json
+// @Param module query string false "模块名 | Module"
+// @Param duration query string false "统计时长 | Duration" default(24h)
 // @Success 200 {object} map[string]interface{}
-// @Router /getstatistics [get]
+// @Router /executions/stats [get]
 // @Security BearerAuth
 func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 	// 从 context 获取 tenant_id
@@ -60,8 +62,10 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 // @Summary 获取趋势数据 | Get trend data
 // @Tags Monitor
 // @Produce json
+// @Param module query string false "模块名 | Module"
+// @Param days query int false "天数 | Days" default(7)
 // @Success 200 {object} map[string]interface{}
-// @Router /gettrenddata [get]
+// @Router /executions/trend [get]
 // @Security BearerAuth
 func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 	// 从 context 获取 tenant_id

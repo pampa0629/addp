@@ -62,6 +62,16 @@ func (h *UserHandler) List(c *gin.Context) {
 	commonapi.RespondPaginated(c, users, total, page, pageSize)
 }
 
+// GetByID godoc
+// @Summary      获取用户详情 | Get user detail
+// @Tags         用户管理 | User Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "用户ID | User ID"
+// @Success      200 {object} models.User
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /users/{id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -73,6 +83,18 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 	commonapi.RespondOrError(c, user, err)
 }
 
+// Update godoc
+// @Summary      更新用户 | Update user
+// @Tags         用户管理 | User Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "用户ID | User ID"
+// @Param        request body models.UserUpdateRequest true "用户更新信息 | User update info"
+// @Success      200 {object} models.User
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /users/{id} [put]
 func (h *UserHandler) Update(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -90,6 +112,16 @@ func (h *UserHandler) Update(c *gin.Context) {
 	commonapi.RespondOrError(c, user, err)
 }
 
+// Delete godoc
+// @Summary      删除用户 | Delete user
+// @Tags         用户管理 | User Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "用户ID | User ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /users/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -121,6 +153,18 @@ func (h *UserHandler) Me(c *gin.Context) {
 	commonapi.RespondOrError(c, user, err)
 }
 
+// ChangePassword godoc
+// @Summary      修改用户密码 | Change user password
+// @Tags         用户管理 | User Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "用户ID | User ID"
+// @Param        request body models.ChangePasswordRequest true "密码修改请求 | Change password request"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /users/{id}/change-password [put]
 func (h *UserHandler) ChangePassword(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {

@@ -86,6 +86,16 @@ func (h *EngineHandler) List(c *gin.Context) {
 	commonapi.RespondPaginated(c, toEngineResponses(engines), total, page, pageSize)
 }
 
+// GetByID godoc
+// @Summary      获取引擎详情 | Get engine detail
+// @Tags         引擎管理 | Engine Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Success      200 {object} models.Engine
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /engines/{id} [get]
 func (h *EngineHandler) GetByID(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -102,6 +112,18 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
+// Update godoc
+// @Summary      更新引擎 | Update engine
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        request body models.EngineUpdateRequest true "引擎更新信息 | Engine update info"
+// @Success      200 {object} models.Engine
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /engines/{id} [put]
 func (h *EngineHandler) Update(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -124,6 +146,16 @@ func (h *EngineHandler) Update(c *gin.Context) {
 	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
+// Delete godoc
+// @Summary      删除引擎 | Delete engine
+// @Tags         引擎管理 | Engine Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /engines/{id} [delete]
 func (h *EngineHandler) Delete(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -153,9 +185,17 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 }
 
 // TestConnection 测试存储引擎连接（用户手动触发，同步返回结果）
-// POST /api/engines/:id/test
-// 请求体可选；编辑弹窗传入 connection_info 时测试当前表单配置。
-// 测试完成后同步更新连接状态缓存。
+// @Summary      测试已有引擎连接 | Test existing engine connection
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        request body models.EngineUpdateRequest false "临时连接配置 | Temporary connection info"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /engines/{id}/test [post]
 func (h *EngineHandler) TestConnection(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -202,6 +242,15 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 }
 
 // TestConnectionBeforeCreate 创建前测试连接
+// @Summary      创建前测试连接 | Test connection before create
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Router       /engines/test-connection [post]
 func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	var req models.EngineCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -422,6 +471,49 @@ func (h *EngineHandler) ListCatalogItems(c *gin.Context) {
 		"status": "success",
 		"items":  items,
 	})
+}
+
+// ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
+// @Summary 列出实时 catalog 子节点 | List live catalog children
+// @Description 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog，适用于扫描前选择 schema、bucket、prefix、collection、label 等范围。| Browse live engine catalog using System-managed connection information.
+// @Tags 引擎管理 | Engine Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "引擎ID | Engine ID"
+// @Param request body models.CatalogListChildrenRequest true "Catalog 路径请求 | Catalog path request"
+// @Success 200 {object} models.CatalogListChildrenResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /engines/{id}/catalog/children [post]
+func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req models.CatalogListChildrenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userID, _ := commonapi.GetCurrentUserID(c)
+	engine, err := h.engineService.GetForConnection(id, userID)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+
+	nodes, err := h.storageEngineService.ListCatalogChildren(engine, req)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	commonapi.RespondSuccess(c, models.CatalogListChildrenResponse{Nodes: nodes})
 }
 
 // TriggerConnectionCheckInternal 触发连接检测（内部API，异步）

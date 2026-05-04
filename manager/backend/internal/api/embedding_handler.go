@@ -29,11 +29,11 @@ func NewEmbeddingHandler(embeddingService *service.EmbeddingService, taskTracker
 type CreateEmbeddingRequest struct {
 	EngineID  uint   `json:"engine_id" binding:"required"`
 	Bucket    string `json:"bucket" binding:"required"`
-	Scope     string `json:"scope"`                      // object|directory|bucket，默认 object
-	ObjectKey string `json:"object_key,omitempty"`       // scope=object 时必填
-	Prefix    string `json:"prefix,omitempty"`           // scope=directory 时使用
-	Recursive bool   `json:"recursive"`                  // 是否递归，默认 true
-	TaskName  string `json:"task_name,omitempty"`        // 任务名称（可选）
+	Scope     string `json:"scope"`                // object|directory|bucket，默认 object
+	ObjectKey string `json:"object_key,omitempty"` // scope=object 时必填
+	Prefix    string `json:"prefix,omitempty"`     // scope=directory 时使用
+	Recursive bool   `json:"recursive"`            // 是否递归，默认 true
+	TaskName  string `json:"task_name,omitempty"`  // 任务名称（可选）
 }
 
 // CreateEmbedding POST /api/embedding
@@ -46,7 +46,7 @@ type CreateEmbeddingRequest struct {
 // @Param body body CreateEmbeddingRequest true "向量化任务配置 | Embedding task configuration"
 // @Success 200 {object} map[string]interface{} "任务已创建 | Task created"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /createembedding [post]
+// @Router /embedding [post]
 // @Security BearerAuth
 func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -158,7 +158,7 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 // @Param task_id path string true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "任务状态信息 | Task status"
 // @Failure 404 {object} map[string]interface{} "任务不存在或已过期 | Task not found or expired"
-// @Router /getembeddingtaskstatus [get]
+// @Router /embedding/tasks/{task_id} [get]
 // @Security BearerAuth
 func (h *EmbeddingHandler) GetEmbeddingTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")

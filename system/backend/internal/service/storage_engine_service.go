@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 )
@@ -172,6 +173,71 @@ func (s *StorageEngineService) ListCatalogItems(resource *models.Engine, namespa
 		})
 	}
 	return items, nil
+}
+
+// ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
+func (s *StorageEngineService) ListCatalogChildren(resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogNode, error) {
+	nodes, err := dbbridge.ListCatalogChildren(context.Background(), resource, toPluginCatalogPath(req.Path), plugin.ListOptions{
+		Recursive: req.Options.Recursive,
+		Limit:     req.Options.Limit,
+		Offset:    req.Options.Offset,
+		Filter:    req.Filter,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]models.CatalogNode, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, fromPluginCatalogNode(node))
+	}
+	return result, nil
+}
+
+func toPluginCatalogPath(path models.CatalogPath) plugin.CatalogPath {
+	segments := make([]plugin.CatalogSegment, 0, len(path.Segments))
+	for _, segment := range path.Segments {
+		segments = append(segments, plugin.CatalogSegment{
+			Term: segment.Term,
+			Kind: segment.Kind,
+			Name: segment.Name,
+		})
+	}
+	return plugin.CatalogPath{
+		Version:  path.Version,
+		EngineID: path.EngineID,
+		Segments: segments,
+	}
+}
+
+func fromPluginCatalogNode(node plugin.CatalogNode) models.CatalogNode {
+	return models.CatalogNode{
+		Name:        node.Name,
+		Path:        fromPluginCatalogPath(node.Path),
+		Term:        node.Term,
+		Kind:        node.Kind,
+		IsContainer: node.IsContainer,
+		IsItem:      node.IsItem,
+		Stats:       node.Stats,
+		Attributes:  node.Attributes,
+		Actions:     node.Actions,
+	}
+}
+
+func fromPluginCatalogPath(path plugin.CatalogPath) models.CatalogPath {
+	segments := make([]models.CatalogSegment, 0, len(path.Segments))
+	for _, segment := range path.Segments {
+		segments = append(segments, models.CatalogSegment{
+			Term: segment.Term,
+			Kind: segment.Kind,
+			Name: segment.Name,
+		})
+	}
+	return models.CatalogPath{
+		Version:  path.Version,
+		EngineID: path.EngineID,
+		Segments: segments,
+	}
 }
 
 func stringAttribute(attributes map[string]interface{}, key string) string {

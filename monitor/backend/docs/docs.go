@@ -15,7 +15,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/checkallmodules": {
+        "/executions": {
             "get": {
                 "security": [
                     {
@@ -28,7 +28,47 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "检查所有模块健康状态 | Check all modules health",
+                "summary": "查询执行记录列表 | List execution records",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "执行状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "触发类型 | Trigger type",
+                        "name": "trigger_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -40,7 +80,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/checkmodulehealth": {
+        "/executions/stats": {
             "get": {
                 "security": [
                     {
@@ -53,7 +93,22 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "检查模块健康状态 | Check module health",
+                "summary": "获取统计数据 | Get statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "24h",
+                        "description": "统计时长 | Duration",
+                        "name": "duration",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -65,7 +120,47 @@ const docTemplate = `{
                 }
             }
         },
-        "/getexecution": {
+        "/executions/trend": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "获取趋势数据 | Get trend data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 7,
+                        "description": "天数 | Days",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/executions/{id}": {
             "get": {
                 "security": [
                     {
@@ -79,6 +174,15 @@ const docTemplate = `{
                     "Monitor"
                 ],
                 "summary": "获取执行记录详情 | Get execution record detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "执行ID | Execution ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -90,7 +194,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/getmodules": {
+        "/modules": {
             "get": {
                 "security": [
                     {
@@ -115,7 +219,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/getstatistics": {
+        "/modules/health/all": {
             "get": {
                 "security": [
                     {
@@ -128,7 +232,7 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "获取统计数据 | Get statistics",
+                "summary": "检查所有模块健康状态 | Check all modules health",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -140,7 +244,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/gettrenddata": {
+        "/modules/{module}/health": {
             "get": {
                 "security": [
                     {
@@ -153,32 +257,16 @@ const docTemplate = `{
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "获取趋势数据 | Get trend data",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/listexecutions": {
-            "get": {
-                "security": [
+                "summary": "检查模块健康状态 | Check module health",
+                "parameters": [
                     {
-                        "BearerAuth": []
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
                     }
                 ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitor"
-                ],
-                "summary": "查询执行记录列表 | List execution records",
                 "responses": {
                     "200": {
                         "description": "OK",

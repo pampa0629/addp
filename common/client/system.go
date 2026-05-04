@@ -486,6 +486,52 @@ type CatalogItemInfo struct {
 	Description string `json:"description,omitempty"`
 }
 
+// EngineCatalogListChildrenRequest 表示实时 catalog 子节点浏览请求。
+type EngineCatalogListChildrenRequest struct {
+	Path    EngineCatalogPath        `json:"path"`
+	Options EngineCatalogListOptions `json:"options,omitempty"`
+	Filter  map[string]interface{}   `json:"filter,omitempty"`
+}
+
+// EngineCatalogListChildrenResponse 表示实时 catalog 子节点浏览响应。
+type EngineCatalogListChildrenResponse struct {
+	Nodes []EngineCatalogNode `json:"nodes"`
+}
+
+// EngineCatalogPath 表示跨引擎结构化 catalog 路径。
+type EngineCatalogPath struct {
+	Version  string                 `json:"version,omitempty"`
+	EngineID uint                   `json:"engine_id,omitempty"`
+	Segments []EngineCatalogSegment `json:"segments"`
+}
+
+// EngineCatalogSegment 表示 catalog 路径中的一层。
+type EngineCatalogSegment struct {
+	Term string `json:"term"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// EngineCatalogNode 表示实时 catalog 浏览返回的中性节点。
+type EngineCatalogNode struct {
+	Name        string                 `json:"name"`
+	Path        EngineCatalogPath      `json:"path"`
+	Term        string                 `json:"term"`
+	Kind        string                 `json:"kind"`
+	IsContainer bool                   `json:"is_container"`
+	IsItem      bool                   `json:"is_item"`
+	Stats       map[string]interface{} `json:"stats,omitempty"`
+	Attributes  map[string]interface{} `json:"attributes,omitempty"`
+	Actions     []string               `json:"actions,omitempty"`
+}
+
+// EngineCatalogListOptions 表示实时 catalog 列表选项。
+type EngineCatalogListOptions struct {
+	Recursive bool `json:"recursive,omitempty"`
+	Limit     int  `json:"limit,omitempty"`
+	Offset    int  `json:"offset,omitempty"`
+}
+
 // ListNamespaces 列出指定引擎的 catalog 命名空间。
 func (c *SystemClient) ListNamespaces(engineID uint) ([]NamespaceInfo, error) {
 	return c.ListNamespacesWithToken(engineID, "")
@@ -575,6 +621,51 @@ func (c *SystemClient) ListCatalogItemsWithToken(engineID uint, namespace string
 	}
 
 	return result.Items, nil
+}
+
+// ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
+func (c *SystemClient) ListCatalogChildren(engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogNode, error) {
+	return c.ListCatalogChildrenWithToken(engineID, req, "")
+}
+
+// ListCatalogChildrenWithToken 使用指定用户 JWT 列出实时 catalog 子节点。
+// token 为空时使用客户端自身认证配置。
+func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCatalogListChildrenRequest, token string) ([]EngineCatalogNode, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/system/engines/%d/catalog/children", c.baseURL, engineID)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		c.addAuth(httpReq)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result EngineCatalogListChildrenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Nodes, nil
 }
 
 // ================ 工作流引擎相关方法（新增） ================

@@ -276,116 +276,22 @@ info:
   title: ADDP Model API
   version: "1.0"
 paths:
-  /adddimensionrelation:
+  /dw-layers:
     get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 事实表ID | Fact table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateTableRelationRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的关联 | Created relation
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 添加维度关联 | Add dimension relation
-      tags:
-      - Model
-  /addmetric:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 事实表ID | Fact table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateFactMetricMappingRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的关联 | Created mapping
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 添加事实表指标关联 | Add fact table metric mapping
-      tags:
-      - Model
-  /approveentity:
-    get:
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: 审批成功 | Approved successfully
+          description: 数仓分层列表 | DW layer list
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 审批通过实体 | Approve entity
+      summary: 查询数仓分层列表 | List DW layers
       tags:
       - Model
-  /createattribute:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityAttributeRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的属性 | Created attribute
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建实体属性 | Create entity attribute
-      tags:
-      - Model
-  /createdwlayer:
-    get:
+    post:
       consumes:
       - application/json
       parameters:
@@ -408,135 +314,8 @@ paths:
       summary: 创建数仓分层 | Create DW layer
       tags:
       - Model
-  /createentity:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的实体 | Created entity
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建实体 | Create entity
-      tags:
-      - Model
-  /createfield:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 逻辑表ID | Logical table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateLogicalFieldRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的字段 | Created field
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建逻辑表字段 | Create logical table field
-      tags:
-      - Model
-  /createlogicaltable:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateLogicalTableRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的逻辑表 | Created logical table
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建逻辑表 | Create logical table
-      tags:
-      - Model
-  /createrelation:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityRelationRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 已创建的关系 | Created relation
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建实体关系 | Create entity relation
-      tags:
-      - Model
-  /deleteattribute:
-    get:
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 属性ID | Attribute ID
-        in: path
-        name: aid
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除实体属性 | Delete entity attribute
-      tags:
-      - Model
-  /deletedwlayer:
-    get:
+  /dw-layers/{id}:
+    delete:
       parameters:
       - description: 分层ID | DW layer ID
         in: path
@@ -556,132 +335,6 @@ paths:
       summary: 删除数仓分层 | Delete DW layer
       tags:
       - Model
-  /deleteentity:
-    get:
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除实体 | Delete entity
-      tags:
-      - Model
-  /deletefield:
-    get:
-      parameters:
-      - description: 逻辑表ID | Logical table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 字段ID | Field ID
-        in: path
-        name: fid
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除逻辑表字段 | Delete logical table field
-      tags:
-      - Model
-  /deletelogicaltable:
-    get:
-      parameters:
-      - description: 逻辑表ID | Logical table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除逻辑表 | Delete logical table
-      tags:
-      - Model
-  /deleterelation:
-    get:
-      parameters:
-      - description: 关系ID | Relation ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除实体关系 | Delete entity relation
-      tags:
-      - Model
-  /exportmermaid:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Mermaid ER 图代码 | Mermaid ER diagram code
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 导出 Mermaid ER 图 | Export Mermaid ER diagram
-      tags:
-      - Model
-  /getattributes:
-    get:
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 属性列表 | Attribute list
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取实体属性列表 | Get entity attributes
-      tags:
-      - Model
-  /getdwlayer:
     get:
       parameters:
       - description: 分层ID | DW layer ID
@@ -702,151 +355,35 @@ paths:
       summary: 获取数仓分层详情 | Get DW layer details
       tags:
       - Model
-  /getentity:
-    get:
-      parameters:
-      - description: 实体ID | Entity ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 实体详情 | Entity details
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取实体详情 | Get entity details
-      tags:
-      - Model
-  /getfields:
-    get:
-      parameters:
-      - description: 逻辑表ID | Logical table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 字段列表 | Field list
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取逻辑表字段列表 | Get logical table fields
-      tags:
-      - Model
-  /getlogicaltable:
-    get:
-      parameters:
-      - description: 逻辑表ID | Logical table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 逻辑表详情 | Logical table details
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取逻辑表详情 | Get logical table details
-      tags:
-      - Model
-  /getrelation:
-    get:
-      parameters:
-      - description: 关系ID | Relation ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 关系详情 | Relation details
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取实体关系详情 | Get entity relation details
-      tags:
-      - Model
-  /importmermaid:
-    get:
+    put:
       consumes:
       - application/json
       parameters:
-      - description: 导入请求 | Import request
+      - description: 分层ID | DW layer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.MermaidImportRequest'
+          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateDWLayerRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 导入结果 | Import result
+          description: 已更新的分层 | Updated DW layer
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
+      summary: 更新数仓分层 | Update DW layer
       tags:
       - Model
-  /listdimensionrelations:
-    get:
-      parameters:
-      - description: 事实表ID | Fact table ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 维度关联列表 | Dimension relation list
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询维度关联列表 | List dimension relations
-      tags:
-      - Model
-  /listdwlayers:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 数仓分层列表 | DW layer list
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询数仓分层列表 | List DW layers
-      tags:
-      - Model
-  /listentities:
+  /entities:
     get:
       parameters:
       - description: 业务域ID | Domain ID
@@ -882,7 +419,379 @@ paths:
       summary: 查询实体列表 | List entities
       tags:
       - Model
-  /listlogicaltables:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的实体 | Created entity
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建实体 | Create entity
+      tags:
+      - Model
+  /entities/{id}:
+    delete:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除实体 | Delete entity
+      tags:
+      - Model
+    get:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 实体详情 | Entity details
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实体详情 | Get entity details
+      tags:
+      - Model
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的实体 | Updated entity
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新实体 | Update entity
+      tags:
+      - Model
+  /entities/{id}/approve:
+    post:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 审批成功 | Approved successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 审批通过实体 | Approve entity
+      tags:
+      - Model
+  /entities/{id}/attributes:
+    get:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 属性列表 | Attribute list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实体属性列表 | Get entity attributes
+      tags:
+      - Model
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityAttributeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的属性 | Created attribute
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建实体属性 | Create entity attribute
+      tags:
+      - Model
+  /entities/{id}/attributes/{aid}:
+    delete:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 属性ID | Attribute ID
+        in: path
+        name: aid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除实体属性 | Delete entity attribute
+      tags:
+      - Model
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 属性ID | Attribute ID
+        in: path
+        name: aid
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityAttributeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的属性 | Updated attribute
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新实体属性 | Update entity attribute
+      tags:
+      - Model
+  /entities/export-mermaid:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Mermaid ER 图代码 | Mermaid ER diagram code
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导出 Mermaid ER 图 | Export Mermaid ER diagram
+      tags:
+      - Model
+  /entities/import-mermaid:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 导入请求 | Import request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.MermaidImportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 导入结果 | Import result
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
+      tags:
+      - Model
+  /entity-relations:
+    get:
+      parameters:
+      - description: 实体ID过滤 | Filter by entity ID
+        in: query
+        name: entity_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 关系列表 | Relation list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询实体关系列表 | List entity relations
+      tags:
+      - Model
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateEntityRelationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的关系 | Created relation
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建实体关系 | Create entity relation
+      tags:
+      - Model
+  /entity-relations/{id}:
+    delete:
+      parameters:
+      - description: 关系ID | Relation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除实体关系 | Delete entity relation
+      tags:
+      - Model
+    get:
+      parameters:
+      - description: 关系ID | Relation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 关系详情 | Relation details
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实体关系详情 | Get entity relation details
+      tags:
+      - Model
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关系ID | Relation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityRelationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的关系 | Updated relation
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新实体关系 | Update entity relation
+      tags:
+      - Model
+  /logical-tables:
     get:
       parameters:
       - description: 数仓分层 | DW layer
@@ -926,10 +835,33 @@ paths:
       summary: 查询逻辑表列表 | List logical tables
       tags:
       - Model
-  /listmetrics:
-    get:
+    post:
+      consumes:
+      - application/json
       parameters:
-      - description: 事实表ID | Fact table ID
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateLogicalTableRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的逻辑表 | Created logical table
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建逻辑表 | Create logical table
+      tags:
+      - Model
+  /logical-tables/{id}:
+    delete:
+      parameters:
+      - description: 逻辑表ID | Logical table ID
         in: path
         name: id
         required: true
@@ -938,36 +870,15 @@ paths:
       - application/json
       responses:
         "200":
-          description: 指标关联列表 | Metric mapping list
+          description: 删除成功 | Deleted successfully
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 查询事实表关联指标列表 | List fact table metric mappings
+      summary: 删除逻辑表 | Delete logical table
       tags:
       - Model
-  /listrelations:
-    get:
-      parameters:
-      - description: 实体ID过滤 | Filter by entity ID
-        in: query
-        name: entity_id
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 关系列表 | Relation list
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询实体关系列表 | List entity relations
-      tags:
-      - Model
-  /previewddl:
     get:
       parameters:
       - description: 逻辑表ID | Logical table ID
@@ -979,17 +890,94 @@ paths:
       - application/json
       responses:
         "200":
-          description: DDL 预览 | DDL preview
+          description: 逻辑表详情 | Logical table details
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 预览 DDL | Preview DDL
+      summary: 获取逻辑表详情 | Get logical table details
       tags:
       - Model
-  /removedimensionrelation:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 逻辑表ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateLogicalTableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的逻辑表 | Updated logical table
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新逻辑表 | Update logical table
+      tags:
+      - Model
+  /logical-tables/{id}/dimension-relations:
     get:
+      parameters:
+      - description: 事实表ID | Fact table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 维度关联列表 | Dimension relation list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询维度关联列表 | List dimension relations
+      tags:
+      - Model
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 事实表ID | Fact table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateTableRelationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的关联 | Created relation
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 添加维度关联 | Add dimension relation
+      tags:
+      - Model
+  /logical-tables/{id}/dimension-relations/{rid}:
+    delete:
       parameters:
       - description: 事实表ID | Fact table ID
         in: path
@@ -1014,126 +1002,82 @@ paths:
       summary: 删除维度关联 | Remove dimension relation
       tags:
       - Model
-  /removemetric:
+  /logical-tables/{id}/fields:
     get:
       parameters:
-      - description: 事实表ID | Fact table ID
+      - description: 逻辑表ID | Logical table ID
         in: path
         name: id
-        required: true
-        type: integer
-      - description: 关联ID | Mapping ID
-        in: path
-        name: mid
         required: true
         type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: 删除成功 | Removed successfully
+          description: 字段列表 | Field list
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 删除事实表指标关联 | Remove fact table metric mapping
+      summary: 获取逻辑表字段列表 | Get logical table fields
       tags:
       - Model
-  /updateattribute:
-    get:
+    post:
       consumes:
       - application/json
       parameters:
-      - description: 实体ID | Entity ID
+      - description: 逻辑表ID | Logical table ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 属性ID | Attribute ID
-        in: path
-        name: aid
-        required: true
-        type: integer
-      - description: 更新请求 | Update request
+      - description: 创建请求 | Create request
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityAttributeRequest'
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateLogicalFieldRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: 已更新的属性 | Updated attribute
+        "201":
+          description: 已创建的字段 | Created field
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 更新实体属性 | Update entity attribute
+      summary: 创建逻辑表字段 | Create logical table field
       tags:
       - Model
-  /updatedwlayer:
-    get:
-      consumes:
-      - application/json
+  /logical-tables/{id}/fields/{fid}:
+    delete:
       parameters:
-      - description: 分层ID | DW layer ID
+      - description: 逻辑表ID | Logical table ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新请求 | Update request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateDWLayerRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 已更新的分层 | Updated DW layer
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数仓分层 | Update DW layer
-      tags:
-      - Model
-  /updateentity:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 实体ID | Entity ID
+      - description: 字段ID | Field ID
         in: path
-        name: id
+        name: fid
         required: true
         type: integer
-      - description: 更新请求 | Update request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 已更新的实体 | Updated entity
+          description: 删除成功 | Deleted successfully
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 更新实体 | Update entity
+      summary: 删除逻辑表字段 | Delete logical table field
       tags:
       - Model
-  /updatefield:
-    get:
+    put:
       consumes:
       - application/json
       parameters:
@@ -1166,62 +1110,100 @@ paths:
       summary: 更新逻辑表字段 | Update logical table field
       tags:
       - Model
-  /updatelogicaltable:
+  /logical-tables/{id}/metrics:
     get:
+      parameters:
+      - description: 事实表ID | Fact table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 指标关联列表 | Metric mapping list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询事实表关联指标列表 | List fact table metric mappings
+      tags:
+      - Model
+    post:
       consumes:
       - application/json
+      parameters:
+      - description: 事实表ID | Fact table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.CreateFactMetricMappingRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的关联 | Created mapping
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 添加事实表指标关联 | Add fact table metric mapping
+      tags:
+      - Model
+  /logical-tables/{id}/metrics/{mid}:
+    delete:
+      parameters:
+      - description: 事实表ID | Fact table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 关联ID | Mapping ID
+        in: path
+        name: mid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Removed successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除事实表指标关联 | Remove fact table metric mapping
+      tags:
+      - Model
+  /logical-tables/{id}/preview-ddl:
+    post:
       parameters:
       - description: 逻辑表ID | Logical table ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新请求 | Update request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateLogicalTableRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 已更新的逻辑表 | Updated logical table
+          description: DDL 预览 | DDL preview
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 更新逻辑表 | Update logical table
-      tags:
-      - Model
-  /updaterelation:
-    get:
-      consumes:
-      - application/json
-      parameters:
-      - description: 关系ID | Relation ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 更新请求 | Update request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.UpdateEntityRelationRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 已更新的关系 | Updated relation
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新实体关系 | Update entity relation
+      summary: 预览 DDL | Preview DDL
       tags:
       - Model
 securityDefinitions:

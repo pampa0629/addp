@@ -28,7 +28,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | 场景 | 必读文档 |
 | --- | --- |
 | 开发原则与编码规范 | `docs/spec/addp开发原则.md` |
-| API 设计、响应格式、HTTP 状态码、Swagger | `docs/spec/addp-API设计规范.md`、`docs/spec/addp-Swagger集成指南.md` |
+| API 设计、响应格式、HTTP 状态码、Swagger | 必须阅读 `docs/spec/addp-API设计规范.md`、`docs/spec/addp-Swagger集成指南.md` |
 | 环境配置、密钥、`.env` | `docs/spec/addp配置介绍.md` |
 | 端口 | `docs/spec/addp端口分配.md` |
 | Go/前端依赖版本 | `docs/spec/addp技术栈规约.md` |
@@ -76,8 +76,11 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 
 ## 后端与 API 约定
 
-- 新增或修改 API 前，阅读 `docs/spec/addp-API设计规范.md`。
+- 新增或修改 API 前，必须阅读 `docs/spec/addp-API设计规范.md` 和 `docs/spec/addp-Swagger集成指南.md`。
 - API 返回结构、`data` 字段语义、错误格式和 Swagger 说明必须符合规范。
+- API 路由、Handler、DTO、Swagger 注解和生成文档必须同步更新。
+- API 修改后必须运行 `bash scripts/swagger/gen-swagger.sh <module>` 和 `bash scripts/swagger/check-route-coverage.sh <module>`。
+- 不允许只改路由或 Handler 而留下旧 Swagger path。
 - 后端通用能力优先放到 `common/`，不要在各模块重复实现。
 - 各服务遵循 Handler -> Service -> Repository -> Database 的分层思路。
 

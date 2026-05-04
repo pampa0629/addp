@@ -162,8 +162,8 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 ## 五、上层消费规则
 
-- System：只通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新。
-- Meta：使用 `CatalogProvider` 扫描目录，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据。
+- System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
+- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Manager：使用 Meta 树构建探查树，预览时组合 `ItemMetadataProvider`、`ContentReadableProvider` 和 query runtime。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`。
 - Service：发布查询服务时使用 query runtime 和 Meta item/spatial 元数据。

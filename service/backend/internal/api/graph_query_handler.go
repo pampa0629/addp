@@ -27,7 +27,16 @@ func NewGraphQueryHandler(s *svc.GraphQueryServiceService, executor *data.GraphQ
 
 // ===== 服务管理 API =====
 
-// CreateService POST /api/service/graph
+// CreateService 创建图查询服务
+// @Summary 创建图查询服务 | Create graph query service
+// @Tags GraphQueryService
+// @Accept json
+// @Produce json
+// @Param request body models.CreateGraphQueryServiceRequest true "创建请求 | Create request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Router /graph [post]
+// @Security BearerAuth
 func (h *GraphQueryHandler) CreateService(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
@@ -51,7 +60,17 @@ func (h *GraphQueryHandler) CreateService(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListServices GET /api/v1/service/graph?page=1&page_size=20&search=...
+// ListServices 获取图查询服务列表
+// @Summary 图查询服务列表 | List graph query services
+// @Tags GraphQueryService
+// @Produce json
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Param search query string false "搜索词 | Search"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /graph [get]
+// @Security BearerAuth
 func (h *GraphQueryHandler) ListServices(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	if tenantID == 0 {
@@ -98,7 +117,15 @@ func (h *GraphQueryHandler) ListServices(c *gin.Context) {
 	})
 }
 
-// GetService GET /api/service/graph/:id
+// GetService 获取图查询服务详情
+// @Summary 获取图查询服务 | Get graph query service
+// @Tags GraphQueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Router /graph/{id} [get]
+// @Security BearerAuth
 func (h *GraphQueryHandler) GetService(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
@@ -119,7 +146,18 @@ func (h *GraphQueryHandler) GetService(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// UpdateService PUT /api/service/graph/:id
+// UpdateService 更新图查询服务
+// @Summary 更新图查询服务 | Update graph query service
+// @Tags GraphQueryService
+// @Accept json
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Param request body models.UpdateGraphQueryServiceRequest true "更新请求 | Update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /graph/{id} [put]
+// @Security BearerAuth
 func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
@@ -146,7 +184,15 @@ func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteService DELETE /api/service/graph/:id
+// DeleteService 删除图查询服务
+// @Summary 删除图查询服务 | Delete graph query service
+// @Tags GraphQueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /graph/{id} [delete]
+// @Security BearerAuth
 func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
@@ -166,6 +212,18 @@ func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 
 // ExecuteQuery POST /api/graph/:serviceName
 // 公开端点（认证可选）：从 JWT 中提取 tenantID；若无 token 则 tenantID=0（要求 public_access=true）
+// @Summary 执行图查询服务 | Execute graph query service
+// @Tags GraphQueryExecution
+// @Accept json
+// @Produce json
+// @Param serviceName path string true "服务名称 | Service name"
+// @Param request body models.GraphQueryExecuteRequest false "执行请求 | Execute request"
+// @Success 200 {object} models.GraphQueryResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/gquery/{serviceName} [post]
 func (h *GraphQueryHandler) ExecuteQuery(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	if serviceName == "" {

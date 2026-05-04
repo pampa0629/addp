@@ -30,7 +30,7 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{} "实体列表 | Entity list"
-// @Router /listentities [get]
+// @Router /entities [get]
 // @Security BearerAuth
 func (h *EntityHandler) ListEntities(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -83,7 +83,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
-// @Router /createentity [get]
+// @Router /entities [post]
 // @Security BearerAuth
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	var req models.CreateEntityRequest
@@ -109,7 +109,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "实体详情 | Entity details"
-// @Router /getentity [get]
+// @Router /entities/{id} [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -135,7 +135,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
-// @Router /updateentity [get]
+// @Router /entities/{id} [put]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -167,7 +167,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /deleteentity [get]
+// @Router /entities/{id} [delete]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -190,7 +190,7 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
-// @Router /approveentity [get]
+// @Router /entities/{id}/approve [post]
 // @Security BearerAuth
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -215,7 +215,7 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "属性列表 | Attribute list"
-// @Router /getattributes [get]
+// @Router /entities/{id}/attributes [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -241,7 +241,7 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
-// @Router /createattribute [get]
+// @Router /entities/{id}/attributes [post]
 // @Security BearerAuth
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -274,7 +274,7 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 // @Param aid path int true "属性ID | Attribute ID"
 // @Param body body models.UpdateEntityAttributeRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的属性 | Updated attribute"
-// @Router /updateattribute [get]
+// @Router /entities/{id}/attributes/{aid} [put]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -310,7 +310,7 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param aid path int true "属性ID | Attribute ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /deleteattribute [get]
+// @Router /entities/{id}/attributes/{aid} [delete]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -339,7 +339,7 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Produce json
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
 // @Success 200 {object} map[string]interface{} "导入结果 | Import result"
-// @Router /importmermaid [get]
+// @Router /entities/import-mermaid [post]
 // @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 	var req models.MermaidImportRequest
@@ -365,7 +365,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Mermaid ER 图代码 | Mermaid ER diagram code"
-// @Router /exportmermaid [get]
+// @Router /entities/export-mermaid [get]
 // @Security BearerAuth
 func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 	tenantID := getTenantID(c)

@@ -30,6 +30,7 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 //   - geom: 几何列名（默认 "geom"）
 //   - srid: 空间参考系（默认 4326）
 //   - cols: 返回列，逗号分隔（最多 8 列）
+//
 // @Summary 获取MVT矢量瓦片 | Get MVT vector tile
 // @Description 获取指定空间数据项（关系表）的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial item (relational table) with three-layer cache
 // @Tags Manager
@@ -47,7 +48,7 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /gettile [get]
+// @Router /engines/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y} [get]
 // @Security BearerAuth
 func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	fmt.Printf("🔵 UnifiedTilesHandler.GetTile 被调用: %s\n", c.Request.URL.Path)

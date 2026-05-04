@@ -7,12 +7,12 @@ import (
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/model/docs"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/model/docs"
 )
 
 // proxyToStandard 创建一个代理处理器，将请求转发到 Standard 模块

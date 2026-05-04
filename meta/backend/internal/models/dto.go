@@ -42,7 +42,8 @@ type ResourceWithStats struct {
 	CheckMessage     string `json:"check_message,omitempty"`     // 状态详情
 }
 
-// ObjectNode 对象存储节点
+// ObjectNode 迁移期实时 catalog 浏览节点。
+// Deprecated: 实时 catalog 浏览应由 System 的 /engines/:id/catalog/children 统一提供；Meta 后续只保留扫描后元数据快照 API。
 type ObjectNode struct {
 	Name         string `json:"name"`
 	Path         string `json:"path"`

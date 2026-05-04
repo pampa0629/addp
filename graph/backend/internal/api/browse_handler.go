@@ -168,6 +168,15 @@ func (h *BrowseHandler) FindPath(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// GetConstraints godoc
+// @Summary      获取图约束 | Get graph constraints
+// @Tags         图谱浏览 | Graph Browse
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/constraints [get]
 func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
@@ -179,7 +188,16 @@ func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 	c.JSON(http.StatusOK, constraints)
 }
 
-// InferSchema GET /graphs/:id/infer-schema?ontology_id=1
+// InferSchema godoc
+// @Summary      推断图谱 Schema | Infer graph schema
+// @Tags         图谱浏览 | Graph Browse
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id          path  int true  "知识图谱 ID | Knowledge graph ID"
+// @Param        ontology_id query int false "本体 ID | Ontology ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/infer-schema [get]
 func (h *BrowseHandler) InferSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
@@ -203,7 +221,18 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 	c.JSON(http.StatusOK, preview)
 }
 
-// ApplyInferredSchema POST /graphs/:id/infer-schema/apply
+// ApplyInferredSchema godoc
+// @Summary      应用推断 Schema | Apply inferred schema
+// @Tags         图谱浏览 | Graph Browse
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body service.ApplyInferredSchemaRequest true "应用请求 | Apply request"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/infer-schema/apply [post]
 func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
 	tenantID := getTenantID(c)

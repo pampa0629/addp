@@ -22,7 +22,17 @@ func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler
 }
 
 // ListTasks 查询任务列表（Orchestrator 标准接口）
-// GET /api/develop/tasks/list?unique_identifier=develop.default&page=1&page_size=20
+// @Summary 列出可编排任务 | List orchestratable tasks
+// @Description 返回可供 Orchestrator 编排复用的开发任务 | List active develop tasks for Orchestrator
+// @Tags Develop
+// @Produce json
+// @Param unique_identifier query string false "任务提供者唯一标识 | Task provider identifier"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /tasks/list [get]
+// @Security BearerAuth
 func (h *TaskListHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

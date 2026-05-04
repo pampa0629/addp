@@ -1,6 +1,33 @@
 # ADDP Swagger 集成指南
 
-本文档说明如何为 ADDP 的 Go 后端模块集成 Swagger UI，以 System 模块为参考实现。
+本文档说明如何为 ADDP 各 HTTP API 模块集成和维护 Swagger/OpenAPI 文档。该规范适用于所有带 HTTP API 的模块，不限 Go 模块：Go + Gin 模块统一使用 swaggo，FastAPI 模块使用框架内置 OpenAPI。
+
+## 强制同步要求
+
+API 修改必须同步 Swagger。任何新增、删除、修改公开 HTTP API 的变更，都必须同时更新：
+
+- 真实路由注册代码。
+- Handler 方法和请求/响应 DTO。
+- Swagger/OpenAPI 注解。
+- 生成产物：`docs/swagger.json`、`docs/swagger.yaml`、`docs/docs.go`。
+
+不允许只修改路由或 Handler 而留下旧 Swagger path，也不允许 Swagger 生成成功但文档缺失真实公开接口。
+
+API 修改后必须执行：
+
+```bash
+bash scripts/swagger/gen-swagger.sh <module>
+bash scripts/swagger/check-route-coverage.sh <module>
+```
+
+涉及多个模块时使用：
+
+```bash
+bash scripts/swagger/gen-swagger.sh all
+bash scripts/swagger/check-route-coverage.sh all
+```
+
+`scripts/dev/restart.sh -<module>` 和 `scripts/dev/restart.sh -all` 会参与 Swagger 生成和覆盖校验，但不能替代开发者补注解。生成失败默认中断重启；覆盖校验在历史欠账清理阶段可降级为告警，详见脚本输出。
 
 ## 依赖版本
 
@@ -19,6 +46,36 @@ go install github.com/swaggo/swag/cmd/swag@latest
 ```
 
 安装后工具路径：`~/go/bin/swag`
+
+## 文档边界
+
+必须纳入 Swagger/OpenAPI：
+
+- 面向 Console 和各模块前端的公开 HTTP API。
+- 模块间通过 HTTP 调用的 API。
+- 对外开放的数据服务 API。
+
+通常不纳入 Swagger/OpenAPI：
+
+- 健康检查：`/health`。
+- Swagger/OpenAPI 自身路由：`/swagger/*any`、`/docs`、`/redoc`、`/openapi.json`。
+- 内部路由：`/api/v1/internal/**` 或明确标记为 internal/debug/metrics 的路由。
+- 临时调试接口。
+
+排除公开覆盖校验的路由必须有明确规则，不能用排除规则掩盖真实公开 API 缺失。
+
+## 路由注解一致性
+
+- `@BasePath` 必须与真实 Gin 路由组一致，例如 `router.Group("/api/v1/meta")` 对应 `@BasePath /api/v1/meta`。
+- `@Router` 必须与真实 Gin 路由一致。Go 路由中的 `:id` 在 Swagger 中必须写为 `{id}`。
+- `@Router` 只写 `@BasePath` 之后的相对路径，例如真实路由 `/api/v1/meta/engines/:engine_id/tree` 应写：
+
+```go
+// @Router /engines/{engine_id}/tree [get]
+```
+
+- HTTP method 必须一致，不能真实路由是 `POST` 而 Swagger 写成 `[get]`。
+- 删除或迁移 API 时，必须删除旧 `@Router` 注解并重新生成文档，避免旧 path 残留。
 
 ## 为 Go 模块添加 Swagger 的步骤
 
@@ -172,9 +229,26 @@ cd <module>/backend
 - `docs/swagger.json` - OpenAPI JSON 规范
 - `docs/swagger.yaml` - OpenAPI YAML 规范
 
+这些生成产物必须随代码同步更新并提交。
+
 ### 7. 验证
 
 重启服务后访问：`http://localhost:<port>/swagger/index.html`
+
+静态覆盖校验：
+
+```bash
+bash scripts/swagger/check-route-coverage.sh <module>
+```
+
+该脚本会对比真实公开路由与 `docs/swagger.json` 中的 paths，发现：
+
+- Swagger 缺失真实公开路由。
+- Swagger 残留已删除或已迁移的旧 path。
+- `@Router` method 与真实路由不一致。
+- `@BasePath` 与真实路由组不一致。
+
+脚本会统一 Gin `:id` 与 Swagger `{id}` 的路径参数格式，并排除 health、swagger、docs、internal、debug、metrics 等不需要公开的路由。
 
 ## Python 模块（FastAPI）
 
@@ -183,6 +257,26 @@ FastAPI 模块（Agent、Copilot）无需额外配置，自动提供：
 - Swagger UI：`/docs`
 - ReDoc：`/redoc`
 - OpenAPI JSON：`/openapi.json`
+
+新增、删除、修改 FastAPI 路由时，同样必须确保 `/openapi.json` 能反映真实 API。Console API 文档中心接入 FastAPI 模块时，应使用该 OpenAPI JSON 作为来源。
+
+## 常见问题
+
+### 生成成功但接口缺失
+
+通常是 Handler 缺少 `@Router` 注解，或注解没有紧贴可被 swaggo 解析的函数。补齐注解后重新执行 `gen-swagger.sh` 和 `check-route-coverage.sh`。
+
+### 路径显示旧值
+
+通常是路由迁移后旧 `@Router` 没删除，或生成产物未更新。删除旧注解并重新生成 `docs/swagger.json`、`docs/swagger.yaml`、`docs/docs.go`。
+
+### BasePath 错误
+
+检查 `cmd/server/main.go` 中的 `@BasePath`，必须与模块真实 `router.Group("/api/v1/<module>")` 一致。BasePath 错误会导致 Console API 文档中心展示的接口前缀不准确。
+
+### Swagger UI 可访问但内容错误
+
+Swagger UI 可访问只说明静态文档服务正常，不代表 API 文档准确。必须同时执行 route coverage 校验。
 
 ## 注解规范
 
@@ -211,7 +305,7 @@ type LoginRequest struct {
 
 ### 优先级
 
-不要为所有端点加注解，优先为以下端点添加：
+所有公开 HTTP API 都应有注解。历史模块补齐时按以下优先级推进：
 
 1. **P0**：认证相关（登录、刷新）
 2. **P0**：核心 CRUD（List、Create、GetByID）

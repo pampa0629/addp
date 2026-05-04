@@ -1,13 +1,13 @@
 package api
 
 import (
-    "net/http"
-    "strconv"
-    "strings"
+	"net/http"
+	"strconv"
+	"strings"
 
-    commonAPI "github.com/addp/common/api"
-    "github.com/addp/transfer/internal/service"
-    "github.com/gin-gonic/gin"
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/transfer/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 // ExecutionHandler 执行记录管理 API Handler
@@ -23,7 +23,14 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 }
 
 // GetExecution 获取执行记录详情
-// GET /api/executions/:id
+// @Summary 获取执行详情 | Get execution detail
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Router /executions/{id} [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -42,7 +49,17 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 }
 
 // ListExecutions 获取执行记录列表
-// GET /api/executions?task_id=1&status=running&page=1&page_size=20
+// @Summary 获取执行列表 | List executions
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "执行状态 | Status"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /executions [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
@@ -79,7 +96,16 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 }
 
 // GetTaskExecutions 获取指定任务的执行记录
-// GET /api/tasks/:id/executions
+// @Summary 获取任务执行列表 | List task executions
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /tasks/{id}/executions [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 	taskID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -102,7 +128,14 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 }
 
 // CancelExecution 取消执行
-// POST /api/executions/:id/cancel
+// @Summary 取消执行 | Cancel execution
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /executions/{id}/cancel [post]
+// @Security BearerAuth
 func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -120,7 +153,14 @@ func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
 }
 
 // RetryExecution 重试失败的执行
-// POST /api/executions/:id/retry
+// @Summary 重试执行 | Retry execution
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /executions/{id}/retry [post]
+// @Security BearerAuth
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -140,7 +180,14 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 }
 
 // GetExecutionProgress 获取执行进度
-// GET /api/executions/:id/progress
+// @Summary 获取执行进度 | Get execution progress
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /executions/{id}/progress [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -159,7 +206,15 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 }
 
 // GetExecutionLogs 获取执行日志
-// GET /api/executions/:id/logs
+// @Summary 获取执行日志 | Get execution logs
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Param limit query int false "最多返回行数 | Line limit"
+// @Success 200 {array} string
+// @Failure 500 {object} map[string]string
+// @Router /executions/{id}/logs [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
@@ -168,37 +223,46 @@ func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-    // 获取完整日志字符串
-    logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
-    if err != nil {
-        commonAPI.InternalServerError(c, err.Error())
-        return
-    }
+	// 获取完整日志字符串
+	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
 
-    // 拆分为行，并根据可选的 limit 参数进行裁剪
-    lines := []string{}
-    if logs != "" {
-        // 使用 \n 拆分，并去掉可能的末尾空行
-        raw := strings.Split(logs, "\n")
-        for _, line := range raw {
-            if line != "" {
-                lines = append(lines, line)
-            }
-        }
-    }
+	// 拆分为行，并根据可选的 limit 参数进行裁剪
+	lines := []string{}
+	if logs != "" {
+		// 使用 \n 拆分，并去掉可能的末尾空行
+		raw := strings.Split(logs, "\n")
+		for _, line := range raw {
+			if line != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
 
-    if limitStr := c.Query("limit"); limitStr != "" {
-        if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && len(lines) > limit {
-            lines = lines[len(lines)-limit:]
-        }
-    }
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && len(lines) > limit {
+			lines = lines[len(lines)-limit:]
+		}
+	}
 
-    // 返回数组，前端按行渲染
-    c.JSON(http.StatusOK, lines)
+	// 返回数组，前端按行渲染
+	c.JSON(http.StatusOK, lines)
 }
 
 // GetExecutionStatistics 获取执行统计
-// GET /api/executions/statistics?task_id=1&start_time=2024-01-01&end_time=2024-12-31
+// @Summary 获取执行统计 | Get execution statistics
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param task_id query int false "任务ID | Task ID"
+// @Param start_time query string false "开始时间 | Start time"
+// @Param end_time query string false "结束时间 | End time"
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /executions/statistics [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

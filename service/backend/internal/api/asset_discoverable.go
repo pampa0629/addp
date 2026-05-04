@@ -18,9 +18,13 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 	return &assetDiscoverableHandler{db: db}
 }
 
-// listDiscoverableAssets GET /api/service/assets/discoverable
-// 返回当前租户下 status='active' 的所有服务（查询服务、注册服务、瓦片服务），供 Asset 模块自动发现。
-// source_reference 格式: "{type}:{id}"，其中 type 为 query/registered/tile
+// listDiscoverableAssets 返回当前租户下 status='active' 的所有服务（查询服务、注册服务、瓦片服务），供 Asset 模块自动发现。
+// @Summary 列出可发现资产 | List discoverable assets
+// @Tags Service
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Router /assets/discoverable [get]
+// @Security BearerAuth
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

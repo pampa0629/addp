@@ -50,11 +50,25 @@ export default {
     })
   },
 
-  // 获取对象存储的节点列表
+  // 获取指定引擎的实时 catalog 子节点（System 统一控制面）
+  listCatalogChildren(engineId, path = { segments: [] }, options = {}) {
+    const catalogPath = typeof path === 'string'
+      ? browserPathToCatalogPath(path)
+      : { segments: [], ...path }
+    return client.post(`/system/engines/${engineId}/catalog/children`, {
+      path: catalogPath,
+      options
+    }).then(res => Array.isArray(res?.nodes) ? res.nodes : [])
+  },
+
+  // 获取扫描配置使用的实时 catalog 顶层节点
+  listCatalogTopNodes(engineId) {
+    return this.listCatalogChildren(engineId).then(nodes => nodes.map(toBrowserNode))
+  },
+
+  // 迁移期兼容：对象存储/文件系统浏览统一转到 System catalog API
   listObjectStorageNodes(engineId, path = '') {
-    return client.get(`/meta/engines/${engineId}/storage/nodes`, {
-      params: { path }
-    })
+    return this.listCatalogChildren(engineId, path).then(nodes => nodes.map(toBrowserNode))
   },
 
   // 自动扫描所有未扫描的引擎
@@ -114,4 +128,48 @@ export default {
         engine_id: engineId
       })
   }
+}
+
+function browserPathToCatalogPath(path = '') {
+  const segments = String(path)
+    .split('/')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map((name, index) => ({
+      name,
+      term: index === 0 ? 'bucket' : 'prefix',
+      kind: index === 0 ? 'bucket' : 'prefix'
+    }))
+  return { segments }
+}
+
+function toBrowserNode(node) {
+  const nodePath = node.attributes?.path || catalogPathToString(node.path) || node.name
+  const type = catalogNodeBrowserType(node)
+  return {
+    name: node.name,
+    schema_name: node.name,
+    path: nodePath,
+    type,
+    node_type: type,
+    size_bytes: node.stats?.size_bytes,
+    file_type: type === 'file' || type === 'object' ? fileExtension(node.name) : ''
+  }
+}
+
+function catalogPathToString(path) {
+  const segments = Array.isArray(path?.segments) ? path.segments : []
+  return segments.map(segment => segment.name).filter(Boolean).join('/')
+}
+
+function catalogNodeBrowserType(node) {
+  if (['bucket', 'root', 'prefix', 'object', 'file'].includes(node.kind)) {
+    return node.kind
+  }
+  return node.is_container ? 'prefix' : 'object'
+}
+
+function fileExtension(name = '') {
+  const index = name.lastIndexOf('.')
+  return index >= 0 ? name.slice(index) : ''
 }

@@ -33,8 +33,16 @@ type serviceEndpointResp struct {
 	Endpoints   map[string]string `json:"endpoints"`
 }
 
-// GetEndpoints GET /api/service/endpoints?ref=query:123
-// 内部接口：根据 source_reference 返回统一服务端点信息
+// GetEndpoints 根据 source_reference 返回统一服务端点信息
+// @Summary 获取服务端点 | Get service endpoints
+// @Tags Service
+// @Produce json
+// @Param ref query string true "服务引用 | Service reference"
+// @Success 200 {object} serviceEndpointResp
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /endpoints [get]
+// @Security BearerAuth
 func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	ref := c.Query("ref")
 	if ref == "" {

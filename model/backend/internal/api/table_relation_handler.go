@@ -25,7 +25,7 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Success 200 {object} map[string]interface{} "维度关联列表 | Dimension relation list"
-// @Router /listdimensionrelations [get]
+// @Router /logical-tables/{id}/dimension-relations [get]
 // @Security BearerAuth
 func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -50,7 +50,7 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param body body models.CreateTableRelationRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关联 | Created relation"
-// @Router /adddimensionrelation [get]
+// @Router /logical-tables/{id}/dimension-relations [post]
 // @Security BearerAuth
 func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -79,7 +79,7 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param rid path int true "关联ID | Relation ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
-// @Router /removedimensionrelation [get]
+// @Router /logical-tables/{id}/dimension-relations/{rid} [delete]
 // @Security BearerAuth
 func (h *TableRelationHandler) RemoveDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)

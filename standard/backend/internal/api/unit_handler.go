@@ -26,7 +26,7 @@ func NewUnitHandler(svc *service.UnitService) *UnitHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listcategories [get]
+// @Router /measurement-categories [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListCategories(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -42,7 +42,7 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createcategory [get]
+// @Router /measurement-categories [post]
 // @Security BearerAuth
 func (h *UnitHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMeasurementCategoryRequest
@@ -63,7 +63,7 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatecategory [get]
+// @Router /measurement-categories/{id} [put]
 // @Security BearerAuth
 func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -89,7 +89,7 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletecategory [get]
+// @Router /measurement-categories/{id} [delete]
 // @Security BearerAuth
 func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -111,7 +111,7 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listunits [get]
+// @Router /units [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListUnits(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -133,7 +133,7 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getunit [get]
+// @Router /units/{id} [get]
 // @Security BearerAuth
 func (h *UnitHandler) GetUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -154,7 +154,7 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createunit [get]
+// @Router /units [post]
 // @Security BearerAuth
 func (h *UnitHandler) CreateUnit(c *gin.Context) {
 	var req models.CreateUnitRequest
@@ -175,7 +175,7 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updateunit [get]
+// @Router /units/{id} [put]
 // @Security BearerAuth
 func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -201,7 +201,7 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deleteunit [get]
+// @Router /units/{id} [delete]
 // @Security BearerAuth
 func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

@@ -25,7 +25,7 @@ func NewDimensionHierarchyHandler(svc *service.DimensionHierarchyService) *Dimen
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /list [get]
+// @Router /dimension-hierarchies [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -42,7 +42,7 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /get [get]
+// @Router /dimension-hierarchies/{id} [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -64,7 +64,7 @@ func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /create [get]
+// @Router /dimension-hierarchies [post]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 	var req models.CreateDimensionHierarchyRequest
@@ -87,7 +87,7 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /update [get]
+// @Router /dimension-hierarchies/{id} [put]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -115,7 +115,7 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /delete [get]
+// @Router /dimension-hierarchies/{id} [delete]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -138,7 +138,7 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /listlevels [get]
+// @Router /dimension-hierarchies/{id}/levels [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -159,7 +159,7 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /createlevel [get]
+// @Router /dimension-hierarchies/{id}/levels [post]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -185,7 +185,7 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /updatelevel [get]
+// @Router /dimension-hierarchies/{id}/levels/{lid} [put]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -216,7 +216,7 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /deletelevel [get]
+// @Router /dimension-hierarchies/{id}/levels/{lid} [delete]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

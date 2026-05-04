@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	commonMiddleware "github.com/addp/common/middleware/auth"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"github.com/addp/graph/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 type BuildHandler struct {
@@ -104,7 +104,16 @@ func (h *BuildHandler) CreateTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, task)
 }
 
-// GetTask GET /graphs/:id/build/tasks/:tid
+// GetTask godoc
+// @Summary      获取构建任务 | Get build task
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Success      200 {object} models.BuildTask
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid} [get]
 func (h *BuildHandler) GetTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -117,7 +126,16 @@ func (h *BuildHandler) GetTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// DeleteTask DELETE /graphs/:id/build/tasks/:tid
+// DeleteTask godoc
+// @Summary      删除构建任务 | Delete build task
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid} [delete]
 func (h *BuildHandler) DeleteTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -153,7 +171,16 @@ func (h *BuildHandler) RunTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "任务已启动"})
 }
 
-// CancelTask POST /graphs/:id/build/tasks/:tid/cancel
+// CancelTask godoc
+// @Summary      取消构建任务 | Cancel build task
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid}/cancel [post]
 func (h *BuildHandler) CancelTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -166,7 +193,16 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "任务已取消"})
 }
 
-// RerunTask POST /graphs/:id/build/tasks/:tid/rerun
+// RerunTask godoc
+// @Summary      重新运行构建任务 | Rerun build task
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid}/rerun [post]
 func (h *BuildHandler) RerunTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -182,7 +218,16 @@ func (h *BuildHandler) RerunTask(c *gin.Context) {
 
 // ——— 材料管理 ———
 
-// ListMaterials GET /graphs/:id/build/tasks/:tid/materials
+// ListMaterials godoc
+// @Summary      列出构建材料 | List build materials
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Success      200 {array} models.BuildMaterial
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid}/materials [get]
 func (h *BuildHandler) ListMaterials(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -195,7 +240,19 @@ func (h *BuildHandler) ListMaterials(c *gin.Context) {
 	c.JSON(http.StatusOK, materials)
 }
 
-// UploadMaterial POST /graphs/:id/build/tasks/:tid/materials (multipart)
+// UploadMaterial godoc
+// @Summary      上传构建材料 | Upload build material
+// @Tags         图谱构建 | Graph Build
+// @Accept       multipart/form-data
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid   path int true "任务 ID | Task ID"
+// @Param        files formData file true "材料文件 | Material files"
+// @Success      201 {array} models.BuildMaterial
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid}/materials [post]
 func (h *BuildHandler) UploadMaterial(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
@@ -234,7 +291,17 @@ func (h *BuildHandler) uploadSingleFile(c *gin.Context, fh *multipart.FileHeader
 	return h.buildSvc.UploadMaterial(taskID, tenantID, graphID, fh.Filename, f, fh.Size)
 }
 
-// DeleteMaterial DELETE /graphs/:id/build/tasks/:tid/materials/:mid
+// DeleteMaterial godoc
+// @Summary      删除构建材料 | Delete build material
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        tid path int true "任务 ID | Task ID"
+// @Param        mid path int true "材料 ID | Material ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/build/tasks/{tid}/materials/{mid} [delete]
 func (h *BuildHandler) DeleteMaterial(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	mid, _ := strconv.ParseUint(c.Param("mid"), 10, 64)
@@ -248,7 +315,20 @@ func (h *BuildHandler) DeleteMaterial(c *gin.Context) {
 
 // ——— 审核队列 ———
 
-// ListReviewItems GET /graphs/:id/review
+// ListReviewItems godoc
+// @Summary      列出审核项 | List review items
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path  int    true  "知识图谱 ID | Knowledge graph ID"
+// @Param        task_id   query int    false "任务 ID | Task ID"
+// @Param        item_type query string false "项目类型 | Item type"
+// @Param        status    query string false "状态 | Status"
+// @Param        page      query int    false "页码 | Page" default(1)
+// @Param        page_size query int    false "每页数量 | Page size" default(20)
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review [get]
 func (h *BuildHandler) ListReviewItems(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -284,7 +364,16 @@ func (h *BuildHandler) ListReviewItems(c *gin.Context) {
 	})
 }
 
-// ApproveReviewItem POST /graphs/:id/review/:iid/approve
+// ApproveReviewItem godoc
+// @Summary      通过审核项 | Approve review item
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        iid path int true "审核项 ID | Review item ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review/{iid}/approve [post]
 func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
@@ -297,7 +386,16 @@ func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已确认写入"})
 }
 
-// RejectReviewItem POST /graphs/:id/review/:iid/reject
+// RejectReviewItem godoc
+// @Summary      拒绝审核项 | Reject review item
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        iid path int true "审核项 ID | Review item ID"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review/{iid}/reject [post]
 func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
@@ -310,7 +408,19 @@ func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
 }
 
-// ModifyReviewItem PUT /graphs/:id/review/:iid
+// ModifyReviewItem godoc
+// @Summary      修改审核项 | Modify review item
+// @Tags         图谱构建 | Graph Build
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        iid     path int true "审核项 ID | Review item ID"
+// @Param        request body map[string]interface{} true "修改内容 | Modify content"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review/{iid} [put]
 func (h *BuildHandler) ModifyReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
@@ -331,7 +441,18 @@ func (h *BuildHandler) ModifyReviewItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已修改并写入"})
 }
 
-// BatchReview POST /graphs/:id/review/batch
+// BatchReview godoc
+// @Summary      批量审核 | Batch review
+// @Tags         图谱构建 | Graph Build
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body map[string]interface{} true "批量审核请求 | Batch review request"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review/batch [post]
 func (h *BuildHandler) BatchReview(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -357,7 +478,15 @@ func (h *BuildHandler) BatchReview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "批量操作完成"})
 }
 
-// PendingReviewCount GET /graphs/:id/review/pending-count
+// PendingReviewCount godoc
+// @Summary      待审核数量 | Pending review count
+// @Tags         图谱构建 | Graph Build
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
+// @Success      200 {object} map[string]int
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/review/pending-count [get]
 func (h *BuildHandler) PendingReviewCount(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tenantID := commonMiddleware.GetTenantID(c)

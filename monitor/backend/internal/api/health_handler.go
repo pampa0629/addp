@@ -26,7 +26,7 @@ func NewHealthHandler(healthService *service.HealthCheckService) *HealthHandler 
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /getmodules [get]
+// @Router /modules [get]
 // @Security BearerAuth
 func (h *HealthHandler) GetModules(c *gin.Context) {
 	modules, err := h.healthService.GetModules(c.Request.Context())
@@ -42,8 +42,9 @@ func (h *HealthHandler) GetModules(c *gin.Context) {
 // @Summary 检查模块健康状态 | Check module health
 // @Tags Monitor
 // @Produce json
+// @Param module path string true "模块名 | Module"
 // @Success 200 {object} map[string]interface{}
-// @Router /checkmodulehealth [get]
+// @Router /modules/{module}/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
 	moduleName := c.Param("module")
@@ -84,7 +85,7 @@ func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /checkallmodules [get]
+// @Router /modules/health/all [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckAllModules(c *gin.Context) {
 	statuses, err := h.healthService.CheckAllModules(c.Request.Context())

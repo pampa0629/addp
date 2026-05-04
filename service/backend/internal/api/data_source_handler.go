@@ -52,8 +52,16 @@ func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 }
 
 // GetEngineTree 获取引擎的元数据树
-// GET /api/service/engines/:engine_id/tree?expand_depth=2
-// 内部调用：Meta API - GET /api/meta/engines/:engine_id/tree
+// @Summary 获取引擎元数据树 | Get engine metadata tree
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id path int true "引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /engines/{engine_id}/tree [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -109,9 +117,15 @@ func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 }
 
 // GetNodeChildren 获取节点的子节点和项目（懒加载）
-// GET /api/service/nodes/:node_id/children
-// 内部调用：Meta API - GET /api/meta/nodes/:node_id/children + /api/meta/nodes/:node_id/items
-// 返回合并后的结果（包括子节点和叶子项目）
+// @Summary 获取节点子项 | Get node children
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {array} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /nodes/{node_id}/children [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 	nodeIDStr := c.Param("node_id")
 	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
@@ -191,8 +205,17 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 }
 
 // GetTableMetadata 获取表的元数据（用于检测几何列）
-// GET /api/service/tables/metadata?engine_id=1&schema=public&table=users
-// 内部调用：Meta API - GET /api/v1/meta/engines/:engine_id/items/fields
+// @Summary 获取表元数据 | Get table metadata
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id query int true "引擎ID | Engine ID"
+// @Param schema query string true "Schema"
+// @Param table query string true "表名 | Table"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tables/metadata [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 	engineIDStr := c.Query("engine_id")
 	if engineIDStr == "" {
@@ -266,8 +289,16 @@ func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 }
 
 // GetTableSpatialMetadata 获取表的空间元数据（用于空间服务发布）
-// GET /api/service/tables/spatial-metadata?engine_id=1&schema=public&table=users
-// 内部调用：Meta API - GET /api/v1/meta/engines/:engine_id/items/spatial
+// @Summary 获取表空间元数据 | Get table spatial metadata
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id query int true "引擎ID | Engine ID"
+// @Param schema query string true "Schema"
+// @Param table query string true "表名 | Table"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Router /tables/spatial-metadata [get]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
 	engineIDStr := c.Query("engine_id")
 	if engineIDStr == "" {
@@ -333,8 +364,16 @@ func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
 }
 
 // GetSQLSpatialMetadata 检测 SQL 查询结果的空间元数据
-// POST /api/service/sql/spatial-metadata
-// Body: { "engine_id": 1, "sql": "SELECT * FROM public.test" }
+// @Summary 获取 SQL 空间元数据 | Get SQL spatial metadata
+// @Tags 数据源 | Data Sources
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "SQL 空间元数据请求 | SQL spatial metadata request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /sql/spatial-metadata [post]
+// @Security BearerAuth
 func (h *DataSourceHandler) GetSQLSpatialMetadata(c *gin.Context) {
 	var req struct {
 		EngineID uint   `json:"engine_id" binding:"required"`

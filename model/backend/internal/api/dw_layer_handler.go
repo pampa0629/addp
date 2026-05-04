@@ -24,7 +24,7 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 // @Tags Model
 // @Produce json
 // @Success 200 {object} map[string]interface{} "数仓分层列表 | DW layer list"
-// @Router /listdwlayers [get]
+// @Router /dw-layers [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -44,7 +44,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateDWLayerRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的分层 | Created DW layer"
-// @Router /createdwlayer [get]
+// @Router /dw-layers [post]
 // @Security BearerAuth
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	var req models.CreateDWLayerRequest
@@ -68,7 +68,7 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Success 200 {object} map[string]interface{} "分层详情 | DW layer details"
-// @Router /getdwlayer [get]
+// @Router /dw-layers/{id} [get]
 // @Security BearerAuth
 func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -94,7 +94,7 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 // @Param id path int true "分层ID | DW layer ID"
 // @Param body body models.UpdateDWLayerRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的分层 | Updated DW layer"
-// @Router /updatedwlayer [get]
+// @Router /dw-layers/{id} [put]
 // @Security BearerAuth
 func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -124,7 +124,7 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /deletedwlayer [get]
+// @Router /dw-layers/{id} [delete]
 // @Security BearerAuth
 func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
