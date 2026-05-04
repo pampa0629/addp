@@ -44,6 +44,17 @@ export {
   parseLocator
 } from './api/dataSource'
 
+// System Catalog API
+export {
+  normalizeCatalogPath,
+  listCatalogChildren,
+  listCatalogBrowserNodes,
+  browserPathToCatalogPath,
+  catalogPathToString,
+  toCatalogBrowserNode,
+  catalogNodeBrowserType
+} from './api/catalog'
+
 // Composables - Authentication
 export {
   createAuthGuard,

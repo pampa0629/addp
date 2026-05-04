@@ -116,50 +116,6 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListObjectStorageNodes 分级列出实时 catalog 节点。
-// Deprecated: 该接口为迁移期接口；新调用方应使用 System /engines/{id}/catalog/children。
-// @Summary 列出实时 catalog 节点（迁移期）| List live catalog nodes (transitional)
-// @Description 迁移期接口：分级列出引擎实时 catalog 节点。新调用方应使用 System /engines/{id}/catalog/children；Meta 长期只提供扫描后元数据快照。| Transitional API for live catalog nodes. New callers should use System /engines/{id}/catalog/children.
-// @Tags Meta
-// @Produce json
-// @Param engine_id path int true "引擎ID | Engine ID"
-// @Param path query string false "Catalog 路径 | Catalog path"
-// @Success 200 {array} models.ObjectNode "节点列表 | Node list"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{engine_id}/storage/nodes [get]
-// @Security BearerAuth
-func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Param("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	path := c.Query("path")
-
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
-	nodes, err := h.scanService.ListObjectStorageNodes(uint(engineID), tenantID, path, token)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, nodes)
-}
-
 // AutoScan 自动扫描所有未扫描的资源
 // @Summary 自动扫描未扫描资源 | Auto scan unscanned resources
 // @Description 扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned for current tenant

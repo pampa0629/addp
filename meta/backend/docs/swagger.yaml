@@ -82,24 +82,6 @@ definitions:
           $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
         type: array
     type: object
-  github_com_addp_meta_internal_models.ObjectNode:
-    properties:
-      file_type:
-        type: string
-      last_modified:
-        type: string
-      name:
-        type: string
-      object_count:
-        type: integer
-      path:
-        type: string
-      size_bytes:
-        type: integer
-      type:
-        description: bucket/prefix/object
-        type: string
-    type: object
   github_com_addp_meta_internal_models.ScanRequest:
     properties:
       engine_id:
@@ -426,50 +408,6 @@ paths:
       summary: 按名称获取空间元数据 | Get spatial metadata by name
       tags:
       - Meta Query
-  /engines/{engine_id}/storage/nodes:
-    get:
-      description: 迁移期接口：分级列出引擎实时 catalog 节点。新调用方应使用 System /engines/{id}/catalog/children；Meta
-        长期只提供扫描后元数据快照。| Transitional API for live catalog nodes. New callers should
-        use System /engines/{id}/catalog/children.
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: Catalog 路径 | Catalog path
-        in: query
-        name: path
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 节点列表 | Node list
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_meta_internal_models.ObjectNode'
-            type: array
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 未授权 | Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出实时 catalog 节点（迁移期）| List live catalog nodes (transitional)
-      tags:
-      - Meta
   /engines/{engine_id}/tree:
     get:
       description: 获取指定引擎的完整元数据树 | Get metadata tree for an engine

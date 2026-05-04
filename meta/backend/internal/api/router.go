@@ -64,8 +64,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 资源相关
 		api.GET("/engines", handler.GetEngines)
 
-		api.GET("/engines/:engine_id/storage/nodes", handler.ListObjectStorageNodes)
-
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
 		api.POST("/scan/engine", handler.ScanEngine)

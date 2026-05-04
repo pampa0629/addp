@@ -259,3 +259,37 @@ Manager:
 - Manager 不依赖 Meta 实时浏览接口读取真实数据内容。
 - 代码中平台级 DTO 和 service 命名不再使用 `ObjectNode` 表达通用 catalog 节点。
 - PostgreSQL schema/table、MinIO bucket/prefix/object、文件系统 directory/file 至少各有一条手工或自动验证路径。
+
+## 十、执行进展记录
+
+更新时间：2026-05-04
+
+### 1. 已完成
+
+- **System 通用 API 已落地**：新增 `POST /api/v1/system/engines/:id/catalog/children`，由 System 基于引擎实例、用户权限和连接信息统一提供实时 catalog 子节点浏览。
+- **System DTO 已补充**：新增 `CatalogListChildrenRequest`、`CatalogListChildrenResponse`、`CatalogPath`、`CatalogSegment`、`CatalogNode`、`CatalogListOptions`，用于 Swagger 和前后端契约表达。
+- **后端能力复用已打通**：`common/dbbridge` 新增 `ListCatalogChildren()`，System service 通过该入口复用 engine plugin 的 `CatalogProvider.ListChildren()`，没有在 System 内重复实现具体引擎浏览逻辑。
+- **后端公共客户端已补充**：`common/client/SystemClient` 新增 `ListCatalogChildren()` / `ListCatalogChildrenWithToken()`，后续 Meta、Manager、Transfer 等模块需要实时浏览时可以统一调用 System。
+- **Meta 前端扫描配置页已迁移**：扫描页加载真实 catalog 顶层节点时，已从旧的 Meta 实时浏览链路切换为 System `catalog/children` API；扫描完成后的树和字段信息仍继续使用 Meta 元数据快照 API。
+- **前端共享 client 已抽取**：`common-frontend/basic/src/api/catalog.js` 提供 `listCatalogChildren()`、`listCatalogBrowserNodes()` 和 `CatalogNode` 到扫描页树节点的适配逻辑，Meta 前端不再维护临时 catalog 转换。
+- **路径传递已改进**：共享适配会保留 System 返回的 `catalog_path`，前端后续继续下钻时可直接传递结构化 `CatalogPath`，不再只能从 `bucket/prefix` 字符串反推。
+- **Meta 实时浏览旧接口已下线**：删除 `/api/v1/meta/engines/:engine_id/storage/nodes` 路由、Handler、Swagger path、`ObjectNode` DTO 以及 `ListObjectStorageNodes`/`ResourceDiscoveryService`，Meta 公开 API 只保留扫描和元数据快照查询。
+- **规范已同步**：`docs/spec/addp引擎插件接口规范.md` 已更新上层消费规则，明确 System 提供实时 catalog 浏览控制面，Meta 聚焦扫描和元数据快照。
+- **Swagger 已同步**：System 和 Meta 的 Swagger 文档已重新生成，并通过路由覆盖检查。
+- **Manager 边界已检查**：Manager 已纳管资产树继续消费 Meta 快照 API；真实数据预览后端直接使用 engine plugin provider，不依赖 Meta 实时浏览接口。
+
+### 2. 已验证
+
+- `bash scripts/swagger/check-route-coverage.sh system` 通过，System 公开路由和 Swagger 覆盖一致。
+- `bash scripts/swagger/check-route-coverage.sh meta` 通过，Meta 公开路由和 Swagger 覆盖一致。
+- `go test ./client ./dbbridge` 在 `common/` 下通过。
+- `go test ./...` 在 `system/backend/` 下通过。
+- `go test ./internal/api ./internal/models ./internal/service` 在 `meta/backend/` 下通过。
+- `npm run build` 在 `meta/frontend/` 下通过；构建仅保留既有 chunk 体积警告。
+- `rg "storage/nodes|ObjectNode|ListObjectStorageNodes"` 检查确认 Meta 后端、Meta 前端和 Swagger 生成产物中无旧实时浏览接口残留；`common-frontend` 中仅保留对象存储预览自身的 `getObjectNodeTypeLabel` 文案工具。
+
+### 3. 下一步待办
+
+- **评估浅层旧接口去留**：评估 System `/engines/:id/namespaces` 和 `/engines/:id/items` 是否仍需要保留为快捷接口；如果保留，应在文档中注明它们只是 `catalog/children` 的便捷封装。
+- **补充 System 文档说明**：在 System 模块文档中补充 `POST /api/v1/system/engines/:id/catalog/children`，并标注 `/namespaces`、`/items` 的快捷封装定位。
+- **补充典型引擎验证**：在实际环境中用 PostgreSQL schema/table、MinIO bucket/prefix/object、NFS root/directory/file 分别验证 `catalog/children` 的根节点和子节点浏览行为。

@@ -25,24 +25,23 @@ import (
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                       *gorm.DB
-	repo                     *ScanRepository           // 数据访问层
-	dbScanService            *DatabaseScanService      // 数据库扫描服务
-	nosqlScanService         *NoSQLScanService         // NoSQL 数据库扫描服务
-	objectScanService        *ObjectStorageScanService // 对象存储扫描服务
-	fsScanService            *FileSystemScanService    // 文件系统扫描服务（湖表检测）
-	metadataQueryService     *MetadataQueryService     // 元数据查询服务（独立）
-	resourceDiscoveryService *ResourceDiscoveryService // 资源发现服务（独立）
-	engineService            *EngineService
-	config                   *config.Config
-	log                      *slog.Logger
-	indexer                  *search.Indexer
-	indexerService           *IndexerService                     // 索引服务（独立）
-	spatialService           *SpatialMetadataService             // 空间元数据服务（独立）
-	scanEventPublisher       *events.ScanEventPublisher          // 扫描事件发布器
-	metadataExtractor        *MetadataExtractor                  // 元数据提取器
-	dedupService             *ScanDedupService                   // 扫描去重服务（可选）
-	taskExecutionRepo        *commonRepo.TaskExecutionRepository // 统一执行记录仓库
+	db                   *gorm.DB
+	repo                 *ScanRepository           // 数据访问层
+	dbScanService        *DatabaseScanService      // 数据库扫描服务
+	nosqlScanService     *NoSQLScanService         // NoSQL 数据库扫描服务
+	objectScanService    *ObjectStorageScanService // 对象存储扫描服务
+	fsScanService        *FileSystemScanService    // 文件系统扫描服务（湖表检测）
+	metadataQueryService *MetadataQueryService     // 元数据查询服务（独立）
+	engineService        *EngineService
+	config               *config.Config
+	log                  *slog.Logger
+	indexer              *search.Indexer
+	indexerService       *IndexerService                     // 索引服务（独立）
+	spatialService       *SpatialMetadataService             // 空间元数据服务（独立）
+	scanEventPublisher   *events.ScanEventPublisher          // 扫描事件发布器
+	metadataExtractor    *MetadataExtractor                  // 元数据提取器
+	dedupService         *ScanDedupService                   // 扫描去重服务（可选）
+	taskExecutionRepo    *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -90,9 +89,6 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
-
-	// 创建 ResourceDiscoveryService（提供资源发现接口）
-	s.resourceDiscoveryService = NewResourceDiscoveryService(db, engineService, log)
 
 	return s
 }
@@ -1291,12 +1287,6 @@ func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, buck
 	}
 
 	return nil
-}
-
-// ListObjectStorageNodes 列出迁移期实时 catalog 节点。
-// Deprecated: 实时 catalog 浏览应迁移到 System /engines/:id/catalog/children。
-func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
-	return s.resourceDiscoveryService.ListObjectStorageNodes(engineID, tenantID, path, token)
 }
 
 // ============================================================================
