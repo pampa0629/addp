@@ -252,7 +252,7 @@ mindmap
 
 ---
 
-### 11. [认证与路由](concepts/addp登录认证的原理说明.md)
+### 11. [认证与路由](addp登录认证的原理说明.md)
 
 **JWT 认证流程、登录实现详解和 Console Token 传递机制**
 
@@ -266,7 +266,7 @@ mindmap
 
 > Gateway 路由规则和 Console 架构图见：[ADDP 模块架构图](addp模块架构图.md)
 
-📄 **[阅读完整文档 →](concepts/addp登录认证的原理说明.md)**
+📄 **[阅读完整文档 →](addp登录认证的原理说明.md)**
 
 ---
 
@@ -281,7 +281,7 @@ mindmap
 ### 用户与权限
 
 - **[账号与权限体系图](concepts/addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、JWT 认证
-- **[登录认证原理说明](concepts/addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
+- **[登录认证原理说明](addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
 
 ### 数据管理
 
@@ -350,10 +350,10 @@ graph TB
 
 ## 相关文档
 
-- [ADDP 各模块简要介绍](concepts/addp各模块功能介绍.md) - 各模块功能概述
-- [ADDP 开发原则](addp开发原则.md) - 开发指导原则
-- [ADDP 配置介绍](addp配置介绍.md) - 环境变量和配置管理
-- [ADDP 技术栈规约](addp技术栈规约.md) - 依赖版本规范
+- [ADDP 各模块简要介绍](addp各模块功能介绍.md) - 各模块功能概述
+- [ADDP 开发原则](../spec/addp开发原则.md) - 开发指导原则
+- [ADDP 配置介绍](../spec/addp配置介绍.md) - 环境变量和配置管理
+- [ADDP 技术栈规约](../spec/addp技术栈规约.md) - 依赖版本规范
 - [ADDP 共享模块介绍](addp共享模块介绍.md) - common 和 common-frontend 详解
 
 ---

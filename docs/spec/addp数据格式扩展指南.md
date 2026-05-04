@@ -784,7 +784,7 @@ transfer/backend/plugins/readers/
 
 - **引擎插件系统**: [docs/addp数据引擎扩展指南.md](addp数据引擎扩展指南.md)
 - **各模块简要介绍**: [docs/concepts/addp各模块功能介绍.md](../concepts/addp各模块功能介绍.md)
-- **共享模块介绍**: [docs/addp共享模块介绍.md](addp共享模块介绍.md)
+- **共享模块介绍**: [docs/concepts/addp共享模块介绍.md](../concepts/addp共享模块介绍.md)
 
 ---
 

@@ -376,7 +376,7 @@ sequenceDiagram
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 数据开发体系图](addp数据开发体系图.md)
 - [ADDP 监控与执行体系图](addp监控与执行体系图.md)
 - [Orchestrator 模块详情](../../orchestrator/CLAUDE.md)

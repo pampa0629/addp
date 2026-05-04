@@ -319,7 +319,7 @@ GET /api/service/catalog  ← 获取服务目录（聚合查询/注册/瓦片服
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
 - [Service 模块详情](../../service/CLAUDE.md)
 
 ---

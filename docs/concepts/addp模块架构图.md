@@ -596,7 +596,7 @@ graph TB
 - **独立部署**：适合单个模块独立部署的场景
 - **适用场景**：开发调试，模块独立交付
 
-> 认证细节（iframe Token 传递、Token 刷新机制等）见：[ADDP 登录认证原理说明](concepts/addp登录认证的原理说明.md)
+> 认证细节（iframe Token 传递、Token 刷新机制等）见：[ADDP 登录认证原理说明](addp登录认证的原理说明.md)
 
 ---
 
@@ -851,12 +851,12 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
 
 ## 相关文档
 
-- [ADDP 各模块简要介绍](concepts/addp各模块功能介绍.md)
+- [ADDP 各模块简要介绍](addp各模块功能介绍.md)
 - [ADDP 核心概念关系图](addp核心概念关系图.md)
-- [ADDP 登录认证原理说明](concepts/addp登录认证的原理说明.md)
-- [ADDP 开发原则](spec/addp开发原则.md)
-- [ADDP 共享模块介绍](concepts/addp共享模块介绍.md)
-- [ADDP 新模块开发指南](spec/addp新模块开发指南.md)
+- [ADDP 登录认证原理说明](addp登录认证的原理说明.md)
+- [ADDP 开发原则](../spec/addp开发原则.md)
+- [ADDP 共享模块介绍](addp共享模块介绍.md)
+- [ADDP 新模块开发指南](../spec/addp新模块开发指南.md)
 - [Monitor 模块实施报告](../monitor/docs/Monitor模块实施报告.md)
 
 ---

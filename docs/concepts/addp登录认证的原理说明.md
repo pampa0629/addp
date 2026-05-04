@@ -352,7 +352,7 @@ graph TB
 
 ### 1. JWT Token 结构
 
-> Gateway 路由规则和 Console 架构总览见：[ADDP 模块架构图](../addp模块架构图.md)
+> Gateway 路由规则和 Console 架构总览见：[ADDP 模块架构图](addp模块架构图.md)
 
 ```json
 {
@@ -631,7 +631,7 @@ ADDP 认证系统的核心设计思想：
 
 ## 相关文档
 
-- [ADDP 模块架构图（含 Gateway 路由 / Console 架构）](../addp模块架构图.md)
+- [ADDP 模块架构图（含 Gateway 路由 / Console 架构）](addp模块架构图.md)
 - [ADDP 账号与权限体系图](addp账号与权限体系图.md)
-- [ADDP 核心概念关系图](../addp核心概念关系图.md)
+- [ADDP 核心概念关系图](addp核心概念关系图.md)
 - [Gateway 架构说明](../../gateway/doc/gateway架构说明.md)

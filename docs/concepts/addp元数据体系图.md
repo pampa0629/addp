@@ -497,9 +497,9 @@ sequenceDiagram
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md)
-- [ADDP 数据格式扩展指南](../addp数据格式扩展指南.md)
+- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
 - [Meta 模块详情](../../meta/CLAUDE.md)
 
 ---

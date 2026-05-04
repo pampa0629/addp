@@ -21,6 +21,10 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 - 临时脚本和临时文档应放到操作系统临时目录，保持项目树整洁。
 - 未经用户允许，不得创建分支提交；提交代码前需得到明确授权。
 
+## 文档总入口
+
+- `docs/README.md`
+
 ## 必读文档导航
 
 遇到以下场景时，主动阅读对应文档：
@@ -38,10 +42,10 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | 引擎能力声明、capabilities | `docs/spec/addp引擎能力声明规范.md` |
 | 新增存储引擎/数据库 | `docs/spec/addp数据引擎扩展指南.md`、`docs/spec/addp引擎插件接口规范.md`、`docs/spec/addp引擎能力声明规范.md` |
 | 新增数据类型/数据格式 | `docs/spec/addp数据格式扩展指南.md` |
-| 故障和问题修复 | `docs/addp常见故障排查.md` |
-| 核心概念与全局视图 | `docs/addp核心概念关系图.md` |
-| 模块划分与系统结构 | `docs/addp模块架构图.md` |
-| 部署与开发启动 | `docs/addp部署和开发步骤.md` |
+| 故障和问题修复 | `docs/guide/addp常见故障排查.md` |
+| 核心概念与全局视图 | `docs/concepts/addp核心概念关系图.md` |
+| 模块划分与系统结构 | `docs/concepts/addp模块架构图.md` |
+| 部署与开发启动 | `docs/guide/addp部署和开发步骤.md` |
 | 存储路径和指纹 | `docs/spec/addp存储引擎路径体系规范.md`、`docs/spec/addp路径统一和指纹计算.md` |
 | 登录认证 | `docs/spec/addp登录认证的统一要求.md`、`docs/concepts/addp登录认证的原理说明.md` |
 | 工作流计算引擎 | `docs/spec/addp工作流计算引擎接口规范.md` |
@@ -136,13 +140,14 @@ bash scripts/dev/start.sh -system
 
 ## 文档维护
 
-- ADDP 整体文档放在 `docs/`。
+- ADDP 整体文档放在 `docs/`，总入口为 `docs/README.md`。
 - 概念文档放在 `docs/concepts/`。
 - 规范文档放在 `docs/spec/`。
+- 操作指南放在 `docs/guide/`。
 - 计划文档放在 `docs/plan/`。
 - 模块文档放在对应模块目录下。
 - 未得到用户同意前，不要新增需要长期保留的文档或脚本。
-- 如果某个问题需要反复修复，或以后可能反复遇到，应主动建议把根因和修复思路记录到 `docs/addp常见故障排查.md`。
+- 如果某个问题需要反复修复，或以后可能反复遇到，应主动建议把根因和修复思路记录到 `docs/guide/addp常见故障排查.md`。
 - UML 相关设计应在 Markdown 文档中使用 Mermaid 代码块。
 
 </INSTRUCTIONS>

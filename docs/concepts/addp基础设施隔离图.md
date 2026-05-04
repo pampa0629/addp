@@ -181,9 +181,9 @@ graph TB
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
-- [ADDP 配置介绍](../addp配置介绍.md)
-- [ADDP 端口分配](../addp端口分配.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
+- [ADDP 配置介绍](../spec/addp配置介绍.md)
+- [ADDP 端口分配](../spec/addp端口分配.md)
 
 ---
 

@@ -367,7 +367,7 @@ sequenceDiagram
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 引擎体系图](addp引擎体系图.md)
 - [ADDP 任务编排体系图](addp任务编排体系图.md)
 - [Develop 模块详情](../../develop/CLAUDE.md)

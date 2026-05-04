@@ -422,14 +422,14 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 
 ## 相关文档
 
-- [ADDP 核心概念关系图](../addp核心概念关系图.md) - 概念关系 Mermaid 图
-- [ADDP 模块架构图](../addp模块架构图.md) - 模块架构 Mermaid 图
+- [ADDP 核心概念关系图](addp核心概念关系图.md) - 概念关系 Mermaid 图
+- [ADDP 模块架构图](addp模块架构图.md) - 模块架构 Mermaid 图
 - [ADDP 开发原则](../spec/addp开发原则.md) - 开发指导原则
-- [ADDP 部署和开发步骤](../addp部署和开发步骤.md) - 快速启动指南
+- [ADDP 部署和开发步骤](../guide/addp部署和开发步骤.md) - 快速启动指南
 - [ADDP 配置介绍](../spec/addp配置介绍.md) - 环境变量和配置中心
 - [ADDP 端口分配](../spec/addp端口分配.md) - 完整端口列表
 - [ADDP 技术栈规约](../spec/addp技术栈规约.md) - Go 和前端依赖版本规范
-- [ADDP 共享模块介绍](addp共享模块介绍.md) - common 和 common-frontend 详细说明
+- [ADDP 共享模块介绍](../concepts/addp共享模块介绍.md) - common 和 common-frontend 详细说明
 
 **各模块详细文档**：
 - System: `system/CLAUDE.md`

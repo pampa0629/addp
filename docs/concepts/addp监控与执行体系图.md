@@ -220,7 +220,7 @@ sequenceDiagram
 
 ## 相关文档
 
-- [返回核心概念关系图](../addp核心概念关系图.md)
+- [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 任务编排体系图](addp任务编排体系图.md)
 - [Monitor 模块实施报告](../Monitor模块实施报告.md)
 
