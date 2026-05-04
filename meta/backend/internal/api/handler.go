@@ -658,12 +658,15 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 // GetMetadataTree 获取资源的完整元数据树
 // GET /api/meta/engines/:engine_id/tree
 func (h *Handler) GetMetadataTree(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
 	engineIDStr := c.Param("engine_id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

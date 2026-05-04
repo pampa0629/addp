@@ -116,7 +116,7 @@
           title="拖拽调整左右区域宽度"
         />
 
-        <!-- 右侧：Schema列表 -->
+        <!-- 右侧：Catalog 顶层节点列表 -->
         <div class="right-panel">
           <div class="panel-header">
             <h3>{{ rightPanelTitle }}</h3>
@@ -307,7 +307,7 @@
       </template>
     </el-dialog>
 
-    <!-- Schema调度设置对话框 -->
+    <!-- 命名空间调度设置对话框 -->
     <el-dialog
       v-model="schemaScheduleDialogVisible"
       :title="`${currentSchema?.name || ''}${t('meta.scan.schemaScheduleTitle')}`"
@@ -373,7 +373,7 @@ const loadingResources = ref(false)
 const selectedResource = ref(null)
 const containerRef = ref(null)
 
-// Schema列表
+// 命名空间 / Catalog 顶层节点列表
 const schemas = ref([])
 const loadingSchemas = ref(false)
 const selectedSchemas = ref([])
@@ -393,7 +393,7 @@ const savingSchedule = ref(false)
 const scheduleCron = ref('') // Cron 表达式
 const scheduleEnabled = ref(true) // 是否启用
 
-// Schema调度相关
+// 命名空间调度相关
 const schemaScheduleDialogVisible = ref(false)
 const currentSchema = ref(null)
 const currentSchemaTask = ref(null)
@@ -439,7 +439,7 @@ const autoScheduleTask = computed(() => {
   )
 })
 
-// Schema调度相关computed
+// 命名空间调度相关computed
 const getSchemaPlan = (schema) => {
   const schemaName = schema.schema_name || schema.name
   const task = allScanTasks.value.find(task => {
@@ -447,7 +447,7 @@ const getSchemaPlan = (schema) => {
     const params = task.parameters || {}
     const schemas = params.namespaces || []
     const paths = params.object_paths || []
-    // 精确匹配：该任务只扫描这一个schema/bucket
+    // 精确匹配：该任务只扫描这一个命名空间或 bucket/path
     const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
     if (isObjectStorage) {
       const path = schema.path || schema.name
@@ -491,18 +491,18 @@ const inheritanceInfo = computed(() => {
   }
 })
 
-// 计算右侧面板标题（根据引擎类型显示 Schema 或 Collection 或 Bucket）
+// 计算右侧面板标题（根据引擎类型显示命名空间、Collection、Bucket 或目录）
 const rightPanelTitle = computed(() => {
   if (!selectedResource.value) return t('meta.scan.schemaList')
   const terminology = getSchemaTerminology(selectedResource.value.resource_type)
-  return `${terminology}${t('meta.scan.schemaList').replace('Schema', '')} - ${selectedResource.value.name}`
+  return `${terminology}${t('meta.scan.namespaceListSuffix')} - ${selectedResource.value.name}`
 })
 
-// 计算表格列标题（根据引擎类型显示 Schema信息 或 Collection信息 或 Bucket信息）
+// 计算表格列标题（根据引擎类型显示命名空间、Collection、Bucket 或目录信息）
 const schemaColumnLabel = computed(() => {
   if (!selectedResource.value) return t('meta.scan.schemaInfo')
   const terminology = getSchemaTerminology(selectedResource.value.resource_type)
-  return `${terminology}${t('meta.scan.schemaInfo').replace('Schema', '')}`
+  return `${terminology}${t('meta.scan.namespaceInfoSuffix')}`
 })
 
 // 加载引擎列表
@@ -608,12 +608,12 @@ const isNoSQLType = (resourceType) => {
   return ['mongodb'].includes(type)
 }
 
-// 获取 Schema/Collection/Bucket 的术语
+// 获取命名空间/Collection/Bucket/目录的术语
 const getSchemaTerminology = (resourceType, plural = false) => {
-  if (!resourceType) return 'Schema'
+  if (!resourceType) return t('meta.scan.defaultNamespaceTerm')
   const type = resourceType.toLowerCase()
   if (type === 'nfs') {
-    return '目录'
+    return t('meta.scan.directoryTerm')
   }
   if (['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)) {
     return 'Bucket'
@@ -621,10 +621,10 @@ const getSchemaTerminology = (resourceType, plural = false) => {
   if (isNoSQLType(resourceType)) {
     return plural ? 'Collection' : 'Collection'
   }
-  return plural ? 'Schema' : 'Schema'
+  return t('meta.scan.defaultNamespaceTerm')
 }
 
-// 加载Schema列表
+// 加载命名空间 / Catalog 顶层节点列表
 const loadSchemas = async () => {
   if (!selectedResource.value) return
 
@@ -641,27 +641,27 @@ const loadSchemas = async () => {
       connectionError = new Error(`引擎离线: ${selectedResource.value.check_message || '连接失败'}`)
       console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
     } else {
-      // 引擎在线或状态未知，尝试获取实际Schema/Bucket列表
+      // 引擎在线或状态未知，尝试获取实际命名空间/Bucket列表
       try {
         if (isObjectStorage) {
           // 对象存储：获取节点列表（buckets）
           const nodesRes = await metaApi.listObjectStorageNodes(selectedResource.value.id)
           const nodes = Array.isArray(nodesRes) ? nodesRes : []
-          // 转换为 schema 格式以兼容现有UI
+          // 转换为统一节点格式以兼容现有UI状态字段
           availableSchemas = nodes.map(node => ({
             name: node.name,
             node_type: node.node_type,
             path: node.path || node.name
           }))
         } else {
-          // 关系型数据库：获取Schema列表
-          const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
+          // 结构化存储：获取命名空间列表
+          const availableRes = await metaApi.listAvailableNamespaces(selectedResource.value.id)
           availableSchemas = Array.isArray(availableRes) ? availableRes : []
         }
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
         connectionError = error
-        console.warn('获取可用Schema/Bucket失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
+        console.warn('获取可用命名空间/Bucket失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
       }
     }
   } catch (error) {
@@ -670,12 +670,12 @@ const loadSchemas = async () => {
   }
 
   try {
-    // 再获取已扫描的schema状态信息
-    const scannedRes = await metaApi.getSchemas(selectedResource.value.id)
+    // 再获取已扫描的 catalog 顶层节点状态信息
+    const scannedRes = await metaApi.getNamespaces(selectedResource.value.id)
     const scannedSchemas = Array.isArray(scannedRes) ? scannedRes : []
 
     if (connectionError && scannedSchemas.length === 0) {
-      // 如果连接失败且没有已扫描的schema，显示空列表
+      // 如果连接失败且没有已扫描的节点，显示空列表
       // 用户已经能从左侧图标看到引擎离线状态，无需重复提示
       schemas.value = []
     } else if (connectionError) {
@@ -713,7 +713,7 @@ const loadSchemas = async () => {
   }
 }
 
-// Schema选择变化
+// 命名空间选择变化
 const handleSchemaSelectionChange = (selection) => {
   selectedSchemas.value = selection
 }
@@ -853,7 +853,7 @@ const handleAutoScan = async () => {
   }
 }
 
-// 批量扫描Schema
+// 批量扫描命名空间或对象路径
 const handleBatchScan = async () => {
   if (!selectedSchemas.value.length) return
 
@@ -898,7 +898,7 @@ const handleBatchScan = async () => {
     scanResult.value = res
     ElMessage.success(t('meta.scan.batchScanComplete'))
 
-    // 刷新Schema列表
+    // 刷新命名空间列表
     await loadSchemas()
     await loadEngines()
   } catch (error) {
@@ -952,7 +952,7 @@ const submitScheduleForm = async () => {
   }
 }
 
-// 扫描单个Schema
+// 扫描单个命名空间或对象路径
 const handleScanSchema = async (schema) => {
   const schemaName = schema.schema_name || schema.name
   const key = schema.id ?? schemaName
@@ -976,13 +976,13 @@ const handleScanSchema = async (schema) => {
   }
 }
 
-// Schema调度相关方法
+// 命名空间调度相关方法
 const handleSchemaSchedule = async (schema) => {
   currentSchema.value = schema
   const schemaName = schema.schema_name || schema.name
   const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
 
-  // 查找该Schema的调度任务
+  // 查找该命名空间或对象路径的调度任务
   currentSchemaTask.value = allScanTasks.value.find(task => {
     if (task.engine_id !== selectedResource.value.id) return false
     const params = task.parameters || {}

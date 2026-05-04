@@ -890,16 +890,8 @@ const title = computed(() => {
 
   // 对象/文件系统类型
   if (['object', 'file', 'directory', 'bucket', 'prefix'].includes(nodeType)) {
-    const path = node.path || node.table || ''
-    if (path) {
-      const schema = String(node.schema || '')
-      const normalizedPath = String(path)
-      const displayPath = schema && normalizedPath.startsWith(`${schema}/`)
-        ? normalizedPath
-        : (schema ? `${schema}/${normalizedPath}` : normalizedPath)
-      return `${displayPath} - ${t('manager.explorer.dataPreview')}`
-    }
-    return `${node.schema || node.label || ''} - ${t('manager.explorer.dataPreview')}`
+    const displayPath = node.path || node.table || node.label || node.schema || ''
+    return `${displayPath} - ${t('manager.explorer.dataPreview')}`
   }
 
   // 表格类型

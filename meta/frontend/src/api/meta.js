@@ -1,65 +1,6 @@
 import client from './client'
 
 export default {
-  // 数据源相关
-  getDatasources() {
-    return client.get('/meta/datasources')
-  },
-
-  getDatasource(id) {
-    return client.get(`/meta/datasources/${id}`)
-  },
-
-  // 数据库相关
-  getDatabases(datasourceId) {
-    return client.get(`/meta/datasources/${datasourceId}/databases`)
-  },
-
-  getDatabase(id) {
-    return client.get(`/meta/databases/${id}`)
-  },
-
-  // 表相关
-  getTables(databaseId) {
-    return client.get(`/meta/databases/${databaseId}/tables`)
-  },
-
-  getTable(id) {
-    return client.get(`/meta/tables/${id}`)
-  },
-
-  // 字段相关
-  getFields(tableId) {
-    return client.get(`/meta/tables/${tableId}/fields`)
-  },
-
-  // 同步相关
-  syncEngine(engineId) {
-    return client.post(`/meta/sync/${engineId}`)
-  },
-
-  autoSyncAll() {
-    return client.post('/meta/sync/auto')
-  },
-
-  // 扫描相关
-  deepScanDatabase(databaseId) {
-    return client.post(`/meta/scan/database/${databaseId}`)
-  },
-
-  deepScanTable(tableId) {
-    return client.post(`/meta/scan/table/${tableId}`)
-  },
-
-  // 搜索
-  searchTables(keyword) {
-    return client.get('/meta/search/tables', { params: { keyword } })
-  },
-
-  searchFields(keyword) {
-    return client.get('/meta/search/fields', { params: { keyword } })
-  },
-
   // 统计
   getStats() {
     return client.get('/meta/stats')
@@ -74,15 +15,13 @@ export default {
     return client.post('/meta/scan', data)
   },
 
-  // ===== 新的元数据扫描API（对应router_new.go） =====
-
   // 获取引擎列表（从System模块）
   getResources() {
     return client.get('/meta/engines')
   },
 
-  // 获取指定引擎已扫描的命名空间列表
-  getSchemas(engineId) {
+  // 获取指定引擎已扫描的 catalog 顶层节点
+  getNamespaces(engineId) {
     return client.get(`/meta/engines/${engineId}/tree`).then(res => {
       const nodes = Array.isArray(res?.top_nodes) ? res.top_nodes : []
       return nodes.map(node => ({
@@ -100,7 +39,7 @@ export default {
   },
 
   // 获取指定引擎的实时命名空间列表
-  listAvailableSchemas(engineId) {
+  listAvailableNamespaces(engineId) {
     return client.get(`/system/engines/${engineId}/namespaces`).then(res => {
       const namespaces = Array.isArray(res?.namespaces) ? res.namespaces : []
       return namespaces.map(item => ({
@@ -123,7 +62,7 @@ export default {
     return client.post('/meta/scan/auto')
   },
 
-  // 扫描指定引擎的指定Schema或对象路径
+  // 扫描指定引擎的指定命名空间或对象路径
   scanEngine(engineId, namespaces, objectPaths) {
     const payload = {
       engine_id: engineId

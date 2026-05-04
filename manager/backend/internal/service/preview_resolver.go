@@ -162,16 +162,18 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 尝试从 Meta 获取元数据（对于对象存储和文件系统类型）
+	// 3. 尝试从 Meta 获取元数据。
+	// meta_id 是最可靠的类型来源，尤其是 Neo4j 的 label/relationship 这类
+	// 旧 locator type 可能被前端树兼容层误写成 table 的数据项。
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
-	if r.metaClient != nil && (isObjectStorageType(engine.EngineType) || isFileSystemType(engine.EngineType)) {
+	metaIDResolved := false
+	if r.metaClient != nil {
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
 		// 优先通过 meta_id 直接获取节点（更精确，避免路径歧义）
 		// 注意：虚拟 ID（>= 100000）对应 MetaItem，需要解码为真实 item ID
-		metaIDResolved := false
 		if loc.MetaID != nil {
 			metaID := *loc.MetaID
 			if metaID >= 100000 {
@@ -207,6 +209,12 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 				}
 			}
 		}
+	}
+
+	if r.metaClient != nil && (isObjectStorageType(engine.EngineType) || isFileSystemType(engine.EngineType)) {
+		// 设置租户 ID，确保服务间调用时正确过滤
+		r.metaClient.SetTenantID(tenantID)
+
 		if !metaIDResolved && len(loc.Path) > 0 {
 			// 回退到路径查找
 			bucketName := loc.Path[0]

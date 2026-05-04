@@ -1,6 +1,6 @@
 # Engine Plugin 接口体系迁移完成记录与后续工作
 
-更新时间：2026-05-04 00:04 CST
+更新时间：2026-05-04 09:39 CST
 
 ## 背景与原则
 
@@ -117,6 +117,16 @@ npm run build --prefix graph/frontend
 npm run build --prefix console/frontend
 git diff --check
 ```
+
+本轮 Swagger/i18n 收尾追加验证已通过：
+
+```bash
+bash scripts/swagger/gen-swagger.sh manager meta
+go test ./meta/backend/internal/api ./meta/backend/internal/service ./manager/backend/internal/api ./manager/backend/internal/service
+npm run build --prefix meta/frontend
+npm run build --prefix manager/frontend
+git diff --check
+```
   
 如后续继续调整 Transfer，应追加执行 `docs/next/engine-plugin-transfer后续事项.md` 中列出的 Transfer 门禁。
 
@@ -130,9 +140,25 @@ Transfer 迁移不纳入本记录主线，继续按 [engine-plugin-transfer后�
 - 对齐 Transfer 任务模型、执行管道和前端任务向导中的 `batch` / `stream` / `micro-batch` 语义。
 - 修复后补跑 Transfer 后端测试、前端构建和真实创建/更新/执行任务路径。
 
-### 2. 清理或重建旧派生数据
+### 2. 清理或重建旧派生数据（已执行）
  
-如遇功能异常，可直接清理或重建：
+2026-05-04 已完成一次真实环境清理与重建验证：
+
+- 确认 `system.engines.capabilities` 均为 `engine.capabilities/v1`，无旧能力声明 JSON 残留。
+- 备份旧派生数据到 `/tmp/addp_engine_plugin_cleanup_20260504_004600.sql`。
+- 清理 `metadata.meta_node` / `metadata.meta_item` / `metadata.scan_tasks` / `metadata.scan_task_runs`。
+- 清理 `manager.quick_view` / `manager.search_histories` / `manager.embeddings` / `manager.embedding_tasks` / `manager.mvt_tasks`。
+- 清理 Redis 中 Meta/Manager 相关派生缓存和旧 `schema_names` 相关键。
+- 清空 Meilisearch `assets` 索引旧文档，并通过重新扫描生成新索引文档。
+- 通过 `POST /api/v1/meta/scan/engine` 重扫 PostgreSQL engine 8 的 `public` namespace，扫描结果为 `namespaces_scanned=1`、`items_scanned=24`、`fields_scanned=207`。
+- 追加修复 Meta tree API 在 SuperAdmin `tenant_id=0` 场景下未切换到引擎实际租户的问题，避免 Manager tree 在清理重扫后返回空树。
+- 复验通过：
+  - Meta tree 可返回 PostgreSQL engine 8 的 `public` 等顶层节点和 item。
+  - Manager tree 可返回 `Business PostgreSQL -> public -> table` 层级。
+  - Manager preview 可通过 `addp://engine/8/path/public/dltb?type=table` 返回表格预览。
+  - 旧 `schema_names` 扫描参数残留为 0，Manager quick view/search history 派生表为 0，Redis 相关缓存键为 0。
+
+后续如再次遇到旧派生数据导致的功能异常，可直接清理或重建：
 
 - 旧 `system.engines.capabilities` 中非 `engine.capabilities/v1` 的 JSON。
 - 旧 Meta 扫描生成的 `meta_node` / `meta_item`，尤其是旧 locator type 或旧 catalog kind 语义的数据。
@@ -141,16 +167,49 @@ Transfer 迁移不纳入本记录主线，继续按 [engine-plugin-transfer后�
 
 清理后优先通过重新扫描生成新元数据，不要写复杂兼容转换。
 
-### 3. Swagger 与生成文档整理
+### 3. Swagger 与生成文档整理（已执行）
 
-- 重新生成或清理 Swagger 文档中旧字段、旧路由、旧 schema/table 命名。
-- 检查 `docs/plan/` 中仍保留的历史计划，确保它们只作为历史记录，不再指导新实现。
+- 2026-05-04 已清理 Manager 空间数据、快显、瓦片、要素定位和导入接口的 Swagger 注解，将公开说明从旧 `Schema/Table` 统称切到 `命名空间 / 数据项` 语义。
+- 通过 `bash scripts/swagger/gen-swagger.sh manager meta` 重新生成 Manager 与 Meta Swagger 文档。
+- 复扫 `manager/backend/docs`、`meta/backend/docs`、Manager/Meta API 注解，确认不再出现以下旧公开 API/术语：
+  - `metadata/tables`
+  - `/schemas`
+  - `schema_names`
+  - `空间数据表`
+  - `spatial table`
+  - `数据库Schema` / `Database schema`
+  - `数据表名` / `Table name`
+- 对仍然代表真实关系型对象的内部路由参数名和 service/model 字段名暂不做机械重命名，避免扩大行为改动；公开文档和用户可见描述已按新规范收口。
+- 已检查 `docs/plan/` 中与 engine plugin 相关的历史计划；相关文档均已标注“当前实现以 provider 化 engine plugin 体系为准”，不再指导新实现。
 
-### 4. 更多真实链路验证
+### 4. i18n 与前端文案整理（已执行）
 
-- 继续补充 MinIO/S3、NFS、MongoDB、Neo4j、MySQL 的 Meta scan、Manager tree、Manager preview 真实路径验证。
-- 验证清理旧 Meta 数据后，重新扫描能稳定生成新 catalog/item 语义数据。
+- 2026-05-04 已清理 Meta 扫描页面 i18n 中用户可见的旧 `Schema` / `Table` 统称：
+  - `Schema List` / `Schema列表` -> `Namespace List` / `命名空间列表`
+  - 扫描完成、加载失败、右侧列表标题和数据项计数改为 namespace/path/item 语义。
+  - 新增 `namespaceListSuffix`、`namespaceInfoSuffix`、`defaultNamespaceTerm`、`directoryTerm`，避免前端通过字符串替换拼接旧 `Schema`。
+- 已清理 Manager 前端 i18n 中用户可见的旧数据库表统称：
+  - 元数据管理副标题、数据项列表、元数据详情、扫描结果、纳管提示统一改为 `Data Items` / `数据项`。
+  - 扫描任务中的 `Schema List` 改为 `Namespace List` / `命名空间列表`。
+  - 导入表单中的目标 `Schema/Table` 改为目标命名空间和目标数据项名称。
+- 图数据库 `Schema Graph` 仍保留为图数据库领域术语，不属于旧关系型 schema/table API 语义。
+
+### 5. 更多真实链路验证
+
+- 继续补充 MinIO/S3、MongoDB、MySQL 的 Meta scan、Manager tree、Manager preview 真实路径验证。
 - 根据更多真实 smoke test 结果继续补充正式规范中的边界案例。
+
+2026-05-04 补充验证与修复：
+
+- NFS 根目录文件预览标题重复问题已修复：前端 locator 兼容层不再把单段路径同时映射为 `schema=README.md` 和 `path=README.md`，文件/对象标题直接展示完整路径，后端补充 `nfsPhysicalPath("", "README.md") == "/README.md"` 测试。
+- Neo4j 预览无效果的根因已定位为旧 Meta 派生数据把 label/relationship 写成 `item_type=table`；同时修复自动扫描旧入口误将 document/graph 引擎落回关系型扫描的问题。
+- Meta `UpsertItem` 在指纹命中旧记录时会同步更新 `item_type` / `name`，避免旧 `table` 记录在 graph 重扫时继续保留错误类型。
+- Neo4j 重扫时会清理同一 database 节点下残留的旧 `item_type=table` 图数据项。
+- 已清理 engine 25 的旧 `metadata.meta_node` / `metadata.meta_item` 派生数据并重新扫描：
+  - `POST /api/v1/meta/scan/engine` 请求 `{"engine_id":25,"namespaces":["neo4j"],"scan_depth":"basic"}` 返回 `namespaces_scanned=1`、`items_scanned=13`。
+  - `metadata.meta_item` 当前分布为 `label=8`、`relationship=5`，无 active `table` 残留。
+  - Manager tree 返回 `type=label` / `type=relationship` locator，例如 `addp://engine/25/path/neo4j/Project?type=label&meta_id=100292`。
+  - Manager preview 验证通过：`Project` label 返回 `preview_type=table`、8 行；`WORKS_AT` relationship 返回 `preview_type=table`、20 行，且无业务属性时也展示 `id/type`。
 
 ## 注意事项
 

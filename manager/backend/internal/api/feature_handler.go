@@ -35,8 +35,8 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param feature_id path string true "要素ID | Feature ID"
-// @Param schema query string true "数据库Schema | Database schema"
-// @Param table query string true "数据表名 | Table name"
+// @Param schema query string true "命名空间 | Namespace"
+// @Param table query string true "数据项名称 | Item name"
 // @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
 // @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
 // @Success 200 {object} map[string]interface{} "中心点坐标 | Centroid coordinates"
@@ -150,8 +150,8 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param feature_id path string true "要素ID | Feature ID"
-// @Param schema query string true "数据库Schema | Database schema"
-// @Param table query string true "数据表名 | Table name"
+// @Param schema query string true "命名空间 | Namespace"
+// @Param table query string true "数据项名称 | Item name"
 // @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
 // @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
 // @Success 200 {object} map[string]interface{} "几何数据及边界框 | Geometry data and bounding box"

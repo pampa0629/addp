@@ -622,6 +622,32 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 
 	family := storageFamily(p0)
 
+	if family == "document" || family == "graph" {
+		if _, ok := p0.(plugin.CatalogProvider); !ok {
+			return 0, 0, 0, fmt.Errorf("engine %s declares %s storage but does not implement CatalogProvider", resource.EngineType, family)
+		}
+		catalogProvider := p0.(plugin.CatalogProvider)
+		databasesInfo, err := s.listNoSQLDatabases(context.Background(), resource, catalogProvider)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("failed to list namespaces: %w", err)
+		}
+		namespaces := make([]string, 0, len(databasesInfo))
+		for _, info := range databasesInfo {
+			namespaces = append(namespaces, info.Name)
+		}
+		schemas, items, fields, err := s.scanNoSQLResourceWithReporter(p0, resource, tenantID, namespaces, "deep", nil)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("%s scan failed: %w", family, err)
+		}
+		s.log.Info("NoSQL 资源扫描完成", cloneLogFields(startFields,
+			"family", family,
+			"namespaces_scanned", schemas,
+			"items_scanned", items,
+			"fields_scanned", fields,
+		)...)
+		return schemas, items, fields, nil
+	}
+
 	if family == "object" {
 		// 对象存储类型（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
 		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, "deep", nil)

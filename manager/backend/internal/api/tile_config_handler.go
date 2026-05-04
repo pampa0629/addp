@@ -43,7 +43,7 @@ type TileConfigResponse struct {
 	AvgRecordsPerTile float64   `json:"avg_records_per_tile,omitempty"` // maxZoom 层级的平均记录数/瓦片
 }
 
-// GetTileConfig 获取指定表的瓦片配置
+// GetTileConfig 获取指定空间数据项的瓦片配置
 // GET /api/engines/:id/spatial/:schema/:table/tile-config
 //
 // 返回值：
@@ -56,8 +56,8 @@ type TileConfigResponse struct {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "数据库Schema | Database schema"
-// @Param table path string true "数据表名 | Table name"
+// @Param schema path string true "命名空间 | Namespace"
+// @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} TileConfigResponse "瓦片配置信息 | Tile configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"

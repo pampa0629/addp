@@ -86,16 +86,20 @@ const selectedNodeLegacy = computed(() => {
 
   const loc = parseLocator(store.selectedLocator)
   const engine = store.engines.find(e => e.id === loc.engineId)
+  const engineType = store.selectedNode.engineType || engine?.engine_type || ''
+  const path = loc.path.join('/')
+  const schema = loc.path[0] || ''
+  const table = loc.path.slice(1).join('/')
 
   return {
     id: store.selectedLocator,
     locator: store.selectedLocator,
     engineId: loc.engineId,
-    engineType: store.selectedNode.engineType || engine?.engine_type || '',
+    engineType,
     engineName: engine?.name || t('manager.explorer.engineNotFound', { engineId: loc.engineId }),
-    schema: loc.path[0] || '',
-    table: loc.path[1] || '',
-    path: loc.path.join('/'),
+    schema,
+    table,
+    path,
     type: loc.type,
     label: store.selectedNode.label
   }

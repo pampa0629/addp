@@ -31,12 +31,12 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 //   - srid: 空间参考系（默认 4326）
 //   - cols: 返回列，逗号分隔（最多 8 列）
 // @Summary 获取MVT矢量瓦片 | Get MVT vector tile
-// @Description 获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial table with three-layer cache
+// @Description 获取指定空间数据项（关系表）的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial item (relational table) with three-layer cache
 // @Tags Manager
 // @Produce application/vnd.mapbox-vector-tile
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "数据库Schema | Database schema"
-// @Param table path string true "数据表名 | Table name"
+// @Param schema path string true "命名空间 | Namespace"
+// @Param table path string true "数据项名称 | Item name"
 // @Param z path int true "缩放级别(0-22) | Zoom level (0-22)"
 // @Param x path int true "瓦片X坐标 | Tile X coordinate"
 // @Param y path int true "瓦片Y坐标 | Tile Y coordinate"

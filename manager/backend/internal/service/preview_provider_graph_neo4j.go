@@ -32,10 +32,7 @@ func (p *GraphLabelPreviewProvider) Supports(req *PreviewRequest) bool {
 	if !strings.EqualFold(req.Engine.EngineType, "neo4j") {
 		return false
 	}
-	if req.ItemType == "" {
-		return false
-	}
-	return req.ItemType == "label"
+	return graphPreviewKind(req) == "label"
 }
 
 func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -94,10 +91,7 @@ func (p *GraphRelationshipPreviewProvider) Supports(req *PreviewRequest) bool {
 	if !strings.EqualFold(req.Engine.EngineType, "neo4j") {
 		return false
 	}
-	if req.ItemType == "" {
-		return false
-	}
-	return req.ItemType == "relationship"
+	return graphPreviewKind(req) == "relationship"
 }
 
 func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -172,6 +166,21 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryRuntimeProvid
 	return graphRuntime, connInfo, database, targetName, nil
 }
 
+func graphPreviewKind(req *PreviewRequest) string {
+	if req == nil {
+		return ""
+	}
+	itemType := strings.ToLower(strings.TrimSpace(req.ItemType))
+	if itemType == "label" || itemType == "relationship" {
+		return itemType
+	}
+	nodeType := strings.ToLower(strings.TrimSpace(req.NodeType))
+	if nodeType == "label" || nodeType == "relationship" {
+		return nodeType
+	}
+	return ""
+}
+
 func flattenGraphEntityRows(source []map[string]interface{}, key string) ([]string, []map[string]interface{}) {
 	if len(source) == 0 {
 		return []string{}, []map[string]interface{}{}
@@ -183,6 +192,12 @@ func flattenGraphEntityRows(source []map[string]interface{}, key string) ([]stri
 	for _, raw := range source {
 		row := map[string]interface{}{}
 		entity, _ := raw[key].(map[string]interface{})
+		for _, field := range graphEntityDisplayFields(entity) {
+			if v, ok := entity[field]; ok {
+				row[field] = v
+				columnSet[field] = struct{}{}
+			}
+		}
 		props, _ := entity["properties"].(map[string]interface{})
 		for k, v := range props {
 			row[k] = v
@@ -207,6 +222,16 @@ func flattenGraphEntityRows(source []map[string]interface{}, key string) ([]stri
 	}
 
 	return columns, rows
+}
+
+func graphEntityDisplayFields(entity map[string]interface{}) []string {
+	if entity == nil {
+		return []string{}
+	}
+	if _, ok := entity["type"]; ok {
+		return []string{"id", "type"}
+	}
+	return []string{"id", "labels"}
 }
 
 func escapeCypherIdentifier(v string) string {

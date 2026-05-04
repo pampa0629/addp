@@ -313,6 +313,8 @@ func (r *ScanRepository) UpsertItemSelective(
 	now := time.Now()
 	updates := map[string]interface{}{
 		"node_id":         node.ID, // 允许 node_id 变化（数据移动）
+		"item_type":       itemType,
+		"name":            name,
 		"full_name":       fullName,
 		"row_count":       rowCount,
 		"size_bytes":      sizeBytes,
@@ -333,6 +335,8 @@ func (r *ScanRepository) UpsertItemSelective(
 
 	// 更新内存中的对象
 	item.NodeID = node.ID
+	item.ItemType = itemType
+	item.Name = name
 	item.FullName = fullName
 	item.RowCount = rowCount
 	item.SizeBytes = sizeBytes

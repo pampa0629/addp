@@ -40,14 +40,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -78,7 +78,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "检查空间数据表的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick view, auto-create record if passed",
+                "description": "检查空间数据项（关系表）的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick view, auto-create record if passed",
                 "produces": [
                     "application/json"
                 ],
@@ -96,14 +96,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -177,7 +177,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "清除指定空间数据表的快显缓存数据 | Clear quick view cache data for a spatial table",
+                "description": "清除指定空间数据项（关系表）的快显缓存数据 | Clear quick view cache data for a spatial item (relational table)",
                 "produces": [
                     "application/json"
                 ],
@@ -195,14 +195,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -831,14 +831,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "query",
                         "required": true
@@ -913,14 +913,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "query",
                         "required": true
@@ -970,7 +970,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取空间数据表的GeoJSON格式数据，支持分页 | Get spatial table data in GeoJSON format with pagination support",
+                "description": "获取空间数据项（关系表）的GeoJSON格式数据，支持分页 | Get spatial item data in GeoJSON format with pagination support",
                 "produces": [
                     "application/geo+json"
                 ],
@@ -988,14 +988,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -1051,7 +1051,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取空间数据表的元数据信息（记录数、地理范围、坐标系等）| Get spatial table metadata (record count, extent, SRID, etc.)",
+                "description": "获取空间数据项（关系表）的元数据信息（记录数、地理范围、坐标系等）| Get spatial item metadata (record count, extent, SRID, etc.)",
                 "produces": [
                     "application/json"
                 ],
@@ -1069,14 +1069,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -1208,7 +1208,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定空间数据表的快显缓存状态及实时生成进度 | Get quick view cache status and real-time generation progress",
+                "description": "获取指定空间数据项（关系表）的快显缓存状态及实时生成进度 | Get quick view cache status and real-time generation progress",
                 "produces": [
                     "application/json"
                 ],
@@ -1226,14 +1226,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -1353,7 +1353,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial table with three-layer cache",
+                "description": "获取指定空间数据项（关系表）的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT) for a spatial item (relational table) with three-layer cache",
                 "produces": [
                     "application/vnd.mapbox-vector-tile"
                 ],
@@ -1371,14 +1371,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -1476,14 +1476,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -1603,13 +1603,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "目标Schema，默认public | Target schema, default public",
+                        "description": "目标命名空间，默认public | Target namespace, default public",
                         "name": "target_schema",
                         "in": "formData"
                     },
                     {
                         "type": "string",
-                        "description": "目标表名，默认使用文件名 | Target table name, default from filename",
+                        "description": "目标数据项名称，默认使用文件名 | Target item name, default from filename",
                         "name": "target_table",
                         "in": "formData"
                     },
@@ -1959,7 +1959,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动空间数据表的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation work (e.g. creating spatial indexes)",
+                "description": "启动空间数据项（关系表）的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation work (e.g. creating spatial indexes)",
                 "produces": [
                     "application/json"
                 ],
@@ -1977,14 +1977,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -2157,14 +2157,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -2447,7 +2447,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "触发指定空间数据表的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation for a spatial table",
+                "description": "触发指定空间数据项（关系表）的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation for a spatial item (relational table)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2468,14 +2468,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true
@@ -2692,7 +2692,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新指定空间数据表的用户偏好显示模式（geojson或mvt）| Update preferred display mode for a spatial table (geojson or mvt)",
+                "description": "更新指定空间数据项（关系表）的用户偏好显示模式（geojson或mvt）| Update preferred display mode for a spatial item (geojson or mvt)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2713,14 +2713,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据库Schema | Database schema",
+                        "description": "命名空间 | Namespace",
                         "name": "schema",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "数据表名 | Table name",
+                        "description": "数据项名称 | Item name",
                         "name": "table",
                         "in": "path",
                         "required": true

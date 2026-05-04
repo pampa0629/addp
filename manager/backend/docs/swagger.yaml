@@ -286,12 +286,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -316,20 +316,20 @@ paths:
       - Manager
   /checkpreparation:
     get:
-      description: 检查空间数据表的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick
-        view, auto-create record if passed
+      description: 检查空间数据项（关系表）的快显准备状态，通过则自动创建快显记录 | Check preparation status for
+        quick view, auto-create record if passed
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -382,19 +382,20 @@ paths:
       - Manager
   /clearquickview:
     delete:
-      description: 清除指定空间数据表的快显缓存数据 | Clear quick view cache data for a spatial table
+      description: 清除指定空间数据项（关系表）的快显缓存数据 | Clear quick view cache data for a spatial
+        item (relational table)
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -807,12 +808,12 @@ paths:
         name: feature_id
         required: true
         type: string
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: query
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: query
         name: table
         required: true
@@ -863,12 +864,12 @@ paths:
         name: feature_id
         required: true
         type: string
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: query
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: query
         name: table
         required: true
@@ -906,20 +907,20 @@ paths:
       - Manager
   /getgeojson:
     get:
-      description: 获取空间数据表的GeoJSON格式数据，支持分页 | Get spatial table data in GeoJSON format
-        with pagination support
+      description: 获取空间数据项（关系表）的GeoJSON格式数据，支持分页 | Get spatial item data in GeoJSON
+        format with pagination support
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -961,7 +962,7 @@ paths:
       - Manager
   /getgeojsonmetadata:
     get:
-      description: 获取空间数据表的元数据信息（记录数、地理范围、坐标系等）| Get spatial table metadata (record
+      description: 获取空间数据项（关系表）的元数据信息（记录数、地理范围、坐标系等）| Get spatial item metadata (record
         count, extent, SRID, etc.)
       parameters:
       - description: 存储引擎ID | Engine ID
@@ -969,12 +970,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1067,20 +1068,20 @@ paths:
       - Manager
   /getquickviewstatus:
     get:
-      description: 获取指定空间数据表的快显缓存状态及实时生成进度 | Get quick view cache status and real-time
-        generation progress
+      description: 获取指定空间数据项（关系表）的快显缓存状态及实时生成进度 | Get quick view cache status and
+        real-time generation progress
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1163,20 +1164,20 @@ paths:
       - Manager
   /gettile:
     get:
-      description: 获取指定空间数据表的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile (MVT)
-        for a spatial table with three-layer cache
+      description: 获取指定空间数据项（关系表）的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile
+        (MVT) for a spatial item (relational table) with three-layer cache
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1243,12 +1244,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1329,11 +1330,11 @@ paths:
         name: target_engine_id
         required: true
         type: integer
-      - description: 目标Schema，默认public | Target schema, default public
+      - description: 目标命名空间，默认public | Target namespace, default public
         in: formData
         name: target_schema
         type: string
-      - description: 目标表名，默认使用文件名 | Target table name, default from filename
+      - description: 目标数据项名称，默认使用文件名 | Target item name, default from filename
         in: formData
         name: target_table
         type: string
@@ -1569,7 +1570,7 @@ paths:
       - Manager
   /prepareforcreatemvt:
     post:
-      description: 启动空间数据表的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation
+      description: 启动空间数据项（关系表）的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation
         work (e.g. creating spatial indexes)
       parameters:
       - description: 存储引擎ID | Engine ID
@@ -1577,12 +1578,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1698,12 +1699,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -1899,20 +1900,20 @@ paths:
     post:
       consumes:
       - application/json
-      description: 触发指定空间数据表的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation
-        for a spatial table
+      description: 触发指定空间数据项（关系表）的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache
+        generation for a spatial item (relational table)
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
@@ -2062,20 +2063,20 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 更新指定空间数据表的用户偏好显示模式（geojson或mvt）| Update preferred display mode
-        for a spatial table (geojson or mvt)
+      description: 更新指定空间数据项（关系表）的用户偏好显示模式（geojson或mvt）| Update preferred display
+        mode for a spatial item (geojson or mvt)
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 数据库Schema | Database schema
+      - description: 命名空间 | Namespace
         in: path
         name: schema
         required: true
         type: string
-      - description: 数据表名 | Table name
+      - description: 数据项名称 | Item name
         in: path
         name: table
         required: true
