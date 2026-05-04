@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/engine/detector"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/format/detector"
 )
 
 // lakeTableFormats 支持的湖表文件格式

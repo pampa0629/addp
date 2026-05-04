@@ -275,29 +275,13 @@ type GraphDBPlugin interface {
 	GetGraphSchema(ctx context.Context, connInfo ConnectionInfo, database string) (*GraphSchema, error)
 }
 
-// ============ 术语 i18n 接口 ============
+// ============ 术语 i18n ============
 
-// TermI18nProvider 术语 i18n 提供者（可选接口）
+// TermI18nKey 获取术语的 i18n key。
 //
-// 引擎插件可选实现此接口，为引擎特有术语提供自定义 i18n key 映射。
-// 未实现时，调用方使用默认规则：返回 "engine.term." + term。
-//
-// 绝大多数插件无需实现此接口，默认规则已足够。
-// 仅当引擎需要将某个通用术语映射到不同 i18n key 时才实现。
-type TermI18nProvider interface {
-	// TermI18nKey 将通用英文术语转换为 i18n key
-	// term: 通用英文术语，如 "schema", "database", "label", "relationship", "table", "view"
-	// 返回: i18n key，如 "engine.term.schema"
-	TermI18nKey(term string) string
-}
-
-// GetTermI18nKey 获取术语的 i18n key（统一入口）
-//
-// 优先使用插件自定义映射（若插件实现了 TermI18nProvider），
-// 否则使用默认规则：返回 "engine.term." + term。
-func GetTermI18nKey(plug EnginePlugin, term string) string {
-	if provider, ok := plug.(TermI18nProvider); ok {
-		return provider.TermI18nKey(term)
-	}
+// 术语来源于 catalog term / node type / item type，默认规则统一为
+// "engine.term." + term。若后续需要引擎级自定义映射，应通过
+// EngineCapabilities 的 catalog model 声明序列化表达，而不是新增插件私有接口。
+func TermI18nKey(term string) string {
 	return "engine.term." + term
 }

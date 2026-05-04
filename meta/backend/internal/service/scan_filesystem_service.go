@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/engine/detector"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format/detector"
 	commonParquet "github.com/addp/common/format/parquet"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"

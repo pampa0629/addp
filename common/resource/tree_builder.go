@@ -339,11 +339,8 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
 	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
 
-	// 获取 typeLabel（i18n key）：优先使用插件自定义映射，否则用默认规则
-	typeLabel := "engine.term." + node.NodeType
-	if plug, err := plugin.Get(engine.EngineType); err == nil {
-		typeLabel = plugin.GetTermI18nKey(plug, node.NodeType)
-	}
+	// 获取 typeLabel（i18n key）
+	typeLabel := plugin.TermI18nKey(node.NodeType)
 
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头

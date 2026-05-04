@@ -453,16 +453,10 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 
 	meta := &models.ItemMetadata{
 		ItemType:        itemType,
-		ItemTypeI18nKey: "engine.term." + itemType,
+		ItemTypeI18nKey: plugin.TermI18nKey(itemType),
 		FullName:        req.Metadata.FullName,
 		Attributes:      mapToMetaAttributes(req.Metadata.Attributes),
 		ScannedAt:       req.Metadata.LastScanAt,
-	}
-
-	if req.Engine != nil {
-		if p, err := plugin.Get(req.Engine.EngineType); err == nil {
-			meta.ItemTypeI18nKey = plugin.GetTermI18nKey(p, itemType)
-		}
 	}
 
 	// FullName 兜底

@@ -147,37 +147,23 @@
 
 ## 四、避免硬编码的机制
 
-### 4.1 插件接口扩展
-
-在 `common/engine/plugin/interfaces.go` 中新增一个**可选接口** `TermI18nProvider`，不修改 `EnginePlugin` 基础接口（`EnginePlugin` 是引擎连接层，不应感知 meta 的 node/item 概念）：
+### 4.1 术语 i18n key 生成
 
 ```go
-// TermI18nProvider 术语 i18n 提供者（可选接口）
-// 引擎插件可选实现，为引擎特有术语提供自定义 i18n key 映射。
-// 未实现时，调用方使用默认规则：返回 "engine.term." + term。
-type TermI18nProvider interface {
-    // TermI18nKey 将通用英文术语转换为 i18n key
-    // term: 通用英文术语，如 "schema", "database", "label", "relationship", "table", "view"
-    // 返回: i18n key，如 "engine.term.schema"
-    TermI18nKey(term string) string
-}
-
-// GetTermI18nKey 统一入口：优先使用插件自定义映射，否则使用默认规则
-func GetTermI18nKey(plug EnginePlugin, term string) string {
-    if provider, ok := plug.(TermI18nProvider); ok {
-        return provider.TermI18nKey(term)
-    }
+// TermI18nKey 将通用英文术语转换为 i18n key。
+// term: 通用英文术语，如 "schema", "database", "label", "relationship", "table", "view"
+// 返回: i18n key，如 "engine.term.schema"
+func TermI18nKey(term string) string {
     return "engine.term." + term
 }
 ```
 
 **设计原则**：
 - `EnginePlugin` 不变，不感知 meta 的 node/item 概念
-- 绝大多数插件（PostgreSQL/MySQL/MinIO/NFS 等）**无需实现任何新方法**，默认规则 `"engine.term.schema"` / `"engine.term.table"` 已足够
-- 只有真正需要自定义术语映射的插件才实现 `TermI18nProvider`（当前所有引擎均无此需求）
-- 调用方（TreeBuilder / ExplorerService）通过类型断言检查插件是否实现该接口
+- 插件无需实现术语翻译接口，默认规则 `"engine.term.schema"` / `"engine.term.table"` 已足够
+- 若后续确实需要引擎级自定义映射，应通过 `EngineCapabilities` 的 catalog model 声明序列化表达，而不是新增插件私有接口
 
-后端在构建 `TreeNode` 时，通过 `GetTermI18nKey(plugin, nodeType)` 填入 `typeLabel` 字段（语义从"已翻译文本"改为"i18n key"）。前端用该 key 查 i18n 字典，找不到时 fallback 到 key 本身（直接显示英文 type 名）。
+后端在构建 `TreeNode` 时，通过 `TermI18nKey(nodeType)` 填入 `typeLabel` 字段（语义从"已翻译文本"改为"i18n key"）。前端用该 key 查 i18n 字典，找不到时 fallback 到 key 本身（直接显示英文 type 名）。
 
 i18n 字典（前端 `locales/zh-CN.json` 等）统一维护 `engine.term.*` 命名空间：
 
@@ -322,9 +308,9 @@ GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...
 - Neo4j node type 修订
 
 ### 阶段二：后端基础改造
-1. `common/engine/plugin/interfaces.go` 新增 `TermI18nProvider` 可选接口 + `GetTermI18nKey()` 辅助函数（不修改 `EnginePlugin`）
-2. `TreeNode` 增加 `TypeLabel` 字段（i18n key），`TreeBuilder.convertMetaNode` 通过 `GetTermI18nKey` 填充
-3. `ExplorerService` 构建树时传入插件实例，使 `TreeBuilder` 能调用 `GetTermI18nKey`
+1. `common/engine/plugin/interfaces.go` 新增 `TermI18nKey()` 辅助函数（不修改 `EnginePlugin`）
+2. `TreeNode` 增加 `TypeLabel` 字段（i18n key），`TreeBuilder.convertMetaNode` 通过 `TermI18nKey` 填充
+3. `ExplorerService` 构建树时沿用 Meta 节点类型，不引入插件私有术语映射接口
 4. 预览响应增加 `ItemMeta` 结构（含 i18n key + key-value attributes），`PreviewResolver` 从 meta 模块读取并填充
 
 ### 阶段三：Neo4j 图预览
