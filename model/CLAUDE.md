@@ -232,7 +232,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 ### Mermaid 解析器
 
-`service/mermaid_parser.go` 实现了 Mermaid ER 图的解析，支持将 ER 图批量导入为实体和关系。适合从已有文档快速初始化数据模型。
+`backend/internal/service/mermaid_parser.go` 实现了 Mermaid ER 图的解析，支持将 ER 图批量导入为实体和关系。适合从已有文档快速初始化数据模型。
 
 ### 逻辑表状态机
 

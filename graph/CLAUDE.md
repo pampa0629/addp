@@ -159,6 +159,8 @@ bash scripts/dev/restart.sh -graph
 
 ## 九、相关文档
 
-- [总体规划](../docs/plan/graph模块总体规划.md)
+- [总体规划](docs/graph模块总体规划.md)
+- [本体管理改进规划](docs/graph本体管理改进规划.md)
+- [图谱构建详细规划](docs/graph阶段2-图谱构建详细规划.md)
 - [ADDP 开发原则](../docs/spec/addp开发原则.md)
 - [新模块开发指南](../docs/spec/addp新模块开发指南.md)

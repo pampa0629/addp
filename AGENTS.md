@@ -47,24 +47,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | 工作流计算引擎 | `docs/spec/addp工作流计算引擎接口规范.md` |
 | Transfer 引擎插件迁移后续事项 | `docs/next/engine-plugin-transfer后续事项.md` |
 
-模块相关问题优先阅读模块自己的 `CLAUDE.md` 或模块文档：
-
-| 模块 | 文档 |
-| --- | --- |
-| System | `system/CLAUDE.md` |
-| Gateway | `gateway/CLAUDE.md`、`gateway/docs/gateway架构说明.md` |
-| Manager | `manager/CLAUDE.md` |
-| Meta | `meta/CLAUDE.md` |
-| Transfer | `transfer/CLAUDE.md` |
-| Orchestrator | `orchestrator/CLAUDE.md` |
-| Develop | `develop/CLAUDE.md` |
-| Service | `service/CLAUDE.md` |
-| Model | `model/CLAUDE.md` |
-| Standard | `standard/CLAUDE.md` |
-| Agent | `agent/CLAUDE.md` |
-| Graph | `graph/CLAUDE.md` |
-| Quality | `quality/CLAUDE.md` |
-| Scripts | `scripts/CLAUDE.md` |
+模块相关问题优先阅读对应目录下的 `CLAUDE.md`；如果模块还有 `docs/` 或 `README.md`，按 `CLAUDE.md` 中的导航继续阅读。Gateway 路由相关问题还需阅读 `gateway/docs/gateway架构说明.md`。
 
 ## 前端开发约定
 
@@ -127,6 +110,7 @@ bash scripts/dev/start.sh -system
 
 - `common/`: 后端共享库。
 - `common-frontend/`: 前端共享库。
+- `common-python/`: Python 后端共享客户端与工具。
 - `console/`: 控制台统一入口。
 - `system/`: 用户认证、租户、日志、系统管理。
 - `gateway/`: API 网关和路由转发。
@@ -137,9 +121,17 @@ bash scripts/dev/start.sh -system
 - `develop/`: SQL 工作台、Notebook、算子工作流。
 - `service/`: 数据服务发布与外部服务注册。
 - `monitor/`: 执行监控、统计分析、健康检查。
+- `standard/`: 数据标准、数据元、指标、术语、码值。
+- `model/`: 数据建模、逻辑表、分层和模型关系。
+- `quality/`: 数据质量规则、检测任务和问题治理。
+- `asset/`: 数据资产目录、发布、授权申请和评价。
+- `portal/`: 用户侧数据资产门户和资产申请入口。
 - `agent/`: AI 对话助手。
+- `copilot/`: AI 辅助生成能力，支持 SQL、工作流和图谱抽取。
 - `graph/`: 知识图谱、本体建模、图谱构建。
 - `engines/`: 工作流和 Notebook 相关引擎。
+- `business/`: 业务数据基础设施样例与启动脚本。
+- `nginx/`: 生产/容器化反向代理配置。
 - `docs/`: 平台级概念、规范、计划和故障排查文档。
 
 ## 文档维护

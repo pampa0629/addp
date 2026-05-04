@@ -42,18 +42,6 @@ export default {
     })
   },
 
-  // 获取指定引擎的实时命名空间列表
-  listAvailableNamespaces(engineId) {
-    return client.get(`/system/engines/${engineId}/namespaces`).then(res => {
-      const namespaces = Array.isArray(res?.namespaces) ? res.namespaces : []
-      return namespaces.map(item => ({
-        ...item,
-        schema_name: item.name || item.schema_name,
-        name: item.name || item.schema_name
-      }))
-    })
-  },
-
   // 获取指定引擎的实时 catalog 子节点（System 统一控制面）
   listCatalogChildren(engineId, path = { segments: [] }, options = {}) {
     return listSystemCatalogChildren(client, engineId, path, options)

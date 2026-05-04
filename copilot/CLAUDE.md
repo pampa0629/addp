@@ -10,6 +10,7 @@
 - **后端**：Python 3.11+ + FastAPI + SQLAlchemy + PostgreSQL
 - **AI 框架**：LangChain + 多 LLM 支持（OpenAI、Claude、Ollama、DashScope）
 - **部署**：Docker + Docker Compose
+- **端口**：后端默认 `8087`（环境变量 `COPILOT_BACKEND_PORT` 或运行时 `PORT`）
 
 核心功能：
 - **SQL 生成**：用户输入自然语言，AI 生成 SQL 查询
@@ -49,7 +50,7 @@
 
 ```bash
 # 进入后端目录
-cd backend
+cd copilot/backend
 
 # 安装依赖
 pip install -r requirements.txt
@@ -58,21 +59,22 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env，配置数据库和 LLM API Key
 
-# 运行开发服务器
-python main.py
+# 推荐通过项目脚本启动
+cd ../..
+bash scripts/dev/start.sh -copilot
 
-# 或使用 uvicorn
-uvicorn main:app --reload --port 8085
+# 或在 copilot/backend 内本地调试
+PORT=8087 ./venv/bin/python main.py
 ```
 
 ### 测试 API
 
 ```bash
 # 健康检查
-curl http://localhost:8085/health
+curl http://localhost:8087/health
 
 # 测试 SQL 生成
-curl -X POST http://localhost:8085/copilot/sql/generate \
+curl -X POST http://localhost:8087/api/v1/copilot/sql/generate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "查询所有人口大于100万的城市",
@@ -81,7 +83,7 @@ curl -X POST http://localhost:8085/copilot/sql/generate \
   }'
 
 # 测试工作流生成
-curl -X POST http://localhost:8085/copilot/workflow/generate \
+curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "加载数据，计算100米缓冲区，保存结果",
@@ -164,7 +166,7 @@ memory = await memory_service.get_memory(conversation_id=1)
 ```bash
 # 数据库配置
 POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
+POSTGRES_PORT=15432
 POSTGRES_USER=addp
 POSTGRES_PASSWORD=addp_password
 POSTGRES_DB=addp
@@ -179,7 +181,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ENCRYPTION_KEY=your-base64-encoded-32-byte-key
 
 # 服务配置
-PORT=8085
+PORT=8087
 DEBUG=true
 ```
 

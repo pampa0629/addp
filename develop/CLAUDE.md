@@ -32,8 +32,8 @@ DevExecutor（统一执行器）
      ├─ 执行 Python 代码
      └─ 返回执行结果（含 matplotlib 图表）
   ↓
-DevExecutionRepository（执行记录持久化）
-  └─ develop.dev_execution 表
+TaskExecutionRepository（统一执行记录持久化）
+  └─ common.task_executions 表（module=develop）
 ```
 
 ### 算子发现服务
@@ -60,14 +60,14 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 | 开发项管理 | dev_items表 | SQL查询、工作流、Notebook |
 
 ### 架构说明
-- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策
+- [数据库架构](frontend/docs/数据库架构.md) - 表关系、数据流向、设计决策
 
 ### 单表文档
 
 详细的表结构和API说明文档：
 
-- [dev_items表](docs/tables/dev_items表.md) - 开发项定义表,支持query/workflow/notebook
-- [dev_executions表](docs/tables/dev_executions表.md) - 执行记录表,历史追踪和性能监控
+- [dev_items表](frontend/docs/tables/dev_items表.md) - 开发项定义表,支持 query/workflow/notebook
+- [dev_executions表](frontend/docs/tables/dev_executions表.md) - 旧执行记录文档；当前执行记录已迁移到 `common.task_executions`
 
 **重要**：修改表结构或API时，必须同步更新对应的单表文档。
 
@@ -85,17 +85,17 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 ### API 路由文件
 
 - [backend/internal/api/router.go](backend/internal/api/router.go) - HTTP 路由定义
-- [backend/internal/api/sql_handler.go](backend/internal/api/sql_handler.go) - SQL 查询 API
+- [backend/internal/api/query_handler.go](backend/internal/api/query_handler.go) - 查询执行 API
 - [backend/internal/api/dev_execution_handler.go](backend/internal/api/dev_execution_handler.go) - 执行管理 API
 - [backend/internal/api/operator_handler.go](backend/internal/api/operator_handler.go) - 算子发现 API
 - [backend/internal/api/notebook_handler.go](backend/internal/api/notebook_handler.go) - Jupyter Notebook API
 
 ### 前端视图文件
 
-- [frontend/src/views/SQLWorkbench.vue](frontend/src/views/SQLWorkbench.vue) - SQL 工作台
+- [frontend/src/views/QueryEditor.vue](frontend/src/views/QueryEditor.vue) - SQL/查询编辑器
 - [frontend/src/views/WorkflowEditor.vue](frontend/src/views/WorkflowEditor.vue) - GIS 工作流编辑器
 - [frontend/src/views/NotebookEditor.vue](frontend/src/views/NotebookEditor.vue) - Jupyter Notebook 编辑器
-- [frontend/src/views/ExecutionHistory.vue](frontend/src/views/ExecutionHistory.vue) - 执行历史查看
+- [frontend/src/views/ExecutionMonitor.vue](frontend/src/views/ExecutionMonitor.vue) - 执行历史查看
 
 ### 配置文件
 
@@ -107,15 +107,14 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 ### 场景 1：执行 SQL 查询
 
 ```bash
-# 1. 通过 API 执行 SQL
-curl -X POST http://localhost:8084/api/v1/sql/execute \
+# 1. 通过 API 执行查询
+curl -X POST http://localhost:8185/api/v1/develop/execute \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "engine_id": 1,
-    "sql": "SELECT * FROM public.cities LIMIT 10",
-    "save_as_dev_item": true,
-    "item_name": "查询前10个城市"
+    "query": "SELECT * FROM public.cities LIMIT 10",
+    "timeout": 30
   }'
 
 # 2. 查看执行结果
@@ -123,7 +122,7 @@ curl -X POST http://localhost:8084/api/v1/sql/execute \
 
 # 3. 查看执行历史
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8084/api/v1/executions?type=sql&limit=20"
+  "http://localhost:8185/api/v1/develop/executions?dev_type=query&page=1&page_size=20"
 ```
 
 ### 场景 2：创建 GIS 工作流
@@ -131,16 +130,16 @@ curl -H "Authorization: Bearer <token>" \
 ```bash
 # 1. 获取可用算子
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8084/api/v1/operators
+  http://localhost:8185/api/v1/develop/operators
 
 # 2. 创建工作流（JSON 定义）
-curl -X POST http://localhost:8084/api/v1/workflows \
+curl -X POST http://localhost:8185/api/v1/develop/items \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "缓冲区分析",
-    "description": "对城市点创建1000米缓冲区",
-    "workflow_data": {
+    "dev_type": "workflow",
+    "content": {
       "nodes": [
         {"id": "1", "type": "buffer", "params": {"distance": 1000}},
         {"id": "2", "type": "to_geojson"}
@@ -150,7 +149,7 @@ curl -X POST http://localhost:8084/api/v1/workflows \
   }'
 
 # 3. 执行工作流
-curl -X POST http://localhost:8084/api/v1/workflows/123/execute \
+curl -X POST http://localhost:8185/api/v1/develop/items/123/execute \
   -H "Authorization: Bearer <token>" \
   -d '{"input_data": "public.cities"}'
 ```
@@ -160,11 +159,11 @@ curl -X POST http://localhost:8084/api/v1/workflows/123/execute \
 ```bash
 # 1. 查看失败的执行记录
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8084/api/v1/executions?status=failed&limit=10"
+  "http://localhost:8185/api/v1/develop/executions?status=failed&page=1&page_size=10"
 
 # 2. 查看详细错误信息
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8084/api/v1/executions/123
+  http://localhost:8185/api/v1/develop/executions/123
 
 # 3. 查看 Develop 后端日志
 tail -f logs/develop-backend.log | grep "execution_id=123"
@@ -187,7 +186,7 @@ Develop 模块允许用户执行任意 SQL（在其权限范围内），存在�
 
 ### 2. 工作流版本管理
 
-工作流定义存储在 `develop.dev_item` 表的 `content` 字段（JSONB）：
+工作流定义存储在 `develop.dev_tasks` 表的 `content` 字段（JSONB）：
 
 - 每次修改工作流会覆盖原内容（不保留历史版本）
 - 如需版本管理，可在前端实现版本号逻辑（存储到 `metadata` 字段）
@@ -217,9 +216,12 @@ Python Workflow Engine 在内存中处理空间数据（GeoDataFrame）：
 
 ```sql
 -- 删除 30 天前的执行记录
-DELETE FROM develop.dev_execution
-WHERE created_at < NOW() - INTERVAL '30 days';
+DELETE FROM common.task_executions
+WHERE module = 'develop'
+  AND created_at < NOW() - INTERVAL '30 days';
 ```
+
+如果需要清理旧开发任务，需单独确认任务保留策略后再处理 `develop.dev_tasks`。
 
 ## 典型开发工作流
 
@@ -234,7 +236,7 @@ tail -f logs/develop-backend.log
 
 # 3. 测试 API
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8084/health
+  http://localhost:8185/health
 ```
 
 ### 添加新算子到工作流编辑器
@@ -247,13 +249,13 @@ bash scripts/dev/restart.sh -develop
 
 # 4. 前端调用算子发现 API 获取新算子
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8084/api/v1/operators
+  http://localhost:8185/api/v1/develop/operators
 
 # 5. 前端工作流编辑器会自动显示新算子
 ```
 
 ## 相关文档
 
-- **Python Workflow Engine 说明** - [engines/python_workflow/README.md](../engines/python_workflow/README.md)
+- **Python Workflow Engine 说明** - [engines/python-workflow](../engines/python-workflow)
 - **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
-- **共享数据库桥接** - [common/dbbridge/README.md](../common/dbbridge/README.md)
+- **共享数据库桥接** - `common/dbbridge`

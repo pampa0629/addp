@@ -35,13 +35,13 @@
 | Orchestrator 模块详情| orchestrator/CLAUDE.md        | 工作流编排、DAG、任务调度         |
 | Develop 模块详情     | develop/CLAUDE.md             | SQL 执行、工作流、算子        |
 | Service 模块详情     | service/CLAUDE.md             | 数据服务、OGC 标准、API 发布      |
-| Monitor 模块详情     | monitor/docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
+| Monitor 模块详情     | monitor/CLAUDE.md   | 执行监控、统计分析、任务记录      |
 | Model 模块详情       | model/CLAUDE.md               | 数据建模、逻辑表、星型建模、指标血缘 |
 | Standard 模块详情    | standard/CLAUDE.md            | 数据标准、数据元、指标、术语、码值 |
 | Agent 模块详情       | agent/CLAUDE.md               | AI 对话助手、自然语言交互、LangGraph |
 | Graph 模块详情       | graph/CLAUDE.md               | 知识图谱、本体建模、图谱构建、图可视化 |
 
-增加前端页面时，阅读：common-front/docs/addp前端风格设计规范.md，关键是不能硬编码颜色，而是要采用addp定义的主题风格CSS；并且要集成到console模块中；
+增加前端页面时，阅读：common-frontend/docs/addp前端风格设计规范.md，关键是不能硬编码颜色，而是要采用addp定义的主题风格CSS；并且要集成到console模块中；
 增加后端的API时，阅读：docs/spec/addp-API设计规范.md，关键是了解并遵从返回data的规定，以及符合swagger的要求；
 
 
@@ -112,8 +112,8 @@ AI可以提交代码到github上，但未经用户允许，不得创建分支提
 - **develop/** - 开发工作台:查询（SQL）工作台、Notebook开发和基于算子的工作流编辑器
 - **service/** - 数据服务模块:内部数据的服务发布（含空间与非空间）、外部服务注册(PostgreSQL service schema)
 - **monitor/** - 执行监控:统一监控所有模块的任务执行记录、统计分析、健康检查 (使用 common.task_executions 表)
-- **engines/python_workflow/** - 基于Python的工作流计算引擎,提供空间和非空间算子
-- **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,提供空间和非空间算子
+- **engines/python-workflow/** - 基于 Python 的工作流计算引擎,提供空间和非空间算子
+- **engines/spark-workflow/** - 基于 Spark 的分布式工作流计算引擎,提供空间和非空间算子
 - **engines/jupyter/** - 基于jupyter的notebook开发后台服务
 - **agent/** - AI 对话助手:基于 LangGraph + FastAPI 的自然语言交互服务，用户通过对话完成数据操作
 - **graph/** - 知识图谱模块:本体建模、图谱构建、图谱探索、图算法分析、知识服务 API (PostgreSQL graph schema + Neo4j)
@@ -318,10 +318,10 @@ Plan模式下生成的计划文档，保存到 ./docs/plan 目录下。
 
 - [`CLAUDE.md`](CLAUDE.md) - 本文件 (平台级架构)
 - [`system/CLAUDE.md`](system/CLAUDE.md) - System 模块详情
-- [`gateway/doc/gateway架构说明.md`](gateway/doc/gateway架构说明.md) - Gateway 路由逻辑
+- [`gateway/docs/gateway架构说明.md`](gateway/docs/gateway架构说明.md) - Gateway 路由逻辑
 - [`common-frontend/README.md`](common-frontend/README.md) - Common 前端组件指南
 - [`common-frontend/docs/ARCHITECTURE.md`](common-frontend/docs/ARCHITECTURE.md) - Common 前端架构
-- 各模块目录中的 DATA_STRUCTURES.md
+- 各模块目录中的 `CLAUDE.md`、`README.md` 和 `docs/`
 
 ### 构建和部署
 
@@ -341,7 +341,7 @@ Plan模式下生成的计划文档，保存到 ./docs/plan 目录下。
 ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 种**数据库/存储引擎（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）。
 
 **相关文档**：
-- **架构说明**：[docs/数据库插件系统.md](docs/数据库插件系统.md) - 了解插件系统的整体架构和设计
+- **架构说明**：[docs/concepts/addp引擎体系图.md](docs/concepts/addp引擎体系图.md) - 了解引擎体系和 Provider 边界
 - **新增指南**：[docs/spec/addp数据引擎扩展指南.md](docs/spec/addp数据引擎扩展指南.md) - 如何添加新的数据库/存储引擎类型
 
 ## 故障排查

@@ -14,6 +14,23 @@
 | Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/label。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
 
+### 实时 Catalog、元数据快照和数据预览的边界
+
+ADDP 中容易混淆的三个概念需要明确区分：
+
+| 概念 | 回答的问题 | 归属模块 | 典型场景 |
+| --- | --- | --- | --- |
+| 实时 Catalog | 真实引擎当前有什么？ | System | 扫描前选择 PostgreSQL schema、MinIO bucket/prefix、MongoDB collection、NFS 目录等。 |
+| 元数据快照 | 平台已经扫描、记录、纳管了什么？ | Meta | 查询 `metadata.meta_node`、`metadata.meta_item`，展示已扫描资产树、字段、空间信息和扫描状态。 |
+| 数据预览 | 用户要查看真实数据内容。 | Manager | 表格预览、对象/文件预览、空间瓦片和后端 preview provider 组合。 |
+
+边界原则：
+
+- System 负责引擎控制面和实时 catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。
+- Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
+- Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
+- `/api/v1/system/engines/:id/namespaces` 和 `/api/v1/system/engines/:id/items` 仅作为浅层快捷封装，长期抽象应以 `catalog/children` 为准。
+
 ---
 
 ## 二、全局架构
