@@ -1,8 +1,10 @@
 package dataitem
 
 import (
+	"context"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
 
@@ -85,8 +87,8 @@ func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	if itemAttrs["format"] != string(format.FormatGeoJSON) {
 		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatGeoJSON)
 	}
-	if attrs["data_family"] != itemAttrs["data_family"] {
-		t.Fatalf("flat data_family = %v, want partition-compatible value", attrs["data_family"])
+	if attrs["data_family"] != nil || attrs["format"] != nil {
+		t.Fatalf("flat item fields should not be written: %#v", attrs)
 	}
 
 	storageAttrs := attrs["storage"].(map[string]interface{})
@@ -117,4 +119,77 @@ func TestInferDataFamilyCanonicalizesCommonAliases(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnclaimedFilesFiltersClaimedPaths(t *testing.T) {
+	files := []plugin.FileEntry{
+		{Name: "roads.shp", Path: "/shp/roads.shp"},
+		{Name: "roads.shx", Path: "/shp/roads.shx"},
+		{Name: "readme.pdf", Path: "/shp/readme.pdf"},
+	}
+
+	got := unclaimedFiles(files, ResourceClaimSet{
+		"/shp/roads.shp": true,
+		"/shp/roads.shx": true,
+	})
+
+	if len(got) != 1 || got[0].Path != "/shp/readme.pdf" {
+		t.Fatalf("unclaimedFiles() = %#v, want only readme.pdf", got)
+	}
+}
+
+func TestResolveItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
+	first := &testScopeDetector{
+		priority: 20,
+		result: &DetectionResult{
+			Items:  []*DetectedItem{{ItemType: "table", CompositionType: CompositionTypeMultiFile, EntryPath: "/shp/roads.shp"}},
+			Claims: ResourceClaimSet{"/shp/roads.shp": true},
+		},
+	}
+	second := &testScopeDetector{priority: 10, result: &DetectionResult{Claims: ResourceClaimSet{}}}
+	mu.Lock()
+	old := detectors
+	detectors = []CompositeItemDetector{first, second}
+	mu.Unlock()
+	defer func() {
+		mu.Lock()
+		detectors = old
+		mu.Unlock()
+	}()
+
+	_, err := ResolveItems(context.Background(), DirectoryResolveInput{
+		Files: []plugin.FileEntry{
+			{Name: "roads.shp", Path: "/shp/roads.shp"},
+			{Name: "readme.pdf", Path: "/shp/readme.pdf"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(second.seenFiles) != 1 || second.seenFiles[0].Path != "/shp/readme.pdf" {
+		t.Fatalf("second detector saw %#v, want only readme.pdf", second.seenFiles)
+	}
+}
+
+type testScopeDetector struct {
+	priority  int
+	result    *DetectionResult
+	seenFiles []plugin.FileEntry
+}
+
+func (d *testScopeDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+	return false
+}
+
+func (d *testScopeDetector) ExtractItemInfo(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, dirPath string, files []plugin.FileEntry) (*CompositeItemInfo, error) {
+	return nil, nil
+}
+
+func (d *testScopeDetector) Priority() int { return d.priority }
+
+func (d *testScopeDetector) ItemType() string { return "test" }
+
+func (d *testScopeDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+	d.seenFiles = input.Files
+	return d.result, nil
 }

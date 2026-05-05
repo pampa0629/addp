@@ -41,6 +41,7 @@ type objectStorageCompositeItem struct {
 	bucket string
 	prefix string
 	item   *dataitem.DetectedItem
+	claims dataitem.ResourceClaimSet
 }
 
 // NewObjectStorageScanService 创建对象存储扫描服务
@@ -1310,7 +1311,7 @@ func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
 			continue
 		}
 		files := objectMetasToFileEntries(bucket, group)
-		detected, err := dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
+		detection, err := dataitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
 			ContentReader: contentReader,
 			ConnInfo:      connInfo,
 			EngineID:      engineID,
@@ -1321,17 +1322,25 @@ func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
 			s.log.Warn("对象存储组合项检测失败", "bucket", bucket, "prefix", prefix, "error", err)
 			continue
 		}
-		if detected == nil {
+		if detection == nil || len(detection.Items) == 0 {
 			continue
 		}
-		for _, meta := range group {
-			skipPaths[meta.Path] = true
+		for path, claimed := range detection.Claims {
+			if claimed {
+				skipPaths[objectPathFromClaim(bucket, path)] = true
+			}
 		}
-		items = append(items, objectStorageCompositeItem{
-			bucket: bucket,
-			prefix: prefix,
-			item:   detected,
-		})
+		for _, detected := range detection.Items {
+			if detected == nil {
+				continue
+			}
+			items = append(items, objectStorageCompositeItem{
+				bucket: bucket,
+				prefix: prefix,
+				item:   detected,
+				claims: detection.Claims,
+			})
+		}
 	}
 	return skipPaths, items
 }
@@ -1368,18 +1377,18 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 			return count, err
 		}
 
-		itemName := pathpkg.Base(strings.Trim(composite.prefix, "/"))
-		if itemName == "" {
-			itemName = "dataset"
-		}
-		parentPath := parentObjectPath(composite.prefix)
+		itemName, objectPath := inferObjectStorageCompositeName(composite)
+		parentPath := parentObjectPath(objectPath)
 		fullName := commonModels.JoinObjectPath(composite.bucket, parentPath, itemName)
 
 		attrs := toJSONMap(dataitem.BuildAttributes(composite.item))
+		if len(composite.item.Fields) > 0 {
+			setSchemaFields(attrs, fieldAttributesFromFormat(composite.item.Fields))
+		}
 		setStorageAttribute(attrs, "bucket", composite.bucket)
 		setStorageAttribute(attrs, "path", parentPath)
 		setStorageAttribute(attrs, "name", itemName)
-		setItemAttribute(attrs, "mode", "directory")
+		setItemAttribute(attrs, "mode", objectStorageCompositeMode(composite.item))
 
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
@@ -1521,6 +1530,53 @@ func parentObjectPath(path string) string {
 		return ""
 	}
 	return strings.Trim(dir, "/") + "/"
+}
+
+func objectPathFromClaim(bucket, claimPath string) string {
+	trimmed := strings.Trim(claimPath, "/")
+	prefix := strings.Trim(bucket, "/") + "/"
+	return strings.TrimPrefix(trimmed, prefix)
+}
+
+func inferObjectStorageCompositeName(composite objectStorageCompositeItem) (name, objectPath string) {
+	if composite.item != nil {
+		switch composite.item.CompositionType {
+		case dataitem.CompositionTypeSingleFile, dataitem.CompositionTypeMultiFile, dataitem.CompositionTypeContainerFile:
+			if composite.item.EntryPath != "" {
+				objectPath = objectPathFromClaim(composite.bucket, composite.item.EntryPath)
+				if objectPath != "" {
+					return pathpkg.Base(objectPath), objectPath
+				}
+			}
+		}
+	}
+	objectPath = strings.Trim(composite.prefix, "/")
+	name = pathpkg.Base(objectPath)
+	if name == "" {
+		name = "dataset"
+		objectPath = name
+	}
+	return name, objectPath
+}
+
+func objectStorageCompositeMode(item *dataitem.DetectedItem) string {
+	if item == nil {
+		return "directory"
+	}
+	switch item.CompositionType {
+	case dataitem.CompositionTypeSingleFile:
+		return "file"
+	case dataitem.CompositionTypeMultiFile:
+		return "multi_file"
+	case dataitem.CompositionTypeContainerFile:
+		return "container_file"
+	case dataitem.CompositionTypeDirectoryTree:
+		return "directory_tree"
+	case dataitem.CompositionTypeMixedCollection:
+		return "mixed_collection"
+	default:
+		return "directory"
+	}
 }
 
 func joinObjectPathParts(parts ...string) string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -67,7 +68,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 	}
 
 	// 2. 尝试从 Meta 获取资源树（可选，失败不影响功能）
-	metaNodes, err := s.getMetaNodes(ctx, engineID, expandDepth, tenantID)
+	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, expandDepth, tenantID)
 	if err != nil {
 		logger.L().Warn("获取 Meta 节点失败，使用降级方案", "engine_id", engineID, "error", err)
 		// Meta 不可用时的降级方案：返回引擎根节点
@@ -149,7 +150,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 
 	// 4. 重新获取节点信息
 	// 使用 -1 获取所有节点，确保能找到目标节点
-	metaNodes, err := s.getMetaNodes(ctx, loc.EngineID, -1, tenantID)
+	metaNodes, err := s.getMetaNodes(ctx, loc.EngineID, engine.EngineType, -1, tenantID)
 	if err != nil {
 		logger.L().Warn("刷新节点失败", "locator", locatorURI, "error", err)
 		return nil, fmt.Errorf("failed to refresh node: %w", err)
@@ -281,7 +282,7 @@ func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, e
 	// 这里我们获取所有节点，然后在内存中过滤出目标节点的子节点
 	// TODO: 优化为直接从 Meta 获取指定节点的子节点
 	nodeDepth := len(loc.Path) // 节点深度 = 路径段数
-	metaNodes, err := s.getMetaNodes(ctx, engineID, expandDepth+nodeDepth, tenantID)
+	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, expandDepth+nodeDepth, tenantID)
 	if err != nil {
 		logger.L().Warn("获取 Meta 节点失败", "locator", locatorURI, "error", err)
 		return nil, fmt.Errorf("failed to get meta nodes: %w", err)
@@ -333,7 +334,7 @@ func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engin
 	}
 
 	// 2. 从 Meta 获取所有节点（不限制深度）
-	metaNodes, err := s.getMetaNodes(ctx, engineID, -1, tenantID)
+	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, -1, tenantID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get meta nodes: %w", err)
 	}
@@ -409,7 +410,7 @@ func (s *ExplorerService) searchInTree(node *resource.TreeNode, keyword string, 
 // 内部辅助方法
 
 // getMetaNodes 从 Meta 模块获取节点列表
-func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expandDepth int, tenantID *uint) ([]*commonModels.MetaNode, error) {
+func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engineType string, expandDepth int, tenantID *uint) ([]*commonModels.MetaNode, error) {
 	if s.metaClient == nil {
 		return nil, fmt.Errorf("meta client not available")
 	}
@@ -454,7 +455,7 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 			// 动态计算 Depth：根据 full_name 中的分隔符数量
 			// - 对象存储: bucket/dir/file → depth=3
 			// - 数据库表: schema.table → depth=2
-			depth := calculateItemDepth(item.ItemType, item.FullName, item.Attributes)
+			depth := calculateItemDepthByEngineType(engineType, item.ItemType, item.FullName, item.Attributes)
 
 			// 再次检查深度
 			if expandDepth != -1 && depth > expandDepth {
@@ -724,9 +725,13 @@ func getEngineIcon(engineType string) string {
 // calculateItemDepth 动态计算 Item 的深度
 // 根据 ItemType 和 FullName 计算节点在树中的深度
 func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONMap) int {
+	return calculateItemDepthByEngineType("", itemType, fullName, attributes)
+}
+
+func calculateItemDepthByEngineType(engineType, itemType, fullName string, attributes commonModels.JSONMap) int {
 	// 对象存储类型（object）：根据路径中的斜杠数量计算
 	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
-	if itemType == "object" {
+	if itemType == "object" || itemType == "lake_table" || isPathSemanticMetaItem(itemType, fullName, attributes, engineType) {
 		segments := strings.Split(strings.Trim(fullName, "/"), "/")
 		return len(segments)
 	}
@@ -746,6 +751,22 @@ func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONM
 
 	// 默认深度为 2（大多数情况下 Items 在第二层）
 	return 2
+}
+
+func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.JSONMap, engineType string) bool {
+	if itemType != "table" {
+		return false
+	}
+	if strings.Contains(fullName, "/") {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "minio", "s3", "nfs", "nas":
+		return true
+	}
+	formatName := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "format", "item")))
+	compositionType := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "composition_type", "item")))
+	return formatName != "" && compositionType != ""
 }
 
 // metaClientAdapter 适配器：将 MetaClient 适配为 TreeBuilder 的 MetaClient 接口

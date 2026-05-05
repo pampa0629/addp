@@ -28,13 +28,47 @@ type SingleFileInput struct {
 	Format      string
 }
 
-// ResolveDirectory 使用已注册 detector 推断一个目录是否整体构成数据项。
-func ResolveDirectory(ctx context.Context, input DirectoryResolveInput) (*DetectedItem, error) {
+// ResolveItems 使用已注册 detector 从一个扫描范围内识别 0..N 个数据项。
+func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+	result := &DetectionResult{
+		Items:  []*DetectedItem{},
+		Claims: ResourceClaimSet{},
+	}
 	for _, d := range GetAll() {
-		if !d.Detect(ctx, input.Files, input.Subdirs) {
+		detectorInput := input
+		detectorInput.Files = unclaimedFiles(input.Files, result.Claims)
+		if len(input.Files) > 0 && len(detectorInput.Files) == 0 {
+			break
+		}
+		if scoped, ok := d.(ScopeItemDetector); ok {
+			scopeResult, err := scoped.ResolveItems(ctx, detectorInput)
+			if err != nil {
+				return nil, err
+			}
+			if scopeResult == nil {
+				continue
+			}
+			for _, item := range scopeResult.Items {
+				if item != nil {
+					result.Items = append(result.Items, item)
+				}
+			}
+			for path, claimed := range scopeResult.Claims {
+				if claimed {
+					result.Claims[path] = true
+				}
+			}
+			if scopeResult.Exclusive {
+				result.Exclusive = true
+				return result, nil
+			}
 			continue
 		}
-		info, err := d.ExtractItemInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, input.Files)
+
+		if !d.Detect(ctx, detectorInput.Files, detectorInput.Subdirs) {
+			continue
+		}
+		info, err := d.ExtractItemInfo(ctx, detectorInput.ContentReader, detectorInput.ConnInfo, detectorInput.EngineID, detectorInput.DirPath, detectorInput.Files)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +76,7 @@ func ResolveDirectory(ctx context.Context, input DirectoryResolveInput) (*Detect
 			info = &CompositeItemInfo{}
 		}
 
-		totalSize := sumFileSize(input.Files)
+		totalSize := sumFileSize(detectorInput.Files)
 		if info.SizeBytes != nil {
 			totalSize = *info.SizeBytes
 		}
@@ -59,28 +93,60 @@ func ResolveDirectory(ctx context.Context, input DirectoryResolveInput) (*Detect
 
 		entryPath := info.EntryPath
 		if entryPath == "" {
-			entryPath = input.DirPath
+			entryPath = detectorInput.DirPath
 		}
 
 		componentFiles := info.ComponentFiles
 		if len(componentFiles) == 0 {
-			componentFiles = filePaths(input.Files)
+			componentFiles = filePaths(detectorInput.Files)
 		}
 
-		return &DetectedItem{
+		item := &DetectedItem{
 			ItemType:        d.ItemType(),
 			CompositionType: compositionType,
 			DataFamily:      dataFamily,
 			Format:          info.Format,
-			PhysicalPath:    input.DirPath,
+			PhysicalPath:    detectorInput.DirPath,
 			EntryPath:       entryPath,
 			ComponentFiles:  componentFiles,
 			SizeBytes:       totalSize,
 			Fields:          info.Fields,
 			Attributes:      info.Attributes,
-		}, nil
+		}
+		result.Items = append(result.Items, item)
+		for _, path := range componentFiles {
+			result.Claims[path] = true
+		}
+		result.Exclusive = compositionType == CompositionTypeDirectoryTree
+		if result.Exclusive {
+			return result, nil
+		}
 	}
-	return nil, nil
+	return result, nil
+}
+
+func unclaimedFiles(files []plugin.FileEntry, claims ResourceClaimSet) []plugin.FileEntry {
+	if len(files) == 0 || len(claims) == 0 {
+		return files
+	}
+	filtered := make([]plugin.FileEntry, 0, len(files))
+	for _, file := range files {
+		if claims[file.Path] {
+			continue
+		}
+		filtered = append(filtered, file)
+	}
+	return filtered
+}
+
+// ResolveDirectory 保留旧调用入口，返回第一个识别出的 item。
+// 新扫描流程应使用 ResolveItems，避免一个扫描范围只能产出一个 item。
+func ResolveDirectory(ctx context.Context, input DirectoryResolveInput) (*DetectedItem, error) {
+	result, err := ResolveItems(ctx, input)
+	if err != nil || result == nil || len(result.Items) == 0 {
+		return nil, err
+	}
+	return result.Items[0], nil
 }
 
 // BuildAttributes 将 detector 输出和标准 item 语义合并为可落库的 attributes。
@@ -96,31 +162,30 @@ func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	itemAttrs := map[string]interface{}{}
 	storageAttrs := map[string]interface{}{}
 
-	setCompatAndSectionValue(attrs, itemAttrs, "composition_type", string(item.CompositionType))
-	setCompatAndSectionValue(attrs, itemAttrs, "data_family", string(item.DataFamily))
+	setSectionValue(itemAttrs, "composition_type", string(item.CompositionType))
+	setSectionValue(itemAttrs, "data_family", string(item.DataFamily))
 	if item.Format != "" {
-		setCompatAndSectionValue(attrs, itemAttrs, "format", item.Format)
+		setSectionValue(itemAttrs, "format", item.Format)
 	}
 	if item.PhysicalPath != "" {
-		setCompatAndSectionValue(attrs, storageAttrs, "physical_path", item.PhysicalPath)
+		setSectionValue(storageAttrs, "physical_path", item.PhysicalPath)
 	}
 	if item.EntryPath != "" {
-		setCompatAndSectionValue(attrs, itemAttrs, "entry_path", item.EntryPath)
+		setSectionValue(itemAttrs, "entry_path", item.EntryPath)
 	}
 	if len(item.ComponentFiles) > 0 {
-		setCompatAndSectionValue(attrs, itemAttrs, "component_files", item.ComponentFiles)
-		setCompatAndSectionValue(attrs, itemAttrs, "file_count", len(item.ComponentFiles))
+		setSectionValue(itemAttrs, "component_files", item.ComponentFiles)
+		setSectionValue(itemAttrs, "file_count", len(item.ComponentFiles))
 	}
 	if item.SizeBytes > 0 {
-		setCompatAndSectionValue(attrs, storageAttrs, "total_size", item.SizeBytes)
+		setSectionValue(storageAttrs, "total_size", item.SizeBytes)
 	}
 	attrs["item"] = mergeSection(attrs["item"], itemAttrs)
 	attrs["storage"] = mergeSection(attrs["storage"], storageAttrs)
 	return attrs
 }
 
-func setCompatAndSectionValue(attrs map[string]interface{}, section map[string]interface{}, key string, value interface{}) {
-	attrs[key] = value
+func setSectionValue(section map[string]interface{}, key string, value interface{}) {
 	section[key] = value
 }
 

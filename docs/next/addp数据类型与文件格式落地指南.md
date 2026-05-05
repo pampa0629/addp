@@ -137,27 +137,23 @@ item 应至少具备：
 {
   "schema_version": 1,
   "storage": {
-    "bucket": "addp",
-    "path": "doc/",
-    "name": "demo.pdf",
-    "physical_path": "addp/doc/demo.pdf",
-    "size_bytes": 12345,
-    "content_type": "application/pdf",
+    "physical_path": "...",
+    "total_size": 12345,
     "last_modified_at": "2026-05-05T10:00:00+08:00"
   },
   "item": {
-    "composition_type": "single_file",
-    "data_family": "document",
-    "format": "pdf",
-    "entry_path": "addp/doc/demo.pdf",
-    "component_files": ["addp/doc/demo.pdf"]
+    "composition_type": "...",
+    "data_family": "...",
+    "format": "...",
+    "entry_path": "...",
+    "component_files": ["..."]
   },
   "schema": {
     "fields": []
   },
   "extensions": {
-    "document": {
-      "page_count": 12
+    "标准扩展命名空间": {
+      "standard_value": "..."
     },
     "com.vendor.plugin.xxx": {
       "custom_value": "..."
@@ -166,8 +162,38 @@ item 应至少具备：
 }
 ```
 
-迁移期间可以保留现有平铺字段作为兼容层，但新的读取逻辑应优先消费分区后的标准结构。  
-兼容字段应有明确删除计划，不应继续扩大平铺字段集合。
+分区结构是目标存储结构，也是新逻辑的唯一事实源。  
+迁移期间可以保留现有平铺字段作为兼容层，但平铺字段只是由分区字段派生出来的只读副本，不是第二份真实数据。新的写入逻辑不得主动扩展平铺字段集合，新的读取逻辑必须优先消费分区后的标准结构。
+
+### 唯一事实源规则
+
+`meta_item` 表自身已经有一组平台基础列，`attributes` 不能再把这些基础列完整复制一份。
+
+| 信息 | 唯一事实源 / 目标存储点 | `attributes` 中是否保存 | 说明 |
+|---|---|---|---|
+| item 主键 | `meta_item.id` | 否 | 不进入 attributes。 |
+| 租户、引擎、节点归属 | `meta_item.tenant_id`、`engine_id`、`node_id` | 否 | attributes 不重复表达关系归属。 |
+| item 类型 | `meta_item.item_type` | 否 | 作为路由基础列；如需对外响应，由 DTO 从表列组装。 |
+| 名称和逻辑全名 | `meta_item.name`、`full_name` | 否 | `storage.path` / `item.entry_path` 不能替代 `full_name`；也不应重复保存 `name`，除非对象枚举接口确有源文件名差异需要放入 `storage.name`。 |
+| fingerprint | `meta_item.fingerprint` | 否 | 不进入 attributes。 |
+| 行数 | `meta_item.row_count` 为平台统计列；`attributes.schema.row_count` 为解析器结构统计 | 仅在确需保留解析来源时保存 | 二者含义必须一致或标明来源；普通文件表优先写 `schema.row_count`，入库时同步表列。 |
+| 大小 | `meta_item.size_bytes` 为平台检索列；`attributes.storage.total_size` / `size_bytes` 为源存储元数据 | 是 | attributes 保存源存储视角；表列用于查询排序和列表展示。不得再顶层平铺一份作为事实源。 |
+| 更新时间 | `meta_item.data_updated_at` / `scanned_at` | 仅源对象修改时间进入 `storage.last_modified_at` | `scanned_at` 是扫描时间，不进入 attributes。 |
+| attributes 结构版本 | `attributes.schema_version` | 是 | 由 normalizer 写入。 |
+| 存储位置与源资源属性 | `attributes.storage` | 是 | bucket、path、physical_path、content_type、last_modified_at 等。 |
+| item 组合语义 | `attributes.item` | 是 | composition_type、data_family、format、entry_path、component_files、file_count 等。 |
+| 字段和表结构 | `attributes.schema` | 是 | fields、primary_key、indexes、row_count 等。 |
+| 空间、媒体、文档、提取状态等扩展 | `attributes.extensions.<namespace>` | 是 | 平台标准扩展或合规私有扩展。 |
+
+因此，目标形态下 `attributes` 顶层只允许出现：
+
+- `schema_version`
+- `storage`
+- `item`
+- `schema`
+- `extensions`
+
+历史平铺兼容字段只能作为迁移期输出或旧数据读取兜底存在，不应作为新数据的规范样例。
 
 ### 字段分区职责
 
@@ -189,6 +215,8 @@ item 应至少具备：
 6. 平台标准扩展应使用稳定名称，例如 `extensions.spatial`、`extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction`。
 7. 第三方私有扩展应使用反向域名或插件 ID 命名空间，例如 `extensions.com.vendor.plugin_name`。
 8. 当私有扩展被多个格式复用，并被平台稳定消费时，应先提升为标准扩展，再允许 `manager`、`transfer`、`asset` 等模块依赖。
+9. 同一事实只能有一个规范存储点。若为了迁移需要双写，必须声明主字段和派生字段，并在读取 helper 中固定优先级。
+10. `attributes.item` 中已经存在的组合语义，不得再在 `attributes` 顶层长期重复保存；`attributes.storage` 中已经存在的大小、路径等源存储信息也不得再顶层重复保存。
 
 ### 冲突处理规则
 
@@ -214,6 +242,46 @@ item 应至少具备：
 - 私有扩展默认只用于展示、诊断或插件自身能力。
 - 预览路由不得依赖任意 custom key。
 - 搜索索引可以选择性索引私有扩展，但应记录来源和字段命名空间。
+
+### 格式规范引用
+
+具体数据格式的 attributes 结构不写在本文中。本文只定义 attributes 分区、来源和合并规则；各格式的组合形态、字段来源、标准扩展和私有扩展应在独立格式规范中说明。
+
+首批格式规范：
+
+| 格式 | 规范文档 | 当前实现重点 |
+|---|---|---|
+| Shapefile | `docs/next/addp格式规范-shapefile.md` | 多文件 item、DBF 字段、空间扩展、Shapefile 私有扩展 |
+| GeoJSON | `docs/next/addp格式规范-geojson.md` | FeatureCollection 字段推断、空间扩展、GeoJSON 私有扩展 |
+| CSV / TSV | `docs/next/addp格式规范-csv-tsv.md` | 分隔符、编码、表头、字段采样 |
+| Excel | `docs/next/addp格式规范-excel.md` | 工作表、字段采样、Excel 私有扩展 |
+| Parquet / ORC / Avro 湖表 | `docs/next/addp格式规范-湖表.md` | 目录树或单文件 item、schema、分区与辅助文件 |
+| SQLite / GeoPackage | `docs/next/addp格式规范-sqlite-geopackage.md` | 容器文件 item、内部表枚举、空间扩展 |
+| 图片 | `docs/next/addp格式规范-图片.md` | 媒体扩展、EXIF、GPS 空间扩展 |
+| PDF | `docs/next/addp格式规范-pdf.md` | 文档扩展、提取状态、文本预览 |
+
+新增格式或扩展现有格式时，应先补充或修订对应格式规范，再修改 detector / parser / extractor / manager provider。
+
+### 标准扩展命名空间
+
+平台标准扩展命名空间目前包括：
+
+| 命名空间 | 含义 | 典型字段 |
+|---|---|---|
+| `extensions.spatial` | 空间扩展信息 | `geometry_column`、`geometry_type` / `geometry_types`、`srid`、`extent`、`dimension`、`has_spatial_index` |
+| `extensions.media` | 图片、音频、视频媒体信息 | width、height、duration、codec、color_mode 等 |
+| `extensions.document` | 文档信息 | title、author、page_count、word_count、keywords 等 |
+| `extensions.statistics` | 统计与采样信息 | sample_size、null_count、min、max 等 |
+| `extensions.extraction` | 内容提取状态和提取结果摘要 | extracted_metadata、plain_text_preview、extractor、status 等 |
+
+`extensions.unqualified` 不是业务语义命名空间，也不是某种格式扩展。  
+它是 `meta` normalizer 的隔离区，用于临时收纳以下信息：
+
+- attributes 顶层出现的未登记字段。
+- `extensions` 下不属于平台标准命名空间、也不符合私有命名空间命名规则的 key。
+- 迁移期旧实现产生的无归属字段。
+
+`unqualified` 的含义是“未归类 / 未合格命名空间”。平台级行为不得依赖其中字段，正常的新 parser / detector 不应主动写入 `extensions.unqualified`。如果其中字段需要被长期使用，必须先明确归属：要么进入平台标准扩展，要么进入合规私有命名空间。
 
 ## 三、各模块职责
 
@@ -406,6 +474,7 @@ common/dataitem/
 - 不要把组合形态 detector 长期留在 `meta` 或 `common/format` 中。
 - 不要让 parser / extractor / 第三方插件直接覆盖平台核心 attributes。
 - 不要把格式私有属性继续平铺到 attributes 顶层。
+- 不要把格式私有属性写入 `extensions.unqualified` 作为长期方案；应使用平台标准扩展或合规私有命名空间。
 - 不要让平台级行为依赖未标准化的 custom key。
 
 ## 六、推荐验证方式

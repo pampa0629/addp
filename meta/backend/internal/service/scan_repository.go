@@ -88,23 +88,13 @@ func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
 	if value, ok := normalized["spatial_metadata"]; ok {
 		setExtensionSection(extensions, "spatial", value)
 	}
+	if value, ok := normalized["plain_text_preview"]; ok {
+		setExtensionValue(extensions, "extraction", "plain_text_preview", value)
+	}
 	moveUnregisteredFlatExtensionKeys(normalized, extensions)
 
 	extensions = normalizeExtensionNamespaces(extensions)
-	writeFlatCompatibility(normalized, storage, []string{
-		"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
-		"size", "total_size", "content_type", "last_modified_at", "modified_at",
-		"etag", "file_type", "object_count", "schema_name",
-	})
-	writeFlatCompatibility(normalized, item, []string{
-		"composition_type", "data_family", "format", "entry_path",
-		"component_files", "file_count", "mode",
-	})
-	writeFlatCompatibility(normalized, schema, []string{
-		"fields", "table_metadata", "table_type", "table_comment",
-		"primary_key", "indexes", "row_count", "document_count", "count",
-	})
-	writeFlatExtensionCompatibility(normalized, extensions)
+	removeFlatCompatibilityKeys(normalized)
 
 	normalized["storage"] = storage
 	normalized["item"] = item
@@ -157,6 +147,18 @@ var allowedFlatAttributeKeys = map[string]struct{}{
 	"spatial_metadata": {},
 
 	"plain_text_preview": {},
+}
+
+var flatCompatibilityKeys = []string{
+	"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
+	"size", "total_size", "content_type", "last_modified_at", "modified_at",
+	"etag", "file_type", "object_count", "schema_name",
+	"composition_type", "data_family", "format", "entry_path",
+	"component_files", "file_count", "mode",
+	"fields", "table_metadata", "table_type", "table_comment",
+	"primary_key", "indexes", "row_count", "document_count", "count",
+	"spatial_metadata",
+	"plain_text_preview",
 }
 
 func moveUnregisteredFlatExtensionKeys(attrs models.JSONMap, extensions map[string]interface{}) {
@@ -212,21 +214,9 @@ func moveKeysToSection(attrs models.JSONMap, section map[string]interface{}, key
 	}
 }
 
-func writeFlatCompatibility(attrs models.JSONMap, section map[string]interface{}, keys []string) {
-	for _, key := range keys {
-		if value, ok := section[key]; ok {
-			attrs[key] = value
-		}
-	}
-}
-
-func writeFlatExtensionCompatibility(attrs models.JSONMap, extensions map[string]interface{}) {
-	spatial, ok := extensions["spatial"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	if value, exists := spatial["spatial_metadata"]; exists {
-		attrs["spatial_metadata"] = value
+func removeFlatCompatibilityKeys(attrs models.JSONMap) {
+	for _, key := range flatCompatibilityKeys {
+		delete(attrs, key)
 	}
 }
 
@@ -245,7 +235,6 @@ func setStorageAttribute(attrs models.JSONMap, key string, value interface{}) {
 	if attrs == nil {
 		return
 	}
-	attrs[key] = value
 	upsertSection(attrs, "storage", map[string]interface{}{key: value})
 }
 
@@ -253,7 +242,6 @@ func setItemAttribute(attrs models.JSONMap, key string, value interface{}) {
 	if attrs == nil {
 		return
 	}
-	attrs[key] = value
 	upsertSection(attrs, "item", map[string]interface{}{key: value})
 }
 
@@ -262,9 +250,6 @@ func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, v
 		return
 	}
 	namespace = normalizeExtensionNamespace(namespace)
-	if namespace == "spatial" && key == "spatial_metadata" {
-		attrs[key] = value
-	}
 	extensions := sectionJSONMap(attrs, "extensions")
 	namespaceAttrs := map[string]interface{}{}
 	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
@@ -362,6 +347,21 @@ func setExtensionSection(extensions map[string]interface{}, key string, value in
 	extensions[key] = map[string]interface{}{
 		key + "_metadata": value,
 	}
+}
+
+func setExtensionValue(extensions map[string]interface{}, namespace string, key string, value interface{}) {
+	if extensions == nil || namespace == "" || key == "" {
+		return
+	}
+	namespace = normalizeExtensionNamespace(namespace)
+	namespaceAttrs := map[string]interface{}{}
+	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
+		for k, v := range existing {
+			namespaceAttrs[k] = v
+		}
+	}
+	namespaceAttrs[key] = value
+	extensions[namespace] = namespaceAttrs
 }
 
 func stringValue(value interface{}) string {

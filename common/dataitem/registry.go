@@ -1,6 +1,7 @@
 package dataitem
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -12,6 +13,11 @@ var (
 
 // Register 注册组合数据项检测器。
 func Register(d CompositeItemDetector) {
+	if provider, ok := d.(FormatRuleProvider); ok {
+		if err := ValidateFormatRule(provider.Rule()); err != nil {
+			panic(fmt.Sprintf("invalid dataitem detector rule: %v", err))
+		}
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	detectors = append(detectors, d)

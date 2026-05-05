@@ -53,8 +53,8 @@ func TestNormalizeMetaItemAttributesMigratesLegacySchemaName(t *testing.T) {
 	if normalized["schema"] == "public" {
 		t.Fatalf("top-level schema should be partition map, got legacy string")
 	}
-	if normalized["schema_name"] != "public" {
-		t.Fatalf("schema_name = %v, want public", normalized["schema_name"])
+	if normalized["schema_name"] != nil {
+		t.Fatalf("flat schema_name should be removed: %#v", normalized)
 	}
 	storage := normalized["storage"].(map[string]interface{})
 	if storage["schema_name"] != "public" {
@@ -102,8 +102,8 @@ func TestNormalizeMetaItemAttributesProtectsPartitionedCoreFromFlatConflicts(t *
 	if item["data_family"] != "tabular" || item["format"] != "geojson" {
 		t.Fatalf("item section = %#v, want partitioned core to win", item)
 	}
-	if normalized["data_family"] != "tabular" || normalized["format"] != "geojson" {
-		t.Fatalf("flat compatibility = %#v, want partitioned core mirrored", normalized)
+	if normalized["data_family"] != nil || normalized["format"] != nil {
+		t.Fatalf("flat core fields should be removed: %#v", normalized)
 	}
 }
 
@@ -161,15 +161,15 @@ func TestUpsertSectionMergesExistingSection(t *testing.T) {
 	}
 }
 
-func TestSetAttributeHelpersWritePartitionAndFlatCompatibility(t *testing.T) {
+func TestSetAttributeHelpersWritePartitionOnly(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
 	setStorageAttribute(attrs, "physical_path", "bucket/data.parquet")
 	setItemAttribute(attrs, "format", "parquet")
 
-	if attrs["physical_path"] != "bucket/data.parquet" || attrs["format"] != "parquet" {
-		t.Fatalf("flat compatibility fields missing: %#v", attrs)
+	if attrs["physical_path"] != nil || attrs["format"] != nil {
+		t.Fatalf("flat compatibility fields should not be written: %#v", attrs)
 	}
 	storage := attrs["storage"].(map[string]interface{})
 	if storage["physical_path"] != "bucket/data.parquet" {
@@ -181,7 +181,7 @@ func TestSetAttributeHelpersWritePartitionAndFlatCompatibility(t *testing.T) {
 	}
 }
 
-func TestSetExtensionAttributeWritesNamespaceAndFlatCompatibility(t *testing.T) {
+func TestSetExtensionAttributeWritesNamespaceOnly(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
@@ -189,8 +189,8 @@ func TestSetExtensionAttributeWritesNamespaceAndFlatCompatibility(t *testing.T) 
 
 	setExtensionAttribute(attrs, "spatial", "spatial_metadata", spatial)
 
-	if attrs["spatial_metadata"] == nil {
-		t.Fatalf("flat spatial_metadata missing: %#v", attrs)
+	if attrs["spatial_metadata"] != nil {
+		t.Fatalf("flat spatial_metadata should not be written: %#v", attrs)
 	}
 	extensions := attrs["extensions"].(map[string]interface{})
 	spatialExt := extensions["spatial"].(map[string]interface{})
@@ -241,12 +241,16 @@ func TestNormalizeMetaItemAttributesMovesUnregisteredFlatKeysToUnqualified(t *te
 	if unqualified["width"] != 800 || unqualified["page_count"] != 12 || unqualified["vendor_key"] != "kept" {
 		t.Fatalf("unqualified extension = %#v, want moved flat keys", unqualified)
 	}
-	if normalized["bucket"] != "addp" {
-		t.Fatalf("registered flat compatibility field should stay: %#v", normalized)
+	if normalized["bucket"] != nil {
+		t.Fatalf("registered flat compatibility field should be removed after section migration: %#v", normalized)
+	}
+	storage := normalized["storage"].(map[string]interface{})
+	if storage["bucket"] != "addp" {
+		t.Fatalf("storage.bucket missing after migration: %#v", storage)
 	}
 }
 
-func TestNormalizeMetaItemAttributesOnlyEmitsRegisteredFlatKeys(t *testing.T) {
+func TestNormalizeMetaItemAttributesOnlyEmitsStandardTopLevelKeys(t *testing.T) {
 	t.Parallel()
 
 	normalized := normalizeMetaItemAttributes(models.JSONMap{
@@ -258,8 +262,15 @@ func TestNormalizeMetaItemAttributesOnlyEmitsRegisteredFlatKeys(t *testing.T) {
 		"custom_private": "kept",
 	})
 
+	allowedTopLevel := map[string]struct{}{
+		"schema_version": {},
+		"storage":        {},
+		"item":           {},
+		"schema":         {},
+		"extensions":     {},
+	}
 	for key := range normalized {
-		if _, allowed := allowedFlatAttributeKeys[key]; !allowed {
+		if _, allowed := allowedTopLevel[key]; !allowed {
 			t.Fatalf("unexpected flat attribute key %q in %#v", key, normalized)
 		}
 	}
@@ -275,10 +286,12 @@ func TestExtractionExtensionIsStandardAndNotFlat(t *testing.T) {
 		"custom_attrs": map[string]interface{}{"width": 800},
 	})
 	setExtractionAttribute(attrs, "schema_info", map[string]interface{}{"row_count": 10})
+	attrs["plain_text_preview"] = "hello"
 
 	normalized := normalizeMetaItemAttributes(attrs)
 	if normalized["metadata_extracted"] != nil || normalized["extractor_available"] != nil ||
-		normalized["extracted_metadata"] != nil || normalized["schema_info"] != nil {
+		normalized["extracted_metadata"] != nil || normalized["schema_info"] != nil ||
+		normalized["plain_text_preview"] != nil {
 		t.Fatalf("extraction fields should not be flat: %#v", normalized)
 	}
 
@@ -289,6 +302,9 @@ func TestExtractionExtensionIsStandardAndNotFlat(t *testing.T) {
 	}
 	if extraction["extracted_metadata"] == nil || extraction["schema_info"] == nil {
 		t.Fatalf("extraction payload missing: %#v", extraction)
+	}
+	if extraction["plain_text_preview"] != "hello" {
+		t.Fatalf("plain text preview missing from extraction: %#v", extraction)
 	}
 	if _, ok := extensions["unqualified"]; ok {
 		t.Fatalf("extraction should be standard namespace, got extensions %#v", extensions)

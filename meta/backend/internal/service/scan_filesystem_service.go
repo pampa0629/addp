@@ -158,52 +158,66 @@ func (s *FileSystemScanService) scanDirectory(
 
 	totalItems := 0
 
-	// bucket 根目录不参与 detector 检测（避免把整个 bucket 识别为一张表）
-	// 子目录才走 detector 链（模式 A：目录即表）
-	if !isBucketRoot {
-		detected, err := s.resolveFileSystemDirectoryItem(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
+	claimedPaths := dataitem.ResourceClaimSet{}
+
+	// 根目录允许非独占组合识别（如根目录下的 Shapefile），但不允许被目录树 detector 整体吞掉。
+	// 子目录走完整组合识别入口；只有 directory_tree 等明确独占范围时才停止后续探测。
+	if isBucketRoot {
+		detection, err := resolveNonExclusiveScopeItems(ctx, contentReader, connInfo, resource, dirPath, files, subdirs)
+		if err != nil {
+			s.log.Warn("提取根目录组合数据项信息失败",
+				"path", dirPath,
+				"error", err,
+			)
+		}
+		if detection != nil {
+			for path, claimed := range detection.Claims {
+				if claimed {
+					claimedPaths[path] = true
+				}
+			}
+			for _, detected := range detection.Items {
+				if detected == nil {
+					continue
+				}
+				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected) {
+					totalItems++
+				}
+			}
+		}
+	} else {
+		detection, err := s.resolveFileSystemDirectoryItems(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取复合数据项信息失败",
 				"path", dirPath,
 				"error", err,
 			)
 		}
-		if detected != nil {
-			attrs := toJSONMap(dataitem.BuildAttributes(detected))
-			if len(detected.Fields) > 0 {
-				setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
+		if detection != nil {
+			for path, claimed := range detection.Claims {
+				if claimed {
+					claimedPaths[path] = true
+				}
 			}
-
-			itemName, fullName := inferItemName(dirPath)
-
-			_, upsertErr := s.repo.UpsertItem(
-				tenantID, resource.ID, parentNode,
-				detected.ItemType, itemName, fullName,
-				attrs, nil, &detected.SizeBytes, nil,
-			)
-			if upsertErr != nil {
-				s.log.Warn("保存复合数据项失败",
-					"path", dirPath,
-					"item_type", detected.ItemType,
-					"error", upsertErr,
-				)
-			} else {
-				totalItems++
-				s.log.Info("识别到复合数据项",
-					"path", dirPath,
-					"item_type", detected.ItemType,
-					"composition_type", detected.CompositionType,
-					"data_family", detected.DataFamily,
-					"name", itemName,
-				)
+			for _, detected := range detection.Items {
+				if detected == nil {
+					continue
+				}
+				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected) {
+					totalItems++
+				}
 			}
-			// 匹配到 detector 后不再递归（整个目录作为一个数据项）
-			return totalItems, nil
+			if detection.Exclusive {
+				return totalItems, nil
+			}
 		}
 	}
 
-	// 未匹配到任何 detector，逐文件处理（模式 B + 普通文件）
+	// 未被组合 detector 认领的文件继续逐文件处理（模式 B + 普通文件）
 	for _, file := range files {
+		if claimedPaths[file.Path] {
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(file.Name))
 		if commonParquet.IsLakeTableExt(ext) {
 			// 模式 B：单个结构化文件识别为 lake_table
@@ -299,7 +313,45 @@ func (s *FileSystemScanService) scanDirectory(
 	return totalItems, nil
 }
 
-func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
+func (s *FileSystemScanService) persistFileSystemDetectedItem(
+	resource *commonModels.Engine,
+	tenantID uint,
+	parentNode *models.MetaNode,
+	dirPath string,
+	detected *dataitem.DetectedItem,
+) bool {
+	attrs := toJSONMap(dataitem.BuildAttributes(detected))
+	if len(detected.Fields) > 0 {
+		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
+	}
+
+	itemName, fullName := inferDetectedItemName(dirPath, detected)
+	_, upsertErr := s.repo.UpsertItem(
+		tenantID, resource.ID, parentNode,
+		detected.ItemType, itemName, fullName,
+		attrs, nil, &detected.SizeBytes, nil,
+	)
+	if upsertErr != nil {
+		s.log.Warn("保存复合数据项失败",
+			"path", dirPath,
+			"item_type", detected.ItemType,
+			"entry_path", detected.EntryPath,
+			"error", upsertErr,
+		)
+		return false
+	}
+	s.log.Info("识别到复合数据项",
+		"path", dirPath,
+		"entry_path", detected.EntryPath,
+		"item_type", detected.ItemType,
+		"composition_type", detected.CompositionType,
+		"data_family", detected.DataFamily,
+		"name", itemName,
+	)
+	return true
+}
+
+func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.CatalogProvider,
@@ -308,7 +360,7 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*dataitem.DetectedItem, error) {
+) (*dataitem.DetectionResult, error) {
 	if len(subdirs) > 0 {
 		recursiveFiles, recursiveSubdirs, err := s.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, dirPath)
 		if err != nil {
@@ -319,7 +371,7 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
 			if info.SizeBytes != nil {
 				totalSize = *info.SizeBytes
 			}
-			return &dataitem.DetectedItem{
+			item := &dataitem.DetectedItem{
 				ItemType:        "lake_table",
 				CompositionType: info.CompositionType,
 				DataFamily:      info.DataFamily,
@@ -330,11 +382,20 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
 				SizeBytes:       totalSize,
 				Fields:          info.Fields,
 				Attributes:      info.Attributes,
+			}
+			claims := dataitem.ResourceClaimSet{}
+			for _, path := range item.ComponentFiles {
+				claims[path] = true
+			}
+			return &dataitem.DetectionResult{
+				Items:     []*dataitem.DetectedItem{item},
+				Claims:    claims,
+				Exclusive: item.CompositionType == dataitem.CompositionTypeDirectoryTree,
 			}, nil
 		}
 	}
 
-	return dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
+	return dataitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
 		ContentReader: contentReader,
 		ConnInfo:      connInfo,
 		EngineID:      resource.ID,
@@ -342,6 +403,54 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
 		Files:         files,
 		Subdirs:       subdirs,
 	})
+}
+
+func resolveNonExclusiveScopeItems(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	resource *commonModels.Engine,
+	dirPath string,
+	files []plugin.FileEntry,
+	subdirs []plugin.DirEntry,
+) (*dataitem.DetectionResult, error) {
+	result := &dataitem.DetectionResult{
+		Items:  []*dataitem.DetectedItem{},
+		Claims: dataitem.ResourceClaimSet{},
+	}
+	input := dataitem.DirectoryResolveInput{
+		ContentReader: contentReader,
+		ConnInfo:      connInfo,
+		EngineID:      resource.ID,
+		DirPath:       dirPath,
+		Files:         files,
+		Subdirs:       subdirs,
+	}
+	for _, detector := range dataitem.GetAll() {
+		scoped, ok := detector.(dataitem.ScopeItemDetector)
+		if !ok {
+			continue
+		}
+		scopeResult, err := scoped.ResolveItems(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		if scopeResult == nil || scopeResult.Exclusive {
+			continue
+		}
+		for _, item := range scopeResult.Items {
+			if item == nil || item.CompositionType == dataitem.CompositionTypeDirectoryTree {
+				continue
+			}
+			result.Items = append(result.Items, item)
+		}
+		for path, claimed := range scopeResult.Claims {
+			if claimed {
+				result.Claims[path] = true
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s *FileSystemScanService) listRoots(
@@ -479,7 +588,6 @@ func setSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	attrs["fields"] = fields
 	upsertSection(attrs, "schema", map[string]interface{}{"fields": fields})
 }
 
@@ -543,4 +651,28 @@ func inferItemName(dirPath string) (name, fullName string) {
 	name = parts[len(parts)-1]
 	fullName = cleaned
 	return
+}
+
+func inferDetectedItemName(dirPath string, item *dataitem.DetectedItem) (name, fullName string) {
+	if item == nil {
+		return inferItemName(dirPath)
+	}
+	switch item.CompositionType {
+	case dataitem.CompositionTypeSingleFile, dataitem.CompositionTypeMultiFile, dataitem.CompositionTypeContainerFile:
+		if item.EntryPath != "" {
+			cleaned := strings.Trim(item.EntryPath, "/")
+			if cleaned != "" {
+				return filepath.Base(cleaned), cleaned
+			}
+		}
+	case dataitem.CompositionTypeDirectoryTree:
+		return inferItemName(dirPath)
+	}
+	if item.EntryPath != "" {
+		cleaned := strings.Trim(item.EntryPath, "/")
+		if cleaned != "" {
+			return filepath.Base(cleaned), cleaned
+		}
+	}
+	return inferItemName(dirPath)
 }

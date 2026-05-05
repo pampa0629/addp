@@ -245,6 +245,8 @@
 
 ### P0
 
+- 按 `addp数据项detector改造设计规范.md` 完成 detector 抽象改造，确保扫描范围可以产出 0..N 个 item，并通过 claimed resources 避免重复落库。
+- 完成所有已支持格式从 meta 扫描、attributes 内容到 manager 预览效果的端到端验证。
 - 清理提取状态类历史平铺字段的旧兜底读取。
 - 继续清理非 Transfer 核心代码中的历史 attributes 读取和私有扩展读取。
 - 保持本文和概念规范、落地指南术语同步。
@@ -263,7 +265,30 @@
 - 建立第三方插件扩展声明机制。
 - 建立更统一的能力发现层。
 
-## 六、后续接力点
+## 六、全格式端到端验证清单
+
+本清单用于逐一验证当前已支持格式在真实引擎中的完整链路。每个格式必须覆盖：
+
+1. meta 扫描结果。
+2. `meta_item.name/full_name/node_id/item_type`。
+3. `attributes.storage/item/schema/extensions`。
+4. manager 目录树位置。
+5. manager 预览路径和预览效果。
+6. 混合目录、同目录多 item、未认领资源不丢失的回归场景。
+
+| 格式 | 组合形态 | 引擎/场景 | 当前重点 | 状态 |
+|---|---|---|---|---|
+| Shapefile | `multi_file` | NFS、MinIO/S3 | 多组同目录识别；入口文件名带扩展名；组件 claimed；DBF 字段和空间扩展；manager 挂在目录下并按 `.shp` 入口预览 | 进行中 |
+| GeoJSON | `single_file` | NFS、MinIO/S3 | 字段采样、空间扩展、单文件 table item、预览路径不重新猜格式 | 待验证 |
+| CSV / TSV | `single_file` | NFS、MinIO/S3 | 分隔符、编码、表头、schema.fields、普通文件与文件表路由 | 待验证 |
+| Excel | `container_file` | NFS、MinIO/S3 | 容器文件作为一条 meta item；sheet 信息进入 attributes；manager 预览默认 sheet | 待验证 |
+| SQLite / GeoPackage | `container_file` | NFS、MinIO/S3 | 容器文件 item；内部表/图层 attributes 展开；GeoPackage 空间扩展 | 待验证 |
+| Parquet / ORC / Avro 单文件 | `single_file` | NFS、MinIO/S3 | 文件名带扩展还是逻辑表名的既有规则复核；schema 解析；manager 表格预览 | 待验证 |
+| 湖表目录树 | `directory_tree` | NFS、MinIO/S3 | 独占条件、辅助文件忽略、分区目录、递归组件 claimed、manager 挂目录树 item | 待验证 |
+| 图片 | `single_file` | NFS、MinIO/S3 | media 扩展、EXIF/GPS、对象预览 | 待验证 |
+| PDF | `single_file` | NFS、MinIO/S3 | document/extraction 扩展、文本预览、对象预览 | 待验证 |
+
+## 七、后续接力点
 
 1. 清理提取状态类历史平铺字段的旧兜底读取。
 2. 补齐 `extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction` 更多 parser / extractor 写入和读取。

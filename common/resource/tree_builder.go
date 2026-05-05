@@ -292,11 +292,11 @@ func calculateItemCount(itemType string, attributes map[string]interface{}) int 
 
 // convertMetaNode 递归转换 MetaNode 为 TreeNode
 func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNode) *TreeNode {
-	// 统一处理：直接使用 parsePath 解析 FullName
+	// 统一处理：按引擎语义从 FullName 解析 ResourceLocator.Path
 	// - PostgreSQL: "public.users" → ["public", "users"]
 	// - MinIO: "addp/image/file.jpg" → ["addp", "image", "file.jpg"]
 	// Path 包含完整路径，可以唯一标识资源
-	path := parsePath(node.FullName, node.NodeType)
+	path := parsePathForEngine(engine.EngineType, node.FullName, node.NodeType)
 
 	// 构建 ResourceLocator
 	loc := &ResourceLocator{
@@ -393,6 +393,10 @@ func calculateItemDepth(itemType, fullName string) int {
 // parsePath 从 FullName 解析路径
 // 不同类型的资源有不同的路径格式
 func parsePath(fullName string, nodeType string) []string {
+	return parsePathForEngine("", fullName, nodeType)
+}
+
+func parsePathForEngine(engineType string, fullName string, nodeType string) []string {
 	if fullName == "" {
 		return []string{}
 	}
@@ -402,7 +406,12 @@ func parsePath(fullName string, nodeType string) []string {
 		// PostgreSQL: schema 只有一级路径
 		// MongoDB: database 只有一级路径
 		return []string{fullName}
-	case "table", "collection", "label", "relationship":
+	case "table":
+		if isPathSemanticEngine(engineType) {
+			return splitSlashPath(fullName)
+		}
+		return strings.Split(fullName, ".")
+	case "collection", "label", "relationship":
 		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
@@ -410,14 +419,27 @@ func parsePath(fullName string, nodeType string) []string {
 		// MinIO/S3: bucket/prefix/object/lake_table 使用斜杠分隔
 		// 文件系统: root/dir/file/lake_table 使用斜杠分隔
 		// 注意：文件系统 full_name 可能以 "/" 开头，需去掉首尾斜杠，避免产生空路径段
-		trimmed := strings.Trim(fullName, "/")
-		if trimmed == "" {
-			return []string{}
-		}
-		return strings.Split(trimmed, "/")
+		return splitSlashPath(fullName)
 	default:
 		// 默认：尝试斜杠分隔
 		return strings.Split(fullName, "/")
+	}
+}
+
+func splitSlashPath(fullName string) []string {
+	trimmed := strings.Trim(fullName, "/")
+	if trimmed == "" {
+		return []string{}
+	}
+	return strings.Split(trimmed, "/")
+}
+
+func isPathSemanticEngine(engineType string) bool {
+	switch strings.ToLower(engineType) {
+	case "minio", "s3", "nfs", "nas":
+		return true
+	default:
+		return false
 	}
 }
 

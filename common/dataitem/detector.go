@@ -22,3 +22,15 @@ type CompositeItemDetector interface {
 	// ItemType 对应 MetaItem.item_type。
 	ItemType() string
 }
+
+// ScopeItemDetector 从一个扫描范围内识别 0..N 个组合数据项。
+// 新 detector 应优先实现该接口，避免把“观察范围”误当成 item 边界。
+type ScopeItemDetector interface {
+	ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error)
+	Priority() int
+}
+
+// FormatRuleProvider 声明 detector 背后的格式规则。
+type FormatRuleProvider interface {
+	Rule() FormatRule
+}
