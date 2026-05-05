@@ -66,6 +66,38 @@ func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
 	}
 }
 
+func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
+	item := InferSingleFile(SingleFileInput{
+		Name:        "roads.geojson",
+		Path:        "bucket/roads.geojson",
+		Size:        42,
+		ContentType: "application/geo+json",
+	})
+
+	attrs := BuildAttributes(item)
+	itemAttrs := attrs["item"].(map[string]interface{})
+	if itemAttrs["composition_type"] != string(CompositionTypeSingleFile) {
+		t.Fatalf("item.composition_type = %v, want %s", itemAttrs["composition_type"], CompositionTypeSingleFile)
+	}
+	if itemAttrs["data_family"] != string(DataFamilyTabular) {
+		t.Fatalf("item.data_family = %v, want %s", itemAttrs["data_family"], DataFamilyTabular)
+	}
+	if itemAttrs["format"] != string(format.FormatGeoJSON) {
+		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatGeoJSON)
+	}
+	if attrs["data_family"] != itemAttrs["data_family"] {
+		t.Fatalf("flat data_family = %v, want partition-compatible value", attrs["data_family"])
+	}
+
+	storageAttrs := attrs["storage"].(map[string]interface{})
+	if storageAttrs["physical_path"] != "bucket/roads.geojson" {
+		t.Fatalf("storage.physical_path = %v, want bucket/roads.geojson", storageAttrs["physical_path"])
+	}
+	if storageAttrs["total_size"] != int64(42) {
+		t.Fatalf("storage.total_size = %v, want 42", storageAttrs["total_size"])
+	}
+}
+
 func TestInferDataFamilyCanonicalizesCommonAliases(t *testing.T) {
 	tests := []struct {
 		formatName string

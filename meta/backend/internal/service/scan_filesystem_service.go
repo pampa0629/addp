@@ -177,7 +177,7 @@ func (s *FileSystemScanService) scanDirectory(
 		if detected != nil {
 			attrs := toJSONMap(dataitem.BuildAttributes(detected))
 			if len(detected.Fields) > 0 {
-				attrs["fields"] = fieldAttributesFromFormat(detected.Fields)
+				setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
 			}
 
 			itemName, fullName := inferItemName(dirPath)
@@ -233,18 +233,18 @@ func (s *FileSystemScanService) scanDirectory(
 				}
 				attrs = toJSONMap(dataitem.BuildAttributes(detected))
 				if len(info.Fields) > 0 {
-					attrs["fields"] = fieldAttributesFromFormat(info.Fields)
+					setSchemaFields(attrs, fieldAttributesFromFormat(info.Fields))
 				}
 			} else {
-				attrs["format"] = ext[1:] // 去掉点号
-				attrs["mode"] = "file"
-				attrs["file_count"] = 1
-				attrs["total_size"] = file.Size
-				attrs["physical_path"] = file.Path
-				attrs["entry_path"] = file.Path
-				attrs["component_files"] = []string{file.Path}
-				attrs["composition_type"] = string(dataitem.CompositionTypeSingleFile)
-				attrs["data_family"] = string(dataitem.DataFamilyTabular)
+				setItemAttribute(attrs, "format", ext[1:]) // 去掉点号
+				setItemAttribute(attrs, "mode", "file")
+				setItemAttribute(attrs, "file_count", 1)
+				setStorageAttribute(attrs, "total_size", file.Size)
+				setStorageAttribute(attrs, "physical_path", file.Path)
+				setItemAttribute(attrs, "entry_path", file.Path)
+				setItemAttribute(attrs, "component_files", []string{file.Path})
+				setItemAttribute(attrs, "composition_type", string(dataitem.CompositionTypeSingleFile))
+				setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyTabular))
 			}
 
 			// 文件名去掉扩展名作为逻辑表名
@@ -394,6 +394,14 @@ func fieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface
 		})
 	}
 	return fieldsData
+}
+
+func setSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
+	if attrs == nil || len(fields) == 0 {
+		return
+	}
+	attrs["fields"] = fields
+	upsertSection(attrs, "schema", map[string]interface{}{"fields": fields})
 }
 
 func fileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {

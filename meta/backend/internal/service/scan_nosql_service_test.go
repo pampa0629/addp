@@ -52,6 +52,33 @@ func TestNoSQLItemType(t *testing.T) {
 	}
 }
 
+func TestBuildDocCollectionAttributesWritesSchemaSection(t *testing.T) {
+	t.Parallel()
+
+	attrs := buildDocCollectionAttributesFromMetadata(&plugin.ItemMetadata{
+		Fields: []plugin.FieldInfo{{
+			Name: "name",
+			Type: "string",
+		}},
+		Indexes: []plugin.IndexInfo{{
+			Name:      "name_idx",
+			Fields:    []string{"name"},
+			IndexType: "btree",
+		}},
+	})
+
+	schema := attrs["schema"].(map[string]interface{})
+	if _, ok := schema["fields"]; !ok {
+		t.Fatalf("schema.fields missing: %#v", schema)
+	}
+	if _, ok := schema["indexes"]; !ok {
+		t.Fatalf("schema.indexes missing: %#v", schema)
+	}
+	if attrs["fields"] == nil || attrs["indexes"] == nil {
+		t.Fatalf("flat compatibility fields/indexes missing: %#v", attrs)
+	}
+}
+
 func TestSoftDeleteLegacyGraphTableItems(t *testing.T) {
 	t.Parallel()
 

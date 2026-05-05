@@ -63,6 +63,64 @@ func TestResolveProviderByMetaUsesDataFamilyAndFormat(t *testing.T) {
 	}
 }
 
+func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	resolver := NewPreviewResolver(registry, nil, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"data_family": "document",
+			"format":      "pdf",
+			"item": map[string]interface{}{
+				"data_family": "tabular",
+				"format":      "geojson",
+			},
+		}},
+		ItemType: "object",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "roads.geojson"})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:file-table" {
+		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	}
+}
+
+func TestStringAttributeReadsPartitionedStorageBeforeFlatFallback(t *testing.T) {
+	attrs := map[string]interface{}{
+		"physical_path": "legacy/path.geojson",
+		"storage": map[string]interface{}{
+			"physical_path": "bucket/path.geojson",
+		},
+	}
+
+	if got := stringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
+		t.Fatalf("stringAttribute() = %q, want bucket/path.geojson", got)
+	}
+}
+
+func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, nil)
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{
+			Path: []string{"bucket", "table.parquet"},
+		},
+		Engine:       &commonModels.Engine{EngineType: "minio"},
+		Metadata:     &commonModels.MetaNode{Attributes: map[string]interface{}{}},
+		ItemType:     "lake_table",
+		PhysicalPath: "bucket/table.parquet",
+	}
+
+	legacyReq := resolver.convertToLegacyRequest(req)
+	if legacyReq.PhysicalPath != "bucket/table.parquet" {
+		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", legacyReq.PhysicalPath)
+	}
+}
+
 func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, nil)
 	req := &PreviewResolverRequest{

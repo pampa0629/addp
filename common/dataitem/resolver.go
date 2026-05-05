@@ -88,29 +88,53 @@ func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	if item == nil {
 		return map[string]interface{}{}
 	}
-	attrs := make(map[string]interface{}, len(item.Attributes)+8)
+	attrs := make(map[string]interface{}, len(item.Attributes)+10)
 	for k, v := range item.Attributes {
 		attrs[k] = v
 	}
-	attrs["composition_type"] = string(item.CompositionType)
-	attrs["data_family"] = string(item.DataFamily)
+
+	itemAttrs := map[string]interface{}{}
+	storageAttrs := map[string]interface{}{}
+
+	setCompatAndSectionValue(attrs, itemAttrs, "composition_type", string(item.CompositionType))
+	setCompatAndSectionValue(attrs, itemAttrs, "data_family", string(item.DataFamily))
 	if item.Format != "" {
-		attrs["format"] = item.Format
+		setCompatAndSectionValue(attrs, itemAttrs, "format", item.Format)
 	}
 	if item.PhysicalPath != "" {
-		attrs["physical_path"] = item.PhysicalPath
+		setCompatAndSectionValue(attrs, storageAttrs, "physical_path", item.PhysicalPath)
 	}
 	if item.EntryPath != "" {
-		attrs["entry_path"] = item.EntryPath
+		setCompatAndSectionValue(attrs, itemAttrs, "entry_path", item.EntryPath)
 	}
 	if len(item.ComponentFiles) > 0 {
-		attrs["component_files"] = item.ComponentFiles
-		attrs["file_count"] = len(item.ComponentFiles)
+		setCompatAndSectionValue(attrs, itemAttrs, "component_files", item.ComponentFiles)
+		setCompatAndSectionValue(attrs, itemAttrs, "file_count", len(item.ComponentFiles))
 	}
 	if item.SizeBytes > 0 {
-		attrs["total_size"] = item.SizeBytes
+		setCompatAndSectionValue(attrs, storageAttrs, "total_size", item.SizeBytes)
 	}
+	attrs["item"] = mergeSection(attrs["item"], itemAttrs)
+	attrs["storage"] = mergeSection(attrs["storage"], storageAttrs)
 	return attrs
+}
+
+func setCompatAndSectionValue(attrs map[string]interface{}, section map[string]interface{}, key string, value interface{}) {
+	attrs[key] = value
+	section[key] = value
+}
+
+func mergeSection(existing interface{}, additions map[string]interface{}) map[string]interface{} {
+	merged := map[string]interface{}{}
+	if section, ok := existing.(map[string]interface{}); ok {
+		for k, v := range section {
+			merged[k] = v
+		}
+	}
+	for k, v := range additions {
+		merged[k] = v
+	}
+	return merged
 }
 
 // InferSingleFileItem 基于单个文件推断基础 item 语义。

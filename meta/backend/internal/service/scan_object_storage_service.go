@@ -1208,14 +1208,15 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 
 		// 湖表属性（itemType 和 itemName 已在上方确定）
 		if itemType == "lake_table" {
-			enhancedAttrs["format"] = meta.FileType
-			enhancedAttrs["mode"] = "file"
+			setItemAttribute(enhancedAttrs, "format", meta.FileType)
+			setItemAttribute(enhancedAttrs, "mode", "file")
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
-			enhancedAttrs["physical_path"] = meta.Bucket + "/" + meta.Path
-			enhancedAttrs["entry_path"] = meta.Bucket + "/" + meta.Path
-			enhancedAttrs["component_files"] = []string{meta.Bucket + "/" + meta.Path}
-			enhancedAttrs["composition_type"] = string(dataitem.CompositionTypeSingleFile)
-			enhancedAttrs["data_family"] = string(dataitem.DataFamilyTabular)
+			physicalPath := meta.Bucket + "/" + meta.Path
+			setStorageAttribute(enhancedAttrs, "physical_path", physicalPath)
+			setItemAttribute(enhancedAttrs, "entry_path", physicalPath)
+			setItemAttribute(enhancedAttrs, "component_files", []string{physicalPath})
+			setItemAttribute(enhancedAttrs, "composition_type", string(dataitem.CompositionTypeSingleFile))
+			setItemAttribute(enhancedAttrs, "data_family", string(dataitem.DataFamilyTabular))
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -1345,10 +1346,10 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		fullName := commonModels.JoinObjectPath(composite.bucket, parentPath, itemName)
 
 		attrs := toJSONMap(dataitem.BuildAttributes(composite.item))
-		attrs["bucket"] = composite.bucket
-		attrs["path"] = parentPath
-		attrs["name"] = itemName
-		attrs["mode"] = "directory"
+		setStorageAttribute(attrs, "bucket", composite.bucket)
+		setStorageAttribute(attrs, "path", parentPath)
+		setStorageAttribute(attrs, "name", itemName)
+		setItemAttribute(attrs, "mode", "directory")
 
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {

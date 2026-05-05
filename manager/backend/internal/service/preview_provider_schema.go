@@ -92,8 +92,8 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 			if item.ObjectSizeBytes != nil {
 				child.SizeBytes = *item.ObjectSizeBytes
 			}
-			if v, ok := item.Attributes["content_type"].(string); ok && v != "" {
-				child.ContentType = v
+			if contentType := stringAttribute(item.Attributes, "content_type"); contentType != "" {
+				child.ContentType = contentType
 			}
 			children = append(children, child)
 		}

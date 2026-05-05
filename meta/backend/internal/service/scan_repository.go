@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -45,6 +46,143 @@ func composeNodeFullName(name string, parent *models.MetaNode, separator string)
 		separator = "."
 	}
 	return fmt.Sprintf("%s%s%s", parent.FullName, separator, name)
+}
+
+func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
+	if attrs == nil {
+		return nil
+	}
+
+	normalized := copyJSONMapForAttributes(attrs)
+	normalized["schema_version"] = 1
+
+	storage := sectionJSONMap(normalized, "storage")
+	item := sectionJSONMap(normalized, "item")
+	schema := sectionJSONMap(normalized, "schema")
+	extensions := sectionJSONMap(normalized, "extensions")
+
+	moveKeysToSection(normalized, storage, []string{
+		"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
+		"size", "total_size", "content_type", "last_modified_at", "modified_at",
+		"etag", "file_type", "object_count",
+	})
+	if schemaName := stringValue(normalized["schema_name"]); schemaName != "" {
+		storage["schema_name"] = schemaName
+	}
+	if legacySchemaName := stringValue(attrs["schema"]); legacySchemaName != "" {
+		storage["schema_name"] = legacySchemaName
+		item["namespace"] = legacySchemaName
+		normalized["schema_name"] = legacySchemaName
+	}
+
+	moveKeysToSection(normalized, item, []string{
+		"composition_type", "data_family", "format", "entry_path",
+		"component_files", "file_count", "mode",
+	})
+	moveKeysToSection(normalized, schema, []string{
+		"fields", "table_metadata", "table_type", "table_comment",
+		"primary_key", "indexes", "row_count", "document_count", "count",
+	})
+
+	if value, ok := normalized["spatial_metadata"]; ok {
+		setExtensionSection(extensions, "spatial", value)
+	}
+
+	normalized["storage"] = storage
+	normalized["item"] = item
+	normalized["schema"] = schema
+	normalized["extensions"] = extensions
+	return normalized
+}
+
+func copyJSONMapForAttributes(attrs models.JSONMap) models.JSONMap {
+	copied := make(models.JSONMap, len(attrs)+5)
+	for k, v := range attrs {
+		copied[k] = v
+	}
+	return copied
+}
+
+func sectionJSONMap(attrs models.JSONMap, key string) map[string]interface{} {
+	if section, ok := attrs[key].(map[string]interface{}); ok {
+		return section
+	}
+	if section, ok := attrs[key].(models.JSONMap); ok {
+		return map[string]interface{}(section)
+	}
+	return map[string]interface{}{}
+}
+
+func moveKeysToSection(attrs models.JSONMap, section map[string]interface{}, keys []string) {
+	for _, key := range keys {
+		if value, ok := attrs[key]; ok {
+			section[key] = value
+		}
+	}
+}
+
+func upsertSection(attrs models.JSONMap, key string, values map[string]interface{}) {
+	if attrs == nil || len(values) == 0 {
+		return
+	}
+	section := sectionJSONMap(attrs, key)
+	for k, v := range values {
+		section[k] = v
+	}
+	attrs[key] = section
+}
+
+func setStorageAttribute(attrs models.JSONMap, key string, value interface{}) {
+	if attrs == nil {
+		return
+	}
+	attrs[key] = value
+	upsertSection(attrs, "storage", map[string]interface{}{key: value})
+}
+
+func setItemAttribute(attrs models.JSONMap, key string, value interface{}) {
+	if attrs == nil {
+		return
+	}
+	attrs[key] = value
+	upsertSection(attrs, "item", map[string]interface{}{key: value})
+}
+
+func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, value interface{}) {
+	if attrs == nil || namespace == "" || key == "" {
+		return
+	}
+	attrs[key] = value
+	extensions := sectionJSONMap(attrs, "extensions")
+	namespaceAttrs := map[string]interface{}{}
+	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
+		for k, v := range existing {
+			namespaceAttrs[k] = v
+		}
+	}
+	namespaceAttrs[key] = value
+	extensions[namespace] = namespaceAttrs
+	attrs["extensions"] = extensions
+}
+
+func setExtensionSection(extensions map[string]interface{}, key string, value interface{}) {
+	if existing, ok := extensions[key].(map[string]interface{}); ok {
+		existingKey := key + "_metadata"
+		if _, exists := existing[existingKey]; !exists {
+			existing[existingKey] = value
+		}
+		return
+	}
+	extensions[key] = map[string]interface{}{
+		key + "_metadata": value,
+	}
+}
+
+func stringValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
 }
 
 // ============================================================================
@@ -269,6 +407,8 @@ func (r *ScanRepository) UpsertItemSelective(
 	rowCount, sizeBytes *int64,
 	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
+	attrs = normalizeMetaItemAttributes(attrs)
+
 	// 生成数据指纹
 	fingerprint, err := r.generateFingerprint(engineID, node, itemType, name, fullName, attrs)
 	if err != nil {

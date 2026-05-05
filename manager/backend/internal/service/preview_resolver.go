@@ -300,8 +300,8 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		req.ItemType = metaItem.ItemType
 		// 提取 physical_path（仅单文件湖表，mode="file"）
 		// 目录型湖表的 physical_path 是目录路径，不能当文件读
-		if physPath, ok := metaItem.Attributes["physical_path"].(string); ok && physPath != "" {
-			mode, _ := metaItem.Attributes["mode"].(string)
+		if physPath := stringAttribute(metaItem.Attributes, "physical_path"); physPath != "" {
+			mode := stringAttribute(metaItem.Attributes, "mode")
 			if mode == "file" {
 				req.PhysicalPath = physPath
 			}

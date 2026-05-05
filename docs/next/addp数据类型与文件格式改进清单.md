@@ -100,6 +100,7 @@ common/dataitem/
 - `InferSingleFile`
 - `InferFormat`
 - `InferDataFamily`
+- `BuildAttributes` 已开始输出 `attributes.item` / `attributes.storage` 分区，同时保留平铺兼容字段
 
 当前说明：
 
@@ -138,16 +139,18 @@ common/dataitem/
 - 文件系统普通文件通过 `common/dataitem.InferSingleFileItem` 补齐标准 item attributes。
 - 对象存储单对象通过 `common/dataitem.InferSingleFile` 补齐标准 item attributes。
 - 对象存储同一前缀下的直接子对象会按前缀分组后进入 `common/dataitem.ResolveDirectory`。
-- 关系数据库表先落 `data_family=tabular`、`format=<engine_type>`。
-- NoSQL collection 先落 `data_family=tabular`、`format=<engine_type>`。
+- 关系数据库表先落 `data_family=tabular`、`format=<engine_type>`，并已源头写入 `attributes.item` / `attributes.schema`。
+- NoSQL collection 先落 `data_family=tabular`、`format=<engine_type>`，字段和索引已源头写入 `attributes.schema`。
 - 图数据库 label / relationship 先落 `data_family=graph`。
+- 元数据查询接口已优先从 `attributes.schema` 和 `attributes.extensions.spatial` 读取字段与空间信息，并保留平铺字段兼容。
 
 当前不足：
 
 - 扫描中间结构仍未完全统一。
 - 部分路径仍手工写 attributes 顶层字段。
-- `attributes` 还没有统一 normalizer。
-- 平铺字段兼容层还没有明确删除计划。
+- `attributes` 已在 `ScanRepository.UpsertItemSelective` 接入第一版 normalizer，且 `common/dataitem.BuildAttributes`、数据库扫描、NoSQL 扫描、文件系统扫描、对象存储扫描已开始源头双写标准分区与平铺兼容字段。
+- 数据库空间元数据已源头双写到 `attributes.extensions.spatial`。
+- 平铺字段兼容层已开始保留读取兼容，但删除计划还没有明确。
 
 ### 4. `manager`
 
@@ -174,7 +177,7 @@ common/dataitem/
 
 - provider 内部仍保留部分历史兜底格式推断。
 - `PreviewRegistry.Resolve` 的 `Supports + priority` 机制仍作为兼容层存在。
-- 后续应迁移为优先消费 `attributes.item` 分区。
+- `PreviewResolver` 和共享属性读取 helper 已优先消费 `attributes.item` / `attributes.storage` 等分区，但 provider 内部还需继续减少兜底猜测。
 
 ### 5. 平行模型
 
@@ -353,7 +356,7 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 
 ### 阶段 3：`meta_item.attributes` 治理
 
-状态：已形成原则，待实现。
+状态：第一版已开始。
 
 目标：
 
@@ -363,16 +366,16 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 
 任务：
 
-1. 定义 attributes 目标结构：`schema_version`、`storage`、`item`、`schema`、`extensions`。
+1. 定义 attributes 目标结构：`schema_version`、`storage`、`item`、`schema`、`extensions`。（已完成）
 2. 明确平台保留字段和第三方插件可写字段边界。
-3. 新增 attributes normalizer，所有 `meta_item` 落库前统一经过 normalizer。
-4. 让 `common/dataitem` 输出进入 `attributes.item`。
-5. 让存储引擎、catalog provider、对象枚举结果进入 `attributes.storage`。
-6. 让字段、主键、索引等结构信息进入 `attributes.schema`。
-7. 让空间、媒体、文档、统计等通用能力进入标准扩展分区。
+3. 新增 attributes normalizer，所有 `meta_item` 落库前统一经过 normalizer。（第一版已完成）
+4. 让 `common/dataitem` 输出进入 `attributes.item`。（源头第一版已双写分区和平铺兼容）
+5. 让存储引擎、catalog provider、对象枚举结果进入 `attributes.storage`。（文件系统和对象存储扫描源头第一版已双写）
+6. 让字段、主键、索引等结构信息进入 `attributes.schema`。（数据库、NoSQL、文件系统源头第一版已双写，查询接口已优先读取）
+7. 让空间、媒体、文档、统计等通用能力进入标准扩展分区。（空间第一版已源头双写到 `extensions.spatial` 且查询接口已优先读取，其他扩展待补齐）
 8. 让第三方或格式私有属性进入 `attributes.extensions.<namespace>`。
 9. 定义冲突处理规则，禁止 parser / extractor / 第三方插件直接覆盖平台核心字段。
-10. 为迁移期保留旧平铺字段兼容读取，但新增读取逻辑优先消费分区结构。
+10. 为迁移期保留旧平铺字段兼容读取，但新增读取逻辑优先消费分区结构。（manager 与 meta 查询第一版已完成）
 
 建议优先实现顺序：
 
@@ -430,14 +433,15 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 3. 优先按 `item_type` 处理 lake table、collection、label、relationship。
 4. 再按 `data_family` / `format` 选择文件表、数据库表、对象内容或文件系统预览能力。
 5. `PreviewRegistry.Resolve` 标记为过渡兼容。
+6. `PreviewResolver` 已优先读取 `attributes.item.data_family` / `attributes.item.format`，并保留平铺字段兼容。
 
 待办：
 
-1. 迁移为优先读取 `attributes.item` 分区。
+1. 继续迁移 provider 内部读取路径，优先消费 `attributes.item` / `attributes.storage` / `attributes.schema` 分区。
 2. 删除 provider 内部兜底格式推断。
 3. 删除未扫描路径直接预览旧入口。
 4. 删除 provider 优先级抢语义路由。
-5. 增加预览路由表测试。
+5. 增加更多预览路由表测试。
 
 验收：
 

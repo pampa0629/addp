@@ -163,14 +163,9 @@ func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([
 }
 
 func fieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) {
-	fieldsData, ok := item.Attributes["fields"]
+	fieldsList, ok := sliceAttributeFromSection(item.Attributes, "schema", "fields")
 	if !ok {
 		return []commonModels.FieldInfo{}, nil
-	}
-
-	fieldsList, ok := fieldsData.([]interface{})
-	if !ok {
-		return []commonModels.FieldInfo{}, fmt.Errorf("invalid fields format in metadata")
 	}
 
 	fieldInfos := make([]commonModels.FieldInfo, 0, len(fieldsList))
@@ -485,7 +480,7 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	// 提取 spatial_metadata
-	if spatialData, ok := item.Attributes["spatial_metadata"].(map[string]interface{}); ok {
+	if spatialData, ok := spatialMetadataAttribute(item.Attributes); ok {
 		if geomCol, ok := spatialData["geometry_column"].(string); ok {
 			spatialMeta.GeometryColumn = geomCol
 		}
@@ -515,7 +510,7 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	// 提取 table_metadata
-	if tableMeta, ok := item.Attributes["table_metadata"].(map[string]interface{}); ok {
+	if tableMeta, ok := mapAttributeFromSection(item.Attributes, "schema", "table_metadata"); ok {
 		if pk, ok := tableMeta["primary_key"].(string); ok {
 			spatialMeta.PrimaryKey = pk
 		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok {
@@ -528,7 +523,7 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	// 提取字段信息
-	if fields, ok := item.Attributes["fields"].([]interface{}); ok {
+	if fields, ok := sliceAttributeFromSection(item.Attributes, "schema", "fields"); ok {
 		for _, f := range fields {
 			if fieldMap, ok := f.(map[string]interface{}); ok {
 				fieldInfo := models.FieldInfo{
@@ -547,6 +542,83 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	return spatialMeta, nil
+}
+
+func attributeFromSection(attrs models.JSONMap, section, key string) (interface{}, bool) {
+	if attrs == nil {
+		return nil, false
+	}
+	if sectionMap, ok := attrs[section].(map[string]interface{}); ok {
+		if value, exists := sectionMap[key]; exists {
+			return value, true
+		}
+	}
+	if sectionMap, ok := attrs[section].(models.JSONMap); ok {
+		if value, exists := sectionMap[key]; exists {
+			return value, true
+		}
+	}
+	value, ok := attrs[key]
+	return value, ok
+}
+
+func mapAttributeFromSection(attrs models.JSONMap, section, key string) (map[string]interface{}, bool) {
+	value, ok := attributeFromSection(attrs, section, key)
+	if !ok {
+		return nil, false
+	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed, true
+	case models.JSONMap:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]interface{}, bool) {
+	value, ok := attributeFromSection(attrs, section, key)
+	if !ok {
+		return nil, false
+	}
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed, true
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func spatialMetadataAttribute(attrs models.JSONMap) (map[string]interface{}, bool) {
+	if spatial, ok := mapAttributeFromSection(attrs, "extensions", "spatial_metadata"); ok {
+		return spatial, true
+	}
+	if spatialExt, ok := mapAttributeFromSection(attrs, "extensions", "spatial"); ok {
+		if spatial, ok := spatialExt["spatial_metadata"].(map[string]interface{}); ok {
+			return spatial, true
+		}
+		if spatial, ok := spatialExt["spatial_metadata"].(models.JSONMap); ok {
+			return map[string]interface{}(spatial), true
+		}
+	}
+	if attrs == nil {
+		return nil, false
+	}
+	switch spatial := attrs["spatial_metadata"].(type) {
+	case map[string]interface{}:
+		return spatial, true
+	case models.JSONMap:
+		return map[string]interface{}(spatial), true
+	default:
+		return nil, false
+	}
 }
 
 func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {

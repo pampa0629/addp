@@ -344,15 +344,23 @@ func (s *DatabaseScanService) scanTableDetails(
 			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
 		}
 
+		fieldsAttr := buildFieldAttributes(fields)
+		tableMetadata := map[string]interface{}{
+			"primary_key":      primaryKeyColumns,
+			"primary_key_name": primaryKeyName,
+			"has_primary_key":  len(primaryKeyColumns) > 0,
+		}
 		attrs = models.JSONMap{
-			"schema":        schemaName,
-			"table_type":    tableInfo.Type,
-			"table_comment": tableInfo.Comment,
-			"fields":        buildFieldAttributes(fields),
-			"table_metadata": map[string]interface{}{
-				"primary_key":      primaryKeyColumns,
-				"primary_key_name": primaryKeyName,
-				"has_primary_key":  len(primaryKeyColumns) > 0,
+			"schema_name":    schemaName,
+			"table_type":     tableInfo.Type,
+			"table_comment":  tableInfo.Comment,
+			"fields":         fieldsAttr,
+			"table_metadata": tableMetadata,
+			"schema": map[string]interface{}{
+				"fields":         fieldsAttr,
+				"table_metadata": tableMetadata,
+				"table_type":     tableInfo.Type,
+				"table_comment":  tableInfo.Comment,
 			},
 		}
 
@@ -360,7 +368,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		if resource.EngineType == "postgresql" && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				attrs["spatial_metadata"] = spatialMeta
+				setExtensionAttribute(attrs, "spatial", "spatial_metadata", spatialMeta)
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
@@ -371,19 +379,27 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 浅度扫描：保留已有字段信息
 		if existingItem != nil && existingItem.Attributes != nil {
 			attrs = existingItem.Attributes
-			attrs["schema"] = schemaName
+			attrs["schema_name"] = schemaName
 			attrs["table_type"] = tableInfo.Type
 			attrs["table_comment"] = tableInfo.Comment
-		} else {
-			attrs = models.JSONMap{
-				"schema":        schemaName,
+			upsertSection(attrs, "schema", map[string]interface{}{
 				"table_type":    tableInfo.Type,
 				"table_comment": tableInfo.Comment,
+			})
+		} else {
+			attrs = models.JSONMap{
+				"schema_name":   schemaName,
+				"table_type":    tableInfo.Type,
+				"table_comment": tableInfo.Comment,
+				"schema": map[string]interface{}{
+					"table_type":    tableInfo.Type,
+					"table_comment": tableInfo.Comment,
+				},
 			}
 		}
 	}
-	attrs["data_family"] = string(dataitem.DataFamilyTabular)
-	attrs["format"] = resource.EngineType
+	setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyTabular))
+	setItemAttribute(attrs, "format", resource.EngineType)
 
 	return fields, attrs, nil
 }

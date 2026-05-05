@@ -373,7 +373,40 @@ func stringAttribute(attrs map[string]interface{}, key string) string {
 	if attrs == nil {
 		return ""
 	}
+	for _, section := range attributeSectionsForKey(key) {
+		if value := sectionStringAttribute(attrs, section, key); value != "" {
+			return value
+		}
+	}
 	if value, ok := attrs[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func attributeSectionsForKey(key string) []string {
+	switch key {
+	case "composition_type", "data_family", "format", "entry_path":
+		return []string{"item"}
+	case "bucket", "path", "name", "physical_path", "size_bytes", "content_type", "last_modified_at", "etag":
+		return []string{"storage"}
+	case "fields", "primary_key", "indexes", "row_count":
+		return []string{"schema"}
+	default:
+		return nil
+	}
+}
+
+func sectionStringAttribute(attrs map[string]interface{}, section, key string) string {
+	raw, ok := attrs[section]
+	if !ok {
+		return ""
+	}
+	sectionAttrs, ok := raw.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if value, ok := sectionAttrs[key].(string); ok {
 		return value
 	}
 	return ""
