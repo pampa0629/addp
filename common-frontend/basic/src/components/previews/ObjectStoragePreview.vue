@@ -180,55 +180,13 @@ const metadataEntries = computed(() => {
 })
 
 const extractedMetadata = computed(() => {
-  // Debug: 打印原始数据
-  console.log('[DEBUG] objectData.value:', objectData.value)
-  console.log('[DEBUG] objectData.value.attributes:', objectData.value?.attributes)
-  console.log('[DEBUG] objectData.value.extracted_metadata:', objectData.value?.extracted_metadata)
-
-  // 1. 优先使用 extracted_metadata 字段（如果存在）
-  const direct = parseMaybeJSON(objectData.value?.extracted_metadata)
-  if (direct && typeof direct === 'object') {
-    console.log('[DEBUG] Found direct extracted_metadata:', direct)
-    return direct
-  }
-
-  // 2. 从 attributes 中提取所有 *_metadata 字段（如 video_metadata, audio_metadata 等）
   const attrs = parseMaybeJSON(objectData.value?.attributes) || objectData.value?.attributes
-  console.log('[DEBUG] Parsed attributes:', attrs)
-
   if (!attrs || typeof attrs !== 'object') {
-    console.log('[DEBUG] No valid attributes found')
     return null
   }
 
-  // 检查是否有标准提取扩展中的 extracted_metadata 字段
   const nested = parseMaybeJSON(attrs.extensions?.extraction?.extracted_metadata)
-  if (nested && typeof nested === 'object') {
-    console.log('[DEBUG] Found nested extracted_metadata:', nested)
-    return nested
-  }
-
-  // 3. 自动识别所有以 _metadata 结尾的字段，构造为 custom_attrs 格式
-  const customAttrs = {}
-  let hasMetadata = false
-
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key.endsWith('_metadata')) {
-      console.log(`[DEBUG] Found metadata field: ${key}`, value)
-      const parsed = parseMaybeJSON(value)
-      if (parsed && typeof parsed === 'object') {
-        // 如果元数据有 data 字段（Meta的标准格式），提取data
-        customAttrs[key] = parsed.data || parsed
-        hasMetadata = true
-        console.log(`[DEBUG] Added to customAttrs:`, customAttrs[key])
-      }
-    }
-  }
-
-  // 如果找到了元数据字段，返回 custom_attrs 包装格式（供 ExtractedMetadata 组件使用）
-  const result = hasMetadata ? { custom_attrs: customAttrs } : null
-  console.log('[DEBUG] Final extractedMetadata result:', result)
-  return result
+  return nested && typeof nested === 'object' ? nested : null
 })
 
 const hasExtractedMetadata = computed(() => {

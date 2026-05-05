@@ -80,11 +80,6 @@ const normalizedAttributes = computed(() => {
 })
 
 const extractedMetadataRoot = computed(() => {
-  const direct = parseMaybeJSON(objectData.value?.extracted_metadata)
-  if (direct && typeof direct === 'object') {
-    return direct
-  }
-
   const attrs = normalizedAttributes.value
   const fromAttrs = parseMaybeJSON(attrs?.extensions?.extraction?.extracted_metadata)
   if (fromAttrs && typeof fromAttrs === 'object') {
@@ -97,29 +92,13 @@ const extractedMetadataRoot = computed(() => {
 })
 
 const rawVideoMetadata = computed(() => {
-  console.log('[VideoPreview DEBUG] normalizedAttributes:', normalizedAttributes.value)
-  console.log('[VideoPreview DEBUG] extractedMetadataRoot:', extractedMetadataRoot.value)
-
   const fromRoot = extractedMetadataRoot.value?.custom_attrs?.video_metadata
   if (fromRoot && typeof fromRoot === 'object') {
-    console.log('[VideoPreview DEBUG] Found video_metadata from extractedMetadataRoot:', fromRoot)
     if (fromRoot.data && typeof fromRoot.data === 'object') {
       return fromRoot.data
     }
     return fromRoot
   }
-  const attrs = normalizedAttributes.value
-  const videoMeta = parseMaybeJSON(attrs.video_metadata)
-  console.log('[VideoPreview DEBUG] videoMeta from attrs:', videoMeta)
-  if (videoMeta && typeof videoMeta === 'object') {
-    if (videoMeta.data && typeof videoMeta.data === 'object') {
-      console.log('[VideoPreview DEBUG] Returning videoMeta.data:', videoMeta.data)
-      return videoMeta.data
-    }
-    console.log('[VideoPreview DEBUG] Returning videoMeta:', videoMeta)
-    return videoMeta
-  }
-  console.log('[VideoPreview DEBUG] No video metadata found, returning empty object')
   return {}
 })
 

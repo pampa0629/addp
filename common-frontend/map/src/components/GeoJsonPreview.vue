@@ -66,7 +66,9 @@ const truncated = computed(() => {
 })
 
 // 提取元数据
-const extractedMetadata = computed(() => objectData.value?.extracted_metadata || null)
+const extractedMetadata = computed(() => {
+  return objectData.value?.attributes?.extensions?.extraction?.extracted_metadata || null
+})
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 const geoFeatures = computed(() => {

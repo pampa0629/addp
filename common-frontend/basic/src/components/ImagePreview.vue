@@ -29,7 +29,7 @@
       <ExtractedMetadata :metadata="extractedMetadata" />
     </div>
 
-    <!-- 如果有图像元数据但不在extracted_metadata中，则显示简化版本 -->
+    <!-- 图像标准扩展信息 -->
     <div v-else-if="hasImageMetadata" class="quick-metadata">
       <h4><i class="el-icon-picture"></i> 图像信息</h4>
       <div class="quick-meta-grid">
@@ -75,28 +75,31 @@ const imageLoadedDimensions = ref({ width: 0, height: 0 })
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
+const attributes = computed(() => objectData.value?.attributes || {})
 
 const imageData = computed(() => content.value?.image_data || content.value?.imageData || null)
 
 // 提取元数据
 const extractedMetadata = computed(() => {
-  return objectData.value?.extracted_metadata ||
-    objectData.value?.attributes?.extensions?.extraction?.extracted_metadata ||
-    null
+  return attributes.value?.extensions?.extraction?.extracted_metadata || null
 })
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
-// 从 extracted_metadata 或 attributes 中获取图像元数据
+// 从标准 media 扩展获取图像元数据
 const imageMetadata = computed(() => {
-  // 优先从 extracted_metadata 获取
-  if (extractedMetadata.value?.custom_attrs?.image_metadata) {
-    return extractedMetadata.value.custom_attrs.image_metadata
+  const media = attributes.value?.extensions?.media
+  if (!media || typeof media !== 'object') {
+    return null
   }
-  // 其次从 attributes 获取
-  if (objectData.value?.attributes?.image_metadata) {
-    return objectData.value.attributes.image_metadata
+  const width = Number(media.width)
+  const height = Number(media.height)
+  return {
+    ...media,
+    resolution: media.resolution || (width && height ? `${width} × ${height}` : ''),
+    megapixels: media.megapixels || (width && height ? (width * height) / 1000000 : 0),
+    aspect_ratio: media.aspect_ratio || (width && height ? (width / height).toFixed(2) : ''),
+    color_space: media.color_space || media.color_mode || media.mode || ''
   }
-  return null
 })
 
 const hasImageMetadata = computed(() => Boolean(imageMetadata.value))
