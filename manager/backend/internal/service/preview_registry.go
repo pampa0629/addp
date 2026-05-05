@@ -30,8 +30,8 @@ type PreviewRequest struct {
 	TenantID     *uint
 	ItemType     string                 // 数据项类型（如 "lake_table"），用于特殊预览路由
 	NodeType     string                 // 节点类型（来自 locator type 参数，如 "prefix"/"object"/"bucket"）
-	PhysicalPath string                 // 物理路径（来自 meta_item.attributes.physical_path），单文件湖表直接读取
-	Attributes   map[string]interface{} // 来自 meta_item/meta_node 的标准属性，如 format/data_family/composition_type
+	PhysicalPath string                 // 物理路径（来自 meta_item.attributes.storage.physical_path），单文件湖表直接读取
+	Attributes   map[string]interface{} // 来自 meta_item/meta_node 的标准属性分区
 }
 
 // Mode 根据请求推断预览模式。

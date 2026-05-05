@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/client"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
@@ -168,7 +169,7 @@ func (s *QueryServiceService) detectLakeMode(tenantID, engineID uint, schemaName
 			continue
 		}
 		if item.Attributes != nil {
-			if mode, ok := item.Attributes["mode"].(string); ok && mode != "" {
+			if mode := commonAttrs.String(item.Attributes, "item", "mode"); mode != "" {
 				return mode
 			}
 		}

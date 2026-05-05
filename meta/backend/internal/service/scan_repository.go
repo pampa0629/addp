@@ -88,6 +88,22 @@ func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
 		setExtensionSection(extensions, "spatial", value)
 	}
 
+	extensions = normalizeExtensionNamespaces(extensions)
+	writeFlatCompatibility(normalized, storage, []string{
+		"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
+		"size", "total_size", "content_type", "last_modified_at", "modified_at",
+		"etag", "file_type", "object_count", "schema_name",
+	})
+	writeFlatCompatibility(normalized, item, []string{
+		"composition_type", "data_family", "format", "entry_path",
+		"component_files", "file_count", "mode",
+	})
+	writeFlatCompatibility(normalized, schema, []string{
+		"fields", "table_metadata", "table_type", "table_comment",
+		"primary_key", "indexes", "row_count", "document_count", "count",
+	})
+	writeFlatExtensionCompatibility(normalized, extensions)
+
 	normalized["storage"] = storage
 	normalized["item"] = item
 	normalized["schema"] = schema
@@ -116,8 +132,29 @@ func sectionJSONMap(attrs models.JSONMap, key string) map[string]interface{} {
 func moveKeysToSection(attrs models.JSONMap, section map[string]interface{}, keys []string) {
 	for _, key := range keys {
 		if value, ok := attrs[key]; ok {
+			if _, exists := section[key]; exists {
+				continue
+			}
 			section[key] = value
 		}
+	}
+}
+
+func writeFlatCompatibility(attrs models.JSONMap, section map[string]interface{}, keys []string) {
+	for _, key := range keys {
+		if value, ok := section[key]; ok {
+			attrs[key] = value
+		}
+	}
+}
+
+func writeFlatExtensionCompatibility(attrs models.JSONMap, extensions map[string]interface{}) {
+	spatial, ok := extensions["spatial"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if value, exists := spatial["spatial_metadata"]; exists {
+		attrs["spatial_metadata"] = value
 	}
 }
 
@@ -152,6 +189,7 @@ func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, v
 	if attrs == nil || namespace == "" || key == "" {
 		return
 	}
+	namespace = normalizeExtensionNamespace(namespace)
 	attrs[key] = value
 	extensions := sectionJSONMap(attrs, "extensions")
 	namespaceAttrs := map[string]interface{}{}
@@ -165,7 +203,81 @@ func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, v
 	attrs["extensions"] = extensions
 }
 
+func normalizeExtensionNamespaces(extensions map[string]interface{}) map[string]interface{} {
+	if len(extensions) == 0 {
+		return extensions
+	}
+	normalized := map[string]interface{}{}
+	unqualified := map[string]interface{}{}
+	for namespace, value := range extensions {
+		cleanNamespace := normalizeExtensionNamespace(namespace)
+		if cleanNamespace == "unqualified" && namespace != "unqualified" {
+			unqualified[namespace] = value
+			continue
+		}
+		if existing, ok := normalized[cleanNamespace].(map[string]interface{}); ok {
+			if incoming, ok := value.(map[string]interface{}); ok {
+				for k, v := range incoming {
+					existing[k] = v
+				}
+				continue
+			}
+		}
+		normalized[cleanNamespace] = value
+	}
+	if len(unqualified) > 0 {
+		if existing, ok := normalized["unqualified"].(map[string]interface{}); ok {
+			for k, v := range unqualified {
+				existing[k] = v
+			}
+		} else {
+			normalized["unqualified"] = unqualified
+		}
+	}
+	return normalized
+}
+
+func normalizeExtensionNamespace(namespace string) string {
+	namespace = strings.ToLower(strings.TrimSpace(namespace))
+	switch namespace {
+	case "spatial", "media", "document", "statistics", "unqualified":
+		return namespace
+	}
+	if isPrivateExtensionNamespace(namespace) {
+		return namespace
+	}
+	return "unqualified"
+}
+
+func isPrivateExtensionNamespace(namespace string) bool {
+	if namespace == "" || strings.Contains(namespace, "..") {
+		return false
+	}
+	hasSeparator := strings.Contains(namespace, ".") || strings.Contains(namespace, "_") || strings.Contains(namespace, "-")
+	if !hasSeparator {
+		return false
+	}
+	for _, part := range strings.FieldsFunc(namespace, func(r rune) bool {
+		return r == '.' || r == '_' || r == '-'
+	}) {
+		if part == "" {
+			return false
+		}
+		for i, r := range part {
+			if r >= 'a' && r <= 'z' {
+				continue
+			}
+			if r >= '0' && r <= '9' && i > 0 {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
 func setExtensionSection(extensions map[string]interface{}, key string, value interface{}) {
+	key = normalizeExtensionNamespace(key)
 	if existing, ok := extensions[key].(map[string]interface{}); ok {
 		existingKey := key + "_metadata"
 		if _, exists := existing[existingKey]; !exists {

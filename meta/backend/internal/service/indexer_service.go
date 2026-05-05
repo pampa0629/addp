@@ -143,7 +143,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	if len(tags) > 0 {
 		assetRecord.Tags = tags
 	}
-	if desc := getStringFromMap(metadata, "file_type_friendly"); desc != "" {
+	if desc := stringFromAttributes(metadata, "document", "file_type_friendly"); desc != "" {
 		assetRecord.Description = desc
 	}
 
@@ -154,28 +154,28 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		}
 	}
 
-	if value := getStringFromMap(metadata, "document_type"); value != "" {
+	if value := stringFromAttributes(metadata, "document", "document_type"); value != "" {
 		assetRecord.DocumentType = value
 	}
-	if value := getStringFromMap(metadata, "title"); value != "" {
+	if value := stringFromAttributes(metadata, "document", "title"); value != "" {
 		assetRecord.Title = value
 	}
-	if value := getStringFromMap(metadata, "author"); value != "" {
+	if value := stringFromAttributes(metadata, "document", "author"); value != "" {
 		assetRecord.Author = value
 	}
-	if keywords := extractStringSlice(metadata["keywords"]); len(keywords) > 0 {
+	if keywords := stringSliceFromAttributes(metadata, "document", "keywords"); len(keywords) > 0 {
 		assetRecord.Keywords = keywords
 	}
-	if wc := intFromInterface(metadata["word_count"]); wc > 0 {
+	if wc := intFromAttributes(metadata, "document", "word_count"); wc > 0 {
 		assetRecord.WordCount = wc
 	}
-	if pc := intFromInterface(metadata["page_count"]); pc > 0 {
+	if pc := intFromAttributes(metadata, "document", "page_count"); pc > 0 {
 		assetRecord.PageCount = pc
 	}
-	if created := extractTimePtr(metadata["created_date"]); created != nil {
+	if created := timeFromAttributes(metadata, "document", "created_date"); created != nil {
 		assetRecord.CreatedDate = created
 	}
-	if modified := extractTimePtr(metadata["modified_date"]); modified != nil {
+	if modified := timeFromAttributes(metadata, "document", "modified_date"); modified != nil {
 		assetRecord.ModifiedDate = modified
 	}
 
@@ -298,6 +298,56 @@ func getStringFromMap(metadata map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+func stringFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) string {
+	if value := getStringFromMap(extensionAttributes(metadata, extensionNamespace), key); value != "" {
+		return value
+	}
+	return getStringFromMap(metadata, key)
+}
+
+func stringSliceFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) []string {
+	if values := extractStringSlice(valueFromExtension(metadata, extensionNamespace, key)); len(values) > 0 {
+		return values
+	}
+	return extractStringSlice(metadata[key])
+}
+
+func intFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) int {
+	if value := intFromInterface(valueFromExtension(metadata, extensionNamespace, key)); value > 0 {
+		return value
+	}
+	return intFromInterface(metadata[key])
+}
+
+func timeFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) *time.Time {
+	if value := extractTimePtr(valueFromExtension(metadata, extensionNamespace, key)); value != nil {
+		return value
+	}
+	return extractTimePtr(metadata[key])
+}
+
+func valueFromExtension(metadata map[string]interface{}, namespace, key string) interface{} {
+	if section := extensionAttributes(metadata, namespace); section != nil {
+		return section[key]
+	}
+	return nil
+}
+
+func extensionAttributes(metadata map[string]interface{}, namespace string) map[string]interface{} {
+	if metadata == nil || namespace == "" {
+		return nil
+	}
+	extensions, ok := metadata["extensions"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	section, ok := extensions[namespace].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return section
 }
 
 func intFromInterface(value interface{}) int {

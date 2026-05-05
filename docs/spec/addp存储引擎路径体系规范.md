@@ -145,7 +145,7 @@ root 节点字段规范：
 | `name` | `.` |
 | `full_name` | `""` |
 | `node_type` | `root` |
-| `attributes.path` | `/` |
+| `attributes.storage.path` | `/` |
 
 `name = "."` 源自 Unix 惯例的"当前目录"含义，同时避免暴露 `export_path`。
 

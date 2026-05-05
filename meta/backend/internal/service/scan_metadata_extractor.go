@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -54,6 +55,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 			}
 			baseAttrs[key] = value
 		}
+		applyExtractedMetadataExtensions(baseAttrs, meta.ExtractedMetadata)
 
 		// 添加基本信息
 		baseAttrs["metadata_extracted"] = true
@@ -246,7 +248,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		if item.DataUpdatedAt != nil {
 			input.LastModified = *item.DataUpdatedAt
 		}
-		if etag, ok := item.Attributes["etag"].(string); ok {
+		if etag := commonAttrs.String(item.Attributes, "storage", "etag"); etag != "" {
 			input.ETag = etag
 		}
 	}
@@ -274,6 +276,8 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		if metadata.SchemaInfo != nil {
 			enhancedAttrs["schema_info"] = metadata.SchemaInfo
 		}
+		applyExtractedMetadataExtensions(enhancedAttrs, metadata)
+		enhancedAttrs = normalizeMetaItemAttributes(enhancedAttrs)
 
 		// 更新数据库
 		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
@@ -282,6 +286,75 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	return metadata, nil
+}
+
+func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.ExtractedMetadata) {
+	if attrs == nil || metadata == nil {
+		return
+	}
+	if metadata.BasicInfo.FileType != "" || metadata.BasicInfo.Encoding != "" {
+		document := map[string]interface{}{}
+		if metadata.BasicInfo.FileType != "" {
+			document["file_type_friendly"] = metadata.BasicInfo.FileType
+		}
+		if metadata.BasicInfo.Encoding != "" {
+			document["encoding"] = metadata.BasicInfo.Encoding
+		}
+		mergeExtensionSection(attrs, "document", document)
+	}
+	for key, value := range metadata.CustomAttrs {
+		if key == "plain_text" {
+			continue
+		}
+		switch standardExtensionForMetadataKey(key) {
+		case "media":
+			setExtensionAttribute(attrs, "media", key, value)
+		case "document":
+			setExtensionAttribute(attrs, "document", key, value)
+		case "statistics":
+			setExtensionAttribute(attrs, "statistics", key, value)
+		default:
+			setExtensionAttribute(attrs, "unqualified", key, value)
+		}
+	}
+	if metadata.SchemaInfo != nil {
+		setExtensionAttribute(attrs, "statistics", "row_count", metadata.SchemaInfo.RowCount)
+		setExtensionAttribute(attrs, "statistics", "column_count", len(metadata.SchemaInfo.Columns))
+	}
+}
+
+func mergeExtensionSection(attrs models.JSONMap, namespace string, values map[string]interface{}) {
+	if len(values) == 0 {
+		return
+	}
+	extensions := sectionJSONMap(attrs, "extensions")
+	namespace = normalizeExtensionNamespace(namespace)
+	section := map[string]interface{}{}
+	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
+		for k, v := range existing {
+			section[k] = v
+		}
+	}
+	for k, v := range values {
+		section[k] = v
+	}
+	extensions[namespace] = section
+	attrs["extensions"] = extensions
+}
+
+func standardExtensionForMetadataKey(key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "width", "height", "format", "color_space", "bit_depth", "has_alpha",
+		"duration", "duration_seconds", "codec", "frame_rate", "sample_rate", "channels":
+		return "media"
+	case "document_type", "title", "author", "keywords", "page_count", "word_count",
+		"char_count", "created_date", "modified_date", "file_type_friendly", "encoding":
+		return "document"
+	case "row_count", "column_count", "feature_count", "object_count", "record_count":
+		return "statistics"
+	default:
+		return ""
+	}
 }
 
 // ============================================================================

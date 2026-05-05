@@ -591,8 +591,8 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 			}
 			if item.RowCount != nil {
 				label.Count = *item.RowCount
-			} else if v, ok := item.Attributes["document_count"]; ok {
-				label.Count = toInt64(v)
+			} else {
+				label.Count = int64AttributeFromAttrs(item.Attributes, "document_count")
 			}
 			resp.NodeLabels = append(resp.NodeLabels, label)
 		case "relationship":
@@ -603,8 +603,8 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 			}
 			if item.RowCount != nil {
 				rel.Count = *item.RowCount
-			} else if v, ok := item.Attributes["count"]; ok {
-				rel.Count = toInt64(v)
+			} else {
+				rel.Count = int64AttributeFromAttrs(item.Attributes, "count")
 			}
 			resp.Relationships = append(resp.Relationships, rel)
 		}
@@ -618,10 +618,19 @@ func extractStringSliceFromAttrs(attrs map[string]interface{}, key string) []str
 	if attrs == nil {
 		return []string{}
 	}
+	if sectionAttrs := explorerAttributeSection(attrs, "schema"); sectionAttrs != nil {
+		if values := interfaceToExplorerStringSlice(sectionAttrs[key]); len(values) > 0 {
+			return values
+		}
+	}
 	raw, ok := attrs[key]
 	if !ok || raw == nil {
 		return []string{}
 	}
+	return interfaceToExplorerStringSlice(raw)
+}
+
+func interfaceToExplorerStringSlice(raw interface{}) []string {
 	switch v := raw.(type) {
 	case []string:
 		return v
@@ -635,6 +644,34 @@ func extractStringSliceFromAttrs(attrs map[string]interface{}, key string) []str
 		return result
 	}
 	return []string{}
+}
+
+func int64AttributeFromAttrs(attrs map[string]interface{}, key string) int64 {
+	if attrs == nil {
+		return 0
+	}
+	if sectionAttrs := explorerAttributeSection(attrs, "schema"); sectionAttrs != nil {
+		if value := toInt64(sectionAttrs[key]); value > 0 {
+			return value
+		}
+	}
+	return toInt64(attrs[key])
+}
+
+func explorerAttributeSection(attrs map[string]interface{}, section string) map[string]interface{} {
+	current := attrs
+	for _, part := range strings.Split(section, ".") {
+		raw, ok := current[part]
+		if !ok {
+			return nil
+		}
+		next, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
 }
 
 // toInt64 将 interface{} 转为 int64

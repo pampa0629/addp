@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -85,6 +86,59 @@ func TestNormalizeMetaItemAttributesBuildsSpatialExtension(t *testing.T) {
 	}
 }
 
+func TestNormalizeMetaItemAttributesProtectsPartitionedCoreFromFlatConflicts(t *testing.T) {
+	t.Parallel()
+
+	normalized := normalizeMetaItemAttributes(models.JSONMap{
+		"data_family": "document",
+		"format":      "pdf",
+		"item": map[string]interface{}{
+			"data_family": "tabular",
+			"format":      "geojson",
+		},
+	})
+
+	item := normalized["item"].(map[string]interface{})
+	if item["data_family"] != "tabular" || item["format"] != "geojson" {
+		t.Fatalf("item section = %#v, want partitioned core to win", item)
+	}
+	if normalized["data_family"] != "tabular" || normalized["format"] != "geojson" {
+		t.Fatalf("flat compatibility = %#v, want partitioned core mirrored", normalized)
+	}
+}
+
+func TestNormalizeMetaItemAttributesConstrainsExtensionNamespaces(t *testing.T) {
+	t.Parallel()
+
+	normalized := normalizeMetaItemAttributes(models.JSONMap{
+		"extensions": map[string]interface{}{
+			"vendor": map[string]interface{}{"unsafe": true},
+			"com.acme.parser": map[string]interface{}{
+				"custom_value": "ok",
+			},
+			"MEDIA": map[string]interface{}{
+				"width": 640,
+			},
+		},
+	})
+
+	extensions := normalized["extensions"].(map[string]interface{})
+	if _, ok := extensions["vendor"]; ok {
+		t.Fatalf("unqualified namespace should not stay at top-level extensions: %#v", extensions)
+	}
+	if _, ok := extensions["com.acme.parser"]; !ok {
+		t.Fatalf("private namespace missing: %#v", extensions)
+	}
+	media := extensions["media"].(map[string]interface{})
+	if media["width"] != 640 {
+		t.Fatalf("media extension = %#v, want normalized standard namespace", media)
+	}
+	unqualified := extensions["unqualified"].(map[string]interface{})
+	if _, ok := unqualified["vendor"]; !ok {
+		t.Fatalf("unqualified extension = %#v, want original invalid namespace captured", unqualified)
+	}
+}
+
 func TestUpsertSectionMergesExistingSection(t *testing.T) {
 	t.Parallel()
 
@@ -142,5 +196,70 @@ func TestSetExtensionAttributeWritesNamespaceAndFlatCompatibility(t *testing.T) 
 	spatialExt := extensions["spatial"].(map[string]interface{})
 	if spatialExt["spatial_metadata"] == nil {
 		t.Fatalf("extensions.spatial.spatial_metadata missing: %#v", spatialExt)
+	}
+}
+
+func TestApplyExtractedMetadataExtensionsWritesStandardSections(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	applyExtractedMetadataExtensions(attrs, &format.ExtractedMetadata{
+		BasicInfo: format.BasicMetadata{FileType: "PDF", Encoding: "UTF-8"},
+		CustomAttrs: map[string]interface{}{
+			"page_count": 12,
+			"word_count": 2400,
+			"width":      800,
+			"plain_text": "not stored in extensions",
+			"vendor_key": "kept",
+		},
+		SchemaInfo: &format.SchemaMetadata{RowCount: 10, Columns: []format.ColumnMetadata{{Name: "id"}}},
+	})
+
+	extensions := attrs["extensions"].(map[string]interface{})
+	document := extensions["document"].(map[string]interface{})
+	if document["page_count"] != 12 || document["word_count"] != 2400 {
+		t.Fatalf("document extension = %#v, want page and word counts", document)
+	}
+	media := extensions["media"].(map[string]interface{})
+	if media["width"] != 800 {
+		t.Fatalf("media extension = %#v, want width", media)
+	}
+	statistics := extensions["statistics"].(map[string]interface{})
+	if statistics["row_count"] != int64(10) || statistics["column_count"] != 1 {
+		t.Fatalf("statistics extension = %#v, want schema stats", statistics)
+	}
+	unqualified := extensions["unqualified"].(map[string]interface{})
+	if unqualified["vendor_key"] != "kept" {
+		t.Fatalf("unqualified extension = %#v, want custom key", unqualified)
+	}
+	if _, ok := unqualified["plain_text"]; ok {
+		t.Fatalf("plain_text should not be stored in extensions: %#v", unqualified)
+	}
+}
+
+func TestIndexerAttributeReadersPreferStandardExtensions(t *testing.T) {
+	t.Parallel()
+
+	attrs := map[string]interface{}{
+		"title":      "legacy title",
+		"page_count": 1,
+		"extensions": map[string]interface{}{
+			"document": map[string]interface{}{
+				"title":      "standard title",
+				"page_count": 12,
+				"keywords":   []interface{}{"alpha", "beta"},
+			},
+		},
+	}
+
+	if got := stringFromAttributes(attrs, "document", "title"); got != "standard title" {
+		t.Fatalf("title = %q, want standard title", got)
+	}
+	if got := intFromAttributes(attrs, "document", "page_count"); got != 12 {
+		t.Fatalf("page_count = %d, want 12", got)
+	}
+	keywords := stringSliceFromAttributes(attrs, "document", "keywords")
+	if len(keywords) != 2 || keywords[0] != "alpha" {
+		t.Fatalf("keywords = %#v, want extension keywords", keywords)
 	}
 }

@@ -63,7 +63,7 @@ type PreviewResolverRequest struct {
 	Pagination   *Pagination               // 分页参数
 	TenantID     *uint                     // 租户 ID
 	ItemType     string                    // 数据项类型（如 "lake_table"），来自 MetaItem
-	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.physical_path）
+	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
 }
 
 // Pagination 分页参数

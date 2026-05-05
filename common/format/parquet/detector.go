@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -536,7 +537,7 @@ func parquetFileCatalogPath(engineID uint, path string) plugin.CatalogPath {
 
 func catalogNodePath(node plugin.CatalogNode) string {
 	if node.Attributes != nil {
-		if path, ok := node.Attributes["path"].(string); ok && path != "" {
+		if path := commonAttrs.String(node.Attributes, "storage", "path"); path != "" {
 			return path
 		}
 	}

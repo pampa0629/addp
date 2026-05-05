@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 )
@@ -37,7 +38,7 @@ func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
 	if len(info.ComponentFiles) != 2 {
 		t.Fatalf("ComponentFiles len = %d, want 2", len(info.ComponentFiles))
 	}
-	if mode := info.Attributes["mode"]; mode != "directory_tree" {
+	if mode := commonAttrs.String(info.Attributes, "item", "mode"); mode != "directory_tree" {
 		t.Fatalf("mode = %v, want directory_tree", mode)
 	}
 }

@@ -52,8 +52,8 @@ type SearchDocument struct {
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
-	Path           string                 `json:"path,omitempty"`      // 目录路径（以 / 结尾）
-	Name           string                 `json:"name,omitempty"`      // 文件名或表名
+	Path           string                 `json:"path,omitempty"` // 目录路径（以 / 结尾）
+	Name           string                 `json:"name,omitempty"` // 文件名或表名
 	FileName       string                 `json:"file_name"`
 	DocumentType   string                 `json:"document_type,omitempty"`
 	Title          string                 `json:"title,omitempty"`
@@ -86,8 +86,8 @@ type VectorDocument struct {
 	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
-	Path           string                 `json:"path,omitempty"`      // 目录路径（以 / 结尾）
-	Name           string                 `json:"name,omitempty"`      // 文件名
+	Path           string                 `json:"path,omitempty"` // 目录路径（以 / 结尾）
+	Name           string                 `json:"name,omitempty"` // 文件名
 	ContentPreview string                 `json:"content_preview,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -104,9 +104,9 @@ type SearchResult struct {
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
 func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
-		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
-		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
-		log:           logger.With("component", "manager_hybrid_search"),
+		assetIndex: strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		enabled:    strings.TrimSpace(cfg.MeilisearchURL) != "",
+		log:        logger.With("component", "manager_hybrid_search"),
 		models: map[embedding.Modality]string{
 			embedding.ModalityText:     cfg.EmbeddingService.Models["text"],
 			embedding.ModalityDocument: cfg.EmbeddingService.Models["text"],
@@ -238,17 +238,17 @@ func (s *HybridSearchService) initIndexes() error {
 
 	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
 	_, err = assetIdx.UpdateSearchableAttributes(&[]string{
-		"name",               // 文件名/表名 - 最高权重
-		"title",              // 文档标题
-		"full_name",          // 完整路径名
-		"content_preview",    // 内容预览（中等权重）
-		"description",        // 描述
-		"tags",               // 标签
-		"content",            // 全文内容（权重较低但范围广）
-		"fields.name",        // 表字段名
-		"fields.comment",     // 字段注释
-		"keywords",           // 关键词
-		"author",             // 作者
+		"name",            // 文件名/表名 - 最高权重
+		"title",           // 文档标题
+		"full_name",       // 完整路径名
+		"content_preview", // 内容预览（中等权重）
+		"description",     // 描述
+		"tags",            // 标签
+		"content",         // 全文内容（权重较低但范围广）
+		"fields.name",     // 表字段名
+		"fields.comment",  // 字段注释
+		"keywords",        // 关键词
+		"author",          // 作者
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
@@ -259,11 +259,11 @@ func (s *HybridSearchService) initIndexes() error {
 		"tenant_id",
 		"engine_id",
 		"engine_type",
-		"asset_type",     // 可过滤表/对象
+		"asset_type", // 可过滤表/对象
 		"schema",
 		"bucket",
 		"table_type",
-		"document_type",  // 可过滤文档类型
+		"document_type", // 可过滤文档类型
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
@@ -542,14 +542,14 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
-				assignString(meta, "name", &doc.Name)            // 文件名
-				assignString(meta, "engine_name", &doc.EngineName)   // 引擎名称
-				assignString(meta, "engine_type", &doc.EngineType)     // 引擎类型
-				assignString(meta, "bucket", &doc.Bucket)
-				assignString(meta, "path", &doc.Path)            // 目录路径
+				assignStringFromAttributes(meta, "storage", "name", &doc.Name) // 文件名
+				assignString(meta, "engine_name", &doc.EngineName)             // 引擎名称
+				assignString(meta, "engine_type", &doc.EngineType)             // 引擎类型
+				assignStringFromAttributes(meta, "storage", "bucket", &doc.Bucket)
+				assignStringFromAttributes(meta, "storage", "path", &doc.Path) // 目录路径
 
 				// 如果有标题字段也读取（用于未来扩展）
-				assignString(meta, "title", &doc.Title)
+				assignStringFromAttributes(meta, "extensions.document", "title", &doc.Title)
 				assignString(meta, "content_preview", &doc.ContentPreview)
 
 				doc.Metadata = meta
@@ -670,27 +670,47 @@ func assignString(meta map[string]interface{}, key string, target *string) {
 	if target == nil || meta == nil {
 		return
 	}
-	if value, ok := meta[key]; ok {
-		switch v := value.(type) {
-		case string:
-			if v != "" {
-				*target = v
+	assignStringValue(meta[key], target)
+}
+
+func assignStringFromAttributes(meta map[string]interface{}, section, key string, target *string) {
+	if target == nil || meta == nil {
+		return
+	}
+	if sectionAttrs := searchAttributeSection(meta, section); sectionAttrs != nil {
+		if value, ok := sectionAttrs[key]; ok {
+			assignStringValue(value, target)
+			if *target != "" {
+				return
 			}
-		case fmt.Stringer:
-			str := v.String()
-			if str != "" {
-				*target = str
-			}
-		case []byte:
-			str := string(v)
-			if str != "" {
-				*target = str
-			}
-		default:
-			str := fmt.Sprintf("%v", v)
-			if strings.TrimSpace(str) != "" {
-				*target = str
-			}
+		}
+	}
+	assignString(meta, key, target)
+}
+
+func assignStringValue(value interface{}, target *string) {
+	if target == nil || value == nil {
+		return
+	}
+	switch v := value.(type) {
+	case string:
+		if v != "" {
+			*target = v
+		}
+	case fmt.Stringer:
+		str := v.String()
+		if str != "" {
+			*target = str
+		}
+	case []byte:
+		str := string(v)
+		if str != "" {
+			*target = str
+		}
+	default:
+		str := fmt.Sprintf("%v", v)
+		if strings.TrimSpace(str) != "" {
+			*target = str
 		}
 	}
 }
@@ -698,6 +718,11 @@ func assignString(meta map[string]interface{}, key string, target *string) {
 func getStringFromMeta(meta map[string]interface{}, key string) string {
 	if meta == nil {
 		return ""
+	}
+	for _, section := range searchAttributeSectionsForKey(key) {
+		if value := getStringFromSection(meta, section, key); value != "" {
+			return value
+		}
 	}
 	if value, ok := meta[key]; ok {
 		switch v := value.(type) {
@@ -712,6 +737,51 @@ func getStringFromMeta(meta map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+func getStringFromSection(meta map[string]interface{}, section, key string) string {
+	if sectionAttrs := searchAttributeSection(meta, section); sectionAttrs != nil {
+		if value, ok := sectionAttrs[key]; ok {
+			switch v := value.(type) {
+			case string:
+				return v
+			case fmt.Stringer:
+				return v.String()
+			case []byte:
+				return string(v)
+			default:
+				return fmt.Sprintf("%v", v)
+			}
+		}
+	}
+	return ""
+}
+
+func searchAttributeSectionsForKey(key string) []string {
+	switch key {
+	case "bucket", "path", "name", "content_type", "file_name":
+		return []string{"storage"}
+	case "title", "author", "document_type", "page_count", "word_count", "keywords", "created_date", "modified_date":
+		return []string{"extensions.document"}
+	default:
+		return nil
+	}
+}
+
+func searchAttributeSection(meta map[string]interface{}, section string) map[string]interface{} {
+	current := meta
+	for _, part := range strings.Split(section, ".") {
+		raw, ok := current[part]
+		if !ok {
+			return nil
+		}
+		next, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
 }
 
 func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
@@ -756,8 +826,8 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		DocumentID:     v.DocumentID,
 		AssetID:        v.AssetID,
 		Score:          v.Score,
-		MatchMethods:   []string{"vector"},        // 标记为向量匹配
-		VectorDistance: v.Distance,                // 保存向量距离
+		MatchMethods:   []string{"vector"}, // 标记为向量匹配
+		VectorDistance: v.Distance,         // 保存向量距离
 		EngineID:       v.EngineID,
 		EngineName:     v.EngineName,
 		EngineType:     v.EngineType,

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
@@ -118,9 +119,7 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 			}
 			physicalPath := ""
 			if item.Attributes != nil {
-				if p, ok := item.Attributes["physical_path"].(string); ok {
-					physicalPath = p
-				}
+				physicalPath = commonAttrs.String(item.Attributes, "storage", "physical_path")
 			}
 			if physicalPath == "" {
 				continue

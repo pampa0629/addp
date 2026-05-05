@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
 	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
@@ -362,7 +363,7 @@ func (s *FileSystemScanService) listRoots(
 			continue
 		}
 		rootPath := node.Path.StringPath()
-		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
 			rootPath = raw
 		}
 		roots = append(roots, plugin.RootEntry{
@@ -388,7 +389,7 @@ func (s *FileSystemScanService) listDirectory(
 	subdirs := make([]plugin.DirEntry, 0, len(nodes))
 	for _, node := range nodes {
 		nodePath := node.Path.StringPath()
-		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
 			nodePath = raw
 		}
 		if node.IsContainer {
@@ -402,7 +403,7 @@ func (s *FileSystemScanService) listDirectory(
 			continue
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType, _ := node.Attributes["content_type"].(string)
+		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
 		files = append(files, plugin.FileEntry{
 			Name:        node.Name,
 			Path:        nodePath,
@@ -428,7 +429,7 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 	subdirs := make([]plugin.DirEntry, 0)
 	for _, node := range nodes {
 		nodePath := node.Path.StringPath()
-		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
 			nodePath = raw
 		}
 		if node.IsContainer {
@@ -442,7 +443,7 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 			continue
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType, _ := node.Attributes["content_type"].(string)
+		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
 		files = append(files, plugin.FileEntry{
 			Name:        node.Name,
 			Path:        nodePath,

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -550,11 +551,7 @@ func isShapefileFileType(attrs models.JSONMap) bool {
 	if len(attrs) == 0 {
 		return false
 	}
-	raw, ok := attrs["file_type"]
-	if !ok {
-		return false
-	}
-	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
+	value := strings.ToLower(strings.TrimSpace(commonAttrs.String(attrs, "storage", "file_type")))
 	if value == "" {
 		return false
 	}

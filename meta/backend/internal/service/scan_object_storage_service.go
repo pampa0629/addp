@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
 	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
@@ -385,22 +386,22 @@ func (s *ObjectStorageScanService) listObjects(resource *commonModels.Engine, ca
 			continue
 		}
 		key := strings.TrimPrefix(node.Path.StringPath(), bucketName+"/")
-		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
 			_, parsedKey := splitObjectPath(raw)
 			key = parsedKey
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType, _ := node.Attributes["content_type"].(string)
+		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
 		object := plugin.ObjectInfo{
 			Bucket:      bucketName,
 			Key:         key,
 			Size:        size,
 			ContentType: contentType,
 		}
-		if modifiedAt, ok := node.Attributes["modified_at"].(time.Time); ok {
-			object.LastModified = modifiedAt
+		if modifiedAt := commonAttrs.TimePtr(node.Attributes, "storage", "modified_at"); modifiedAt != nil {
+			object.LastModified = *modifiedAt
 		}
-		if etag, ok := node.Attributes["etag"].(string); ok {
+		if etag := commonAttrs.String(node.Attributes, "storage", "etag"); etag != "" {
 			object.ETag = etag
 		}
 		objects = append(objects, object)

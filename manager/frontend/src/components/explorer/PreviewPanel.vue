@@ -982,6 +982,24 @@ const objectContentType = computed(() => {
   return objectData.value?.content_type || ''
 })
 
+function attributeSection(attributes = {}, section) {
+  return attributes?.[section] && typeof attributes[section] === 'object' ? attributes[section] : {}
+}
+
+function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
+  const standard = attributeSection(attributes, section)
+  const keys = [key, ...fallbackKeys]
+  for (const currentKey of keys) {
+    const value = standard?.[currentKey]
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+  for (const currentKey of keys) {
+    const value = attributes?.[currentKey]
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+  return undefined
+}
+
 const objectFileTypeLabel = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
@@ -1020,9 +1038,8 @@ const objectImageDimensions = computed(() => {
   const attributes = objectData.value?.attributes || {}
   const extracted = objectData.value?.extracted_metadata || attributes.extracted_metadata || {}
 
-  // 尝试从多个可能的位置获取宽高信息
-  let width = extracted.width || extracted.Width || attributes.width || attributes.Width
-  let height = extracted.height || extracted.Height || attributes.height || attributes.Height
+  const width = attributeValue(attributes, 'extensions.media', 'width', 'Width') || extracted.width || extracted.Width
+  const height = attributeValue(attributes, 'extensions.media', 'height', 'Height') || extracted.height || extracted.Height
 
   if (width && height) {
     return `${width} × ${height}`
@@ -1042,8 +1059,8 @@ const objectMetadataTooltip = computed(() => {
   // 图片特有信息
   if (contentType.startsWith('image/')) {
     // 图片尺寸（宽 高）
-    const width = extracted.width || extracted.Width || attributes.width || attributes.Width
-    const height = extracted.height || extracted.Height || attributes.height || attributes.Height
+    const width = attributeValue(attributes, 'extensions.media', 'width', 'Width') || extracted.width || extracted.Width
+    const height = attributeValue(attributes, 'extensions.media', 'height', 'Height') || extracted.height || extracted.Height
     if (width && height) {
       parts.push(`${t('manager.explorer.metaWidth')} ${width} ${t('manager.explorer.metaHeight')} ${height}`)
     }
@@ -1054,19 +1071,19 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 图片格式
-    const format = extracted.format || extracted.Format || attributes.format || attributes.image_format
+    const format = attributeValue(attributes, 'extensions.media', 'format', 'image_format') || extracted.format || extracted.Format
     if (format && format !== contentType.split('/')[1]) {
       parts.push(`${t('manager.explorer.metaFormat')}: ${format}`)
     }
 
     // 颜色模式
-    const colorMode = extracted.mode || extracted.Mode || attributes.mode || attributes.color_mode
+    const colorMode = attributeValue(attributes, 'extensions.media', 'color_space', 'color_mode', 'mode') || extracted.color_space || extracted.mode || extracted.Mode
     if (colorMode) {
       parts.push(`${t('manager.explorer.metaColorMode')}: ${colorMode}`)
     }
 
     // DPI
-    const dpi = extracted.dpi || extracted.DPI || attributes.dpi
+    const dpi = attributeValue(attributes, 'extensions.media', 'dpi') || extracted.dpi || extracted.DPI
     if (dpi) {
       parts.push(`DPI: ${dpi}`)
     }

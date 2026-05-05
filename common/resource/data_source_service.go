@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/models"
 )
 
@@ -118,11 +119,11 @@ func (s *DataSourceService) GetEngineTree(engineID uint, expandDepth int) (*Tree
 	if expandDepth == 0 {
 		rootLocator := buildEngineRootLocator(engine.ID)
 		return &TreeNode{
-			ID:          rootLocator,
-			Locator:     rootLocator,
-			Label:       engine.Name,
-			Type:        "engine",
-			Icon:        getEngineIcon(engine.EngineType),
+			ID:      rootLocator,
+			Locator: rootLocator,
+			Label:   engine.Name,
+			Type:    "engine",
+			Icon:    getEngineIcon(engine.EngineType),
 			Metadata: map[string]interface{}{
 				"engine_id":   engine.ID,
 				"engine_type": engine.EngineType,
@@ -248,35 +249,27 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 
 	if tableNode.Attributes != nil {
 		// 检查 has_geometry
-		if hasGeom, ok := tableNode.Attributes["has_geometry"].(bool); ok {
-			metadata.HasGeometry = hasGeom
-		}
+		metadata.HasGeometry = commonAttrs.BoolFromSections(tableNode.Attributes, "has_geometry",
+			"extensions.spatial", "extensions.spatial.spatial_metadata")
 
 		// 提取几何列名称
-		if geomCol, ok := tableNode.Attributes["geometry_column"].(string); ok {
-			metadata.GeometryColumn = geomCol
-		}
+		metadata.GeometryColumn = commonAttrs.StringFromSections(tableNode.Attributes, "geometry_column",
+			"extensions.spatial", "extensions.spatial.spatial_metadata")
 
 		// 提取 SRID
-		if srid, ok := tableNode.Attributes["srid"].(float64); ok {
+		if srid := commonAttrs.Int64FromSections(tableNode.Attributes, "srid",
+			"extensions.spatial", "extensions.spatial.spatial_metadata"); srid > 0 {
 			sridInt := int(srid)
 			metadata.SRID = &sridInt
 		}
 
 		// 提取几何类型
-		if geomType, ok := tableNode.Attributes["geometry_type"].(string); ok {
-			metadata.GeometryType = geomType
-		}
+		metadata.GeometryType = commonAttrs.StringFromSections(tableNode.Attributes, "geometry_type",
+			"extensions.spatial", "extensions.spatial.spatial_metadata")
 
 		// 提取范围
-		if extent, ok := tableNode.Attributes["extent"].([]interface{}); ok {
-			metadata.Extent = make([]float64, 0, len(extent))
-			for _, v := range extent {
-				if f, ok := v.(float64); ok {
-					metadata.Extent = append(metadata.Extent, f)
-				}
-			}
-		}
+		metadata.Extent = commonAttrs.Float64SliceFromSections(tableNode.Attributes, "extent",
+			"extensions.spatial", "extensions.spatial.spatial_metadata")
 	}
 
 	log.Printf("[DataSourceService] DetectTableMetadata: hasGeometry=%v, column=%s",
