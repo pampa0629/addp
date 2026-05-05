@@ -1,9 +1,15 @@
-# ADDP 数据类型与文件格式持续跟进计划
+# ADDP 数据类型与文件格式改进清单
 
 更新时间：2026-05-05
 
-本文是一个持续跟进的计划文档，用来记录 ADDP 在“数据类型、文件格式、组合形态、扩展语义”这条线上的当前状态、后续任务和阶段性验收标准。  
-它会随着后续会话持续更新，不是一次性结题文档。
+本文是 ADDP 在“数据类型、文件格式、组合形态、扩展语义、attributes 治理”方向上的持续跟进清单。  
+它的定位是路线图和状态板：记录当前共识、实现现状、主要差距、阶段计划和后续接力点。
+
+相关文档分工：
+
+- `addp数据类型与文件格式概念规范.md`：定义概念边界，回答“应该如何理解这些概念”。
+- `addp数据类型与文件格式落地指南.md`：定义实现原则和落地结构，回答“代码应该怎么做”。
+- 本文：记录推进计划、当前状态和待办，回答“接下来怎么改、做到什么程度算完成”。
 
 ## 一、当前共识
 
@@ -18,35 +24,60 @@
 7. 空间不是独立数据家族，而是扩展语义。
 8. 目录型、容器型、多文件型都属于组合形态。
 9. 落地实现必须从 `meta` 扫描出发，先推断组合形态，再归并 item，然后判断数据家族和文件格式。
+10. `meta` 是 item 识别和入库的权威来源。
+11. `manager` 只消费 `meta` 已扫描入库的 item，不预览未扫描资源。
+12. `manager` 不通过 provider 优先级、文件后缀或路径重新识别 item；provider 只根据 `meta` 标准属性选择预览能力。
+13. `meta_item.attributes` 应采用“受控核心 + 开放扩展”：平台核心字段必须受控，第三方格式和插件私有属性必须允许扩展但要进入命名空间。
+14. ADDP 约束的是“平台如何理解一个 item”，不是穷举所有格式可能携带的属性。
 
-## 二、当前代码快照
+## 二、目标状态
 
-这一部分记录当前仓库里已经存在的相关实现，方便后续会话接力时快速定位。
+最终希望形成下面这条稳定链路：
 
-### 1. `common/format` 已经是共享核心，但不应承载组合形态主语义
+```text
+资源树扫描
+  -> 组合形态推断
+  -> meta item 归并
+  -> 数据家族判断
+  -> 文件格式识别
+  -> 元数据与扩展信息提取
+  -> attributes 归一化
+  -> manager / transfer / asset / search 消费标准 item
+```
 
-当前 `common/format` 已具备以下能力：
+目标状态要求：
 
-- `TableInfo`、`ObjectInfo`、`FieldInfo`、`ExtensionInfo`
-- `FileTableParser`
-- `DBTableParser`
-- `ObjectInfoParser`
-- `DocCollectionParser`
-- `DetectFormat` / MIME 转换 / TypeMapper
+- 组合形态由 `common/dataitem` 统一识别。
+- 文件格式由 `common/format` 统一识别和解析。
+- `meta` 负责把扫描、识别、解析结果合成为稳定的 meta item。
+- `meta_item.attributes` 分区表达，不再长期依赖平铺 JSON。
+- 平台核心字段可校验，第三方扩展可开放。
+- 平台模块只依赖核心字段和标准扩展，不依赖任意 custom key。
 
-相关文件包括：
+推荐 attributes 目标结构：
 
-- `common/format/info.go`
-- `common/format/interface.go`
-- `common/format/registry.go`
-- `common/format/detection.go`
+```json
+{
+  "schema_version": 1,
+  "storage": {},
+  "item": {},
+  "schema": {},
+  "extensions": {}
+}
+```
 
-历史组合形态 detector 兼容层仍位于：
+其中：
 
-- `common/format/detector/registry.go`
-- `common/format/detector/detector.go`
+| 分区 | 职责 |
+|---|---|
+| `storage` | 存储位置、对象基础属性、catalog 基础信息 |
+| `item` | 组合形态、数据家族、格式、入口路径、组成文件 |
+| `schema` | 字段、主键、索引、表级结构信息 |
+| `extensions` | 空间、媒体、文档、统计、第三方插件私有属性 |
 
-这个位置属于历史实现位置。根据当前概念共识，组合形态推断发生在文件格式识别之前，主入口已开始迁移到 `common/dataitem`。
+## 三、当前实现快照
+
+### 1. `common/dataitem`
 
 当前已新增目录：
 
@@ -60,29 +91,67 @@ common/dataitem/
 
 已落地：
 
-- `CompositionType`、`DataFamily`、`DetectedItem`
-- `CompositeItemDetector` 主接口与 registry
-- `ResolveDirectory` 目录级组合形态推断入口
-- `InferSingleFileItem` 单文件基础语义推断
-- `common/format/detector` 保留为兼容转发层
+- `CompositionType`
+- `DataFamily`
+- `DetectedItem`
+- `CompositeItemDetector`
+- `ResolveDirectory`
+- `InferSingleFileItem`
+- `InferSingleFile`
+- `InferFormat`
+- `InferDataFamily`
 
-### 2. `meta` 已经开始按资源树和组合规则工作
+当前说明：
 
-当前 `meta` 并不是只按单文件格式扫描：
+- `common/dataitem` 已经成为组合形态推断的主入口。
+- `common/format/detector` 目前保留为兼容转发层。
+- 已新增 Shapefile 多文件 detector。
+- 单文件 SQLite / GeoPackage 已识别为 `container_file`。
+- 复杂目录树、跨层辅助文件、混合集合归并仍待增强。
 
-- `scan_filesystem_service.go` 已使用 `detector.GetAll()` 做复合项识别
-- `scan_object_storage_service.go` 已通过 `format.GetObjectInfoParser()` 提取对象元数据
-- `scan_database_service.go` 仍保留 `ScannerTableInfo` 作为扫描中间结构
+### 2. `common/format`
 
-说明：
+当前 `common/format` 已具备：
 
-- `meta` 已经是组合形态识别和 item 归并的关键入口
-- 但扫描中间结构还未完全统一
-- 后续 `meta` 应调用 `common/dataitem`，而不是自己持有组合形态推断规则
+- `TableInfo`
+- `ObjectInfo`
+- `FieldInfo`
+- `ExtensionInfo`
+- `FileTableParser`
+- `DBTableParser`
+- `ObjectInfoParser`
+- `DocCollectionParser`
+- `DetectFormat`
+- MIME 转换和 TypeMapper
 
-### 3. `manager` 已经有多条预览链路
+当前说明：
 
-当前 `manager` 侧已经形成多种预览 provider：
+- `common/format` 仍是格式识别和解析的共享核心。
+- 它不应承载组合形态主语义。
+- parser / extractor 应输出格式解析结果和扩展信息，不应直接决定 attributes 最终结构。
+
+### 3. `meta`
+
+当前 `meta` 已经开始按资源树和组合规则工作：
+
+- 文件系统目录型组合项通过 `common/dataitem.ResolveDirectory` 进入 detector 链。
+- 文件系统普通文件通过 `common/dataitem.InferSingleFileItem` 补齐标准 item attributes。
+- 对象存储单对象通过 `common/dataitem.InferSingleFile` 补齐标准 item attributes。
+- 对象存储同一前缀下的直接子对象会按前缀分组后进入 `common/dataitem.ResolveDirectory`。
+- 关系数据库表先落 `data_family=tabular`、`format=<engine_type>`。
+- NoSQL collection 先落 `data_family=tabular`、`format=<engine_type>`。
+- 图数据库 label / relationship 先落 `data_family=graph`。
+
+当前不足：
+
+- 扫描中间结构仍未完全统一。
+- 部分路径仍手工写 attributes 顶层字段。
+- `attributes` 还没有统一 normalizer。
+- 平铺字段兼容层还没有明确删除计划。
+
+### 4. `manager`
+
+当前 `manager` 已经有多条预览链路：
 
 - `FileTablePreviewProvider`
 - `LakeTablePreviewProvider`
@@ -91,19 +160,23 @@ common/dataitem/
 - `FileSystemPreviewProvider`
 - `DocCollectionPreviewProvider`
 - 图谱类预览 provider
-
-同时还存在：
-
 - `ObjectContentRegistry`
 - `PreviewRegistry`
 - `PreviewResolver`
 
-说明：
+已完成第一版调整：
 
-- 预览层已经比较完整
-- 但组合形态、数据家族、文件格式的判定规则仍然分散在多个 provider 中
+- `PreviewResolver` 已开始按 `MetaItem` / `MetaNode` 做确定性路由。
+- 预览取不到 MetaItem / MetaNode 时会返回未扫描错误。
+- 新链路优先按 `item_type`、`data_family`、`format` 等标准属性选择 provider。
 
-### 4. 旧模型仍未完全收口
+当前不足：
+
+- provider 内部仍保留部分历史兜底格式推断。
+- `PreviewRegistry.Resolve` 的 `Supports + priority` 机制仍作为兼容层存在。
+- 后续应迁移为优先消费 `attributes.item` 分区。
+
+### 5. 平行模型
 
 当前仍存在一些平行模型或历史结构：
 
@@ -112,210 +185,326 @@ common/dataitem/
 - `common/format.ScannerTableInfo`
 - `common/format.ScannerFieldInfo`
 
-这些结构在短期内还需要保留，但后续应逐步收口，避免重复语义。
+短期可以保留，但需要逐步明确归属和迁移路线，避免重复表达同一语义。
 
-## 三、当前主要问题
+## 四、主要差距
 
-### 1. 扫描入口统一了，但扫描语义还没统一
+### 1. 组合形态覆盖不完整
 
-`meta` 已经是入口，但：
+当前已有 Shapefile、多种单文件基础识别和部分湖表处理，但组合形态规则还需要继续扩展：
 
-- 组合形态推断还没有完全成为第一层语义
-- 有些路径仍然会先按文件后缀或格式分支
-- 扫描中间结构还保留旧命名
-
-### 2. 组合形态识别还不够系统
-
-当前代码已经有：
-
-- `CompositeItemDetector`
-- `dataitem.GetAll()` 主入口
-- `common/format/detector.GetAll()` 兼容入口
-- 单文件湖表识别
-
-但组合形态规则仍不够完整，还缺少更多 detector 覆盖：
-
-- 单文件单 item
 - 多文件单 item
 - 容器文件单 item
 - 目录树单 item
 - 混合集合单 item
+- 嵌套组合形态
+- 对象存储跨层组件归并
 
-### 3. 数据家族与格式识别仍有混合判断
+### 2. 扫描语义还未完全统一
 
-目前不少逻辑仍然把“格式识别”和“数据家族判断”交织在一起。  
-后续应拆成两层：
+`meta` 已经是入口，但部分代码路径仍然：
 
-1. item 先归并
-2. 再判断数据家族
-3. 最后做具体文件格式识别
+- 先按扩展名或格式分支。
+- 直接构造 attributes。
+- 使用旧扫描中间结构。
+- 在数据库表、文件表、对象和集合之间保留不同语义口径。
 
-### 4. 空间扩展需要进一步收口
+### 3. 数据家族与格式识别仍有交织
 
-空间能力已经存在于多个 parser 和 preview provider 中，但还缺少一个统一口径：
+后续应保持：
 
-- 空间是扩展语义
-- 它会影响字段解释、预览、地图展示和查询
-- 但它不应该成为新的数据家族
+```text
+先归并 item
+  -> 再判断 data_family
+  -> 最后识别 format
+```
 
-### 5. 预览与扫描的规则还分散
+格式识别不能再承担组合形态判断职责，空间也不能再被当作独立数据家族。
 
-目前 `meta`、`manager`、`common/format`、`common/engine` 都有自己的判断逻辑。  
-这说明体系已经跑起来了，但还没有完全收口。
+### 4. attributes 仍是弱结构化
 
-## 四、持续推进目标
+当前第一版已经写入标准属性：
 
-1. 新增 `common/dataitem`，把组合形态识别提升为平台级共享能力。
-2. 把数据家族判断从组合形态之后单独拎出来。
-3. 把文件格式识别下沉到统一的格式能力层。
-4. 把空间、采样、页数、媒体信息等统一为扩展语义。
-5. 收敛旧模型和中间结构，减少重复转换。
-6. 让新增数据类型的接入路径标准化。
+- `composition_type`
+- `data_family`
+- `format`
+- `entry_path`
+- `component_files`
+- `physical_path`
+- `fields`
 
-## 五、阶段性计划
+但问题仍在：
+
+- 缺少 `schema_version`。
+- 缺少统一 normalizer。
+- 缺少 `storage` / `item` / `schema` / `extensions` 分区。
+- parser / extractor / plugin 仍可能直接写顶层字段。
+- 第三方扩展没有命名空间约束。
+- 平台行为仍可能读取平铺 custom key。
+
+### 5. 空间扩展需要标准化
+
+空间能力已经存在于多个 parser 和 preview provider 中，但缺少统一口径：
+
+- 空间属于扩展语义。
+- 空间可能挂在表格型数据、影像型数据或其他数据家族上。
+- 预览、地图渲染、空间查询应依赖标准空间扩展，而不是硬编码格式分支。
+
+### 6. 第三方扩展机制还不完整
+
+ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。  
+因此不能把 attributes 做成封闭全字段 schema，但必须要求：
+
+- 第三方扩展有命名空间。
+- 插件不能覆盖平台核心字段。
+- 插件能声明可展示字段、可索引字段和能力边界。
+- 私有扩展晋升为标准扩展前，平台核心行为不能依赖它。
+
+## 五、阶段计划
 
 ### 阶段 0：文档与共识收口
 
-状态：已开始，基础包已落地。
+状态：进行中。
+
+目标：
+
+- 三份文档定位清楚。
+- 概念规范、落地指南、改进清单术语一致。
+- attributes 治理原则明确为“受控核心 + 开放扩展”。
 
 任务：
 
-1. 统一概念文档
-2. 统一落地顺序
-3. 把本计划文档维护为持续跟进入口
+1. 补齐概念规范中的 attributes 分层原则。（已完成）
+2. 补齐落地指南中的 attributes 推荐结构和写入规则。（已完成）
+3. 整理本文为后续推进路线图。（已完成）
 
 验收：
 
-- 概念规范、落地指南、改进计划三份文档术语一致
-- 组合形态与空间扩展边界清楚
+- 新会话能仅凭三份文档理解当前方向。
+- 文档不再把“格式扩展开放性”和“平台核心字段约束”混为一谈。
 
 ### 阶段 1：`common/dataitem` 与组合形态收口
 
-状态：已完成第一阶段收口。后续递归目录树、跨层辅助文件、复杂混合集合归并作为增强项继续推进。
+状态：第一版已完成，继续增强。
 
-目标：把组合形态推断从 `meta` 消费逻辑和 `common/format/detector` 历史位置中抽出来，沉淀为 `common/dataitem` 平台级能力。`meta` 先调用 `common/dataitem` 识别“怎么组成一套数据”，再识别“它是什么数据”。
+目标：
 
-任务：
+- `common/dataitem` 成为组合形态推断主入口。
+- `meta` 不持有私有组合形态规则。
+- 组合 item 的 fingerprint 与入口路径、组件列表一致。
 
-1. 新增 `common/dataitem` 包。（已完成）
-2. 定义 `CompositionType`、`DataFamily`、`DetectedItem` 等基础类型。（已完成）
-3. 将 `common/format/detector` 的 `CompositeItemDetector` 迁移或适配到 `common/dataitem`。（已完成：旧包保留兼容转发）
-4. 梳理 `scan_filesystem_service.go`，让其通过 `common/dataitem` 做组合形态推断。（已完成第一版）
-5. 梳理 `scan_object_storage_service.go`，确认对象存储场景是否也走统一 item 推断入口。（已完成第一版：单对象补齐 `composition_type`、`data_family`、`entry_path`、`component_files` 等标准 attributes；同一前缀直接子对象已接入 `common/dataitem.ResolveDirectory` 做组合归并）
-6. 梳理 `scan_database_service.go`，确认数据库表、collection 与 dataitem 模型的边界。（已完成第一版：关系表、NoSQL collection/label/relationship 先补齐 `data_family` 与 `format`；数据库原生 catalog item 暂不写文件组合形态）
-7. 统一 `ScannerTableInfo` / `ScannerFieldInfo` 的定位。（已完成定位说明：仅作为旧 Scanner 接口和 meta 数据库扫描之间的适配层，新语义进入 `TableInfo` / `ObjectInfo` / `common/dataitem`）
+已完成：
 
-当前实现说明：
+1. 新增 `common/dataitem` 包。
+2. 定义 `CompositionType`、`DataFamily`、`DetectedItem`。
+3. 建立 `CompositeItemDetector` 和 registry。
+4. `common/format/detector` 改为兼容转发层。
+5. 文件系统扫描接入 `common/dataitem.ResolveDirectory`。
+6. 文件系统普通文件接入 `InferSingleFileItem`。
+7. 对象存储单对象接入 `InferSingleFile`。
+8. 对象存储同一前缀直接子对象接入 `ResolveDirectory`。
+9. 新增 Shapefile 多文件 detector。
 
-- 文件系统目录型组合项通过 `common/dataitem.ResolveDirectory` 进入 detector 链。
-- 文件系统普通文件通过 `common/dataitem.InferSingleFileItem` 补齐标准 item attributes。
-- 对象存储单对象通过 `common/dataitem.InferSingleFile` 补齐标准 item attributes，但保留对象存储原有 `bucket/path/name` 语义，避免影响 fingerprint。
-- 对象存储同一前缀下的直接子对象会按前缀分组后进入 `common/dataitem.ResolveDirectory`；匹配组合项后写入目录型 item，并跳过组件对象的单文件 item 落库。
-- 对象存储组合归并当前是第一版，只处理同一前缀直接子对象；递归目录树、跨层辅助文件、混合集合归并仍待增强。
-- 关系数据库表属于引擎原生逻辑 item，本轮只落 `data_family=tabular`、`format=<engine_type>`。
-- NoSQL collection 本轮落 `data_family=tabular`、`format=<engine_type>`；图数据库 label/relationship 落 `data_family=graph`。
-- 已新增 Shapefile 多文件 detector，识别同名 `.shp/.shx/.dbf` 必需组件，并归并 `.prj/.cpg/.sbn/.sbx` 等辅助组件。
-- `common/format/detector` 仅保留兼容转发层，主注册入口为 `common/dataitem`。
+待办：
+
+1. 增强对象存储递归目录树归并。
+2. 支持跨层辅助文件。
+3. 支持复杂混合集合。
+4. 梳理数据库表、collection、label、relationship 是否需要“引擎原生 item”组合形态。
+5. 增加更多组合形态测试样例。
 
 验收：
 
-- 多文件、容器、目录树、混合集合都能被稳定归并。（第一阶段已覆盖 Shapefile 多文件、湖表目录/单文件、SQLite/GeoPackage 容器型单文件基础标识；复杂混合集合后续增强）
-- 组合形态 detector 的主入口在 `common/dataitem`。（已完成）
-- `meta` 只调用共享 detector，不持有私有组合形态规则。（已完成）
-- `meta` item 的组合形态字段可回显。（已完成：写入 attributes）
-- item fingerprint 与组合形态一致。（已完成第一版：组合 item 使用组合入口路径；组件对象/文件在匹配组合后跳过单文件落库）
+- 多文件、容器、目录树、混合集合都有稳定 detector 接入点。
+- 组件文件在归并为组合 item 后不会重复落成普通单文件 item。
+- `entry_path`、`component_files`、`composition_type` 稳定可回显。
 
 ### 阶段 2：数据家族与格式识别分离
 
-状态：已开始。`common/dataitem` 已提供统一的单文件格式规范化和数据家族推断入口，后续继续审计 `manager` 预览 provider。
+状态：第一版已开始。
 
-目标：先判断数据家族，再判断格式。
+目标：
 
-任务：
+- 数据家族是主分类。
+- 文件格式只表达编码方式。
+- 空间、采样、索引、页数、EXIF 等进入扩展语义。
 
-1. 明确数据家族枚举。（已完成第一版：`common/dataitem.DataFamily`）
-2. 明确文件格式枚举。（已沿用 `common/format.FormatType`，并在 `common/dataitem.InferFormat` 中补齐对象存储常见扩展名别名规范化）
-3. 明确 item -> family -> format 的判断顺序。（已完成第一版：组合 item 由 detector 明确返回；单文件 item 在归并后通过 `InferFormat` 和 `InferDataFamily` 生成标准 attributes）
-4. 审核 `manager` 里的各类 preview provider。（已开始：`FileTablePreviewProvider` 已优先消费 Meta 标准 attributes）
-5. 减少 provider 内部重复格式分支
+已完成：
 
-当前实现说明：
+1. 明确 `common/dataitem.DataFamily` 第一版枚举。
+2. 沿用 `common/format.FormatType` 作为格式枚举基础。
+3. `InferFormat` 统一处理显式格式、MIME、扩展名。
+4. 对象存储常见扩展名别名已规范化。
+5. `InferDataFamily` 基于规范化格式判断主数据家族。
+6. SQLite / GeoPackage 识别为 `container_file`，数据家族保持 `tabular`。
 
-- `common/dataitem.InferFormat` 统一处理显式格式、MIME 类型、文件名扩展名三类输入。
-- 对象存储扫描中常见的 `jpg`、`xlsx`、`gpkg`、`.tif` 等扩展名会被规范化为 `jpeg`、`excel`、`geopackage`、`tiff`。
-- `InferDataFamily` 以规范化后的格式判断主数据家族，避免把图片、Excel、GeoPackage 等误判为 `unknown`。
-- 单文件 SQLite / GeoPackage 继续识别为 `container_file` 组合形态，但数据家族保持 `tabular`。
-- `manager` 的 `PreviewRequest` 已透传 Meta attributes，`FileTablePreviewProvider` 优先使用 `format` / `content_type`，再按文件名兜底，避免绕过 `common/dataitem` 的规范化规则。
+待办：
 
-验收：
-
-- 同类资源在不同组合形态下仍能识别为同一数据家族。（已补充 `common/dataitem` 单元测试覆盖）
-- 格式识别不再承担组合形态判断职责。（已完成第一版：组合形态由 `CompositionType`/detector 承担，格式只作为 `format` attribute）
-
-### 阶段 3：空间扩展收口
-
-目标：把空间做成统一扩展语义。
-
-任务：
-
-1. 统一 `SpatialInfo` 的使用口径
-2. 梳理 `shapefile`、`geojson`、`postgresql`、影像空间元数据
-3. 明确哪些字段属于空间扩展
-4. 明确哪些预览能力依赖空间扩展
+1. 继续审核扫描路径中混合判断逻辑。
+2. 减少 provider 内部重复格式分支。
+3. 明确更多格式到数据家族的映射。
+4. 明确未知格式的处理策略。
 
 验收：
 
-- 表格型空间数据和影像型空间数据都能走统一扩展口径
-- 前端地图展示或空间渲染只依赖扩展信息，不依赖硬编码格式分支
+- 同类资源在不同组合形态下仍识别为同一数据家族。
+- 格式识别不再承担组合形态判断职责。
+- 空间不再作为独立数据家族。
 
-### 阶段 4：模型与注册收口
+### 阶段 3：`meta_item.attributes` 治理
 
-目标：减少平行模型与重复注册体系。
+状态：已形成原则，待实现。
+
+目标：
+
+- attributes 从平铺 JSON 收口为“受控核心 + 开放扩展”。
+- 平台核心字段稳定可校验。
+- 第三方扩展开放但有命名空间。
 
 任务：
 
-1. 收拢 `common/format` 与 `common/engine/plugin` 的平行结构
-2. 审核 `common/format/registry.go`
-3. 审核 `common/dataitem` 的 detector registry
-4. 决定 `common/format/detector` 是否保留兼容层或删除
-5. 审核 `manager` 的 `ObjectContentRegistry`
+1. 定义 attributes 目标结构：`schema_version`、`storage`、`item`、`schema`、`extensions`。
+2. 明确平台保留字段和第三方插件可写字段边界。
+3. 新增 attributes normalizer，所有 `meta_item` 落库前统一经过 normalizer。
+4. 让 `common/dataitem` 输出进入 `attributes.item`。
+5. 让存储引擎、catalog provider、对象枚举结果进入 `attributes.storage`。
+6. 让字段、主键、索引等结构信息进入 `attributes.schema`。
+7. 让空间、媒体、文档、统计等通用能力进入标准扩展分区。
+8. 让第三方或格式私有属性进入 `attributes.extensions.<namespace>`。
+9. 定义冲突处理规则，禁止 parser / extractor / 第三方插件直接覆盖平台核心字段。
+10. 为迁移期保留旧平铺字段兼容读取，但新增读取逻辑优先消费分区结构。
+
+建议优先实现顺序：
+
+1. 先新增 normalizer 和目标结构写入。
+2. 同时保留旧平铺字段兼容。
+3. 迁移 `PreviewResolver` 优先读取 `attributes.item`。
+4. 迁移对象预览、文件表预览、文档集合预览读取路径。
+5. 最后删除不再需要的平铺字段读取。
 
 验收：
 
-- 新能力只需要进入一条明确的注册路径
-- registry 语义统一
-- 旧结构的保留理由清楚
+- 平台核心字段有明确 schema 和归属。
+- 第三方扩展能存储不可预知字段，但必须有命名空间。
+- 平台级行为不依赖未标准化 custom key。
+- 冲突字段不会覆盖核心 item 语义。
+- 旧平铺字段有兼容策略和删除计划。
 
-## 六、后续会话接力点
+### 阶段 4：空间扩展收口
 
-后续新会话可以直接从下面这些点接手：
+状态：待推进。
 
-1. `common/dataitem` 包如何设计并迁移现有 detector。
-2. 对象存储目录/前缀是否接入组合形态 detector，支持 shapefile、parquet dataset 等多文件/目录型对象存储数据集归并。
-3. 数据库表、文档集合与 `dataitem` 模型的边界如何表达，是否需要新增“引擎原生 item”组合形态。
-4. `TableInfo` / `ObjectInfo` 与 `Scanner*` 模型如何逐步收口。
-5. 空间扩展如何统一成一个稳定的扩展语义。
-6. `manager` 的预览 provider 如何减少分支判断。
+目标：
 
-## 七、当前优先级
+- 把空间做成统一扩展语义。
+- 表格型空间数据和影像型空间数据都能走同一扩展口径。
+
+任务：
+
+1. 统一 `SpatialInfo` 的使用口径。
+2. 梳理 `shapefile`、`geojson`、`postgresql`、影像空间元数据。
+3. 明确哪些字段属于空间标准扩展。
+4. 明确哪些预览能力依赖空间扩展。
+5. 将空间信息接入 `attributes.extensions.spatial`。
+
+验收：
+
+- 前端地图展示或空间渲染只依赖标准空间扩展。
+- 不硬编码空间字段名为 `geom`。
+- 不通过具体格式判断是否具备空间能力。
+
+### 阶段 5：`manager` 预览路由收口
+
+状态：第一版已完成，继续删除历史逻辑。
+
+目标：
+
+- `manager` 只消费 `meta` 标准 item。
+- 预览路由确定性选择 provider。
+- provider 不再通过优先级抢语义路由。
+
+已完成：
+
+1. `PreviewResolver` 先要求存在 MetaItem / MetaNode。
+2. 取不到 MetaItem / MetaNode 时返回未扫描错误。
+3. 优先按 `item_type` 处理 lake table、collection、label、relationship。
+4. 再按 `data_family` / `format` 选择文件表、数据库表、对象内容或文件系统预览能力。
+5. `PreviewRegistry.Resolve` 标记为过渡兼容。
+
+待办：
+
+1. 迁移为优先读取 `attributes.item` 分区。
+2. 删除 provider 内部兜底格式推断。
+3. 删除未扫描路径直接预览旧入口。
+4. 删除 provider 优先级抢语义路由。
+5. 增加预览路由表测试。
+
+验收：
+
+- `manager` 预览不再支持未扫描资源直接预览。
+- provider 不再自行猜测组合形态、数据家族或文件格式。
+- 所有预览路由都可以追溯到 meta 标准属性。
+
+### 阶段 6：模型与注册收口
+
+状态：待推进。
+
+目标：
+
+- 减少平行模型与重复注册体系。
+- 新增能力只需要进入清晰的一条或少数几条注册路径。
+
+任务：
+
+1. 收拢 `common/format` 与 `common/engine/plugin` 的平行结构。
+2. 审核 `common/format/registry.go`。
+3. 审核 `common/dataitem` detector registry。
+4. 决定 `common/format/detector` 是否保留兼容层或删除。
+5. 审核 `manager` 的 `ObjectContentRegistry`。
+6. 明确第三方插件能力声明格式。
+
+验收：
+
+- registry 语义统一。
+- 新格式、新组合形态、新 extractor 的接入路径清楚。
+- 旧结构的保留理由清楚。
+
+## 六、当前优先级
 
 ### P0
 
-- 新增 `common/dataitem` 并作为组合形态推断主入口
-- 让 `meta` 通过 `common/dataitem` 使用组合形态能力
-- 把数据家族、文件格式、扩展语义顺序理顺
-- 继续统一文档和实现的术语
+- 完成 attributes 目标结构和 normalizer 设计。
+- 继续让 `meta` 通过 `common/dataitem` 使用组合形态能力。
+- 迁移 `manager` 预览路由优先消费标准 attributes。
+- 保持文档和实现术语一致。
 
 ### P1
 
-- 收敛旧扫描中间结构
-- 统一空间扩展口径
-- 减少预览 provider 内重复逻辑
+- 增强对象存储组合归并能力。
+- 统一空间扩展口径。
+- 收敛旧扫描中间结构。
+- 删除 `manager` 预览旧兜底逻辑。
 
 ### P2
 
-- 收拢平行 registry
-- 建立更统一的能力发现层
+- 收拢平行 registry。
+- 建立第三方插件扩展声明机制。
+- 建立更统一的能力发现层。
+
+## 七、后续会话接力点
+
+后续新会话可以直接从下面这些点接手：
+
+1. 设计并实现 `meta_item.attributes` normalizer。
+2. 将 `composition_type`、`data_family`、`format`、`entry_path`、`component_files` 迁移到 `attributes.item`。
+3. 将对象存储、文件系统、数据库 catalog 基础信息迁移到 `attributes.storage`。
+4. 将字段、主键、索引等结构信息迁移到 `attributes.schema`。
+5. 将空间信息迁移到 `attributes.extensions.spatial`。
+6. 改造 `PreviewResolver` 优先读取分区后的 attributes。
+7. 增强对象存储目录/前缀组合归并，支持 shapefile、parquet dataset 等多文件或目录型数据集。
+8. 梳理数据库表、文档集合与 `dataitem` 模型的边界。
+9. 收口 `TableInfo` / `ObjectInfo` 与 `Scanner*` 模型。
+10. 删除 `manager` 中未扫描路径直接预览、provider 自行猜格式、provider 优先级抢语义路由等历史逻辑。
 
 ## 八、结语
 

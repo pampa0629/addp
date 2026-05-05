@@ -723,7 +723,18 @@ http://localhost:8091/docs                 # Copilot 模块（FastAPI）
 
 **参考实现**：System 模块的 API 设计可作为其他模块的参考标准
 
-### 10.2 现有接口迁移
+### 10.2 后端实现分层与共享能力
+
+各服务的后端实现应遵循 `Handler -> Service -> Repository -> Database` 的分层思路：
+
+1. **Handler** 负责 HTTP 请求解析、参数绑定、认证上下文读取、响应写回和 Swagger 注解维护。
+2. **Service** 负责业务规则、事务边界、跨 Repository 编排和领域错误返回。
+3. **Repository** 负责数据访问封装，避免在 Handler 或 Service 中散落 SQL/GORM 细节。
+4. **Database** 表示具体数据库、外部存储或引擎调用边界。
+
+后端通用能力应优先沉淀到 `common/`，不要在各模块重复实现。适合放入 `common/` 的能力包括统一响应、错误映射、认证上下文、分页模型、通用客户端、存储路径与指纹等跨模块复用逻辑。
+
+### 10.3 现有接口迁移
 
 **迁移策略（已完成）**：
 
@@ -742,7 +753,7 @@ http://localhost:8091/docs                 # Copilot 模块（FastAPI）
 - 高频接口优先统一格式（如用户、引擎、日志）
 - 内部接口可延后
 
-### 10.3 共享响应处理
+### 10.4 共享响应处理
 
 在 `common/api` 模块中提供统一的响应方法（参考 System 模块实现）：
 
@@ -919,11 +930,11 @@ Body: {"user_ids": [1, 2, 3]}
 
 ---
 
-## 十一、amis 集成规范
+## 十二、amis 集成规范
 
 [百度 amis](https://aisuda.bce.baidu.com/amis/zh-CN/docs/start/getting-started) 是 ADDP 前端组件化的核心框架。amis 对 API 响应格式有特定要求，需要在前端适配层处理，**后端不做任何改动**。
 
-### 11.1 amis 期望的响应格式
+### 12.1 amis 期望的响应格式
 
 ```json
 {
@@ -937,7 +948,7 @@ Body: {"user_ids": [1, 2, 3]}
 - `msg` 为错误消息
 - `data` 为实际数据
 
-### 11.2 统一适配器
+### 12.2 统一适配器
 
 在 `common-frontend/basic/src/utils/amis-adaptor.js` 中提供统一适配器，**所有使用 amis 的模块必须使用此适配器**，不得各自实现：
 
@@ -992,7 +1003,7 @@ export function toAmisListResponse(data, httpStatus = 200) {
 }
 ```
 
-### 11.3 分页参数映射
+### 12.3 分页参数映射
 
 amis 默认发送 `page` 和 `perPage`，ADDP 使用 `page` 和 `page_size`，在 amis 组件配置中映射：
 
@@ -1010,7 +1021,7 @@ amis 默认发送 `page` 和 `perPage`，ADDP 使用 `page` 和 `page_size`，�
 }
 ```
 
-### 11.4 axios 拦截器集成
+### 12.4 axios 拦截器集成
 
 在各模块前端的 axios 实例中统一处理，避免每个 amis 组件单独配置 adaptor：
 
@@ -1028,11 +1039,11 @@ amisAxios.interceptors.response.use(
 
 ---
 
-## 十二、AI Agent 友好性规范
+## 十三、AI Agent 友好性规范
 
 AI agent 调用 API 时需要理解接口语义、判断错误是否可重试、知道参数从哪里获取。以下规范让 API 对 agent 更友好。
 
-### 12.1 Swagger 注释中的 x-ai-hint
+### 13.1 Swagger 注释中的 x-ai-hint
 
 在 Go handler 注释中添加 `x-ai-hint` 扩展字段，描述 API 用途和参数来源：
 
@@ -1058,7 +1069,7 @@ func (h *ItemHandler) Execute(c *gin.Context) { ... }
 async def chat(request: ChatRequest): ...
 ```
 
-### 12.2 错误响应增加 error_type
+### 13.2 错误响应增加 error_type
 
 对于 agent 需要判断是否重试的场景，错误响应可附加 `error_type` 字段（可选）：
 
@@ -1091,7 +1102,7 @@ async def chat(request: ChatRequest): ...
 
 **注意**：`error_type` 是可选字段，不强制要求所有接口都实现。优先在 agent 频繁调用的接口上添加。
 
-### 12.3 agent 调用其他模块的认证
+### 13.3 agent 调用其他模块的认证
 
 agent 调用其他模块（develop、meta、manager 等）时，统一使用内部 API Key 认证：
 
@@ -1105,11 +1116,11 @@ headers = {
 
 ---
 
-## 十三、Python Client 规范
+## 十四、Python Client 规范
 
 `agent/backend/tools/` 目录下的各模块 client 必须继承统一基类，保持一致的接口风格。
 
-### 13.1 基类定义
+### 14.1 基类定义
 
 基类位于 `agent/backend/tools/base_client.py`：
 
@@ -1169,7 +1180,7 @@ class AddpBaseClient:
         await self.close()
 ```
 
-### 13.2 子类示例
+### 14.2 子类示例
 
 ```python
 from .base_client import AddpBaseClient
@@ -1190,7 +1201,7 @@ class DevelopClient(AddpBaseClient):
         return await self.post(f"/api/v1/develop/items/{item_id}/execute", json=params or {})
 ```
 
-### 13.3 规范要求
+### 14.3 规范要求
 
 - 所有 client 必须继承 `AddpBaseClient`
 - 方法名使用 snake_case，与 API 路径语义对应
@@ -1199,7 +1210,7 @@ class DevelopClient(AddpBaseClient):
 
 ---
 
-## 十四、参考资料
+## 十五、参考资料
 
 - [Google API Design Guide](https://cloud.google.com/apis/design)
 - [Microsoft REST API Guidelines](https://github.com/microsoft/api-guidelines)

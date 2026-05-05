@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
+
+var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta item or node")
 
 // PreviewResolver 数据预览解析器
 // 职责：
@@ -92,7 +95,7 @@ type PreviewMetadata struct {
 	SizeBytes    *int64 `json:"size_bytes"`    // 大小（来自 Meta）
 }
 
-// Preview 执行预览
+// Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
 func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverRequest) (*PreviewResult, error) {
 	// 1. 验证参数
 	if req.Locator == nil {
@@ -102,17 +105,15 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 		return nil, fmt.Errorf("engine is required")
 	}
 
-	// 2. 尝试从 Meta 获取元数据（可选，失败不影响预览）
-	if req.Metadata == nil && req.Locator.MetaID != nil && r.metaClient != nil {
-		// TODO: 调用 MetaClient 获取节点元数据
-		logger.L().Debug("尝试从 Meta 获取节点元数据", "meta_id", *req.Locator.MetaID)
+	if req.Metadata == nil {
+		return nil, ErrPreviewRequiresScannedMeta
 	}
 
-	// 3. 转换为旧的 PreviewRequest 格式（兼容现有插件）
+	// 3. 转换为旧的 PreviewRequest 格式（provider 接口过渡期复用）
 	legacyReq := r.convertToLegacyRequest(req)
 
-	// 4. 选择预览插件
-	provider, err := r.registry.Resolve(legacyReq)
+	// 4. 按 Meta 标准属性确定性选择预览插件
+	provider, err := r.resolveProviderByMeta(req, legacyReq)
 	if err != nil {
 		logger.L().Warn("未找到合适的预览插件", "locator", req.Locator.ToURI(), "error", err)
 		return &PreviewResult{
@@ -122,7 +123,7 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 		}, nil
 	}
 
-	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI())
+	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI(), "item_type", req.ItemType)
 
 	// 5. 执行预览
 	tablePreview, err := provider.Preview(ctx, legacyReq)
@@ -247,6 +248,10 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		}
 	}
 
+	if metaNode == nil && metaItem == nil {
+		return nil, ErrPreviewRequiresScannedMeta
+	}
+
 	// 对文件系统类型，用 metaItem.FullName 修正 locator 路径（前端传来的路径可能缺少根目录）
 	if metaItem != nil && isFileSystemType(engine.EngineType) && metaItem.FullName != "" {
 		parts := strings.Split(strings.Trim(metaItem.FullName, "/"), "/")
@@ -318,12 +323,16 @@ func isPreviewItemType(itemType string) bool {
 
 // DetectPreviewType 检测预览类型
 func (r *PreviewResolver) DetectPreviewType(loc *resource.ResourceLocator, engine *commonModels.Engine) string {
-	legacyReq := r.convertToLegacyRequest(&PreviewResolverRequest{
+	req := &PreviewResolverRequest{
 		Locator: loc,
 		Engine:  engine,
-	})
+	}
+	if loc != nil {
+		req.ItemType = strings.ToLower(strings.TrimSpace(string(loc.Type)))
+	}
+	legacyReq := r.convertToLegacyRequest(req)
 
-	provider, err := r.registry.Resolve(legacyReq)
+	provider, err := r.resolveProviderByMeta(req, legacyReq)
 	if err != nil {
 		return "unsupported"
 	}
@@ -412,6 +421,107 @@ func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {
 		return nil
 	}
 	return req.Metadata.Attributes
+}
+
+func (r *PreviewResolver) resolveProviderByMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) (PreviewProvider, error) {
+	if r == nil || r.registry == nil {
+		return nil, ErrNoPreviewProvider
+	}
+	for _, name := range providerNamesForMeta(req, legacyReq) {
+		provider, err := r.registry.GetByName(name)
+		if err != nil {
+			continue
+		}
+		return provider, nil
+	}
+	return nil, ErrNoPreviewProvider
+}
+
+func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) []string {
+	attrs := req.MetadataAttributes()
+	itemType := strings.ToLower(strings.TrimSpace(req.ItemType))
+	if itemType == "" && req != nil && req.Metadata != nil {
+		itemType = strings.ToLower(strings.TrimSpace(req.Metadata.NodeType))
+	}
+	dataFamily := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_family")))
+	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
+
+	switch itemType {
+	case "lake_table":
+		return []string{"builtin:lake-table"}
+	case "collection":
+		return []string{"builtin:doc-collection"}
+	case "label":
+		return []string{"builtin:graph-label"}
+	case "relationship":
+		return []string{"builtin:graph-relationship"}
+	}
+
+	if isNodePreview(req, legacyReq) {
+		if legacyReq != nil && (isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
+			return []string{"builtin:filesystem", "builtin:object-storage", "builtin:schema-node"}
+		}
+		return []string{"builtin:schema-node"}
+	}
+
+	switch dataFamily {
+	case "tabular":
+		if legacyReq != nil && isFileTableFormat(formatName) && isObjectStorageType(legacyReq.Engine.EngineType) {
+			return []string{"builtin:file-table"}
+		}
+		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+			return []string{"builtin:filesystem"}
+		}
+		return []string{"builtin:database-table"}
+	case "graph":
+		if itemType == "relationship" {
+			return []string{"builtin:graph-relationship"}
+		}
+		return []string{"builtin:graph-label"}
+	case "image", "video", "audio", "document":
+		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+			return []string{"builtin:filesystem"}
+		}
+		return []string{"builtin:object-storage"}
+	}
+
+	switch itemType {
+	case "table", "view", "materialized_view":
+		return []string{"builtin:database-table"}
+	case "object":
+		return []string{"builtin:object-storage"}
+	case "file":
+		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+			return []string{"builtin:filesystem"}
+		}
+		return []string{"builtin:object-storage"}
+	}
+
+	return nil
+}
+
+func isNodePreview(req *PreviewResolverRequest, legacyReq *PreviewRequest) bool {
+	if legacyReq != nil && legacyReq.Table == "" {
+		return true
+	}
+	if req == nil || req.Metadata == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(req.Metadata.NodeType)) {
+	case "root", "bucket", "prefix", "schema", "database", "dir", "directory":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFileTableFormat(formatName string) bool {
+	switch strings.ToLower(strings.TrimSpace(formatName)) {
+	case "csv", "tsv", "excel", "xlsx", "xls", "geojson", "shapefile", "parquet", "avro", "sqlite", "geopackage":
+		return true
+	default:
+		return false
+	}
 }
 
 // convertToNewResult 将旧的 TablePreview 转换为新的 PreviewResult

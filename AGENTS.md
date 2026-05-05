@@ -13,7 +13,8 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 ## 工作原则
 
 - 优先阅读并遵守仓库中的规范文档，尤其是 `docs/spec/` 和 `docs/concepts/` 下的文档。
-- 当代码实现与文档规范不一致时，先和用户核实，再修订文档规范，并基于规范开发。
+- 当代码实现与文档规范不一致，或遇到设计不合理、规范和代码冲突、语义边界不清，或继续修改会影响架构方向、模块职责、长期演进时，必须先停下来和用户讨论确认；确认后应先修订规范，再基于规范开发，不得绕过讨论继续实现。
+- 遇到用户不合理的设计思路和实现思路时，要敢于提出质疑，直到用户再次明确要求。
 - ADDP 当前处于积极开发阶段，无需为了向后兼容保留旧逻辑；过时实现应大胆删除。
 - 修复问题时追根因，不做临时补丁；涉及架构层面的根因应主动提出讨论。
 - 避免重复代码，优先复用或抽取到 `common/`、`common-frontend/`。
@@ -64,12 +65,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 ## 后端与 API 约定
 
 - 新增或修改 API 前，必须阅读 `docs/spec/addp-API设计规范.md` 和 `docs/spec/addp-Swagger集成指南.md`。
-- API 返回结构、`data` 字段语义、错误格式和 Swagger 说明必须符合规范。
-- API 路由、Handler、DTO、Swagger 注解和生成文档必须同步更新。
-- API 修改后必须运行 `bash scripts/swagger/gen-swagger.sh <module>` 和 `bash scripts/swagger/check-route-coverage.sh <module>`。
-- 不允许只改路由或 Handler 而留下旧 Swagger path。
-- 后端通用能力优先放到 `common/`，不要在各模块重复实现。
-- 各服务遵循 Handler -> Service -> Repository -> Database 的分层思路。
+- API 返回结构、错误格式、Swagger 同步、覆盖校验、后端分层和共享能力归属等细则以以上两份规范文档为准。
 
 ## 启动与验证
 

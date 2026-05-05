@@ -86,6 +86,9 @@ func (r *PreviewRegistry) Register(provider PreviewProvider) {
 }
 
 // Resolve 根据请求选择合适的插件。
+//
+// Deprecated: 新的预览主链路应基于 MetaItem 标准属性做确定性路由。
+// 该方法仅保留给旧插件兼容层和过渡期代码。
 func (r *PreviewRegistry) Resolve(req *PreviewRequest) (PreviewProvider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -96,6 +99,20 @@ func (r *PreviewRegistry) Resolve(req *PreviewRequest) (PreviewProvider, error) 
 		}
 	}
 
+	return nil, ErrNoPreviewProvider
+}
+
+// GetByName 根据 provider 名称返回插件。
+func (r *PreviewRegistry) GetByName(name string) (PreviewProvider, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	name = strings.TrimSpace(name)
+	for _, provider := range r.providers {
+		if provider.Name() == name {
+			return provider, nil
+		}
+	}
 	return nil, ErrNoPreviewProvider
 }
 

@@ -341,44 +341,6 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	return &resp.Data, nil
 }
 
-// PreviewTable 获取表数据预览
-// 当 tableName 为空时，返回 schema/bucket 的统计信息和子节点列表
-func (s *MetadataService) PreviewTable(engineID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
-	return s.PreviewTableWithContext(context.Background(), engineID, schemaName, tableName, page, pageSize, tenantID)
-}
-
-func (s *MetadataService) PreviewTableWithContext(ctx context.Context, engineID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
-	resource, err := s.getResourceForTenant(engineID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	if s.previews == nil {
-		return nil, fmt.Errorf("preview registry not initialized")
-	}
-
-	req := &PreviewRequest{
-		Engine:   resource,
-		Schema:   schemaName,
-		Table:    tableName,
-		Page:     page,
-		PageSize: pageSize,
-		TenantID: tenantID,
-	}
-
-	provider, err := s.previews.Resolve(req)
-	if err != nil {
-		return nil, fmt.Errorf("no preview plugin available: %w", err)
-	}
-
-	result, err := provider.Preview(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
 func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 	if resource == nil || !resource.IsActive {
 		return false

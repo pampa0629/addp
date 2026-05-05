@@ -184,6 +184,10 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
+		if err == service.ErrPreviewRequiresScannedMeta {
+			commonAPI.NotFoundError(c, "Resource has not been scanned by meta")
+			return
+		}
 		// 检查是否为表不存在错误（使用 errors.As 处理包装后的错误）
 		var tableNotFoundErr *service.TableNotFoundError
 		if errors.As(err, &tableNotFoundErr) {
