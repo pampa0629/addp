@@ -79,7 +79,11 @@ const metadata = computed(() => content.value?.metadata || {})
 const imageData = computed(() => content.value?.image_data || content.value?.imageData || null)
 
 // 提取元数据
-const extractedMetadata = computed(() => objectData.value?.extracted_metadata || null)
+const extractedMetadata = computed(() => {
+  return objectData.value?.extracted_metadata ||
+    objectData.value?.attributes?.extensions?.extraction?.extracted_metadata ||
+    null
+})
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 // 从 extracted_metadata 或 attributes 中获取图像元数据

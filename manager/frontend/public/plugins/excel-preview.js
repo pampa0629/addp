@@ -41,7 +41,7 @@
     }
 
     const attrs = object.attributes || {}
-    const extracted = attrs.extracted_metadata || {}
+    const extracted = attrs.extensions?.extraction?.extracted_metadata || {}
     const custom = extracted.custom_attrs || extracted.customAttrs || {}
     if (custom && (custom.excel_metadata || custom.document_type === 'xlsx' || custom.document_type === 'xlsm')) {
       return true

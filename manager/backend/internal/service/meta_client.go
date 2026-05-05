@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	commonAttrs "github.com/addp/common/attributes"
 )
 
 // MetaClient 用于调用Meta模块的API
@@ -126,8 +128,8 @@ func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[str
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 检查是否有extracted_metadata
-	if extracted, ok := result.Data.Attributes["extracted_metadata"].(map[string]interface{}); ok {
+	// 检查标准提取扩展中的 extracted_metadata
+	if extracted, ok := commonAttrs.Value(result.Data.Attributes, "extensions.extraction", "extracted_metadata").(map[string]interface{}); ok {
 		return extracted, nil
 	}
 
@@ -160,7 +162,7 @@ func (c *MetaClient) TryExtractMetadata(engineID uint, objectKey string, objectD
 
 	// 3. 调用Meta提取
 	extracted, err := c.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
-		EngineID: engineID,
+		EngineID:   engineID,
 		ObjectKey:  objectKey,
 		ObjectData: objectData,
 	})

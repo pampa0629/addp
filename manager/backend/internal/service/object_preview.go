@@ -491,7 +491,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 针对对象尝试触发提取
 	if item != nil && objectPath != "" {
-		extractorAvailable, _ := combinedAttributes["extractor_available"].(bool)
+		extractorAvailable := commonAttrs.Bool(combinedAttributes, "extensions.extraction", "extractor_available")
 		hasExtracted := preview.Object.ExtractedMetadata != nil
 
 		if extractorAvailable && !hasExtracted {
@@ -501,7 +501,18 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 				if preview.Object.Attributes == nil {
 					preview.Object.Attributes = make(models.JSONMap)
 				}
-				preview.Object.Attributes["extracted_metadata"] = extracted
+				extensions := commonAttrs.Section(preview.Object.Attributes, "extensions")
+				if extensions == nil {
+					extensions = map[string]interface{}{}
+				}
+				extraction, _ := extensions["extraction"].(map[string]interface{})
+				if extraction == nil {
+					extraction = map[string]interface{}{}
+				}
+				extraction["metadata_extracted"] = true
+				extraction["extracted_metadata"] = extracted
+				extensions["extraction"] = extraction
+				preview.Object.Attributes["extensions"] = extensions
 			}
 		}
 	}

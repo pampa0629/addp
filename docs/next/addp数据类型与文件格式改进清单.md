@@ -101,9 +101,10 @@
 - 查询接口已优先读 `attributes.schema` 和 `attributes.extensions.spatial`。
 - `ScanRepository.UpsertItemSelective` 已接入 attributes normalizer，并补充核心字段冲突保护。
 - `attributes.extensions` 已增加标准命名空间和私有命名空间约束，非法扩展统一收纳到 `extensions.unqualified`。
-- 对象提取元数据已开始写入 `extensions.media`、`extensions.document`、`extensions.statistics`。
+- 对象提取元数据已开始写入 `extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction`。
 - 搜索索引构建已优先消费 `extensions.document` 中的文档标题、作者、页数、词数、关键词和日期等字段。
 - 文件系统和对象存储扫描资源节点、Parquet 目录树 detector、共享前端 catalog 适配、Manager 图片元信息展示已优先消费标准 attributes 分区。
+- `meta` normalizer 已增加顶层平铺字段白名单，未登记顶层扩展字段会收纳到 `extensions.unqualified`；非空间标准扩展不再主动双写平铺字段。
 
 仍需收口：
 
@@ -131,6 +132,8 @@
 - `develop` DuckDB 湖表注册和 `common/duckdb` SQL 改写优先读取 `attributes.storage.physical_path`。
 - `common/resource` 树节点对象计数优先读取 `attributes.storage.object_count`。
 - `common/resource` 表空间元数据优先读取 `attributes.extensions.spatial`。
+- `manager` file-table provider 已删除按文件名推断格式的兜底，只使用 Meta 标准 `format` 或 `content_type`。
+- `manager` 节点预览已按引擎类型确定单一路由，避免多个 provider 候选按注册顺序抢路由。
 
 仍需收口：
 
@@ -172,12 +175,13 @@
 - `extensions`
 - 核心字段：`composition_type`、`data_family`、`format`、`entry_path`、`component_files`、`physical_path`、`fields`
 - 分区字段优先于平铺字段的冲突保护。
-- 第三方扩展命名空间约束：平台标准命名空间为 `spatial`、`media`、`document`、`statistics`；私有命名空间应使用反向域名或插件 ID 形式；不合规 key 进入 `extensions.unqualified`。
-- 对象提取元数据到 `extensions.media`、`extensions.document`、`extensions.statistics` 的第一版映射。
+- 顶层平铺字段白名单与回归测试。
+- 第三方扩展命名空间约束：平台标准命名空间为 `spatial`、`media`、`document`、`statistics`、`extraction`；私有命名空间应使用反向域名或插件 ID 形式；不合规 key 进入 `extensions.unqualified`。
+- 对象提取元数据到 `extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction` 的第一版映射。
 
 待补：
 
-- 增加扫描回归校验，禁止新增不在兼容清单内的平铺字段。
+- 继续清理提取状态类历史平铺字段的前端和插件兜底读取。
 - 补齐更多 parser / extractor 的标准扩展映射和读取路径。
 - 为第三方插件建立显式扩展声明机制。
 
@@ -194,7 +198,7 @@
 
 1. 当前阶段：normalizer 继续双写上述兼容字段，读取侧优先消费分区字段。
 2. 下一阶段：清理已完成初筛，非 Transfer 核心代码中未再发现清单内平铺字段的直接读取；后续新增读取必须走统一 helper 或标准分区。
-3. 再下一阶段：增加扫描回归校验，禁止新增不在清单内的平铺字段。
+3. 再下一阶段：顶层白名单回归校验已起步，提取状态类字段已迁入 `extensions.extraction`，继续清理旧兜底读取。
 4. 最终阶段：完成存量数据迁移后，停止 normalizer 双写平铺字段，仅保留离线迁移脚本或诊断工具中的旧数据读取能力。
 
 ### 4. 空间扩展
@@ -236,8 +240,8 @@
 
 ### P0
 
-- 增加扫描回归校验，禁止新增不在兼容清单内的平铺字段。
-- 继续清理 provider 历史兜底格式推断和优先级抢语义路由。
+- 清理提取状态类历史平铺字段的旧兜底读取。
+- 继续清理 provider 内剩余历史兜底和旧 Registry 兼容层。
 - 保持本文和概念规范、落地指南术语同步。
 - Transfer 相关事项已拆到 `docs/next/transfer数据类型与文件格式后续事项.md`，本阶段不纳入当前实施范围。
 
@@ -256,8 +260,8 @@
 
 ## 六、后续接力点
 
-1. 增加扫描回归校验，禁止新增不在兼容清单内的平铺字段。
-2. 补齐 `extensions.media`、`extensions.document`、`extensions.statistics` 更多 parser / extractor 写入和读取。
+1. 清理提取状态类历史平铺字段的旧兜底读取。
+2. 补齐 `extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction` 更多 parser / extractor 写入和读取。
 3. 建立第三方插件扩展声明机制，让私有命名空间可校验、可展示、可索引。
 4. 删除 `manager` 预览旧兜底逻辑和 provider 优先级抢路由。
 5. 为对象存储更多目录树、混合集合补 detector，并覆盖跨层组件真实扫描用例。

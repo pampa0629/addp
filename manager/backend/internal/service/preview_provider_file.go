@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -48,7 +47,7 @@ func (p *FileTablePreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	// 优先使用 Meta 已识别的 format/content_type，文件名仅作为兜底。
+	// 仅使用 Meta 已识别的 format/content_type，不在 provider 内按文件名猜测格式。
 	formatType := p.resolveFormat(req)
 	_, err := format.GetFileTableParser(formatType)
 	return err == nil
@@ -348,12 +347,23 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 	if req == nil {
 		return format.FormatUnknown
 	}
-	formatName := dataitem.InferFormat(
-		itemEntryPath(req, req.Table),
-		stringAttribute(req.Attributes, "content_type"),
-		stringAttribute(req.Attributes, "format"),
-	)
-	return format.FormatType(formatName)
+	if formatName := strings.TrimSpace(stringAttribute(req.Attributes, "format")); formatName != "" {
+		return normalizeFileTableFormat(formatName)
+	}
+	return format.MIMEToFormat(stringAttribute(req.Attributes, "content_type"))
+}
+
+func normalizeFileTableFormat(formatName string) format.FormatType {
+	switch strings.ToLower(strings.TrimSpace(formatName)) {
+	case "xlsx", "xls":
+		return format.FormatExcel
+	case "shp":
+		return format.FormatShapefile
+	case "gpkg":
+		return format.FormatGeoPackage
+	default:
+		return format.FormatType(strings.ToLower(strings.TrimSpace(formatName)))
+	}
 }
 
 func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {

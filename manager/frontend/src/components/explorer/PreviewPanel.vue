@@ -1000,6 +1000,10 @@ function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
   return undefined
 }
 
+function extractedMetadataValue(attributes = {}) {
+  return attributeValue(attributes, 'extensions.extraction', 'extracted_metadata')
+}
+
 const objectFileTypeLabel = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
@@ -1036,7 +1040,7 @@ const objectImageDimensions = computed(() => {
   }
 
   const attributes = objectData.value?.attributes || {}
-  const extracted = objectData.value?.extracted_metadata || attributes.extracted_metadata || {}
+  const extracted = objectData.value?.extracted_metadata || extractedMetadataValue(attributes) || {}
 
   const width = attributeValue(attributes, 'extensions.media', 'width', 'Width') || extracted.width || extracted.Width
   const height = attributeValue(attributes, 'extensions.media', 'height', 'Height') || extracted.height || extracted.Height
@@ -1054,7 +1058,7 @@ const objectMetadataTooltip = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
   const attributes = objectData.value?.attributes || {}
-  const extracted = objectData.value?.extracted_metadata || attributes.extracted_metadata || {}
+  const extracted = objectData.value?.extracted_metadata || extractedMetadataValue(attributes) || {}
 
   // 图片特有信息
   if (contentType.startsWith('image/')) {
@@ -1103,12 +1107,12 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 视频尺寸（宽 × 高）
-    const width = videoMeta.width || videoMeta.video_width ||
-                  extracted.width || extracted.Width || attributes.width || attributes.Width ||
-                  extracted.video_width || attributes.video_width
-    const height = videoMeta.height || videoMeta.video_height ||
-                   extracted.height || extracted.Height || attributes.height || attributes.Height ||
-                   extracted.video_height || attributes.video_height
+    const width = attributeValue(attributes, 'extensions.media', 'width', 'video_width', 'Width') ||
+                  videoMeta.width || videoMeta.video_width ||
+                  extracted.width || extracted.Width || extracted.video_width
+    const height = attributeValue(attributes, 'extensions.media', 'height', 'video_height', 'Height') ||
+                   videoMeta.height || videoMeta.video_height ||
+                   extracted.height || extracted.Height || extracted.video_height
     const resolution = videoMeta.resolution || videoMeta.video_resolution ||
                        extracted.resolution || extracted.Resolution || attributes.resolution
 
@@ -1119,38 +1123,43 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 时长
-    const duration = videoMeta.duration || videoMeta.duration_seconds || videoMeta.total_duration ||
-                     extracted.duration || extracted.Duration || attributes.duration
+    const duration = attributeValue(attributes, 'extensions.media', 'duration', 'duration_seconds') ||
+                     videoMeta.duration || videoMeta.duration_seconds || videoMeta.total_duration ||
+                     extracted.duration || extracted.Duration
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 视频编码（codec）
-    const videoCodec = videoMeta.codec || videoMeta.video_codec ||
-                       extracted.video_codec || extracted.VideoCodec || attributes.video_codec ||
-                       extracted.codec || extracted.Codec || attributes.codec
+    const videoCodec = attributeValue(attributes, 'extensions.media', 'codec', 'video_codec') ||
+                       videoMeta.codec || videoMeta.video_codec ||
+                       extracted.video_codec || extracted.VideoCodec ||
+                       extracted.codec || extracted.Codec
     if (videoCodec) {
       parts.push(`${t('manager.explorer.metaVideoCodec')}: ${videoCodec}`)
     }
 
     // 音频编码
-    const audioCodec = videoMeta.audio_codec || videoMeta.audio_format ||
-                       extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec
+    const audioCodec = attributeValue(attributes, 'extensions.media', 'audio_codec') ||
+                       videoMeta.audio_codec || videoMeta.audio_format ||
+                       extracted.audio_codec || extracted.AudioCodec
     if (audioCodec) {
       parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
     }
 
     // 帧率
-    const fps = videoMeta.frame_rate || videoMeta.fps ||
-                extracted.fps || extracted.FPS || attributes.fps || extracted.frame_rate
+    const fps = attributeValue(attributes, 'extensions.media', 'frame_rate', 'fps') ||
+                videoMeta.frame_rate || videoMeta.fps ||
+                extracted.fps || extracted.FPS || extracted.frame_rate
     if (fps) {
       parts.push(`${t('manager.explorer.metaFrameRate')}: ${fps} fps`)
     }
 
     // 比特率
-    const bitrate = videoMeta.bitrate || videoMeta.bit_rate ||
-                    extracted.bitrate || extracted.Bitrate || attributes.bitrate
+    const bitrate = attributeValue(attributes, 'extensions.media', 'bitrate', 'bit_rate') ||
+                    videoMeta.bitrate || videoMeta.bit_rate ||
+                    extracted.bitrate || extracted.Bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
       parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
@@ -1160,27 +1169,28 @@ const objectMetadataTooltip = computed(() => {
   // 音频特有信息
   if (contentType.includes('audio')) {
     // 时长
-    const duration = extracted.duration || extracted.Duration || attributes.duration
+    const duration = attributeValue(attributes, 'extensions.media', 'duration', 'duration_seconds') || extracted.duration || extracted.Duration
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 音频编码
-    const audioCodec = extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec ||
-                       extracted.codec || extracted.Codec || attributes.codec
+    const audioCodec = attributeValue(attributes, 'extensions.media', 'codec', 'audio_codec') ||
+                       extracted.audio_codec || extracted.AudioCodec ||
+                       extracted.codec || extracted.Codec
     if (audioCodec) {
       parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
     }
 
     // 采样率
-    const sampleRate = extracted.sample_rate || extracted.SampleRate || attributes.sample_rate
+    const sampleRate = attributeValue(attributes, 'extensions.media', 'sample_rate') || extracted.sample_rate || extracted.SampleRate
     if (sampleRate) {
       parts.push(`${t('manager.explorer.metaSampleRate')}: ${sampleRate} Hz`)
     }
 
     // 比特率
-    const bitrate = extracted.bitrate || extracted.Bitrate || attributes.bitrate
+    const bitrate = attributeValue(attributes, 'extensions.media', 'bitrate', 'bit_rate') || extracted.bitrate || extracted.Bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
       parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
@@ -1189,22 +1199,22 @@ const objectMetadataTooltip = computed(() => {
 
   // PDF 特有信息
   if (contentType.includes('pdf')) {
-    const pages = extracted.pages || extracted.Pages || attributes.pages || attributes.page_count
+    const pages = attributeValue(attributes, 'extensions.document', 'page_count', 'pages') || extracted.pages || extracted.Pages
     if (pages) {
       parts.push(t('manager.explorer.metaPdfPages', { value: pages }))
     }
 
-    const author = extracted.author || extracted.Author || attributes.author
+    const author = attributeValue(attributes, 'extensions.document', 'author') || extracted.author || extracted.Author
     if (author) {
       parts.push(t('manager.explorer.metaPdfAuthor', { value: author }))
     }
 
-    const title = extracted.title || extracted.Title || attributes.title
+    const title = attributeValue(attributes, 'extensions.document', 'title') || extracted.title || extracted.Title
     if (title) {
       parts.push(t('manager.explorer.metaPdfTitle', { value: title }))
     }
 
-    const creator = extracted.creator || extracted.Creator || attributes.creator
+    const creator = attributeValue(attributes, 'extensions.document', 'creator') || extracted.creator || extracted.Creator
     if (creator) {
       parts.push(t('manager.explorer.metaPdfCreator', { value: creator }))
     }

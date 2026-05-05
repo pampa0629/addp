@@ -58,8 +58,9 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 		applyExtractedMetadataExtensions(baseAttrs, meta.ExtractedMetadata)
 
 		// 添加基本信息
-		baseAttrs["metadata_extracted"] = true
-		baseAttrs["file_type_friendly"] = meta.ExtractedMetadata.BasicInfo.FileType
+		setExtractionAttribute(baseAttrs, "metadata_extracted", true)
+		setExtractionAttribute(baseAttrs, "extracted_metadata", buildExtractedMetadataPayload(meta.ExtractedMetadata))
+		setExtensionAttribute(baseAttrs, "document", "file_type_friendly", meta.ExtractedMetadata.BasicInfo.FileType)
 		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
 			baseAttrs["content_type"] = meta.ExtractedMetadata.BasicInfo.ContentType
 		}
@@ -81,7 +82,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	}
 
 	// 标记有提取器可用（但本次扫描未提取）
-	baseAttrs["extractor_available"] = true
+	setExtractionAttribute(baseAttrs, "extractor_available", true)
 	baseAttrs["content_type"] = contentType
 
 	return baseAttrs
@@ -118,7 +119,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 			// 文件未变化，复用已有的 metadata
 			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
 				// 检查是否已经提取过元数据
-				if extracted, ok := existingItem.Attributes["metadata_extracted"].(bool); ok && extracted {
+				if commonAttrs.Bool(existingItem.Attributes, "extensions.extraction", "metadata_extracted") {
 					e.log.Debug("复用缓存的元数据",
 						"fingerprint", fingerprint,
 						"fullPath", fullPath,
@@ -267,15 +268,9 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 			enhancedAttrs = make(models.JSONMap)
 		}
 
-		// 合并提取的元数据到 attributes
-		enhancedAttrs["extracted_metadata"] = map[string]interface{}{
-			"basic_info":   metadata.BasicInfo,
-			"custom_attrs": metadata.CustomAttrs,
-		}
-
-		if metadata.SchemaInfo != nil {
-			enhancedAttrs["schema_info"] = metadata.SchemaInfo
-		}
+		setExtractionAttribute(enhancedAttrs, "metadata_extracted", true)
+		setExtractionAttribute(enhancedAttrs, "extracted_metadata", buildExtractedMetadataPayload(metadata))
+		setExtractionAttribute(enhancedAttrs, "schema_info", metadata.SchemaInfo)
 		applyExtractedMetadataExtensions(enhancedAttrs, metadata)
 		enhancedAttrs = normalizeMetaItemAttributes(enhancedAttrs)
 
@@ -286,6 +281,27 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	return metadata, nil
+}
+
+func setExtractionAttribute(attrs models.JSONMap, key string, value interface{}) {
+	if attrs == nil || key == "" || value == nil {
+		return
+	}
+	setExtensionAttribute(attrs, "extraction", key, value)
+}
+
+func buildExtractedMetadataPayload(metadata *format.ExtractedMetadata) map[string]interface{} {
+	if metadata == nil {
+		return nil
+	}
+	payload := map[string]interface{}{
+		"basic_info":   metadata.BasicInfo,
+		"custom_attrs": metadata.CustomAttrs,
+	}
+	if metadata.SchemaInfo != nil {
+		payload["schema_info"] = metadata.SchemaInfo
+	}
+	return payload
 }
 
 func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.ExtractedMetadata) {

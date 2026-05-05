@@ -199,6 +199,102 @@ func TestSetExtensionAttributeWritesNamespaceAndFlatCompatibility(t *testing.T) 
 	}
 }
 
+func TestSetExtensionAttributeDoesNotWriteNonSpatialFlatCompatibility(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+
+	setExtensionAttribute(attrs, "media", "width", 800)
+	setExtensionAttribute(attrs, "document", "page_count", 12)
+	setExtensionAttribute(attrs, "unqualified", "vendor_key", "kept")
+
+	if attrs["width"] != nil || attrs["page_count"] != nil || attrs["vendor_key"] != nil {
+		t.Fatalf("non-spatial extension fields should not be flat: %#v", attrs)
+	}
+	extensions := attrs["extensions"].(map[string]interface{})
+	if extensions["media"].(map[string]interface{})["width"] != 800 {
+		t.Fatalf("media extension missing width: %#v", extensions)
+	}
+	if extensions["document"].(map[string]interface{})["page_count"] != 12 {
+		t.Fatalf("document extension missing page_count: %#v", extensions)
+	}
+	if extensions["unqualified"].(map[string]interface{})["vendor_key"] != "kept" {
+		t.Fatalf("unqualified extension missing vendor_key: %#v", extensions)
+	}
+}
+
+func TestNormalizeMetaItemAttributesMovesUnregisteredFlatKeysToUnqualified(t *testing.T) {
+	t.Parallel()
+
+	normalized := normalizeMetaItemAttributes(models.JSONMap{
+		"bucket":     "addp",
+		"width":      800,
+		"page_count": 12,
+		"vendor_key": "kept",
+	})
+
+	if normalized["width"] != nil || normalized["page_count"] != nil || normalized["vendor_key"] != nil {
+		t.Fatalf("unregistered flat keys should be removed: %#v", normalized)
+	}
+	extensions := normalized["extensions"].(map[string]interface{})
+	unqualified := extensions["unqualified"].(map[string]interface{})
+	if unqualified["width"] != 800 || unqualified["page_count"] != 12 || unqualified["vendor_key"] != "kept" {
+		t.Fatalf("unqualified extension = %#v, want moved flat keys", unqualified)
+	}
+	if normalized["bucket"] != "addp" {
+		t.Fatalf("registered flat compatibility field should stay: %#v", normalized)
+	}
+}
+
+func TestNormalizeMetaItemAttributesOnlyEmitsRegisteredFlatKeys(t *testing.T) {
+	t.Parallel()
+
+	normalized := normalizeMetaItemAttributes(models.JSONMap{
+		"bucket":         "addp",
+		"format":         "pdf",
+		"fields":         []map[string]interface{}{{"name": "id"}},
+		"width":          800,
+		"page_count":     12,
+		"custom_private": "kept",
+	})
+
+	for key := range normalized {
+		if _, allowed := allowedFlatAttributeKeys[key]; !allowed {
+			t.Fatalf("unexpected flat attribute key %q in %#v", key, normalized)
+		}
+	}
+}
+
+func TestExtractionExtensionIsStandardAndNotFlat(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	setExtractionAttribute(attrs, "metadata_extracted", true)
+	setExtractionAttribute(attrs, "extractor_available", true)
+	setExtractionAttribute(attrs, "extracted_metadata", map[string]interface{}{
+		"custom_attrs": map[string]interface{}{"width": 800},
+	})
+	setExtractionAttribute(attrs, "schema_info", map[string]interface{}{"row_count": 10})
+
+	normalized := normalizeMetaItemAttributes(attrs)
+	if normalized["metadata_extracted"] != nil || normalized["extractor_available"] != nil ||
+		normalized["extracted_metadata"] != nil || normalized["schema_info"] != nil {
+		t.Fatalf("extraction fields should not be flat: %#v", normalized)
+	}
+
+	extensions := normalized["extensions"].(map[string]interface{})
+	extraction := extensions["extraction"].(map[string]interface{})
+	if extraction["metadata_extracted"] != true || extraction["extractor_available"] != true {
+		t.Fatalf("extraction status missing: %#v", extraction)
+	}
+	if extraction["extracted_metadata"] == nil || extraction["schema_info"] == nil {
+		t.Fatalf("extraction payload missing: %#v", extraction)
+	}
+	if _, ok := extensions["unqualified"]; ok {
+		t.Fatalf("extraction should be standard namespace, got extensions %#v", extensions)
+	}
+}
+
 func TestApplyExtractedMetadataExtensionsWritesStandardSections(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +330,9 @@ func TestApplyExtractedMetadataExtensionsWritesStandardSections(t *testing.T) {
 	}
 	if _, ok := unqualified["plain_text"]; ok {
 		t.Fatalf("plain_text should not be stored in extensions: %#v", unqualified)
+	}
+	if attrs["page_count"] != nil || attrs["width"] != nil || attrs["vendor_key"] != nil {
+		t.Fatalf("extracted extension fields should not be flat: %#v", attrs)
 	}
 }
 

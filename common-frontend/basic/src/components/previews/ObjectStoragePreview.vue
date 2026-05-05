@@ -201,8 +201,8 @@ const extractedMetadata = computed(() => {
     return null
   }
 
-  // 检查是否有 extracted_metadata 字段
-  const nested = parseMaybeJSON(attrs.extracted_metadata)
+  // 检查是否有标准提取扩展中的 extracted_metadata 字段
+  const nested = parseMaybeJSON(attrs.extensions?.extraction?.extracted_metadata)
   if (nested && typeof nested === 'object') {
     console.log('[DEBUG] Found nested extracted_metadata:', nested)
     return nested

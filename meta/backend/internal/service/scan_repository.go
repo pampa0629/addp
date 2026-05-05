@@ -87,6 +87,7 @@ func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
 	if value, ok := normalized["spatial_metadata"]; ok {
 		setExtensionSection(extensions, "spatial", value)
 	}
+	moveUnregisteredFlatExtensionKeys(normalized, extensions)
 
 	extensions = normalizeExtensionNamespaces(extensions)
 	writeFlatCompatibility(normalized, storage, []string{
@@ -109,6 +110,76 @@ func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
 	normalized["schema"] = schema
 	normalized["extensions"] = extensions
 	return normalized
+}
+
+var allowedFlatAttributeKeys = map[string]struct{}{
+	"schema_version": {},
+	"storage":        {},
+	"item":           {},
+	"schema":         {},
+	"extensions":     {},
+
+	"bucket":           {},
+	"path":             {},
+	"relative_path":    {},
+	"name":             {},
+	"physical_path":    {},
+	"size_bytes":       {},
+	"size":             {},
+	"total_size":       {},
+	"content_type":     {},
+	"last_modified_at": {},
+	"modified_at":      {},
+	"etag":             {},
+	"file_type":        {},
+	"object_count":     {},
+	"schema_name":      {},
+
+	"composition_type": {},
+	"data_family":      {},
+	"format":           {},
+	"entry_path":       {},
+	"component_files":  {},
+	"file_count":       {},
+	"mode":             {},
+
+	"fields":         {},
+	"table_metadata": {},
+	"table_type":     {},
+	"table_comment":  {},
+	"primary_key":    {},
+	"indexes":        {},
+	"row_count":      {},
+	"document_count": {},
+	"count":          {},
+
+	"spatial_metadata": {},
+
+	"plain_text_preview": {},
+}
+
+func moveUnregisteredFlatExtensionKeys(attrs models.JSONMap, extensions map[string]interface{}) {
+	unqualified := map[string]interface{}{}
+	if existing, ok := extensions["unqualified"].(map[string]interface{}); ok {
+		for k, v := range existing {
+			unqualified[k] = v
+		}
+	}
+	for key, value := range attrs {
+		if _, allowed := allowedFlatAttributeKeys[key]; allowed {
+			continue
+		}
+		if value == nil {
+			continue
+		}
+		if _, exists := unqualified[key]; !exists {
+			unqualified[key] = value
+		}
+		delete(attrs, key)
+	}
+	if len(unqualified) > 0 {
+		extensions["unqualified"] = unqualified
+	}
 }
 
 func copyJSONMapForAttributes(attrs models.JSONMap) models.JSONMap {
@@ -190,7 +261,9 @@ func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, v
 		return
 	}
 	namespace = normalizeExtensionNamespace(namespace)
-	attrs[key] = value
+	if namespace == "spatial" && key == "spatial_metadata" {
+		attrs[key] = value
+	}
 	extensions := sectionJSONMap(attrs, "extensions")
 	namespaceAttrs := map[string]interface{}{}
 	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
@@ -240,7 +313,7 @@ func normalizeExtensionNamespaces(extensions map[string]interface{}) map[string]
 func normalizeExtensionNamespace(namespace string) string {
 	namespace = strings.ToLower(strings.TrimSpace(namespace))
 	switch namespace {
-	case "spatial", "media", "document", "statistics", "unqualified":
+	case "spatial", "media", "document", "statistics", "extraction", "unqualified":
 		return namespace
 	}
 	if isPrivateExtensionNamespace(namespace) {

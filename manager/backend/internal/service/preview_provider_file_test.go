@@ -36,14 +36,14 @@ func TestFileTablePreviewProviderResolveFormatUsesContentType(t *testing.T) {
 	}
 }
 
-func TestFileTablePreviewProviderResolveFormatFallsBackToFilename(t *testing.T) {
+func TestFileTablePreviewProviderResolveFormatDoesNotFallbackToFilename(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
 		Table: "roads.geojson",
 	}
 
 	got := provider.resolveFormat(req)
-	if got != format.FormatGeoJSON {
-		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatGeoJSON)
+	if got != format.FormatUnknown {
+		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatUnknown)
 	}
 }

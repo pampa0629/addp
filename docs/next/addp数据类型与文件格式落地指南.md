@@ -186,7 +186,7 @@ item 应至少具备：
 3. `common/dataitem` 负责生成 `item` 分区的核心语义。
 4. `common/format` 的 parser / extractor 只提供格式解析结果和扩展信息，不应直接覆盖 `item.format`、`item.data_family` 等核心字段。
 5. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
-6. 平台标准扩展应使用稳定名称，例如 `extensions.spatial`、`extensions.media`、`extensions.document`、`extensions.statistics`。
+6. 平台标准扩展应使用稳定名称，例如 `extensions.spatial`、`extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction`。
 7. 第三方私有扩展应使用反向域名或插件 ID 命名空间，例如 `extensions.com.vendor.plugin_name`。
 8. 当私有扩展被多个格式复用，并被平台稳定消费时，应先提升为标准扩展，再允许 `manager`、`transfer`、`asset` 等模块依赖。
 

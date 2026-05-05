@@ -459,8 +459,13 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	}
 
 	if isNodePreview(req, legacyReq) {
-		if legacyReq != nil && (isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
-			return []string{"builtin:filesystem", "builtin:object-storage", "builtin:schema-node"}
+		if legacyReq != nil {
+			if isFileSystemType(legacyReq.Engine.EngineType) {
+				return []string{"builtin:filesystem"}
+			}
+			if isObjectStorageType(legacyReq.Engine.EngineType) {
+				return []string{"builtin:object-storage"}
+			}
 		}
 		return []string{"builtin:schema-node"}
 	}

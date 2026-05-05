@@ -46,7 +46,7 @@
       if (attributes.video_metadata) {
         return true
       }
-      const extracted = object.extracted_metadata || attributes.extracted_metadata
+      const extracted = object.extracted_metadata || attributes.extensions?.extraction?.extracted_metadata
       if (
         extracted &&
         extracted.custom_attrs &&

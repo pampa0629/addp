@@ -86,13 +86,14 @@ const extractedMetadataRoot = computed(() => {
   }
 
   const attrs = normalizedAttributes.value
-  const fromAttrs = parseMaybeJSON(attrs?.extracted_metadata)
+  const fromAttrs = parseMaybeJSON(attrs?.extensions?.extraction?.extracted_metadata)
   if (fromAttrs && typeof fromAttrs === 'object') {
     return fromAttrs
   }
-  return attrs?.extracted_metadata && typeof attrs.extracted_metadata === 'object'
-    ? attrs.extracted_metadata
-    : null
+  if (attrs?.extensions?.extraction?.extracted_metadata && typeof attrs.extensions.extraction.extracted_metadata === 'object') {
+    return attrs.extensions.extraction.extracted_metadata
+  }
+  return null
 })
 
 const rawVideoMetadata = computed(() => {
