@@ -160,14 +160,7 @@ func (s *FileSystemScanService) scanDirectory(
 	// bucket 根目录不参与 detector 检测（避免把整个 bucket 识别为一张表）
 	// 子目录才走 detector 链（模式 A：目录即表）
 	if !isBucketRoot {
-		detected, err := dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
-			ContentReader: contentReader,
-			ConnInfo:      connInfo,
-			EngineID:      resource.ID,
-			DirPath:       dirPath,
-			Files:         files,
-			Subdirs:       subdirs,
-		})
+		detected, err := s.resolveFileSystemDirectoryItem(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取复合数据项信息失败",
 				"path", dirPath,
@@ -305,6 +298,51 @@ func (s *FileSystemScanService) scanDirectory(
 	return totalItems, nil
 }
 
+func (s *FileSystemScanService) resolveFileSystemDirectoryItem(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	catalogProvider plugin.CatalogProvider,
+	connInfo plugin.ConnectionInfo,
+	resource *commonModels.Engine,
+	dirPath string,
+	files []plugin.FileEntry,
+	subdirs []plugin.DirEntry,
+) (*dataitem.DetectedItem, error) {
+	if len(subdirs) > 0 {
+		recursiveFiles, recursiveSubdirs, err := s.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, dirPath)
+		if err != nil {
+			return nil, err
+		}
+		if info, err := commonParquet.ExtractDirectoryTreeInfo(ctx, contentReader, connInfo, resource.ID, dirPath, recursiveFiles, recursiveSubdirs); err == nil && info != nil {
+			totalSize := int64(0)
+			if info.SizeBytes != nil {
+				totalSize = *info.SizeBytes
+			}
+			return &dataitem.DetectedItem{
+				ItemType:        "lake_table",
+				CompositionType: info.CompositionType,
+				DataFamily:      info.DataFamily,
+				Format:          info.Format,
+				PhysicalPath:    dirPath,
+				EntryPath:       info.EntryPath,
+				ComponentFiles:  info.ComponentFiles,
+				SizeBytes:       totalSize,
+				Fields:          info.Fields,
+				Attributes:      info.Attributes,
+			}, nil
+		}
+	}
+
+	return dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
+		ContentReader: contentReader,
+		ConnInfo:      connInfo,
+		EngineID:      resource.ID,
+		DirPath:       dirPath,
+		Files:         files,
+		Subdirs:       subdirs,
+	})
+}
+
 func (s *FileSystemScanService) listRoots(
 	ctx context.Context,
 	resource *commonModels.Engine,
@@ -348,6 +386,46 @@ func (s *FileSystemScanService) listDirectory(
 	}
 	files := make([]plugin.FileEntry, 0, len(nodes))
 	subdirs := make([]plugin.DirEntry, 0, len(nodes))
+	for _, node := range nodes {
+		nodePath := node.Path.StringPath()
+		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {
+			nodePath = raw
+		}
+		if node.IsContainer {
+			subdirs = append(subdirs, plugin.DirEntry{
+				Name: node.Name,
+				Path: nodePath,
+			})
+			continue
+		}
+		if !node.IsItem {
+			continue
+		}
+		size, _ := int64Stat(node.Stats, "size_bytes")
+		contentType, _ := node.Attributes["content_type"].(string)
+		files = append(files, plugin.FileEntry{
+			Name:        node.Name,
+			Path:        nodePath,
+			Size:        size,
+			ContentType: contentType,
+		})
+	}
+	return files, subdirs, nil
+}
+
+func (s *FileSystemScanService) listDirectoryRecursive(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	connInfo plugin.ConnectionInfo,
+	dirPath string,
+) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	files := make([]plugin.FileEntry, 0, len(nodes))
+	subdirs := make([]plugin.DirEntry, 0)
 	for _, node := range nodes {
 		nodePath := node.Path.StringPath()
 		if raw, ok := node.Attributes["path"].(string); ok && raw != "" {

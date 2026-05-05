@@ -19,9 +19,8 @@ var lakeTableFormats = map[string]bool{
 	".avro":    true,
 }
 
-// LakeTableDetector 湖表检测器
-// 检测条件：目录下的直接子文件全部为 .parquet/.orc/.avro
-// 优先级：80
+// LakeTableDetector 湖表检测器。
+// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为湖表格式。
 type LakeTableDetector struct{}
 
 func init() {
@@ -36,23 +35,217 @@ func (d *LakeTableDetector) ItemType() string {
 	return "lake_table"
 }
 
-// Detect 检测目录是否为湖表
-// 条件：有文件 && 无子目录 && 所有文件都是支持的格式
 func (d *LakeTableDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
-	if len(files) == 0 {
-		return false
-	}
-	// 有子目录则不是湖表（第一阶段不处理嵌套分区）
-	if len(subdirs) > 0 {
-		return false
-	}
+	lakeFileCount := 0
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
 		if !lakeTableFormats[ext] {
 			return false
 		}
+		lakeFileCount++
 	}
-	return true
+	if lakeFileCount == 0 {
+		return false
+	}
+	if len(subdirs) == 0 {
+		return true
+	}
+	return hasPartitionLikeSubdir(subdirs)
+}
+
+func hasPartitionLikeSubdir(subdirs []plugin.DirEntry) bool {
+	for _, subdir := range subdirs {
+		name := strings.Trim(strings.ToLower(subdir.Name), "/")
+		if name == "" {
+			continue
+		}
+		if strings.Contains(name, "=") || strings.HasPrefix(name, "_") {
+			return true
+		}
+	}
+	return false
+}
+
+func lakeTableFiles(files []plugin.FileEntry) []plugin.FileEntry {
+	filtered := make([]plugin.FileEntry, 0, len(files))
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if lakeTableFormats[ext] {
+			filtered = append(filtered, f)
+		}
+	}
+	return filtered
+}
+
+func directLakeTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEntry {
+	trimmedDir := strings.Trim(dirPath, "/")
+	filtered := make([]plugin.FileEntry, 0, len(files))
+	for _, f := range lakeTableFiles(files) {
+		parent := strings.Trim(filepath.ToSlash(filepath.Dir(strings.Trim(f.Path, "/"))), "/")
+		if parent == "." {
+			parent = ""
+		}
+		if parent == trimmedDir {
+			filtered = append(filtered, f)
+		}
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return lakeTableFiles(files)
+}
+
+func firstReadableParquetFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
+	candidates := directLakeTableFiles(files, dirPath)
+	for i := range candidates {
+		ext := strings.ToLower(filepath.Ext(candidates[i].Name))
+		if ext == ".parquet" {
+			return &candidates[i]
+		}
+	}
+	for i := range files {
+		ext := strings.ToLower(filepath.Ext(files[i].Name))
+		if ext == ".parquet" {
+			return &files[i]
+		}
+	}
+	return nil
+}
+
+func lakeTableEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+	if len(subdirs) > 0 {
+		return dirPath
+	}
+	if directFiles := directLakeTableFiles(files, dirPath); len(directFiles) > 0 {
+		return directFiles[0].Path
+	}
+	return dirPath
+}
+
+func lakeTableCompositionType(files []plugin.FileEntry, subdirs []plugin.DirEntry) dataitem.CompositionType {
+	if len(subdirs) > 0 {
+		return dataitem.CompositionTypeDirectoryTree
+	}
+	if len(files) > 1 {
+		return dataitem.CompositionTypeMultiFile
+	}
+	return dataitem.CompositionTypeSingleFile
+}
+
+func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
+	filtered := lakeTableFiles(files)
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no lake table files in directory: %s", dirPath)
+	}
+	if len(filtered) != len(files) {
+		return nil, fmt.Errorf("directory contains non-lake-table files: %s", dirPath)
+	}
+	return filtered, nil
+}
+
+func lakeTableSize(files []plugin.FileEntry) int64 {
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.Size
+	}
+	return totalSize
+}
+
+func lakeTableFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+	fieldsData := make([]map[string]interface{}, 0, len(fields))
+	for _, f := range fields {
+		fieldsData = append(fieldsData, map[string]interface{}{
+			"name":          f.Name,
+			"type":          string(f.Type),
+			"original_type": f.OriginalType,
+			"nullable":      f.Nullable,
+		})
+	}
+	return fieldsData
+}
+
+func lakeTableAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64) map[string]interface{} {
+	attrs := map[string]interface{}{
+		"format":        formatName,
+		"mode":          mode,
+		"file_count":    len(files),
+		"total_size":    totalSize,
+		"physical_path": dirPath,
+	}
+	if len(fieldsData) > 0 {
+		attrs["fields"] = fieldsData
+	}
+	return attrs
+}
+
+func lakeTableMode(subdirs []plugin.DirEntry) string {
+	if len(subdirs) > 0 {
+		return "directory_tree"
+	}
+	return "directory"
+}
+
+func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *dataitem.CompositeItemInfo {
+	totalSize := lakeTableSize(files)
+	formatName := detectFormat(files)
+	return &dataitem.CompositeItemInfo{
+		CompositionType: lakeTableCompositionType(files, subdirs),
+		DataFamily:      dataitem.DataFamilyTabular,
+		Format:          formatName,
+		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
+		ComponentFiles:  filePaths(files),
+		SizeBytes:       &totalSize,
+		Attributes:      lakeTableAttributes(formatName, lakeTableMode(subdirs), nil, files, dirPath, totalSize),
+	}
+}
+
+func (d *LakeTableDetector) extractLakeTableInfo(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	dirPath string,
+	files []plugin.FileEntry,
+	subdirs []plugin.DirEntry,
+) (*dataitem.CompositeItemInfo, error) {
+	files, err := validateLakeTableFiles(files, dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	firstParquet := firstReadableParquetFile(files, dirPath)
+	if firstParquet == nil {
+		return lakeTableInfoWithoutSchema(files, subdirs, dirPath), nil
+	}
+	if contentReader == nil {
+		return lakeTableInfoWithoutSchema(files, subdirs, dirPath), nil
+	}
+
+	rc, err := contentReader.OpenContent(ctx, connInfo, parquetFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
+	}
+	defer rc.Close()
+
+	parser := &Parser{}
+	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse parquet schema from %s: %w", firstParquet.Path, err)
+	}
+
+	totalSize := lakeTableSize(files)
+	formatName := detectFormat(files)
+	fieldsData := lakeTableFieldAttributes(tableInfo.Fields)
+	return &dataitem.CompositeItemInfo{
+		Fields:          tableInfo.Fields,
+		CompositionType: lakeTableCompositionType(files, subdirs),
+		DataFamily:      dataitem.DataFamilyTabular,
+		Format:          formatName,
+		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
+		ComponentFiles:  filePaths(files),
+		SizeBytes:       &totalSize,
+		Attributes:      lakeTableAttributes(formatName, lakeTableMode(subdirs), fieldsData, files, dirPath, totalSize),
+	}, nil
 }
 
 // ExtractItemInfo 提取湖表元信息（读取第一个 Parquet 文件获取 Schema）
@@ -64,71 +257,23 @@ func (d *LakeTableDetector) ExtractItemInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 ) (*dataitem.CompositeItemInfo, error) {
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no files in directory: %s", dirPath)
-	}
+	return d.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
+}
 
-	// 找第一个 parquet 文件读取 Schema
-	var firstParquet *plugin.FileEntry
-	for i := range files {
-		ext := strings.ToLower(filepath.Ext(files[i].Name))
-		if ext == ".parquet" {
-			firstParquet = &files[i]
-			break
-		}
+func ExtractDirectoryTreeInfo(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	dirPath string,
+	files []plugin.FileEntry,
+	subdirs []plugin.DirEntry,
+) (*dataitem.CompositeItemInfo, error) {
+	detector := &LakeTableDetector{}
+	if !detector.Detect(ctx, files, subdirs) {
+		return nil, fmt.Errorf("directory is not a lake table dataset: %s", dirPath)
 	}
-	if firstParquet == nil {
-		// 没有 parquet 文件，返回空 Schema（orc/avro 暂不解析）
-		return buildBasicInfo(files, dirPath), nil
-	}
-
-	// 读取文件内容
-	rc, err := contentReader.OpenContent(ctx, connInfo, parquetFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
-	}
-	defer rc.Close()
-
-	// 解析 Schema
-	parser := &Parser{}
-	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse parquet schema from %s: %w", firstParquet.Path, err)
-	}
-
-	// 计算总文件大小
-	var totalSize int64
-	for _, f := range files {
-		totalSize += f.Size
-	}
-
-	// 构建 FieldInfo 列表（用于 Attributes.fields）
-	fieldsData := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-	for _, f := range tableInfo.Fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":          f.Name,
-			"type":          string(f.Type),
-			"original_type": f.OriginalType,
-			"nullable":      f.Nullable,
-		})
-	}
-
-	return &dataitem.CompositeItemInfo{
-		Fields:          tableInfo.Fields,
-		CompositionType: dataitem.CompositionTypeDirectoryTree,
-		DataFamily:      dataitem.DataFamilyTabular,
-		Format:          detectFormat(files),
-		EntryPath:       dirPath,
-		ComponentFiles:  filePaths(files),
-		Attributes: map[string]interface{}{
-			"format":        detectFormat(files),
-			"mode":          "directory",
-			"fields":        fieldsData,
-			"file_count":    len(files),
-			"total_size":    totalSize,
-			"physical_path": dirPath,
-		},
-	}, nil
+	return detector.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
 // ExtractSingleFileInfo 提取单个湖表文件的元信息（模式 B：文件即表）
