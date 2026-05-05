@@ -1284,7 +1284,23 @@ func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
 
 	groups := objectMetasByParentPrefix(metas)
 	items := make([]objectStorageCompositeItem, 0)
-	for groupKey, group := range groups {
+	groupKeys := make([]string, 0, len(groups))
+	for groupKey := range groups {
+		groupKeys = append(groupKeys, groupKey)
+	}
+	sort.Slice(groupKeys, func(i, j int) bool {
+		_, leftPrefix := splitObjectCompositeGroupKey(groupKeys[i])
+		_, rightPrefix := splitObjectCompositeGroupKey(groupKeys[j])
+		leftDepth := strings.Count(strings.Trim(leftPrefix, "/"), "/")
+		rightDepth := strings.Count(strings.Trim(rightPrefix, "/"), "/")
+		if leftDepth != rightDepth {
+			return leftDepth > rightDepth
+		}
+		return groupKeys[i] < groupKeys[j]
+	})
+
+	for _, groupKey := range groupKeys {
+		group := unclaimedObjectMetas(groups[groupKey], skipPaths)
 		if len(group) < 2 {
 			continue
 		}
@@ -1317,6 +1333,19 @@ func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
 		})
 	}
 	return skipPaths, items
+}
+
+func unclaimedObjectMetas(group []format.ObjectMetadata, skipPaths map[string]bool) []format.ObjectMetadata {
+	if len(group) == 0 || len(skipPaths) == 0 {
+		return group
+	}
+	filtered := make([]format.ObjectMetadata, 0, len(group))
+	for _, meta := range group {
+		if !skipPaths[meta.Path] {
+			filtered = append(filtered, meta)
+		}
+	}
+	return filtered
 }
 
 func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
@@ -1427,14 +1456,34 @@ func objectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]forma
 		if meta.NodeType != "object" {
 			continue
 		}
-		parent := parentObjectPath(meta.Path)
-		if parent == "" {
-			continue
+		for _, parent := range compositeCandidatePrefixes(meta.Path) {
+			if parent == "" {
+				continue
+			}
+			key := meta.Bucket + "\x00" + strings.Trim(parent, "/")
+			groups[key] = append(groups[key], meta)
 		}
-		key := meta.Bucket + "\x00" + strings.Trim(parent, "/")
-		groups[key] = append(groups[key], meta)
 	}
 	return groups
+}
+
+func compositeCandidatePrefixes(path string) []string {
+	trimmed := strings.Trim(path, "/")
+	parent := strings.Trim(parentObjectPath(trimmed), "/")
+	if parent == "" {
+		return nil
+	}
+	prefixes := []string{parent}
+	parts := strings.Split(parent, "/")
+	if len(parts) > 1 {
+		for i := len(parts) - 1; i >= 1; i-- {
+			prefix := strings.Join(parts[:i], "/")
+			if prefix != "" {
+				prefixes = append(prefixes, prefix)
+			}
+		}
+	}
+	return prefixes
 }
 
 func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []plugin.FileEntry {

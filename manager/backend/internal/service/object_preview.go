@@ -330,6 +330,16 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	if objectPath == "" {
 		return nil, fmt.Errorf("object path is empty")
 	}
+	if entryPath := stringAttribute(combinedAttributes, "entry_path"); entryPath != "" {
+		normalizedEntry := strings.Trim(entryPath, "/")
+		if strings.HasPrefix(normalizedEntry, bucket+"/") {
+			normalizedEntry = strings.TrimPrefix(normalizedEntry, bucket+"/")
+		}
+		if normalizedEntry != "" {
+			objectPath = normalizedEntry
+			displayPath = objectPath
+		}
+	}
 	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
 	stat, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
@@ -342,13 +352,17 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			preview.Object.SizeBytes = *item.ObjectSizeBytes
 		} else if item.SizeBytes != nil {
 			preview.Object.SizeBytes = *item.SizeBytes
+		} else if sizeBytes := int64Attribute(item.Attributes, "size_bytes"); sizeBytes > 0 {
+			preview.Object.SizeBytes = sizeBytes
+		} else if totalSize := int64Attribute(item.Attributes, "total_size"); totalSize > 0 {
+			preview.Object.SizeBytes = totalSize
 		} else {
 			preview.Object.SizeBytes = stat.Size
 		}
 		if rowCount := item.RowCount; rowCount != nil {
 			preview.Object.ObjectCount = *rowCount
 		}
-		if v, ok := item.Attributes["file_type"].(string); ok && v != "" {
+		if v := stringAttribute(item.Attributes, "content_type"); v != "" {
 			preview.Object.ContentType = v
 		}
 	} else {

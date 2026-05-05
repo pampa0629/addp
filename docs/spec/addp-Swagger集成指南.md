@@ -280,6 +280,17 @@ Swagger UI 可访问只说明静态文档服务正常，不代表 API 文档准�
 
 ## 注解规范
 
+### 双语注解
+
+Swagger 注解中面向人阅读的描述应使用 `中文 | English` 格式，中文在前，英文在后。运行时错误消息不依赖 Swagger 注解翻译，必须按 [国际化开发规范](addp国际化开发规范.md) 使用前后端 i18n 机制。
+
+```go
+// @Summary 获取用户列表 | Get user list
+// @Description 根据条件分页查询系统用户列表 | Query system user list with pagination
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Success 200 {object} response.Data "返回用户列表 | Return user list"
+```
+
 ### 标签（Tags）分组建议
 
 按功能模块分组，使用中文：

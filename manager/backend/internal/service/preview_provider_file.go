@@ -67,11 +67,7 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return nil, err
 	}
 
-	// 构建完整路径
-	fullPath := req.Table
-	if req.Schema != "" && req.Schema != bucket {
-		fullPath = filepath.Join(req.Schema, req.Table)
-	}
+	fullPath := objectKeyFromPreviewRequest(req, bucket)
 
 	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
 	formatType := p.resolveFormat(req)
@@ -353,11 +349,47 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 		return format.FormatUnknown
 	}
 	formatName := dataitem.InferFormat(
-		req.Table,
+		itemEntryPath(req, req.Table),
 		stringAttribute(req.Attributes, "content_type"),
 		stringAttribute(req.Attributes, "format"),
 	)
 	return format.FormatType(formatName)
+}
+
+func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {
+	if req == nil {
+		return ""
+	}
+	for _, path := range []string{
+		stringAttribute(req.Attributes, "entry_path"),
+		req.PhysicalPath,
+	} {
+		path = strings.Trim(path, "/")
+		if strings.HasPrefix(path, bucket+"/") {
+			return strings.TrimPrefix(path, bucket+"/")
+		}
+		if path != "" {
+			return path
+		}
+	}
+	fullPath := req.Table
+	if req.Schema != "" && req.Schema != bucket {
+		fullPath = filepath.Join(req.Schema, req.Table)
+	}
+	return strings.Trim(fullPath, "/")
+}
+
+func itemEntryPath(req *PreviewRequest, fallback string) string {
+	if req == nil {
+		return fallback
+	}
+	if entryPath := stringAttribute(req.Attributes, "entry_path"); entryPath != "" {
+		return entryPath
+	}
+	if req.PhysicalPath != "" {
+		return req.PhysicalPath
+	}
+	return fallback
 }
 
 // detectDelimiter 检测 CSV/TSV 分隔符

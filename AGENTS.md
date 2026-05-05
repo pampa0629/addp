@@ -39,6 +39,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 | Go/前端依赖版本 | `docs/spec/addp技术栈规约.md` |
 | 共享模块使用 | `docs/concepts/addp共享模块介绍.md` |
 | 创建新模块 | `docs/spec/addp新模块开发指南.md` |
+| 国际化、语言切换、翻译文件、双语 Swagger | `docs/concepts/addp国际化体系图.md`、`docs/spec/addp国际化开发规范.md` |
 | 引擎体系、插件接口、Provider 边界 | `docs/concepts/addp引擎体系图.md`、`docs/spec/addp引擎插件接口规范.md` |
 | 引擎能力声明、capabilities | `docs/spec/addp引擎能力声明规范.md` |
 | 新增存储引擎/数据库 | `docs/spec/addp数据引擎扩展指南.md`、`docs/spec/addp引擎插件接口规范.md`、`docs/spec/addp引擎能力声明规范.md` |
@@ -57,6 +58,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 ## 前端开发约定
 
 - 新增前端页面时，阅读 `common-frontend/docs/addp前端风格设计规范.md`（如存在）以及 `common-frontend/README.md`。
+- 新增或修改用户可见文本、语言切换、翻译文件时，阅读 `docs/concepts/addp国际化体系图.md` 和 `docs/spec/addp国际化开发规范.md`。
 - 前端应集成到 `console` 模块中，遵循 Console 统一入口和 iframe 模块集成模式。
 - 不要硬编码颜色，应使用 ADDP 主题风格 CSS 和共享前端能力。
 - 仅修改前端代码时，通常无需重启后端服务。
@@ -65,6 +67,7 @@ ADDP（全域数据平台）是一个采用微服务架构的企业数据平台�
 ## 后端与 API 约定
 
 - 新增或修改 API 前，必须阅读 `docs/spec/addp-API设计规范.md` 和 `docs/spec/addp-Swagger集成指南.md`。
+- 新增或修改后端用户可见错误消息、Swagger 双语注解时，必须阅读 `docs/spec/addp国际化开发规范.md`。
 - API 返回结构、错误格式、Swagger 同步、覆盖校验、后端分层和共享能力归属等细则以以上两份规范文档为准。
 
 ## 启动与验证

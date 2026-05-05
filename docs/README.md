@@ -16,14 +16,18 @@
 
 1. [核心概念总览](concepts/addp核心概念关系图.md)
 2. [模块架构图](concepts/addp模块架构图.md)
-3. [开发原则](spec/addp开发原则.md)
-4. [部署和开发步骤](guide/addp部署和开发步骤.md)
-5. [常见故障排查](guide/addp常见故障排查.md)
+3. [国际化体系图](concepts/addp国际化体系图.md)
+4. [开发原则](spec/addp开发原则.md)
+5. [国际化开发规范](spec/addp国际化开发规范.md)
+6. [部署和开发步骤](guide/addp部署和开发步骤.md)
+7. [常见故障排查](guide/addp常见故障排查.md)
 
 ## 常用入口
 
 - [概念文档](concepts/)
 - [规范文档](spec/)
+- [国际化体系图](concepts/addp国际化体系图.md)
+- [国际化开发规范](spec/addp国际化开发规范.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)

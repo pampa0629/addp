@@ -307,14 +307,16 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 7. 对象存储单对象接入 `InferSingleFile`。
 8. 对象存储同一前缀直接子对象接入 `ResolveDirectory`。
 9. 新增 Shapefile 多文件 detector。
+10. 对象存储组合检测已增加祖先前缀候选，支持跨层辅助文件进入同一组合候选，并按更具体前缀优先避免重复归并。
+11. 增加对象存储跨层组合候选和已归并组件跳过测试。
 
 待办：
 
-1. 增强对象存储递归目录树归并。
-2. 支持跨层辅助文件。
+1. 继续增强对象存储递归目录树归并，补齐真实目录树 detector。
+2. 继续扩展跨层辅助文件 detector 规则。
 3. 支持复杂混合集合。
 4. 梳理数据库表、collection、label、relationship 是否需要“引擎原生 item”组合形态。
-5. 增加更多组合形态测试样例。
+5. 增加更多组合形态测试样例，覆盖目录树、混合集合和重复归并防护。
 
 验收：
 
@@ -434,14 +436,16 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 4. 再按 `data_family` / `format` 选择文件表、数据库表、对象内容或文件系统预览能力。
 5. `PreviewRegistry.Resolve` 标记为过渡兼容。
 6. `PreviewResolver` 已优先读取 `attributes.item.data_family` / `attributes.item.format`，并保留平铺字段兼容。
+7. provider 共享属性读取 helper 已支持从 `attributes.item` / `attributes.storage` / `attributes.schema` / `attributes.extensions.spatial` 读取字符串、数字、数组和 map。
+8. 对象预览和文件表预览已优先使用 `entry_path`、`physical_path`、`content_type`、`size_bytes` / `total_size` 等标准分区属性。
 
 待办：
 
-1. 继续迁移 provider 内部读取路径，优先消费 `attributes.item` / `attributes.storage` / `attributes.schema` 分区。
+1. 继续迁移剩余 provider 内部读取路径，优先消费 `attributes.item` / `attributes.storage` / `attributes.schema` 分区。
 2. 删除 provider 内部兜底格式推断。
 3. 删除未扫描路径直接预览旧入口。
 4. 删除 provider 优先级抢语义路由。
-5. 增加更多预览路由表测试。
+5. 增加更多预览路由表测试，覆盖对象预览、文件表预览和空间扩展读取。
 
 验收：
 
@@ -505,10 +509,10 @@ ADDP 的“全域”目标要求未来允许第三方扩展更多数据格式。
 4. 将字段、主键、索引等结构信息迁移到 `attributes.schema`。
 5. 将空间信息迁移到 `attributes.extensions.spatial`。
 6. 改造 `PreviewResolver` 优先读取分区后的 attributes。
-7. 增强对象存储目录/前缀组合归并，支持 shapefile、parquet dataset 等多文件或目录型数据集。
+7. 为对象存储目录树、混合集合补 detector，并覆盖跨层组件真实扫描用例。
 8. 梳理数据库表、文档集合与 `dataitem` 模型的边界。
 9. 收口 `TableInfo` / `ObjectInfo` 与 `Scanner*` 模型。
-10. 删除 `manager` 中未扫描路径直接预览、provider 自行猜格式、provider 优先级抢语义路由等历史逻辑。
+10. 继续删除 `manager` 中 provider 自行猜格式、provider 优先级抢语义路由等历史逻辑。
 
 ## 八、结语
 

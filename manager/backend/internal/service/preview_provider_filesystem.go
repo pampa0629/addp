@@ -369,6 +369,45 @@ func catalogNodePhysicalPath(node plugin.CatalogNode) string {
 	return node.Path.StringPath()
 }
 
+func mapAttribute(attrs map[string]interface{}, key string) map[string]interface{} {
+	if attrs == nil {
+		return nil
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if sectionAttrs := sectionMapAttribute(attrs, section, key); len(sectionAttrs) > 0 {
+			return sectionAttrs
+		}
+	}
+	if value, ok := attrs[key].(map[string]interface{}); ok {
+		return value
+	}
+	return nil
+}
+
+func stringSliceAttribute(attrs map[string]interface{}, key string) []string {
+	if attrs == nil {
+		return nil
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if values := sectionStringSliceAttribute(attrs, section, key); len(values) > 0 {
+			return values
+		}
+	}
+	return interfaceToStringSlice(attrs[key])
+}
+
+func int64Attribute(attrs map[string]interface{}, key string) int64 {
+	if attrs == nil {
+		return 0
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if value := sectionInt64Attribute(attrs, section, key); value != 0 {
+			return value
+		}
+	}
+	return interfaceToInt64(attrs[key])
+}
+
 func stringAttribute(attrs map[string]interface{}, key string) string {
 	if attrs == nil {
 		return ""
@@ -386,12 +425,14 @@ func stringAttribute(attrs map[string]interface{}, key string) string {
 
 func attributeSectionsForKey(key string) []string {
 	switch key {
-	case "composition_type", "data_family", "format", "entry_path":
+	case "composition_type", "data_family", "format", "entry_path", "component_files", "file_count", "mode":
 		return []string{"item"}
-	case "bucket", "path", "name", "physical_path", "size_bytes", "content_type", "last_modified_at", "etag":
+	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}
-	case "fields", "primary_key", "indexes", "row_count":
+	case "fields", "primary_key", "indexes", "row_count", "document_count":
 		return []string{"schema"}
+	case "spatial_metadata":
+		return []string{"extensions.spatial"}
 	default:
 		return nil
 	}
@@ -410,6 +451,79 @@ func sectionStringAttribute(attrs map[string]interface{}, section, key string) s
 		return value
 	}
 	return ""
+}
+
+func sectionMapAttribute(attrs map[string]interface{}, section, key string) map[string]interface{} {
+	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
+		if value, ok := sectionAttrs[key].(map[string]interface{}); ok {
+			return value
+		}
+	}
+	return nil
+}
+
+func sectionStringSliceAttribute(attrs map[string]interface{}, section, key string) []string {
+	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
+		return interfaceToStringSlice(sectionAttrs[key])
+	}
+	return nil
+}
+
+func sectionInt64Attribute(attrs map[string]interface{}, section, key string) int64 {
+	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
+		return interfaceToInt64(sectionAttrs[key])
+	}
+	return 0
+}
+
+func sectionAttributes(attrs map[string]interface{}, section string) map[string]interface{} {
+	current := attrs
+	for _, part := range strings.Split(section, ".") {
+		raw, ok := current[part]
+		if !ok {
+			return nil
+		}
+		next, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
+}
+
+func interfaceToStringSlice(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []interface{}:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && text != "" {
+				values = append(values, text)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
+}
+
+func interfaceToInt64(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	default:
+		return 0
+	}
 }
 
 func int64Stat(stats map[string]interface{}, key string) int64 {

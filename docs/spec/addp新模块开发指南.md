@@ -25,6 +25,12 @@
    - ✅ 支持独立启动模式（`-your-module`）
    - ✅ 支持全量启动模式（默认行为）
 
+5. **国际化原则**
+   - ✅ 新模块必须按 [ADDP 国际化开发规范](addp国际化开发规范.md) 创建前后端翻译文件
+   - ✅ 前端用户可见文本必须使用 Vue I18n，不得硬编码中文或英文
+   - ✅ 后端用户可见错误消息必须通过 `common/middleware/i18n` 翻译
+   - ✅ Swagger 注解必须使用 `中文 | English` 双语格式
+
 **违反以上原则的代码将无法通过 Code Review。**
 
 ---
@@ -179,14 +185,24 @@
    - 重用 System 模块的 JWT 验证逻辑
    - 从 System 导入 auth 中间件或创建相同的
    - 从 JWT 声明中提取 user_id 并传递给服务层
-5. **Docker 集成**:
+5. **国际化集成**:
+
+   - 注册 `common/middleware/i18n.I18nMiddleware()`
+   - 创建 `<module>/backend/i18n/i18n.go`
+   - 创建 `<module>/backend/i18n/locales/zh-cn.toml` 和 `en.toml`
+   - Handler 中的用户可见错误消息使用 `commoni18n.T(c, modulei18n.MsgXxx)`
+   - Swagger 注解使用 `中文 | English` 格式
+
+   详细要求参见 [ADDP 国际化开发规范](addp国际化开发规范.md)。
+
+6. **Docker 集成**:
 
    - 在服务根目录创建 Dockerfile
    - 使用 `profile: full` 将服务添加到 `docker-compose.yml`
    - 使用健康检查进行依赖管理
    - 连接到 `addp-network` 进行服务间通信
 
-6. **开发脚本集成**（新模块必做）:
+7. **开发脚本集成**（新模块必做）:
 
    新模块需要修改开发脚本以支持独立启动和重启：
 
@@ -290,10 +306,14 @@
    bash scripts/dev/start.sh
    ```
 
-7. **前端集成**:
+8. **前端集成**:
 
    - 创建独立的 `<module>/frontend/` 目录
    - 从 `system/frontend/` 复制结构 (Vue 3 + Pinia + Element Plus)
+   - 创建 `<module>/frontend/src/i18n/zh-cn.json` 和 `en.json`
+   - 使用 `common-frontend/basic` 的 `createAddpI18n()` 初始化 Vue I18n
+   - iframe 模块启用 Console 语言切换监听，请求统一携带 `Accept-Language`
+   - Element Plus locale 必须跟随 ADDP 当前语言
    - 创建 `api/client.js` 指向模块后端
    - 创建 `api/auth.js` 指向 System 后端 (8180) 进行认证
    - 从 System 模块复制 auth store 模式 (独立副本,非共享)

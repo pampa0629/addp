@@ -293,6 +293,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			ID:             metaItem.ID,
 			EngineID:       metaItem.EngineID,
 			Path:           metaItem.FullName,
+			FullName:       metaItem.FullName,
 			ItemCount:      1,
 			TotalSizeBytes: sizeBytes,
 			Attributes:     metaItem.Attributes,
@@ -302,7 +303,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		// 目录型湖表的 physical_path 是目录路径，不能当文件读
 		if physPath := stringAttribute(metaItem.Attributes, "physical_path"); physPath != "" {
 			mode := stringAttribute(metaItem.Attributes, "mode")
-			if mode == "file" {
+			if mode == "file" || stringAttribute(metaItem.Attributes, "composition_type") == "single_file" {
 				req.PhysicalPath = physPath
 			}
 		}
