@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/detector"
 )
 
 // lakeTableFormats 支持的湖表文件格式
@@ -25,7 +25,7 @@ var lakeTableFormats = map[string]bool{
 type LakeTableDetector struct{}
 
 func init() {
-	detector.Register(&LakeTableDetector{})
+	dataitem.Register(&LakeTableDetector{})
 }
 
 func (d *LakeTableDetector) Priority() int {
@@ -63,7 +63,7 @@ func (d *LakeTableDetector) ExtractItemInfo(
 	engineID uint,
 	dirPath string,
 	files []plugin.FileEntry,
-) (*detector.CompositeItemInfo, error) {
+) (*dataitem.CompositeItemInfo, error) {
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files in directory: %s", dirPath)
 	}
@@ -113,8 +113,13 @@ func (d *LakeTableDetector) ExtractItemInfo(
 		})
 	}
 
-	return &detector.CompositeItemInfo{
-		Fields: tableInfo.Fields,
+	return &dataitem.CompositeItemInfo{
+		Fields:          tableInfo.Fields,
+		CompositionType: dataitem.CompositionTypeDirectoryTree,
+		DataFamily:      dataitem.DataFamilyTabular,
+		Format:          detectFormat(files),
+		EntryPath:       dirPath,
+		ComponentFiles:  filePaths(files),
 		Attributes: map[string]interface{}{
 			"format":        detectFormat(files),
 			"mode":          "directory",
@@ -135,13 +140,19 @@ func ExtractSingleFileInfo(
 	engineID uint,
 	filePath string,
 	fileSize int64,
-) (*detector.CompositeItemInfo, error) {
+) (*dataitem.CompositeItemInfo, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	format := ext[1:] // 去掉点号，如 "parquet"
 
 	// 非 parquet 格式暂不解析 Schema
 	if ext != ".parquet" {
-		return &detector.CompositeItemInfo{
+		return &dataitem.CompositeItemInfo{
+			CompositionType: dataitem.CompositionTypeSingleFile,
+			DataFamily:      dataitem.DataFamilyTabular,
+			Format:          format,
+			EntryPath:       filePath,
+			ComponentFiles:  []string{filePath},
+			SizeBytes:       &fileSize,
 			Attributes: map[string]interface{}{
 				"format":        format,
 				"mode":          "file",
@@ -162,7 +173,13 @@ func ExtractSingleFileInfo(
 	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
-		return &detector.CompositeItemInfo{
+		return &dataitem.CompositeItemInfo{
+			CompositionType: dataitem.CompositionTypeSingleFile,
+			DataFamily:      dataitem.DataFamilyTabular,
+			Format:          "parquet",
+			EntryPath:       filePath,
+			ComponentFiles:  []string{filePath},
+			SizeBytes:       &fileSize,
 			Attributes: map[string]interface{}{
 				"format":        "parquet",
 				"mode":          "file",
@@ -183,8 +200,14 @@ func ExtractSingleFileInfo(
 		})
 	}
 
-	return &detector.CompositeItemInfo{
-		Fields: tableInfo.Fields,
+	return &dataitem.CompositeItemInfo{
+		Fields:          tableInfo.Fields,
+		CompositionType: dataitem.CompositionTypeSingleFile,
+		DataFamily:      dataitem.DataFamilyTabular,
+		Format:          "parquet",
+		EntryPath:       filePath,
+		ComponentFiles:  []string{filePath},
+		SizeBytes:       &fileSize,
 		Attributes: map[string]interface{}{
 			"format":        "parquet",
 			"mode":          "file",
@@ -197,14 +220,21 @@ func ExtractSingleFileInfo(
 }
 
 // buildBasicInfo 构建基础信息（无 Schema）
-func buildBasicInfo(files []plugin.FileEntry, dirPath string) *detector.CompositeItemInfo {
+func buildBasicInfo(files []plugin.FileEntry, dirPath string) *dataitem.CompositeItemInfo {
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
 	}
-	return &detector.CompositeItemInfo{
+	format := detectFormat(files)
+	return &dataitem.CompositeItemInfo{
+		CompositionType: dataitem.CompositionTypeDirectoryTree,
+		DataFamily:      dataitem.DataFamilyTabular,
+		Format:          format,
+		EntryPath:       dirPath,
+		ComponentFiles:  filePaths(files),
+		SizeBytes:       &totalSize,
 		Attributes: map[string]interface{}{
-			"format":        detectFormat(files),
+			"format":        format,
 			"mode":          "directory",
 			"file_count":    len(files),
 			"total_size":    totalSize,
@@ -237,6 +267,14 @@ func detectFormat(files []plugin.FileEntry) string {
 		}
 	}
 	return best
+}
+
+func filePaths(files []plugin.FileEntry) []string {
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	return paths
 }
 
 // ReadFirstParquetPreviewWithProviders 从 CatalogProvider 列目录，并通过 ContentReadableProvider 读取第一个 Parquet。

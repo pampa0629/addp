@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -179,6 +180,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 			attrs["document_count"] = count
 		}
 		attrs["size_bytes"] = sizeBytes
+		applyNoSQLDataItemAttributes(attrs, itemType, resource.EngineType)
 
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
 		rowCount := count
@@ -373,4 +375,16 @@ func countStatKey(itemType string) string {
 		return "count"
 	}
 	return "document_count"
+}
+
+func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType, engineType string) {
+	attrs["format"] = engineType
+	switch itemType {
+	case "collection":
+		attrs["data_family"] = string(dataitem.DataFamilyTabular)
+	case "label", "relationship":
+		attrs["data_family"] = string(dataitem.DataFamilyGraph)
+	default:
+		attrs["data_family"] = string(dataitem.DataFamilyUnknown)
+	}
 }

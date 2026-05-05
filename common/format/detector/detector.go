@@ -3,8 +3,8 @@ package detector
 import (
 	"context"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 )
 
 // CompositeItemDetector 复合数据项检测器。
@@ -26,7 +26,6 @@ type CompositeItemDetector interface {
 }
 
 // CompositeItemInfo 复合数据项信息。
-type CompositeItemInfo struct {
-	Fields     []format.FieldInfo     // 列定义，复用现有 FieldInfo。
-	Attributes map[string]interface{} // 其他扩展属性。
-}
+//
+// Deprecated: 请改用 common/dataitem.CompositeItemInfo。
+type CompositeItemInfo = dataitem.CompositeItemInfo

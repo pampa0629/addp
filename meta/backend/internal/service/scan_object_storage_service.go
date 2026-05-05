@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	pathpkg "path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/addp/common/dataitem"
+	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonParquet "github.com/addp/common/format/parquet"
@@ -31,6 +34,12 @@ type ObjectStorageScanService struct {
 	indexer           *IndexerService    // 索引服务
 	objectClients     map[uint]*minio.Client
 	objectClientMu    sync.Mutex
+}
+
+type objectStorageCompositeItem struct {
+	bucket string
+	prefix string
+	item   *dataitem.DetectedItem
 }
 
 // NewObjectStorageScanService 创建对象存储扫描服务
@@ -948,6 +957,12 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	scannedFingerprints map[string]bool,
 ) (int, error) {
 	objects := 0
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
 
 	// 重要：在循环外部只处理一次scanPathPrefix，建立基础父节点
 	// 例如：扫描 "addp/shapefile" 时，scanPathPrefix = "shapefile"
@@ -983,6 +998,12 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
+	compositeSkipPaths, compositeItems := s.detectObjectStorageCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+	compositeCount, err := s.persistObjectStorageCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints)
+	if err != nil {
+		return objects, err
+	}
+	objects += compositeCount
 
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
@@ -1073,6 +1094,9 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		if meta.NodeType != "object" {
 			continue
 		}
+		if compositeSkipPaths[meta.Path] {
+			continue
+		}
 
 		objectName := pathpkg.Base(strings.Trim(meta.Path, "/"))
 		if objectName == "" {
@@ -1105,6 +1129,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		if meta.LastModified != nil {
 			attrs["last_modified_at"] = meta.LastModified
 		}
+		mergeDataItemAttributes(attrs, inferObjectStorageDataItem(meta, objectName))
 
 		// 生成fingerprint - 两步计算方式
 		// 湖表使用逻辑名称（去掉扩展名）计算 fullName，与 NFS 保持一致
@@ -1158,6 +1183,9 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
 			// 但仍需要更新node_id（文件可能移动到了不同的目录）
 			enhancedAttrs = existingItem.Attributes // 使用已有的attributes
+			for k, v := range attrs {
+				enhancedAttrs[k] = v
+			}
 		} else {
 			// 浅层扫描 + 新记录：使用基础属性
 			enhancedAttrs = attrs
@@ -1184,6 +1212,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			enhancedAttrs["mode"] = "file"
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			enhancedAttrs["physical_path"] = meta.Bucket + "/" + meta.Path
+			enhancedAttrs["entry_path"] = meta.Bucket + "/" + meta.Path
+			enhancedAttrs["component_files"] = []string{meta.Bucket + "/" + meta.Path}
+			enhancedAttrs["composition_type"] = string(dataitem.CompositionTypeSingleFile)
+			enhancedAttrs["data_family"] = string(dataitem.DataFamilyTabular)
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -1211,6 +1243,245 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		ensureNodeAggregate(stats, bucketNode)
 	}
 	return objects, nil
+}
+
+func inferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *dataitem.DetectedItem {
+	physicalPath := meta.Bucket + "/" + meta.Path
+	return dataitem.InferSingleFile(dataitem.SingleFileInput{
+		Name:   objectName,
+		Path:   physicalPath,
+		Size:   meta.SizeBytes,
+		Format: meta.FileType,
+	})
+}
+
+func mergeDataItemAttributes(attrs models.JSONMap, item *dataitem.DetectedItem) {
+	if item == nil {
+		return
+	}
+	for k, v := range dataitem.BuildAttributes(item) {
+		switch k {
+		case "path", "size", "content_type":
+			continue
+		default:
+			attrs[k] = v
+		}
+	}
+}
+
+func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	metas []format.ObjectMetadata,
+) (map[string]bool, []objectStorageCompositeItem) {
+	skipPaths := map[string]bool{}
+	if contentReader == nil {
+		return skipPaths, nil
+	}
+
+	groups := objectMetasByParentPrefix(metas)
+	items := make([]objectStorageCompositeItem, 0)
+	for groupKey, group := range groups {
+		if len(group) < 2 {
+			continue
+		}
+		bucket, prefix := splitObjectCompositeGroupKey(groupKey)
+		if prefix == "" {
+			continue
+		}
+		files := objectMetasToFileEntries(bucket, group)
+		detected, err := dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
+			ContentReader: contentReader,
+			ConnInfo:      connInfo,
+			EngineID:      engineID,
+			DirPath:       bucket + "/" + prefix,
+			Files:         files,
+		})
+		if err != nil {
+			s.log.Warn("对象存储组合项检测失败", "bucket", bucket, "prefix", prefix, "error", err)
+			continue
+		}
+		if detected == nil {
+			continue
+		}
+		for _, meta := range group {
+			skipPaths[meta.Path] = true
+		}
+		items = append(items, objectStorageCompositeItem{
+			bucket: bucket,
+			prefix: prefix,
+			item:   detected,
+		})
+	}
+	return skipPaths, items
+}
+
+func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
+	tenantID, engineID uint,
+	bucketNode, basePrefixNode *models.MetaNode,
+	items []objectStorageCompositeItem,
+	stats map[uint]*nodeAggregate,
+	includeBucketAggregate bool,
+	scanPathPrefix string,
+	scannedFingerprints map[string]bool,
+) (int, error) {
+	count := 0
+	for _, composite := range items {
+		if composite.item == nil {
+			continue
+		}
+		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, composite.prefix, scanPathPrefix, stats)
+		if err != nil {
+			return count, err
+		}
+
+		itemName := pathpkg.Base(strings.Trim(composite.prefix, "/"))
+		if itemName == "" {
+			itemName = "dataset"
+		}
+		parentPath := parentObjectPath(composite.prefix)
+		fullName := commonModels.JoinObjectPath(composite.bucket, parentPath, itemName)
+
+		attrs := toJSONMap(dataitem.BuildAttributes(composite.item))
+		attrs["bucket"] = composite.bucket
+		attrs["path"] = parentPath
+		attrs["name"] = itemName
+		attrs["mode"] = "directory"
+
+		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+		if scannedFingerprints != nil {
+			scannedFingerprints[fingerprint] = true
+		}
+
+		sizeVal := composite.item.SizeBytes
+		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, composite.item.ItemType, itemName, fullName, attrs, nil, &sizeVal, nil); err != nil {
+			return count, err
+		}
+		count++
+		updatedNodes := map[uint]bool{}
+		for _, node := range []*models.MetaNode{bucketNode, parentNode} {
+			if node == nil || updatedNodes[node.ID] {
+				continue
+			}
+			if !includeBucketAggregate && node.ID == bucketNode.ID {
+				continue
+			}
+			updatedNodes[node.ID] = true
+			agg := ensureNodeAggregate(stats, node)
+			agg.itemCount++
+			agg.totalSize += composite.item.SizeBytes
+		}
+	}
+	return count, nil
+}
+
+func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
+	tenantID, engineID uint,
+	bucketNode, basePrefixNode *models.MetaNode,
+	prefix string,
+	scanPathPrefix string,
+	stats map[uint]*nodeAggregate,
+) (*models.MetaNode, error) {
+	parent := bucketNode
+	if basePrefixNode != nil {
+		parent = basePrefixNode
+	}
+
+	parentPrefix := parentObjectPath(prefix)
+	relative := strings.Trim(parentPrefix, "/")
+	if scanPathPrefix != "" && strings.HasPrefix(relative, strings.Trim(scanPathPrefix, "/")) {
+		relative = strings.TrimPrefix(relative, strings.Trim(scanPathPrefix, "/"))
+		relative = strings.Trim(relative, "/")
+	}
+	if relative == "" {
+		return parent, nil
+	}
+	current := parent
+	segments := strings.Split(relative, "/")
+	for idx, segment := range segments {
+		if segment == "" {
+			continue
+		}
+		fullName := composeNodeFullName(segment, current, "/")
+		pathSoFar := joinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
+		attrs := models.JSONMap{
+			"bucket": bucketNode.Name,
+			"path":   pathSoFar + "/",
+		}
+		childNode, err := s.repo.UpsertNode(tenantID, engineID, current, "prefix", segment, &fullName, attrs)
+		if err != nil {
+			return nil, err
+		}
+		current = childNode
+		ensureNodeAggregate(stats, childNode)
+	}
+	return current, nil
+}
+
+func objectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]format.ObjectMetadata {
+	groups := map[string][]format.ObjectMetadata{}
+	for _, meta := range metas {
+		if meta.NodeType != "object" {
+			continue
+		}
+		parent := parentObjectPath(meta.Path)
+		if parent == "" {
+			continue
+		}
+		key := meta.Bucket + "\x00" + strings.Trim(parent, "/")
+		groups[key] = append(groups[key], meta)
+	}
+	return groups
+}
+
+func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []plugin.FileEntry {
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].Path < metas[j].Path
+	})
+	files := make([]plugin.FileEntry, 0, len(metas))
+	for _, meta := range metas {
+		modifiedAt := time.Time{}
+		if meta.LastModified != nil {
+			modifiedAt = *meta.LastModified
+		}
+		files = append(files, plugin.FileEntry{
+			Name:       pathpkg.Base(meta.Path),
+			Path:       bucket + "/" + meta.Path,
+			Size:       meta.SizeBytes,
+			ModifiedAt: modifiedAt,
+		})
+	}
+	return files
+}
+
+func splitObjectCompositeGroupKey(key string) (string, string) {
+	parts := strings.SplitN(key, "\x00", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
+func parentObjectPath(path string) string {
+	dir := pathpkg.Dir(strings.Trim(path, "/"))
+	if dir == "." || dir == "/" {
+		return ""
+	}
+	return strings.Trim(dir, "/") + "/"
+}
+
+func joinObjectPathParts(parts ...string) string {
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		cleaned = append(cleaned, part)
+	}
+	return strings.Join(cleaned, "/")
 }
 
 // ============================================================================

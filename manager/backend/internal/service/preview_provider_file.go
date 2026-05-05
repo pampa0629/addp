@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -47,8 +48,8 @@ func (p *FileTablePreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	// 检测格式并查找对应的 parser
-	formatType := format.DetectFormat(req.Table, nil)
+	// 优先使用 Meta 已识别的 format/content_type，文件名仅作为兜底。
+	formatType := p.resolveFormat(req)
 	_, err := format.GetFileTableParser(formatType)
 	return err == nil
 }
@@ -72,8 +73,8 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		fullPath = filepath.Join(req.Schema, req.Table)
 	}
 
-	// 检测格式
-	formatType := format.DetectFormat(req.Table, nil)
+	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
+	formatType := p.resolveFormat(req)
 
 	// 获取对应的 parser
 	parser, err := format.GetFileTableParser(formatType)
@@ -345,6 +346,18 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 	}
 
 	return opts
+}
+
+func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {
+	if req == nil {
+		return format.FormatUnknown
+	}
+	formatName := dataitem.InferFormat(
+		req.Table,
+		stringAttribute(req.Attributes, "content_type"),
+		stringAttribute(req.Attributes, "format"),
+	)
+	return format.FormatType(formatName)
 }
 
 // detectDelimiter 检测 CSV/TSV 分隔符

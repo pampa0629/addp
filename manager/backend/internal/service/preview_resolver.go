@@ -290,6 +290,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			Path:           metaItem.FullName,
 			ItemCount:      1,
 			TotalSizeBytes: sizeBytes,
+			Attributes:     metaItem.Attributes,
 		}
 		req.ItemType = metaItem.ItemType
 		// 提取 physical_path（仅单文件湖表，mode="file"）
@@ -402,7 +403,15 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		ItemType:     req.ItemType,
 		NodeType:     string(req.Locator.Type),
 		PhysicalPath: req.PhysicalPath,
+		Attributes:   req.MetadataAttributes(),
 	}
+}
+
+func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {
+	if req == nil || req.Metadata == nil || len(req.Metadata.Attributes) == 0 {
+		return nil
+	}
+	return req.Metadata.Attributes
 }
 
 // convertToNewResult 将旧的 TablePreview 转换为新的 PreviewResult

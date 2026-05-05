@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -136,7 +137,8 @@ func (s *DatabaseScanService) scanTables(
 		return 0, 0, fmt.Errorf("failed to list tables: %w", err)
 	}
 
-	// 转换为 meta 内部的 TableInfo 格式
+	// ScannerTableInfo 是旧 Scanner 适配层结构，数据库扫描在此处做一次边界转换。
+	// 新的 item 语义（data_family、format 等）写入 attrs，不再扩展 ScannerTableInfo。
 	tables := make([]format.ScannerTableInfo, len(pluginTables))
 	for i, t := range pluginTables {
 		tables[i] = format.ScannerTableInfo{
@@ -312,7 +314,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
 
-		// 转换为 meta 内部的 FieldInfo 格式
+		// ScannerFieldInfo 是旧 Scanner 适配层结构，字段级标准语义后续应收口到 format.FieldInfo。
 		fields = make([]format.ScannerFieldInfo, len(pluginColumns))
 		for i, col := range pluginColumns {
 			fields[i] = format.ScannerFieldInfo{
@@ -380,6 +382,8 @@ func (s *DatabaseScanService) scanTableDetails(
 			}
 		}
 	}
+	attrs["data_family"] = string(dataitem.DataFamilyTabular)
+	attrs["format"] = resource.EngineType
 
 	return fields, attrs, nil
 }

@@ -35,8 +35,9 @@ type SchemaInfo struct {
 	TotalSizeBytes int64
 }
 
-// ScannerTableInfo 表信息（Scanner 专用）
-// 注意：这是旧的扫描器结构体，新代码应使用 TableInfo (info.go)
+// ScannerTableInfo 表信息（Scanner 专用）。
+// 定位：仅作为旧 Scanner 接口和 meta 数据库扫描之间的适配层。
+// 新的数据家族、组合形态、文件格式语义不应继续扩展到这里，应进入 TableInfo/ObjectInfo 或 common/dataitem。
 type ScannerTableInfo struct {
 	Name         string
 	Type         string
@@ -46,8 +47,9 @@ type ScannerTableInfo struct {
 	LastModified *time.Time // 表的最后修改时间（用于增量扫描判断）
 }
 
-// ScannerFieldInfo 字段信息（Scanner 专用）
-// 注意：这是旧的扫描器结构体，新代码应使用 FieldInfo (info.go)
+// ScannerFieldInfo 字段信息（Scanner 专用）。
+// 定位：仅作为旧 Scanner 接口和 meta 数据库扫描之间的适配层。
+// 新字段级语义应优先使用 FieldInfo，并通过明确转换函数落到扫描 attributes。
 type ScannerFieldInfo struct {
 	Name             string
 	OrdinalPosition  int
@@ -152,10 +154,10 @@ type BasicMetadata struct {
 // SchemaMetadata 结构化数据的schema信息
 // 适用于CSV、Parquet、GeoJSON FeatureCollection等有表格结构的数据
 type SchemaMetadata struct {
-	Columns    []ColumnMetadata           // 列信息
-	RowCount   int64                      // 总行数（-1表示未知）
-	SampleData []map[string]interface{}   // 前N行样本数据（可选）
-	Extra      map[string]interface{}     // 额外的schema信息
+	Columns    []ColumnMetadata         // 列信息
+	RowCount   int64                    // 总行数（-1表示未知）
+	SampleData []map[string]interface{} // 前N行样本数据（可选）
+	Extra      map[string]interface{}   // 额外的schema信息
 }
 
 // ColumnMetadata 列元数据

@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/dataitem"
+	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format/detector"
+	"github.com/addp/common/format"
 	commonParquet "github.com/addp/common/format/parquet"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -158,69 +160,46 @@ func (s *FileSystemScanService) scanDirectory(
 	// bucket 根目录不参与 detector 检测（避免把整个 bucket 识别为一张表）
 	// 子目录才走 detector 链（模式 A：目录即表）
 	if !isBucketRoot {
-		detectors := detector.GetAll()
-		for _, d := range detectors {
-			if !d.Detect(ctx, files, subdirs) {
-				continue
-			}
-			// 提取元信息
-			info, err := d.ExtractItemInfo(ctx, contentReader, connInfo, resource.ID, dirPath, files)
-			if err != nil {
-				s.log.Warn("提取复合数据项信息失败",
-					"path", dirPath,
-					"item_type", d.ItemType(),
-					"error", err,
-				)
-				break
-			}
-
-			// 计算总大小
-			var totalSize int64
-			for _, f := range files {
-				totalSize += f.Size
-			}
-
-			// 构建 attributes
-			attrs := models.JSONMap{}
-			for k, v := range info.Attributes {
-				attrs[k] = v
-			}
-			if _, ok := attrs["physical_path"]; !ok {
-				attrs["physical_path"] = dirPath
-			}
-
-			// 存储 fields 到 attributes
-			if len(info.Fields) > 0 {
-				fieldsData := make([]map[string]interface{}, 0, len(info.Fields))
-				for _, f := range info.Fields {
-					fieldsData = append(fieldsData, map[string]interface{}{
-						"name":          f.Name,
-						"type":          string(f.Type),
-						"original_type": f.OriginalType,
-						"nullable":      f.Nullable,
-					})
-				}
-				attrs["fields"] = fieldsData
+		detected, err := dataitem.ResolveDirectory(ctx, dataitem.DirectoryResolveInput{
+			ContentReader: contentReader,
+			ConnInfo:      connInfo,
+			EngineID:      resource.ID,
+			DirPath:       dirPath,
+			Files:         files,
+			Subdirs:       subdirs,
+		})
+		if err != nil {
+			s.log.Warn("提取复合数据项信息失败",
+				"path", dirPath,
+				"error", err,
+			)
+		}
+		if detected != nil {
+			attrs := toJSONMap(dataitem.BuildAttributes(detected))
+			if len(detected.Fields) > 0 {
+				attrs["fields"] = fieldAttributesFromFormat(detected.Fields)
 			}
 
 			itemName, fullName := inferItemName(dirPath)
 
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
-				d.ItemType(), itemName, fullName,
-				attrs, nil, &totalSize, nil,
+				detected.ItemType, itemName, fullName,
+				attrs, nil, &detected.SizeBytes, nil,
 			)
 			if upsertErr != nil {
 				s.log.Warn("保存复合数据项失败",
 					"path", dirPath,
-					"item_type", d.ItemType(),
+					"item_type", detected.ItemType,
 					"error", upsertErr,
 				)
 			} else {
 				totalItems++
 				s.log.Info("识别到复合数据项",
 					"path", dirPath,
-					"item_type", d.ItemType(),
+					"item_type", detected.ItemType,
+					"composition_type", detected.CompositionType,
+					"data_family", detected.DataFamily,
 					"name", itemName,
 				)
 			}
@@ -241,20 +220,20 @@ func (s *FileSystemScanService) scanDirectory(
 
 			attrs := models.JSONMap{}
 			if info != nil {
-				for k, v := range info.Attributes {
-					attrs[k] = v
+				detected := &dataitem.DetectedItem{
+					CompositionType: info.CompositionType,
+					DataFamily:      info.DataFamily,
+					Format:          info.Format,
+					PhysicalPath:    file.Path,
+					EntryPath:       info.EntryPath,
+					ComponentFiles:  info.ComponentFiles,
+					SizeBytes:       file.Size,
+					Fields:          info.Fields,
+					Attributes:      info.Attributes,
 				}
+				attrs = toJSONMap(dataitem.BuildAttributes(detected))
 				if len(info.Fields) > 0 {
-					fieldsData := make([]map[string]interface{}, 0, len(info.Fields))
-					for _, f := range info.Fields {
-						fieldsData = append(fieldsData, map[string]interface{}{
-							"name":          f.Name,
-							"type":          string(f.Type),
-							"original_type": f.OriginalType,
-							"nullable":      f.Nullable,
-						})
-					}
-					attrs["fields"] = fieldsData
+					attrs["fields"] = fieldAttributesFromFormat(info.Fields)
 				}
 			} else {
 				attrs["format"] = ext[1:] // 去掉点号
@@ -262,6 +241,10 @@ func (s *FileSystemScanService) scanDirectory(
 				attrs["file_count"] = 1
 				attrs["total_size"] = file.Size
 				attrs["physical_path"] = file.Path
+				attrs["entry_path"] = file.Path
+				attrs["component_files"] = []string{file.Path}
+				attrs["composition_type"] = string(dataitem.CompositionTypeSingleFile)
+				attrs["data_family"] = string(dataitem.DataFamilyTabular)
 			}
 
 			// 文件名去掉扩展名作为逻辑表名
@@ -281,11 +264,7 @@ func (s *FileSystemScanService) scanDirectory(
 			}
 		} else {
 			// 普通文件 → file
-			fileAttrs := models.JSONMap{
-				"path":         file.Path,
-				"size":         file.Size,
-				"content_type": file.ContentType,
-			}
+			fileAttrs := toJSONMap(dataitem.BuildAttributes(dataitem.InferSingleFileItem(file)))
 			itemName := file.Name
 			fullName := joinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
@@ -394,6 +373,27 @@ func (s *FileSystemScanService) listDirectory(
 		})
 	}
 	return files, subdirs, nil
+}
+
+func toJSONMap(attrs map[string]interface{}) models.JSONMap {
+	result := models.JSONMap{}
+	for k, v := range attrs {
+		result[k] = v
+	}
+	return result
+}
+
+func fieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
+	fieldsData := make([]map[string]interface{}, 0, len(fields))
+	for _, f := range fields {
+		fieldsData = append(fieldsData, map[string]interface{}{
+			"name":          f.Name,
+			"type":          string(f.Type),
+			"original_type": f.OriginalType,
+			"nullable":      f.Nullable,
+		})
+	}
+	return fieldsData
 }
 
 func fileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {
