@@ -13,6 +13,13 @@ var (
 
 // Register 注册组合数据项检测器。
 func Register(d CompositeItemDetector) {
+	if provider, ok := d.(FormatRulesProvider); ok {
+		for _, rule := range provider.Rules() {
+			if err := ValidateFormatRule(rule); err != nil {
+				panic(fmt.Sprintf("invalid dataitem detector rule: %v", err))
+			}
+		}
+	}
 	if provider, ok := d.(FormatRuleProvider); ok {
 		if err := ValidateFormatRule(provider.Rule()); err != nil {
 			panic(fmt.Sprintf("invalid dataitem detector rule: %v", err))

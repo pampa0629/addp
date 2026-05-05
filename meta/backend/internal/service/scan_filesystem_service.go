@@ -213,78 +213,31 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 	}
 
-	// 未被组合 detector 认领的文件继续逐文件处理（模式 B + 普通文件）
+	// 未被组合 detector 认领的文件继续逐文件处理。
 	for _, file := range files {
 		if claimedPaths[file.Path] {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(file.Name))
-		if commonParquet.IsLakeTableExt(ext) {
-			// 模式 B：单个结构化文件识别为 lake_table
-			info, err := commonParquet.ExtractSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
-			if err != nil {
-				s.log.Warn("提取单文件湖表信息失败", "path", file.Path, "error", err)
-			}
-
-			attrs := models.JSONMap{}
-			if info != nil {
-				detected := &dataitem.DetectedItem{
-					CompositionType: info.CompositionType,
-					DataFamily:      info.DataFamily,
-					Format:          info.Format,
-					PhysicalPath:    file.Path,
-					EntryPath:       info.EntryPath,
-					ComponentFiles:  info.ComponentFiles,
-					SizeBytes:       file.Size,
-					Fields:          info.Fields,
-					Attributes:      info.Attributes,
-				}
-				attrs = toJSONMap(dataitem.BuildAttributes(detected))
-				if len(info.Fields) > 0 {
-					setSchemaFields(attrs, fieldAttributesFromFormat(info.Fields))
-				}
-			} else {
-				setItemAttribute(attrs, "format", ext[1:]) // 去掉点号
-				setItemAttribute(attrs, "mode", "file")
-				setItemAttribute(attrs, "file_count", 1)
-				setStorageAttribute(attrs, "total_size", file.Size)
-				setStorageAttribute(attrs, "physical_path", file.Path)
-				setItemAttribute(attrs, "entry_path", file.Path)
-				setItemAttribute(attrs, "component_files", []string{file.Path})
-				setItemAttribute(attrs, "composition_type", string(dataitem.CompositionTypeSingleFile))
-				setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyTabular))
-			}
-
-			// 文件名去掉扩展名作为逻辑表名
-			itemName := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
-			fullName := joinFSPath(parentNode.FullName, itemName)
-
-			_, upsertErr := s.repo.UpsertItem(
-				tenantID, resource.ID, parentNode,
-				"lake_table", itemName, fullName,
-				attrs, nil, &file.Size, nil,
-			)
-			if upsertErr != nil {
-				s.log.Warn("保存单文件湖表失败", "path", file.Path, "error", upsertErr)
-			} else {
-				totalItems++
-				s.log.Info("识别到单文件湖表", "path", file.Path, "name", itemName)
-			}
-		} else {
-			// 普通文件 → file
-			fileAttrs := toJSONMap(dataitem.BuildAttributes(dataitem.InferSingleFileItem(file)))
+		detected := dataitem.InferSingleFileItem(file)
+		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
+			itemType := fileSystemSingleFileItemType(detected)
 			itemName := file.Name
 			fullName := joinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
-				"file", itemName, fullName,
+				itemType, itemName, fullName,
 				fileAttrs, nil, &file.Size, nil,
 			)
 			if upsertErr != nil {
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
 			} else {
 				totalItems++
+				if itemType == "lake_table" && len(fields) > 0 {
+					s.log.Info("识别到单文件湖表", "path", file.Path, "name", itemName, "field_count", len(fields))
+				}
 			}
+		} else {
+			s.log.Warn("提取单文件属性失败", "path", file.Path, "error", err)
 		}
 	}
 
@@ -351,6 +304,49 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	return true
 }
 
+func (s *FileSystemScanService) enrichSingleFileAttributes(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	resource *commonModels.Engine,
+	file plugin.FileEntry,
+	detected *dataitem.DetectedItem,
+) (models.JSONMap, []format.FieldInfo, error) {
+	if detected == nil {
+		detected = dataitem.InferSingleFileItem(file)
+	}
+	if detected.ItemType == "lake_table" && commonParquet.IsLakeTableFileType(detected.Format) {
+		info, err := commonParquet.ExtractSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
+		if err != nil {
+			s.log.Warn("提取单文件湖表信息失败，使用基础文件属性", "path", file.Path, "error", err)
+			return toJSONMap(dataitem.BuildAttributes(detected)), nil, nil
+		}
+		if info != nil {
+			if info.SizeBytes == nil {
+				info.SizeBytes = &file.Size
+			}
+			sizeBytes := *info.SizeBytes
+			detected = &dataitem.DetectedItem{
+				ItemType:        "lake_table",
+				CompositionType: info.CompositionType,
+				DataFamily:      info.DataFamily,
+				Format:          info.Format,
+				PhysicalPath:    file.Path,
+				EntryPath:       info.EntryPath,
+				ComponentFiles:  info.ComponentFiles,
+				SizeBytes:       sizeBytes,
+				Fields:          info.Fields,
+				Attributes:      info.Attributes,
+			}
+		}
+	}
+	attrs := toJSONMap(dataitem.BuildAttributes(detected))
+	if len(detected.Fields) > 0 {
+		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
+	}
+	return attrs, detected.Fields, nil
+}
+
 func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
@@ -361,47 +357,25 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
 ) (*dataitem.DetectionResult, error) {
+	var recursiveFiles []plugin.FileEntry
+	var recursiveSubdirs []plugin.DirEntry
 	if len(subdirs) > 0 {
-		recursiveFiles, recursiveSubdirs, err := s.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, dirPath)
+		var err error
+		recursiveFiles, recursiveSubdirs, err = s.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, dirPath)
 		if err != nil {
 			return nil, err
-		}
-		if info, err := commonParquet.ExtractDirectoryTreeInfo(ctx, contentReader, connInfo, resource.ID, dirPath, recursiveFiles, recursiveSubdirs); err == nil && info != nil {
-			totalSize := int64(0)
-			if info.SizeBytes != nil {
-				totalSize = *info.SizeBytes
-			}
-			item := &dataitem.DetectedItem{
-				ItemType:        "lake_table",
-				CompositionType: info.CompositionType,
-				DataFamily:      info.DataFamily,
-				Format:          info.Format,
-				PhysicalPath:    dirPath,
-				EntryPath:       info.EntryPath,
-				ComponentFiles:  info.ComponentFiles,
-				SizeBytes:       totalSize,
-				Fields:          info.Fields,
-				Attributes:      info.Attributes,
-			}
-			claims := dataitem.ResourceClaimSet{}
-			for _, path := range item.ComponentFiles {
-				claims[path] = true
-			}
-			return &dataitem.DetectionResult{
-				Items:     []*dataitem.DetectedItem{item},
-				Claims:    claims,
-				Exclusive: item.CompositionType == dataitem.CompositionTypeDirectoryTree,
-			}, nil
 		}
 	}
 
 	return dataitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
-		ContentReader: contentReader,
-		ConnInfo:      connInfo,
-		EngineID:      resource.ID,
-		DirPath:       dirPath,
-		Files:         files,
-		Subdirs:       subdirs,
+		ContentReader:    contentReader,
+		ConnInfo:         connInfo,
+		EngineID:         resource.ID,
+		DirPath:          dirPath,
+		Files:            files,
+		Subdirs:          subdirs,
+		RecursiveFiles:   recursiveFiles,
+		RecursiveSubdirs: recursiveSubdirs,
 	})
 }
 
@@ -675,4 +649,19 @@ func inferDetectedItemName(dirPath string, item *dataitem.DetectedItem) (name, f
 		}
 	}
 	return inferItemName(dirPath)
+}
+
+func fileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
+	if item == nil {
+		return "file"
+	}
+	if item.ItemType != "" {
+		return item.ItemType
+	}
+	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
+		rule.CompositionType == dataitem.CompositionTypeSingleFile &&
+		rule.ItemType != "" {
+		return rule.ItemType
+	}
+	return "file"
 }

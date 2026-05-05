@@ -26,6 +26,35 @@ var lakeTableAuxiliaryFileNames = map[string]bool{
 	"_common_metadata": true,
 }
 
+var lakeTableRules = []dataitem.FormatRule{
+	{
+		Format:          "parquet",
+		DataFamily:      dataitem.DataFamilyTabular,
+		ItemType:        "lake_table",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+		Priority:        40,
+		Entry: dataitem.EntryRule{
+			Extensions: []string{".parquet", ".orc", ".avro"},
+		},
+	},
+	{
+		Format:          "parquet",
+		DataFamily:      dataitem.DataFamilyTabular,
+		ItemType:        "lake_table",
+		CompositionType: dataitem.CompositionTypeDirectoryTree,
+		Priority:        80,
+		Entry: dataitem.EntryRule{
+			Extensions: []string{".parquet", ".orc", ".avro"},
+		},
+		DirectoryTree: &dataitem.DirectoryTreeRule{
+			AllowRecursive:       true,
+			IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
+			RequiresStrongMatch:  true,
+			ExclusiveOnStrongHit: true,
+		},
+	},
+}
+
 // LakeTableDetector 湖表检测器。
 // 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为湖表数据文件或常见辅助文件。
 type LakeTableDetector struct{}
@@ -38,16 +67,69 @@ func (d *LakeTableDetector) Priority() int {
 	return 80
 }
 
+func (d *LakeTableDetector) Rules() []dataitem.FormatRule {
+	return lakeTableRules
+}
+
 func (d *LakeTableDetector) ItemType() string {
 	return "lake_table"
 }
 
+func (d *LakeTableDetector) ResolveItems(
+	ctx context.Context,
+	input dataitem.DirectoryResolveInput,
+) (*dataitem.DetectionResult, error) {
+	files := input.Files
+	subdirs := input.Subdirs
+	if len(input.RecursiveFiles) > 0 {
+		files = input.RecursiveFiles
+		subdirs = input.RecursiveSubdirs
+	}
+	if !d.Detect(ctx, files, subdirs) {
+		return nil, nil
+	}
+	info, err := d.extractLakeTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, nil
+	}
+	totalSize := int64(0)
+	if info.SizeBytes != nil {
+		totalSize = *info.SizeBytes
+	}
+	item := &dataitem.DetectedItem{
+		ItemType:        d.ItemType(),
+		CompositionType: info.CompositionType,
+		DataFamily:      info.DataFamily,
+		Format:          info.Format,
+		PhysicalPath:    input.DirPath,
+		EntryPath:       info.EntryPath,
+		ComponentFiles:  info.ComponentFiles,
+		SizeBytes:       totalSize,
+		Fields:          info.Fields,
+		Attributes:      info.Attributes,
+	}
+	claims := dataitem.ResourceClaimSet{}
+	for _, path := range item.ComponentFiles {
+		claims[path] = true
+	}
+	return &dataitem.DetectionResult{
+		Items:     []*dataitem.DetectedItem{item},
+		Claims:    claims,
+		Exclusive: item.CompositionType == dataitem.CompositionTypeDirectoryTree,
+	}, nil
+}
+
 func (d *LakeTableDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
 	lakeFileCount := 0
+	auxiliaryFileCount := 0
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
 		if !lakeTableFormats[ext] {
 			if isLakeTableAuxiliaryFile(f.Name) {
+				auxiliaryFileCount++
 				continue
 			}
 			return false
@@ -58,7 +140,7 @@ func (d *LakeTableDetector) Detect(ctx context.Context, files []plugin.FileEntry
 		return false
 	}
 	if len(subdirs) == 0 {
-		return true
+		return lakeFileCount == 1 || auxiliaryFileCount > 0 || hasPartLikeLakeFiles(files)
 	}
 	return hasPartitionLikeSubdir(subdirs)
 }
@@ -74,6 +156,22 @@ func hasPartitionLikeSubdir(subdirs []plugin.DirEntry) bool {
 		}
 	}
 	return false
+}
+
+func hasPartLikeLakeFiles(files []plugin.FileEntry) bool {
+	lakeFileCount := 0
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file.Name))
+		if !lakeTableFormats[ext] {
+			continue
+		}
+		lakeFileCount++
+		name := strings.ToLower(strings.TrimSpace(filepath.Base(file.Name)))
+		if !(strings.HasPrefix(name, "part-") || strings.HasPrefix(name, "part_")) {
+			return false
+		}
+	}
+	return lakeFileCount > 1
 }
 
 func lakeTableFiles(files []plugin.FileEntry) []plugin.FileEntry {
@@ -113,10 +211,7 @@ func directLakeTableFiles(files []plugin.FileEntry, dirPath string) []plugin.Fil
 			filtered = append(filtered, f)
 		}
 	}
-	if len(filtered) > 0 {
-		return filtered
-	}
-	return lakeTableFiles(files)
+	return filtered
 }
 
 func firstReadableParquetFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
@@ -140,18 +235,23 @@ func lakeTableEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dir
 	if len(subdirs) > 0 {
 		return dirPath
 	}
-	if directFiles := directLakeTableFiles(files, dirPath); len(directFiles) > 0 {
+	if directFiles := directLakeTableFiles(files, dirPath); len(directFiles) > 1 {
+		return dirPath
+	} else if len(directFiles) == 1 {
 		return directFiles[0].Path
+	}
+	if lakeFiles := lakeTableFiles(files); len(lakeFiles) == 1 {
+		return lakeFiles[0].Path
 	}
 	return dirPath
 }
 
-func lakeTableCompositionType(files []plugin.FileEntry, subdirs []plugin.DirEntry) dataitem.CompositionType {
+func lakeTableCompositionType(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.CompositionType {
 	if len(subdirs) > 0 {
 		return dataitem.CompositionTypeDirectoryTree
 	}
-	if len(files) > 1 {
-		return dataitem.CompositionTypeMultiFile
+	if len(directLakeTableFiles(files, dirPath)) > 1 || len(lakeTableFiles(files)) > 1 {
+		return dataitem.CompositionTypeDirectoryTree
 	}
 	return dataitem.CompositionTypeSingleFile
 }
@@ -206,24 +306,24 @@ func lakeTableAttributes(formatName string, mode string, fieldsData []map[string
 	return attrs
 }
 
-func lakeTableMode(subdirs []plugin.DirEntry) string {
-	if len(subdirs) > 0 {
+func lakeTableMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+	if lakeTableCompositionType(files, subdirs, dirPath) == dataitem.CompositionTypeDirectoryTree {
 		return "directory_tree"
 	}
-	return "directory"
+	return "file"
 }
 
 func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *dataitem.CompositeItemInfo {
 	totalSize := lakeTableSize(files)
 	formatName := detectFormat(files)
 	return &dataitem.CompositeItemInfo{
-		CompositionType: lakeTableCompositionType(files, subdirs),
+		CompositionType: lakeTableCompositionType(files, subdirs, dirPath),
 		DataFamily:      dataitem.DataFamilyTabular,
 		Format:          formatName,
 		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
 		ComponentFiles:  filePaths(files),
 		SizeBytes:       &totalSize,
-		Attributes:      lakeTableAttributes(formatName, lakeTableMode(subdirs), nil, files, dirPath, totalSize),
+		Attributes:      lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
 	}
 }
 
@@ -266,13 +366,13 @@ func (d *LakeTableDetector) extractLakeTableInfo(
 	fieldsData := lakeTableFieldAttributes(tableInfo.Fields)
 	return &dataitem.CompositeItemInfo{
 		Fields:          tableInfo.Fields,
-		CompositionType: lakeTableCompositionType(files, subdirs),
+		CompositionType: lakeTableCompositionType(files, subdirs, dirPath),
 		DataFamily:      dataitem.DataFamilyTabular,
 		Format:          formatName,
 		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
 		ComponentFiles:  filePaths(files),
 		SizeBytes:       &totalSize,
-		Attributes:      lakeTableAttributes(formatName, lakeTableMode(subdirs), fieldsData, files, dirPath, totalSize),
+		Attributes:      lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
 	}, nil
 }
 

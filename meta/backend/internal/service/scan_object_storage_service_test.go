@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 )
 
@@ -56,5 +57,53 @@ func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
 	}
 	if filtered[0].Path == "datasets/roads/roads.shp" {
 		t.Fatalf("claimed component should be removed: %#v", filtered)
+	}
+}
+
+func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
+	t.Parallel()
+
+	got := objectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "geojson",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+	})
+	if got != "table" {
+		t.Fatalf("itemType = %q, want table", got)
+	}
+
+	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "pdf",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+	})
+	if got != "file" {
+		t.Fatalf("pdf itemType = %q, want file", got)
+	}
+
+	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "parquet",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+	})
+	if got != "lake_table" {
+		t.Fatalf("parquet itemType = %q, want lake_table", got)
+	}
+}
+
+func TestInferObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
+	t.Parallel()
+
+	name, objectPath := inferObjectStorageCompositeName(objectStorageCompositeItem{
+		bucket: "addp",
+		prefix: "lake",
+		item: &dataitem.DetectedItem{
+			CompositionType: dataitem.CompositionTypeSingleFile,
+			EntryPath:       "addp/lake/sales.parquet",
+		},
+	})
+
+	if name != "sales.parquet" {
+		t.Fatalf("name = %q, want sales.parquet", name)
+	}
+	if objectPath != "lake/sales.parquet" {
+		t.Fatalf("objectPath = %q, want lake/sales.parquet", objectPath)
 	}
 }

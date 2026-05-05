@@ -57,23 +57,28 @@
 
 - `CompositionType`、`DataFamily`、`DetectedItem`
 - `CompositeItemDetector` 和 registry
-- `ResolveDirectory`
+- `ResolveItems` 多 item 识别入口；`ResolveDirectory` 仅保留为旧调用兼容包装
+- `DetectionResult.Claims` / `DetectionResult.Exclusive`
+- `FormatRule` / `FormatRulesProvider` 规则声明和注册校验
 - `InferSingleFileItem` / `InferSingleFile`
 - `InferFormat` / `InferDataFamily`
 - `BuildAttributes`
 
 已支持：
 
-- Shapefile 多文件 detector。
+- Shapefile 多文件 detector，同目录多组识别、组件 claimed、同目录混合文件不丢失。
 - 单文件 SQLite / GeoPackage 识别为 `container_file`。
 - 湖表分区目录树识别为 `directory_tree`。
 - 湖表目录树 detector 已容忍 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等常见辅助文件，辅助文件不进入 item 组件清单和大小统计。
-- 对象存储祖先前缀候选，支持部分跨层组件归并。
+- 湖表目录树 detector 已接入统一 `ResolveItems`，递归观察资源由扫描入口提供。
+- Parquet / ORC / Avro 单文件识别为 `single_file` + `lake_table`，文件名保留扩展名；多个独立 sibling 文件不会被误合成目录树 item。
+- 对象存储同 prefix 候选已进入统一组合检测；跨层组件只允许由格式规则显式声明，当前不做统一框架猜测。
 
 仍需增强：
 
 - 更多目录树 detector。
-- 更多跨层辅助文件规则。
+- 更多目录树辅助文件规则。
+- 更多格式声明规则。
 - 混合集合单 item。
 - 嵌套组合形态。
 
@@ -95,10 +100,10 @@
 
 已开始按资源树和组合规则工作：
 
-- 文件系统目录项进入 `common/dataitem.ResolveDirectory`。
+- 文件系统目录项进入 `common/dataitem.ResolveItems`。
 - 文件系统目录树候选可使用递归文件视图，匹配后整目录落一个 item。
 - 文件系统普通文件、对象存储单对象已通过 `common/dataitem` 补齐标准 item attributes。
-- 对象存储同前缀和祖先前缀候选已进入组合检测。
+- 对象存储同前缀候选已进入组合检测。
 - 关系表、NoSQL collection、图 label / relationship 已源头写入基础 `attributes.item` / `attributes.schema`。
 - 查询接口已优先读 `attributes.schema` 和 `attributes.extensions.spatial`。
 - `ScanRepository.UpsertItemSelective` 已接入 attributes normalizer，并补充核心字段冲突保护。
@@ -150,7 +155,7 @@
 
 ### 1. 组合形态覆盖
 
-已覆盖第一批多文件、容器文件、湖表目录树和对象存储跨层候选。
+已覆盖第一批多文件、容器文件、湖表目录树和对象存储同 prefix 候选。
 
 待补：
 
@@ -159,7 +164,7 @@
 - 更多目录树 detector。
 - 混合集合单 item。
 - 嵌套组合形态。
-- 对象存储更多真实跨层组件场景。
+- 对象存储更多真实跨层组件场景；跨层能力必须来自格式实现层声明。
 
 ### 2. 扫描语义统一
 
@@ -234,7 +239,7 @@
 | 阶段 | 状态 | 当前结论 |
 |---|---|---|
 | 阶段 0：文档与共识 | 已完成 | 三份文档定位已清楚，后续随实现同步维护。 |
-| 阶段 1：`common/dataitem` 与组合形态 | 第一版已完成，继续增强 | 主入口已建立，继续补 detector 和真实场景。 |
+| 阶段 1：`common/dataitem` 与组合形态 | 第一版已完成，继续增强 | `ResolveItems`、claims、exclusive、FormatRule 已建立，继续补 detector 和真实场景。 |
 | 阶段 2：数据家族与格式识别分离 | 第一版已完成，继续治理 | 空间不作为数据家族，格式不承载组合形态。 |
 | 阶段 3：attributes 治理 | 第一版已完成，继续治理 | 分区结构、normalizer、冲突保护、命名空间约束和删除计划已落地，继续补读取迁移和扩展映射。 |
 | 阶段 4：空间扩展收口 | 待推进 | 需要统一标准空间扩展口径。 |
@@ -245,7 +250,7 @@
 
 ### P0
 
-- 按 `addp数据项detector改造设计规范.md` 完成 detector 抽象改造，确保扫描范围可以产出 0..N 个 item，并通过 claimed resources 避免重复落库。
+- 按 `addp数据项detector改造设计规范.md` 继续完成 detector 抽象收口，确保新增格式都通过 `ResolveItems`、claimed resources 和 `FormatRule` 接入。
 - 完成所有已支持格式从 meta 扫描、attributes 内容到 manager 预览效果的端到端验证。
 - 清理提取状态类历史平铺字段的旧兜底读取。
 - 继续清理非 Transfer 核心代码中的历史 attributes 读取和私有扩展读取。
@@ -278,13 +283,13 @@
 
 | 格式 | 组合形态 | 引擎/场景 | 当前重点 | 状态 |
 |---|---|---|---|---|
-| Shapefile | `multi_file` | NFS、MinIO/S3 | 多组同目录识别；入口文件名带扩展名；组件 claimed；DBF 字段和空间扩展；manager 挂在目录下并按 `.shp` 入口预览 | 进行中 |
+| Shapefile | `multi_file` | NFS、MinIO/S3 | 多组同目录识别；入口文件名带扩展名；组件 claimed；DBF 字段和空间扩展；manager 挂在目录下并按 `.shp` 入口预览 | 代码已改，待真实引擎验证 |
 | GeoJSON | `single_file` | NFS、MinIO/S3 | 字段采样、空间扩展、单文件 table item、预览路径不重新猜格式 | 待验证 |
 | CSV / TSV | `single_file` | NFS、MinIO/S3 | 分隔符、编码、表头、schema.fields、普通文件与文件表路由 | 待验证 |
 | Excel | `container_file` | NFS、MinIO/S3 | 容器文件作为一条 meta item；sheet 信息进入 attributes；manager 预览默认 sheet | 待验证 |
 | SQLite / GeoPackage | `container_file` | NFS、MinIO/S3 | 容器文件 item；内部表/图层 attributes 展开；GeoPackage 空间扩展 | 待验证 |
-| Parquet / ORC / Avro 单文件 | `single_file` | NFS、MinIO/S3 | 文件名带扩展还是逻辑表名的既有规则复核；schema 解析；manager 表格预览 | 待验证 |
-| 湖表目录树 | `directory_tree` | NFS、MinIO/S3 | 独占条件、辅助文件忽略、分区目录、递归组件 claimed、manager 挂目录树 item | 待验证 |
+| Parquet / ORC / Avro 单文件 | `single_file` | NFS、MinIO/S3 | 文件名带扩展；schema 解析；独立 sibling 文件不误合并；manager 表格预览 | 代码已改，待真实引擎验证 |
+| 湖表目录树 | `directory_tree` | NFS、MinIO/S3 | 独占条件、辅助文件忽略、分区目录、递归组件 claimed、manager 挂目录树 item | 代码已改，待真实引擎验证 |
 | 图片 | `single_file` | NFS、MinIO/S3 | media 扩展、EXIF/GPS、对象预览 | 待验证 |
 | PDF | `single_file` | NFS、MinIO/S3 | document/extraction 扩展、文本预览、对象预览 | 待验证 |
 

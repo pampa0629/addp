@@ -17,7 +17,7 @@ import (
 	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/parquet"
+	_ "github.com/addp/common/format/parquet"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -1109,13 +1109,11 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
 		}
 
-		// 提前判断是否为湖表格式，以便正确计算 fullName 和 fingerprint
-		// 湖表的逻辑名称去掉扩展名，与 NFS 保持一致
+		dataItem := inferObjectStorageDataItem(meta, objectName)
 		itemType := "object"
 		itemName := objectName
-		if commonParquet.IsLakeTableFileType(meta.FileType) {
-			itemType = "lake_table"
-			itemName = commonParquet.LogicalLakeTableName(objectName)
+		if inferredType := objectStorageSingleFileItemType(dataItem); inferredType != "object" {
+			itemType = inferredType
 		}
 
 		// 构建基础属性
@@ -1131,15 +1129,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		if meta.LastModified != nil {
 			attrs["last_modified_at"] = meta.LastModified
 		}
-		mergeDataItemAttributes(attrs, inferObjectStorageDataItem(meta, objectName))
+		mergeDataItemAttributes(attrs, dataItem)
 
 		// 生成fingerprint - 两步计算方式
-		// 湖表使用逻辑名称（去掉扩展名）计算 fullName，与 NFS 保持一致
-		logicalName := name
-		if itemType == "lake_table" {
-			logicalName = commonParquet.LogicalLakeTableName(name)
-		}
-		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, logicalName)
+		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
@@ -1210,15 +1203,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 
 		// 湖表属性（itemType 和 itemName 已在上方确定）
 		if itemType == "lake_table" {
-			setItemAttribute(enhancedAttrs, "format", meta.FileType)
-			setItemAttribute(enhancedAttrs, "mode", "file")
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
 			setStorageAttribute(enhancedAttrs, "physical_path", physicalPath)
 			setItemAttribute(enhancedAttrs, "entry_path", physicalPath)
-			setItemAttribute(enhancedAttrs, "component_files", []string{physicalPath})
-			setItemAttribute(enhancedAttrs, "composition_type", string(dataitem.CompositionTypeSingleFile))
-			setItemAttribute(enhancedAttrs, "data_family", string(dataitem.DataFamilyTabular))
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -1577,6 +1565,21 @@ func objectStorageCompositeMode(item *dataitem.DetectedItem) string {
 	default:
 		return "directory"
 	}
+}
+
+func objectStorageSingleFileItemType(item *dataitem.DetectedItem) string {
+	if item == nil {
+		return "object"
+	}
+	if item.ItemType != "" {
+		return item.ItemType
+	}
+	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
+		rule.CompositionType == dataitem.CompositionTypeSingleFile &&
+		rule.ItemType != "" {
+		return rule.ItemType
+	}
+	return "object"
 }
 
 func joinObjectPathParts(parts ...string) string {

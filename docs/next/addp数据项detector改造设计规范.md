@@ -10,7 +10,7 @@
 
 ## 一、当前问题
 
-当前 `common/dataitem.ResolveDirectory` 的设计把“以目录为观察窗口”和“目录整体就是 item”混在了一起。
+改造前 `common/dataitem.ResolveDirectory` 的设计把“以目录为观察窗口”和“目录整体就是 item”混在了一起。
 
 以 Shapefile 为例：
 
@@ -137,6 +137,13 @@ type DetectionResult struct {
 ```
 
 `Exclusive=true` 表示当前扫描范围整体已经被某个 item 认领，扫描器可以停止递归或停止处理范围内剩余资源。该能力必须谨慎使用，只允许目录树、容器内部整体视图等明确场景使用。
+
+实现约束：
+
+- `ResolveItems` 是新扫描流程的主入口。
+- `ResolveDirectory` 仅作为兼容旧调用的包装入口，返回第一个 item，不得再用于新扫描链路。
+- 目录树 detector 需要递归观察资源时，由扫描入口提供 `RecursiveFiles` / `RecursiveSubdirs`；格式 detector 只消费候选资源，不自行访问存储引擎递归拉取目录。
+- 递归观察资源只表示“本轮 detector 可见的候选集合”，不改变 item 身份生成规则。
 
 ## 五、detector 分类
 
@@ -312,17 +319,17 @@ detector 不得把 `meta_item.name`、`meta_item.full_name`、`item_type`、`fin
 
 ### 阶段 1：抽象修正
 
-1. 新增统一识别入口，支持一个扫描范围产出多个 item。
-2. 为 `DetectedItem` 增加 claimed resources / exclusive scope 表达。
-3. 将当前目录 detector 拆为组合来源 detector。
-4. 为格式实现层增加组件规则声明能力，统一入口不得内置具体格式的后缀集合。
+1. 已新增统一识别入口 `ResolveItems`，支持一个扫描范围产出多个 item。
+2. 已通过 `DetectionResult.Claims` / `DetectionResult.Exclusive` 表达 claimed resources 和 exclusive scope。
+3. 已将 Shapefile 从目录级 detector 校准为 sibling multi-file detector。
+4. 已为格式实现层增加 `FormatRule` / `FormatRulesProvider` 声明能力，统一入口不得内置具体格式的后缀集合。
 5. 组合类型由平台统一定义，格式实现层只声明自己属于哪种组合形态、如何识别、如何认领资源。
 
 ### 阶段 2：扫描流程修正
 
-1. meta 扫描先调用统一入口。
-2. 先保存 detector 产出的 item。
-3. 跳过已认领资源。
+1. 文件系统和对象存储扫描已接入统一入口。
+2. 扫描流程先保存 detector 产出的 item。
+3. 已按 claimed resources 跳过已认领资源。
 4. 未认领文件继续走单文件识别。
 5. 未独占子目录继续递归。
 
@@ -330,10 +337,11 @@ detector 不得把 `meta_item.name`、`meta_item.full_name`、`item_type`、`fin
 
 优先迁移：
 
-1. Shapefile：从目录级 detector 改为 sibling multi-file detector。
-2. 湖表：保留 directory-tree detector，但必须显式声明独占条件。
-3. SQLite / GeoPackage：纳入 container-file detector。
-4. CSV / GeoJSON / PDF / 图片：纳入 residual single-file detector。
+1. Shapefile：已从目录级 detector 改为 sibling multi-file detector。
+2. 湖表：已保留 directory-tree detector，并声明 `DirectoryTreeRule` 和显式独占条件。
+3. SQLite / GeoPackage：已纳入内置 `container_file` 规则。
+4. CSV / GeoJSON / PDF / 图片：已纳入内置 residual single-file 规则。
+5. Parquet / ORC / Avro 单文件：已纳入内置 `single_file` + `lake_table` 规则；多个独立 sibling 文件不得被误合成一个目录树 item。
 
 ### 阶段 4：端到端验证
 

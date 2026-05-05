@@ -17,6 +17,10 @@ type DirectoryResolveInput struct {
 	DirPath       string
 	Files         []plugin.FileEntry
 	Subdirs       []plugin.DirEntry
+	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 directory_tree 时提供。
+	// detector 只消费观察资源，不自行遍历存储引擎。
+	RecursiveFiles   []plugin.FileEntry
+	RecursiveSubdirs []plugin.DirEntry
 }
 
 // SingleFileInput 是单文件 item 推断的输入。
@@ -37,7 +41,9 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 	for _, d := range GetAll() {
 		detectorInput := input
 		detectorInput.Files = unclaimedFiles(input.Files, result.Claims)
-		if len(input.Files) > 0 && len(detectorInput.Files) == 0 {
+		detectorInput.RecursiveFiles = unclaimedFiles(input.RecursiveFiles, result.Claims)
+		if len(input.Files) > 0 && len(detectorInput.Files) == 0 &&
+			(len(input.RecursiveFiles) == 0 || len(detectorInput.RecursiveFiles) == 0) {
 			break
 		}
 		if scoped, ok := d.(ScopeItemDetector); ok {
@@ -216,12 +222,17 @@ func InferSingleFileItem(file plugin.FileEntry) *DetectedItem {
 func InferSingleFile(input SingleFileInput) *DetectedItem {
 	formatName := InferFormat(input.Name, input.ContentType, input.Format)
 	compositionType := CompositionTypeSingleFile
-	if formatName == string(format.FormatSQLite) || formatName == string(format.FormatGeoPackage) {
-		compositionType = CompositionTypeContainerFile
+	dataFamily := InferDataFamily(formatName, input.ContentType)
+	itemType := "file"
+	if rule, ok := MatchBuiltinSingleFileRule(formatName); ok {
+		compositionType = rule.CompositionType
+		dataFamily = rule.DataFamily
+		itemType = rule.ItemType
 	}
 	return &DetectedItem{
+		ItemType:        itemType,
 		CompositionType: compositionType,
-		DataFamily:      InferDataFamily(formatName, input.ContentType),
+		DataFamily:      dataFamily,
 		Format:          formatName,
 		PhysicalPath:    input.Path,
 		EntryPath:       input.Path,

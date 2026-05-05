@@ -2,6 +2,59 @@ package dataitem
 
 import "fmt"
 
+// MatchBuiltinSingleFileRule 返回单文件或容器文件匹配的内置格式声明。
+func MatchBuiltinSingleFileRule(formatName string) (FormatRule, bool) {
+	for _, rule := range BuiltinSingleFileRules() {
+		if rule.Format == formatName {
+			return rule, true
+		}
+	}
+	return FormatRule{}, false
+}
+
+// BuiltinSingleFileRules 返回 common/dataitem 内置的单文件和容器文件格式声明。
+func BuiltinSingleFileRules() []FormatRule {
+	return []FormatRule{
+		singleFileRule("csv", DataFamilyTabular, "table", []string{".csv"}),
+		singleFileRule("tsv", DataFamilyTabular, "table", []string{".tsv"}),
+		singleFileRule("geojson", DataFamilyTabular, "table", []string{".geojson", ".json"}),
+		singleFileRule("excel", DataFamilyTabular, "table", []string{".xls", ".xlsx"}),
+		singleFileRule("parquet", DataFamilyTabular, "lake_table", []string{".parquet"}),
+		singleFileRule("orc", DataFamilyTabular, "lake_table", []string{".orc"}),
+		singleFileRule("avro", DataFamilyTabular, "lake_table", []string{".avro"}),
+		singleFileRule("pdf", DataFamilyDocument, "file", []string{".pdf"}),
+		singleFileRule("jpeg", DataFamilyImage, "file", []string{".jpg", ".jpeg"}),
+		singleFileRule("png", DataFamilyImage, "file", []string{".png"}),
+		singleFileRule("gif", DataFamilyImage, "file", []string{".gif"}),
+		singleFileRule("tiff", DataFamilyImage, "file", []string{".tif", ".tiff"}),
+		containerFileRule("sqlite", DataFamilyTabular, "file", []string{".sqlite", ".sqlite3", ".db"}),
+		containerFileRule("geopackage", DataFamilyTabular, "file", []string{".gpkg"}),
+	}
+}
+
+func singleFileRule(format string, family DataFamily, itemType string, exts []string) FormatRule {
+	return FormatRule{
+		Format:          format,
+		DataFamily:      family,
+		ItemType:        itemType,
+		CompositionType: CompositionTypeSingleFile,
+		Priority:        10,
+		Entry:           EntryRule{Extensions: exts},
+	}
+}
+
+func containerFileRule(format string, family DataFamily, itemType string, exts []string) FormatRule {
+	return FormatRule{
+		Format:          format,
+		DataFamily:      family,
+		ItemType:        itemType,
+		CompositionType: CompositionTypeContainerFile,
+		Priority:        20,
+		Entry:           EntryRule{Extensions: exts},
+		Container:       &ContainerRule{ExpandInternalItems: false},
+	}
+}
+
 // ValidateFormatRule 校验格式声明是否符合组合形态的条件约束。
 func ValidateFormatRule(rule FormatRule) error {
 	if rule.Format == "" {

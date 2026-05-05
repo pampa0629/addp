@@ -34,3 +34,8 @@ type ScopeItemDetector interface {
 type FormatRuleProvider interface {
 	Rule() FormatRule
 }
+
+// FormatRulesProvider 声明 detector 背后的多条格式规则。
+type FormatRulesProvider interface {
+	Rules() []FormatRule
+}

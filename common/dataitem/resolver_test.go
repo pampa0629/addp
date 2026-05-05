@@ -51,6 +51,9 @@ func TestInferSingleFileUsesCanonicalFormatForFamily(t *testing.T) {
 	if item.DataFamily != DataFamilyTabular {
 		t.Fatalf("DataFamily = %q, want %q", item.DataFamily, DataFamilyTabular)
 	}
+	if item.ItemType != "table" {
+		t.Fatalf("ItemType = %q, want table", item.ItemType)
+	}
 }
 
 func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
@@ -65,6 +68,9 @@ func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
 	}
 	if item.DataFamily != DataFamilyTabular {
 		t.Fatalf("DataFamily = %q, want %q", item.DataFamily, DataFamilyTabular)
+	}
+	if item.ItemType != "file" {
+		t.Fatalf("ItemType = %q, want file", item.ItemType)
 	}
 }
 

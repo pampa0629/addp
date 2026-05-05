@@ -40,6 +40,22 @@ func TestInferDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	}
 }
 
+func TestInferDetectedItemNameUsesEntryPathForSingleFile(t *testing.T) {
+	t.Parallel()
+
+	name, fullName := inferDetectedItemName("/lake", &dataitem.DetectedItem{
+		CompositionType: dataitem.CompositionTypeSingleFile,
+		EntryPath:       "/lake/sales.parquet",
+	})
+
+	if name != "sales.parquet" {
+		t.Fatalf("name = %q, want sales.parquet", name)
+	}
+	if fullName != "lake/sales.parquet" {
+		t.Fatalf("fullName = %q, want lake/sales.parquet", fullName)
+	}
+}
+
 func TestInferDetectedItemNameKeepsDirectoryTreePath(t *testing.T) {
 	t.Parallel()
 
@@ -53,5 +69,33 @@ func TestInferDetectedItemNameKeepsDirectoryTreePath(t *testing.T) {
 	}
 	if fullName != "lake/sales" {
 		t.Fatalf("fullName = %q, want lake/sales", fullName)
+	}
+}
+
+func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
+	t.Parallel()
+
+	got := fileSystemSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "csv",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+	})
+	if got != "table" {
+		t.Fatalf("itemType = %q, want table", got)
+	}
+
+	got = fileSystemSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "sqlite",
+		CompositionType: dataitem.CompositionTypeContainerFile,
+	})
+	if got != "file" {
+		t.Fatalf("container itemType = %q, want file", got)
+	}
+
+	got = fileSystemSingleFileItemType(&dataitem.DetectedItem{
+		Format:          "parquet",
+		CompositionType: dataitem.CompositionTypeSingleFile,
+	})
+	if got != "lake_table" {
+		t.Fatalf("parquet itemType = %q, want lake_table", got)
 	}
 }
