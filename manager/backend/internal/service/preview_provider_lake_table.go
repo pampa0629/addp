@@ -12,31 +12,14 @@ import (
 
 // LakeTablePreviewProvider 湖表预览 Provider
 // 支持 item_type="lake_table" 的数据项预览（Parquet/ORC/Avro 目录）
-type LakeTablePreviewProvider struct {
-	priority int
-}
+type LakeTablePreviewProvider struct{}
 
 func NewLakeTablePreviewProvider() PreviewProvider {
-	return &LakeTablePreviewProvider{
-		priority: 95, // 高于 file-table(90)，优先处理湖表
-	}
+	return &LakeTablePreviewProvider{}
 }
 
 func (p *LakeTablePreviewProvider) Name() string {
 	return "builtin:lake-table"
-}
-
-func (p *LakeTablePreviewProvider) Priority() int {
-	return p.priority
-}
-
-// Supports 检测是否为湖表预览请求
-// 条件：ItemType == "lake_table" 且引擎为对象存储类型
-func (p *LakeTablePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	return req.ItemType == "lake_table" && (isObjectStorageType(req.Engine.EngineType) || isFileSystemType(req.Engine.EngineType))
 }
 
 func (p *LakeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {

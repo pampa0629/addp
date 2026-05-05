@@ -162,7 +162,7 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 	}
 
 	registry.Register(provider)
-	logger.L().Info("数据预览: 注册插件成功", "config", path, "plugin", provider.Name(), "priority", provider.Priority())
+	logger.L().Info("数据预览: 注册插件成功", "config", path, "plugin", provider.Name())
 }
 
 func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) error {

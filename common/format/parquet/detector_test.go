@@ -43,6 +43,31 @@ func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
 	}
 }
 
+func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
+	t.Parallel()
+
+	d := &LakeTableDetector{}
+	files := []plugin.FileEntry{
+		{Name: "part-000.parquet", Path: "dataset/part-000.parquet", Size: 10},
+		{Name: "_SUCCESS", Path: "dataset/_SUCCESS", Size: 0},
+		{Name: "._metadata.crc", Path: "dataset/._metadata.crc", Size: 4},
+	}
+
+	if !d.Detect(context.Background(), files, nil) {
+		t.Fatal("expected parquet directory with auxiliary files to match")
+	}
+	info, err := ExtractDirectoryTreeInfo(context.Background(), nil, nil, 1, "dataset", files, nil)
+	if err != nil {
+		t.Fatalf("ExtractDirectoryTreeInfo() error = %v", err)
+	}
+	if len(info.ComponentFiles) != 1 || info.ComponentFiles[0] != "dataset/part-000.parquet" {
+		t.Fatalf("ComponentFiles = %#v, want only parquet data file", info.ComponentFiles)
+	}
+	if info.SizeBytes == nil || *info.SizeBytes != 10 {
+		t.Fatalf("SizeBytes = %v, want 10", info.SizeBytes)
+	}
+}
+
 func TestLakeTableDetectorRejectsMixedDirectoryTree(t *testing.T) {
 	t.Parallel()
 

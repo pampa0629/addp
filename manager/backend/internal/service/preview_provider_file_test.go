@@ -47,3 +47,14 @@ func TestFileTablePreviewProviderResolveFormatDoesNotFallbackToFilename(t *testi
 		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatUnknown)
 	}
 }
+
+func TestFileTablePreviewProviderBuildParseOptionsUsesResolvedFormat(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+
+	if got := provider.buildParseOptions(format.FormatTSV).Delimiter; got != '\t' {
+		t.Fatalf("TSV delimiter = %q, want tab", got)
+	}
+	if got := provider.buildParseOptions(format.FormatCSV).Delimiter; got != ',' {
+		t.Fatalf("CSV delimiter = %q, want comma", got)
+	}
+}

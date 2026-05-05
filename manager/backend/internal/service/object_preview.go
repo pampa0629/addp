@@ -61,12 +61,18 @@ func mergeJSONMaps(maps ...models.JSONMap) models.JSONMap {
 	return merged
 }
 
+func metaItemLiteAttributes(item *models.MetaItemLite) map[string]interface{} {
+	if item == nil || len(item.Attributes) == 0 {
+		return nil
+	}
+	return item.Attributes
+}
+
 type objectStoragePreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
 	metaClient     *commonClient.MetaClient
 	metaServiceURL string
 	content        *ObjectContentRegistry
-	priority       int
 }
 
 func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) PreviewProvider {
@@ -75,16 +81,11 @@ func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository
 		metaClient:     metaClient,
 		metaServiceURL: metaServiceURL,
 		content:        content,
-		priority:       95,
 	}
 }
 
 func (p *objectStoragePreviewProvider) Name() string {
 	return "builtin:object-storage"
-}
-
-func (p *objectStoragePreviewProvider) Priority() int {
-	return p.priority
 }
 
 type objectStorageConfig struct {
@@ -167,24 +168,6 @@ func resolveBucket(connBucket, schemaParam string) (string, error) {
 	return bucket, nil
 }
 
-func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-
-	if !isObjectStorageType(req.Engine.EngineType) {
-		return false
-	}
-
-	// schema 代表 bucket
-	if req.Schema == "" {
-		return false
-	}
-
-	// 对象存储插件处理 node/object 场景
-	return true
-}
-
 func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	resource := req.Engine
 	bucket := req.Schema
@@ -212,15 +195,8 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			if len(parts) == 2 && parts[1] != "" {
 				// 使用用户的 JWT token 创建临时客户端
 				metaClient = commonClient.NewMetaClient(p.metaServiceURL, parts[1])
-				fmt.Printf("[DEBUG] 创建用户 Meta Client, token 前缀: %s..., URL: %s\n", parts[1][:20], p.metaServiceURL)
-			} else {
-				fmt.Printf("[DEBUG] Authorization header 格式不正确: %s\n", authHeader)
 			}
-		} else {
-			fmt.Printf("[DEBUG] 没有 Authorization header,使用默认 metaClient\n")
 		}
-	} else {
-		fmt.Printf("[DEBUG] context 不是 *gin.Context 类型\n")
 	}
 
 	// 设置租户 ID（仅当使用服务级别的内部 API client 时）
@@ -387,10 +363,6 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	if item != nil && len(item.Attributes) > 0 {
 		preview.Object.Attributes = item.Attributes
-		// Debug: 打印attributes内容以排查问题
-		if jsonBytes, err := json.MarshalIndent(item.Attributes, "", "  "); err == nil {
-			fmt.Printf("DEBUG: item.Attributes JSON =\n%s\n", string(jsonBytes))
-		}
 	}
 
 	rawContentType := stat.ContentType
@@ -407,6 +379,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
+			Format:      stringAttribute(metaItemLiteAttributes(item), "format"),
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,

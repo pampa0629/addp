@@ -13,9 +13,7 @@ type namedPreviewProvider struct {
 	name string
 }
 
-func (p namedPreviewProvider) Name() string                  { return p.name }
-func (p namedPreviewProvider) Priority() int                 { return 0 }
-func (p namedPreviewProvider) Supports(*PreviewRequest) bool { return false }
+func (p namedPreviewProvider) Name() string { return p.name }
 func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models.TablePreview, error) {
 	return nil, nil
 }

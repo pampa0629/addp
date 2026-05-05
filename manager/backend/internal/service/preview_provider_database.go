@@ -17,7 +17,6 @@ import (
 type DatabaseTablePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	metaClient   *commonClient.MetaClient
-	priority     int
 }
 
 // NewDatabaseTablePreviewProvider 创建通用数据库表预览 Provider
@@ -25,40 +24,11 @@ func NewDatabaseTablePreviewProvider(metadataRepo *repository.MetadataRepository
 	return &DatabaseTablePreviewProvider{
 		metadataRepo: metadataRepo,
 		metaClient:   metaClient,
-		priority:     100, // 高优先级
 	}
 }
 
 func (p *DatabaseTablePreviewProvider) Name() string {
 	return "builtin:database-table"
-}
-
-func (p *DatabaseTablePreviewProvider) Priority() int {
-	return p.priority
-}
-
-func (p *DatabaseTablePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if req.Schema == "" || req.Table == "" {
-		return false
-	}
-
-	// 检查是否为表预览模式
-	if req.Mode() != PreviewModeTable {
-		return false
-	}
-
-	plug, err := plugin.Get(req.Engine.EngineType)
-	if err != nil {
-		return false
-	}
-	if _, ok := plug.(plugin.SQLQueryRuntimeProvider); !ok {
-		return false
-	}
-	capabilities := plug.Capabilities()
-	return capabilities.Storage != nil && containsString(capabilities.Storage.Families, "tabular")
 }
 
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -95,20 +65,16 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 3. 尝试从 Meta 获取列元数据（优先用于展示，包含更准确的几何类型）。
 	columnMetadata, geometryColumns, srid, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
-	fmt.Printf("[DEBUG] getColumnMetadataFromMeta 结果: metaErr=%v, columnMetadata_len=%d, geometryColumns=%v, srid=%d\n",
-		metaErr, len(columnMetadata), geometryColumns, srid)
 	var columnNames []string
 
 	if metaErr == nil && len(columnMetadata) > 0 {
 		// Meta 元数据可用，使用 Meta 的数据
-		fmt.Printf("[DEBUG] 使用 Meta 路径获取列信息: schema=%s, table=%s\n", req.Schema, tableName)
 		columnNames = make([]string, len(columnMetadata))
 		for i, meta := range columnMetadata {
 			columnNames[i] = meta.ColumnName
 		}
 	} else {
 		// Meta 不可用或无数据，回退到 ItemMetadataProvider。
-		fmt.Printf("[DEBUG] Meta 不可用，回退到 ItemMetadataProvider: schema=%s, table=%s, metaErr=%v\n", req.Schema, tableName, metaErr)
 		columnNames = make([]string, len(columns))
 		for i, col := range columns {
 			columnNames[i] = col.ColumnName
@@ -116,7 +82,6 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 		// 检测几何列
 		geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
-		fmt.Printf("[DEBUG] detectGeometryColumns 结果: geometryColumns=%v, engineType=%s\n", geometryColumns, req.Engine.EngineType)
 
 		// 转换列元数据
 		columnMetadata = make([]models.ColumnMetadata, len(columns))
@@ -165,9 +130,6 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] 即将返回 TablePreview: schema=%s, table=%s, geometryColumns=%v, srid=%d, extent=%v\n",
-		req.Schema, tableName, geometryColumns, srid, extent)
-
 	return &models.TablePreview{
 		Mode:                  PreviewModeTable,
 		Columns:               columnNames,
@@ -210,8 +172,6 @@ func (p *DatabaseTablePreviewProvider) queryData(
 				// 空间字段：转换为 WKT 格式（如 MULTIPOLYGON (((120.175...）））
 				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewWKTExpr(col), col.ColumnName))
 				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewRenderExpr(col), renderGeometryColumnName(col.ColumnName)))
-				// 调试日志：记录空间字段转换
-				fmt.Printf("[DEBUG] 检测到空间列: %s, 类型: %s, 使用 ST_AsText 转换\n", col.ColumnName, col.DataType)
 			} else {
 				// 普通字段：列名加双引号，确保大小写敏感
 				selectColumns = append(selectColumns, fmt.Sprintf("\"%s\"", col.ColumnName))
@@ -219,8 +179,6 @@ func (p *DatabaseTablePreviewProvider) queryData(
 		}
 		query = fmt.Sprintf("SELECT %s FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",
 			strings.Join(selectColumns, ", "), schema, table, limit, offset)
-		// 调试日志：记录生成的 SQL 查询
-		fmt.Printf("[DEBUG] PostgreSQL 查询: %s\n", query)
 
 	case "mysql", "doris":
 		// MySQL/Doris: 使用反引号
@@ -484,15 +442,6 @@ func numericToInt64(value interface{}) int64 {
 	return 0
 }
 
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）
 func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	ctx context.Context,
@@ -511,16 +460,11 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
 	spatialMeta, err := p.metaClient.GetItemSpatialMetadata(engineID, schema, table)
 	if err != nil {
-		fmt.Printf("[DEBUG] Meta API 调用失败: schema=%s, table=%s, err=%v\n", schema, table, err)
 		return nil, nil, 0, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] Meta API 返回: schema=%s, table=%s, fields_len=%d, geometry_column=%s, srid=%d, extent=%v\n",
-		schema, table, len(spatialMeta.Fields), spatialMeta.GeometryColumn, spatialMeta.SRID, spatialMeta.Extent)
-
 	// 如果没有字段信息，返回错误
 	if len(spatialMeta.Fields) == 0 {
-		fmt.Printf("[DEBUG] Meta 返回的字段列表为空: schema=%s, table=%s\n", schema, table)
 		return nil, nil, 0, nil, fmt.Errorf("no field metadata in Meta")
 	}
 
@@ -535,7 +479,6 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 		if field.Name == spatialMeta.GeometryColumn && spatialMeta.GeometryColumn != "" {
 			// 将几何列添加到列表
 			geometryColumns = append(geometryColumns, field.Name)
-			fmt.Printf("[DEBUG] 识别到几何列: field_name=%s, geometry_column=%s\n", field.Name, spatialMeta.GeometryColumn)
 
 			// 使用更精确的几何类型描述
 			// 例如: "GEOMETRY(MULTIPOLYGON, 4326)" 而不是 "USER-DEFINED"
@@ -571,8 +514,6 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	}
 
 	// 返回 SRID 和 Extent（用于前端显示）
-	fmt.Printf("[DEBUG] getColumnMetadataFromMeta 返回: schema=%s, table=%s, geometryColumns=%v, srid=%d, extent=%v\n",
-		schema, table, geometryColumns, spatialMeta.SRID, spatialMeta.Extent)
 	return columnMetadata, geometryColumns, spatialMeta.SRID, spatialMeta.Extent, nil
 }
 

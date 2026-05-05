@@ -1,6 +1,5 @@
 {
   "name": "builtin:filesystem",
   "type": "builtin",
-  "builtin": "filesystem",
-  "priority": 93
+  "builtin": "filesystem"
 }

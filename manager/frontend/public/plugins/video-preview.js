@@ -41,12 +41,9 @@
         return true
       }
 
-      // 检查是否有 video_metadata
+      // 检查标准提取扩展中的 video_metadata
       const attributes = object.attributes || {}
-      if (attributes.video_metadata) {
-        return true
-      }
-      const extracted = object.extracted_metadata || attributes.extensions?.extraction?.extracted_metadata
+      const extracted = attributes.extensions?.extraction?.extracted_metadata
       if (
         extracted &&
         extracted.custom_attrs &&

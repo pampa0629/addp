@@ -12,33 +12,17 @@ import (
 type schemaPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	metaClient   *commonClient.MetaClient
-	priority     int
 }
 
 func NewSchemaPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient) PreviewProvider {
 	return &schemaPreviewProvider{
 		metadataRepo: metadataRepo,
 		metaClient:   metaClient,
-		priority:     90,
 	}
 }
 
 func (p *schemaPreviewProvider) Name() string {
 	return "builtin:schema-node"
-}
-
-func (p *schemaPreviewProvider) Priority() int {
-	return p.priority
-}
-
-func (p *schemaPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if req.Schema == "" {
-		return false
-	}
-	return req.Table == ""
 }
 
 func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {

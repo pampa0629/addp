@@ -24,6 +24,7 @@ type ObjectContentPluginConfig struct {
 }
 
 type ObjectContentMatcherConfig struct {
+	Formats      []string `json:"formats,omitempty"`
 	Extensions   []string `json:"extensions,omitempty"`
 	ContentTypes []string `json:"content_types,omitempty"`
 }
@@ -57,7 +58,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(80),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pdf"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/pdf"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"pdf"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pdf"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/pdf"})),
 			},
 			maxBytes:    cfg.maxBytesOr(maxPDFPreviewBytes),
 			contentKind: "pdf",
@@ -70,7 +71,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(75),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".docx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "wordprocessingml"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"docx"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".docx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "wordprocessingml"})),
 			},
 			maxBytes:    cfg.maxBytesOr(maxDOCXPreviewBytes),
 			contentKind: "docx",
@@ -83,7 +84,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".wps"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"wps"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".wps"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"})),
 			},
 			maxBytes:    cfg.maxBytesOr(maxWPSPreviewBytes),
 			contentKind: "wps",
@@ -96,7 +97,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pptx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentationml"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"pptx"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pptx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentationml"})),
 			},
 			maxBytes:    cfg.maxBytesOr(maxPPTXPreviewBytes),
 			contentKind: "pptx",
@@ -109,7 +110,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(70),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"image/", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/bmp", "image/webp", "image/tiff", "image/svg+xml", "image/heic"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"image", "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "svg", "heic"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"image/", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/bmp", "image/webp", "image/tiff", "image/svg+xml", "image/heic"})),
 			},
 			maxBytes: cfg.maxBytesOr(maxImagePreviewBytes),
 		}
@@ -120,7 +121,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(60),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".json"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/json"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"json"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".json"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/json"})),
 			},
 			maxBytes: cfg.maxBytesOr(maxJSONPreviewBytes),
 			kind:     "json",
@@ -132,7 +133,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(65),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".geojson"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/geo+json", "geojson", "geo+json"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"geojson"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".geojson"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/geo+json", "geojson", "geo+json"})),
 			},
 			maxBytes: cfg.maxBytesOr(maxGeoJSONPreview),
 			kind:     "geojson",
@@ -144,7 +145,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(62),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".xlsx", ".xlsm", ".xls"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroEnabled.12"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"excel", "xlsx", "xls"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".xlsx", ".xlsm", ".xls"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroEnabled.12"})),
 			},
 			maxBytes:    cfg.maxBytesOr(maxExcelPreviewBytes),
 			sheetLimit:  defaultExcelSheetLimit,
@@ -162,6 +163,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(66),
 				matcher: newObjectContentMatcher(
+					normalizeFormatsOrDefault(cfg.Match.Formats, []string{"shapefile", "shp"}),
 					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}),
 					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, defaultShapefileContentTypes()),
 				),
@@ -176,7 +178,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(58),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".sqlite", ".db", ".sqlite3"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/x-sqlite3", "application/sqlite", "application/octet-stream"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"sqlite"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".sqlite", ".db", ".sqlite3"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/x-sqlite3", "application/sqlite", "application/octet-stream"})),
 			},
 			maxBytes:   cfg.maxBytesOr(maxSQLitePreviewBytes),
 			tableLimit: defaultSQLiteTableLimit,
@@ -191,7 +193,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(0),
-				matcher:  newObjectContentMatcher(normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"text"}), normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
 			},
 			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
 			kind:     "text",
@@ -203,7 +205,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(55),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".md", ".markdown"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"text/markdown", "text/x-markdown", "text/plain"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"markdown"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".md", ".markdown"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"text/markdown", "text/x-markdown", "text/plain"})),
 			},
 			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
 			kind:     "markdown",
@@ -215,7 +217,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(63),
-				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".parquet"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"})),
+				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"parquet"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".parquet"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"})),
 			},
 			maxBytes: cfg.maxBytesOr(maxParquetPreviewBytes),
 			rowLimit: defaultParquetRowLimit,
@@ -236,6 +238,17 @@ func normalizeExtensions(values []string) []string {
 			trimmed = "." + trimmed
 		}
 		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func normalizeFormats(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, formatName := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(formatName))
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
 	}
 	return normalized
 }
@@ -266,6 +279,13 @@ func normalizeExtensionsOrDefault(values, fallback []string) []string {
 		return normalizeExtensions(values)
 	}
 	return normalizeExtensions(fallback)
+}
+
+func normalizeFormatsOrDefault(values, fallback []string) []string {
+	if len(values) > 0 {
+		return normalizeFormats(values)
+	}
+	return normalizeFormats(fallback)
 }
 
 func normalizeContentTypesOrDefault(values, fallback []string) []string {
@@ -384,7 +404,7 @@ func loadContentPluginFromFile(registry *ObjectContentRegistry, path string) {
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(50),
-				matcher:  newObjectContentMatcher(normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
+				matcher:  newObjectContentMatcher(normalizeFormats(cfg.Match.Formats), normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
 			},
 			command:  command,
 			args:     cfg.Args,

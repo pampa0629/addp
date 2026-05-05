@@ -22,8 +22,8 @@ type UnifiedMVTService struct {
 	spatialPreviewService *SpatialPreviewService // 缓存访问（内存 LRU → Redis → MinIO）
 	mvtService            *MVTService            // 实时生成（直接从 PG 查询）
 	metadataRepo          *repository.MetadataRepository
-	quickViewService      *QuickViewService      // 快显服务（可选，用于更新统计）
-	sf                    singleflight.Group     // ✅ Singleflight 防缓存击穿
+	quickViewService      *QuickViewService  // 快显服务（可选，用于更新统计）
+	sf                    singleflight.Group // ✅ Singleflight 防缓存击穿
 }
 
 // NewUnifiedMVTService 创建统一的 MVT 服务
@@ -63,7 +63,6 @@ func (s *UnifiedMVTService) GetTile(
 	z, x, y int,
 	srid int,
 ) (*TileResponse, error) {
-	fmt.Printf("⚡⚡⚡ UnifiedMVTService.GetTile() 被调用！z=%d, x=%d, y=%d\n", z, x, y)
 	startTime := time.Now()
 
 	// ✅ 租户验证（必须传递 tenant_id）

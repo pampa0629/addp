@@ -20,8 +20,14 @@ var lakeTableFormats = map[string]bool{
 	".avro":    true,
 }
 
+var lakeTableAuxiliaryFileNames = map[string]bool{
+	"_success":         true,
+	"_metadata":        true,
+	"_common_metadata": true,
+}
+
 // LakeTableDetector 湖表检测器。
-// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为湖表格式。
+// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为湖表数据文件或常见辅助文件。
 type LakeTableDetector struct{}
 
 func init() {
@@ -41,6 +47,9 @@ func (d *LakeTableDetector) Detect(ctx context.Context, files []plugin.FileEntry
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
 		if !lakeTableFormats[ext] {
+			if isLakeTableAuxiliaryFile(f.Name) {
+				continue
+			}
 			return false
 		}
 		lakeFileCount++
@@ -76,6 +85,20 @@ func lakeTableFiles(files []plugin.FileEntry) []plugin.FileEntry {
 		}
 	}
 	return filtered
+}
+
+func isLakeTableAuxiliaryFile(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
+	if normalized == "" {
+		return false
+	}
+	if lakeTableAuxiliaryFileNames[normalized] {
+		return true
+	}
+	if strings.HasPrefix(normalized, ".") && strings.Contains(normalized, ".crc") {
+		return true
+	}
+	return strings.HasSuffix(normalized, ".crc")
 }
 
 func directLakeTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEntry {
@@ -138,7 +161,11 @@ func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no lake table files in directory: %s", dirPath)
 	}
-	if len(filtered) != len(files) {
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if lakeTableFormats[ext] || isLakeTableAuxiliaryFile(f.Name) {
+			continue
+		}
 		return nil, fmt.Errorf("directory contains non-lake-table files: %s", dirPath)
 	}
 	return filtered, nil

@@ -2,6 +2,5 @@
   "name": "builtin:database-table",
   "type": "builtin",
   "builtin": "database-table",
-  "priority": 100,
   "description": "关系型数据库表预览（支持 PostgreSQL、MySQL、ClickHouse、Doris 等，不包括 MongoDB）"
 }

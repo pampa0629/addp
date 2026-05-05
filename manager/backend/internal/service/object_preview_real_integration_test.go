@@ -44,6 +44,7 @@ func TestObjectStoragePreviewProvider_ManagedMinIORealShapefile(t *testing.T) {
 			name:     "builtin:shapefile",
 			priority: 90,
 			matcher: newObjectContentMatcher(
+				[]string{"shapefile", "shp"},
 				[]string{".shp"},
 				[]string{"application/x-esri-shapefile", "application/octet-stream", "shp"},
 			),
@@ -56,7 +57,6 @@ func TestObjectStoragePreviewProvider_ManagedMinIORealShapefile(t *testing.T) {
 		metaClient:     metaClient,
 		metaServiceURL: cfg.MetaServiceURL,
 		content:        contentRegistry,
-		priority:       95,
 	}
 
 	tenantID := uint(1)

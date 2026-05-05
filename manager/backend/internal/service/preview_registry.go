@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"sort"
 	"strings"
 	"sync"
 
@@ -54,8 +53,6 @@ func (r *PreviewRequest) Mode() string {
 // PreviewProvider 数据预览插件需要实现的接口。
 type PreviewProvider interface {
 	Name() string
-	Priority() int
-	Supports(*PreviewRequest) bool
 	Preview(context.Context, *PreviewRequest) (*models.TablePreview, error)
 }
 
@@ -80,26 +77,6 @@ func (r *PreviewRegistry) Register(provider PreviewProvider) {
 	defer r.mu.Unlock()
 
 	r.providers = append(r.providers, provider)
-	sort.SliceStable(r.providers, func(i, j int) bool {
-		return r.providers[i].Priority() > r.providers[j].Priority()
-	})
-}
-
-// Resolve 根据请求选择合适的插件。
-//
-// Deprecated: 新的预览主链路应基于 MetaItem 标准属性做确定性路由。
-// 该方法仅保留给旧插件兼容层和过渡期代码。
-func (r *PreviewRegistry) Resolve(req *PreviewRequest) (PreviewProvider, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	for _, provider := range r.providers {
-		if provider.Supports(req) {
-			return provider, nil
-		}
-	}
-
-	return nil, ErrNoPreviewProvider
 }
 
 // GetByName 根据 provider 名称返回插件。
@@ -131,9 +108,4 @@ func (r *PreviewRegistry) Providers() []string {
 // sanitizeEngineType 统一引擎类型比较。
 func sanitizeEngineType(engineType string) string {
 	return strings.ToLower(strings.TrimSpace(engineType))
-}
-
-// sanitizeResourceType 兼容旧名称
-func sanitizeResourceType(resourceType string) string {
-	return sanitizeEngineType(resourceType)
 }

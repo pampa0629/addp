@@ -15,42 +15,14 @@ import (
 
 // FileTablePreviewProvider 通用文件表预览 Provider
 // 自动支持所有实现了 FileTableParser 的文件格式（CSV、Excel、Shapefile、GeoJSON、Parquet 等）
-type FileTablePreviewProvider struct {
-	priority int
-}
+type FileTablePreviewProvider struct{}
 
 func NewFileTablePreviewProvider() PreviewProvider {
-	return &FileTablePreviewProvider{
-		priority: 90, // 统一优先级
-	}
+	return &FileTablePreviewProvider{}
 }
 
 func (p *FileTablePreviewProvider) Name() string {
 	return "builtin:file-table"
-}
-
-func (p *FileTablePreviewProvider) Priority() int {
-	return p.priority
-}
-
-func (p *FileTablePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-
-	// 必须是对象存储类型
-	if !isObjectStorageType(req.Engine.EngineType) {
-		return false
-	}
-
-	if req.Table == "" {
-		return false
-	}
-
-	// 仅使用 Meta 已识别的 format/content_type，不在 provider 内按文件名猜测格式。
-	formatType := p.resolveFormat(req)
-	_, err := format.GetFileTableParser(formatType)
-	return err == nil
 }
 
 func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -78,7 +50,7 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	}
 
 	// 构建解析选项
-	opts := p.buildParseOptions(formatType, req.Table)
+	opts := p.buildParseOptions(formatType)
 
 	// Shapefile 需要特殊处理：下载所有组件文件
 	if formatType == format.FormatShapefile {
@@ -328,16 +300,18 @@ func (p *FileTablePreviewProvider) downloadFile(ctx context.Context, client *min
 	return err
 }
 
-// buildParseOptions 根据格式类型构建解析选项
-func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType, filename string) *format.ParseOptions {
+// buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。
+func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType) *format.ParseOptions {
 	opts := &format.ParseOptions{
 		HasHeader:  true,
 		SampleSize: 100,
 	}
 
-	// CSV/TSV 需要检测分隔符
-	if formatType == format.FormatCSV || formatType == format.FormatTSV {
-		opts.Delimiter = p.detectDelimiter(filename)
+	switch formatType {
+	case format.FormatTSV:
+		opts.Delimiter = '\t'
+	case format.FormatCSV:
+		opts.Delimiter = ','
 	}
 
 	return opts
@@ -400,19 +374,6 @@ func itemEntryPath(req *PreviewRequest, fallback string) string {
 		return req.PhysicalPath
 	}
 	return fallback
-}
-
-// detectDelimiter 检测 CSV/TSV 分隔符
-func (p *FileTablePreviewProvider) detectDelimiter(filename string) rune {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".tsv":
-		return '\t'
-	case ".csv":
-		return ','
-	default:
-		return ','
-	}
 }
 
 // detectGeometryColumns 检测几何列

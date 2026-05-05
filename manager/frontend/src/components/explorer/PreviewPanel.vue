@@ -983,7 +983,14 @@ const objectContentType = computed(() => {
 })
 
 function attributeSection(attributes = {}, section) {
-  return attributes?.[section] && typeof attributes[section] === 'object' ? attributes[section] : {}
+  if (!attributes || !section) return {}
+
+  const current = section.split('.').reduce((target, key) => {
+    if (!target || typeof target !== 'object') return undefined
+    return target[key]
+  }, attributes)
+
+  return current && typeof current === 'object' ? current : {}
 }
 
 function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
@@ -1001,7 +1008,7 @@ function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
 }
 
 function extractedMetadataValue(attributes = {}) {
-  return attributeValue(attributes, 'extensions.extraction', 'extracted_metadata')
+  return attributeSection(attributes, 'extensions.extraction').extracted_metadata
 }
 
 const objectFileTypeLabel = computed(() => {
@@ -1033,14 +1040,14 @@ const objectFileTypeLabel = computed(() => {
   return t('manager.explorer.fileTypeGeneric')
 })
 
-// 图片尺寸信息（从 attributes 或 extracted_metadata 中提取）
+// 图片尺寸信息（优先从标准 attributes 分区读取）
 const objectImageDimensions = computed(() => {
   if (!objectContentType.value.startsWith('image/')) {
     return null
   }
 
   const attributes = objectData.value?.attributes || {}
-  const extracted = objectData.value?.extracted_metadata || extractedMetadataValue(attributes) || {}
+  const extracted = extractedMetadataValue(attributes) || {}
 
   const width = attributeValue(attributes, 'extensions.media', 'width', 'Width') || extracted.width || extracted.Width
   const height = attributeValue(attributes, 'extensions.media', 'height', 'Height') || extracted.height || extracted.Height
@@ -1058,7 +1065,7 @@ const objectMetadataTooltip = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
   const attributes = objectData.value?.attributes || {}
-  const extracted = objectData.value?.extracted_metadata || extractedMetadataValue(attributes) || {}
+  const extracted = extractedMetadataValue(attributes) || {}
 
   // 图片特有信息
   if (contentType.startsWith('image/')) {
@@ -1095,11 +1102,10 @@ const objectMetadataTooltip = computed(() => {
 
   // 视频特有信息
   if (contentType.includes('video')) {
-    // 尝试从 custom_attrs.video_metadata 中获取视频元数据
+    // 兼容提取 payload 内部结构，但入口只来自标准 extraction 扩展。
     const videoMeta = extracted.custom_attrs?.video_metadata?.data ||
                       extracted.custom_attrs?.video_metadata ||
-                      attributes.video_metadata?.data ||
-                      attributes.video_metadata || {}
+                      {}
 
     // 文件大小
     if (objectSizeBytes.value > 0) {

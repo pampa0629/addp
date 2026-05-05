@@ -12,28 +12,13 @@ import (
 
 // GraphLabelPreviewProvider Neo4j label 预览
 // 使用 GraphQueryRuntimeProvider 采样节点属性，输出表格预览
-// 优先级高于通用数据库预览，避免被 database-table provider 抢占
-type GraphLabelPreviewProvider struct {
-	priority int
-}
+type GraphLabelPreviewProvider struct{}
 
 func NewGraphLabelPreviewProvider() PreviewProvider {
-	return &GraphLabelPreviewProvider{priority: 102}
+	return &GraphLabelPreviewProvider{}
 }
 
 func (p *GraphLabelPreviewProvider) Name() string { return "builtin:graph-label" }
-
-func (p *GraphLabelPreviewProvider) Priority() int { return p.priority }
-
-func (p *GraphLabelPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if !strings.EqualFold(req.Engine.EngineType, "neo4j") {
-		return false
-	}
-	return graphPreviewKind(req) == "label"
-}
 
 func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
@@ -72,27 +57,13 @@ func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 
 // GraphRelationshipPreviewProvider Neo4j relationship 预览
 // 使用 GraphQueryRuntimeProvider 采样关系属性，输出表格预览
-type GraphRelationshipPreviewProvider struct {
-	priority int
-}
+type GraphRelationshipPreviewProvider struct{}
 
 func NewGraphRelationshipPreviewProvider() PreviewProvider {
-	return &GraphRelationshipPreviewProvider{priority: 102}
+	return &GraphRelationshipPreviewProvider{}
 }
 
 func (p *GraphRelationshipPreviewProvider) Name() string { return "builtin:graph-relationship" }
-
-func (p *GraphRelationshipPreviewProvider) Priority() int { return p.priority }
-
-func (p *GraphRelationshipPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if !strings.EqualFold(req.Engine.EngineType, "neo4j") {
-		return false
-	}
-	return graphPreviewKind(req) == "relationship"
-}
 
 func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	commonAttrs "github.com/addp/common/attributes"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 
@@ -681,20 +682,17 @@ func (r *ScanRepository) generateFingerprint(
 ) (string, error) {
 	if attrs != nil {
 		// 对象存储：使用 bucket/path+name
-		if bucket, ok := attrs["bucket"].(string); ok {
+		if bucket := commonAttrs.String(attrs, "storage", "bucket"); bucket != "" {
 			// 优先从 name 字段获取文件名（新规范）
-			fileName := ""
-			if n, ok := attrs["name"].(string); ok {
-				fileName = n
-			}
+			fileName := commonAttrs.String(attrs, "storage", "name")
 
 			// 获取目录路径
-			dir := ""
-			if p, ok := attrs["path"].(string); ok {
-				dir = p // path 已经是目录路径（以 / 结尾）
-			} else if rp, ok := attrs["relative_path"].(string); ok {
+			dir := commonAttrs.String(attrs, "storage", "path")
+			if dir == "" {
 				// 兼容旧数据：relative_path 包含完整路径，需要拆分
-				dir, fileName = commonModels.SplitObjectPath(rp)
+				if rp := commonAttrs.String(attrs, "storage", "relative_path"); rp != "" {
+					dir, fileName = commonModels.SplitObjectPath(rp)
+				}
 			}
 
 			// 两步计算指纹：先拼接 full_name，再计算指纹
@@ -703,7 +701,7 @@ func (r *ScanRepository) generateFingerprint(
 		}
 
 		// 关系数据库：使用 schema.table
-		if schema, ok := attrs["schema_name"].(string); ok {
+		if schema := commonAttrs.String(attrs, "storage", "schema_name"); schema != "" {
 			// 两步计算指纹：先拼接 full_name，再计算指纹
 			fullName := fmt.Sprintf("%s.%s", schema, name)
 			return commonModels.GenerateItemFingerprint(engineID, fullName), nil

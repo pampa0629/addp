@@ -443,24 +443,21 @@ func (w *ShapefileWriter) convertSchema(inputSchema *pipeline.Schema) error {
 }
 ```
 
-### 示例3：在Manager模块中使用格式判断
+### 示例3：Manager 模块消费 Meta 标准格式
 
 ```go
-// manager/backend/internal/service/preview_provider.go
+// manager/backend/internal/service/preview_resolver.go
 package service
 
-import (
-    "github.com/addp/common/format"
-)
+func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) []string {
+    attrs := req.MetadataAttributes()
+    dataFamily := stringAttribute(attrs, "data_family")
+    formatName := stringAttribute(attrs, "format")
 
-func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
-    // 检测文件格式
-    formatType := format.DetectFormat(req.Table, nil)
-
-    // 只支持特定格式的预览
-    return format.IsImageFormat(formatType) ||
-           format.IsDocumentFormat(formatType) ||
-           formatType == format.FormatGeoJSON
+    if dataFamily == "tabular" && isFileTableFormat(formatName) {
+        return []string{"builtin:file-table"}
+    }
+    return []string{"builtin:object-storage"}
 }
 ```
 

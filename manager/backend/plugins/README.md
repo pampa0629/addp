@@ -32,7 +32,6 @@ plugins/
   "name": "builtin:database-table",
   "type": "builtin",
   "builtin": "database-table",
-  "priority": 100,
   "description": "关系型数据库表预览"
 }
 ```
@@ -40,6 +39,7 @@ plugins/
 **特点**:
 - 配置简单，无需匹配规则
 - 处理的是"数据源类型"而非"文件类型"
+- 主链路由 Meta 标准属性确定性选择 provider，配置中的顺序不参与语义路由
 - 通过 `LoadPreviewPlugins()` 加载
 
 ### 2. ObjectContentHandler（对象内容处理器）
@@ -56,6 +56,7 @@ plugins/
   "builtin": "geojson",
   "priority": 65,
   "match": {
+    "formats": ["geojson"],
     "extensions": [".geojson"],
     "content_types": ["application/geo+json"]
   },
@@ -73,13 +74,13 @@ plugins/
 ```
 用户请求预览
   ↓
-PreviewRegistry 选择 Provider（providers/ 目录）
+PreviewResolver 根据 Meta 标准属性选择 Provider（providers/ 目录）
   ↓
-Provider 判断数据源类型
+Provider 执行对应预览
   ↓
 如果是对象存储，调用 ObjectContentRegistry（content/ 目录）
   ↓
-ContentHandler 根据文件扩展名处理具体文件
+ContentHandler 优先根据 Meta 标准 format 匹配，必要时再使用扩展名和 Content-Type
 ```
 
 ## 如何扩展
@@ -91,8 +92,7 @@ ContentHandler 根据文件扩展名处理具体文件
 {
   "name": "builtin:doris-table",
   "type": "builtin",
-  "builtin": "database-table",
-  "priority": 100
+  "builtin": "database-table"
 }
 ```
 
@@ -106,6 +106,7 @@ ContentHandler 根据文件扩展名处理具体文件
   "builtin": "parquet",
   "priority": 60,
   "match": {
+    "formats": ["parquet"],
     "extensions": [".parquet"],
     "content_types": ["application/x-parquet"]
   },

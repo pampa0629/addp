@@ -20,36 +20,16 @@ import (
 type fileSystemPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	content      *ObjectContentRegistry
-	priority     int
 }
 
 func NewFileSystemPreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
 	return &fileSystemPreviewProvider{
 		metadataRepo: metadataRepo,
 		content:      content,
-		priority:     93, // 高于 object-storage(95) 低一点，但高于数据库类
 	}
 }
 
-func (p *fileSystemPreviewProvider) Name() string  { return "builtin:filesystem" }
-func (p *fileSystemPreviewProvider) Priority() int { return p.priority }
-
-func (p *fileSystemPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if !isObjectStorageType(req.Engine.EngineType) && !isFileSystemType(req.Engine.EngineType) {
-		return false
-	}
-	pl, err := plugin.Get(req.Engine.EngineType)
-	if err != nil {
-		return false
-	}
-	if _, ok := pl.(plugin.CatalogProvider); ok {
-		return true
-	}
-	return false
-}
+func (p *fileSystemPreviewProvider) Name() string { return "builtin:filesystem" }
 
 func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	engine := req.Engine
@@ -163,6 +143,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
+			Format:      stringAttribute(preview.Object.Attributes, "format"),
 			Extension:   defaultExtension(filePath),
 			ContentType: canonicalContentType,
 			Size:        meta.Size,

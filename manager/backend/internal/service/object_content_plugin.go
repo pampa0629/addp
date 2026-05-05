@@ -28,6 +28,7 @@ type ObjectContentRequest struct {
 	Bucket      string
 	Path        string // 目录路径（以 / 结尾），不含文件名
 	Name        string // 文件名
+	Format      string
 	Extension   string
 	ContentType string
 	Size        int64
@@ -110,13 +111,16 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 	// 按照路径统一规范：path 是目录路径（以/结尾），name 是文件名
 	metadata := map[string]interface{}{
 		"bucket":     req.Bucket,
-		"path":       req.Path,  // 目录路径（以 / 结尾）
-		"name":       req.Name,  // 文件名
+		"path":       req.Path, // 目录路径（以 / 结尾）
+		"name":       req.Name, // 文件名
 		"size_bytes": req.Size,
 		"limit":      limit,
 	}
 	if req.Extension != "" {
 		metadata["extension"] = req.Extension
+	}
+	if req.Format != "" {
+		metadata["format"] = req.Format
 	}
 	if req.ContentType != "" {
 		metadata["content_type"] = req.ContentType
@@ -154,11 +158,20 @@ func contentKindLabel(kind string) string {
 // ------------ 匹配器 ------------
 
 type objectContentMatcher struct {
+	formats      []string
 	extensions   []string
 	contentTypes []string
 }
 
-func newObjectContentMatcher(exts, contentTypes []string) objectContentMatcher {
+func newObjectContentMatcher(formats, exts, contentTypes []string) objectContentMatcher {
+	normalizedFormats := make([]string, 0, len(formats))
+	for _, formatName := range formats {
+		trimmed := strings.ToLower(strings.TrimSpace(formatName))
+		if trimmed != "" {
+			normalizedFormats = append(normalizedFormats, trimmed)
+		}
+	}
+
 	normalizedExts := make([]string, 0, len(exts))
 	for _, ext := range exts {
 		trimmed := strings.ToLower(strings.TrimSpace(ext))
@@ -180,6 +193,7 @@ func newObjectContentMatcher(exts, contentTypes []string) objectContentMatcher {
 	}
 
 	return objectContentMatcher{
+		formats:      normalizedFormats,
 		extensions:   normalizedExts,
 		contentTypes: normalizedTypes,
 	}
@@ -189,6 +203,16 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 	if req == nil {
 		return false
 	}
+	formatLower := normalizeContentFormat(req.Format)
+	if formatLower != "" && len(m.formats) > 0 {
+		for _, formatName := range m.formats {
+			if formatLower == formatName {
+				return true
+			}
+		}
+		return false
+	}
+
 	extMatched := len(m.extensions) == 0
 	extLower := strings.ToLower(strings.TrimSpace(req.Extension))
 	if len(m.extensions) > 0 {
@@ -225,6 +249,16 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 	}
 
 	return extMatched && ctMatched
+}
+
+func normalizeContentFormat(formatName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(formatName))
+	switch normalized {
+	case "", "unknown":
+		return ""
+	default:
+		return normalized
+	}
 }
 
 // ------------ 内置处理器基类 ------------
@@ -834,8 +868,9 @@ type commandContentHandler struct {
 }
 
 type commandContentPayload struct {
-	Path        string `json:"path"`        // 目录路径（以 / 结尾）
-	Name        string `json:"name"`        // 文件名
+	Path        string `json:"path"` // 目录路径（以 / 结尾）
+	Name        string `json:"name"` // 文件名
+	Format      string `json:"format"`
 	Extension   string `json:"extension"`
 	ContentType string `json:"content_type"`
 	Size        int64  `json:"size"`
@@ -853,6 +888,7 @@ func (h *commandContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	payload := commandContentPayload{
 		Path:        req.Path,
 		Name:        req.Name,
+		Format:      req.Format,
 		Extension:   req.Extension,
 		ContentType: req.ContentType,
 		Size:        req.Size,

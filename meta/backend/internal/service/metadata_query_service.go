@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
@@ -548,18 +549,10 @@ func attributeFromSection(attrs models.JSONMap, section, key string) (interface{
 	if attrs == nil {
 		return nil, false
 	}
-	if sectionMap, ok := attrs[section].(map[string]interface{}); ok {
-		if value, exists := sectionMap[key]; exists {
-			return value, true
-		}
+	if value := commonAttrs.Value(attrs, section, key); value != nil {
+		return value, true
 	}
-	if sectionMap, ok := attrs[section].(models.JSONMap); ok {
-		if value, exists := sectionMap[key]; exists {
-			return value, true
-		}
-	}
-	value, ok := attrs[key]
-	return value, ok
+	return nil, false
 }
 
 func mapAttributeFromSection(attrs models.JSONMap, section, key string) (map[string]interface{}, bool) {
@@ -597,21 +590,11 @@ func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]int
 }
 
 func spatialMetadataAttribute(attrs models.JSONMap) (map[string]interface{}, bool) {
-	if spatial, ok := mapAttributeFromSection(attrs, "extensions", "spatial_metadata"); ok {
-		return spatial, true
-	}
-	if spatialExt, ok := mapAttributeFromSection(attrs, "extensions", "spatial"); ok {
-		if spatial, ok := spatialExt["spatial_metadata"].(map[string]interface{}); ok {
-			return spatial, true
-		}
-		if spatial, ok := spatialExt["spatial_metadata"].(models.JSONMap); ok {
-			return map[string]interface{}(spatial), true
-		}
-	}
-	if attrs == nil {
+	value := commonAttrs.ValueFromSections(attrs, "spatial_metadata", "extensions.spatial")
+	if value == nil {
 		return nil, false
 	}
-	switch spatial := attrs["spatial_metadata"].(type) {
+	switch spatial := value.(type) {
 	case map[string]interface{}:
 		return spatial, true
 	case models.JSONMap:

@@ -15,17 +15,14 @@ import (
 
 // PluginConfig 描述前后端统一的预览插件配置。
 type PluginConfig struct {
-	Name          string    `json:"name,omitempty"`
-	Type          string    `json:"type,omitempty"`    // builtin | command，默认 command
-	Builtin       string    `json:"builtin,omitempty"` // builtin 类型必填
-	Command       string    `json:"command,omitempty"` // command 类型必填
-	Args          []string  `json:"args,omitempty"`
-	ResourceTypes []string  `json:"resource_types,omitempty"`
-	Modes         []string  `json:"modes,omitempty"`
-	Priority      *int      `json:"priority,omitempty"`
-	TimeoutSec    int       `json:"timeout,omitempty"`
-	Enabled       *bool     `json:"enabled,omitempty"`
-	Metadata      JSONAlias `json:"metadata,omitempty"` // 预留
+	Name       string    `json:"name,omitempty"`
+	Type       string    `json:"type,omitempty"`    // builtin | command，默认 command
+	Builtin    string    `json:"builtin,omitempty"` // builtin 类型必填
+	Command    string    `json:"command,omitempty"` // command 类型必填
+	Args       []string  `json:"args,omitempty"`
+	TimeoutSec int       `json:"timeout,omitempty"`
+	Enabled    *bool     `json:"enabled,omitempty"`
+	Metadata   JSONAlias `json:"metadata,omitempty"` // 预留
 }
 
 // JSONAlias 用于兼容未来扩展的透明 JSON 字段。
@@ -48,36 +45,17 @@ func (c *PluginConfig) pluginType() string {
 	return "command"
 }
 
-func (c *PluginConfig) priorityOr(defaultValue int) int {
-	if c.Priority == nil {
-		return defaultValue
-	}
-	return *c.Priority
-}
-
 // ==================== command provider ====================
 
 type commandPreviewProvider struct {
 	cfg          PluginConfig
 	metadataRepo *repository.MetadataRepository
-	resourceSet  map[string]struct{}
-	modeSet      map[string]struct{}
 	timeout      time.Duration
 }
 
 func newCommandPreviewProvider(cfg PluginConfig, metadataRepo *repository.MetadataRepository) (PreviewProvider, error) {
 	if strings.TrimSpace(cfg.Command) == "" {
 		return nil, fmt.Errorf("plugin %s command is empty", displayName(cfg))
-	}
-
-	resourceSet := make(map[string]struct{})
-	for _, rt := range cfg.ResourceTypes {
-		resourceSet[sanitizeResourceType(rt)] = struct{}{}
-	}
-
-	modeSet := make(map[string]struct{})
-	for _, mode := range cfg.Modes {
-		modeSet[strings.ToLower(strings.TrimSpace(mode))] = struct{}{}
 	}
 
 	timeout := time.Duration(cfg.TimeoutSec) * time.Second
@@ -88,8 +66,6 @@ func newCommandPreviewProvider(cfg PluginConfig, metadataRepo *repository.Metada
 	return &commandPreviewProvider{
 		cfg:          cfg,
 		metadataRepo: metadataRepo,
-		resourceSet:  resourceSet,
-		modeSet:      modeSet,
 		timeout:      timeout,
 	}, nil
 }
@@ -99,31 +75,6 @@ func (p *commandPreviewProvider) Name() string {
 		return p.cfg.Name
 	}
 	return fmt.Sprintf("command:%s", p.cfg.Command)
-}
-
-func (p *commandPreviewProvider) Priority() int {
-	return p.cfg.priorityOr(10)
-}
-
-func (p *commandPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-
-	if len(p.resourceSet) > 0 {
-		if _, ok := p.resourceSet[sanitizeResourceType(req.Engine.EngineType)]; !ok {
-			return false
-		}
-	}
-
-	mode := strings.ToLower(req.Mode())
-	if len(p.modeSet) > 0 && mode != "" {
-		if _, ok := p.modeSet[mode]; !ok {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -193,30 +144,22 @@ func displayName(cfg PluginConfig) string {
 	return "unnamed"
 }
 
-// wrapProviderForOverrides 允许配置覆盖插件名称与优先级。
+// wrapProviderForOverrides 允许配置覆盖插件名称。
 func wrapProviderForOverrides(provider PreviewProvider, cfg PluginConfig) PreviewProvider {
 	needsName := strings.TrimSpace(cfg.Name) != "" && cfg.Name != provider.Name()
-	needsPriority := cfg.Priority != nil && provider.Priority() != *cfg.Priority
-	if !needsName && !needsPriority {
+	if !needsName {
 		return provider
 	}
 
 	return &providerOverrides{
 		PreviewProvider: provider,
 		overrideName:    strings.TrimSpace(cfg.Name),
-		overridePriority: func() *int {
-			if cfg.Priority == nil {
-				return nil
-			}
-			return cfg.Priority
-		}(),
 	}
 }
 
 type providerOverrides struct {
 	PreviewProvider
-	overrideName     string
-	overridePriority *int
+	overrideName string
 }
 
 func (p *providerOverrides) Name() string {
@@ -224,13 +167,6 @@ func (p *providerOverrides) Name() string {
 		return p.overrideName
 	}
 	return p.PreviewProvider.Name()
-}
-
-func (p *providerOverrides) Priority() int {
-	if p.overridePriority != nil {
-		return *p.overridePriority
-	}
-	return p.PreviewProvider.Priority()
 }
 
 // builtinProviderFactory 负责实例化内置插件。

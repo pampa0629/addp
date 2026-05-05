@@ -10,38 +10,14 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
-type docCollectionPreviewProvider struct {
-	priority int
-}
+type docCollectionPreviewProvider struct{}
 
 func NewDocCollectionPreviewProvider() PreviewProvider {
-	return &docCollectionPreviewProvider{
-		priority: 100,
-	}
+	return &docCollectionPreviewProvider{}
 }
 
 func (p *docCollectionPreviewProvider) Name() string {
 	return "builtin:doc-collection"
-}
-
-func (p *docCollectionPreviewProvider) Priority() int {
-	return p.priority
-}
-
-func (p *docCollectionPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Engine == nil {
-		return false
-	}
-	if req.Schema == "" || req.Table == "" {
-		return false
-	}
-
-	pl, err := plugin.Get(req.Engine.EngineType)
-	if err != nil {
-		return false
-	}
-	_, ok := pl.(plugin.DocumentQueryRuntimeProvider)
-	return ok
 }
 
 func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {

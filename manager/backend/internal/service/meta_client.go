@@ -141,8 +141,8 @@ func (c *MetaClient) TryExtractMetadata(engineID uint, objectKey string, objectD
 	// 1. 先查询已有的元数据
 	existing, err := c.GetObjectMetadata(engineID, objectKey)
 	if err != nil {
-		// 查询失败，记录日志但继续尝试提取
-		fmt.Printf("Failed to get existing metadata: %v\n", err)
+		// 查询失败时继续尝试提取，避免旧元数据缺失阻断预览。
+		_ = err
 	}
 
 	if existing != nil {

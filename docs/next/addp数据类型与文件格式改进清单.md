@@ -66,6 +66,7 @@
 - Shapefile 多文件 detector。
 - 单文件 SQLite / GeoPackage 识别为 `container_file`。
 - 湖表分区目录树识别为 `directory_tree`。
+- 湖表目录树 detector 已容忍 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等常见辅助文件，辅助文件不进入 item 组件清单和大小统计。
 - 对象存储祖先前缀候选，支持部分跨层组件归并。
 
 仍需增强：
@@ -123,6 +124,7 @@
 - 对象预览和文件表预览已优先使用 `entry_path`、`physical_path`、`content_type`、`size_bytes` / `total_size`。
 - 搜索结果、对象预览和图谱 schema 展示已开始优先读取 `storage`、`schema`、`extensions.document` 分区。
 - 图片尺寸、图片格式、颜色模式等对象展示字段已优先读取 `extensions.media`。
+- 对象预览面板和内置视频预览插件已清理 `object.extracted_metadata`、`attributes.video_metadata` 等提取元数据旧入口，统一从 `attributes.extensions.extraction.extracted_metadata` 读取。
 
 ### `service` / `develop` / `common`
 
@@ -133,13 +135,15 @@
 - `common/resource` 树节点对象计数优先读取 `attributes.storage.object_count`。
 - `common/resource` 表空间元数据优先读取 `attributes.extensions.spatial`。
 - `manager` file-table provider 已删除按文件名推断格式的兜底，只使用 Meta 标准 `format` 或 `content_type`。
+- `manager` file-table provider 的 CSV/TSV 解析分隔符已改为只由 Meta 已识别 `format` 决定，不再按文件名扩展名二次猜测。
 - `manager` 节点预览已按引擎类型确定单一路由，避免多个 provider 候选按注册顺序抢路由。
+- `manager` 主预览链路已不再调用 `PreviewRegistry.Resolve()` 的 `Supports + priority` 抢路由入口，未引用的旧入口已删除。
+- `manager` 后端 `PreviewProvider` 接口已删除 `Supports()` 和 `Priority()`，provider 不再暴露按自身判断或优先级抢语义路由的入口，主 provider 配置中的 `priority` 也已移除。
+- `manager` 对象内容预览插件 matcher 已支持并优先匹配 Meta 标准 `format`；空值或 `unknown` 不触发强匹配，`extension` / `content_type` 仅作为迁移期兜底；命令型内容插件 payload 同步携带 `format`。
 
 仍需收口：
 
-- provider 内部仍有历史兜底格式推断。
-- `PreviewRegistry.Resolve` 的 `Supports + priority` 机制仍作为兼容层存在。
-- 还需要删除 provider 优先级抢语义路由。
+- 内容预览插件仍需结合后续插件声明机制继续收敛私有能力描述。
 
 ## 三、主要差距
 
@@ -181,7 +185,7 @@
 
 待补：
 
-- 继续清理提取状态类历史平铺字段的前端和插件兜底读取。
+- 提取状态类历史平铺字段的 Manager 前端和内置插件兜底读取已完成初筛清理；后续新增读取必须走 `extensions.extraction`。
 - 补齐更多 parser / extractor 的标准扩展映射和读取路径。
 - 为第三方插件建立显式扩展声明机制。
 
@@ -233,7 +237,7 @@
 | 阶段 2：数据家族与格式识别分离 | 第一版已完成，继续治理 | 空间不作为数据家族，格式不承载组合形态。 |
 | 阶段 3：attributes 治理 | 第一版已完成，继续治理 | 分区结构、normalizer、冲突保护、命名空间约束和删除计划已落地，继续补读取迁移和扩展映射。 |
 | 阶段 4：空间扩展收口 | 待推进 | 需要统一标准空间扩展口径。 |
-| 阶段 5：manager 预览路由 | 第一版已完成，继续删除历史逻辑 | 确定性路由已开始，继续删 provider 兜底和优先级抢路由。 |
+| 阶段 5：manager 预览路由 | 第一版已完成，继续治理内容插件 | 主 provider 已完成确定性路由，继续结合后续插件声明机制收敛内容插件私有能力描述。 |
 | 阶段 6：模型与注册收口 | 待推进 | 需要减少平行模型和重复 registry。 |
 
 ## 五、当前优先级
@@ -241,7 +245,7 @@
 ### P0
 
 - 清理提取状态类历史平铺字段的旧兜底读取。
-- 继续清理 provider 内剩余历史兜底和旧 Registry 兼容层。
+- 继续清理非 Transfer 核心代码中的历史 attributes 读取和私有扩展读取。
 - 保持本文和概念规范、落地指南术语同步。
 - Transfer 相关事项已拆到 `docs/next/transfer数据类型与文件格式后续事项.md`，本阶段不纳入当前实施范围。
 
@@ -263,9 +267,9 @@
 1. 清理提取状态类历史平铺字段的旧兜底读取。
 2. 补齐 `extensions.media`、`extensions.document`、`extensions.statistics`、`extensions.extraction` 更多 parser / extractor 写入和读取。
 3. 建立第三方插件扩展声明机制，让私有命名空间可校验、可展示、可索引。
-4. 删除 `manager` 预览旧兜底逻辑和 provider 优先级抢路由。
+4. 结合后续插件声明机制收敛 `manager` 内容预览插件的私有能力描述。
 5. 为对象存储更多目录树、混合集合补 detector，并覆盖跨层组件真实扫描用例。
-6. 继续迁移剩余 manager provider，删除 provider 内部格式猜测和优先级抢语义路由。
+6. 继续迁移剩余 manager 内容插件，删除内容处理器内部格式猜测和私有能力描述。
 7. 梳理数据库表、文档集合与 `dataitem` 模型的边界，决定是否引入“引擎原生 item”组合形态。
 8. 收口 `TableInfo` / `ObjectInfo` 与 `Scanner*` 模型。
 9. 审核 `common/format`、`common/dataitem`、`manager` 的 registry 语义，形成统一接入路径。

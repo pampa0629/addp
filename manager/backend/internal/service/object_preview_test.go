@@ -72,6 +72,7 @@ func TestInferContentType(t *testing.T) {
 func TestObjectContentMatcherGenericContentType(t *testing.T) {
 	t.Parallel()
 	matcher := newObjectContentMatcher(
+		[]string{"docx"},
 		[]string{".docx"},
 		[]string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "wordprocessingml"},
 	)
@@ -87,6 +88,7 @@ func TestObjectContentMatcherGenericContentType(t *testing.T) {
 func TestObjectContentMatcherWPS(t *testing.T) {
 	t.Parallel()
 	matcher := newObjectContentMatcher(
+		[]string{"wps"},
 		[]string{".wps"},
 		[]string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"},
 	)
@@ -102,6 +104,7 @@ func TestObjectContentMatcherWPS(t *testing.T) {
 func TestObjectContentMatcherShapefileAliases(t *testing.T) {
 	t.Parallel()
 	matcher := newObjectContentMatcher(
+		[]string{"shapefile", "shp"},
 		[]string{".shp"},
 		defaultShapefileContentTypes(),
 	)
@@ -124,6 +127,40 @@ func TestObjectContentMatcherShapefileAliases(t *testing.T) {
 				t.Fatalf("expected matcher to accept shapefile content type %q", contentType)
 			}
 		})
+	}
+}
+
+func TestObjectContentMatcherPrefersStandardFormat(t *testing.T) {
+	t.Parallel()
+	matcher := newObjectContentMatcher(
+		[]string{"pdf"},
+		[]string{".pdf"},
+		[]string{"application/pdf"},
+	)
+	req := &ObjectContentRequest{
+		Format:      "pdf",
+		Extension:   ".bin",
+		ContentType: "application/octet-stream",
+	}
+	if !matcher.matches(req) {
+		t.Fatalf("expected matcher to accept standard format even when extension and content type are generic")
+	}
+}
+
+func TestObjectContentMatcherIgnoresUnknownFormat(t *testing.T) {
+	t.Parallel()
+	matcher := newObjectContentMatcher(
+		[]string{"pdf"},
+		[]string{".pdf"},
+		[]string{"application/pdf"},
+	)
+	req := &ObjectContentRequest{
+		Format:      "unknown",
+		Extension:   ".pdf",
+		ContentType: "application/pdf",
+	}
+	if !matcher.matches(req) {
+		t.Fatalf("expected matcher to fall back to extension and content type when format is unknown")
 	}
 }
 

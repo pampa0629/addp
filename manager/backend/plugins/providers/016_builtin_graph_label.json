@@ -2,7 +2,6 @@
   "name": "builtin:graph-label",
   "type": "builtin",
   "builtin": "graph-label",
-  "priority": 102,
   "description": "Neo4j 节点标签预览（采样节点属性）",
   "enabled": true
 }
