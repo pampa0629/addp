@@ -475,7 +475,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	for i, field := range spatialMeta.Fields {
 		dataType := field.DataType
 
-		// 对于几何列，使用 spatial_metadata 中的几何类型信息来丰富 data_type
+		// 对于几何列，使用 Meta 返回的标准空间能力信息来丰富 data_type
 		if field.Name == spatialMeta.GeometryColumn && spatialMeta.GeometryColumn != "" {
 			// 将几何列添加到列表
 			geometryColumns = append(geometryColumns, field.Name)

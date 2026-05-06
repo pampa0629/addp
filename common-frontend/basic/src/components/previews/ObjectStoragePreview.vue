@@ -185,7 +185,7 @@ const extractedMetadata = computed(() => {
     return null
   }
 
-  const nested = parseMaybeJSON(attrs.extensions?.extraction?.extracted_metadata)
+  const nested = parseMaybeJSON(attrs.capabilities?.extraction?.extracted_metadata)
   return nested && typeof nested === 'object' ? nested : null
 })
 

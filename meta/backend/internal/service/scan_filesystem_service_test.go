@@ -57,7 +57,7 @@ func TestInferDetectedItemNameUsesEntryPathForSingleFile(t *testing.T) {
 	}
 }
 
-func TestInferDetectedItemNameKeepsDirectoryTreePath(t *testing.T) {
+func TestInferDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	t.Parallel()
 
 	name, fullName := inferDetectedItemName("/lake/sales", &dataitem.DetectedItem{
@@ -98,5 +98,23 @@ func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	})
 	if got != "lake_table" {
 		t.Fatalf("parquet itemType = %q, want lake_table", got)
+	}
+}
+
+func TestApplyContainerSummaryWritesStandardTypeInfo(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	applyContainerSummary(attrs, &dataitem.DetectedItem{
+		DataType: dataitem.DataTypeContainer,
+	})
+
+	typeInfo := attrs["type_info"].(map[string]interface{})
+	container := typeInfo["container"].(map[string]interface{})
+	if container["child_count"] != 0 || container["resource_count"] != 1 {
+		t.Fatalf("type_info.container = %#v", container)
+	}
+	if _, ok := container["children"]; !ok {
+		t.Fatalf("type_info.container.children missing: %#v", container)
 	}
 }

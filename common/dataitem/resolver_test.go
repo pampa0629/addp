@@ -106,6 +106,31 @@ func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	}
 }
 
+func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
+	item := InferSingleFile(SingleFileInput{Name: "roads.geojson", Path: "roads.geojson"})
+	attrs := BuildAttributes(item)
+	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
+	if spatial["primary_geometry_column"] != "geometry" || spatial["has_spatial_index"] != false {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
+	}
+	columns := spatial["geometry_columns"].([]map[string]interface{})
+	if len(columns) != 1 || columns[0]["srid"] != 4326 || columns[0]["geometry_type"] != "geometry" {
+		t.Fatalf("geometry_columns = %#v", columns)
+	}
+}
+
+func TestInferSingleTIFFWritesRasterSpatialShell(t *testing.T) {
+	item := InferSingleFile(SingleFileInput{Name: "scene.tif", Path: "scene.tif"})
+	attrs := BuildAttributes(item)
+	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
+	if _, ok := spatial["extent"]; !ok {
+		t.Fatalf("capabilities.spatial.extent missing: %#v", spatial)
+	}
+	if spatial["has_spatial_index"] != false {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
+	}
+}
+
 func TestInferDataTypeCanonicalizesCommonAliases(t *testing.T) {
 	tests := []struct {
 		formatName string

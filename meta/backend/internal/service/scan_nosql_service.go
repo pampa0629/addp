@@ -180,7 +180,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 			attrs["document_count"] = count
 		}
 		attrs["size_bytes"] = sizeBytes
-		applyNoSQLDataItemAttributes(attrs, itemType, resource.EngineType)
+		applyNoSQLDataItemAttributes(attrs, itemType)
 
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
 		rowCount := count
@@ -378,9 +378,8 @@ func countStatKey(itemType string) string {
 	return "document_count"
 }
 
-func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType, engineType string) {
+func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType string) {
 	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
-	setItemAttribute(attrs, "format", engineType)
 	switch itemType {
 	case "collection":
 		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))

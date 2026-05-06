@@ -4,7 +4,7 @@ import "fmt"
 
 // MatchBuiltinSingleResourceRule 返回内置 single resource 格式声明。
 func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
-	for _, rule := range BuiltinSingleFileRules() {
+	for _, rule := range BuiltinSingleResourceRules() {
 		if rule.Format == formatName {
 			return rule, true
 		}
@@ -17,27 +17,32 @@ func MatchBuiltinSingleFileRule(formatName string) (FormatRule, bool) {
 	return MatchBuiltinSingleResourceRule(formatName)
 }
 
-// BuiltinSingleFileRules 返回 common/dataitem 内置的单文件和容器文件格式声明。
-func BuiltinSingleFileRules() []FormatRule {
+// BuiltinSingleResourceRules 返回 common/dataitem 内置的 single resource 和容器格式声明。
+func BuiltinSingleResourceRules() []FormatRule {
 	return []FormatRule{
-		singleFileRule("csv", DataTypeTable, "table", []string{".csv"}),
-		singleFileRule("tsv", DataTypeTable, "table", []string{".tsv"}),
-		singleFileRule("geojson", DataTypeTable, "table", []string{".geojson", ".json"}),
-		singleFileRule("excel", DataTypeContainer, "file", []string{".xls", ".xlsx"}),
-		singleFileRule("parquet", DataTypeTable, "lake_table", []string{".parquet"}),
-		singleFileRule("orc", DataTypeTable, "lake_table", []string{".orc"}),
-		singleFileRule("avro", DataTypeTable, "lake_table", []string{".avro"}),
-		singleFileRule("pdf", DataTypeDocument, "file", []string{".pdf"}),
-		singleFileRule("jpeg", DataTypeMedia, "file", []string{".jpg", ".jpeg"}),
-		singleFileRule("png", DataTypeMedia, "file", []string{".png"}),
-		singleFileRule("gif", DataTypeMedia, "file", []string{".gif"}),
-		singleFileRule("tiff", DataTypeMedia, "file", []string{".tif", ".tiff"}),
-		containerFileRule("sqlite", DataTypeContainer, "file", []string{".sqlite", ".sqlite3", ".db"}),
-		containerFileRule("geopackage", DataTypeContainer, "file", []string{".gpkg"}),
+		singleResourceRule("csv", DataTypeTable, "table", []string{".csv"}),
+		singleResourceRule("tsv", DataTypeTable, "table", []string{".tsv"}),
+		singleResourceRule("geojson", DataTypeTable, "table", []string{".geojson", ".json"}),
+		singleResourceRule("excel", DataTypeContainer, "file", []string{".xls", ".xlsx"}),
+		singleResourceRule("parquet", DataTypeTable, "lake_table", []string{".parquet"}),
+		singleResourceRule("orc", DataTypeTable, "lake_table", []string{".orc"}),
+		singleResourceRule("avro", DataTypeTable, "lake_table", []string{".avro"}),
+		singleResourceRule("pdf", DataTypeDocument, "file", []string{".pdf"}),
+		singleResourceRule("jpeg", DataTypeMedia, "file", []string{".jpg", ".jpeg"}),
+		singleResourceRule("png", DataTypeMedia, "file", []string{".png"}),
+		singleResourceRule("gif", DataTypeMedia, "file", []string{".gif"}),
+		singleResourceRule("tiff", DataTypeMedia, "file", []string{".tif", ".tiff"}),
+		containerResourceRule("sqlite", DataTypeContainer, "file", []string{".sqlite", ".sqlite3", ".db"}),
+		containerResourceRule("geopackage", DataTypeContainer, "file", []string{".gpkg"}),
 	}
 }
 
-func singleFileRule(format string, family DataType, itemType string, exts []string) FormatRule {
+// BuiltinSingleFileRules 保留为编译期过渡入口；新代码应使用 BuiltinSingleResourceRules。
+func BuiltinSingleFileRules() []FormatRule {
+	return BuiltinSingleResourceRules()
+}
+
+func singleResourceRule(format string, family DataType, itemType string, exts []string) FormatRule {
 	return FormatRule{
 		Format:       format,
 		DataType:     family,
@@ -48,7 +53,7 @@ func singleFileRule(format string, family DataType, itemType string, exts []stri
 	}
 }
 
-func containerFileRule(format string, family DataType, itemType string, exts []string) FormatRule {
+func containerResourceRule(format string, family DataType, itemType string, exts []string) FormatRule {
 	return FormatRule{
 		Format:       format,
 		DataType:     family,

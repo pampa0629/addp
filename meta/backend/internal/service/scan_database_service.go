@@ -138,7 +138,7 @@ func (s *DatabaseScanService) scanTables(
 	}
 
 	// ScannerTableInfo 是旧 Scanner 适配层结构，数据库扫描在此处做一次边界转换。
-	// 新的 item 语义（data_family、format 等）写入 attrs，不再扩展 ScannerTableInfo。
+	// 新的 item 语义写入 attrs，不再扩展 ScannerTableInfo。
 	tables := make([]format.ScannerTableInfo, len(pluginTables))
 	for i, t := range pluginTables {
 		tables[i] = format.ScannerTableInfo{
@@ -373,7 +373,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		if resource.EngineType == "postgresql" && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				setExtensionAttribute(attrs, "spatial", "spatial_metadata", spatialMeta)
+				upsertNestedSection(attrs, "capabilities", "spatial", spatialCapabilityFromMetadata(spatialMeta))
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
@@ -405,7 +405,6 @@ func (s *DatabaseScanService) scanTableDetails(
 	}
 	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
 	setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))
-	setItemAttribute(attrs, "format", resource.EngineType)
 
 	return fields, attrs, nil
 }
@@ -469,6 +468,31 @@ func (s *DatabaseScanService) scanSpatialMetadata(ctx context.Context, db *gorm.
 	}
 
 	return spatialMeta
+}
+
+func spatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[string]interface{} {
+	if spatialMeta == nil || spatialMeta.GeometryColumn == "" {
+		return map[string]interface{}{}
+	}
+
+	geometryColumn := map[string]interface{}{
+		"name":          spatialMeta.GeometryColumn,
+		"geometry_type": "geometry",
+	}
+	if spatialMeta.SRID > 0 {
+		geometryColumn["srid"] = spatialMeta.SRID
+	}
+
+	values := map[string]interface{}{
+		"geometry_columns":        []map[string]interface{}{geometryColumn},
+		"primary_geometry_column": spatialMeta.GeometryColumn,
+		"has_spatial_index":       spatialMeta.HasSpatialIndex,
+	}
+	if len(spatialMeta.Extent) == 4 {
+		values["extent"] = spatialMeta.Extent
+		values["extent_srid"] = spatialMeta.ExtentSRID
+	}
+	return values
 }
 
 // deleteRemovedTables 软删除已移除的表

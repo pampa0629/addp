@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -107,6 +108,9 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 			plainText = v
 		}
 	}
+	if plainText == "" {
+		plainText = extractedPlainTextFromAttributes(metadata)
+	}
 	if v, ok := metadata["plain_text"].(string); ok && plainText == "" {
 		plainText = v
 	}
@@ -152,6 +156,9 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		if basic := meta.ExtractedMetadata.BasicInfo; basic.ContentType != "" {
 			assetRecord.ContentType = basic.ContentType
 		}
+	}
+	if assetRecord.ContentType == "" {
+		assetRecord.ContentType = commonAttrs.String(metadata, "storage", "content_type")
 	}
 
 	if value := stringFromAttributes(metadata, "document", "document_type"); value != "" {
@@ -301,31 +308,36 @@ func getStringFromMap(metadata map[string]interface{}, key string) string {
 }
 
 func stringFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) string {
-	if value := getStringFromMap(extensionAttributes(metadata, extensionNamespace), key); value != "" {
-		return value
-	}
-	return getStringFromMap(metadata, key)
+	return getStringFromMap(extensionAttributes(metadata, extensionNamespace), key)
 }
 
 func stringSliceFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) []string {
-	if values := extractStringSlice(valueFromExtension(metadata, extensionNamespace, key)); len(values) > 0 {
-		return values
-	}
-	return extractStringSlice(metadata[key])
+	return extractStringSlice(valueFromExtension(metadata, extensionNamespace, key))
 }
 
 func intFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) int {
-	if value := intFromInterface(valueFromExtension(metadata, extensionNamespace, key)); value > 0 {
-		return value
-	}
-	return intFromInterface(metadata[key])
+	return intFromInterface(valueFromExtension(metadata, extensionNamespace, key))
 }
 
 func timeFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) *time.Time {
-	if value := extractTimePtr(valueFromExtension(metadata, extensionNamespace, key)); value != nil {
-		return value
+	return extractTimePtr(valueFromExtension(metadata, extensionNamespace, key))
+}
+
+func extractedPlainTextFromAttributes(metadata map[string]interface{}) string {
+	extraction := commonAttrs.Section(metadata, "capabilities.extraction")
+	if extraction == nil {
+		return ""
 	}
-	return extractTimePtr(metadata[key])
+	extracted, ok := extraction["extracted_metadata"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	customAttrs, ok := extracted["custom_attrs"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	text, _ := customAttrs["plain_text"].(string)
+	return text
 }
 
 func valueFromExtension(metadata map[string]interface{}, namespace, key string) interface{} {
@@ -344,11 +356,7 @@ func standardAttributeSection(metadata map[string]interface{}, namespace string)
 		return nil
 	}
 	for _, root := range standardAttributeRoots(namespace) {
-		sections, ok := metadata[root].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if section, ok := sections[namespace].(map[string]interface{}); ok {
+		if section := commonAttrs.Section(metadata, root+"."+namespace); section != nil {
 			return section
 		}
 	}

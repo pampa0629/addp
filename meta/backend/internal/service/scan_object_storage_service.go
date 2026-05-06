@@ -1130,6 +1130,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			attrs["last_modified_at"] = meta.LastModified
 		}
 		mergeDataItemAttributes(attrs, dataItem)
+		applyContainerSummary(attrs, dataItem)
 
 		// 生成fingerprint - 两步计算方式
 		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
@@ -1453,34 +1454,14 @@ func objectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]forma
 		if meta.NodeType != "object" {
 			continue
 		}
-		for _, parent := range compositeCandidatePrefixes(meta.Path) {
-			if parent == "" {
-				continue
-			}
-			key := meta.Bucket + "\x00" + strings.Trim(parent, "/")
-			groups[key] = append(groups[key], meta)
+		parent := strings.Trim(parentObjectPath(meta.Path), "/")
+		if parent == "" {
+			continue
 		}
+		key := meta.Bucket + "\x00" + parent
+		groups[key] = append(groups[key], meta)
 	}
 	return groups
-}
-
-func compositeCandidatePrefixes(path string) []string {
-	trimmed := strings.Trim(path, "/")
-	parent := strings.Trim(parentObjectPath(trimmed), "/")
-	if parent == "" {
-		return nil
-	}
-	prefixes := []string{parent}
-	parts := strings.Split(parent, "/")
-	if len(parts) > 1 {
-		for i := len(parts) - 1; i >= 1; i-- {
-			prefix := strings.Join(parts[:i], "/")
-			if prefix != "" {
-				prefixes = append(prefixes, prefix)
-			}
-		}
-	}
-	return prefixes
 }
 
 func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []plugin.FileEntry {
@@ -1569,7 +1550,7 @@ func objectStorageSingleFileItemType(item *dataitem.DetectedItem) string {
 	if item.ItemType != "" {
 		return item.ItemType
 	}
-	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
+	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
 		rule.Organization == dataitem.OrganizationSingle &&
 		rule.ItemType != "" {
 		return rule.ItemType

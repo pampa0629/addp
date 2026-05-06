@@ -9,7 +9,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
+func TestLakeTableDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	t.Parallel()
 
 	d := &LakeTableDetector{}
@@ -25,9 +25,9 @@ func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
 	if !d.Detect(context.Background(), files, subdirs) {
 		t.Fatal("expected partitioned parquet directory to match")
 	}
-	info, err := ExtractDirectoryTreeInfo(context.Background(), nil, nil, 1, "dataset", files, subdirs)
+	info, err := ExtractWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, subdirs)
 	if err != nil {
-		t.Fatalf("ExtractDirectoryTreeInfo() error = %v", err)
+		t.Fatalf("ExtractWholeScopeInfo() error = %v", err)
 	}
 	if info.Organization != dataitem.OrganizationWhole {
 		t.Fatalf("Organization = %q, want %q", info.Organization, dataitem.OrganizationWhole)
@@ -86,9 +86,9 @@ func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
 	if !d.Detect(context.Background(), files, nil) {
 		t.Fatal("expected parquet directory with auxiliary files to match")
 	}
-	info, err := ExtractDirectoryTreeInfo(context.Background(), nil, nil, 1, "dataset", files, nil)
+	info, err := ExtractWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, nil)
 	if err != nil {
-		t.Fatalf("ExtractDirectoryTreeInfo() error = %v", err)
+		t.Fatalf("ExtractWholeScopeInfo() error = %v", err)
 	}
 	if len(info.ComponentFiles) != 1 || info.ComponentFiles[0] != "dataset/part-000.parquet" {
 		t.Fatalf("ComponentFiles = %#v, want only parquet data file", info.ComponentFiles)
@@ -98,7 +98,7 @@ func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
 	}
 }
 
-func TestLakeTableDetectorRejectsMixedDirectoryTree(t *testing.T) {
+func TestLakeTableDetectorRejectsMixedWholeScope(t *testing.T) {
 	t.Parallel()
 
 	d := &LakeTableDetector{}
@@ -109,11 +109,11 @@ func TestLakeTableDetectorRejectsMixedDirectoryTree(t *testing.T) {
 	subdirs := []plugin.DirEntry{{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"}}
 
 	if d.Detect(context.Background(), files, subdirs) {
-		t.Fatal("expected mixed directory tree to be rejected")
+		t.Fatal("expected mixed whole scope to be rejected")
 	}
 }
 
-func TestLakeTableDetectorResolvesDirectoryTreeFromRecursiveScope(t *testing.T) {
+func TestLakeTableDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	t.Parallel()
 
 	d := &LakeTableDetector{}

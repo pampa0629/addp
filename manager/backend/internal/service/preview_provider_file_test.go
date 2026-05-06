@@ -11,7 +11,9 @@ func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
 	req := &PreviewRequest{
 		Table: "fallback.bin",
 		Attributes: map[string]interface{}{
-			"format": "xlsx",
+			"item": map[string]interface{}{
+				"format": "xlsx",
+			},
 		},
 	}
 
@@ -26,7 +28,9 @@ func TestFileTablePreviewProviderResolveFormatUsesContentType(t *testing.T) {
 	req := &PreviewRequest{
 		Table: "fallback.bin",
 		Attributes: map[string]interface{}{
-			"content_type": "application/geo+json",
+			"storage": map[string]interface{}{
+				"content_type": "application/geo+json",
+			},
 		},
 	}
 

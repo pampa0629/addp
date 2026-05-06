@@ -80,10 +80,33 @@ class SQLService:
                 cols = [f"{c['name']} ({c.get('type', 'unknown')})" for c in ds['columns']]
                 context += f"  字段: {', '.join(cols)}\n"
 
-            if ds.get('spatial_metadata'):
-                context += f"  空间字段: {ds['spatial_metadata'].get('geometry_column', 'geom')}\n"
+            spatial = self._spatial_capability(ds)
+            if spatial:
+                geometry_column = spatial.get('primary_geometry_column') or self._first_geometry_column_name(spatial) or 'geometry'
+                context += f"  空间字段: {geometry_column}\n"
 
         return context
+
+    def _spatial_capability(self, datasource: Dict) -> Dict:
+        capabilities = datasource.get('capabilities') or {}
+        if isinstance(capabilities, dict) and isinstance(capabilities.get('spatial'), dict):
+            return capabilities['spatial']
+
+        attributes = datasource.get('attributes') or {}
+        if isinstance(attributes, dict):
+            attr_capabilities = attributes.get('capabilities') or {}
+            if isinstance(attr_capabilities, dict) and isinstance(attr_capabilities.get('spatial'), dict):
+                return attr_capabilities['spatial']
+
+        return {}
+
+    def _first_geometry_column_name(self, spatial: Dict) -> str:
+        columns = spatial.get('geometry_columns') or []
+        if isinstance(columns, list) and columns:
+            first = columns[0]
+            if isinstance(first, dict):
+                return first.get('name', '')
+        return ''
 
     def _extract_sql(self, output: str) -> str:
         sql_match = re.search(r'```sql\s*\n(.*?)\n```', output, re.DOTALL | re.IGNORECASE)

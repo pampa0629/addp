@@ -20,7 +20,7 @@ func TestValidateFormatRuleAcceptsMultiFileRule(t *testing.T) {
 	}
 }
 
-func TestValidateFormatRuleRejectsSingleFileComponents(t *testing.T) {
+func TestValidateFormatRuleRejectsSingleResourceComponents(t *testing.T) {
 	rule := FormatRule{
 		Format:       "csv",
 		DataType:     DataTypeTable,
@@ -35,7 +35,7 @@ func TestValidateFormatRuleRejectsSingleFileComponents(t *testing.T) {
 	}
 }
 
-func TestValidateFormatRuleRejectsDirectoryTreeWithoutRule(t *testing.T) {
+func TestValidateFormatRuleRejectsWholeWithoutRule(t *testing.T) {
 	rule := FormatRule{
 		Format:       "parquet",
 		DataType:     DataTypeTable,
@@ -48,10 +48,10 @@ func TestValidateFormatRuleRejectsDirectoryTreeWithoutRule(t *testing.T) {
 	}
 }
 
-func TestBuiltinSingleFileRulesAreValid(t *testing.T) {
-	rules := BuiltinSingleFileRules()
+func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
+	rules := BuiltinSingleResourceRules()
 	if len(rules) == 0 {
-		t.Fatal("BuiltinSingleFileRules() returned no rules")
+		t.Fatal("BuiltinSingleResourceRules() returned no rules")
 	}
 
 	seenCSV := false
@@ -76,8 +76,8 @@ func TestBuiltinSingleFileRulesAreValid(t *testing.T) {
 	}
 }
 
-func TestMatchBuiltinSingleFileRule(t *testing.T) {
-	rule, ok := MatchBuiltinSingleFileRule("geopackage")
+func TestMatchBuiltinSingleResourceRule(t *testing.T) {
+	rule, ok := MatchBuiltinSingleResourceRule("geopackage")
 	if !ok {
 		t.Fatal("expected geopackage rule to match")
 	}

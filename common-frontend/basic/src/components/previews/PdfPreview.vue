@@ -160,7 +160,7 @@ const contentTypeLabel = computed(() => {
 
 // 提取元数据
 const extractedMetadata = computed(() => {
-  return objectData.value?.attributes?.extensions?.extraction?.extracted_metadata || null
+  return objectData.value?.attributes?.capabilities?.extraction?.extracted_metadata || null
 })
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 

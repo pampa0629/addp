@@ -359,9 +359,6 @@ func mapAttribute(attrs map[string]interface{}, key string) map[string]interface
 			return sectionAttrs
 		}
 	}
-	if value, ok := attrs[key].(map[string]interface{}); ok {
-		return value
-	}
 	return nil
 }
 
@@ -374,7 +371,7 @@ func stringSliceAttribute(attrs map[string]interface{}, key string) []string {
 			return values
 		}
 	}
-	return interfaceToStringSlice(attrs[key])
+	return nil
 }
 
 func int64Attribute(attrs map[string]interface{}, key string) int64 {
@@ -386,7 +383,7 @@ func int64Attribute(attrs map[string]interface{}, key string) int64 {
 			return value
 		}
 	}
-	return interfaceToInt64(attrs[key])
+	return 0
 }
 
 func stringAttribute(attrs map[string]interface{}, key string) string {
@@ -397,9 +394,6 @@ func stringAttribute(attrs map[string]interface{}, key string) string {
 		if value := sectionStringAttribute(attrs, section, key); value != "" {
 			return value
 		}
-	}
-	if value, ok := attrs[key].(string); ok {
-		return value
 	}
 	return ""
 }

@@ -81,12 +81,12 @@ const normalizedAttributes = computed(() => {
 
 const extractedMetadataRoot = computed(() => {
   const attrs = normalizedAttributes.value
-  const fromAttrs = parseMaybeJSON(attrs?.extensions?.extraction?.extracted_metadata)
+  const fromAttrs = parseMaybeJSON(attrs?.capabilities?.extraction?.extracted_metadata)
   if (fromAttrs && typeof fromAttrs === 'object') {
     return fromAttrs
   }
-  if (attrs?.extensions?.extraction?.extracted_metadata && typeof attrs.extensions.extraction.extracted_metadata === 'object') {
-    return attrs.extensions.extraction.extracted_metadata
+  if (attrs?.capabilities?.extraction?.extracted_metadata && typeof attrs.capabilities.extraction.extracted_metadata === 'object') {
+    return attrs.capabilities.extraction.extracted_metadata
   }
   return null
 })

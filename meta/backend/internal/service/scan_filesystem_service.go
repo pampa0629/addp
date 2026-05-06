@@ -161,7 +161,7 @@ func (s *FileSystemScanService) scanDirectory(
 	claimedPaths := dataitem.ResourceClaimSet{}
 
 	// 根目录允许非独占组合识别（如根目录下的 Shapefile），但不允许被目录树 detector 整体吞掉。
-	// 子目录走完整组合识别入口；只有 directory_tree 等明确独占范围时才停止后续探测。
+	// 子目录走完整组合识别入口；只有 whole scope 等明确独占范围时才停止后续探测。
 	if isBucketRoot {
 		detection, err := resolveNonExclusiveScopeItems(ctx, contentReader, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
@@ -344,7 +344,19 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	if len(detected.Fields) > 0 {
 		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
 	}
+	applyContainerSummary(attrs, detected)
 	return attrs, detected.Fields, nil
+}
+
+func applyContainerSummary(attrs models.JSONMap, detected *dataitem.DetectedItem) {
+	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
+		return
+	}
+	upsertNestedSection(attrs, "type_info", "container", map[string]interface{}{
+		"children":       []map[string]interface{}{},
+		"child_count":    0,
+		"resource_count": 1,
+	})
 }
 
 func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
@@ -658,7 +670,7 @@ func fileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
 	if item.ItemType != "" {
 		return item.ItemType
 	}
-	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
+	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
 		rule.Organization == dataitem.OrganizationSingle &&
 		rule.ItemType != "" {
 		return rule.ItemType

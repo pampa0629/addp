@@ -394,7 +394,7 @@ func (d *LakeTableDetector) ExtractItemInfo(
 	return d.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
 }
 
-func ExtractDirectoryTreeInfo(
+func ExtractWholeScopeInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -408,6 +408,19 @@ func ExtractDirectoryTreeInfo(
 		return nil, fmt.Errorf("directory is not a lake table dataset: %s", dirPath)
 	}
 	return detector.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
+}
+
+// ExtractDirectoryTreeInfo 保留为编译期过渡入口；新代码应使用 ExtractWholeScopeInfo。
+func ExtractDirectoryTreeInfo(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	dirPath string,
+	files []plugin.FileEntry,
+	subdirs []plugin.DirEntry,
+) (*dataitem.CompositeItemInfo, error) {
+	return ExtractWholeScopeInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
 // ExtractSingleFileInfo 提取单个湖表文件的元信息（模式 B：文件即表）

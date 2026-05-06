@@ -61,7 +61,7 @@ type EntryRule struct {
 	MIMETypes  []string
 }
 
-// ComponentRule 声明 multi_file 组合的组件规则。
+// ComponentRule 声明 multi 组织方式的组件规则。
 type ComponentRule struct {
 	MatchScope         ComponentMatchScope
 	MatchKey           ComponentMatchKey

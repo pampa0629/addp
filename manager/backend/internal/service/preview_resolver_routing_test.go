@@ -38,7 +38,7 @@ func TestResolveProviderByMetaUsesItemType(t *testing.T) {
 	}
 }
 
-func TestResolveProviderByMetaUsesDataFamilyAndFormat(t *testing.T) {
+func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
 	resolver := NewPreviewResolver(registry, nil, nil, nil)
@@ -88,7 +88,7 @@ func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	}
 }
 
-func TestStringAttributeReadsPartitionedStorageBeforeFlatFallback(t *testing.T) {
+func TestStringAttributeReadsPartitionedStorageOnly(t *testing.T) {
 	attrs := map[string]interface{}{
 		"physical_path": "legacy/path.geojson",
 		"storage": map[string]interface{}{
@@ -98,6 +98,10 @@ func TestStringAttributeReadsPartitionedStorageBeforeFlatFallback(t *testing.T) 
 
 	if got := stringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
 		t.Fatalf("stringAttribute() = %q, want bucket/path.geojson", got)
+	}
+
+	if got := stringAttribute(map[string]interface{}{"physical_path": "legacy/path.geojson"}, "physical_path"); got != "" {
+		t.Fatalf("stringAttribute() legacy flat = %q, want empty", got)
 	}
 }
 
@@ -118,6 +122,9 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	}
 	if got := int64Attribute(attrs, "total_size"); got != 42 {
 		t.Fatalf("total_size = %d, want 42", got)
+	}
+	if got := stringSliceAttribute(map[string]interface{}{"component_files": []interface{}{"legacy/a.shp"}}, "component_files"); len(got) != 0 {
+		t.Fatalf("legacy flat component_files = %#v, want empty", got)
 	}
 }
 

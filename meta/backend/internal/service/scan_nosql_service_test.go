@@ -80,6 +80,21 @@ func TestBuildDocCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
 	}
 }
 
+func TestApplyNoSQLDataItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	applyNoSQLDataItemAttributes(attrs, "collection")
+
+	item := attrs["item"].(map[string]interface{})
+	if item["organization"] != "single" || item["data_type"] != "table" {
+		t.Fatalf("item attrs = %#v", item)
+	}
+	if item["format"] != nil {
+		t.Fatalf("native NoSQL item should not write item.format: %#v", item)
+	}
+}
+
 func TestSoftDeleteLegacyGraphTableItems(t *testing.T) {
 	t.Parallel()
 

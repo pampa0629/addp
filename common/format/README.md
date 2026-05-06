@@ -451,10 +451,11 @@ package service
 
 func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) []string {
     attrs := req.MetadataAttributes()
-    dataFamily := stringAttribute(attrs, "data_family")
-    formatName := stringAttribute(attrs, "format")
+    item := section(attrs, "item")
+    dataType := stringAttribute(item, "data_type")
+    formatName := stringAttribute(item, "format")
 
-    if dataFamily == "tabular" && isFileTableFormat(formatName) {
+    if dataType == "table" && isFileTableFormat(formatName) {
         return []string{"builtin:file-table"}
     }
     return []string{"builtin:object-storage"}

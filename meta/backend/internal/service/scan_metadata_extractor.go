@@ -46,14 +46,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	// 如果 S3Scanner 已经提取了元数据，直接使用
 	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
 		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
-			baseAttrs["plain_text_preview"] = previewText(text, documentPreviewRuneLimit)
-		}
-		// 将提取的 CustomAttrs 合并到 baseAttrs 中，跳过大字段
-		for key, value := range meta.ExtractedMetadata.CustomAttrs {
-			if key == "plain_text" {
-				continue
-			}
-			baseAttrs[key] = value
+			setExtractionAttribute(baseAttrs, "plain_text_preview", previewText(text, documentPreviewRuneLimit))
 		}
 		applyExtractedMetadataExtensions(baseAttrs, meta.ExtractedMetadata)
 
@@ -62,7 +55,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 		setExtractionAttribute(baseAttrs, "extracted_metadata", buildExtractedMetadataPayload(meta.ExtractedMetadata))
 		setExtensionAttribute(baseAttrs, "document", "file_type_friendly", meta.ExtractedMetadata.BasicInfo.FileType)
 		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
-			baseAttrs["content_type"] = meta.ExtractedMetadata.BasicInfo.ContentType
+			setStorageAttribute(baseAttrs, "content_type", meta.ExtractedMetadata.BasicInfo.ContentType)
 		}
 
 		return baseAttrs
@@ -83,7 +76,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 
 	// 标记有提取器可用（但本次扫描未提取）
 	setExtractionAttribute(baseAttrs, "extractor_available", true)
-	baseAttrs["content_type"] = contentType
+	setStorageAttribute(baseAttrs, "content_type", contentType)
 
 	return baseAttrs
 }

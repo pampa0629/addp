@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Section returns a nested attributes section such as "storage" or "extensions.spatial".
+// Section returns a nested attributes section such as "storage" or "capabilities.spatial".
 func Section(attrs map[string]interface{}, section string) map[string]interface{} {
 	if attrs == nil || section == "" {
 		return nil

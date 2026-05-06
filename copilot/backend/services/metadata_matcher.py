@@ -152,7 +152,7 @@ class MetadataMatcherService:
                 score += 0.4
 
             # 空间表优先
-            if candidate.get("spatial_metadata"):
+            if self._has_spatial_capability(candidate):
                 score += 0.2
 
             # 数据新鲜度
@@ -188,13 +188,26 @@ class MetadataMatcherService:
         elif score >= 0.5:
             reasons.append("可能相关")
 
-        if candidate.get("spatial_metadata"):
+        if self._has_spatial_capability(candidate):
             reasons.append("包含空间字段")
 
         if candidate.get("row_count", 0) > 1000:
             reasons.append("数据量充足")
 
         return ", ".join(reasons) if reasons else "一般匹配"
+
+    def _has_spatial_capability(self, candidate: Dict) -> bool:
+        capabilities = candidate.get("capabilities") or {}
+        if isinstance(capabilities, dict) and isinstance(capabilities.get("spatial"), dict):
+            return True
+
+        attributes = candidate.get("attributes") or {}
+        if isinstance(attributes, dict):
+            attr_capabilities = attributes.get("capabilities") or {}
+            if isinstance(attr_capabilities, dict) and isinstance(attr_capabilities.get("spatial"), dict):
+                return True
+
+        return False
 
     async def close(self):
         """关闭 HTTP 客户端"""
