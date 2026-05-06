@@ -2,7 +2,13 @@
 
 更新时间：2026-05-05
 
-本文从 `addp数据类型与文件格式改进清单.md` 中拆出 Transfer 模块相关工作。当前阶段先不修改 Transfer 代码，只记录后续接力事项，避免和 meta / manager / service / develop 的 attributes 治理推进混在一起。
+本文记录 Transfer 模块与数据类型、文件格式、组合形态、标准 attributes 相关的后续工作。当前阶段先不修改 Transfer 代码，只记录后续接力事项，避免和 meta / manager / service / develop 的 attributes 治理推进混在一起。
+
+正式规范见：
+
+- [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)
+- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
+- [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
 
 ## 背景
 

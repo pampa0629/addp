@@ -1,351 +1,371 @@
 # ADDP 数据类型与格式体系图
 
-本文档展示 ADDP 平台的数据类型分类、数据格式支持和类型映射机制。
+本文定义 ADDP 对 data item、数据类型、组织方式、文件格式和横切能力的概念模型。本文只讨论概念层，不修改实现规范；spec 层后续应以本文为准逐步修订。
 
----
+## 核心结论
 
-## 目录
+ADDP 的数据管理主轴是：
 
-1. [数据类型分类](#数据类型分类)
-2. [数据格式体系](#数据格式体系)
-3. [FieldType 统一类型系统](#fieldtype-统一类型系统)
-4. [TypeMapper 类型映射](#typemapper-类型映射)
+```text
+engine -> node -> data item
+```
 
----
+- `engine`：数据来自哪个引擎。
+- `node`：引擎内的目录、schema、bucket、prefix 等资源树节点。
+- `data item`：平台真正管理、预览、检索、授权、传输的核心数据对象，对应 `meta_item`。
 
-## 数据类型分类
+`data item` 是 meta 体系的核心概念，也是 `meta_item` 表的关键语义。`node` 只是资源树组织结构，不能替代 item 边界。
 
-ADDP 使用**两个正交维度**来描述数据，确保分类清晰且可扩展：
+一个 data item 内部可以包含子 item，例如 SQLite 的内部 table、Excel 的 sheet、GeoPackage 的 layer、压缩包中的文件。当前概念上这些子 item 不直接展开为 `meta_item`，而应先在 attributes 中表达；只有当需要独立授权、检索、血缘、传输或生命周期管理时，才讨论是否升格为独立 meta item。
 
-### 维度 1: 存储位置 (Where)
+一句话概括：
 
-数据的物理存储位置，即所在的存储引擎：
+**engine 管连接，node 管资源树，data item 管平台语义；组织方式管资源如何成为 item，数据类型管用户如何理解 item，文件格式管编码，横切能力管跨类型附加能力。**
+
+## 总览
 
 ```mermaid
 graph LR
-    Storage[存储位置]
+    Engine[Engine] --> Node[Node]
+    Node --> Item[Data Item / Meta Item]
 
-    Storage --> Table[table - 数据库中的表]
-    Storage --> File[file - 对象存储中的文件]
+    Item --> Organization[组织方式]
+    Item --> DataType[数据类型]
+    Item --> Format[文件格式]
+    Item --> TypeInfo[类型信息]
+    Item --> FormatInfo[格式信息]
+    Item --> Capabilities[横切能力]
+    Item --> Children[内部子 item]
 
-    Table --> TableEx[PostgreSQL、MySQL<br/>MongoDB、ClickHouse<br/>Doris]
-    File --> FileEx[MinIO、S3]
+    Organization --> O1[single]
+    Organization --> O2[multi]
+    Organization --> O3[whole]
 
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef location fill:#e1f5ff,stroke:#01579b
-    classDef example fill:#e8f5e9,stroke:#1b5e20
+    DataType --> T1[table]
+    DataType --> T2[document]
+    DataType --> T3[media]
+    DataType --> T4[container]
+    DataType --> T5[graph]
+    DataType --> T6[unknown]
 
-    class Storage root
-    class Table,File location
-    class TableEx,FileEx example
+    Capabilities --> C1[spatial]
+    Capabilities --> C2[temporal]
+    Capabilities --> C3[profile/statistics]
+    Capabilities --> C4[extraction]
+    Capabilities --> C5[semantic]
+    Capabilities --> C6[partitioning]
+    Capabilities --> C7[indexing]
 ```
 
-### 维度 2: 数据特征 (What)
+## engine / node / data item
 
-按照结构化与非结构化划分：
+### engine
 
-```mermaid
-graph TB
-    DataType[结构化与否]
+`engine` 表示数据接入和访问能力，例如 PostgreSQL、MySQL、MongoDB、Neo4j、MinIO、S3、NFS、本地文件系统。
 
-    DataType --> TableData[表格型数据（结构化）<br/>TableInfo]
-    DataType --> ObjectData[对象型数据（非结构化）<br/>ObjectInfo]
+engine 只回答：
 
-    TableData --> TableEx1[数据库表:<br/>PostgreSQL、MySQL<br/>MongoDB 集合]
-    TableData --> TableEx2[表格型文件:<br/>CSV、Excel、Parquet<br/>Shapefile、GeoJSON]
+- 如何连接。
+- 如何枚举资源。
+- 如何读取内容。
+- 能提供哪些存储侧元信息。
 
-    ObjectData --> ObjectEx[非结构化文件:<br/>图片 JPG/PNG<br/>视频 MP4/AVI<br/>文档 PDF]
+engine 不直接决定 data item 的数据类型，也不直接决定一个目录、prefix 或文件组是否构成 item。
 
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef type fill:#e1f5ff,stroke:#01579b
-    classDef example fill:#e8f5e9,stroke:#1b5e20
+### node
 
-    class DataType root
-    class TableData,ObjectData type
-    class TableEx1,TableEx2,ObjectEx example
+`node` 表示 engine 内的资源树节点，例如：
+
+- 数据库 schema。
+- bucket。
+- prefix。
+- 目录。
+- catalog 分组节点。
+
+node 的职责是组织资源树，服务浏览、扫描和定位。node 不是 data item，除非某个 detector 或引擎原生边界明确说明“这个范围整体构成一个 data item”。
+
+### data item
+
+`data item` 是 ADDP 的核心数据对象，对应 `meta_item`。平台围绕 data item 做：
+
+- 元数据扫描。
+- 目录展示。
+- 预览。
+- 检索。
+- 授权。
+- 传输。
+- 血缘和资产治理。
+
+data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`、`engine_id`、`node_id`、`item_type`、`name`、`full_name`、`fingerprint`。这些字段不应重复写入 attributes。
+
+## 组织方式
+
+组织方式回答：**引擎中的文件、目录、表、prefix 等资源如何组织成一个 data item。**
+
+建议使用“组织方式”替代“组合形态”。它比“组合形态”更贴近 engine 资源到 data item 的归并关系，也更容易跨文件、对象存储和数据库引擎复用。
+
+| 组织方式 | 含义 | 示例 |
+|---|---|---|
+| `single` | 一对一，一个引擎资源就是一个 data item | 数据库 table、CSV 文件、SQLite 文件、PDF、图片 |
+| `multi` | 多对一，多个资源共同组成一个 data item | Shapefile 多文件、一组表共同构成一个业务 item |
+| `whole` | 全部对一，整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB 场景目录、完整数据集目录 |
+
+### single
+
+`single` 不等于“单文件”。它表示一个引擎资源和一个 data item 一一对应。
+
+示例：
+
+- PostgreSQL table。
+- CSV 文件。
+- PDF 文件。
+- SQLite 文件。
+- ZIP 文件。
+
+SQLite、ZIP、RAR 等虽然内部包含子 item 或子资源，但它们作为外层 data item 仍是 `single`。容器不是组织方式，而是数据类型。
+
+### multi
+
+`multi` 表示多个资源共同组成一个有意义的 data item。
+
+示例：
+
+- Shapefile 的 `.shp/.shx/.dbf/.prj`。
+- 未来一组物理表共同构成一个业务逻辑 item。
+- 主文件 + 同级索引文件 + 同级元数据文件。
+
+`multi` 只认领明确匹配的组件资源，不独占整个目录或 prefix。
+
+### whole
+
+`whole` 表示整个范围构成一个 data item，不再逐个顾忌范围内的文件和子目录。
+
+示例：
+
+- Iceberg 表目录。
+- OSGB 场景目录。
+- 明确声明为完整数据集的 prefix。
+
+Parquet 本身不需要被称为“湖表”。一个 Parquet 文件可以是 `single + table + format=parquet`；一组同类 Parquet 文件可以是 `multi + table + format=parquet`；未来 Iceberg 支持后，可以是 `whole + table + format=iceberg`。数据类型仍然是 `table`。
+
+### 取消容器组织方式
+
+容器不是组织方式。容器描述的是 data item 的数据类型或类型特征。
+
+例如：
+
+- SQLite 文件：`organization=single`，`data_type=container`，`format=sqlite`。
+- GeoPackage 文件：`organization=single`，`data_type=container`，`format=geopackage`。
+- ZIP 文件：`organization=single`，`data_type=container`，`format=zip`。
+
+容器内部的表、sheet、layer、文件是内部子 item，应先在 attributes 中表达。
+
+### 暂不保留 mixed_collection
+
+`mixed_collection` 暂不作为基础组织方式。
+
+如果只认领部分资源，就是 `multi`；如果整个范围都归并为一个 item，就是 `whole`。未来确实出现无法表达的复杂组织方式，再单独讨论。
+
+## 数据类型
+
+数据类型回答：**这个 data item 在用户观感和处理方式上是什么。**
+
+数据类型是对一类类似数据的抽象。它们通常具备相似的数据特征、预览方式、处理手段和治理方式。
+
+建议第一版数据类型：
+
+| 数据类型 | 含义 | 典型处理方式 |
+|---|---|---|
+| `table` | 表格型数据，有字段、行列或可推断字段 | 字段预览、表格查询、导入导出、统计分析 |
+| `document` | 文档型数据，面向阅读、解析和全文提取 | 文档预览、文本提取、全文索引、摘要 |
+| `media` | 媒体型数据，包括图片、视频、音频 | 缩略图、播放、转码、媒体元信息 |
+| `container` | 容器型数据，内部包含子 item 或资源 | 内部目录、sheet/table/layer 枚举、解包或选择子对象 |
+| `graph` | 图数据，节点、边、关系结构 | 图谱预览、关系查询、图算法 |
+| `unknown` | 暂未识别 | 基础文件预览或下载 |
+
+### table
+
+`table` 是所有表格型 data item 的通用数据类型。
+
+包括：
+
+- 数据库表。
+- CSV / TSV。
+- records 型 JSON。
+- GeoJSON FeatureCollection。
+- Shapefile。
+- Parquet / ORC / Avro。
+- Iceberg 等表格式目录。
+
+CSV 和 JSON 虽然文本属性强，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
+
+JSON 需要结构识别：
+
+- records array、JSON Lines、GeoJSON FeatureCollection 可归为 `table`。
+- 任意 JSON 对象、配置文件、嵌套文档可归为 `document` 或 `container`，取决于平台消费方式。
+
+### media
+
+`media` 合并图片、视频、音频。
+
+理由：
+
+- 用户感知都是媒体内容。
+- 处理链路相近：预览、缩略图、播放、转码、编码信息。
+- 差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达。
+
+### container
+
+`container` 表示 item 内部包含子 item 或资源。
+
+示例：
+
+- ZIP / RAR / TAR。
+- SQLite。
+- GeoPackage。
+- Excel。
+
+容器类型不说明它如何被 engine 组织成 item。大多数容器文件外层组织方式是 `single`。
+
+## 类型信息
+
+类型信息是某个数据类型天然应该具备的通用元数据。
+
+| 数据类型 | 类型信息示例 |
+|---|---|
+| `table` | 字段列表、字段类型、主键、索引、行数、采样信息 |
+| `document` | 标题、作者、页数、正文摘要、语言 |
+| `media` | kind、宽高、时长、编码、采样率、颜色模式 |
+| `container` | 内部子 item 列表、默认入口、子资源数量 |
+| `graph` | label、relationship、属性结构、节点数、边数 |
+
+这里不再使用 `schema` 作为概念层分区名。这个词容易和数据库 schema、JSON 结构规范、表结构描述混淆。对于 ADDP 概念层，应明确说：
+
+- 表格型数据有 `table info`。
+- 媒体型数据有 `media info`。
+- 文档型数据有 `document info`。
+- 容器型数据有 `container info`。
+
+## 文件格式与格式信息
+
+文件格式回答 item 的编码方式，例如：
+
+- `csv`、`tsv`
+- `json`、`geojson`
+- `parquet`、`orc`、`avro`
+- `shapefile`
+- `sqlite`、`geopackage`
+- `zip`、`rar`
+- `pdf`
+- `jpeg`、`png`、`tiff`
+
+格式信息是某个具体格式才有的描述。
+
+示例：
+
+| 格式 | 格式信息示例 |
+|---|---|
+| `csv` | delimiter、encoding、has_header、quote_char |
+| `shapefile` | base_name、component_extensions、has_prj、shape_type、dbf_version |
+| `geojson` | geojson_type、feature_count、has_bbox、crs |
+| `sqlite` | sqlite_version、table_count、tables |
+| `zip` | compression_method、entry_count、encrypted |
+
+格式信息不应污染数据类型信息。例如 Shapefile 的 `shape_type` 是格式信息；几何字段列表、字段类型属于 table info；哪个字段是空间字段和 SRID/extent 属于 spatial。
+
+## 横切能力
+
+横切能力是不属于单一数据类型、也不属于单一文件格式，但会影响平台处理能力的附加语义。
+
+### spatial
+
+`spatial` 是典型横切能力。它既不属于数据类型，也不属于文件格式。
+
+具体而言：
+
+1. table 上的空间字段，本身应该在 table info 的 field info 中。
+2. 哪个字段是空间字段，属于 spatial。
+3. SRID、extent、geometry type、空间维度、空间索引等属于 spatial。
+4. Shapefile、GeoJSON、GeoPackage 等具体格式仍应保留自己的 format info，和通用 spatial 独立。
+
+示例：
+
+- Shapefile = `data_type=table` + `organization=multi` + `format=shapefile` + `spatial`。
+- GeoJSON = `data_type=table` + `organization=single` + `format=geojson` + `spatial`。
+- PostGIS 表 = `data_type=table` + `organization=single` + `spatial`。
+- GeoTIFF = `data_type=media` + `format=tiff` + `spatial`。
+
+### 其他横切能力
+
+| 横切能力 | 含义 |
+|---|---|
+| `temporal` | 时间字段、时间范围、时间粒度 |
+| `profile` / `statistics` | 采样统计、空值率、min/max、质量画像 |
+| `extraction` | OCR、文本提取、摘要、提取状态 |
+| `semantic` | embedding、语义索引、向量表示 |
+| `partitioning` | 分区字段、分区范围、分区样例 |
+| `indexing` | 空间索引、全文索引、向量索引等能力描述 |
+
+这些能力不应变成顶层数据类型，也不应被塞进具体格式信息。它们应该作为横切能力独立表达。
+
+## 去掉 ObjectInfo
+
+概念层不再保留 `ObjectInfo`。
+
+原因是 `ObjectInfo` 容易被误解为“对象存储中的对象信息”，但实际上对象大小、etag、content-type、last_modified 等属于 storage 层信息。
+
+例如 MinIO 中的 CSV 文件同时具备：
+
+- storage info：bucket、path、size、etag、content_type、last_modified。
+- table info：字段、行数、表头、采样类型。
+
+因此：
+
+- `TableInfo` 属于 `data_type=table` 的类型信息。
+- `MediaInfo` 属于 `data_type=media` 的类型信息。
+- `DocumentInfo` 属于 `data_type=document` 的类型信息。
+- `ContainerInfo` 属于 `data_type=container` 的类型信息。
+- 原 `ObjectInfo` 应拆散并融入 storage info，不作为数据类型模型。
+
+## attributes 概念分层
+
+基于上述概念，data item attributes 应表达：
+
+```json
+{
+  "storage": {},
+  "item": {
+    "organization": "single|multi|whole",
+    "data_type": "table|document|media|container|graph|unknown",
+    "format": "..."
+  },
+  "type_info": {},
+  "format_info": {},
+  "capabilities": {}
+}
 ```
 
-**说明**：
-- **表格型数据 (TableInfo)**：结构化，具有行列结构，可以查询和预览字段，返回 `TableInfo` 对象
-  - 数据库表：PostgreSQL、MySQL、MongoDB 集合、ClickHouse 表
-  - 文件：CSV、Excel、Shapefile、GeoJSON、Parquet
-- **对象型数据 (ObjectInfo)**：非结构化的二进制数据，返回 `ObjectInfo` 对象
-  - 文件：图片（JPG/PNG/GIF/TIFF）、视频（MP4/AVI/MOV）、文档（PDF）
-
-### 可选扩展特性 (Extensions)
-
-数据的附加特性，通过 `ExtensionInfo` 机制实现：
-
-```mermaid
-graph TB
-    Extensions[扩展特性]
-
-    Extensions --> Spatial[空间扩展<br/>SpatialInfo]
-    Extensions --> Document[文档数据库扩展<br/>DocCollectionInfo]
-    Extensions --> CSV[CSV 扩展<br/>CSVInfo]
-    Extensions --> Media[媒体扩展<br/>ImageInfo/VideoInfo]
-
-    Spatial --> SpatialEx[适用于:<br/>PostGIS 表、Shapefile<br/>GeoJSON、GeoPackage<br/>包含: 几何字段、SRID、边界框]
-
-    Document --> DocEx[适用于:<br/>MongoDB、CouchDB<br/>包含: 动态 Schema、采样信息]
-
-    CSV --> CSVEx[适用于: CSV 文件<br/>包含: 分隔符、编码、表头信息]
-
-    Media --> MediaEx[适用于:<br/>图片: 宽高、格式、GPS<br/>视频: 时长、编码、帧率]
-
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef extension fill:#ffe0b2,stroke:#e65100
-    classDef example fill:#e8f5e9,stroke:#1b5e20
-
-    class Extensions root
-    class Spatial,Document,CSV,Media extension
-    class SpatialEx,DocEx,CSVEx,MediaEx example
-```
-
-**关键设计**：
-- **空间特性是扩展，不是独立类型**：PostGIS 表本质上是关系型数据库表，只是增加了空间字段
-- **文档数据库也是表格型的**：MongoDB 的集合也有行列结构，特殊性在于 Schema 动态（使用 `FieldTypeMixed`）
-- **文件不等于非结构化**：CSV、Shapefile 等文件也包含表格型数据
-
-### 数据分类矩阵
-
-| 存储位置 | 表格型数据 (TableInfo) | 对象型数据 (ObjectInfo) |
-|---------|----------------------|----------------------|
-| **table** | PostgreSQL 表<br/>MySQL 表<br/>MongoDB 集合<br/>ClickHouse 表 | --- |
-| **file** | CSV 文件<br/>Excel 文件<br/>Shapefile 文件<br/>GeoJSON 文件<br/>Parquet 文件 | 图片文件<br/>视频文件<br/>PDF 文件 |
-
-**扩展示例**：
-- PostgreSQL + PostGIS 表 = `TableInfo` + `SpatialInfo`
-- Shapefile 文件 = `TableInfo` + `SpatialInfo` + `ShapefileInfo`
-- MongoDB 集合 = `TableInfo` + `DocCollectionInfo`
-- JPG 图片 = `ObjectInfo` + `ImageInfo`
-
----
-
-## 数据格式体系
-
-ADDP 支持的文件格式按**数据特征**分类：
-
-```mermaid
-graph TB
-    Format[文件格式 File Format]
-
-    Format --> TableFormat[表格数据格式<br/>返回 TableInfo]
-    Format --> ObjectFormat[对象数据格式<br/>返回 ObjectInfo]
-
-    TableFormat --> TF1[通用表格格式]
-    TableFormat --> TF2[空间表格格式<br/>附加 SpatialInfo]
-
-    TF1 --> TF1a[CSV - 逗号分隔值<br/>.csv]
-    TF1 --> TF1b[Excel - 电子表格<br/>.xlsx, .xls]
-    TF1 --> TF1c[Parquet - 列式存储<br/>.parquet]
-
-    TF2 --> TF2a[Shapefile - 地理空间<br/>.shp + .shx + .dbf + .prj]
-    TF2 --> TF2b[GeoJSON - JSON 空间<br/>.geojson]
-    TF2 --> TF2c[GeoPackage - SQLite 空间<br/>.gpkg]
-
-    ObjectFormat --> OF1[图片<br/>JPG, PNG, GIF, TIFF<br/>+ ImageInfo]
-    ObjectFormat --> OF2[视频<br/>MP4, AVI, MOV<br/>+ VideoInfo]
-    ObjectFormat --> OF3[文档<br/>PDF, TXT<br/>+ PDFInfo]
-
-    classDef root fill:#fff9c4,stroke:#f57f17
-    classDef category fill:#e1f5ff,stroke:#01579b
-    classDef subcategory fill:#b2ebf2,stroke:#006064
-    classDef format fill:#e8f5e9,stroke:#1b5e20
-
-    class Format root
-    class TableFormat,ObjectFormat category
-    class TF1,TF2 subcategory
-    class TF1a,TF1b,TF1c,TF2a,TF2b,TF2c,OF1,OF2,OF3 format
-```
-
-### 格式支持列表
-
-| 数据特征 | 格式名称 | 扩展名 | 返回类型 | 扩展信息 | Parser 支持 | 预览支持 |
-|---------|---------|-------|---------|---------|-----------|---------|
-| **表格数据** | CSV | .csv | `TableInfo` | `CSVInfo` | ✅ CSVParser | ✅ TablePreview |
-| | Excel | .xlsx, .xls | `TableInfo` | `ExcelInfo` | ✅ ExcelParser | ✅ TablePreview |
-| | Parquet | .parquet | `TableInfo` | - | ✅ ParquetParser | ✅ TablePreview |
-| | SQLite | .db, .sqlite | `TableInfo` | - | ✅ SQLiteParser | ✅ TablePreview |
-| **表格数据<br/>+ 空间扩展** | Shapefile | .shp | `TableInfo` | `SpatialInfo`<br/>`ShapefileInfo` | ✅ ShapefileParser | ✅ ShapefilePreview |
-| | GeoJSON | .geojson | `TableInfo` | `SpatialInfo`<br/>`GeoJSONInfo` | ✅ GeoJSONParser | ✅ GeoJsonPreview |
-| | GeoPackage | .gpkg | `TableInfo` | `SpatialInfo` | ✅ GeoPackageParser | ✅ TablePreview |
-| **对象数据** | 图片 | .jpg, .png, .gif, .tiff | `ObjectInfo` | `ImageInfo` | ✅ ImageParser | ✅ ImagePreview |
-| | 视频 | .mp4, .avi, .mov | `ObjectInfo` | `VideoInfo` | ✅ VideoParser | ✅ VideoPreview |
-| | 文档 | .pdf | `ObjectInfo` | `PDFInfo` | ✅ PDFParser | ✅ PDFPreview |
-
-**说明**：
-- **表格数据格式**：生成 `TableInfo`，包含字段定义和记录，可以进行查询和分析
-- **空间表格格式**：在表格基础上增加 `SpatialInfo` 扩展，包含几何字段、SRID、边界框等信息
-- **对象数据格式**：生成 `ObjectInfo`，包含文件元数据（大小、修改时间）和格式特定扩展（如图片的宽高、视频的时长）
-
----
-
-## FieldType 统一类型系统
-
-ADDP 定义了统一的 `FieldType` 类型系统,所有 Parser 返回的字段类型都映射到这个系统:
-
-```mermaid
-classDiagram
-    class FieldType {
-        <<enumeration>>
-    }
-
-    class BasicTypes {
-        string 字符串
-        int 整数
-        bigint 大整数
-        float 浮点数
-        decimal 精确小数
-        bool 布尔值
-        date 日期
-        time 时间
-        timestamp 时间戳
-        bytes 字节数组
-    }
-
-    class SpatialTypes {
-        geometry 通用几何
-        point 点
-        linestring 线
-        polygon 多边形
-        multipoint 多点
-        multilinestring 多线
-        multipolygon 多多边形
-    }
-
-    class ComplexTypes {
-        json JSON对象
-        array 数组
-        uuid UUID
-        mixed 混合类型
-    }
-
-    FieldType --> BasicTypes
-    FieldType --> SpatialTypes
-    FieldType --> ComplexTypes
-
-    class SpecialCases {
-        mixed: MongoDB等NoSQL<br/>字段类型不固定
-    }
-
-    ComplexTypes --> SpecialCases
-```
-
-### FieldType 详细说明
-
-| 类型分类 | FieldType | 说明 | 映射示例 |
-|---------|-----------|------|---------|
-| **基础类型** | `string` | 字符串 | PostgreSQL: `varchar`, `text` |
-| | `int` | 整数 | PostgreSQL: `int`, `integer` |
-| | `bigint` | 大整数 | PostgreSQL: `bigint` |
-| | `float` | 浮点数 | PostgreSQL: `real`, `float` |
-| | `decimal` | 精确小数 | PostgreSQL: `numeric`, `decimal` |
-| | `bool` | 布尔值 | PostgreSQL: `boolean` |
-| | `date` | 日期 | PostgreSQL: `date` |
-| | `time` | 时间 | PostgreSQL: `time` |
-| | `timestamp` | 时间戳 | PostgreSQL: `timestamp` |
-| | `bytes` | 字节数组 | PostgreSQL: `bytea` |
-| **空间类型** | `geometry` | 通用几何 | PostGIS: `geometry` |
-| | `point` | 点 | PostGIS: `point` |
-| | `linestring` | 线 | PostGIS: `linestring` |
-| | `polygon` | 多边形 | PostGIS: `polygon` |
-| | `multipoint` | 多点 | PostGIS: `multipoint` |
-| **复杂类型** | `json` | JSON 对象 | PostgreSQL: `json`, `jsonb` |
-| | `array` | 数组 | PostgreSQL: `array` |
-| | `uuid` | UUID | PostgreSQL: `uuid` |
-| | `mixed` | 混合类型 | MongoDB: 同一字段不同文档类型不同 |
-
----
-
-## TypeMapper 类型映射
-
-ADDP 使用 `TypeMapper` 实现原生类型 ↔ FieldType 的双向转换:
-
-```mermaid
-sequenceDiagram
-    participant Parser as Parser
-    participant TypeMapper as TypeMapper
-    participant FieldType as FieldType 系统
-
-    Note over Parser,FieldType: 从数据源提取类型
-
-    Parser->>TypeMapper: 1. 提取原生类型<br/>(如 "varchar(255)")
-    TypeMapper->>TypeMapper: 2. 解析原生类型
-    TypeMapper->>FieldType: 3. 映射到 FieldType<br/>(如 "string")
-    FieldType-->>Parser: 4. 返回统一类型
-
-    Note over Parser,FieldType: 写入数据源时转换
-
-    Parser->>TypeMapper: 5. 提供 FieldType<br/>(如 "string")
-    TypeMapper->>TypeMapper: 6. 根据目标数据库<br/>选择原生类型
-    TypeMapper-->>Parser: 7. 返回原生类型<br/>(如 "VARCHAR(255)")
-```
-
-### TypeMapper 示例
-
-**PostgreSQL TypeMapper**:
-
-| 原生类型 | FieldType | 反向映射 |
-|---------|-----------|---------|
-| `varchar`, `text`, `char` | `string` | `VARCHAR(255)` |
-| `int`, `integer`, `int4` | `int` | `INTEGER` |
-| `bigint`, `int8` | `bigint` | `BIGINT` |
-| `real`, `float4` | `float` | `REAL` |
-| `numeric`, `decimal` | `decimal` | `NUMERIC` |
-| `boolean`, `bool` | `bool` | `BOOLEAN` |
-| `geometry` | `geometry` | `GEOMETRY` |
-| `point` | `point` | `POINT` |
-| `json`, `jsonb` | `json` | `JSONB` |
-
-**MongoDB TypeMapper**:
-
-| BSON 类型 | FieldType | 说明 |
-|-----------|-----------|------|
-| `string` | `string` | 字符串 |
-| `int`, `long` | `int`, `bigint` | 整数 |
-| `double` | `float` | 浮点数 |
-| `bool` | `bool` | 布尔值 |
-| `date` | `timestamp` | 日期时间 |
-| `object` | `json` | 嵌套对象 |
-| `array` | `array` | 数组 |
-| `mixed` | `mixed` | 混合类型(同一字段不同文档类型不同) |
-
-**Shapefile DBF TypeMapper**:
-
-| DBF 类型 | FieldType | 说明 |
-|----------|-----------|------|
-| `C` (Character) | `string` | 字符串 |
-| `N` (Numeric) | `int`, `decimal` | 数值(根据精度判断) |
-| `F` (Float) | `float` | 浮点数 |
-| `L` (Logical) | `bool` | 布尔值 |
-| `D` (Date) | `date` | 日期 |
-
----
-
-## 数据格式扩展
-
-ADDP 支持通过插件机制扩展新的数据格式,详细指南请参考:
-
-[ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
-
-**扩展步骤** (3 步):
-1. 在 `common/parser/` 创建新的 Parser 实现
-2. 实现对应的 Parser 接口(FileTableParser/ObjectInfoParser 等)
-3. 在 `common/parser/registry.go` 注册 Parser
-
----
-
-## 相关文档
-
-- [返回核心概念关系图](addp核心概念关系图.md)
-- [ADDP 元数据体系图](addp元数据体系图.md)
-- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
-
----
-
-**文档版本**: v2.0
-**创建日期**: 2026-02-16
-**更新日期**: 2026-02-16
-**更新说明**: 重新梳理数据类型分类，采用"存储位置"和"数据特征"两个正交维度，更准确地反映代码实际设计
-**作者**: ADDP 开发团队
+| 分区 | 回答的问题 | 示例 |
+|---|---|---|
+| `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、entry_path、component_files |
+| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
+| `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile components、SQLite version |
+| `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
+
+`meta_item` 表字段仍是 item 身份和归属的事实源。attributes 不重复保存 `id`、`tenant_id`、`engine_id`、`node_id`、`name`、`full_name`、`fingerprint` 等表字段。
+
+本文先定义概念目标。当前实现中的旧字段名和 spec 层结构应在后续修订中逐步对齐，不在本文中保留 `schema` 作为概念层兼容项。
+
+## 设计原则
+
+- ADDP 的核心层次是 `engine -> node -> data item`。
+- data item 是平台真正治理、预览、检索和传输的对象。
+- 组织方式表达资源如何成为 item，不表达数据是什么。
+- 数据类型表达用户如何理解 item，不表达资源如何组织。
+- 文件格式表达编码方式，不表达数据类型和组织方式。
+- 横切能力表达跨数据类型、跨格式的附加能力。
+- 容器是数据类型，不是组织方式。
+- “湖表”不是基础概念；Parquet、Iceberg 等都是 `table` 类型在不同组织方式和格式下的实现。
+- `ObjectInfo` 不作为概念层模型，存储侧对象信息归入 storage info。
+- 一个事实只有一个规范来源和一个规范存储点。
