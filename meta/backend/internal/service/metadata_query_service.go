@@ -391,11 +391,9 @@ func (s *MetadataQueryService) GetItemByPath(tenantID, engineID uint, bucketName
 		fullPath = bucketName + "/" + strings.TrimPrefix(objectPath, "/")
 	}
 
-	// 尝试多种路径匹配方式
 	err := s.db.Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
 		Where("item_type IN ?", []string{"object", "lake_table"}).
-		Where("(attributes->>'bucket' = ? AND (attributes->>'path' = ? OR attributes->>'relative_path' = ? OR full_name = ?))",
-			bucketName, fullPath, objectPath, fullPath).
+		Where("full_name = ?", fullPath).
 		First(&item).Error
 
 	if err != nil {

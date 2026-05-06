@@ -272,7 +272,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 
 			if err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ?",
 				tenantID, engineID, "object").
-				Where("attributes->>'bucket' = ?", bucketName).
+				Where("attributes->'storage'->>'bucket' = ?", bucketName).
 				Find(&existingItems).Error; err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
 					"bucket", bucketName,
@@ -837,7 +837,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 			// 查询该 bucket 下的所有对象
 			if err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ?",
 				tenantID, engineID, "object").
-				Where("attributes->>'bucket' = ?", bucketName).
+				Where("attributes->'storage'->>'bucket' = ?", bucketName).
 				Find(&existingItems).Error; err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
 					"bucket", bucketName,
@@ -1238,7 +1238,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 
 func inferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *dataitem.DetectedItem {
 	physicalPath := meta.Bucket + "/" + meta.Path
-	return dataitem.InferSingleFile(dataitem.SingleFileInput{
+	return dataitem.InferSingleResource(dataitem.SingleResourceInput{
 		Name:   objectName,
 		Path:   physicalPath,
 		Size:   meta.SizeBytes,

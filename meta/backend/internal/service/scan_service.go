@@ -455,14 +455,13 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	scanDepth = strings.ToLower(scanDepth)
 
 	// 标准化深度值：统一使用 basic/deep 命名
-	// 向后兼容：自动将旧版 shallow 转换为 basic
 	if scanDepth == "shallow" {
-		scanDepth = "basic" // 向后兼容：shallow 自动转为 basic
+		return nil, fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
 	}
 
 	// 验证有效值
 	if scanDepth != "basic" && scanDepth != "deep" {
-		scanDepth = "basic" // 无效值默认使用基础扫描
+		return nil, fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
 	}
 
 	startFields := append(connectionLogFields(resource),
@@ -1258,8 +1257,8 @@ func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, buck
 	if err := s.db.
 		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
 		Where("node_type = ?", "prefix").
-		Where("(attributes ->> 'bucket') = ?", bucketName).
-		Where("(attributes ->> 'path') = ? OR (attributes ->> 'path') LIKE ?", clean, clean+"/%").
+		Where("(attributes -> 'storage' ->> 'bucket') = ?", bucketName).
+		Where("(attributes -> 'storage' ->> 'path') = ? OR (attributes -> 'storage' ->> 'path') LIKE ?", clean, clean+"/%").
 		Find(&targetNodes).Error; err != nil {
 		return fmt.Errorf("failed to query prefix nodes for cleanup: %w", err)
 	}
@@ -1277,14 +1276,6 @@ func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, buck
 		if err := s.db.Unscoped().Where("id IN ?", ids).Delete(&models.MetaNode{}).Error; err != nil {
 			return fmt.Errorf("failed to delete prefix nodes: %w", err)
 		}
-	}
-
-	if err := s.db.Unscoped().
-		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
-		Where("(attributes ->> 'bucket') = ?", bucketName).
-		Where("(attributes ->> 'relative_path') = ? OR (attributes ->> 'relative_path') LIKE ?", clean, clean+"/%").
-		Delete(&models.MetaItem{}).Error; err != nil {
-		return fmt.Errorf("failed to delete object items by relative path: %w", err)
 	}
 
 	return nil

@@ -23,8 +23,8 @@ type DirectoryResolveInput struct {
 	RecursiveSubdirs []plugin.DirEntry
 }
 
-// SingleFileInput 是单文件 item 推断的输入。
-type SingleFileInput struct {
+// SingleResourceInput 是 single 组织方式 item 推断的输入。
+type SingleResourceInput struct {
 	Name        string
 	Path        string
 	Size        int64
@@ -145,16 +145,6 @@ func unclaimedFiles(files []plugin.FileEntry, claims ResourceClaimSet) []plugin.
 	return filtered
 }
 
-// ResolveDirectory 保留旧调用入口，返回第一个识别出的 item。
-// 新扫描流程应使用 ResolveItems，避免一个扫描范围只能产出一个 item。
-func ResolveDirectory(ctx context.Context, input DirectoryResolveInput) (*DetectedItem, error) {
-	result, err := ResolveItems(ctx, input)
-	if err != nil || result == nil || len(result.Items) == 0 {
-		return nil, err
-	}
-	return result.Items[0], nil
-}
-
 // BuildAttributes 将 detector 输出和标准 item 语义合并为可落库的 attributes。
 func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	if item == nil {
@@ -209,9 +199,9 @@ func mergeSection(existing interface{}, additions map[string]interface{}) map[st
 	return merged
 }
 
-// InferSingleFileItem 基于单个文件推断基础 item 语义。
-func InferSingleFileItem(file plugin.FileEntry) *DetectedItem {
-	return InferSingleFile(SingleFileInput{
+// InferSingleResourceItem 基于一个资源推断基础 item 语义。
+func InferSingleResourceItem(file plugin.FileEntry) *DetectedItem {
+	return InferSingleResource(SingleResourceInput{
 		Name:        file.Name,
 		Path:        file.Path,
 		Size:        file.Size,
@@ -219,8 +209,8 @@ func InferSingleFileItem(file plugin.FileEntry) *DetectedItem {
 	})
 }
 
-// InferSingleFile 基于单文件信息推断基础 item 语义。
-func InferSingleFile(input SingleFileInput) *DetectedItem {
+// InferSingleResource 基于单个资源信息推断基础 item 语义。
+func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	formatName := InferFormat(input.Name, input.ContentType, input.Format)
 	organization := OrganizationSingle
 	dataType := InferDataType(formatName, input.ContentType)

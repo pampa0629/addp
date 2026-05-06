@@ -410,19 +410,6 @@ func ExtractWholeScopeInfo(
 	return detector.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
-// ExtractDirectoryTreeInfo 保留为编译期过渡入口；新代码应使用 ExtractWholeScopeInfo。
-func ExtractDirectoryTreeInfo(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	dirPath string,
-	files []plugin.FileEntry,
-	subdirs []plugin.DirEntry,
-) (*dataitem.CompositeItemInfo, error) {
-	return ExtractWholeScopeInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
-}
-
 // ExtractSingleFileInfo 提取单个湖表文件的元信息（模式 B：文件即表）
 // 目前只有 .parquet 支持 Schema 解析，.orc/.avro 返回基础信息
 func ExtractSingleFileInfo(

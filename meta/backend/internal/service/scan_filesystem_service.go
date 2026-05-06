@@ -218,7 +218,7 @@ func (s *FileSystemScanService) scanDirectory(
 		if claimedPaths[file.Path] {
 			continue
 		}
-		detected := dataitem.InferSingleFileItem(file)
+		detected := dataitem.InferSingleResourceItem(file)
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
 			itemType := fileSystemSingleFileItemType(detected)
 			itemName := file.Name
@@ -233,11 +233,11 @@ func (s *FileSystemScanService) scanDirectory(
 			} else {
 				totalItems++
 				if itemType == "lake_table" && len(fields) > 0 {
-					s.log.Info("识别到单文件湖表", "path", file.Path, "name", itemName, "field_count", len(fields))
+					s.log.Info("识别到 single 资源湖表", "path", file.Path, "name", itemName, "field_count", len(fields))
 				}
 			}
 		} else {
-			s.log.Warn("提取单文件属性失败", "path", file.Path, "error", err)
+			s.log.Warn("提取 single 资源属性失败", "path", file.Path, "error", err)
 		}
 	}
 
@@ -313,12 +313,12 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	detected *dataitem.DetectedItem,
 ) (models.JSONMap, []format.FieldInfo, error) {
 	if detected == nil {
-		detected = dataitem.InferSingleFileItem(file)
+		detected = dataitem.InferSingleResourceItem(file)
 	}
 	if detected.ItemType == "lake_table" && commonParquet.IsLakeTableFileType(detected.Format) {
 		info, err := commonParquet.ExtractSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
-			s.log.Warn("提取单文件湖表信息失败，使用基础文件属性", "path", file.Path, "error", err)
+			s.log.Warn("提取 single 资源湖表信息失败，使用基础资源属性", "path", file.Path, "error", err)
 			return toJSONMap(dataitem.BuildAttributes(detected)), nil, nil
 		}
 		if info != nil {

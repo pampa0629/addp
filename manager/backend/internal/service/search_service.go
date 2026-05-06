@@ -685,7 +685,6 @@ func assignStringFromAttributes(meta map[string]interface{}, section, key string
 			}
 		}
 	}
-	assignString(meta, key, target)
 }
 
 func assignStringValue(value interface{}, target *string) {
@@ -722,18 +721,6 @@ func getStringFromMeta(meta map[string]interface{}, key string) string {
 	for _, section := range searchAttributeSectionsForKey(key) {
 		if value := getStringFromSection(meta, section, key); value != "" {
 			return value
-		}
-	}
-	if value, ok := meta[key]; ok {
-		switch v := value.(type) {
-		case string:
-			return v
-		case fmt.Stringer:
-			return v.String()
-		case []byte:
-			return string(v)
-		default:
-			return fmt.Sprintf("%v", v)
 		}
 	}
 	return ""
@@ -803,13 +790,10 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		name = getStringFromMeta(meta, "name")
 	}
 
-	// 构建 fileName（优先使用 name，然后是 FileName 字段，最后是 file_name metadata）
+	// 构建 fileName（优先使用标准 storage.name，然后是向量记录的 FileName 字段）
 	fileName := name
 	if fileName == "" {
 		fileName = v.FileName
-	}
-	if fileName == "" {
-		fileName = getStringFromMeta(meta, "file_name")
 	}
 	if fileName == "" {
 		fileName = v.DocumentID
@@ -886,13 +870,7 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	// meta-assets 使用 name 字段存储文件名
 	if val, ok := hitMap["name"].(string); ok {
 		doc.Name = val
-		doc.FileName = val // 保持兼容性
-	}
-	// 兼容旧的 file_name 字段（如果存在）
-	if doc.FileName == "" {
-		if val, ok := hitMap["file_name"].(string); ok {
-			doc.FileName = val
-		}
+		doc.FileName = val
 	}
 	if val, ok := hitMap["document_type"].(string); ok {
 		doc.DocumentType = val

@@ -111,9 +111,6 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	if plainText == "" {
 		plainText = extractedPlainTextFromAttributes(metadata)
 	}
-	if v, ok := metadata["plain_text"].(string); ok && plainText == "" {
-		plainText = v
-	}
 	delete(metadata, "plain_text")
 
 	// 准备文档内容字段

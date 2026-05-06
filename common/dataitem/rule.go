@@ -12,11 +12,6 @@ func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
 	return FormatRule{}, false
 }
 
-// MatchBuiltinSingleFileRule 保留为编译期过渡入口；新代码应使用 MatchBuiltinSingleResourceRule。
-func MatchBuiltinSingleFileRule(formatName string) (FormatRule, bool) {
-	return MatchBuiltinSingleResourceRule(formatName)
-}
-
 // BuiltinSingleResourceRules 返回 common/dataitem 内置的 single resource 和容器格式声明。
 func BuiltinSingleResourceRules() []FormatRule {
 	return []FormatRule{
@@ -35,11 +30,6 @@ func BuiltinSingleResourceRules() []FormatRule {
 		containerResourceRule("sqlite", DataTypeContainer, "file", []string{".sqlite", ".sqlite3", ".db"}),
 		containerResourceRule("geopackage", DataTypeContainer, "file", []string{".gpkg"}),
 	}
-}
-
-// BuiltinSingleFileRules 保留为编译期过渡入口；新代码应使用 BuiltinSingleResourceRules。
-func BuiltinSingleFileRules() []FormatRule {
-	return BuiltinSingleResourceRules()
 }
 
 func singleResourceRule(format string, family DataType, itemType string, exts []string) FormatRule {

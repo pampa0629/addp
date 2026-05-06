@@ -37,8 +37,8 @@ func TestInferFormatUsesMIMEBeforeFilenameFallback(t *testing.T) {
 	}
 }
 
-func TestInferSingleFileUsesCanonicalFormatForFamily(t *testing.T) {
-	item := InferSingleFile(SingleFileInput{
+func TestInferSingleResourceUsesCanonicalFormatForFamily(t *testing.T) {
+	item := InferSingleResource(SingleResourceInput{
 		Name:   "sheet.bin",
 		Path:   "bucket/sheet.xlsx",
 		Size:   42,
@@ -56,8 +56,8 @@ func TestInferSingleFileUsesCanonicalFormatForFamily(t *testing.T) {
 	}
 }
 
-func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
-	item := InferSingleFile(SingleFileInput{
+func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
+	item := InferSingleResource(SingleResourceInput{
 		Name: "data.gpkg",
 		Path: "bucket/data.gpkg",
 		Size: 42,
@@ -75,7 +75,7 @@ func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
 }
 
 func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
-	item := InferSingleFile(SingleFileInput{
+	item := InferSingleResource(SingleResourceInput{
 		Name:        "roads.geojson",
 		Path:        "bucket/roads.geojson",
 		Size:        42,
@@ -107,7 +107,7 @@ func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 }
 
 func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
-	item := InferSingleFile(SingleFileInput{Name: "roads.geojson", Path: "roads.geojson"})
+	item := InferSingleResource(SingleResourceInput{Name: "roads.geojson", Path: "roads.geojson"})
 	attrs := BuildAttributes(item)
 	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
 	if spatial["primary_geometry_column"] != "geometry" || spatial["has_spatial_index"] != false {
@@ -120,7 +120,7 @@ func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
 }
 
 func TestInferSingleTIFFWritesRasterSpatialShell(t *testing.T) {
-	item := InferSingleFile(SingleFileInput{Name: "scene.tif", Path: "scene.tif"})
+	item := InferSingleResource(SingleResourceInput{Name: "scene.tif", Path: "scene.tif"})
 	attrs := BuildAttributes(item)
 	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
 	if _, ok := spatial["extent"]; !ok {

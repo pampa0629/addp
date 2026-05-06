@@ -443,17 +443,8 @@ func (r *ScanRepository) generateFingerprint(
 	if attrs != nil {
 		// 对象存储：使用 bucket/path+name
 		if bucket := commonAttrs.String(attrs, "storage", "bucket"); bucket != "" {
-			// 优先从 name 字段获取文件名（新规范）
 			fileName := commonAttrs.String(attrs, "storage", "name")
-
-			// 获取目录路径
 			dir := commonAttrs.String(attrs, "storage", "path")
-			if dir == "" {
-				// 兼容旧数据：relative_path 包含完整路径，需要拆分
-				if rp := commonAttrs.String(attrs, "storage", "relative_path"); rp != "" {
-					dir, fileName = commonModels.SplitObjectPath(rp)
-				}
-			}
 
 			// 两步计算指纹：先拼接 full_name，再计算指纹
 			fullName := commonModels.JoinObjectPath(bucket, dir, fileName)

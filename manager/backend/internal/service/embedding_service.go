@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/addp/common/embedding"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/embedding"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
@@ -31,12 +31,12 @@ import (
 // 3. 数据更新检测（文件修改后重新向量化）
 // 4. 向量化状态查询
 type EmbeddingService struct {
-	vectorRepo    *repository.EmbeddingRepository
-	systemClient  *commonClient.SystemClient
+	vectorRepo      *repository.EmbeddingRepository
+	systemClient    *commonClient.SystemClient
 	embeddingClient embedding.MultiModalEmbedder
-	taskExecRepo  *commonRepo.TaskExecutionRepository
-	cfg           *config.Config
-	log           *slog.Logger
+	taskExecRepo    *commonRepo.TaskExecutionRepository
+	cfg             *config.Config
+	log             *slog.Logger
 }
 
 // NewEmbeddingService 创建向量化服务
@@ -77,11 +77,11 @@ func NewEmbeddingService(
 
 // EmbedObjectRequest 单对象向量化请求
 type EmbedObjectRequest struct {
-	EngineID  uint
-	Bucket    string
-	Path      string // 目录路径（以/结尾）
-	Name      string // 文件名
-	TenantID  *uint
+	EngineID uint
+	Bucket   string
+	Path     string // 目录路径（以/结尾）
+	Name     string // 文件名
+	TenantID *uint
 }
 
 // EmbedObjectResult 单对象向量化结果
@@ -229,13 +229,13 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 		tenantIDInt = int(*req.TenantID)
 	}
 	exec := &commonModels.TaskExecution{
-		ExecutionID:  executionID,
-		TenantID:     tenantIDInt,
-		Module:       commonModels.ModuleManager,
-		TaskType:     "embedding",
-		Status:       commonModels.ExecutionStatusRunning,
-		TriggerType:  commonModels.TriggerTypeManual,
-		StartedAt:    &startTime,
+		ExecutionID: executionID,
+		TenantID:    tenantIDInt,
+		Module:      commonModels.ModuleManager,
+		TaskType:    "embedding",
+		Status:      commonModels.ExecutionStatusRunning,
+		TriggerType: commonModels.TriggerTypeManual,
+		StartedAt:   &startTime,
 	}
 	if s.taskExecRepo != nil {
 		if err := s.taskExecRepo.Create(ctx, exec); err != nil {
@@ -339,8 +339,8 @@ func (s *EmbeddingService) finishExecution(ctx context.Context, executionID stri
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startTime).Milliseconds()
 	fields := map[string]interface{}{
-		"status":           status,
-		"completed_at":     completedAt,
+		"status":            status,
+		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 	}
 	if errDetails != nil {
@@ -628,14 +628,16 @@ func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, buc
 
 	// 构建 metadata（符合路径统一规范）
 	metadata := map[string]interface{}{
-		"engine_id":      engineID,
-		"engine_name":    engine.Name,
-		"engine_type":    engine.EngineType,
-		"bucket":         bucket,
-		"path":           path,        // 目录路径（以 / 结尾）
-		"name":           name,        // 文件名
-		"content_type":   objInfo.ContentType,
-		"last_modified":  objInfo.LastModified.Format(time.RFC3339),
+		"engine_id":   engineID,
+		"engine_name": engine.Name,
+		"engine_type": engine.EngineType,
+		"storage": map[string]interface{}{
+			"bucket":           bucket,
+			"path":             path,
+			"name":             name,
+			"content_type":     objInfo.ContentType,
+			"last_modified_at": objInfo.LastModified.Format(time.RFC3339),
+		},
 	}
 
 	// 转换为 JSON
