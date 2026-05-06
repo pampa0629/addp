@@ -18,9 +18,10 @@ func TestSetSchemaFieldsWritesPartitionOnly(t *testing.T) {
 	if attrs["fields"] != nil {
 		t.Fatalf("flat fields should not be written: %#v", attrs)
 	}
-	schema := attrs["schema"].(map[string]interface{})
-	if schema["fields"] == nil {
-		t.Fatalf("schema.fields missing: %#v", schema)
+	typeInfo := attrs["type_info"].(map[string]interface{})
+	table := typeInfo["table"].(map[string]interface{})
+	if table["fields"] == nil {
+		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
 }
 
@@ -28,8 +29,8 @@ func TestInferDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	t.Parallel()
 
 	name, fullName := inferDetectedItemName("/shp", &dataitem.DetectedItem{
-		CompositionType: dataitem.CompositionTypeMultiFile,
-		EntryPath:       "/shp/farmland.shp",
+		Organization: dataitem.OrganizationMulti,
+		EntryPath:    "/shp/farmland.shp",
 	})
 
 	if name != "farmland.shp" {
@@ -44,8 +45,8 @@ func TestInferDetectedItemNameUsesEntryPathForSingleFile(t *testing.T) {
 	t.Parallel()
 
 	name, fullName := inferDetectedItemName("/lake", &dataitem.DetectedItem{
-		CompositionType: dataitem.CompositionTypeSingleFile,
-		EntryPath:       "/lake/sales.parquet",
+		Organization: dataitem.OrganizationSingle,
+		EntryPath:    "/lake/sales.parquet",
 	})
 
 	if name != "sales.parquet" {
@@ -60,8 +61,8 @@ func TestInferDetectedItemNameKeepsDirectoryTreePath(t *testing.T) {
 	t.Parallel()
 
 	name, fullName := inferDetectedItemName("/lake/sales", &dataitem.DetectedItem{
-		CompositionType: dataitem.CompositionTypeDirectoryTree,
-		EntryPath:       "/lake/sales/_metadata",
+		Organization: dataitem.OrganizationWhole,
+		EntryPath:    "/lake/sales/_metadata",
 	})
 
 	if name != "sales" {
@@ -76,24 +77,24 @@ func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	t.Parallel()
 
 	got := fileSystemSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "csv",
-		CompositionType: dataitem.CompositionTypeSingleFile,
+		Format:       "csv",
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "table" {
 		t.Fatalf("itemType = %q, want table", got)
 	}
 
 	got = fileSystemSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "sqlite",
-		CompositionType: dataitem.CompositionTypeContainerFile,
+		Format:       "sqlite",
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "file" {
 		t.Fatalf("container itemType = %q, want file", got)
 	}
 
 	got = fileSystemSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "parquet",
-		CompositionType: dataitem.CompositionTypeSingleFile,
+		Format:       "parquet",
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "lake_table" {
 		t.Fatalf("parquet itemType = %q, want lake_table", got)

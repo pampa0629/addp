@@ -54,143 +54,13 @@ func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
 		return nil
 	}
 
-	normalized := copyJSONMapForAttributes(attrs)
+	normalized := models.JSONMap{}
 	normalized["schema_version"] = 1
 
-	storage := sectionJSONMap(normalized, "storage")
-	item := sectionJSONMap(normalized, "item")
-	schema := sectionJSONMap(normalized, "schema")
-	extensions := sectionJSONMap(normalized, "extensions")
-
-	moveKeysToSection(normalized, storage, []string{
-		"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
-		"size", "total_size", "content_type", "last_modified_at", "modified_at",
-		"etag", "file_type", "object_count",
-	})
-	if schemaName := stringValue(normalized["schema_name"]); schemaName != "" {
-		storage["schema_name"] = schemaName
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "capabilities"} {
+		normalized[section] = sectionJSONMap(attrs, section)
 	}
-	if legacySchemaName := stringValue(attrs["schema"]); legacySchemaName != "" {
-		storage["schema_name"] = legacySchemaName
-		item["namespace"] = legacySchemaName
-		normalized["schema_name"] = legacySchemaName
-	}
-
-	moveKeysToSection(normalized, item, []string{
-		"composition_type", "data_family", "format", "entry_path",
-		"component_files", "file_count", "mode",
-	})
-	moveKeysToSection(normalized, schema, []string{
-		"fields", "table_metadata", "table_type", "table_comment",
-		"primary_key", "indexes", "row_count", "document_count", "count",
-	})
-
-	if value, ok := normalized["spatial_metadata"]; ok {
-		setExtensionSection(extensions, "spatial", value)
-	}
-	if value, ok := normalized["plain_text_preview"]; ok {
-		setExtensionValue(extensions, "extraction", "plain_text_preview", value)
-	}
-	moveUnregisteredFlatExtensionKeys(normalized, extensions)
-
-	extensions = normalizeExtensionNamespaces(extensions)
-	removeFlatCompatibilityKeys(normalized)
-
-	normalized["storage"] = storage
-	normalized["item"] = item
-	normalized["schema"] = schema
-	normalized["extensions"] = extensions
 	return normalized
-}
-
-var allowedFlatAttributeKeys = map[string]struct{}{
-	"schema_version": {},
-	"storage":        {},
-	"item":           {},
-	"schema":         {},
-	"extensions":     {},
-
-	"bucket":           {},
-	"path":             {},
-	"relative_path":    {},
-	"name":             {},
-	"physical_path":    {},
-	"size_bytes":       {},
-	"size":             {},
-	"total_size":       {},
-	"content_type":     {},
-	"last_modified_at": {},
-	"modified_at":      {},
-	"etag":             {},
-	"file_type":        {},
-	"object_count":     {},
-	"schema_name":      {},
-
-	"composition_type": {},
-	"data_family":      {},
-	"format":           {},
-	"entry_path":       {},
-	"component_files":  {},
-	"file_count":       {},
-	"mode":             {},
-
-	"fields":         {},
-	"table_metadata": {},
-	"table_type":     {},
-	"table_comment":  {},
-	"primary_key":    {},
-	"indexes":        {},
-	"row_count":      {},
-	"document_count": {},
-	"count":          {},
-
-	"spatial_metadata": {},
-
-	"plain_text_preview": {},
-}
-
-var flatCompatibilityKeys = []string{
-	"bucket", "path", "relative_path", "name", "physical_path", "size_bytes",
-	"size", "total_size", "content_type", "last_modified_at", "modified_at",
-	"etag", "file_type", "object_count", "schema_name",
-	"composition_type", "data_family", "format", "entry_path",
-	"component_files", "file_count", "mode",
-	"fields", "table_metadata", "table_type", "table_comment",
-	"primary_key", "indexes", "row_count", "document_count", "count",
-	"spatial_metadata",
-	"plain_text_preview",
-}
-
-func moveUnregisteredFlatExtensionKeys(attrs models.JSONMap, extensions map[string]interface{}) {
-	unqualified := map[string]interface{}{}
-	if existing, ok := extensions["unqualified"].(map[string]interface{}); ok {
-		for k, v := range existing {
-			unqualified[k] = v
-		}
-	}
-	for key, value := range attrs {
-		if _, allowed := allowedFlatAttributeKeys[key]; allowed {
-			continue
-		}
-		if value == nil {
-			continue
-		}
-		if _, exists := unqualified[key]; !exists {
-			unqualified[key] = value
-		}
-		delete(attrs, key)
-	}
-	if len(unqualified) > 0 {
-		extensions["unqualified"] = unqualified
-	}
-}
-
-func copyJSONMapForAttributes(attrs models.JSONMap) models.JSONMap {
-	copied := make(models.JSONMap, len(attrs)+5)
-	for k, v := range attrs {
-		copied[k] = v
-	}
-	return copied
 }
 
 func sectionJSONMap(attrs models.JSONMap, key string) map[string]interface{} {
@@ -201,23 +71,6 @@ func sectionJSONMap(attrs models.JSONMap, key string) map[string]interface{} {
 		return map[string]interface{}(section)
 	}
 	return map[string]interface{}{}
-}
-
-func moveKeysToSection(attrs models.JSONMap, section map[string]interface{}, keys []string) {
-	for _, key := range keys {
-		if value, ok := attrs[key]; ok {
-			if _, exists := section[key]; exists {
-				continue
-			}
-			section[key] = value
-		}
-	}
-}
-
-func removeFlatCompatibilityKeys(attrs models.JSONMap) {
-	for _, key := range flatCompatibilityKeys {
-		delete(attrs, key)
-	}
 }
 
 func upsertSection(attrs models.JSONMap, key string, values map[string]interface{}) {
@@ -249,126 +102,33 @@ func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, v
 	if attrs == nil || namespace == "" || key == "" {
 		return
 	}
-	namespace = normalizeExtensionNamespace(namespace)
-	extensions := sectionJSONMap(attrs, "extensions")
-	namespaceAttrs := map[string]interface{}{}
-	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
-		for k, v := range existing {
-			namespaceAttrs[k] = v
-		}
-	}
-	namespaceAttrs[key] = value
-	extensions[namespace] = namespaceAttrs
-	attrs["extensions"] = extensions
-}
-
-func normalizeExtensionNamespaces(extensions map[string]interface{}) map[string]interface{} {
-	if len(extensions) == 0 {
-		return extensions
-	}
-	normalized := map[string]interface{}{}
-	unqualified := map[string]interface{}{}
-	for namespace, value := range extensions {
-		cleanNamespace := normalizeExtensionNamespace(namespace)
-		if cleanNamespace == "unqualified" && namespace != "unqualified" {
-			unqualified[namespace] = value
-			continue
-		}
-		if existing, ok := normalized[cleanNamespace].(map[string]interface{}); ok {
-			if incoming, ok := value.(map[string]interface{}); ok {
-				for k, v := range incoming {
-					existing[k] = v
-				}
-				continue
-			}
-		}
-		normalized[cleanNamespace] = value
-	}
-	if len(unqualified) > 0 {
-		if existing, ok := normalized["unqualified"].(map[string]interface{}); ok {
-			for k, v := range unqualified {
-				existing[k] = v
-			}
-		} else {
-			normalized["unqualified"] = unqualified
-		}
-	}
-	return normalized
-}
-
-func normalizeExtensionNamespace(namespace string) string {
 	namespace = strings.ToLower(strings.TrimSpace(namespace))
 	switch namespace {
-	case "spatial", "media", "document", "statistics", "extraction", "unqualified":
-		return namespace
+	case "media", "document":
+		upsertNestedSection(attrs, "type_info", namespace, map[string]interface{}{key: value})
+	case "spatial", "statistics", "extraction", "semantic", "temporal", "partitioning", "indexing":
+		upsertNestedSection(attrs, "capabilities", namespace, map[string]interface{}{key: value})
+	default:
+		upsertNestedSection(attrs, "format_info", "unqualified", map[string]interface{}{key: value})
 	}
-	if isPrivateExtensionNamespace(namespace) {
-		return namespace
-	}
-	return "unqualified"
 }
 
-func isPrivateExtensionNamespace(namespace string) bool {
-	if namespace == "" || strings.Contains(namespace, "..") {
-		return false
-	}
-	hasSeparator := strings.Contains(namespace, ".") || strings.Contains(namespace, "_") || strings.Contains(namespace, "-")
-	if !hasSeparator {
-		return false
-	}
-	for _, part := range strings.FieldsFunc(namespace, func(r rune) bool {
-		return r == '.' || r == '_' || r == '-'
-	}) {
-		if part == "" {
-			return false
-		}
-		for i, r := range part {
-			if r >= 'a' && r <= 'z' {
-				continue
-			}
-			if r >= '0' && r <= '9' && i > 0 {
-				continue
-			}
-			return false
-		}
-	}
-	return true
-}
-
-func setExtensionSection(extensions map[string]interface{}, key string, value interface{}) {
-	key = normalizeExtensionNamespace(key)
-	if existing, ok := extensions[key].(map[string]interface{}); ok {
-		existingKey := key + "_metadata"
-		if _, exists := existing[existingKey]; !exists {
-			existing[existingKey] = value
-		}
+func upsertNestedSection(attrs models.JSONMap, section string, namespace string, values map[string]interface{}) {
+	if attrs == nil || section == "" || namespace == "" || len(values) == 0 {
 		return
 	}
-	extensions[key] = map[string]interface{}{
-		key + "_metadata": value,
-	}
-}
-
-func setExtensionValue(extensions map[string]interface{}, namespace string, key string, value interface{}) {
-	if extensions == nil || namespace == "" || key == "" {
-		return
-	}
-	namespace = normalizeExtensionNamespace(namespace)
+	sectionAttrs := sectionJSONMap(attrs, section)
 	namespaceAttrs := map[string]interface{}{}
-	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
+	if existing, ok := sectionAttrs[namespace].(map[string]interface{}); ok {
 		for k, v := range existing {
 			namespaceAttrs[k] = v
 		}
 	}
-	namespaceAttrs[key] = value
-	extensions[namespace] = namespaceAttrs
-}
-
-func stringValue(value interface{}) string {
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
+	for k, v := range values {
+		namespaceAttrs[k] = v
 	}
-	return ""
+	sectionAttrs[namespace] = namespaceAttrs
+	attrs[section] = sectionAttrs
 }
 
 // ============================================================================

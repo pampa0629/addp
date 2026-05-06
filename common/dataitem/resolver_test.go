@@ -48,11 +48,11 @@ func TestInferSingleFileUsesCanonicalFormatForFamily(t *testing.T) {
 	if item.Format != string(format.FormatExcel) {
 		t.Fatalf("Format = %q, want %q", item.Format, format.FormatExcel)
 	}
-	if item.DataFamily != DataFamilyTabular {
-		t.Fatalf("DataFamily = %q, want %q", item.DataFamily, DataFamilyTabular)
+	if item.DataType != DataTypeContainer {
+		t.Fatalf("DataType = %q, want %q", item.DataType, DataTypeContainer)
 	}
-	if item.ItemType != "table" {
-		t.Fatalf("ItemType = %q, want table", item.ItemType)
+	if item.ItemType != "file" {
+		t.Fatalf("ItemType = %q, want file", item.ItemType)
 	}
 }
 
@@ -63,11 +63,11 @@ func TestInferSingleFileDetectsContainerComposition(t *testing.T) {
 		Size: 42,
 	})
 
-	if item.CompositionType != CompositionTypeContainerFile {
-		t.Fatalf("CompositionType = %q, want %q", item.CompositionType, CompositionTypeContainerFile)
+	if item.Organization != OrganizationSingle {
+		t.Fatalf("Organization = %q, want %q", item.Organization, OrganizationSingle)
 	}
-	if item.DataFamily != DataFamilyTabular {
-		t.Fatalf("DataFamily = %q, want %q", item.DataFamily, DataFamilyTabular)
+	if item.DataType != DataTypeContainer {
+		t.Fatalf("DataType = %q, want %q", item.DataType, DataTypeContainer)
 	}
 	if item.ItemType != "file" {
 		t.Fatalf("ItemType = %q, want file", item.ItemType)
@@ -84,16 +84,16 @@ func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 	attrs := BuildAttributes(item)
 	itemAttrs := attrs["item"].(map[string]interface{})
-	if itemAttrs["composition_type"] != string(CompositionTypeSingleFile) {
-		t.Fatalf("item.composition_type = %v, want %s", itemAttrs["composition_type"], CompositionTypeSingleFile)
+	if itemAttrs["organization"] != string(OrganizationSingle) {
+		t.Fatalf("item.organization = %v, want %s", itemAttrs["organization"], OrganizationSingle)
 	}
-	if itemAttrs["data_family"] != string(DataFamilyTabular) {
-		t.Fatalf("item.data_family = %v, want %s", itemAttrs["data_family"], DataFamilyTabular)
+	if itemAttrs["data_type"] != string(DataTypeTable) {
+		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], DataTypeTable)
 	}
 	if itemAttrs["format"] != string(format.FormatGeoJSON) {
 		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatGeoJSON)
 	}
-	if attrs["data_family"] != nil || attrs["format"] != nil {
+	if attrs["data_type"] != nil || attrs["format"] != nil {
 		t.Fatalf("flat item fields should not be written: %#v", attrs)
 	}
 
@@ -106,22 +106,22 @@ func TestBuildAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	}
 }
 
-func TestInferDataFamilyCanonicalizesCommonAliases(t *testing.T) {
+func TestInferDataTypeCanonicalizesCommonAliases(t *testing.T) {
 	tests := []struct {
 		formatName string
-		want       DataFamily
+		want       DataType
 	}{
-		{formatName: "jpg", want: DataFamilyImage},
-		{formatName: "xlsx", want: DataFamilyTabular},
-		{formatName: "gpkg", want: DataFamilyTabular},
-		{formatName: "orc", want: DataFamilyTabular},
+		{formatName: "jpg", want: DataTypeMedia},
+		{formatName: "xlsx", want: DataTypeContainer},
+		{formatName: "gpkg", want: DataTypeContainer},
+		{formatName: "orc", want: DataTypeTable},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.formatName, func(t *testing.T) {
-			got := InferDataFamily(tt.formatName, "")
+			got := InferDataType(tt.formatName, "")
 			if got != tt.want {
-				t.Fatalf("InferDataFamily() = %q, want %q", got, tt.want)
+				t.Fatalf("InferDataType() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -148,7 +148,7 @@ func TestResolveItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
 	first := &testScopeDetector{
 		priority: 20,
 		result: &DetectionResult{
-			Items:  []*DetectedItem{{ItemType: "table", CompositionType: CompositionTypeMultiFile, EntryPath: "/shp/roads.shp"}},
+			Items:  []*DetectedItem{{ItemType: "table", Organization: OrganizationMulti, EntryPath: "/shp/roads.shp"}},
 			Claims: ResourceClaimSet{"/shp/roads.shp": true},
 		},
 	}

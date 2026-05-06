@@ -4,11 +4,11 @@ import "testing"
 
 func TestValidateFormatRuleAcceptsMultiFileRule(t *testing.T) {
 	rule := FormatRule{
-		Format:          "shapefile",
-		DataFamily:      DataFamilyTabular,
-		ItemType:        "table",
-		CompositionType: CompositionTypeMultiFile,
-		Entry:           EntryRule{Extensions: []string{".shp"}},
+		Format:       "shapefile",
+		DataType:     DataTypeTable,
+		ItemType:     "table",
+		Organization: OrganizationMulti,
+		Entry:        EntryRule{Extensions: []string{".shp"}},
 		Components: &ComponentRule{
 			RequiredExtensions: []string{".shp", ".shx", ".dbf"},
 			EntryExtension:     ".shp",
@@ -22,29 +22,29 @@ func TestValidateFormatRuleAcceptsMultiFileRule(t *testing.T) {
 
 func TestValidateFormatRuleRejectsSingleFileComponents(t *testing.T) {
 	rule := FormatRule{
-		Format:          "csv",
-		DataFamily:      DataFamilyTabular,
-		ItemType:        "table",
-		CompositionType: CompositionTypeSingleFile,
-		Entry:           EntryRule{Extensions: []string{".csv"}},
-		Components:      &ComponentRule{},
+		Format:       "csv",
+		DataType:     DataTypeTable,
+		ItemType:     "table",
+		Organization: OrganizationSingle,
+		Entry:        EntryRule{Extensions: []string{".csv"}},
+		Components:   &ComponentRule{},
 	}
 
 	if err := ValidateFormatRule(rule); err == nil {
-		t.Fatal("expected single_file rule with Components to be rejected")
+		t.Fatal("expected single rule with Components to be rejected")
 	}
 }
 
 func TestValidateFormatRuleRejectsDirectoryTreeWithoutRule(t *testing.T) {
 	rule := FormatRule{
-		Format:          "parquet",
-		DataFamily:      DataFamilyTabular,
-		ItemType:        "lake_table",
-		CompositionType: CompositionTypeDirectoryTree,
+		Format:       "parquet",
+		DataType:     DataTypeTable,
+		ItemType:     "lake_table",
+		Organization: OrganizationWhole,
 	}
 
 	if err := ValidateFormatRule(rule); err == nil {
-		t.Fatal("expected directory_tree rule without DirectoryTree to be rejected")
+		t.Fatal("expected whole rule without WholeScope to be rejected")
 	}
 }
 
@@ -61,13 +61,13 @@ func TestBuiltinSingleFileRulesAreValid(t *testing.T) {
 		if err := ValidateFormatRule(rule); err != nil {
 			t.Fatalf("ValidateFormatRule(%s) error = %v", rule.Format, err)
 		}
-		if rule.Format == "csv" && rule.CompositionType == CompositionTypeSingleFile {
+		if rule.Format == "csv" && rule.Organization == OrganizationSingle {
 			seenCSV = true
 		}
-		if rule.Format == "geopackage" && rule.CompositionType == CompositionTypeContainerFile {
+		if rule.Format == "geopackage" && rule.Organization == OrganizationSingle {
 			seenGeoPackage = true
 		}
-		if rule.Format == "parquet" && rule.ItemType == "lake_table" && rule.CompositionType == CompositionTypeSingleFile {
+		if rule.Format == "parquet" && rule.ItemType == "lake_table" && rule.Organization == OrganizationSingle {
 			seenParquet = true
 		}
 	}
@@ -81,7 +81,10 @@ func TestMatchBuiltinSingleFileRule(t *testing.T) {
 	if !ok {
 		t.Fatal("expected geopackage rule to match")
 	}
-	if rule.CompositionType != CompositionTypeContainerFile {
-		t.Fatalf("CompositionType = %q, want container_file", rule.CompositionType)
+	if rule.Organization != OrganizationSingle {
+		t.Fatalf("Organization = %q, want single", rule.Organization)
+	}
+	if rule.DataType != DataTypeContainer {
+		t.Fatalf("DataType = %q, want container", rule.DataType)
 	}
 }

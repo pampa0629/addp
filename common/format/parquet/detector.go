@@ -28,25 +28,22 @@ var lakeTableAuxiliaryFileNames = map[string]bool{
 
 var lakeTableRules = []dataitem.FormatRule{
 	{
-		Format:          "parquet",
-		DataFamily:      dataitem.DataFamilyTabular,
-		ItemType:        "lake_table",
-		CompositionType: dataitem.CompositionTypeSingleFile,
-		Priority:        40,
+		Format:       "parquet",
+		DataType:     dataitem.DataTypeTable,
+		ItemType:     "lake_table",
+		Organization: dataitem.OrganizationSingle,
+		Priority:     40,
 		Entry: dataitem.EntryRule{
 			Extensions: []string{".parquet", ".orc", ".avro"},
 		},
 	},
 	{
-		Format:          "parquet",
-		DataFamily:      dataitem.DataFamilyTabular,
-		ItemType:        "lake_table",
-		CompositionType: dataitem.CompositionTypeDirectoryTree,
-		Priority:        80,
-		Entry: dataitem.EntryRule{
-			Extensions: []string{".parquet", ".orc", ".avro"},
-		},
-		DirectoryTree: &dataitem.DirectoryTreeRule{
+		Format:       "parquet",
+		DataType:     dataitem.DataTypeTable,
+		ItemType:     "lake_table",
+		Organization: dataitem.OrganizationWhole,
+		Priority:     80,
+		WholeScope: &dataitem.WholeScopeRule{
 			AllowRecursive:       true,
 			IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
 			RequiresStrongMatch:  true,
@@ -100,16 +97,16 @@ func (d *LakeTableDetector) ResolveItems(
 		totalSize = *info.SizeBytes
 	}
 	item := &dataitem.DetectedItem{
-		ItemType:        d.ItemType(),
-		CompositionType: info.CompositionType,
-		DataFamily:      info.DataFamily,
-		Format:          info.Format,
-		PhysicalPath:    input.DirPath,
-		EntryPath:       info.EntryPath,
-		ComponentFiles:  info.ComponentFiles,
-		SizeBytes:       totalSize,
-		Fields:          info.Fields,
-		Attributes:      info.Attributes,
+		ItemType:       d.ItemType(),
+		Organization:   info.Organization,
+		DataType:       info.DataType,
+		Format:         info.Format,
+		PhysicalPath:   input.DirPath,
+		EntryPath:      info.EntryPath,
+		ComponentFiles: info.ComponentFiles,
+		SizeBytes:      totalSize,
+		Fields:         info.Fields,
+		Attributes:     info.Attributes,
 	}
 	claims := dataitem.ResourceClaimSet{}
 	for _, path := range item.ComponentFiles {
@@ -118,7 +115,7 @@ func (d *LakeTableDetector) ResolveItems(
 	return &dataitem.DetectionResult{
 		Items:     []*dataitem.DetectedItem{item},
 		Claims:    claims,
-		Exclusive: item.CompositionType == dataitem.CompositionTypeDirectoryTree,
+		Exclusive: item.Organization == dataitem.OrganizationWhole,
 	}, nil
 }
 
@@ -246,14 +243,14 @@ func lakeTableEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dir
 	return dirPath
 }
 
-func lakeTableCompositionType(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.CompositionType {
+func lakeTableOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.Organization {
 	if len(subdirs) > 0 {
-		return dataitem.CompositionTypeDirectoryTree
+		return dataitem.OrganizationWhole
 	}
 	if len(directLakeTableFiles(files, dirPath)) > 1 || len(lakeTableFiles(files)) > 1 {
-		return dataitem.CompositionTypeDirectoryTree
+		return dataitem.OrganizationWhole
 	}
-	return dataitem.CompositionTypeSingleFile
+	return dataitem.OrganizationSingle
 }
 
 func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
@@ -294,36 +291,45 @@ func lakeTableFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 
 func lakeTableAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64) map[string]interface{} {
 	attrs := map[string]interface{}{
-		"format":        formatName,
-		"mode":          mode,
-		"file_count":    len(files),
-		"total_size":    totalSize,
-		"physical_path": dirPath,
+		"storage": map[string]interface{}{
+			"physical_path": dirPath,
+			"total_size":    totalSize,
+		},
+		"format_info": map[string]interface{}{
+			formatName: map[string]interface{}{
+				"mode":       mode,
+				"file_count": len(files),
+			},
+		},
 	}
 	if len(fieldsData) > 0 {
-		attrs["fields"] = fieldsData
+		attrs["type_info"] = map[string]interface{}{
+			"table": map[string]interface{}{
+				"fields": fieldsData,
+			},
+		}
 	}
 	return attrs
 }
 
 func lakeTableMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
-	if lakeTableCompositionType(files, subdirs, dirPath) == dataitem.CompositionTypeDirectoryTree {
-		return "directory_tree"
+	if lakeTableOrganization(files, subdirs, dirPath) == dataitem.OrganizationWhole {
+		return "whole"
 	}
-	return "file"
+	return "single"
 }
 
 func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *dataitem.CompositeItemInfo {
 	totalSize := lakeTableSize(files)
 	formatName := detectFormat(files)
 	return &dataitem.CompositeItemInfo{
-		CompositionType: lakeTableCompositionType(files, subdirs, dirPath),
-		DataFamily:      dataitem.DataFamilyTabular,
-		Format:          formatName,
-		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
-		ComponentFiles:  filePaths(files),
-		SizeBytes:       &totalSize,
-		Attributes:      lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
+		Organization:   lakeTableOrganization(files, subdirs, dirPath),
+		DataType:       dataitem.DataTypeTable,
+		Format:         formatName,
+		EntryPath:      lakeTableEntryPath(files, subdirs, dirPath),
+		ComponentFiles: filePaths(files),
+		SizeBytes:      &totalSize,
+		Attributes:     lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
 	}
 }
 
@@ -365,14 +371,14 @@ func (d *LakeTableDetector) extractLakeTableInfo(
 	formatName := detectFormat(files)
 	fieldsData := lakeTableFieldAttributes(tableInfo.Fields)
 	return &dataitem.CompositeItemInfo{
-		Fields:          tableInfo.Fields,
-		CompositionType: lakeTableCompositionType(files, subdirs, dirPath),
-		DataFamily:      dataitem.DataFamilyTabular,
-		Format:          formatName,
-		EntryPath:       lakeTableEntryPath(files, subdirs, dirPath),
-		ComponentFiles:  filePaths(files),
-		SizeBytes:       &totalSize,
-		Attributes:      lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
+		Fields:         tableInfo.Fields,
+		Organization:   lakeTableOrganization(files, subdirs, dirPath),
+		DataType:       dataitem.DataTypeTable,
+		Format:         formatName,
+		EntryPath:      lakeTableEntryPath(files, subdirs, dirPath),
+		ComponentFiles: filePaths(files),
+		SizeBytes:      &totalSize,
+		Attributes:     lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
 	}, nil
 }
 
@@ -420,19 +426,13 @@ func ExtractSingleFileInfo(
 	// 非 parquet 格式暂不解析 Schema
 	if ext != ".parquet" {
 		return &dataitem.CompositeItemInfo{
-			CompositionType: dataitem.CompositionTypeSingleFile,
-			DataFamily:      dataitem.DataFamilyTabular,
-			Format:          format,
-			EntryPath:       filePath,
-			ComponentFiles:  []string{filePath},
-			SizeBytes:       &fileSize,
-			Attributes: map[string]interface{}{
-				"format":        format,
-				"mode":          "file",
-				"file_count":    1,
-				"total_size":    fileSize,
-				"physical_path": filePath,
-			},
+			Organization:   dataitem.OrganizationSingle,
+			DataType:       dataitem.DataTypeTable,
+			Format:         format,
+			EntryPath:      filePath,
+			ComponentFiles: []string{filePath},
+			SizeBytes:      &fileSize,
+			Attributes:     lakeTableAttributes(format, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 		}, nil
 	}
 
@@ -447,19 +447,13 @@ func ExtractSingleFileInfo(
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &dataitem.CompositeItemInfo{
-			CompositionType: dataitem.CompositionTypeSingleFile,
-			DataFamily:      dataitem.DataFamilyTabular,
-			Format:          "parquet",
-			EntryPath:       filePath,
-			ComponentFiles:  []string{filePath},
-			SizeBytes:       &fileSize,
-			Attributes: map[string]interface{}{
-				"format":        "parquet",
-				"mode":          "file",
-				"file_count":    1,
-				"total_size":    fileSize,
-				"physical_path": filePath,
-			},
+			Organization:   dataitem.OrganizationSingle,
+			DataType:       dataitem.DataTypeTable,
+			Format:         "parquet",
+			EntryPath:      filePath,
+			ComponentFiles: []string{filePath},
+			SizeBytes:      &fileSize,
+			Attributes:     lakeTableAttributes("parquet", "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 		}, nil
 	}
 
@@ -474,21 +468,14 @@ func ExtractSingleFileInfo(
 	}
 
 	return &dataitem.CompositeItemInfo{
-		Fields:          tableInfo.Fields,
-		CompositionType: dataitem.CompositionTypeSingleFile,
-		DataFamily:      dataitem.DataFamilyTabular,
-		Format:          "parquet",
-		EntryPath:       filePath,
-		ComponentFiles:  []string{filePath},
-		SizeBytes:       &fileSize,
-		Attributes: map[string]interface{}{
-			"format":        "parquet",
-			"mode":          "file",
-			"fields":        fieldsData,
-			"file_count":    1,
-			"total_size":    fileSize,
-			"physical_path": filePath,
-		},
+		Fields:         tableInfo.Fields,
+		Organization:   dataitem.OrganizationSingle,
+		DataType:       dataitem.DataTypeTable,
+		Format:         "parquet",
+		EntryPath:      filePath,
+		ComponentFiles: []string{filePath},
+		SizeBytes:      &fileSize,
+		Attributes:     lakeTableAttributes("parquet", "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 	}, nil
 }
 
@@ -500,19 +487,13 @@ func buildBasicInfo(files []plugin.FileEntry, dirPath string) *dataitem.Composit
 	}
 	format := detectFormat(files)
 	return &dataitem.CompositeItemInfo{
-		CompositionType: dataitem.CompositionTypeDirectoryTree,
-		DataFamily:      dataitem.DataFamilyTabular,
-		Format:          format,
-		EntryPath:       dirPath,
-		ComponentFiles:  filePaths(files),
-		SizeBytes:       &totalSize,
-		Attributes: map[string]interface{}{
-			"format":        format,
-			"mode":          "directory",
-			"file_count":    len(files),
-			"total_size":    totalSize,
-			"physical_path": dirPath,
-		},
+		Organization:   dataitem.OrganizationWhole,
+		DataType:       dataitem.DataTypeTable,
+		Format:         format,
+		EntryPath:      dirPath,
+		ComponentFiles: filePaths(files),
+		SizeBytes:      &totalSize,
+		Attributes:     lakeTableAttributes(format, "whole", nil, files, dirPath, totalSize),
 	}
 }
 

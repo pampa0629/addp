@@ -11,7 +11,7 @@ func TestSearchAttributeReadersPreferStandardSections(t *testing.T) {
 		"storage": map[string]interface{}{
 			"name": "standard.pdf",
 		},
-		"extensions": map[string]interface{}{
+		"type_info": map[string]interface{}{
 			"document": map[string]interface{}{
 				"title": "standard title",
 			},
@@ -26,7 +26,7 @@ func TestSearchAttributeReadersPreferStandardSections(t *testing.T) {
 	}
 
 	var assigned string
-	assignStringFromAttributes(meta, "extensions.document", "title", &assigned)
+	assignStringFromAttributes(meta, "type_info.document", "title", &assigned)
 	if assigned != "standard title" {
 		t.Fatalf("assigned title = %q, want standard title", assigned)
 	}

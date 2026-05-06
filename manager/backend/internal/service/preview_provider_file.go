@@ -345,7 +345,6 @@ func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {
 		return ""
 	}
 	for _, path := range []string{
-		stringAttribute(req.Attributes, "entry_path"),
 		req.PhysicalPath,
 	} {
 		path = strings.Trim(path, "/")
@@ -366,9 +365,6 @@ func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {
 func itemEntryPath(req *PreviewRequest, fallback string) string {
 	if req == nil {
 		return fallback
-	}
-	if entryPath := stringAttribute(req.Attributes, "entry_path"); entryPath != "" {
-		return entryPath
 	}
 	if req.PhysicalPath != "" {
 		return req.PhysicalPath

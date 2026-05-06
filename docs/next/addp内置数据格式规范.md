@@ -45,7 +45,7 @@ GeoJSON FeatureCollection 是空间矢量表。`FeatureCollection.features[].pro
 | `data_type` | `table` |
 | `format` | `shapefile` |
 | `organization` | `multi` |
-| 入口文件 | `.shp` |
+| 主文件 | `.shp`，即 `meta_item.full_name` |
 
 Shapefile 是空间矢量表，不是单个 `.shp` 文件。`.shp`、`.shx`、`.dbf` 必须共同构成一个 item；`.prj`、`.cpg`、`.sbn`、`.sbx` 等为可选组件。
 
@@ -53,7 +53,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。`.shp`、`.shx`、`.
 
 - 必需组件：`.shp`、`.shx`、`.dbf`。
 - 可选组件：`.prj`、`.cpg`、`.sbn`、`.sbx`。
-- 入口文件：`.shp`。
+- 主文件：`.shp`，也是 `meta_item.full_name`。
 - 组件匹配：同目录或同 prefix 下相同 basename。
 - 不允许跨目录递归匹配。
 - 不独占目录。
@@ -78,7 +78,6 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。`.shp`、`.shx`、`.
     "organization": "multi",
     "data_type": "table",
     "format": "shapefile",
-    "entry_path": "/shp/farmland.shp",
     "component_files": [
       "/shp/farmland.dbf",
       "/shp/farmland.prj",
@@ -112,18 +111,24 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。`.shp`、`.shx`、`.
   },
   "capabilities": {
     "spatial": {
-      "geometry_column": "geometry",
-      "geometry_type": "Polygon",
-      "srid": 0,
+      "geometry_columns": [
+        {
+          "name": "geometry",
+          "geometry_type": "Polygon",
+          "srid": 0,
+          "dimension": 2,
+          "nullable": false
+        }
+      ],
+      "primary_geometry_column": "geometry",
       "extent": null,
-      "dimension": 2,
       "has_spatial_index": false
     }
   }
 }
 ```
 
-`base_name`、`component_extensions`、`has_prj`、`has_cpg` 不得写入 attributes 顶层，也不得长期写入 `format_info.unqualified`。Manager 预览必须使用 `item.entry_path` 和 `item.component_files`。
+`base_name`、`component_extensions`、`has_prj`、`has_cpg` 不得写入 attributes 顶层，也不得长期写入 `format_info.unqualified`。Manager 预览必须使用 `meta_item.full_name` 作为主文件路径，并使用 `item.component_files` 读取组件文件。
 
 ## Parquet / ORC / Avro / Iceberg
 
@@ -136,7 +141,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。`.shp`、`.shx`、`.
 
 Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“湖表”。一组同类 Parquet 文件只有在有明确组件规则或 manifest 规则时才能归并为 `multi` item。Iceberg 等表格式目录由规范声明后可作为 `organization=whole` 的 table item。
 
-`whole` item 的 `component_files` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。多个独立 sibling Parquet 文件不得被误合成一个 whole item。
+`whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`component_files` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。多个独立 sibling Parquet 文件不得被误合成一个 whole item。
 
 分区字段来自目录结构或表格式元数据解析，应进入 `capabilities.partitioning`；字段和行数进入 `type_info.table`；格式私有信息进入 `format_info.<format>`。
 
@@ -147,7 +152,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | SQLite | `container` | `sqlite` | `single` |
 | GeoPackage | `container` | `geopackage` | `single` |
 
-容器文件本身先作为一个 item；`item.entry_path` 指向容器文件。内部表、图层、sheet 先写入 `type_info.container.children`。是否展开为子 meta item 属于后续规范事项。
+容器文件本身先作为一个 item；`meta_item.full_name` 指向容器文件。内部表、图层、sheet 先写入 `type_info.container.children`。是否展开为子 meta item 属于后续规范事项。
 
 SQLite 版本、内部表数量、表清单等格式私有信息进入 `format_info.sqlite`。GeoPackage 的 layer 清单、gpkg 元数据等进入 `format_info.geopackage`；空间能力写入 `capabilities.spatial`，不得混入格式私有字段。
 

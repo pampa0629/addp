@@ -1206,7 +1206,6 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
 			setStorageAttribute(enhancedAttrs, "physical_path", physicalPath)
-			setItemAttribute(enhancedAttrs, "entry_path", physicalPath)
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -1528,8 +1527,8 @@ func objectPathFromClaim(bucket, claimPath string) string {
 
 func inferObjectStorageCompositeName(composite objectStorageCompositeItem) (name, objectPath string) {
 	if composite.item != nil {
-		switch composite.item.CompositionType {
-		case dataitem.CompositionTypeSingleFile, dataitem.CompositionTypeMultiFile, dataitem.CompositionTypeContainerFile:
+		switch composite.item.Organization {
+		case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
 			if composite.item.EntryPath != "" {
 				objectPath = objectPathFromClaim(composite.bucket, composite.item.EntryPath)
 				if objectPath != "" {
@@ -1551,17 +1550,13 @@ func objectStorageCompositeMode(item *dataitem.DetectedItem) string {
 	if item == nil {
 		return "directory"
 	}
-	switch item.CompositionType {
-	case dataitem.CompositionTypeSingleFile:
-		return "file"
-	case dataitem.CompositionTypeMultiFile:
-		return "multi_file"
-	case dataitem.CompositionTypeContainerFile:
-		return "container_file"
-	case dataitem.CompositionTypeDirectoryTree:
-		return "directory_tree"
-	case dataitem.CompositionTypeMixedCollection:
-		return "mixed_collection"
+	switch item.Organization {
+	case dataitem.OrganizationSingle:
+		return "single"
+	case dataitem.OrganizationMulti:
+		return "multi"
+	case dataitem.OrganizationWhole:
+		return "whole"
 	default:
 		return "directory"
 	}
@@ -1575,7 +1570,7 @@ func objectStorageSingleFileItemType(item *dataitem.DetectedItem) string {
 		return item.ItemType
 	}
 	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
-		rule.CompositionType == dataitem.CompositionTypeSingleFile &&
+		rule.Organization == dataitem.OrganizationSingle &&
 		rule.ItemType != "" {
 		return rule.ItemType
 	}

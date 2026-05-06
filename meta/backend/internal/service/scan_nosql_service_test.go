@@ -52,7 +52,7 @@ func TestNoSQLItemType(t *testing.T) {
 	}
 }
 
-func TestBuildDocCollectionAttributesWritesSchemaSection(t *testing.T) {
+func TestBuildDocCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
 	t.Parallel()
 
 	attrs := buildDocCollectionAttributesFromMetadata(&plugin.ItemMetadata{
@@ -67,15 +67,16 @@ func TestBuildDocCollectionAttributesWritesSchemaSection(t *testing.T) {
 		}},
 	})
 
-	schema := attrs["schema"].(map[string]interface{})
-	if _, ok := schema["fields"]; !ok {
-		t.Fatalf("schema.fields missing: %#v", schema)
+	typeInfo := attrs["type_info"].(map[string]interface{})
+	table := typeInfo["table"].(map[string]interface{})
+	if _, ok := table["fields"]; !ok {
+		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
-	if _, ok := schema["indexes"]; !ok {
-		t.Fatalf("schema.indexes missing: %#v", schema)
+	if _, ok := table["indexes"]; !ok {
+		t.Fatalf("type_info.table.indexes missing: %#v", table)
 	}
-	if attrs["fields"] == nil || attrs["indexes"] == nil {
-		t.Fatalf("flat compatibility fields/indexes missing: %#v", attrs)
+	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil {
+		t.Fatalf("legacy flat/schema fields should not be written: %#v", attrs)
 	}
 }
 

@@ -87,14 +87,14 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 			totalSize = *info.SizeBytes
 		}
 
-		compositionType := info.CompositionType
-		if compositionType == "" {
-			compositionType = CompositionTypeDirectoryTree
+		organization := info.Organization
+		if organization == "" {
+			organization = OrganizationWhole
 		}
 
-		dataFamily := info.DataFamily
-		if dataFamily == "" {
-			dataFamily = InferDataFamily(info.Format, "")
+		dataType := info.DataType
+		if dataType == "" {
+			dataType = InferDataType(info.Format, "")
 		}
 
 		entryPath := info.EntryPath
@@ -108,22 +108,22 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 		}
 
 		item := &DetectedItem{
-			ItemType:        d.ItemType(),
-			CompositionType: compositionType,
-			DataFamily:      dataFamily,
-			Format:          info.Format,
-			PhysicalPath:    detectorInput.DirPath,
-			EntryPath:       entryPath,
-			ComponentFiles:  componentFiles,
-			SizeBytes:       totalSize,
-			Fields:          info.Fields,
-			Attributes:      info.Attributes,
+			ItemType:       d.ItemType(),
+			Organization:   organization,
+			DataType:       dataType,
+			Format:         info.Format,
+			PhysicalPath:   detectorInput.DirPath,
+			EntryPath:      entryPath,
+			ComponentFiles: componentFiles,
+			SizeBytes:      totalSize,
+			Fields:         info.Fields,
+			Attributes:     info.Attributes,
 		}
 		result.Items = append(result.Items, item)
 		for _, path := range componentFiles {
 			result.Claims[path] = true
 		}
-		result.Exclusive = compositionType == CompositionTypeDirectoryTree
+		result.Exclusive = organization == OrganizationWhole
 		if result.Exclusive {
 			return result, nil
 		}
@@ -168,20 +168,21 @@ func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	itemAttrs := map[string]interface{}{}
 	storageAttrs := map[string]interface{}{}
 
-	setSectionValue(itemAttrs, "composition_type", string(item.CompositionType))
-	setSectionValue(itemAttrs, "data_family", string(item.DataFamily))
+	setSectionValue(itemAttrs, "organization", string(item.Organization))
+	setSectionValue(itemAttrs, "data_type", string(item.DataType))
 	if item.Format != "" {
 		setSectionValue(itemAttrs, "format", item.Format)
 	}
 	if item.PhysicalPath != "" {
 		setSectionValue(storageAttrs, "physical_path", item.PhysicalPath)
 	}
-	if item.EntryPath != "" {
-		setSectionValue(itemAttrs, "entry_path", item.EntryPath)
-	}
-	if len(item.ComponentFiles) > 0 {
+	if item.Organization == OrganizationMulti && len(item.ComponentFiles) > 0 {
 		setSectionValue(itemAttrs, "component_files", item.ComponentFiles)
 		setSectionValue(itemAttrs, "file_count", len(item.ComponentFiles))
+	}
+	if item.Organization == OrganizationWhole {
+		setSectionValue(itemAttrs, "scope_exclusive", true)
+		setSectionValue(itemAttrs, "claim_policy", "whole_scope")
 	}
 	if item.SizeBytes > 0 {
 		setSectionValue(storageAttrs, "total_size", item.SizeBytes)
@@ -221,27 +222,29 @@ func InferSingleFileItem(file plugin.FileEntry) *DetectedItem {
 // InferSingleFile 基于单文件信息推断基础 item 语义。
 func InferSingleFile(input SingleFileInput) *DetectedItem {
 	formatName := InferFormat(input.Name, input.ContentType, input.Format)
-	compositionType := CompositionTypeSingleFile
-	dataFamily := InferDataFamily(formatName, input.ContentType)
+	organization := OrganizationSingle
+	dataType := InferDataType(formatName, input.ContentType)
 	itemType := "file"
-	if rule, ok := MatchBuiltinSingleFileRule(formatName); ok {
-		compositionType = rule.CompositionType
-		dataFamily = rule.DataFamily
+	if rule, ok := MatchBuiltinSingleResourceRule(formatName); ok {
+		organization = rule.Organization
+		dataType = rule.DataType
 		itemType = rule.ItemType
 	}
 	return &DetectedItem{
-		ItemType:        itemType,
-		CompositionType: compositionType,
-		DataFamily:      dataFamily,
-		Format:          formatName,
-		PhysicalPath:    input.Path,
-		EntryPath:       input.Path,
-		ComponentFiles:  []string{input.Path},
-		SizeBytes:       input.Size,
+		ItemType:       itemType,
+		Organization:   organization,
+		DataType:       dataType,
+		Format:         formatName,
+		PhysicalPath:   input.Path,
+		EntryPath:      input.Path,
+		ComponentFiles: []string{input.Path},
+		SizeBytes:      input.Size,
 		Attributes: map[string]interface{}{
-			"path":         input.Path,
-			"size":         input.Size,
-			"content_type": input.ContentType,
+			"storage": map[string]interface{}{
+				"path":         input.Path,
+				"size":         input.Size,
+				"content_type": input.ContentType,
+			},
 		},
 	}
 }
@@ -260,8 +263,8 @@ func InferFormat(fileName, contentType, explicitFormat string) string {
 	return normalizeFormat(string(formatType), fileName)
 }
 
-// InferDataFamily 从规范化格式和 MIME 类型推断主数据家族。
-func InferDataFamily(formatName, contentType string) DataFamily {
+// InferDataType 从规范化格式和 MIME 类型推断主数据类型。
+func InferDataType(formatName, contentType string) DataType {
 	normalizedFormat := canonicalFormat(formatName)
 	switch format.FormatType(normalizedFormat) {
 	case format.FormatCSV, format.FormatExcel, format.FormatTSV,
@@ -269,34 +272,39 @@ func InferDataFamily(formatName, contentType string) DataFamily {
 		format.FormatKML, format.FormatKMZ, format.FormatParquet, format.FormatAvro,
 		format.FormatSQLite, format.FormatPostgres, format.FormatMySQL,
 		format.FormatJSON, format.FormatXML:
-		return DataFamilyTabular
+		if normalizedFormat == string(format.FormatExcel) ||
+			normalizedFormat == string(format.FormatSQLite) ||
+			normalizedFormat == string(format.FormatGeoPackage) {
+			return DataTypeContainer
+		}
+		return DataTypeTable
 	case format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF, format.FormatImage:
-		return DataFamilyImage
+		return DataTypeMedia
 	case format.FormatVideo:
-		return DataFamilyVideo
+		return DataTypeMedia
 	case format.FormatPDF, format.FormatDOCX, format.FormatPPTX, format.FormatWPS, format.FormatText:
-		return DataFamilyDocument
+		return DataTypeDocument
 	case format.FormatAudio:
-		return DataFamilyAudio
+		return DataTypeMedia
 	}
 
 	switch normalizedFormat {
 	case "orc", "clickhouse", "doris", "mongodb":
-		return DataFamilyTabular
+		return DataTypeTable
 	}
 
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	switch {
 	case strings.HasPrefix(contentType, "image/"):
-		return DataFamilyImage
+		return DataTypeMedia
 	case strings.HasPrefix(contentType, "video/"):
-		return DataFamilyVideo
+		return DataTypeMedia
 	case strings.HasPrefix(contentType, "audio/"):
-		return DataFamilyAudio
+		return DataTypeMedia
 	case contentType == "application/pdf", strings.HasPrefix(contentType, "text/"):
-		return DataFamilyDocument
+		return DataTypeDocument
 	default:
-		return DataFamilyUnknown
+		return DataTypeUnknown
 	}
 }
 

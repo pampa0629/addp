@@ -42,7 +42,7 @@
     "capabilities": [
       {
         "name": "spatial",
-        "writes_standard_fields": ["srid", "extent"]
+        "writes_standard_fields": ["geometry_columns", "extent"]
       }
     ]
   }

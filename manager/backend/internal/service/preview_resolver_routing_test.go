@@ -47,8 +47,10 @@ func TestResolveProviderByMetaUsesDataFamilyAndFormat(t *testing.T) {
 		Locator: &resource.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
-			"data_family": "tabular",
-			"format":      "geojson",
+			"item": map[string]interface{}{
+				"data_type": "table",
+				"format":    "geojson",
+			},
 		}},
 		ItemType: "object",
 	}
@@ -70,11 +72,9 @@ func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 		Locator: &resource.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
-			"data_family": "document",
-			"format":      "pdf",
 			"item": map[string]interface{}{
-				"data_family": "tabular",
-				"format":      "geojson",
+				"data_type": "table",
+				"format":    "geojson",
 			},
 		}},
 		ItemType: "object",

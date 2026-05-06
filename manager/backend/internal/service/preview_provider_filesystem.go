@@ -406,14 +406,18 @@ func stringAttribute(attrs map[string]interface{}, key string) string {
 
 func attributeSectionsForKey(key string) []string {
 	switch key {
-	case "composition_type", "data_family", "format", "entry_path", "component_files", "file_count", "mode":
+	case "organization", "data_type", "format", "component_files", "file_count", "scope_exclusive", "claim_policy":
 		return []string{"item"}
 	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}
 	case "fields", "primary_key", "indexes", "row_count", "document_count":
-		return []string{"schema"}
-	case "spatial_metadata":
-		return []string{"extensions.spatial"}
+		return []string{"type_info.table"}
+	case "width", "height", "duration", "codec", "page_count", "word_count":
+		return []string{"type_info.media", "type_info.document"}
+	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
+		return []string{"capabilities.spatial"}
+	case "metadata_extracted", "extractor_available", "extracted_metadata", "plain_text_preview":
+		return []string{"capabilities.extraction"}
 	default:
 		return nil
 	}

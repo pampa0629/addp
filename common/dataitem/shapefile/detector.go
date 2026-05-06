@@ -35,11 +35,11 @@ var (
 type Detector struct{}
 
 var rule = dataitem.FormatRule{
-	Format:          "shapefile",
-	DataFamily:      dataitem.DataFamilyTabular,
-	ItemType:        "table",
-	CompositionType: dataitem.CompositionTypeMultiFile,
-	Priority:        100,
+	Format:       "shapefile",
+	DataType:     dataitem.DataTypeTable,
+	ItemType:     "table",
+	Organization: dataitem.OrganizationMulti,
+	Priority:     100,
 	Entry: dataitem.EntryRule{
 		Extensions: []string{".shp"},
 	},
@@ -93,16 +93,16 @@ func (d *Detector) ResolveItems(ctx context.Context, input dataitem.DirectoryRes
 			totalSize = *info.SizeBytes
 		}
 		item := &dataitem.DetectedItem{
-			ItemType:        d.ItemType(),
-			CompositionType: rule.CompositionType,
-			DataFamily:      rule.DataFamily,
-			Format:          info.Format,
-			PhysicalPath:    input.DirPath,
-			EntryPath:       info.EntryPath,
-			ComponentFiles:  info.ComponentFiles,
-			SizeBytes:       totalSize,
-			Fields:          info.Fields,
-			Attributes:      info.Attributes,
+			ItemType:       d.ItemType(),
+			Organization:   rule.Organization,
+			DataType:       rule.DataType,
+			Format:         info.Format,
+			PhysicalPath:   input.DirPath,
+			EntryPath:      info.EntryPath,
+			ComponentFiles: info.ComponentFiles,
+			SizeBytes:      totalSize,
+			Fields:         info.Fields,
+			Attributes:     info.Attributes,
 		}
 		result.Items = append(result.Items, item)
 		for _, path := range info.ComponentFiles {
@@ -149,15 +149,15 @@ func (d *Detector) extractMatchedItemInfo(
 
 	entryPath := match.files[".shp"].Path
 	info := &dataitem.CompositeItemInfo{
-		CompositionType: rule.CompositionType,
-		DataFamily:      rule.DataFamily,
-		Format:          rule.Format,
-		EntryPath:       entryPath,
-		ComponentFiles:  componentFiles,
-		SizeBytes:       &totalSize,
+		Organization:   rule.Organization,
+		DataType:       rule.DataType,
+		Format:         rule.Format,
+		EntryPath:      entryPath,
+		ComponentFiles: componentFiles,
+		SizeBytes:      &totalSize,
 		Attributes: map[string]interface{}{
-			"extensions": map[string]interface{}{
-				"builtin.shapefile": map[string]interface{}{
+			"format_info": map[string]interface{}{
+				"shapefile": map[string]interface{}{
 					"base_name":            match.baseName,
 					"component_extensions": extensions,
 					"has_prj":              match.exts[".prj"],
@@ -252,21 +252,24 @@ func enrichShapefileInfo(
 	if bbox != nil {
 		extent = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
 	}
-	upsertAttributesSection(info, "schema", map[string]interface{}{
+	upsertNestedAttributesSection(info, "type_info", "table", map[string]interface{}{
+		"fields":      fieldAttributes(fields),
 		"row_count":   rowCount,
 		"primary_key": []string{},
 	})
-	upsertExtensionSection(info, "spatial", map[string]interface{}{
-		"geometry_column":    "geometry",
-		"geometry_type":      geometryType,
-		"srid":               0,
-		"extent":             extent,
-		"dimension":          2,
-		"has_spatial_index":  match.exts[".sbn"] && match.exts[".sbx"],
-		"source":             "builtin.shapefile",
-		"inference_complete": true,
+	upsertNestedAttributesSection(info, "capabilities", "spatial", map[string]interface{}{
+		"geometry_columns": []map[string]interface{}{{
+			"name":          "geometry",
+			"geometry_type": geometryType,
+			"srid":          0,
+			"dimension":     2,
+			"nullable":      false,
+		}},
+		"primary_geometry_column": "geometry",
+		"extent":                  extent,
+		"has_spatial_index":       match.exts[".sbn"] && match.exts[".sbx"],
 	})
-	upsertExtensionSection(info, "builtin.shapefile", map[string]interface{}{
+	upsertNestedAttributesSection(info, "format_info", "shapefile", map[string]interface{}{
 		"shape_type": geometryType,
 	})
 }
@@ -327,7 +330,7 @@ func catalogPathForContent(engineID uint, path string) plugin.CatalogPath {
 	}
 }
 
-func upsertAttributesSection(info *dataitem.CompositeItemInfo, section string, values map[string]interface{}) {
+func upsertNestedAttributesSection(info *dataitem.CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
 	if info.Attributes == nil {
 		info.Attributes = map[string]interface{}{}
 	}
@@ -337,24 +340,8 @@ func upsertAttributesSection(info *dataitem.CompositeItemInfo, section string, v
 			sectionAttrs[k] = v
 		}
 	}
-	for k, v := range values {
-		sectionAttrs[k] = v
-	}
-	info.Attributes[section] = sectionAttrs
-}
-
-func upsertExtensionSection(info *dataitem.CompositeItemInfo, namespace string, values map[string]interface{}) {
-	if info.Attributes == nil {
-		info.Attributes = map[string]interface{}{}
-	}
-	extensions := map[string]interface{}{}
-	if existing, ok := info.Attributes["extensions"].(map[string]interface{}); ok {
-		for k, v := range existing {
-			extensions[k] = v
-		}
-	}
 	namespaceAttrs := map[string]interface{}{}
-	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
+	if existing, ok := sectionAttrs[namespace].(map[string]interface{}); ok {
 		for k, v := range existing {
 			namespaceAttrs[k] = v
 		}
@@ -362,8 +349,23 @@ func upsertExtensionSection(info *dataitem.CompositeItemInfo, namespace string, 
 	for k, v := range values {
 		namespaceAttrs[k] = v
 	}
-	extensions[namespace] = namespaceAttrs
-	info.Attributes["extensions"] = extensions
+	sectionAttrs[namespace] = namespaceAttrs
+	info.Attributes[section] = sectionAttrs
+}
+
+func fieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+	attrs := make([]map[string]interface{}, 0, len(fields))
+	for _, field := range fields {
+		attrs = append(attrs, map[string]interface{}{
+			"name":          field.Name,
+			"type":          string(field.Type),
+			"original_type": field.OriginalType,
+			"nullable":      field.Nullable,
+			"size":          field.Size,
+			"precision":     field.Precision,
+		})
+	}
+	return attrs
 }
 
 type shapefileMatch struct {

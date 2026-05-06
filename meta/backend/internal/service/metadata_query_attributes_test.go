@@ -6,7 +6,7 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func TestFieldsFromMetaItemPrefersPartitionedSchemaFields(t *testing.T) {
+func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 	t.Parallel()
 
 	fields, err := fieldsFromMetaItem(models.MetaItem{
@@ -14,9 +14,11 @@ func TestFieldsFromMetaItemPrefersPartitionedSchemaFields(t *testing.T) {
 			"fields": []interface{}{
 				map[string]interface{}{"name": "legacy_id", "data_type": "text"},
 			},
-			"schema": map[string]interface{}{
-				"fields": []interface{}{
-					map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"fields": []interface{}{
+						map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+					},
 				},
 			},
 		},
@@ -29,26 +31,31 @@ func TestFieldsFromMetaItemPrefersPartitionedSchemaFields(t *testing.T) {
 	}
 }
 
-func TestSpatialMetadataFromItemReadsPartitionedSpatialExtension(t *testing.T) {
+func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	t.Parallel()
 
 	meta, err := spatialMetadataFromItem(models.MetaItem{
 		Attributes: models.JSONMap{
-			"extensions": map[string]interface{}{
+			"capabilities": map[string]interface{}{
 				"spatial": map[string]interface{}{
-					"spatial_metadata": map[string]interface{}{
-						"geometry_column": "shape",
-						"srid":            float64(4326),
-						"geometry_types":  []interface{}{"POLYGON"},
+					"geometry_columns": []interface{}{
+						map[string]interface{}{
+							"name":          "shape",
+							"srid":          float64(4326),
+							"geometry_type": "POLYGON",
+						},
 					},
+					"primary_geometry_column": "shape",
 				},
 			},
-			"schema": map[string]interface{}{
-				"table_metadata": map[string]interface{}{
-					"primary_key": []interface{}{"id"},
-				},
-				"fields": []interface{}{
-					map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"table_metadata": map[string]interface{}{
+						"primary_key": []interface{}{"id"},
+					},
+					"fields": []interface{}{
+						map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+					},
 				},
 			},
 		},

@@ -299,11 +299,10 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			Attributes:     metaItem.Attributes,
 		}
 		req.ItemType = metaItem.ItemType
-		// 提取 physical_path（仅单文件湖表，mode="file"）
+		// 提取 physical_path（仅 single 湖表）
 		// 目录型湖表的 physical_path 是目录路径，不能当文件读
 		if physPath := stringAttribute(metaItem.Attributes, "physical_path"); physPath != "" {
-			mode := stringAttribute(metaItem.Attributes, "mode")
-			if mode == "file" || stringAttribute(metaItem.Attributes, "composition_type") == "single_file" {
+			if stringAttribute(metaItem.Attributes, "organization") == "single" {
 				req.PhysicalPath = physPath
 			}
 		}
@@ -444,7 +443,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	if itemType == "" && req != nil && req.Metadata != nil {
 		itemType = strings.ToLower(strings.TrimSpace(req.Metadata.NodeType))
 	}
-	dataFamily := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_family")))
+	dataType := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_type")))
 	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
 
 	switch itemType {
@@ -470,8 +469,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		return []string{"builtin:schema-node"}
 	}
 
-	switch dataFamily {
-	case "tabular":
+	switch dataType {
+	case "table":
 		if legacyReq != nil && isFileTableFormat(formatName) && isObjectStorageType(legacyReq.Engine.EngineType) {
 			return []string{"builtin:file-table"}
 		}
@@ -484,7 +483,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 			return []string{"builtin:graph-relationship"}
 		}
 		return []string{"builtin:graph-label"}
-	case "image", "video", "audio", "document":
+	case "media", "document", "container":
 		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
 			return []string{"builtin:filesystem"}
 		}

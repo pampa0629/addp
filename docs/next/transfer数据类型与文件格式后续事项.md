@@ -28,7 +28,7 @@
 Transfer 后续需要按同一口径消费 meta item：
 
 - `storage`：读取物理位置、大小、内容类型、修改时间等。
-- `item`：读取组织方式、数据类型、格式、入口路径、组件文件等。
+- `item`：读取组织方式、数据类型、格式、组件文件和 whole scope 独占语义等。
 - `type_info`：读取字段、索引、主键、行数、媒体信息、文档信息、容器内部对象等类型信息。
 - `format_info`：读取具体格式私有信息。
 - `capabilities`：读取空间、时间、统计、提取、分区、索引等横切能力。
@@ -36,7 +36,7 @@ Transfer 后续需要按同一口径消费 meta item：
 ## 后续任务
 
 1. 扫描 Transfer 中直接读取旧 attributes 的路径，改为只读取标准分区。
-2. 文件读取、格式转换、导入导出任务优先依赖 `attributes.item.format`、`attributes.item.entry_path` 和 `attributes.item.component_files`。
+2. 文件读取、格式转换、导入导出任务优先依赖 `meta_item.full_name`、`attributes.item.format` 和 `attributes.item.component_files`。
 3. 空间能力判断只依赖 `attributes.capabilities.spatial`，不得按固定字段名或单一格式推断空间能力。
 4. 表结构和字段映射只依赖 `attributes.type_info.table.fields`。
 5. 对 Shapefile、GeoJSON、Parquet、Iceberg 等组织方式/文件格式补充真实传输用例，验证 Transfer 不绕过 meta item 归并结果。

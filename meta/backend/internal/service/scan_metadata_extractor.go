@@ -119,7 +119,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 			// 文件未变化，复用已有的 metadata
 			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
 				// 检查是否已经提取过元数据
-				if commonAttrs.Bool(existingItem.Attributes, "extensions.extraction", "metadata_extracted") {
+				if commonAttrs.Bool(existingItem.Attributes, "capabilities.extraction", "metadata_extracted") {
 					e.log.Debug("复用缓存的元数据",
 						"fingerprint", fingerprint,
 						"fullPath", fullPath,
@@ -316,7 +316,7 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 		if metadata.BasicInfo.Encoding != "" {
 			document["encoding"] = metadata.BasicInfo.Encoding
 		}
-		mergeExtensionSection(attrs, "document", document)
+		upsertNestedSection(attrs, "type_info", "document", document)
 	}
 	for key, value := range metadata.CustomAttrs {
 		if key == "plain_text" {
@@ -337,25 +337,6 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 		setExtensionAttribute(attrs, "statistics", "row_count", metadata.SchemaInfo.RowCount)
 		setExtensionAttribute(attrs, "statistics", "column_count", len(metadata.SchemaInfo.Columns))
 	}
-}
-
-func mergeExtensionSection(attrs models.JSONMap, namespace string, values map[string]interface{}) {
-	if len(values) == 0 {
-		return
-	}
-	extensions := sectionJSONMap(attrs, "extensions")
-	namespace = normalizeExtensionNamespace(namespace)
-	section := map[string]interface{}{}
-	if existing, ok := extensions[namespace].(map[string]interface{}); ok {
-		for k, v := range existing {
-			section[k] = v
-		}
-	}
-	for k, v := range values {
-		section[k] = v
-	}
-	extensions[namespace] = section
-	attrs["extensions"] = extensions
 }
 
 func standardExtensionForMetadataKey(key string) string {

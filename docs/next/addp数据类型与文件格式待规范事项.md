@@ -101,7 +101,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 2. `priority` 是否仅允许在同一标准匹配结果内解决冲突。
 3. 内容插件是否允许读取 `format_info` 私有字段用于展示。
 4. 命令型插件是否需要声明输入 payload schema 和输出 content schema。
-5. multi / whole 内容插件是否统一使用 `entry_path`、`component_files` 和 whole scope manifest，不允许自行枚举 sibling。
+5. multi / whole 内容插件是否统一使用 `meta_item.full_name`、`component_files` 和 whole scope manifest，不允许自行枚举 sibling。
 
 ## 七、引擎原生 item 按 single 处理
 
@@ -113,11 +113,11 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 
 `single` 的含义是“一个引擎资源对应一个 data item”，不是“单文件”。因此：
 
-- PostgreSQL table：`organization=single`、`data_type=table`、`format=postgresql_table` 或由具体规范确认。
+- PostgreSQL table：`organization=single`、`data_type=table`；无格式私有信息时不写 `format` 和 `format_info`。
 - MongoDB collection：可按平台消费方式识别为 `data_type=table` 或 `document`，`organization=single`。
 - Neo4j label / relationship：可按 `data_type=graph` 或后续图规范定义，`organization=single`。
 
-引擎原生 item 不要求 `component_files`。`entry_path` 可使用引擎原生可定位名称，或由后续规范明确单独字段；这部分应纳入后续实现跟进。
+引擎原生 item 不要求 `component_files`。`meta_item.full_name` 已是引擎内唯一逻辑标识和定位事实源，不再定义通用 `entry_path`。
 
 ## 八、TableInfo / ObjectInfo / Scanner* 模型收口
 
@@ -146,7 +146,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 3. 第三方插件扩展声明机制。
 4. Manager 内容预览插件能力描述。
 5. Registry 与能力发现层收口。
-6. 引擎原生 item 的 `format` 与 `entry_path` 口径。
+6. 引擎原生 item 的 `format` 口径。
 
 ## 十二、当前可继续开展但不阻塞讨论的事项
 

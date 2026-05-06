@@ -307,16 +307,6 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	if objectPath == "" {
 		return nil, fmt.Errorf("object path is empty")
 	}
-	if entryPath := stringAttribute(combinedAttributes, "entry_path"); entryPath != "" {
-		normalizedEntry := strings.Trim(entryPath, "/")
-		if strings.HasPrefix(normalizedEntry, bucket+"/") {
-			normalizedEntry = strings.TrimPrefix(normalizedEntry, bucket+"/")
-		}
-		if normalizedEntry != "" {
-			objectPath = normalizedEntry
-			displayPath = objectPath
-		}
-	}
 	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
 	stat, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
@@ -464,7 +454,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 针对对象尝试触发提取
 	if item != nil && objectPath != "" {
-		extractorAvailable := commonAttrs.Bool(combinedAttributes, "extensions.extraction", "extractor_available")
+		extractorAvailable := commonAttrs.Bool(combinedAttributes, "capabilities.extraction", "extractor_available")
 		hasExtracted := preview.Object.ExtractedMetadata != nil
 
 		if extractorAvailable && !hasExtracted {
@@ -474,18 +464,18 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 				if preview.Object.Attributes == nil {
 					preview.Object.Attributes = make(models.JSONMap)
 				}
-				extensions := commonAttrs.Section(preview.Object.Attributes, "extensions")
-				if extensions == nil {
-					extensions = map[string]interface{}{}
+				capabilities := commonAttrs.Section(preview.Object.Attributes, "capabilities")
+				if capabilities == nil {
+					capabilities = map[string]interface{}{}
 				}
-				extraction, _ := extensions["extraction"].(map[string]interface{})
+				extraction, _ := capabilities["extraction"].(map[string]interface{})
 				if extraction == nil {
 					extraction = map[string]interface{}{}
 				}
 				extraction["metadata_extracted"] = true
 				extraction["extracted_metadata"] = extracted
-				extensions["extraction"] = extraction
-				preview.Object.Attributes["extensions"] = extensions
+				capabilities["extraction"] = extraction
+				preview.Object.Attributes["capabilities"] = capabilities
 			}
 		}
 	}

@@ -248,28 +248,34 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 	}
 
 	if tableNode.Attributes != nil {
-		// 检查 has_geometry
-		metadata.HasGeometry = commonAttrs.BoolFromSections(tableNode.Attributes, "has_geometry",
-			"extensions.spatial", "extensions.spatial.spatial_metadata")
-
-		// 提取几何列名称
-		metadata.GeometryColumn = commonAttrs.StringFromSections(tableNode.Attributes, "geometry_column",
-			"extensions.spatial", "extensions.spatial.spatial_metadata")
-
-		// 提取 SRID
-		if srid := commonAttrs.Int64FromSections(tableNode.Attributes, "srid",
-			"extensions.spatial", "extensions.spatial.spatial_metadata"); srid > 0 {
-			sridInt := int(srid)
-			metadata.SRID = &sridInt
+		spatial := commonAttrs.Section(tableNode.Attributes, "capabilities.spatial")
+		if spatial != nil {
+			metadata.GeometryColumn = commonAttrs.InterfaceString(spatial["primary_geometry_column"])
+			if columns, ok := spatial["geometry_columns"].([]interface{}); ok && len(columns) > 0 {
+				if column, ok := columns[0].(map[string]interface{}); ok {
+					if metadata.GeometryColumn == "" {
+						metadata.GeometryColumn = commonAttrs.InterfaceString(column["name"])
+					}
+					metadata.GeometryType = commonAttrs.InterfaceString(column["geometry_type"])
+					if srid := commonAttrs.InterfaceInt64(column["srid"]); srid > 0 {
+						sridInt := int(srid)
+						metadata.SRID = &sridInt
+					}
+				}
+			}
+			if columns, ok := spatial["geometry_columns"].([]map[string]interface{}); ok && len(columns) > 0 {
+				if metadata.GeometryColumn == "" {
+					metadata.GeometryColumn = commonAttrs.InterfaceString(columns[0]["name"])
+				}
+				metadata.GeometryType = commonAttrs.InterfaceString(columns[0]["geometry_type"])
+				if srid := commonAttrs.InterfaceInt64(columns[0]["srid"]); srid > 0 {
+					sridInt := int(srid)
+					metadata.SRID = &sridInt
+				}
+			}
+			metadata.HasGeometry = metadata.GeometryColumn != ""
+			metadata.Extent = commonAttrs.InterfaceFloat64Slice(spatial["extent"])
 		}
-
-		// 提取几何类型
-		metadata.GeometryType = commonAttrs.StringFromSections(tableNode.Attributes, "geometry_type",
-			"extensions.spatial", "extensions.spatial.spatial_metadata")
-
-		// 提取范围
-		metadata.Extent = commonAttrs.Float64SliceFromSections(tableNode.Attributes, "extent",
-			"extensions.spatial", "extensions.spatial.spatial_metadata")
 	}
 
 	log.Printf("[DataSourceService] DetectTableMetadata: hasGeometry=%v, column=%s",

@@ -29,8 +29,8 @@ func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractDirectoryTreeInfo() error = %v", err)
 	}
-	if info.CompositionType != dataitem.CompositionTypeDirectoryTree {
-		t.Fatalf("CompositionType = %q, want %q", info.CompositionType, dataitem.CompositionTypeDirectoryTree)
+	if info.Organization != dataitem.OrganizationWhole {
+		t.Fatalf("Organization = %q, want %q", info.Organization, dataitem.OrganizationWhole)
 	}
 	if info.EntryPath != "dataset" {
 		t.Fatalf("EntryPath = %q, want dataset", info.EntryPath)
@@ -38,12 +38,12 @@ func TestLakeTableDetectorDetectsPartitionedDirectoryTree(t *testing.T) {
 	if len(info.ComponentFiles) != 2 {
 		t.Fatalf("ComponentFiles len = %d, want 2", len(info.ComponentFiles))
 	}
-	if mode := commonAttrs.String(info.Attributes, "item", "mode"); mode != "directory_tree" {
-		t.Fatalf("mode = %v, want directory_tree", mode)
+	if mode := commonAttrs.String(info.Attributes, "format_info.parquet", "mode"); mode != "whole" {
+		t.Fatalf("mode = %v, want whole", mode)
 	}
 }
 
-func TestLakeTableDetectorRulesDeclareSingleFileAndDirectoryTree(t *testing.T) {
+func TestLakeTableDetectorRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 	t.Parallel()
 
 	d := &LakeTableDetector{}
@@ -53,23 +53,23 @@ func TestLakeTableDetectorRulesDeclareSingleFileAndDirectoryTree(t *testing.T) {
 	}
 
 	seenSingle := false
-	seenDirectoryTree := false
+	seenWhole := false
 	for _, rule := range rules {
 		if err := dataitem.ValidateFormatRule(rule); err != nil {
-			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.CompositionType, err)
+			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.Organization, err)
 		}
-		switch rule.CompositionType {
-		case dataitem.CompositionTypeSingleFile:
+		switch rule.Organization {
+		case dataitem.OrganizationSingle:
 			seenSingle = true
-		case dataitem.CompositionTypeDirectoryTree:
-			seenDirectoryTree = true
-			if rule.DirectoryTree == nil || !rule.DirectoryTree.ExclusiveOnStrongHit {
-				t.Fatalf("directory_tree rule = %#v, want explicit exclusive rule", rule.DirectoryTree)
+		case dataitem.OrganizationWhole:
+			seenWhole = true
+			if rule.WholeScope == nil || !rule.WholeScope.ExclusiveOnStrongHit {
+				t.Fatalf("whole scope rule = %#v, want explicit exclusive rule", rule.WholeScope)
 			}
 		}
 	}
-	if !seenSingle || !seenDirectoryTree {
-		t.Fatalf("rules missing single_file=%v directory_tree=%v", seenSingle, seenDirectoryTree)
+	if !seenSingle || !seenWhole {
+		t.Fatalf("rules missing single=%v whole=%v", seenSingle, seenWhole)
 	}
 }
 
@@ -136,8 +136,8 @@ func TestLakeTableDetectorResolvesDirectoryTreeFromRecursiveScope(t *testing.T) 
 		t.Fatalf("ResolveItems() = %#v, want one item", result)
 	}
 	item := result.Items[0]
-	if item.CompositionType != dataitem.CompositionTypeDirectoryTree {
-		t.Fatalf("CompositionType = %q, want directory_tree", item.CompositionType)
+	if item.Organization != dataitem.OrganizationWhole {
+		t.Fatalf("Organization = %q, want whole", item.Organization)
 	}
 	if item.EntryPath != "dataset" || item.PhysicalPath != "dataset" {
 		t.Fatalf("paths = entry %q physical %q, want dataset", item.EntryPath, item.PhysicalPath)

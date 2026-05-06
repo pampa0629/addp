@@ -549,7 +549,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 				assignStringFromAttributes(meta, "storage", "path", &doc.Path) // 目录路径
 
 				// 如果有标题字段也读取（用于未来扩展）
-				assignStringFromAttributes(meta, "extensions.document", "title", &doc.Title)
+				assignStringFromAttributes(meta, "type_info.document", "title", &doc.Title)
 				assignString(meta, "content_preview", &doc.ContentPreview)
 
 				doc.Metadata = meta
@@ -762,7 +762,7 @@ func searchAttributeSectionsForKey(key string) []string {
 	case "bucket", "path", "name", "content_type", "file_name":
 		return []string{"storage"}
 	case "title", "author", "document_type", "page_count", "word_count", "keywords", "created_date", "modified_date":
-		return []string{"extensions.document"}
+		return []string{"type_info.document"}
 	default:
 		return nil
 	}

@@ -351,17 +351,22 @@ func (s *DatabaseScanService) scanTableDetails(
 			"has_primary_key":  len(primaryKeyColumns) > 0,
 		}
 		attrs = models.JSONMap{
-			"schema_name":    schemaName,
-			"table_type":     tableInfo.Type,
-			"table_comment":  tableInfo.Comment,
-			"fields":         fieldsAttr,
-			"table_metadata": tableMetadata,
-			"schema": map[string]interface{}{
-				"fields":         fieldsAttr,
-				"table_metadata": tableMetadata,
-				"table_type":     tableInfo.Type,
-				"table_comment":  tableInfo.Comment,
+			"storage": map[string]interface{}{
+				"schema_name": schemaName,
 			},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"fields":         fieldsAttr,
+					"table_metadata": tableMetadata,
+					"table_type":     tableInfo.Type,
+					"table_comment":  tableInfo.Comment,
+				},
+			},
+		}
+		if len(primaryKeyColumns) > 0 {
+			upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{
+				"primary_key": primaryKeyColumns,
+			})
 		}
 
 		// 扫描空间元数据（仅 PostgreSQL）
@@ -379,26 +384,27 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 浅度扫描：保留已有字段信息
 		if existingItem != nil && existingItem.Attributes != nil {
 			attrs = existingItem.Attributes
-			attrs["schema_name"] = schemaName
-			attrs["table_type"] = tableInfo.Type
-			attrs["table_comment"] = tableInfo.Comment
-			upsertSection(attrs, "schema", map[string]interface{}{
+			setStorageAttribute(attrs, "schema_name", schemaName)
+			upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{
 				"table_type":    tableInfo.Type,
 				"table_comment": tableInfo.Comment,
 			})
 		} else {
 			attrs = models.JSONMap{
-				"schema_name":   schemaName,
-				"table_type":    tableInfo.Type,
-				"table_comment": tableInfo.Comment,
-				"schema": map[string]interface{}{
-					"table_type":    tableInfo.Type,
-					"table_comment": tableInfo.Comment,
+				"storage": map[string]interface{}{
+					"schema_name": schemaName,
+				},
+				"type_info": map[string]interface{}{
+					"table": map[string]interface{}{
+						"table_type":    tableInfo.Type,
+						"table_comment": tableInfo.Comment,
+					},
 				},
 			}
 		}
 	}
-	setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyTabular))
+	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
+	setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))
 	setItemAttribute(attrs, "format", resource.EngineType)
 
 	return fields, attrs, nil

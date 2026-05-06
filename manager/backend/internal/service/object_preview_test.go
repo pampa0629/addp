@@ -168,7 +168,9 @@ func TestShouldBuildShapefileTablePreview(t *testing.T) {
 	t.Parallel()
 	preview := &models.TablePreview{
 		Object: &models.ObjectPreview{
-			Attributes: models.JSONMap{"file_type": "shp"},
+			Attributes: models.JSONMap{
+				"storage": map[string]interface{}{"file_type": "shp"},
+			},
 			Content: &models.ObjectPreviewContent{
 				Kind: "text",
 			},

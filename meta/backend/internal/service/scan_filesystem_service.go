@@ -288,17 +288,17 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,
 			"item_type", detected.ItemType,
-			"entry_path", detected.EntryPath,
+			"full_name", fullName,
 			"error", upsertErr,
 		)
 		return false
 	}
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
-		"entry_path", detected.EntryPath,
+		"full_name", fullName,
 		"item_type", detected.ItemType,
-		"composition_type", detected.CompositionType,
-		"data_family", detected.DataFamily,
+		"organization", detected.Organization,
+		"data_type", detected.DataType,
 		"name", itemName,
 	)
 	return true
@@ -327,16 +327,16 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			}
 			sizeBytes := *info.SizeBytes
 			detected = &dataitem.DetectedItem{
-				ItemType:        "lake_table",
-				CompositionType: info.CompositionType,
-				DataFamily:      info.DataFamily,
-				Format:          info.Format,
-				PhysicalPath:    file.Path,
-				EntryPath:       info.EntryPath,
-				ComponentFiles:  info.ComponentFiles,
-				SizeBytes:       sizeBytes,
-				Fields:          info.Fields,
-				Attributes:      info.Attributes,
+				ItemType:       "lake_table",
+				Organization:   info.Organization,
+				DataType:       info.DataType,
+				Format:         info.Format,
+				PhysicalPath:   file.Path,
+				EntryPath:      info.EntryPath,
+				ComponentFiles: info.ComponentFiles,
+				SizeBytes:      sizeBytes,
+				Fields:         info.Fields,
+				Attributes:     info.Attributes,
 			}
 		}
 	}
@@ -413,7 +413,7 @@ func resolveNonExclusiveScopeItems(
 			continue
 		}
 		for _, item := range scopeResult.Items {
-			if item == nil || item.CompositionType == dataitem.CompositionTypeDirectoryTree {
+			if item == nil || item.Organization == dataitem.OrganizationWhole {
 				continue
 			}
 			result.Items = append(result.Items, item)
@@ -562,7 +562,7 @@ func setSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	upsertSection(attrs, "schema", map[string]interface{}{"fields": fields})
+	upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
 }
 
 func fileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {
@@ -631,15 +631,15 @@ func inferDetectedItemName(dirPath string, item *dataitem.DetectedItem) (name, f
 	if item == nil {
 		return inferItemName(dirPath)
 	}
-	switch item.CompositionType {
-	case dataitem.CompositionTypeSingleFile, dataitem.CompositionTypeMultiFile, dataitem.CompositionTypeContainerFile:
+	switch item.Organization {
+	case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
 		if item.EntryPath != "" {
 			cleaned := strings.Trim(item.EntryPath, "/")
 			if cleaned != "" {
 				return filepath.Base(cleaned), cleaned
 			}
 		}
-	case dataitem.CompositionTypeDirectoryTree:
+	case dataitem.OrganizationWhole:
 		return inferItemName(dirPath)
 	}
 	if item.EntryPath != "" {
@@ -659,7 +659,7 @@ func fileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
 		return item.ItemType
 	}
 	if rule, ok := dataitem.MatchBuiltinSingleFileRule(item.Format); ok &&
-		rule.CompositionType == dataitem.CompositionTypeSingleFile &&
+		rule.Organization == dataitem.OrganizationSingle &&
 		rule.ItemType != "" {
 		return rule.ItemType
 	}

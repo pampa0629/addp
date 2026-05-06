@@ -329,25 +329,41 @@ func timeFromAttributes(metadata map[string]interface{}, extensionNamespace, key
 }
 
 func valueFromExtension(metadata map[string]interface{}, namespace, key string) interface{} {
-	if section := extensionAttributes(metadata, namespace); section != nil {
+	if section := standardAttributeSection(metadata, namespace); section != nil {
 		return section[key]
 	}
 	return nil
 }
 
 func extensionAttributes(metadata map[string]interface{}, namespace string) map[string]interface{} {
+	return standardAttributeSection(metadata, namespace)
+}
+
+func standardAttributeSection(metadata map[string]interface{}, namespace string) map[string]interface{} {
 	if metadata == nil || namespace == "" {
 		return nil
 	}
-	extensions, ok := metadata["extensions"].(map[string]interface{})
-	if !ok {
-		return nil
+	for _, root := range standardAttributeRoots(namespace) {
+		sections, ok := metadata[root].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if section, ok := sections[namespace].(map[string]interface{}); ok {
+			return section
+		}
 	}
-	section, ok := extensions[namespace].(map[string]interface{})
-	if !ok {
-		return nil
+	return nil
+}
+
+func standardAttributeRoots(namespace string) []string {
+	switch namespace {
+	case "media", "document", "container", "table", "graph":
+		return []string{"type_info"}
+	case "spatial", "statistics", "extraction", "semantic", "temporal", "partitioning", "indexing":
+		return []string{"capabilities"}
+	default:
+		return []string{"format_info"}
 	}
-	return section
 }
 
 func intFromInterface(value interface{}) int {

@@ -164,7 +164,7 @@ func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([
 }
 
 func fieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) {
-	fieldsList, ok := sliceAttributeFromSection(item.Attributes, "schema", "fields")
+	fieldsList, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields")
 	if !ok {
 		return []commonModels.FieldInfo{}, nil
 	}
@@ -480,10 +480,49 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 		Fields: []models.FieldInfo{},
 	}
 
-	// 提取 spatial_metadata
+	// 提取 capabilities.spatial
 	if spatialData, ok := spatialMetadataAttribute(item.Attributes); ok {
-		if geomCol, ok := spatialData["geometry_column"].(string); ok {
+		if geomCol, ok := spatialData["primary_geometry_column"].(string); ok {
 			spatialMeta.GeometryColumn = geomCol
+		}
+		if columns, ok := spatialData["geometry_columns"].([]interface{}); ok && len(columns) > 0 {
+			for _, rawColumn := range columns {
+				if first, ok := rawColumn.(map[string]interface{}); ok {
+					if spatialMeta.GeometryColumn != "" && toString(first["name"]) != spatialMeta.GeometryColumn {
+						continue
+					}
+					spatialMeta.GeometryColumn = toString(first["name"])
+					spatialMeta.SRID = int(toInt(first["srid"]))
+					if geomType := toString(first["geometry_type"]); geomType != "" {
+						spatialMeta.GeometryTypes = []string{geomType}
+					}
+					break
+				}
+				if first, ok := rawColumn.(models.JSONMap); ok {
+					if spatialMeta.GeometryColumn != "" && toString(first["name"]) != spatialMeta.GeometryColumn {
+						continue
+					}
+					spatialMeta.GeometryColumn = toString(first["name"])
+					spatialMeta.SRID = int(toInt(first["srid"]))
+					if geomType := toString(first["geometry_type"]); geomType != "" {
+						spatialMeta.GeometryTypes = []string{geomType}
+					}
+					break
+				}
+			}
+		}
+		if columns, ok := spatialData["geometry_columns"].([]map[string]interface{}); ok && len(columns) > 0 {
+			for _, column := range columns {
+				if spatialMeta.GeometryColumn != "" && toString(column["name"]) != spatialMeta.GeometryColumn {
+					continue
+				}
+				spatialMeta.GeometryColumn = toString(column["name"])
+				spatialMeta.SRID = int(toInt(column["srid"]))
+				if geomType := toString(column["geometry_type"]); geomType != "" {
+					spatialMeta.GeometryTypes = []string{geomType}
+				}
+				break
+			}
 		}
 		if srid, ok := spatialData["srid"].(float64); ok {
 			spatialMeta.SRID = int(srid)
@@ -511,7 +550,7 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	// 提取 table_metadata
-	if tableMeta, ok := mapAttributeFromSection(item.Attributes, "schema", "table_metadata"); ok {
+	if tableMeta, ok := mapAttributeFromSection(item.Attributes, "type_info.table", "table_metadata"); ok {
 		if pk, ok := tableMeta["primary_key"].(string); ok {
 			spatialMeta.PrimaryKey = pk
 		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok {
@@ -524,7 +563,7 @@ func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 	}
 
 	// 提取字段信息
-	if fields, ok := sliceAttributeFromSection(item.Attributes, "schema", "fields"); ok {
+	if fields, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields"); ok {
 		for _, f := range fields {
 			if fieldMap, ok := f.(map[string]interface{}); ok {
 				fieldInfo := models.FieldInfo{
@@ -590,7 +629,7 @@ func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]int
 }
 
 func spatialMetadataAttribute(attrs models.JSONMap) (map[string]interface{}, bool) {
-	value := commonAttrs.ValueFromSections(attrs, "spatial_metadata", "extensions.spatial")
+	value := commonAttrs.ValueFromSections(attrs, "spatial", "capabilities")
 	if value == nil {
 		return nil, false
 	}

@@ -28,12 +28,12 @@ func Section(attrs map[string]interface{}, section string) map[string]interface{
 	return current
 }
 
-// Value reads a key from a standard attributes section first, then falls back to flat compatibility.
+// Value reads a key from a standard attributes section.
 func Value(attrs map[string]interface{}, section, key string) interface{} {
 	return ValueFromSections(attrs, key, section)
 }
 
-// ValueFromSections reads a key from the first matching standard section, then falls back to flat compatibility.
+// ValueFromSections reads a key from the first matching standard section.
 func ValueFromSections(attrs map[string]interface{}, key string, sections ...string) interface{} {
 	for _, section := range sections {
 		if sectionAttrs := Section(attrs, section); sectionAttrs != nil {
@@ -42,10 +42,7 @@ func ValueFromSections(attrs map[string]interface{}, key string, sections ...str
 			}
 		}
 	}
-	if attrs == nil {
-		return nil
-	}
-	return attrs[key]
+	return nil
 }
 
 func StringFromSections(attrs map[string]interface{}, key string, sections ...string) string {

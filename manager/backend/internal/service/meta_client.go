@@ -128,8 +128,8 @@ func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[str
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 检查标准提取扩展中的 extracted_metadata
-	if extracted, ok := commonAttrs.Value(result.Data.Attributes, "extensions.extraction", "extracted_metadata").(map[string]interface{}); ok {
+	// 检查标准提取能力中的 extracted_metadata
+	if extracted, ok := commonAttrs.Value(result.Data.Attributes, "capabilities.extraction", "extracted_metadata").(map[string]interface{}); ok {
 		return extracted, nil
 	}
 

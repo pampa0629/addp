@@ -13,10 +13,10 @@ Manager 内容预览插件应消费 meta 已识别的标准 data item，不重�
 插件匹配只基于标准字段：
 
 - `meta_item.item_type`
+- `meta_item.full_name`
 - `attributes.item.organization`
 - `attributes.item.data_type`
 - `attributes.item.format`
-- `attributes.item.entry_path`
 - `attributes.item.component_files`
 - `attributes.storage.physical_path`
 - `attributes.type_info`
@@ -38,7 +38,6 @@ Manager 内容预览插件应消费 meta 已识别的标准 data item，不重�
     },
     "priority": 100,
     "input": {
-      "requires_entry_path": true,
       "requires_component_files": true
     },
     "output": {
@@ -53,8 +52,8 @@ Manager 内容预览插件应消费 meta 已识别的标准 data item，不重�
 
 - `priority` 只在同一标准匹配结果内解决冲突。
 - 插件不得用扩展名、MIME 或 provider 优先级覆盖 meta 识别结果。
-- multi item 使用 `entry_path` 和 `component_files`。
-- whole item 使用 whole scope 规范声明的入口、manifest 或 claimed resources。
+- multi item 使用 `meta_item.full_name` 作为主资源，并使用 `component_files` 读取组件资源。
+- whole item 使用 `meta_item.full_name` 作为 whole scope 根范围；manifest 等格式入口写入 `format_info.<format>`。
 - 私有 `format_info` 只能用于展示细节，不得改变核心路由。
 
 ## 待讨论

@@ -65,7 +65,7 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 
 	got := objectStorageSingleFileItemType(&dataitem.DetectedItem{
 		Format:          "geojson",
-		CompositionType: dataitem.CompositionTypeSingleFile,
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "table" {
 		t.Fatalf("itemType = %q, want table", got)
@@ -73,7 +73,7 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 
 	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
 		Format:          "pdf",
-		CompositionType: dataitem.CompositionTypeSingleFile,
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "file" {
 		t.Fatalf("pdf itemType = %q, want file", got)
@@ -81,7 +81,7 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 
 	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
 		Format:          "parquet",
-		CompositionType: dataitem.CompositionTypeSingleFile,
+		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "lake_table" {
 		t.Fatalf("parquet itemType = %q, want lake_table", got)
@@ -95,7 +95,7 @@ func TestInferObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 		bucket: "addp",
 		prefix: "lake",
 		item: &dataitem.DetectedItem{
-			CompositionType: dataitem.CompositionTypeSingleFile,
+			Organization: dataitem.OrganizationSingle,
 			EntryPath:       "addp/lake/sales.parquet",
 		},
 	})

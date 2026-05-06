@@ -348,7 +348,7 @@ JSON 需要结构识别：
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
-| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、entry_path、component_files |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile components、SQLite version |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |

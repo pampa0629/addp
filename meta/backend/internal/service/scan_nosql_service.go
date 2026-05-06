@@ -228,7 +228,6 @@ func buildDocCollectionAttributesFromMetadata(itemMetadata *plugin.ItemMetadata)
 	for key, value := range itemMetadata.Attributes {
 		attrs[key] = value
 	}
-	schemaAttrs := map[string]interface{}{}
 	if len(itemMetadata.Indexes) > 0 {
 		indexes := make([]map[string]interface{}, 0, len(itemMetadata.Indexes))
 		for _, idx := range itemMetadata.Indexes {
@@ -239,16 +238,11 @@ func buildDocCollectionAttributesFromMetadata(itemMetadata *plugin.ItemMetadata)
 				"index_type": idx.IndexType,
 			})
 		}
-		attrs["indexes"] = indexes
-		schemaAttrs["indexes"] = indexes
+		upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"indexes": indexes})
 	}
 	if len(itemMetadata.Fields) > 0 {
 		fields := buildDocFieldAttributes(itemMetadata.Fields)
-		attrs["fields"] = fields
-		schemaAttrs["fields"] = fields
-	}
-	if len(schemaAttrs) > 0 {
-		attrs["schema"] = schemaAttrs
+		upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
 	}
 
 	return attrs
@@ -385,13 +379,14 @@ func countStatKey(itemType string) string {
 }
 
 func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType, engineType string) {
+	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
 	setItemAttribute(attrs, "format", engineType)
 	switch itemType {
 	case "collection":
-		setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyTabular))
+		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))
 	case "label", "relationship":
-		setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyGraph))
+		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeGraph))
 	default:
-		setItemAttribute(attrs, "data_family", string(dataitem.DataFamilyUnknown))
+		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeUnknown))
 	}
 }

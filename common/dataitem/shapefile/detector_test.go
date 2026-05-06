@@ -25,8 +25,8 @@ func TestDetectorDetectsCompleteShapefile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractItemInfo() error = %v", err)
 	}
-	if info.CompositionType != dataitem.CompositionTypeMultiFile {
-		t.Fatalf("CompositionType = %q, want %q", info.CompositionType, dataitem.CompositionTypeMultiFile)
+	if info.Organization != dataitem.OrganizationMulti {
+		t.Fatalf("Organization = %q, want %q", info.Organization, dataitem.OrganizationMulti)
 	}
 	if info.Format != "shapefile" {
 		t.Fatalf("Format = %q, want shapefile", info.Format)
@@ -34,13 +34,13 @@ func TestDetectorDetectsCompleteShapefile(t *testing.T) {
 	if got, want := len(info.ComponentFiles), len(files); got != want {
 		t.Fatalf("ComponentFiles len = %d, want %d", got, want)
 	}
-	if info.Attributes["base_name"] != nil || info.Attributes["has_prj"] != nil {
+	if info.Attributes["base_name"] != nil || info.Attributes["has_prj"] != nil || info.Attributes["extensions"] != nil {
 		t.Fatalf("shapefile private fields should not be flat: %#v", info.Attributes)
 	}
-	extensions := info.Attributes["extensions"].(map[string]interface{})
-	shapefileExt := extensions["builtin.shapefile"].(map[string]interface{})
-	if shapefileExt["base_name"] != "roads" || shapefileExt["has_prj"] != true {
-		t.Fatalf("builtin shapefile extension = %#v, want base_name and has_prj", shapefileExt)
+	formatInfo := info.Attributes["format_info"].(map[string]interface{})
+	shapefileInfo := formatInfo["shapefile"].(map[string]interface{})
+	if shapefileInfo["base_name"] != "roads" || shapefileInfo["has_prj"] != true {
+		t.Fatalf("shapefile format info = %#v, want base_name and has_prj", shapefileInfo)
 	}
 }
 
@@ -51,8 +51,8 @@ func TestDetectorRuleDeclaresMultiFileComponents(t *testing.T) {
 	if rule.Format != "shapefile" {
 		t.Fatalf("Format = %q, want shapefile", rule.Format)
 	}
-	if rule.CompositionType != dataitem.CompositionTypeMultiFile {
-		t.Fatalf("CompositionType = %q, want multi_file", rule.CompositionType)
+	if rule.Organization != dataitem.OrganizationMulti {
+		t.Fatalf("Organization = %q, want multi", rule.Organization)
 	}
 	if rule.Components == nil {
 		t.Fatal("Components missing")

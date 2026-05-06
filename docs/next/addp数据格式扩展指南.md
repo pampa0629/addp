@@ -89,7 +89,7 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 
 ### common/dataitem
 
-`common/dataitem` 负责组织方式推断和 data item 识别，输出 `DetectedItem`。其组织方式、数据类型、格式、入口路径和组成资源列表是 `attributes.item` 的主要来源。
+`common/dataitem` 负责组织方式推断和 data item 识别，输出 `DetectedItem`。其组织方式、数据类型、格式、组成资源列表和 whole scope 独占语义是 `attributes.item` 的主要来源。data item 的定位事实源始终是 `meta_item.full_name`。
 
 ### common/format
 
@@ -97,7 +97,7 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 
 ### manager
 
-`manager` 只消费 meta 已入库 item。预览路由基于 `item_type` 表字段，以及 `attributes.item.organization`、`attributes.item.data_type`、`attributes.item.format`、`attributes.item.entry_path`、`attributes.item.component_files`、`attributes.storage.physical_path` 等标准属性，不按后缀或 provider 优先级重新猜测 item。
+`manager` 只消费 meta 已入库 item。预览路由基于 `item_type` 表字段、`meta_item.full_name`，以及 `attributes.item.organization`、`attributes.item.data_type`、`attributes.item.format`、`attributes.item.component_files`、`attributes.storage.physical_path` 等标准属性，不按后缀或 provider 优先级重新猜测 item。
 
 ### transfer
 
@@ -119,7 +119,7 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 2. 实现 `ScopeItemDetector`，支持一个扫描范围产出多个 item。
 3. 明确是否允许递归组件，默认不得跨目录或跨 prefix 猜测。
 4. 实现 parser / extractor。
-5. 接入 manager / transfer，使用 `entry_path` 和 `component_files`。
+5. 接入 manager / transfer，使用 `meta_item.full_name` 定位主资源，使用 `component_files` 读取组件资源。
 
 ### 新增 container 数据类型格式
 

@@ -35,7 +35,7 @@ attributes 分区统一采用以下概念：
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | physical_path、bucket、path、etag、content_type、last_modified_at、total_size |
-| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、entry_path、component_files、file_count |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、file_count、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile components、sqlite version |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
@@ -53,7 +53,7 @@ attributes 分区统一采用以下概念：
 | fingerprint | `meta_item.fingerprint` | 不写入 attributes |
 | 大小 | `meta_item.size_bytes` + `attributes.storage.total_size` | 表列用于列表和排序，attributes 保存源存储视角 |
 | 修改时间 | `meta_item.data_updated_at` + `attributes.storage.last_modified_at` | `scanned_at` 不进入 attributes |
-| data item 核心语义 | `attributes.item` | organization、data_type、format、entry_path、component_files |
+| data item 核心语义 | `attributes.item` | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
 | 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
@@ -65,7 +65,7 @@ attributes 分区统一采用以下概念：
 | 分区 | 写入来源 | 内容 |
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
-| `item` | `common/dataitem`、meta normalizer | organization、data_type、format、entry_path、component_files、file_count |
+| `item` | `common/dataitem`、meta normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
 | `type_info` | 数据库 metadata、parser、采样器、extractor | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
 | `format_info` | parser、extractor、plugin | CSV 分隔符、Shapefile 组件、GeoJSON 类型、SQLite 版本等具体格式信息 |
 | `capabilities` | parser、extractor、plugin、画像任务 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -79,6 +79,9 @@ attributes 分区统一采用以下概念：
 5. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
 6. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
 7. 空间、时间、统计、提取、语义、分区、索引等不应进入 `data_type` 或 `format_info`，应作为横切能力写入 `capabilities`。
+8. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
+9. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
+10. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
 
 ## type_info 结构约定
 
@@ -113,7 +116,7 @@ attributes 分区统一采用以下概念：
 
 | 命名空间 | 含义 | 典型字段 |
 |---|---|---|
-| `spatial` | 空间能力 | geometry_column、geometry_type、geometry_types、srid、extent、dimension、has_spatial_index |
+| `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
 | `statistics` | 统计和采样 | sample_size、null_count、min、max、profiled_at |
 | `extraction` | 内容提取 | metadata_extracted、extractor_available、plain_text_preview、summary、index_ref |
@@ -122,6 +125,45 @@ attributes 分区统一采用以下概念：
 | `indexing` | 索引能力 | spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
+
+### capabilities.spatial 最小结构
+
+`capabilities.spatial` 表达跨格式稳定消费的空间能力，不负责完整空间画像。meta 扫描阶段只写能够从字段声明、格式头或轻量元数据中确定的信息，不为了推断实际几何类型而扫描全量数据。
+
+建议最小结构：
+
+```json
+{
+  "geometry_columns": [
+    {
+      "name": "geometry",
+      "geometry_type": "geometry",
+      "srid": 4326,
+      "dimension": 2,
+      "nullable": false
+    }
+  ],
+  "primary_geometry_column": "geometry",
+  "extent": null,
+  "has_spatial_index": false
+}
+```
+
+字段规则：
+
+| 字段 | 规则 |
+|---|---|
+| `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段。 |
+| `geometry_type` | 写入声明类型或格式天然可确定的类型。PostGIS 字段声明为 `geometry` 时就写 `geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
+| `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。 |
+| `crs` | 不能确定编号但能获得 CRS 描述时写 `crs`，例如 WKT、PROJJSON、proj4。`srid` 和 `crs` 二选一，不同时写。 |
+| `dimension` | 坐标维度，无法确定时可省略。 |
+| `nullable` | 字段是否可空，无法确定时可省略。 |
+| `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入。 |
+| `extent` | 空间范围。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据。 |
+| `has_spatial_index` | 是否存在空间索引；无法确定时可省略。 |
+
+`feature_count` 不属于 spatial，表格型行数写入 `type_info.table.row_count`。如果后续画像任务采样得到实际几何类型分布，应进入 `capabilities.statistics` 或后续画像结构，不反向覆盖 meta 扫描阶段的 `geometry_type`。
 
 ## 冲突处理
 

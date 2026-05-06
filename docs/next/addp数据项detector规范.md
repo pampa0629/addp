@@ -6,7 +6,7 @@
 
 detector 不能等同于目录 detector，也不能按单一格式局部修补。detector 是从资源候选集合中识别 `0..N` 个 data item 的统一入口。
 
-detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `organization`、`data_type`、`format` 和入口资源，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。
+detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `organization`、`data_type`、`format`、主资源和组件资源，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。主资源或 whole scope 根范围应成为 `meta_item.full_name`。
 
 ## 扫描范围不是 item 边界
 
@@ -39,7 +39,7 @@ type DetectionResult struct {
 
 - `Items`：本轮识别出的 data item。
 - `Claims`：detector 已认领的源资源路径。已认领资源不再作为普通资源重复落 item。
-- `Exclusive`：当前扫描范围整体已被一个 item 认领。仅 `organization=whole`、容器内部整体视图等明确场景允许使用。
+- `Exclusive`：当前扫描范围整体已被一个 item 认领。仅 `organization=whole` 等明确场景允许使用；该范围内其他资源不得再生成独立 item。
 
 ## 递归观察资源
 
@@ -77,7 +77,7 @@ Shapefile 必须归入 sibling multi-resource，不得作为 whole-scope detecto
 
 ## FormatRule
 
-格式实现层通过规则声明一次性回答自己的组织方式、数据类型、入口、组件和优先级：
+格式实现层通过规则声明一次性回答自己的组织方式、数据类型、主资源、组件和优先级：
 
 ```go
 type FormatRule struct {
@@ -104,7 +104,7 @@ type FormatRule struct {
 
 `ContainerRule` 只描述容器型数据的内部枚举、默认入口和内部子 item 表达方式，不改变 `organization`。一个容器文件自身仍应按 `single` 组织方式生成外层 data item。
 
-统一入口只负责提供候选资源、执行优先级、合并结果和处理 claimed resources。一套文件到底需要哪些后缀、入口文件是哪一个、可选组件有哪些，必须由格式实现层声明。
+统一入口只负责提供候选资源、执行优先级、合并结果和处理 claimed resources。一套文件到底需要哪些后缀、主文件是哪一个、可选组件有哪些，必须由格式实现层声明。主文件或 whole scope 根范围最终应写入 `meta_item.full_name`，不得再写入通用 `attributes.item.entry_path`。
 
 ## Shapefile 校准用例
 
@@ -132,4 +132,4 @@ type FormatRule struct {
 5. `raw.csv` 生成 `data_type=table`、`organization=single` item。
 6. 两个 Shapefile item 的 `full_name` 分别来自入口文件全路径。
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
-8. Shapefile 预览使用 meta 中的 `item.entry_path` 和 `item.component_files`，不得重新枚举 sibling 后猜测。
+8. Shapefile 预览使用 `meta_item.full_name` 和 `item.component_files`，不得重新枚举 sibling 后猜测。

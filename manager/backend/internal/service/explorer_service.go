@@ -619,7 +619,7 @@ func extractStringSliceFromAttrs(attrs map[string]interface{}, key string) []str
 	if attrs == nil {
 		return []string{}
 	}
-	if sectionAttrs := explorerAttributeSection(attrs, "schema"); sectionAttrs != nil {
+	if sectionAttrs := explorerAttributeSection(attrs, "type_info.table"); sectionAttrs != nil {
 		if values := interfaceToExplorerStringSlice(sectionAttrs[key]); len(values) > 0 {
 			return values
 		}
@@ -651,7 +651,7 @@ func int64AttributeFromAttrs(attrs map[string]interface{}, key string) int64 {
 	if attrs == nil {
 		return 0
 	}
-	if sectionAttrs := explorerAttributeSection(attrs, "schema"); sectionAttrs != nil {
+	if sectionAttrs := explorerAttributeSection(attrs, "type_info.table"); sectionAttrs != nil {
 		if value := toInt64(sectionAttrs[key]); value > 0 {
 			return value
 		}
@@ -765,8 +765,8 @@ func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.J
 		return true
 	}
 	formatName := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "format", "item")))
-	compositionType := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "composition_type", "item")))
-	return formatName != "" && compositionType != ""
+	organization := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "organization", "item")))
+	return formatName != "" && organization != ""
 }
 
 // metaClientAdapter 适配器：将 MetaClient 适配为 TreeBuilder 的 MetaClient 接口
