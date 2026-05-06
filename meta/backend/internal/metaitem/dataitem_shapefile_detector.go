@@ -1,4 +1,4 @@
-package shapefile
+package metaitem
 
 import (
 	"context"
@@ -16,12 +16,12 @@ import (
 )
 
 var (
-	requiredExts = map[string]bool{
+	shapefileRequiredExts = map[string]bool{
 		".shp": true,
 		".shx": true,
 		".dbf": true,
 	}
-	knownExts = map[string]bool{
+	shapefileKnownExts = map[string]bool{
 		".shp": true,
 		".shx": true,
 		".dbf": true,
@@ -32,9 +32,9 @@ var (
 	}
 )
 
-type Detector struct{}
+type shapefileItemDetector struct{}
 
-var rule = dataitem.FormatRule{
+var shapefileItemRule = dataitem.FormatRule{
 	Format:       "shapefile",
 	DataType:     dataitem.DataTypeTable,
 	ItemType:     "table",
@@ -53,29 +53,25 @@ var rule = dataitem.FormatRule{
 	},
 }
 
-func init() {
-	dataitem.Register(&Detector{})
+func (d *shapefileItemDetector) Rule() dataitem.FormatRule {
+	return shapefileItemRule
 }
 
-func (d *Detector) Rule() dataitem.FormatRule {
-	return rule
+func (d *shapefileItemDetector) Priority() int {
+	return shapefileItemRule.Priority
 }
 
-func (d *Detector) Priority() int {
-	return rule.Priority
+func (d *shapefileItemDetector) ItemType() string {
+	return shapefileItemRule.ItemType
 }
 
-func (d *Detector) ItemType() string {
-	return rule.ItemType
-}
-
-func (d *Detector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
-	_, ok := matchShapefile(files)
+func (d *shapefileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+	_, ok := matchShapefileItem(files)
 	return ok
 }
 
-func (d *Detector) ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
-	matches := matchShapefiles(input.Files)
+func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
+	matches := matchShapefileItems(input.Files)
 	result := &dataitem.DetectionResult{
 		Items:  []*dataitem.DetectedItem{},
 		Claims: dataitem.ResourceClaimSet{},
@@ -94,8 +90,8 @@ func (d *Detector) ResolveItems(ctx context.Context, input dataitem.DirectoryRes
 		}
 		item := &dataitem.DetectedItem{
 			ItemType:       d.ItemType(),
-			Organization:   rule.Organization,
-			DataType:       rule.DataType,
+			Organization:   shapefileItemRule.Organization,
+			DataType:       shapefileItemRule.DataType,
 			Format:         info.Format,
 			PhysicalPath:   input.DirPath,
 			EntryPath:      info.EntryPath,
@@ -112,7 +108,7 @@ func (d *Detector) ResolveItems(ctx context.Context, input dataitem.DirectoryRes
 	return result, nil
 }
 
-func (d *Detector) ExtractItemInfo(
+func (d *shapefileItemDetector) ExtractItemInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -120,19 +116,19 @@ func (d *Detector) ExtractItemInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 ) (*dataitem.CompositeItemInfo, error) {
-	match, ok := matchShapefile(files)
+	match, ok := matchShapefileItem(files)
 	if !ok {
 		return nil, fmt.Errorf("no complete shapefile component set in directory: %s", dirPath)
 	}
 	return d.extractMatchedItemInfo(ctx, contentReader, connInfo, engineID, match)
 }
 
-func (d *Detector) extractMatchedItemInfo(
+func (d *shapefileItemDetector) extractMatchedItemInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	match shapefileMatch,
+	match shapefileItemMatch,
 ) (*dataitem.CompositeItemInfo, error) {
 	totalSize := int64(0)
 	componentFiles := make([]string, 0, len(match.files))
@@ -149,9 +145,9 @@ func (d *Detector) extractMatchedItemInfo(
 
 	entryPath := match.files[".shp"].Path
 	info := &dataitem.CompositeItemInfo{
-		Organization:   rule.Organization,
-		DataType:       rule.DataType,
-		Format:         rule.Format,
+		Organization:   shapefileItemRule.Organization,
+		DataType:       shapefileItemRule.DataType,
+		Format:         shapefileItemRule.Format,
 		EntryPath:      entryPath,
 		ComponentFiles: componentFiles,
 		SizeBytes:      &totalSize,
@@ -176,13 +172,13 @@ func enrichShapefileInfo(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	match shapefileMatch,
+	match shapefileItemMatch,
 	info *dataitem.CompositeItemInfo,
 ) {
 	if contentReader == nil || info == nil {
 		return
 	}
-	tempDir, cleanup, err := copyComponentsToTempDir(ctx, contentReader, connInfo, engineID, match)
+	tempDir, cleanup, err := copyShapefileComponentsToTempDir(ctx, contentReader, connInfo, engineID, match)
 	if err != nil {
 		return
 	}
@@ -252,12 +248,12 @@ func enrichShapefileInfo(
 	if bbox != nil {
 		extent = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
 	}
-	upsertNestedAttributesSection(info, "type_info", "table", map[string]interface{}{
-		"fields":      fieldAttributes(fields),
+	upsertShapefileItemSection(info, "type_info", "table", map[string]interface{}{
+		"fields":      shapefileFieldAttributes(fields),
 		"row_count":   rowCount,
 		"primary_key": []string{},
 	})
-	upsertNestedAttributesSection(info, "capabilities", "spatial", map[string]interface{}{
+	upsertShapefileItemSection(info, "capabilities", "spatial", map[string]interface{}{
 		"geometry_columns": []map[string]interface{}{{
 			"name":          "geometry",
 			"geometry_type": geometryType,
@@ -269,17 +265,17 @@ func enrichShapefileInfo(
 		"extent":                  extent,
 		"has_spatial_index":       match.exts[".sbn"] && match.exts[".sbx"],
 	})
-	upsertNestedAttributesSection(info, "format_info", "shapefile", map[string]interface{}{
+	upsertShapefileItemSection(info, "format_info", "shapefile", map[string]interface{}{
 		"shape_type": geometryType,
 	})
 }
 
-func copyComponentsToTempDir(
+func copyShapefileComponentsToTempDir(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	match shapefileMatch,
+	match shapefileItemMatch,
 ) (string, func(), error) {
 	tempDir, err := os.MkdirTemp("", "addp-shapefile-*")
 	if err != nil {
@@ -287,7 +283,7 @@ func copyComponentsToTempDir(
 	}
 	cleanup := func() { _ = os.RemoveAll(tempDir) }
 	for ext, file := range match.files {
-		if err := copyContentToFile(ctx, contentReader, connInfo, engineID, file.Path, filepath.Join(tempDir, match.baseName+ext)); err != nil {
+		if err := copyShapefileContentToFile(ctx, contentReader, connInfo, engineID, file.Path, filepath.Join(tempDir, match.baseName+ext)); err != nil {
 			cleanup()
 			return "", nil, err
 		}
@@ -295,7 +291,7 @@ func copyComponentsToTempDir(
 	return tempDir, cleanup, nil
 }
 
-func copyContentToFile(
+func copyShapefileContentToFile(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -303,7 +299,7 @@ func copyContentToFile(
 	sourcePath string,
 	targetPath string,
 ) error {
-	rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathForContent(engineID, sourcePath), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, shapefileCatalogPathForContent(engineID, sourcePath), plugin.ReadOptions{})
 	if err != nil {
 		return err
 	}
@@ -318,7 +314,7 @@ func copyContentToFile(
 	return err
 }
 
-func catalogPathForContent(engineID uint, path string) plugin.CatalogPath {
+func shapefileCatalogPathForContent(engineID uint, path string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
@@ -330,7 +326,7 @@ func catalogPathForContent(engineID uint, path string) plugin.CatalogPath {
 	}
 }
 
-func upsertNestedAttributesSection(info *dataitem.CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
+func upsertShapefileItemSection(info *dataitem.CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
 	if info.Attributes == nil {
 		info.Attributes = map[string]interface{}{}
 	}
@@ -353,7 +349,7 @@ func upsertNestedAttributesSection(info *dataitem.CompositeItemInfo, section str
 	info.Attributes[section] = sectionAttrs
 }
 
-func fieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+func shapefileFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
 	attrs := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		attrs = append(attrs, map[string]interface{}{
@@ -368,32 +364,32 @@ func fieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
 	return attrs
 }
 
-type shapefileMatch struct {
+type shapefileItemMatch struct {
 	baseName string
 	files    map[string]plugin.FileEntry
 	exts     map[string]bool
 }
 
-func matchShapefile(files []plugin.FileEntry) (shapefileMatch, bool) {
-	matches := matchShapefiles(files)
+func matchShapefileItem(files []plugin.FileEntry) (shapefileItemMatch, bool) {
+	matches := matchShapefileItems(files)
 	if len(matches) == 0 {
-		return shapefileMatch{}, false
+		return shapefileItemMatch{}, false
 	}
 	return matches[0], true
 }
 
-func matchShapefiles(files []plugin.FileEntry) []shapefileMatch {
+func matchShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
 	groups := map[string]map[string]plugin.FileEntry{}
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Name))
-		if !knownExts[ext] {
+		if !shapefileKnownExts[ext] {
 			continue
 		}
 		base := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
 		if base == "" {
 			continue
 		}
-		groupKey := shapefileGroupKey(file.Path, base)
+		groupKey := shapefileItemGroupKey(file.Path, base)
 		if _, ok := groups[groupKey]; !ok {
 			groups[groupKey] = map[string]plugin.FileEntry{}
 		}
@@ -406,11 +402,11 @@ func matchShapefiles(files []plugin.FileEntry) []shapefileMatch {
 	}
 	sort.Strings(groupKeys)
 
-	matches := make([]shapefileMatch, 0, len(groupKeys))
+	matches := make([]shapefileItemMatch, 0, len(groupKeys))
 	for _, key := range groupKeys {
 		group := groups[key]
 		complete := true
-		for ext := range requiredExts {
+		for ext := range shapefileRequiredExts {
 			if _, ok := group[ext]; !ok {
 				complete = false
 				break
@@ -423,7 +419,7 @@ func matchShapefiles(files []plugin.FileEntry) []shapefileMatch {
 		for ext := range group {
 			exts[ext] = true
 		}
-		matches = append(matches, shapefileMatch{
+		matches = append(matches, shapefileItemMatch{
 			baseName: strings.TrimSuffix(group[".shp"].Name, filepath.Ext(group[".shp"].Name)),
 			files:    group,
 			exts:     exts,
@@ -432,7 +428,7 @@ func matchShapefiles(files []plugin.FileEntry) []shapefileMatch {
 	return matches
 }
 
-func shapefileGroupKey(path, base string) string {
+func shapefileItemGroupKey(path, base string) string {
 	dir := filepath.Dir(strings.Trim(path, "/"))
 	if dir == "." {
 		dir = ""

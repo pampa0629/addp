@@ -12,13 +12,12 @@ import (
 	"sync"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
-	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/parquet"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -387,22 +386,22 @@ func (s *ObjectStorageScanService) listObjects(resource *commonModels.Engine, ca
 			continue
 		}
 		key := strings.TrimPrefix(node.Path.StringPath(), bucketName+"/")
-		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
+		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
 			_, parsedKey := splitObjectPath(raw)
 			key = parsedKey
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
+		contentType := commonJSON.String(node.Attributes, "storage", "content_type")
 		object := plugin.ObjectInfo{
 			Bucket:      bucketName,
 			Key:         key,
 			Size:        size,
 			ContentType: contentType,
 		}
-		if modifiedAt := commonAttrs.TimePtr(node.Attributes, "storage", "modified_at"); modifiedAt != nil {
+		if modifiedAt := commonJSON.TimePtr(node.Attributes, "storage", "modified_at"); modifiedAt != nil {
 			object.LastModified = *modifiedAt
 		}
-		if etag := commonAttrs.String(node.Attributes, "storage", "etag"); etag != "" {
+		if etag := commonJSON.String(node.Attributes, "storage", "etag"); etag != "" {
 			object.ETag = etag
 		}
 		objects = append(objects, object)
@@ -1250,7 +1249,7 @@ func mergeDataItemAttributes(attrs models.JSONMap, item *dataitem.DetectedItem) 
 	if item == nil {
 		return
 	}
-	for k, v := range dataitem.BuildAttributes(item) {
+	for k, v := range metaitem.BuildAttributes(item) {
 		switch k {
 		case "path", "size", "content_type":
 			continue
@@ -1299,7 +1298,7 @@ func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
 			continue
 		}
 		files := objectMetasToFileEntries(bucket, group)
-		detection, err := dataitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
+		detection, err := metaitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
 			ContentReader: contentReader,
 			ConnInfo:      connInfo,
 			EngineID:      engineID,
@@ -1369,7 +1368,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		parentPath := parentObjectPath(objectPath)
 		fullName := commonModels.JoinObjectPath(composite.bucket, parentPath, itemName)
 
-		attrs := toJSONMap(dataitem.BuildAttributes(composite.item))
+		attrs := toJSONMap(metaitem.BuildAttributes(composite.item))
 		if len(composite.item.Fields) > 0 {
 			setSchemaFields(attrs, fieldAttributesFromFormat(composite.item.Fields))
 		}

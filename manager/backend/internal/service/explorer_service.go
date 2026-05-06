@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
@@ -764,8 +764,8 @@ func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.J
 	case "minio", "s3", "nfs", "nas":
 		return true
 	}
-	formatName := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "format", "item")))
-	organization := strings.ToLower(strings.TrimSpace(commonAttrs.StringFromSections(attributes, "organization", "item")))
+	formatName := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "format", "item")))
+	organization := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "organization", "item")))
 	return formatName != "" && organization != ""
 }
 

@@ -40,7 +40,7 @@ Transfer 后续需要按同一口径消费 meta item：
 3. 空间能力判断只依赖 `attributes.capabilities.spatial`，不得按固定字段名或单一格式推断空间能力。
 4. 表结构和字段映射只依赖 `attributes.type_info.table.fields`。
 5. 对 Shapefile、GeoJSON、Parquet、Iceberg 等组织方式/文件格式补充真实传输用例，验证 Transfer 不绕过 meta item 归并结果。
-6. 清理 Transfer 内部重复格式判断逻辑，必要时复用 `common/dataitem` 和 `common/attributes`。
+6. 清理 Transfer 内部重复格式判断逻辑，必要时复用 Meta Client、common 层数据类型概念、`common/format` 和 `common/jsonmap`；不得绕过 Meta 重新执行 data item 识别。
 7. 明确 Transfer 插件私有扩展写入规范：第三方格式信息只能写入合规 `format_info.<namespace>`，横切能力只能写入合规 `capabilities.<namespace>`，不得覆盖 `storage`、`item`、`type_info` 核心字段。
 
 ## 建议验证

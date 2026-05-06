@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	commonAttrs "github.com/addp/common/attributes"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -248,16 +248,16 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 	}
 
 	if tableNode.Attributes != nil {
-		spatial := commonAttrs.Section(tableNode.Attributes, "capabilities.spatial")
+		spatial := commonJSON.Section(tableNode.Attributes, "capabilities.spatial")
 		if spatial != nil {
-			metadata.GeometryColumn = commonAttrs.InterfaceString(spatial["primary_geometry_column"])
+			metadata.GeometryColumn = commonJSON.InterfaceString(spatial["primary_geometry_column"])
 			if columns, ok := spatial["geometry_columns"].([]interface{}); ok && len(columns) > 0 {
 				if column, ok := columns[0].(map[string]interface{}); ok {
 					if metadata.GeometryColumn == "" {
-						metadata.GeometryColumn = commonAttrs.InterfaceString(column["name"])
+						metadata.GeometryColumn = commonJSON.InterfaceString(column["name"])
 					}
-					metadata.GeometryType = commonAttrs.InterfaceString(column["geometry_type"])
-					if srid := commonAttrs.InterfaceInt64(column["srid"]); srid > 0 {
+					metadata.GeometryType = commonJSON.InterfaceString(column["geometry_type"])
+					if srid := commonJSON.InterfaceInt64(column["srid"]); srid > 0 {
 						sridInt := int(srid)
 						metadata.SRID = &sridInt
 					}
@@ -265,16 +265,16 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 			}
 			if columns, ok := spatial["geometry_columns"].([]map[string]interface{}); ok && len(columns) > 0 {
 				if metadata.GeometryColumn == "" {
-					metadata.GeometryColumn = commonAttrs.InterfaceString(columns[0]["name"])
+					metadata.GeometryColumn = commonJSON.InterfaceString(columns[0]["name"])
 				}
-				metadata.GeometryType = commonAttrs.InterfaceString(columns[0]["geometry_type"])
-				if srid := commonAttrs.InterfaceInt64(columns[0]["srid"]); srid > 0 {
+				metadata.GeometryType = commonJSON.InterfaceString(columns[0]["geometry_type"])
+				if srid := commonJSON.InterfaceInt64(columns[0]["srid"]); srid > 0 {
 					sridInt := int(srid)
 					metadata.SRID = &sridInt
 				}
 			}
 			metadata.HasGeometry = metadata.GeometryColumn != ""
-			metadata.Extent = commonAttrs.InterfaceFloat64Slice(spatial["extent"])
+			metadata.Extent = commonJSON.InterfaceFloat64Slice(spatial["extent"])
 		}
 	}
 

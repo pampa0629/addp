@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 
@@ -442,9 +442,9 @@ func (r *ScanRepository) generateFingerprint(
 ) (string, error) {
 	if attrs != nil {
 		// 对象存储：使用 bucket/path+name
-		if bucket := commonAttrs.String(attrs, "storage", "bucket"); bucket != "" {
-			fileName := commonAttrs.String(attrs, "storage", "name")
-			dir := commonAttrs.String(attrs, "storage", "path")
+		if bucket := commonJSON.String(attrs, "storage", "bucket"); bucket != "" {
+			fileName := commonJSON.String(attrs, "storage", "name")
+			dir := commonJSON.String(attrs, "storage", "path")
 
 			// 两步计算指纹：先拼接 full_name，再计算指纹
 			fullName := commonModels.JoinObjectPath(bucket, dir, fileName)
@@ -452,7 +452,7 @@ func (r *ScanRepository) generateFingerprint(
 		}
 
 		// 关系数据库：使用 schema.table
-		if schema := commonAttrs.String(attrs, "storage", "schema_name"); schema != "" {
+		if schema := commonJSON.String(attrs, "storage", "schema_name"); schema != "" {
 			// 两步计算指纹：先拼接 full_name，再计算指纹
 			fullName := fmt.Sprintf("%s.%s", schema, name)
 			return commonModels.GenerateItemFingerprint(engineID, fullName), nil

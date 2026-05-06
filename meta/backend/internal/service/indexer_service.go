@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
@@ -155,7 +155,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		}
 	}
 	if assetRecord.ContentType == "" {
-		assetRecord.ContentType = commonAttrs.String(metadata, "storage", "content_type")
+		assetRecord.ContentType = commonJSON.String(metadata, "storage", "content_type")
 	}
 
 	if value := stringFromAttributes(metadata, "document", "document_type"); value != "" {
@@ -321,7 +321,7 @@ func timeFromAttributes(metadata map[string]interface{}, extensionNamespace, key
 }
 
 func extractedPlainTextFromAttributes(metadata map[string]interface{}) string {
-	extraction := commonAttrs.Section(metadata, "capabilities.extraction")
+	extraction := commonJSON.Section(metadata, "capabilities.extraction")
 	if extraction == nil {
 		return ""
 	}
@@ -353,7 +353,7 @@ func standardAttributeSection(metadata map[string]interface{}, namespace string)
 		return nil
 	}
 	for _, root := range standardAttributeRoots(namespace) {
-		if section := commonAttrs.Section(metadata, root+"."+namespace); section != nil {
+		if section := commonJSON.Section(metadata, root+"."+namespace); section != nil {
 			return section
 		}
 	}

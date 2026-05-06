@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/duckdb"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	_ "github.com/marcboeker/go-duckdb"
@@ -205,7 +205,7 @@ func (s *DuckDBService) getLakeTables(ctx context.Context, tenantID uint, engine
 		}
 		physicalPath := ""
 		if item.Attributes != nil {
-			physicalPath = commonAttrs.String(item.Attributes, "storage", "physical_path")
+			physicalPath = commonJSON.String(item.Attributes, "storage", "physical_path")
 		}
 		tables = append(tables, TableRef{
 			EngineName:   engine.Name,

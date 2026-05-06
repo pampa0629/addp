@@ -65,23 +65,24 @@ attributes 分区统一采用以下概念：
 | 分区 | 写入来源 | 内容 |
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
-| `item` | `common/dataitem`、meta normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、parser、采样器、extractor | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
-| `format_info` | parser、extractor、plugin | CSV 分隔符、Shapefile 组件、GeoJSON 类型、SQLite 版本等具体格式信息 |
-| `capabilities` | parser、extractor、plugin、画像任务 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
+| `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
+| `type_info` | 数据库 metadata、parser、采样器、extractor、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
+| `format_info` | parser、extractor、plugin、Meta item normalizer | CSV 分隔符、Shapefile 组件、GeoJSON 类型、SQLite 版本等具体格式信息 |
+| `capabilities` | parser、extractor、plugin、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
 ## 写入规则
 
-1. `meta` 在落库前通过统一 normalizer 生成 attributes。
-2. 引擎抽象层只提供存储和 catalog 基础信息，不直接决定 `data_type` 或 `organization`。
-3. `common/dataitem` 负责生成 `item` 分区的核心语义。
-4. `common/format` 的 parser / extractor 只提供类型信息、格式信息和横切能力，不直接覆盖 `item.format`、`item.data_type`、`item.organization` 等核心字段。
-5. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
-6. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
-7. 空间、时间、统计、提取、语义、分区、索引等不应进入 `data_type` 或 `format_info`，应作为横切能力写入 `capabilities`。
-8. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
-9. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
-10. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
+1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
+2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `organization`。
+3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策和 `item` 分区落库构造属于 Meta 模块职责；跨模块需要 item 信息时通过 Meta Client 消费已入库结果。
+4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
+5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
+6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
+7. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
+8. 空间、时间、统计、提取、语义、分区、索引等不应进入 `data_type` 或 `format_info`，应作为横切能力写入 `capabilities`。
+9. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
+10. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
+11. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
 
 ## type_info 结构约定
 

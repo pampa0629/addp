@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	commonClient "github.com/addp/common/client"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -454,7 +454,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 针对对象尝试触发提取
 	if item != nil && objectPath != "" {
-		extractorAvailable := commonAttrs.Bool(combinedAttributes, "capabilities.extraction", "extractor_available")
+		extractorAvailable := commonJSON.Bool(combinedAttributes, "capabilities.extraction", "extractor_available")
 		hasExtracted := preview.Object.ExtractedMetadata != nil
 
 		if extractorAvailable && !hasExtracted {
@@ -464,7 +464,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 				if preview.Object.Attributes == nil {
 					preview.Object.Attributes = make(models.JSONMap)
 				}
-				capabilities := commonAttrs.Section(preview.Object.Attributes, "capabilities")
+				capabilities := commonJSON.Section(preview.Object.Attributes, "capabilities")
 				if capabilities == nil {
 					capabilities = map[string]interface{}{}
 				}
@@ -525,7 +525,7 @@ func isShapefileFileType(attrs models.JSONMap) bool {
 	if len(attrs) == 0 {
 		return false
 	}
-	value := strings.ToLower(strings.TrimSpace(commonAttrs.String(attrs, "storage", "file_type")))
+	value := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "storage", "file_type")))
 	if value == "" {
 		return false
 	}

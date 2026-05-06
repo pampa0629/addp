@@ -1,4 +1,4 @@
-package shapefile
+package metaitem
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestDetectorDetectsCompleteShapefile(t *testing.T) {
-	d := &Detector{}
+	d := &shapefileItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "bucket/roads/roads.shp", Size: 10},
 		{Name: "roads.shx", Path: "bucket/roads/roads.shx", Size: 20},
@@ -45,31 +45,31 @@ func TestDetectorDetectsCompleteShapefile(t *testing.T) {
 }
 
 func TestDetectorRuleDeclaresMultiFileComponents(t *testing.T) {
-	d := &Detector{}
-	rule := d.Rule()
+	d := &shapefileItemDetector{}
+	shapefileItemRule := d.Rule()
 
-	if rule.Format != "shapefile" {
-		t.Fatalf("Format = %q, want shapefile", rule.Format)
+	if shapefileItemRule.Format != "shapefile" {
+		t.Fatalf("Format = %q, want shapefile", shapefileItemRule.Format)
 	}
-	if rule.Organization != dataitem.OrganizationMulti {
-		t.Fatalf("Organization = %q, want multi", rule.Organization)
+	if shapefileItemRule.Organization != dataitem.OrganizationMulti {
+		t.Fatalf("Organization = %q, want multi", shapefileItemRule.Organization)
 	}
-	if rule.Components == nil {
+	if shapefileItemRule.Components == nil {
 		t.Fatal("Components missing")
 	}
-	if rule.Components.EntryExtension != ".shp" {
-		t.Fatalf("EntryExtension = %q, want .shp", rule.Components.EntryExtension)
+	if shapefileItemRule.Components.EntryExtension != ".shp" {
+		t.Fatalf("EntryExtension = %q, want .shp", shapefileItemRule.Components.EntryExtension)
 	}
-	if rule.Components.AllowRecursive {
+	if shapefileItemRule.Components.AllowRecursive {
 		t.Fatal("Shapefile sibling components must not allow recursive matching")
 	}
-	if err := dataitem.ValidateFormatRule(rule); err != nil {
+	if err := dataitem.ValidateFormatRule(shapefileItemRule); err != nil {
 		t.Fatalf("ValidateFormatRule() error = %v", err)
 	}
 }
 
 func TestDetectorResolveItemsDetectsMultipleShapefiles(t *testing.T) {
-	d := &Detector{}
+	d := &shapefileItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "farmland.shp", Path: "/shp/farmland.shp", Size: 10},
 		{Name: "farmland.shx", Path: "/shp/farmland.shx", Size: 20},
@@ -108,7 +108,7 @@ func TestDetectorResolveItemsDetectsMultipleShapefiles(t *testing.T) {
 }
 
 func TestDetectorRejectsIncompleteShapefile(t *testing.T) {
-	d := &Detector{}
+	d := &shapefileItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "bucket/roads/roads.shp"},
 		{Name: "roads.dbf", Path: "bucket/roads/roads.dbf"},
@@ -120,7 +120,7 @@ func TestDetectorRejectsIncompleteShapefile(t *testing.T) {
 }
 
 func TestDetectorRejectsCrossDirectoryComponents(t *testing.T) {
-	d := &Detector{}
+	d := &shapefileItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "dataset/roads/roads.shp"},
 		{Name: "roads.shx", Path: "dataset/roads/roads.shx"},

@@ -369,3 +369,17 @@ JSON 需要结构识别：
 - “湖表”不是基础概念；Parquet、Iceberg 等都是 `table` 类型在不同组织方式和格式下的实现。
 - `ObjectInfo` 不作为概念层模型，存储侧对象信息归入 storage info。
 - 一个事实只有一个规范来源和一个规范存储点。
+
+## 模块边界
+
+数据类型与格式体系同时涉及通用概念和 Meta 扫描职责，必须按职责拆分：
+
+| 层级 | 职责 |
+|---|---|
+| `common/jsonmap` | decoded JSON map 的通用读写 helper，不承载 attributes 规范语义，也不作为 `meta_item.attributes` 的业务模型。 |
+| common 层数据类型概念 | `data_type` 等跨模块稳定枚举和基础类型定义。它们可以被 Meta、Manager、Transfer 等共同引用，但不决定资源如何归并成 meta item。 |
+| `common/format` | 文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer。它提供可复用解析能力，不直接落库 attributes。 |
+| `meta` | 资源树扫描、data item 识别、组织方式决策、claims / exclusive、`component_files`、`meta_item.full_name` 决策、attributes normalizer 和落库。 |
+| 其他业务模块 | 通过 Meta Client 消费已入库的 meta item 与标准 attributes，不重复实现资源组织方式识别。 |
+
+因此，构成 meta item 的资源组织方式和识别流程不属于 common 通用能力；common 可以提供稳定枚举、格式 parser 和 JSON map 工具，但不能替代 Meta 对 item 边界和 attributes 落库结构的裁决。

@@ -1,4 +1,4 @@
-package attributes
+package jsonmap
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Section returns a nested attributes section such as "storage" or "capabilities.spatial".
+// Section returns a nested map section such as "storage" or "capabilities.spatial".
 func Section(attrs map[string]interface{}, section string) map[string]interface{} {
 	if attrs == nil || section == "" {
 		return nil
@@ -28,12 +28,12 @@ func Section(attrs map[string]interface{}, section string) map[string]interface{
 	return current
 }
 
-// Value reads a key from a standard attributes section.
+// Value reads a key from a nested map section.
 func Value(attrs map[string]interface{}, section, key string) interface{} {
 	return ValueFromSections(attrs, key, section)
 }
 
-// ValueFromSections reads a key from the first matching standard section.
+// ValueFromSections reads a key from the first matching nested map section.
 func ValueFromSections(attrs map[string]interface{}, key string, sections ...string) interface{} {
 	for _, section := range sections {
 		if sectionAttrs := Section(attrs, section); sectionAttrs != nil {

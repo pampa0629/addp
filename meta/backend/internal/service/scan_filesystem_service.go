@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
-	_ "github.com/addp/common/dataitem/shapefile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonParquet "github.com/addp/common/format/parquet"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -273,7 +273,7 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	dirPath string,
 	detected *dataitem.DetectedItem,
 ) bool {
-	attrs := toJSONMap(dataitem.BuildAttributes(detected))
+	attrs := toJSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
 	}
@@ -316,10 +316,10 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 		detected = dataitem.InferSingleResourceItem(file)
 	}
 	if detected.ItemType == "lake_table" && commonParquet.IsLakeTableFileType(detected.Format) {
-		info, err := commonParquet.ExtractSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
+		info, err := metaitem.ExtractLakeTableSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
 			s.log.Warn("提取 single 资源湖表信息失败，使用基础资源属性", "path", file.Path, "error", err)
-			return toJSONMap(dataitem.BuildAttributes(detected)), nil, nil
+			return toJSONMap(metaitem.BuildAttributes(detected)), nil, nil
 		}
 		if info != nil {
 			if info.SizeBytes == nil {
@@ -340,7 +340,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			}
 		}
 	}
-	attrs := toJSONMap(dataitem.BuildAttributes(detected))
+	attrs := toJSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
 	}
@@ -379,7 +379,7 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 		}
 	}
 
-	return dataitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
+	return metaitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
 		ContentReader:    contentReader,
 		ConnInfo:         connInfo,
 		EngineID:         resource.ID,
@@ -400,43 +400,14 @@ func resolveNonExclusiveScopeItems(
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
 ) (*dataitem.DetectionResult, error) {
-	result := &dataitem.DetectionResult{
-		Items:  []*dataitem.DetectedItem{},
-		Claims: dataitem.ResourceClaimSet{},
-	}
-	input := dataitem.DirectoryResolveInput{
+	return metaitem.ResolveNonExclusiveItems(ctx, dataitem.DirectoryResolveInput{
 		ContentReader: contentReader,
 		ConnInfo:      connInfo,
 		EngineID:      resource.ID,
 		DirPath:       dirPath,
 		Files:         files,
 		Subdirs:       subdirs,
-	}
-	for _, detector := range dataitem.GetAll() {
-		scoped, ok := detector.(dataitem.ScopeItemDetector)
-		if !ok {
-			continue
-		}
-		scopeResult, err := scoped.ResolveItems(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		if scopeResult == nil || scopeResult.Exclusive {
-			continue
-		}
-		for _, item := range scopeResult.Items {
-			if item == nil || item.Organization == dataitem.OrganizationWhole {
-				continue
-			}
-			result.Items = append(result.Items, item)
-		}
-		for path, claimed := range scopeResult.Claims {
-			if claimed {
-				result.Claims[path] = true
-			}
-		}
-	}
-	return result, nil
+	})
 }
 
 func (s *FileSystemScanService) listRoots(
@@ -458,7 +429,7 @@ func (s *FileSystemScanService) listRoots(
 			continue
 		}
 		rootPath := node.Path.StringPath()
-		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
+		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
 			rootPath = raw
 		}
 		roots = append(roots, plugin.RootEntry{
@@ -484,7 +455,7 @@ func (s *FileSystemScanService) listDirectory(
 	subdirs := make([]plugin.DirEntry, 0, len(nodes))
 	for _, node := range nodes {
 		nodePath := node.Path.StringPath()
-		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
+		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
 			nodePath = raw
 		}
 		if node.IsContainer {
@@ -498,7 +469,7 @@ func (s *FileSystemScanService) listDirectory(
 			continue
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
+		contentType := commonJSON.String(node.Attributes, "storage", "content_type")
 		files = append(files, plugin.FileEntry{
 			Name:        node.Name,
 			Path:        nodePath,
@@ -524,7 +495,7 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 	subdirs := make([]plugin.DirEntry, 0)
 	for _, node := range nodes {
 		nodePath := node.Path.StringPath()
-		if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
+		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
 			nodePath = raw
 		}
 		if node.IsContainer {
@@ -538,7 +509,7 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 			continue
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType := commonAttrs.String(node.Attributes, "storage", "content_type")
+		contentType := commonJSON.String(node.Attributes, "storage", "content_type")
 		files = append(files, plugin.FileEntry{
 			Name:        node.Name,
 			Path:        nodePath,

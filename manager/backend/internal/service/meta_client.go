@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
+	commonJSON "github.com/addp/common/jsonmap"
 )
 
 // MetaClient 用于调用Meta模块的API
@@ -129,7 +129,7 @@ func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[str
 	}
 
 	// 检查标准提取能力中的 extracted_metadata
-	if extracted, ok := commonAttrs.Value(result.Data.Attributes, "capabilities.extraction", "extracted_metadata").(map[string]interface{}); ok {
+	if extracted, ok := commonJSON.Value(result.Data.Attributes, "capabilities.extraction", "extracted_metadata").(map[string]interface{}); ok {
 		return extracted, nil
 	}
 

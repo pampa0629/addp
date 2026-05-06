@@ -60,7 +60,7 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 ## 扫描主流程
 
 1. `meta` 从存储引擎获取资源树候选集合。
-2. 通过 `common/dataitem.ResolveItems` 推断组织方式。
+2. 通过 Meta 内部 detector / resolver 推断组织方式。
 3. 归并并落库稳定 `meta_item`。
 4. 在 data item 层判断 `data_type` 和主 `format`。
 5. 调用 parser / extractor 提取 `type_info`、`format_info` 和 `capabilities`。
@@ -87,13 +87,19 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 
 `meta` 负责资源树扫描、组织方式推断、data item 归并、数据类型判断、格式识别、元数据提取、fingerprint 维护和 attributes normalizer。
 
-### common/dataitem
+Meta 内部维护 data item detector registry 和扫描 resolver。新增或修改 detector 时，应接入 Meta 的扫描流程；不得在 common 包中通过 `init()` 自动注册 Meta item 识别逻辑。
 
-`common/dataitem` 负责组织方式推断和 data item 识别，输出 `DetectedItem`。其组织方式、数据类型、格式、组成资源列表和 whole scope 独占语义是 `attributes.item` 的主要来源。data item 的定位事实源始终是 `meta_item.full_name`。
+### common 层数据类型概念
+
+`data_type` 等跨模块稳定概念可以保留在 common 层，供 Meta、Manager、Transfer 等模块共享。它们只表达平台通用语义，不负责资源树扫描、detector registry、claims / exclusive 合并或 `meta_item.full_name` 决策。
 
 ### common/format
 
 `common/format` 负责格式识别、类型信息、格式信息、字段类型映射、parser / extractor。它不直接决定 meta item 如何归并，也不绕过 normalizer 写最终 attributes。
+
+### common/jsonmap
+
+`common/jsonmap` 是 decoded JSON map 的通用读写 helper，用于读取嵌套 section、字符串、数字、时间等基础值。它不承载 attributes 规范语义，不能作为 `meta_item.attributes` 的业务模型或 normalizer。
 
 ### manager
 

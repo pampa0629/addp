@@ -8,6 +8,16 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 提供与其他服务交互的客户端：
 - `SystemClient`: 与 System 模块交互的客户端，用于获取资源配置、用户认证等
 
+### jsonmap
+decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串、数字、时间等基础值。
+
+`jsonmap` 不承载 `meta_item.attributes` 业务规范；attributes 标准分区、normalizer 和落库构造属于 Meta 模块。
+
+### format
+文件格式、类型信息、格式信息、字段类型映射、parser / extractor / analyzer 等通用能力。
+
+`format` 不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
+
 ### models
 共享的数据模型：
 - `Resource`: 资源信息结构体
@@ -44,6 +54,7 @@ connStr, err := models.BuildConnectionString(engine)
 ## 设计原则
 
 1. **单一职责**: 只包含真正通用的代码
-2. **零依赖**: 尽量减少外部依赖，只使用 Go 标准库
-3. **向后兼容**: 修改时保持 API 兼容性
-4. **文档完善**: 所有公开函数和类型都有文档注释
+2. **边界清晰**: 通用概念和工具可进入 common，Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta
+3. **零依赖**: 尽量减少外部依赖，只使用 Go 标准库
+4. **无需旧兼容**: 开发阶段不为旧包名、旧数据或旧逻辑保留兼容层
+5. **文档完善**: 所有公开函数和类型都有文档注释

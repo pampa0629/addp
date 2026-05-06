@@ -1,7 +1,6 @@
 package dataitem
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 
@@ -30,173 +29,6 @@ type SingleResourceInput struct {
 	Size        int64
 	ContentType string
 	Format      string
-}
-
-// ResolveItems 使用已注册 detector 从一个扫描范围内识别 0..N 个数据项。
-func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
-	result := &DetectionResult{
-		Items:  []*DetectedItem{},
-		Claims: ResourceClaimSet{},
-	}
-	for _, d := range GetAll() {
-		detectorInput := input
-		detectorInput.Files = unclaimedFiles(input.Files, result.Claims)
-		detectorInput.RecursiveFiles = unclaimedFiles(input.RecursiveFiles, result.Claims)
-		if len(input.Files) > 0 && len(detectorInput.Files) == 0 &&
-			(len(input.RecursiveFiles) == 0 || len(detectorInput.RecursiveFiles) == 0) {
-			break
-		}
-		if scoped, ok := d.(ScopeItemDetector); ok {
-			scopeResult, err := scoped.ResolveItems(ctx, detectorInput)
-			if err != nil {
-				return nil, err
-			}
-			if scopeResult == nil {
-				continue
-			}
-			for _, item := range scopeResult.Items {
-				if item != nil {
-					result.Items = append(result.Items, item)
-				}
-			}
-			for path, claimed := range scopeResult.Claims {
-				if claimed {
-					result.Claims[path] = true
-				}
-			}
-			if scopeResult.Exclusive {
-				result.Exclusive = true
-				return result, nil
-			}
-			continue
-		}
-
-		if !d.Detect(ctx, detectorInput.Files, detectorInput.Subdirs) {
-			continue
-		}
-		info, err := d.ExtractItemInfo(ctx, detectorInput.ContentReader, detectorInput.ConnInfo, detectorInput.EngineID, detectorInput.DirPath, detectorInput.Files)
-		if err != nil {
-			return nil, err
-		}
-		if info == nil {
-			info = &CompositeItemInfo{}
-		}
-
-		totalSize := sumFileSize(detectorInput.Files)
-		if info.SizeBytes != nil {
-			totalSize = *info.SizeBytes
-		}
-
-		organization := info.Organization
-		if organization == "" {
-			organization = OrganizationWhole
-		}
-
-		dataType := info.DataType
-		if dataType == "" {
-			dataType = InferDataType(info.Format, "")
-		}
-
-		entryPath := info.EntryPath
-		if entryPath == "" {
-			entryPath = detectorInput.DirPath
-		}
-
-		componentFiles := info.ComponentFiles
-		if len(componentFiles) == 0 {
-			componentFiles = filePaths(detectorInput.Files)
-		}
-
-		item := &DetectedItem{
-			ItemType:       d.ItemType(),
-			Organization:   organization,
-			DataType:       dataType,
-			Format:         info.Format,
-			PhysicalPath:   detectorInput.DirPath,
-			EntryPath:      entryPath,
-			ComponentFiles: componentFiles,
-			SizeBytes:      totalSize,
-			Fields:         info.Fields,
-			Attributes:     info.Attributes,
-		}
-		result.Items = append(result.Items, item)
-		for _, path := range componentFiles {
-			result.Claims[path] = true
-		}
-		result.Exclusive = organization == OrganizationWhole
-		if result.Exclusive {
-			return result, nil
-		}
-	}
-	return result, nil
-}
-
-func unclaimedFiles(files []plugin.FileEntry, claims ResourceClaimSet) []plugin.FileEntry {
-	if len(files) == 0 || len(claims) == 0 {
-		return files
-	}
-	filtered := make([]plugin.FileEntry, 0, len(files))
-	for _, file := range files {
-		if claims[file.Path] {
-			continue
-		}
-		filtered = append(filtered, file)
-	}
-	return filtered
-}
-
-// BuildAttributes 将 detector 输出和标准 item 语义合并为可落库的 attributes。
-func BuildAttributes(item *DetectedItem) map[string]interface{} {
-	if item == nil {
-		return map[string]interface{}{}
-	}
-	attrs := make(map[string]interface{}, len(item.Attributes)+10)
-	for k, v := range item.Attributes {
-		attrs[k] = v
-	}
-
-	itemAttrs := map[string]interface{}{}
-	storageAttrs := map[string]interface{}{}
-
-	setSectionValue(itemAttrs, "organization", string(item.Organization))
-	setSectionValue(itemAttrs, "data_type", string(item.DataType))
-	if item.Format != "" {
-		setSectionValue(itemAttrs, "format", item.Format)
-	}
-	if item.PhysicalPath != "" {
-		setSectionValue(storageAttrs, "physical_path", item.PhysicalPath)
-	}
-	if item.Organization == OrganizationMulti && len(item.ComponentFiles) > 0 {
-		setSectionValue(itemAttrs, "component_files", item.ComponentFiles)
-		setSectionValue(itemAttrs, "file_count", len(item.ComponentFiles))
-	}
-	if item.Organization == OrganizationWhole {
-		setSectionValue(itemAttrs, "scope_exclusive", true)
-		setSectionValue(itemAttrs, "claim_policy", "whole_scope")
-	}
-	if item.SizeBytes > 0 {
-		setSectionValue(storageAttrs, "total_size", item.SizeBytes)
-	}
-	attrs["item"] = mergeSection(attrs["item"], itemAttrs)
-	attrs["storage"] = mergeSection(attrs["storage"], storageAttrs)
-	return attrs
-}
-
-func setSectionValue(section map[string]interface{}, key string, value interface{}) {
-	section[key] = value
-}
-
-func mergeSection(existing interface{}, additions map[string]interface{}) map[string]interface{} {
-	merged := map[string]interface{}{}
-	if section, ok := existing.(map[string]interface{}); ok {
-		for k, v := range section {
-			merged[k] = v
-		}
-	}
-	for k, v := range additions {
-		merged[k] = v
-	}
-	return merged
 }
 
 // InferSingleResourceItem 基于一个资源推断基础 item 语义。
@@ -340,24 +172,6 @@ func InferDataType(formatName, contentType string) DataType {
 	default:
 		return DataTypeUnknown
 	}
-}
-
-func sumFileSize(files []plugin.FileEntry) int64 {
-	var total int64
-	for _, f := range files {
-		total += f.Size
-	}
-	return total
-}
-
-func filePaths(files []plugin.FileEntry) []string {
-	paths := make([]string, 0, len(files))
-	for _, f := range files {
-		if f.Path != "" {
-			paths = append(paths, f.Path)
-		}
-	}
-	return paths
 }
 
 func normalizeFormat(formatName, fileName string) string {

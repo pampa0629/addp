@@ -8,6 +8,8 @@ detector 不能等同于目录 detector，也不能按单一格式局部修补�
 
 detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `organization`、`data_type`、`format`、主资源和组件资源，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。主资源或 whole scope 根范围应成为 `meta_item.full_name`。
 
+detector registry、扫描范围内的 resolver、claims / exclusive 合并、`component_files` 决策和 attributes 落库构造属于 Meta 模块职责。common 层只保留跨模块稳定枚举、格式规则数据结构或 parser / analyzer 等通用能力；跨模块需要 item 结果时应通过 Meta Client 消费已入库 meta item，不直接复用 Meta 的识别流程。
+
 ## 扫描范围不是 item 边界
 
 扫描范围是引擎提供的一批候选资源，例如：
@@ -28,6 +30,10 @@ ResolveItems(scope) (*DetectionResult, error)
 ```
 
 `ResolveDirectory` 不再作为新规范接口保留。实现阶段应删除旧调用或改为直接调用 `ResolveItems`，不得继续提供旧扫描语义兜底。
+
+`ResolveItems` 是 Meta 扫描流程内的统一入口，而不是面向所有业务模块的 common API。实现上应位于 Meta 模块内部，例如当前由 `meta/backend/internal/metaitem.ResolveItems` 承载；Manager、Transfer、Asset、Search 等模块不得绕过 Meta 扫描自行调用 detector 重新判断资源组织方式。
+
+detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Meta 应显式组装 detector 列表并校验其 `FormatRule`，以保证 item 识别流程的所有权清晰可追踪。
 
 ```go
 type DetectionResult struct {

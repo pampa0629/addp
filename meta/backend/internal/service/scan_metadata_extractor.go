@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -112,7 +112,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 			// 文件未变化，复用已有的 metadata
 			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
 				// 检查是否已经提取过元数据
-				if commonAttrs.Bool(existingItem.Attributes, "capabilities.extraction", "metadata_extracted") {
+				if commonJSON.Bool(existingItem.Attributes, "capabilities.extraction", "metadata_extracted") {
 					e.log.Debug("复用缓存的元数据",
 						"fingerprint", fingerprint,
 						"fullPath", fullPath,
@@ -242,7 +242,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		if item.DataUpdatedAt != nil {
 			input.LastModified = *item.DataUpdatedAt
 		}
-		if etag := commonAttrs.String(item.Attributes, "storage", "etag"); etag != "" {
+		if etag := commonJSON.String(item.Attributes, "storage", "etag"); etag != "" {
 			input.ETag = etag
 		}
 	}

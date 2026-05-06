@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"strings"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
 	_ "github.com/addp/common/format/mappers/postgresql"
 	_ "github.com/addp/common/format/mappers/spatialite"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -586,7 +586,7 @@ func attributeFromSection(attrs models.JSONMap, section, key string) (interface{
 	if attrs == nil {
 		return nil, false
 	}
-	if value := commonAttrs.Value(attrs, section, key); value != nil {
+	if value := commonJSON.Value(attrs, section, key); value != nil {
 		return value, true
 	}
 	return nil, false
@@ -627,7 +627,7 @@ func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]int
 }
 
 func spatialMetadataAttribute(attrs models.JSONMap) (map[string]interface{}, bool) {
-	value := commonAttrs.ValueFromSections(attrs, "spatial", "capabilities")
+	value := commonJSON.ValueFromSections(attrs, "spatial", "capabilities")
 	if value == nil {
 		return nil, false
 	}

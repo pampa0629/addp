@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
@@ -794,7 +794,7 @@ func (s *ScanService) listFileSystemRootPaths(resource *commonModels.Engine, p p
 		}
 		paths := make([]string, 0, len(nodes))
 		for _, node := range nodes {
-			if raw := commonAttrs.String(node.Attributes, "storage", "path"); raw != "" {
+			if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
 				paths = append(paths, raw)
 				continue
 			}

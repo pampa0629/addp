@@ -1,12 +1,12 @@
-package attributes
+package jsonmap
 
 import "testing"
 
-func TestStringReadsOnlyStandardSection(t *testing.T) {
+func TestStringReadsNestedSection(t *testing.T) {
 	t.Parallel()
 
 	attrs := map[string]interface{}{
-		"physical_path": "legacy.parquet",
+		"physical_path": "top-level.parquet",
 		"storage": map[string]interface{}{
 			"physical_path": "standard.parquet",
 		},
@@ -42,11 +42,11 @@ func TestInt64AndFloat64Slice(t *testing.T) {
 	}
 }
 
-func TestValueFromSectionsSupportsNestedSpatialCapability(t *testing.T) {
+func TestValueFromSectionsSupportsNestedSections(t *testing.T) {
 	t.Parallel()
 
 	attrs := map[string]interface{}{
-		"primary_geometry_column": "legacy_geom",
+		"primary_geometry_column": "top_level_geom",
 		"capabilities": map[string]interface{}{
 			"spatial": map[string]interface{}{
 				"primary_geometry_column": "shape",

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -279,7 +279,7 @@ func calculateItemCount(itemType string, attributes map[string]interface{}) int 
 	// 对象存储的 directory/prefix 可能包含子对象
 	if itemType == "directory" || itemType == "prefix" {
 		// 从标准 storage 分区中提取 object_count，兼容迁移期平铺字段
-		if objCount := commonAttrs.Int64(attributes, "storage", "object_count"); objCount > 0 {
+		if objCount := commonJSON.Int64(attributes, "storage", "object_count"); objCount > 0 {
 			return int(objCount)
 		}
 		// 如果没有 object_count，返回 0（后续懒加载时会尝试获取子节点）

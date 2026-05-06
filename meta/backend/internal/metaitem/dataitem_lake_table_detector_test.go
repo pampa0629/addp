@@ -1,18 +1,18 @@
-package parquet
+package metaitem
 
 import (
 	"context"
 	"testing"
 
-	commonAttrs "github.com/addp/common/attributes"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 )
 
 func TestLakeTableDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
 		{Name: "part-001.parquet", Path: "dataset/dt=2026-05-06/part-001.parquet", Size: 20},
@@ -25,9 +25,9 @@ func TestLakeTableDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	if !d.Detect(context.Background(), files, subdirs) {
 		t.Fatal("expected partitioned parquet directory to match")
 	}
-	info, err := ExtractWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, subdirs)
+	info, err := extractLakeTableWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, subdirs)
 	if err != nil {
-		t.Fatalf("ExtractWholeScopeInfo() error = %v", err)
+		t.Fatalf("extractLakeTableWholeScopeInfo() error = %v", err)
 	}
 	if info.Organization != dataitem.OrganizationWhole {
 		t.Fatalf("Organization = %q, want %q", info.Organization, dataitem.OrganizationWhole)
@@ -38,7 +38,7 @@ func TestLakeTableDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	if len(info.ComponentFiles) != 2 {
 		t.Fatalf("ComponentFiles len = %d, want 2", len(info.ComponentFiles))
 	}
-	if mode := commonAttrs.String(info.Attributes, "format_info.parquet", "mode"); mode != "whole" {
+	if mode := commonJSON.String(info.Attributes, "format_info.parquet", "mode"); mode != "whole" {
 		t.Fatalf("mode = %v, want whole", mode)
 	}
 }
@@ -46,7 +46,7 @@ func TestLakeTableDetectorDetectsPartitionedWholeScope(t *testing.T) {
 func TestLakeTableDetectorRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	rules := d.Rules()
 	if len(rules) != 2 {
 		t.Fatalf("Rules len = %d, want 2", len(rules))
@@ -76,7 +76,7 @@ func TestLakeTableDetectorRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/part-000.parquet", Size: 10},
 		{Name: "_SUCCESS", Path: "dataset/_SUCCESS", Size: 0},
@@ -86,9 +86,9 @@ func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
 	if !d.Detect(context.Background(), files, nil) {
 		t.Fatal("expected parquet directory with auxiliary files to match")
 	}
-	info, err := ExtractWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, nil)
+	info, err := extractLakeTableWholeScopeInfo(context.Background(), nil, nil, 1, "dataset", files, nil)
 	if err != nil {
-		t.Fatalf("ExtractWholeScopeInfo() error = %v", err)
+		t.Fatalf("extractLakeTableWholeScopeInfo() error = %v", err)
 	}
 	if len(info.ComponentFiles) != 1 || info.ComponentFiles[0] != "dataset/part-000.parquet" {
 		t.Fatalf("ComponentFiles = %#v, want only parquet data file", info.ComponentFiles)
@@ -101,7 +101,7 @@ func TestLakeTableDetectorAllowsAuxiliaryFiles(t *testing.T) {
 func TestLakeTableDetectorRejectsMixedWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet"},
 		{Name: "README.txt", Path: "dataset/README.txt"},
@@ -116,7 +116,7 @@ func TestLakeTableDetectorRejectsMixedWholeScope(t *testing.T) {
 func TestLakeTableDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	result, err := d.ResolveItems(context.Background(), dataitem.DirectoryResolveInput{
 		DirPath: "dataset",
 		Subdirs: []plugin.DirEntry{
@@ -153,7 +153,7 @@ func TestLakeTableDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 func TestLakeTableDetectorRejectsSiblingIndependentParquetFiles(t *testing.T) {
 	t.Parallel()
 
-	d := &LakeTableDetector{}
+	d := &lakeTableItemDetector{}
 	files := []plugin.FileEntry{
 		{Name: "sales.parquet", Path: "dataset/sales.parquet"},
 		{Name: "customers.parquet", Path: "dataset/customers.parquet"},
