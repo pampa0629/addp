@@ -1,6 +1,6 @@
 # ADDP 元数据 attributes 规范
 
-本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
 
 ## 目标结构
 
@@ -26,7 +26,7 @@
 - `format_info`
 - `capabilities`
 
-迁移期旧字段和平铺字段只能作为兼容层或旧数据读取兜底，新写入逻辑不得扩展旧字段集合。
+旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
 ## 术语统一
 
@@ -40,21 +40,7 @@ attributes 分区统一采用以下概念：
 | `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile components、sqlite version |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
-旧术语映射：
-
-| 旧字段 / 旧分区 | 新字段 / 新分区 |
-|---|---|
-| `item.composition_type` | `item.organization` |
-| `item.data_family` | `item.data_type` |
-| `schema` | `type_info` |
-| `extensions.spatial` | `capabilities.spatial` |
-| `extensions.media` | `type_info.media`，跨类型媒体能力再进入 `capabilities` |
-| `extensions.document` | `type_info.document` |
-| `extensions.statistics` | `capabilities.statistics` |
-| `extensions.extraction` | `capabilities.extraction` |
-| `extensions.builtin.<format>` | `format_info.<format>` |
-
-`schema` 在实现中曾表示表结构，但概念层不再把它作为通用分区名。表格型数据的字段、主键、索引、行数应进入 `type_info.table`。
+`schema` 不作为通用分区名。表格型数据的字段、主键、索引、行数应进入 `type_info.table`。
 
 ## 唯一事实源
 
@@ -72,7 +58,7 @@ attributes 分区统一采用以下概念：
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
-同一事实只能有一个规范存储点。若迁移期需要双写，必须声明主字段和派生字段，并在读取 helper 中固定优先级。
+同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
 
 ## 分区职责
 

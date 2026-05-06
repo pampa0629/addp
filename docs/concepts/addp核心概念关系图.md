@@ -172,7 +172,7 @@ mindmap
 
 ---
 
-### 5. [数据类型与格式](concepts/addp数据类型与格式体系图.md)
+### 5. [数据类型与格式](../next/addp数据类型与格式体系图.md)
 
 **数据类型分类、数据格式支持和类型映射机制**
 
@@ -181,7 +181,7 @@ mindmap
 - FieldType 统一类型系统
 - TypeMapper 类型映射
 
-📄 **[阅读完整文档 →](concepts/addp数据类型与格式体系图.md)**
+📄 **[阅读完整文档 →](../next/addp数据类型与格式体系图.md)**
 
 ---
 
@@ -286,7 +286,7 @@ mindmap
 ### 数据管理
 
 - **[元数据体系图](concepts/addp元数据体系图.md)** - 元数据层次、Parser 体系、TableInfo 统一结构
-- **[数据类型与格式体系图](concepts/addp数据类型与格式体系图.md)** - 数据类型、数据格式、FieldType 统一类型
+- **[数据类型与格式体系图](../next/addp数据类型与格式体系图.md)** - 数据类型、数据格式、FieldType 统一类型
 
 ### 数据开发与编排
 

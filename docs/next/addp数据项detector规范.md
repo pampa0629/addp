@@ -1,6 +1,6 @@
 # ADDP 数据项 detector 规范
 
-本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
 
 ## 核心结论
 
@@ -27,7 +27,7 @@ detector 只负责回答“哪些资源组成哪些 data item”。它可以给�
 ResolveItems(scope) (*DetectionResult, error)
 ```
 
-`ResolveDirectory` 仅保留为旧调用兼容包装，返回第一个 item，不得用于新扫描链路。
+`ResolveDirectory` 不再作为新规范接口保留。实现阶段应删除旧调用或改为直接调用 `ResolveItems`，不得继续提供旧扫描语义兜底。
 
 ```go
 type DetectionResult struct {

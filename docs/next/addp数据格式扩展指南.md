@@ -1,27 +1,26 @@
 # ADDP 数据格式扩展指南
 
-本文是 ADDP 数据类型、组织方式、文件格式和横切能力扩展的入口规范。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文是 ADDP 数据类型、组织方式、文件格式和横切能力扩展的 next 阶段入口规范。概念边界以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
 
 ## 术语统一
 
-spec 层统一采用以下术语：
+spec 层统一采用以下术语，不保留旧术语兼容写入：
 
-| 旧术语 | 新术语 | 说明 |
+| 术语 | 字段 / 取值 | 说明 |
 |---|---|---|
-| 组合形态 / `composition_type` | 组织方式 / `organization` | 资源如何归并成 data item |
-| `single_file` | `single` | 一个引擎资源对应一个 data item，不等同于“单文件” |
-| `multi_file` | `multi` | 多个明确组件资源共同构成一个 data item |
-| `directory_tree` | `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item |
-| `container_file` | `organization=single` + `data_type=container` | 容器是数据类型，不是组织方式 |
-| `mixed_collection` | 不作为基础组织方式 | 部分认领用 `multi`，整体认领用 `whole` |
-| 数据家族 / `data_family` | 数据类型 / `data_type` | 用户如何理解和处理 data item |
-| `tabular` | `table` | 表格型数据统一称为 `table` |
-| `image`、`audio`、`video` | `media` | 具体媒体种类写入 `type_info.media.kind` |
-| `schema` 分区 | `type_info` | 表结构只是 table 类型信息的一种 |
-| 格式私有扩展 | `format_info` | 具体格式才有的描述 |
-| 标准扩展 | `capabilities` | spatial、temporal、statistics、extraction 等横切能力 |
+| 组织方式 | `attributes.item.organization` | 资源如何归并成 data item |
+| single | `organization=single` | 一个引擎资源对应一个 data item，不等同于“单文件” |
+| multi | `organization=multi` | 多个明确组件资源共同构成一个 data item |
+| whole | `organization=whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item |
+| 数据类型 | `attributes.item.data_type` | 用户如何理解和处理 data item |
+| 文件格式 | `attributes.item.format` | data item 的编码方式或格式族 |
+| 类型信息 | `attributes.type_info` | 某个数据类型的通用元数据 |
+| 格式信息 | `attributes.format_info` | 某个具体格式才有的描述 |
+| 横切能力 | `attributes.capabilities` | spatial、temporal、statistics、extraction 等跨类型能力 |
 
 `meta_item.item_type` 是表字段事实源，不等同于 `attributes.item.data_type`。平台语义应以 data item、organization、data_type、format、type_info、format_info、capabilities 的组合表达。
+
+旧字段和旧枚举不做兼容读取或兼容写入。发现仍依赖旧字段的数据和代码，应直接暴露问题并通过重新 meta 扫描或代码修正解决。
 
 ## 相关规范
 
@@ -32,7 +31,7 @@ spec 层统一采用以下术语：
 | [ADDP 数据项 detector 规范](addp数据项detector规范.md) | `ResolveItems`、组织方式、claims、exclusive、`FormatRule` |
 | [ADDP 元数据 attributes 规范](addp元数据attributes规范.md) | `attributes.storage/item/type_info/format_info/capabilities` 分区、唯一事实源、扩展命名空间 |
 | [ADDP 内置数据格式规范](addp内置数据格式规范.md) | CSV/TSV、Excel、GeoJSON、Shapefile、Parquet/ORC/Avro、SQLite/GeoPackage、图片、PDF 的落地规则 |
-| [ADDP 数据类型与文件格式后续规范事项](../next/addp数据类型与文件格式待规范事项.md) | 尚未定稿、需要讨论后才能开发的事项 |
+| [ADDP 数据类型与文件格式待规范事项](addp数据类型与文件格式待规范事项.md) | 尚未定稿、需要讨论后才能开发的事项 |
 
 ## 基本原则
 
@@ -102,7 +101,7 @@ spec 层统一采用以下术语：
 
 ### transfer
 
-`transfer` 应消费标准化后的 meta item 和 attributes，不重复判断组织方式，不重复推断字段类型。Transfer 后续事项单独记录在 [Transfer 数据类型与文件格式后续事项](../next/transfer数据类型与文件格式后续事项.md)。
+`transfer` 应消费标准化后的 meta item 和 attributes，不重复判断组织方式，不重复推断字段类型。Transfer 后续事项单独记录在 [Transfer 数据类型与文件格式后续事项](transfer数据类型与文件格式后续事项.md)。
 
 ## 新增格式步骤
 
