@@ -15,7 +15,7 @@ func TestShouldUpdateTableUsesLastModified(t *testing.T) {
 	oldTime := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
 	newTime := oldTime.Add(time.Hour)
 	item := &models.MetaItem{DataUpdatedAt: &oldTime}
-	table := format.ScannerTableInfo{LastModified: &newTime}
+	table := plugin.TableInfo{LastModified: &newTime}
 
 	if !ShouldUpdateTable(item, table) {
 		t.Fatal("table should update when source last_modified is newer")

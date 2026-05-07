@@ -5,7 +5,6 @@ import (
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/config"
-	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/pkg/pipeline"
 )
 
@@ -86,22 +85,22 @@ func TestResourceToConnectorConfig_PostgreSQL(t *testing.T) {
 func TestMapTaskMode(t *testing.T) {
 	tests := []struct {
 		name     string
-		mode     models.TaskMode
+		mode     string
 		expected pipeline.ReaderMode
 	}{
 		{
 			name:     "stream mode",
-			mode:     models.TaskModeStream,
+			mode:     string(pipeline.ModeStream),
 			expected: pipeline.ModeStream,
 		},
 		{
 			name:     "micro-batch mode",
-			mode:     models.TaskModeMicroBatch,
+			mode:     string(pipeline.ModeMicroBatch),
 			expected: pipeline.ModeMicroBatch,
 		},
 		{
 			name:     "batch mode (default)",
-			mode:     models.TaskModeBatch,
+			mode:     string(pipeline.ModeBatch),
 			expected: pipeline.ModeBatch,
 		},
 	}

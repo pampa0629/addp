@@ -49,27 +49,11 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 		}
 		applyGeometryColumns(spatialMeta, spatialData["geometry_columns"])
 
-		if srid, ok := spatialData["srid"].(float64); ok {
-			spatialMeta.SRID = int(srid)
-		}
 		if extentSRID, ok := spatialData["extent_srid"].(float64); ok {
 			spatialMeta.ExtentSRID = int(extentSRID)
 		}
-		if extent, ok := spatialData["extent"].([]interface{}); ok {
-			spatialMeta.Extent = make([]float64, len(extent))
-			for i, v := range extent {
-				if f, ok := v.(float64); ok {
-					spatialMeta.Extent[i] = f
-				}
-			}
-		}
-		if geomTypes, ok := spatialData["geometry_types"].([]interface{}); ok {
-			spatialMeta.GeometryTypes = make([]string, 0, len(geomTypes))
-			for _, v := range geomTypes {
-				if s, ok := v.(string); ok {
-					spatialMeta.GeometryTypes = append(spatialMeta.GeometryTypes, s)
-				}
-			}
+		if extent := float64Slice(spatialData["extent"]); len(extent) == 4 {
+			spatialMeta.Extent = extent
 		}
 	}
 
@@ -139,6 +123,30 @@ func applyGeometryColumn(spatialMeta *models.SpatialMetadataResponse, rawColumn 
 		spatialMeta.GeometryTypes = []string{geomType}
 	}
 	return true
+}
+
+func float64Slice(raw interface{}) []float64 {
+	switch values := raw.(type) {
+	case []float64:
+		return values
+	case []interface{}:
+		result := make([]float64, 0, len(values))
+		for _, value := range values {
+			switch v := value.(type) {
+			case float64:
+				result = append(result, v)
+			case int:
+				result = append(result, float64(v))
+			case int64:
+				result = append(result, float64(v))
+			default:
+				return nil
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func attributeFromSection(attrs models.JSONMap, section, key string) (interface{}, bool) {

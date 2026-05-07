@@ -185,59 +185,6 @@ func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionIn
 	return result, nil
 }
 
-// ListObjects 列出对象（支持前缀过滤和递归）
-func (p *S3Plugin) listObjects(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, prefix string, recursive bool) ([]plugin.ObjectInfo, error) {
-	client, err := p.createClient(connInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	objectCh := client.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
-		Prefix:    prefix,
-		Recursive: recursive,
-	})
-
-	var result []plugin.ObjectInfo
-	for object := range objectCh {
-		if object.Err != nil {
-			return nil, fmt.Errorf("failed to list objects: %w", object.Err)
-		}
-
-		result = append(result, plugin.ObjectInfo{
-			Bucket:       bucket,
-			Key:          object.Key,
-			Size:         object.Size,
-			LastModified: object.LastModified,
-			ContentType:  p.inferContentType(object.Key),
-			ETag:         object.ETag,
-		})
-	}
-
-	return result, nil
-}
-
-// GetObjectMetadata 获取单个对象的元数据
-func (p *S3Plugin) getObjectMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, bucket, key string) (*plugin.ObjectInfo, error) {
-	client, err := p.createClient(connInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	objInfo, err := client.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get object metadata: %w", err)
-	}
-
-	return &plugin.ObjectInfo{
-		Bucket:       bucket,
-		Key:          objInfo.Key,
-		Size:         objInfo.Size,
-		LastModified: objInfo.LastModified,
-		ContentType:  objInfo.ContentType,
-		ETag:         objInfo.ETag,
-	}, nil
-}
-
 // InferContentType 根据对象键推断 MIME 类型
 func (p *S3Plugin) inferContentType(objectKey string) string {
 	ext := strings.ToLower(filepath.Ext(objectKey))

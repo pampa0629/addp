@@ -588,24 +588,24 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 		case "label":
 			label := NodeLabelSchema{
 				Label:      item.Name,
-				Properties: extractStringSliceFromAttrs(item.Attributes, "fields"),
+				Properties: extractStringSliceFromSection(item.Attributes, "type_info.graph", "properties"),
 			}
 			if item.RowCount != nil {
 				label.Count = *item.RowCount
 			} else {
-				label.Count = int64AttributeFromAttrs(item.Attributes, "document_count")
+				label.Count = int64AttributeFromSection(item.Attributes, "type_info.graph", "node_count")
 			}
 			resp.NodeLabels = append(resp.NodeLabels, label)
 		case "relationship":
 			rel := RelationshipSchema{
 				Type:       item.Name,
-				FromLabels: extractStringSliceFromAttrs(item.Attributes, "from_labels"),
-				ToLabels:   extractStringSliceFromAttrs(item.Attributes, "to_labels"),
+				FromLabels: extractStringSliceFromSection(item.Attributes, "type_info.graph", "from_labels"),
+				ToLabels:   extractStringSliceFromSection(item.Attributes, "type_info.graph", "to_labels"),
 			}
 			if item.RowCount != nil {
 				rel.Count = *item.RowCount
 			} else {
-				rel.Count = int64AttributeFromAttrs(item.Attributes, "count")
+				rel.Count = int64AttributeFromSection(item.Attributes, "type_info.graph", "edge_count")
 			}
 			resp.Relationships = append(resp.Relationships, rel)
 		}
@@ -614,21 +614,14 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 	return resp, nil
 }
 
-// extractStringSliceFromAttrs 从 attributes map 中提取字符串切片
-func extractStringSliceFromAttrs(attrs map[string]interface{}, key string) []string {
+func extractStringSliceFromSection(attrs map[string]interface{}, section, key string) []string {
 	if attrs == nil {
 		return []string{}
 	}
-	if sectionAttrs := explorerAttributeSection(attrs, "type_info.table"); sectionAttrs != nil {
-		if values := interfaceToExplorerStringSlice(sectionAttrs[key]); len(values) > 0 {
-			return values
-		}
+	if sectionAttrs := explorerAttributeSection(attrs, section); sectionAttrs != nil {
+		return interfaceToExplorerStringSlice(sectionAttrs[key])
 	}
-	raw, ok := attrs[key]
-	if !ok || raw == nil {
-		return []string{}
-	}
-	return interfaceToExplorerStringSlice(raw)
+	return []string{}
 }
 
 func interfaceToExplorerStringSlice(raw interface{}) []string {
@@ -647,16 +640,14 @@ func interfaceToExplorerStringSlice(raw interface{}) []string {
 	return []string{}
 }
 
-func int64AttributeFromAttrs(attrs map[string]interface{}, key string) int64 {
+func int64AttributeFromSection(attrs map[string]interface{}, section, key string) int64 {
 	if attrs == nil {
 		return 0
 	}
-	if sectionAttrs := explorerAttributeSection(attrs, "type_info.table"); sectionAttrs != nil {
-		if value := toInt64(sectionAttrs[key]); value > 0 {
-			return value
-		}
+	if sectionAttrs := explorerAttributeSection(attrs, section); sectionAttrs != nil {
+		return toInt64(sectionAttrs[key])
 	}
-	return toInt64(attrs[key])
+	return 0
 }
 
 func explorerAttributeSection(attrs map[string]interface{}, section string) map[string]interface{} {

@@ -6,7 +6,7 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo format.ScannerTableInfo) bool {
+func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo plugin.TableInfo) bool {
 	if existingItem == nil {
 		return true
 	}

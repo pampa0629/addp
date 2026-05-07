@@ -399,8 +399,8 @@ func (s *MetadataQueryService) GetItemSpatialMetadataByName(tenantID, engineID u
 	var item models.MetaItem
 
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND deleted_at IS NULL", tenantID, engineID, itemName).
-		Where("(attributes->>'schema' = ? OR attributes->>'namespace' = ? OR full_name = ?)",
-			namespace, namespace, metaquery.QualifiedName(namespace, itemName)).
+		Where("(attributes #>> '{storage,schema_name}' = ? OR full_name = ?)",
+			namespace, metaquery.QualifiedName(namespace, itemName)).
 		First(&item).Error
 
 	if err != nil {

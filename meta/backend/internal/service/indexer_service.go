@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -32,7 +33,7 @@ func NewIndexerService(indexer *search.Indexer, log *slog.Logger) *IndexerServic
 }
 
 // IndexTableAsset 索引表资产到 Meilisearch
-func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo format.ScannerTableInfo, fields []format.ScannerFieldInfo, item *models.MetaItem) {
+func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugin.TableInfo, fields []format.FieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -46,14 +47,12 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	fieldRecords := make([]search.FieldRecord, 0, len(fields))
 	for _, field := range fields {
 		fieldRecords = append(fieldRecords, search.FieldRecord{
-			Name:            field.Name,
-			DataType:        field.DataType,
-			ColumnType:      field.ColumnType,
-			Comment:         field.Comment,
-			OrdinalPosition: field.OrdinalPosition,
-			IsNullable:      field.IsNullable,
-			IsPrimaryKey:    field.IsPrimaryKey,
-			IsUniqueKey:     field.IsUniqueKey,
+			Name:         field.Name,
+			DataType:     string(field.Type),
+			ColumnType:   field.OriginalType,
+			Comment:      field.Comment,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.IsPrimaryKey,
 		})
 	}
 
@@ -67,7 +66,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 		Name:          item.Name,
 		FullName:      item.FullName,
 		Schema:        schemaName,
-		TableType:     tableInfo.Type,
+		TableType:     tableTypeForIndex(tableInfo),
 		Description:   tableInfo.Comment,
 		RowCount:      item.RowCount,
 		SizeBytes:     item.SizeBytes,
@@ -79,6 +78,13 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	if err := s.indexer.IndexAsset(context.Background(), record); err != nil {
 		s.log.Warn("索引表元数据失败", "fingerprint", item.Fingerprint, "schema", schemaName, "error", err)
 	}
+}
+
+func tableTypeForIndex(tableInfo plugin.TableInfo) string {
+	if tableInfo.Kind != "" {
+		return tableInfo.Kind
+	}
+	return "table"
 }
 
 // IndexObjectAsset 索引对象资产到 Meilisearch（统一索引）
@@ -140,7 +146,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	if len(tags) > 0 {
 		assetRecord.Tags = tags
 	}
-	if desc := stringFromAttributes(metadata, "document", "file_type_friendly"); desc != "" {
+	if desc := stringFromStandardAttributes(metadata, "type_info.document", "file_type_friendly"); desc != "" {
 		assetRecord.Description = desc
 	}
 
@@ -154,28 +160,28 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		assetRecord.ContentType = commonJSON.String(metadata, "storage", "content_type")
 	}
 
-	if value := stringFromAttributes(metadata, "document", "document_type"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "type_info.document", "document_type"); value != "" {
 		assetRecord.DocumentType = value
 	}
-	if value := stringFromAttributes(metadata, "document", "title"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "type_info.document", "title"); value != "" {
 		assetRecord.Title = value
 	}
-	if value := stringFromAttributes(metadata, "document", "author"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "type_info.document", "author"); value != "" {
 		assetRecord.Author = value
 	}
-	if keywords := stringSliceFromAttributes(metadata, "document", "keywords"); len(keywords) > 0 {
+	if keywords := stringSliceFromStandardAttributes(metadata, "type_info.document", "keywords"); len(keywords) > 0 {
 		assetRecord.Keywords = keywords
 	}
-	if wc := intFromAttributes(metadata, "document", "word_count"); wc > 0 {
+	if wc := intFromStandardAttributes(metadata, "type_info.document", "word_count"); wc > 0 {
 		assetRecord.WordCount = wc
 	}
-	if pc := intFromAttributes(metadata, "document", "page_count"); pc > 0 {
+	if pc := intFromStandardAttributes(metadata, "type_info.document", "page_count"); pc > 0 {
 		assetRecord.PageCount = pc
 	}
-	if created := timeFromAttributes(metadata, "document", "created_date"); created != nil {
+	if created := timeFromStandardAttributes(metadata, "type_info.document", "created_date"); created != nil {
 		assetRecord.CreatedDate = created
 	}
-	if modified := timeFromAttributes(metadata, "document", "modified_date"); modified != nil {
+	if modified := timeFromStandardAttributes(metadata, "type_info.document", "modified_date"); modified != nil {
 		assetRecord.ModifiedDate = modified
 	}
 
@@ -300,20 +306,20 @@ func getStringFromMap(metadata map[string]interface{}, key string) string {
 	return ""
 }
 
-func stringFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) string {
-	return getStringFromMap(extensionAttributes(metadata, extensionNamespace), key)
+func stringFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) string {
+	return getStringFromMap(standardAttributes(metadata, sectionPath), key)
 }
 
-func stringSliceFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) []string {
-	return extractStringSlice(valueFromExtension(metadata, extensionNamespace, key))
+func stringSliceFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) []string {
+	return extractStringSlice(valueFromStandardAttributes(metadata, sectionPath, key))
 }
 
-func intFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) int {
-	return intFromInterface(valueFromExtension(metadata, extensionNamespace, key))
+func intFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) int {
+	return intFromInterface(valueFromStandardAttributes(metadata, sectionPath, key))
 }
 
-func timeFromAttributes(metadata map[string]interface{}, extensionNamespace, key string) *time.Time {
-	return extractTimePtr(valueFromExtension(metadata, extensionNamespace, key))
+func timeFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) *time.Time {
+	return extractTimePtr(valueFromStandardAttributes(metadata, sectionPath, key))
 }
 
 func extractedPlainTextFromAttributes(metadata map[string]interface{}) string {
@@ -333,38 +339,15 @@ func extractedPlainTextFromAttributes(metadata map[string]interface{}) string {
 	return text
 }
 
-func valueFromExtension(metadata map[string]interface{}, namespace, key string) interface{} {
-	if section := standardAttributeSection(metadata, namespace); section != nil {
+func valueFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) interface{} {
+	if section := standardAttributes(metadata, sectionPath); section != nil {
 		return section[key]
 	}
 	return nil
 }
 
-func extensionAttributes(metadata map[string]interface{}, namespace string) map[string]interface{} {
-	return standardAttributeSection(metadata, namespace)
-}
-
-func standardAttributeSection(metadata map[string]interface{}, namespace string) map[string]interface{} {
-	if metadata == nil || namespace == "" {
-		return nil
-	}
-	for _, root := range standardAttributeRoots(namespace) {
-		if section := commonJSON.Section(metadata, root+"."+namespace); section != nil {
-			return section
-		}
-	}
-	return nil
-}
-
-func standardAttributeRoots(namespace string) []string {
-	switch namespace {
-	case "media", "document", "container", "table", "graph":
-		return []string{"type_info"}
-	case "spatial", "statistics", "extraction", "semantic", "temporal", "partitioning", "indexing":
-		return []string{"capabilities"}
-	default:
-		return []string{"format_info"}
-	}
+func standardAttributes(metadata map[string]interface{}, sectionPath string) map[string]interface{} {
+	return commonJSON.Section(metadata, sectionPath)
 }
 
 func intFromInterface(value interface{}) int {

@@ -249,11 +249,17 @@ func (p *MySQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string
 		SELECT
 			table_schema as ` + "`schema`" + `,
 			table_name as table_name,
+			CASE
+				WHEN table_type = 'VIEW' THEN 'view'
+				WHEN table_type = 'BASE TABLE' THEN 'table'
+				ELSE LOWER(REPLACE(table_type, ' ', '_'))
+			END AS table_kind,
+			COALESCE(table_comment, '') as comment,
 			COALESCE(table_rows, 0) as row_count,
 			COALESCE(data_length + index_length, 0) as size_bytes
 		FROM information_schema.tables
 		WHERE table_schema = ?
-		  AND table_type = 'BASE TABLE'
+		  AND table_type IN ('BASE TABLE', 'VIEW')
 		ORDER BY table_name
 	`
 

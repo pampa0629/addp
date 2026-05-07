@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -8,8 +9,11 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"github.com/addp/common/format"
+	_ "golang.org/x/image/tiff"
 )
 
 // Parser 实现 Image 格式的解析器
@@ -48,43 +52,53 @@ func inferColorModel(cfg image.Config) string {
 	return "RGB"
 }
 
-// ============ ObjectInfoParser 接口实现 ============
+// Extract 实现 FileMetadataExtractor 接口。
+func (p *Parser) Extract(ctx context.Context, input format.ExtractInput) (*format.ExtractedMetadata, error) {
+	reader := input.Reader
+	var data []byte
+	if isTIFFInput(input) {
+		var err error
+		data, err = io.ReadAll(input.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read image: %w", err)
+		}
+		reader = bytes.NewReader(data)
+	}
 
-// ParseObjectInfo 实现 ObjectInfoParser 接口
-// 从图像文件中提取 ObjectInfo（包含 ImageInfo 扩展信息）
-func (p *Parser) ParseObjectInfo(ctx context.Context, input io.Reader, basicInfo format.ObjectBasicInfo) (*format.ObjectInfo, error) {
-	// 解码图像配置
-	cfg, formatName, err := image.DecodeConfig(input)
+	cfg, formatName, err := image.DecodeConfig(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
 
-	// 构建 ImageInfo
-	imageInfo := &format.ImageInfo{
-		Width:      cfg.Width,
-		Height:     cfg.Height,
-		Format:     formatName,
-		ColorSpace: inferColorModel(cfg),
+	customAttrs := map[string]interface{}{
+		"kind":        "image",
+		"width":       cfg.Width,
+		"height":      cfg.Height,
+		"format":      formatName,
+		"color_space": inferColorModel(cfg),
+	}
+	if len(data) > 0 {
+		if spatial := extractGeoTIFFSpatial(data, cfg.Width, cfg.Height); len(spatial) > 0 {
+			customAttrs["spatial"] = spatial
+		}
 	}
 
-	// 构建 ObjectInfo
-	objectInfo := &format.ObjectInfo{
-		Key:         basicInfo.Key,
-		SizeBytes:   basicInfo.SizeBytes,
-		ModifiedAt:  basicInfo.ModifiedAt,
-		ContentType: basicInfo.ContentType,
-		ETag:        basicInfo.ETag,
-		Extensions:  []format.ExtensionInfo{imageInfo},
-	}
-
-	return objectInfo, nil
+	return &format.ExtractedMetadata{
+		BasicInfo: format.BasicMetadata{
+			FileType:     "Image",
+			Size:         input.Size,
+			ContentType:  input.ContentType,
+			LastModified: input.LastModified,
+			ETag:         input.ETag,
+		},
+		CustomAttrs: customAttrs,
+	}, nil
 }
 
-// SupportedContentTypes 实现 ObjectInfoParser 接口
-// 返回支持的 MIME 类型
-func (p *Parser) SupportedContentTypes() []string {
+// SupportedTypes 实现 FileMetadataExtractor 接口。
+func (p *Parser) SupportedTypes() []string {
 	return []string{
-		"image/*",       // 通配符
+		"image/*",
 		"image/jpeg",
 		"image/jpg",
 		"image/png",
@@ -96,8 +110,21 @@ func (p *Parser) SupportedContentTypes() []string {
 	}
 }
 
+// Priority 实现 FileMetadataExtractor 接口。
+func (p *Parser) Priority() int {
+	return 100
+}
+
+func isTIFFInput(input format.ExtractInput) bool {
+	contentType := strings.ToLower(strings.TrimSpace(input.ContentType))
+	if contentType == "image/tiff" || contentType == "image/tif" {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(input.ObjectKey))
+	return ext == ".tif" || ext == ".tiff"
+}
+
 func init() {
 	parser := NewParser(nil)
-	// 注册为 ObjectInfoParser
-	_ = format.RegisterObjectInfoParser(parser)
+	_ = format.RegisterExtractor(parser)
 }

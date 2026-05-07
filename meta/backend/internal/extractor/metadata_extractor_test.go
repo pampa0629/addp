@@ -19,6 +19,7 @@ func TestExtractionMetadataWritesCapabilitiesAndTypeInfo(t *testing.T) {
 	applyExtractedMetadataExtensions(attrs, &format.ExtractedMetadata{
 		BasicInfo: format.BasicMetadata{FileType: "PDF", Encoding: "UTF-8"},
 		CustomAttrs: map[string]interface{}{
+			"kind":       "image",
 			"page_count": 12,
 			"word_count": 2400,
 			"width":      800,
@@ -46,7 +47,7 @@ func TestExtractionMetadataWritesCapabilitiesAndTypeInfo(t *testing.T) {
 		t.Fatalf("type_info.document = %#v", document)
 	}
 	media := typeInfo["media"].(map[string]interface{})
-	if media["width"] != 800 {
+	if media["kind"] != "image" || media["width"] != 800 {
 		t.Fatalf("type_info.media = %#v", media)
 	}
 	unqualified := attrs["format_info"].(map[string]interface{})["unqualified"].(map[string]interface{})
@@ -55,5 +56,29 @@ func TestExtractionMetadataWritesCapabilitiesAndTypeInfo(t *testing.T) {
 	}
 	if _, ok := unqualified["plain_text"]; ok {
 		t.Fatalf("plain_text should not be stored: %#v", unqualified)
+	}
+}
+
+func TestApplyExtractedMetadataExtensionsStoresSpatialCapability(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	applyExtractedMetadataExtensions(attrs, &format.ExtractedMetadata{
+		CustomAttrs: map[string]interface{}{
+			"spatial": map[string]interface{}{
+				"extent":            []float64{100, 180, 120, 200},
+				"srid":              4326,
+				"has_spatial_index": false,
+			},
+		},
+	})
+
+	capabilities := attrs["capabilities"].(map[string]interface{})
+	spatial := capabilities["spatial"].(map[string]interface{})
+	if spatial["srid"] != 4326 || spatial["has_spatial_index"] != false {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
+	}
+	if attrs["spatial"] != nil {
+		t.Fatalf("legacy flat spatial attr should not be written: %#v", attrs)
 	}
 }

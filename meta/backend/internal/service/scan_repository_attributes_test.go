@@ -17,13 +17,13 @@ func TestIndexerAttributeReadersPreferStandardTypeInfo(t *testing.T) {
 		},
 	}
 
-	if got := stringFromAttributes(attrs, "document", "title"); got != "standard title" {
+	if got := stringFromStandardAttributes(attrs, "type_info.document", "title"); got != "standard title" {
 		t.Fatalf("title = %q, want standard title", got)
 	}
-	if got := intFromAttributes(attrs, "document", "page_count"); got != 12 {
+	if got := intFromStandardAttributes(attrs, "type_info.document", "page_count"); got != 12 {
 		t.Fatalf("page_count = %d, want 12", got)
 	}
-	keywords := stringSliceFromAttributes(attrs, "document", "keywords")
+	keywords := stringSliceFromStandardAttributes(attrs, "type_info.document", "keywords")
 	if len(keywords) != 2 || keywords[0] != "alpha" {
 		t.Fatalf("keywords = %#v, want type_info keywords", keywords)
 	}
@@ -32,10 +32,10 @@ func TestIndexerAttributeReadersPreferStandardTypeInfo(t *testing.T) {
 		"title":      "legacy title",
 		"page_count": 1,
 	}
-	if got := stringFromAttributes(standardOnly, "document", "title"); got != "" {
+	if got := stringFromStandardAttributes(standardOnly, "type_info.document", "title"); got != "" {
 		t.Fatalf("legacy title fallback = %q, want empty", got)
 	}
-	if got := intFromAttributes(standardOnly, "document", "page_count"); got != 0 {
+	if got := intFromStandardAttributes(standardOnly, "type_info.document", "page_count"); got != 0 {
 		t.Fatalf("legacy page_count fallback = %d, want 0", got)
 	}
 }

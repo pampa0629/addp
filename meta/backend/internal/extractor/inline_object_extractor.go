@@ -53,35 +53,19 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	}
 
 	if e.log != nil {
-		e.log.Debug("正在获取对象信息解析器", "content_type", contentType, "key", key)
+		e.log.Debug("正在获取文件元数据提取器", "content_type", contentType, "key", key)
 	}
-	parser, err := format.GetObjectInfoParser(contentType)
-	if err != nil {
+	parser := format.GetExtractor(contentType)
+	if parser == nil && strings.HasPrefix(contentType, "image/") {
+		parser = format.GetExtractor("image/*")
+	}
+	if parser == nil {
 		if e.log != nil {
-			e.log.Debug("获取解析器失败，尝试通配符匹配",
+			e.log.Debug("无可用的文件元数据提取器",
 				"content_type", contentType,
-				"error", err,
 				"key", key)
 		}
-		if strings.HasPrefix(contentType, "image/") {
-			parser, err = format.GetObjectInfoParser("image/*")
-			if err != nil {
-				if e.log != nil {
-					e.log.Warn("通配符解析器也失败",
-						"content_type", contentType,
-						"error", err,
-						"key", key)
-				}
-				return nil
-			}
-		} else {
-			if e.log != nil {
-				e.log.Debug("无可用的元数据解析器",
-					"content_type", contentType,
-					"key", key)
-			}
-			return nil
-		}
+		return nil
 	}
 
 	client, err := e.clientManager.GetByResource(resource)
@@ -112,15 +96,15 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	}
 	defer obj.Close()
 
-	basicInfo := format.ObjectBasicInfo{
-		Key:         key,
-		SizeBytes:   size,
-		ContentType: contentType,
-		ETag:        etag,
-		ModifiedAt:  lastModified,
-	}
-
-	objectInfo, err := parser.ParseObjectInfo(ctx, obj, basicInfo)
+	extractedMeta, err := parser.Extract(ctx, format.ExtractInput{
+		EngineID:     resource.ID,
+		ObjectKey:    key,
+		ContentType:  contentType,
+		Size:         size,
+		Reader:       obj,
+		LastModified: lastModified,
+		ETag:         etag,
+	})
 	if err != nil {
 		if e.log != nil {
 			e.log.Debug("提取对象元数据失败",
@@ -130,30 +114,23 @@ func (e *InlineObjectMetadataExtractor) Extract(
 		}
 		return nil
 	}
-
-	extractedMeta := &format.ExtractedMetadata{
-		BasicInfo: format.BasicMetadata{
-			FileName:     filepath.Base(key),
-			FileType:     contentType,
-			Size:         size,
-			ContentType:  contentType,
-			LastModified: lastModified,
-			ETag:         etag,
-		},
-		CustomAttrs: make(map[string]interface{}),
+	if extractedMeta == nil {
+		return nil
 	}
-
-	if imageInfo := objectInfo.GetImageInfo(); imageInfo != nil {
-		extractedMeta.CustomAttrs["width"] = imageInfo.Width
-		extractedMeta.CustomAttrs["height"] = imageInfo.Height
-		extractedMeta.CustomAttrs["format"] = imageInfo.Format
-		extractedMeta.CustomAttrs["color_space"] = imageInfo.ColorSpace
-		if imageInfo.BitDepth > 0 {
-			extractedMeta.CustomAttrs["bit_depth"] = imageInfo.BitDepth
-		}
-		if imageInfo.HasAlpha {
-			extractedMeta.CustomAttrs["has_alpha"] = true
-		}
+	if extractedMeta.BasicInfo.FileName == "" {
+		extractedMeta.BasicInfo.FileName = filepath.Base(key)
+	}
+	if extractedMeta.BasicInfo.ContentType == "" {
+		extractedMeta.BasicInfo.ContentType = contentType
+	}
+	if extractedMeta.BasicInfo.Size == 0 {
+		extractedMeta.BasicInfo.Size = size
+	}
+	if extractedMeta.BasicInfo.LastModified.IsZero() {
+		extractedMeta.BasicInfo.LastModified = lastModified
+	}
+	if extractedMeta.BasicInfo.ETag == "" {
+		extractedMeta.BasicInfo.ETag = etag
 	}
 
 	if e.log != nil {

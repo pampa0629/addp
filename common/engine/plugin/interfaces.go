@@ -148,6 +148,8 @@ type SchemaInfo struct {
 type TableInfo struct {
 	Schema       string     `gorm:"column:schema"`        // 所属 Schema
 	TableName    string     `gorm:"column:table_name"`    // 表名
+	Kind         string     `gorm:"column:table_kind"`    // Catalog kind: table/view/materialized_view/external_table
+	Comment      string     `gorm:"column:comment"`       // 表注释
 	RowCount     int64      `gorm:"column:row_count"`     // 行数（估算值）
 	SizeBytes    int64      `gorm:"column:size_bytes"`    // 表大小（字节）
 	LastModified *time.Time `gorm:"column:last_modified"` // 表的最后修改时间（用于增量扫描）
@@ -199,8 +201,8 @@ type BucketInfo struct {
 	CreationDate time.Time // 创建时间
 }
 
-// ObjectInfo 对象信息
-type ObjectInfo struct {
+// ObjectStorageEntry 对象存储条目。
+type ObjectStorageEntry struct {
 	Bucket       string    // 所属 Bucket
 	Key          string    // 对象键（完整路径）
 	Size         int64     // 对象大小（字节）

@@ -119,7 +119,7 @@ graph TB
 
 ## Parser 体系架构
 
-ADDP 提供 **4 种 Parser 接口**,用于从不同数据源提取详细的元数据:
+ADDP 提供 **3 种结构 Parser 接口** 和 **1 种文件元数据 Extractor 接口**,用于从不同数据源提取详细的元数据:
 
 ```mermaid
 classDiagram
@@ -144,15 +144,15 @@ classDiagram
         +ReadPreview(client, db, collection, limit) PreviewData
     }
 
-    class ObjectInfoParser {
+    class FileMetadataExtractor {
         <<interface>>
-        +ParseObjectInfo(filePath) ObjectInfo
+        +Extract(input) ExtractedMetadata
     }
 
     Parser <|-- FileTableParser
     Parser <|-- DBTableParser
     Parser <|-- DocCollectionParser
-    Parser <|-- ObjectInfoParser
+    Parser <|-- FileMetadataExtractor
 
     class CSVParser {
         实现: FileTableParser
@@ -191,17 +191,17 @@ classDiagram
     }
 
     class ImageParser {
-        实现: ObjectInfoParser
+        实现: FileMetadataExtractor
         支持: JPG, PNG, TIFF
     }
 
     class VideoParser {
-        实现: ObjectInfoParser
+        实现: FileMetadataExtractor
         支持: MP4, AVI
     }
 
     class PDFParser {
-        实现: ObjectInfoParser
+        实现: FileMetadataExtractor
         支持: PDF 文档
     }
 
@@ -215,9 +215,9 @@ classDiagram
 
     DocCollectionParser <|.. MongoDBParser
 
-    ObjectInfoParser <|.. ImageParser
-    ObjectInfoParser <|.. VideoParser
-    ObjectInfoParser <|.. PDFParser
+    FileMetadataExtractor <|.. ImageParser
+    FileMetadataExtractor <|.. VideoParser
+    FileMetadataExtractor <|.. PDFParser
 ```
 
 ### Parser 类型说明
@@ -250,12 +250,12 @@ classDiagram
   - 返回 DocCollectionInfo 扩展信息
 - **使用场景**: Meta 模块扫描 MongoDB Collection,Manager 模块预览文档数据
 
-**4. ObjectInfoParser (对象信息解析器)**:
-- **用途**: 从对象存储文件提取扩展信息
+**4. FileMetadataExtractor (文件元数据提取器)**:
+- **用途**: 从文件内容提取媒体、文档、文本等增强元数据
 - **支持类型**: 图片 (JPEG、PNG、TIFF)、视频 (MP4、AVI)、文档 (PDF)
 - **核心方法**:
-  - `ParseObjectInfo()`: 提取对象扩展信息
-- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据 (分辨率、时长、页数等)
+  - `Extract()`: 提取 `ExtractedMetadata`
+- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据，并按 attributes 规范写入 `storage`、`type_info.media`、`type_info.document`、`capabilities.extraction`
 
 ---
 

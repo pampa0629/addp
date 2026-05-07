@@ -96,29 +96,6 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	attrs[section] = sectionAttrs
 }
 
-// BuildFieldAttributes 将扫描字段信息转换为 attributes 中的表字段描述。
-func BuildFieldAttributes(fields []format.ScannerFieldInfo) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(fields))
-	for _, field := range fields {
-		result = append(result, map[string]interface{}{
-			"name":              field.Name,
-			"ordinal_position":  field.OrdinalPosition,
-			"data_type":         field.DataType,
-			"column_type":       field.ColumnType,
-			"is_nullable":       field.IsNullable,
-			"default_value":     field.DefaultValue,
-			"comment":           field.Comment,
-			"is_primary_key":    field.IsPrimaryKey,
-			"is_unique_key":     field.IsUniqueKey,
-			"character_set":     field.CharacterSet,
-			"collation":         field.Collation,
-			"numeric_precision": field.NumericPrecision,
-			"numeric_scale":     field.NumericScale,
-		})
-	}
-	return result
-}
-
 func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	result := models.JSONMap{}
 	for k, v := range attrs {

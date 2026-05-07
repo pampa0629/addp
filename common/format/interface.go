@@ -3,7 +3,6 @@ package format
 import (
 	"context"
 	"io"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -60,33 +59,6 @@ type FileTableParser interface {
 	// SupportedFormats 返回支持的文件格式
 	// 例如: [FormatCSV, FormatShapefile, FormatGeoJSON]
 	SupportedFormats() []FormatType
-}
-
-// ============ 对象信息解析器 ============
-
-// ObjectInfoParser 对象信息解析器
-// 用于从MinIO/S3等对象存储中的文件提取完整的 ObjectInfo（包含扩展信息）
-type ObjectInfoParser interface {
-	// ParseObjectInfo 从对象存储文件中提取 ObjectInfo
-	// 参数:
-	//   - ctx: 上下文
-	//   - input: 文件输入流
-	//   - basicInfo: 基础对象信息（从对象存储获取）
-	// 返回: ObjectInfo（包含扩展信息，如 ImageInfo、VideoInfo等）
-	ParseObjectInfo(ctx context.Context, input io.Reader, basicInfo ObjectBasicInfo) (*ObjectInfo, error)
-
-	// SupportedContentTypes 返回支持的MIME类型
-	// 例如: ["image/jpeg", "image/png", "video/mp4"]
-	SupportedContentTypes() []string
-}
-
-// ObjectBasicInfo 对象基础信息（从对象存储获取）
-type ObjectBasicInfo struct {
-	Key         string    // 对象键（完整路径）
-	SizeBytes   int64     // 对象大小（字节）
-	ContentType string    // MIME 类型
-	ETag        string    // ETag（对象版本标识）
-	ModifiedAt  time.Time // 最后修改时间
 }
 
 // ============ 文档数据库集合解析器 ============

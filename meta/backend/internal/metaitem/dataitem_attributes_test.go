@@ -66,21 +66,33 @@ func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
 		Organization: dataitem.OrganizationSingle,
 		DataType:     dataitem.DataTypeDocument,
 		Attributes: map[string]interface{}{
-			"path":         "legacy/path",
-			"size":         int64(10),
-			"content_type": "text/plain",
-			"custom":       "ok",
+			"path": "legacy/path",
+			"size": int64(10),
+			"storage": map[string]interface{}{
+				"path":         "legacy/path",
+				"content_type": "text/plain",
+				"custom":       "ok",
+			},
 		},
 	}
-	attrs := map[string]interface{}{"bucket": "demo"}
+	attrs := map[string]interface{}{
+		"storage": map[string]interface{}{
+			"bucket": "demo",
+			"path":   "docs/",
+		},
+	}
 
 	MergeDataItemAttributes(attrs, item)
 
 	if attrs["path"] != nil || attrs["size"] != nil || attrs["content_type"] != nil {
 		t.Fatalf("legacy flat storage fields should be skipped: %#v", attrs)
 	}
-	if attrs["custom"] != "ok" {
-		t.Fatalf("custom attr = %#v", attrs["custom"])
+	storage := attrs["storage"].(map[string]interface{})
+	if storage["bucket"] != "demo" || storage["path"] != "docs/" {
+		t.Fatalf("existing storage attrs should win over detected legacy storage keys: %#v", storage)
+	}
+	if storage["custom"] != "ok" {
+		t.Fatalf("custom storage attr = %#v", storage["custom"])
 	}
 	if attrs["item"] == nil {
 		t.Fatalf("item section missing: %#v", attrs)

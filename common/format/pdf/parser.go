@@ -122,13 +122,11 @@ func estimatePageCount(content []byte) int {
 	// 无法确定页数
 	return -1
 }
-// ============ ObjectInfoParser 接口实现 ============
 
-// ParseObjectInfo 实现 ObjectInfoParser 接口
-// 从 PDF 文件中提取 ObjectInfo（包含 PDFInfo 扩展信息）
-func (p *Parser) ParseObjectInfo(ctx context.Context, input io.Reader, basicInfo format.ObjectBasicInfo) (*format.ObjectInfo, error) {
+// Extract 实现 FileMetadataExtractor 接口。
+func (p *Parser) Extract(ctx context.Context, input format.ExtractInput) (*format.ExtractedMetadata, error) {
 	// 读取 PDF 内容
-	content, err := io.ReadAll(input)
+	content, err := io.ReadAll(input.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PDF content: %w", err)
 	}
@@ -142,40 +140,49 @@ func (p *Parser) ParseObjectInfo(ctx context.Context, input io.Reader, basicInfo
 	docMeta := extractPDFMetadata(content)
 	pageCount := estimatePageCount(content)
 
-	// 构建 PDFInfo
-	pdfInfo := &format.PDFInfo{
-		PageCount: pageCount,
-		Title:     docMeta["Title"],
-		Author:    docMeta["Author"],
-		Subject:   docMeta["Subject"],
-		Creator:   docMeta["Creator"],
-		Producer:  docMeta["Producer"],
-		Encrypted: bytes.Contains(content, []byte("/Encrypt")),
+	customAttrs := map[string]interface{}{
+		"document_type": "pdf",
+		"page_count":    pageCount,
+		"encrypted":     bytes.Contains(content, []byte("/Encrypt")),
+	}
+	for _, field := range []struct {
+		key   string
+		value string
+	}{
+		{"title", docMeta["Title"]},
+		{"author", docMeta["Author"]},
+		{"subject", docMeta["Subject"]},
+		{"creator", docMeta["Creator"]},
+		{"producer", docMeta["Producer"]},
+	} {
+		if field.value != "" {
+			customAttrs[field.key] = field.value
+		}
 	}
 
-	// 构建 ObjectInfo
-	objectInfo := &format.ObjectInfo{
-		Key:         basicInfo.Key,
-		SizeBytes:   basicInfo.SizeBytes,
-		ModifiedAt:  basicInfo.ModifiedAt,
-		ContentType: basicInfo.ContentType,
-		ETag:        basicInfo.ETag,
-		Extensions:  []format.ExtensionInfo{pdfInfo},
-	}
-
-	return objectInfo, nil
+	return &format.ExtractedMetadata{
+		BasicInfo: format.BasicMetadata{
+			FileType:     "PDF",
+			Size:         input.Size,
+			ContentType:  input.ContentType,
+			LastModified: input.LastModified,
+			ETag:         input.ETag,
+		},
+		CustomAttrs: customAttrs,
+	}, nil
 }
 
-// SupportedContentTypes 实现 ObjectInfoParser 接口
-// 返回支持的 MIME 类型
-func (p *Parser) SupportedContentTypes() []string {
-	return []string{
-		"application/pdf",
-	}
+// SupportedTypes 实现 FileMetadataExtractor 接口。
+func (p *Parser) SupportedTypes() []string {
+	return []string{"application/pdf"}
+}
+
+// Priority 实现 FileMetadataExtractor 接口。
+func (p *Parser) Priority() int {
+	return 100
 }
 
 func init() {
 	parser := NewParser(nil)
-	// 注册为 ObjectInfoParser
-	_ = format.RegisterObjectInfoParser(parser)
+	_ = format.RegisterExtractor(parser)
 }

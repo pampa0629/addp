@@ -398,15 +398,15 @@ func (s *EmbeddingService) DeleteEmbeddings(ctx context.Context, engineID uint, 
 
 // ===== 内部辅助方法 =====
 
-// ObjectInfo 对象元数据
-type ObjectInfo struct {
+// ObjectStorageInfo 对象存储元数据。
+type ObjectStorageInfo struct {
 	Size         int64
 	ContentType  string
 	LastModified time.Time
 }
 
 // getObjectInfo 获取对象元数据
-func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectInfo, error) {
+func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectStorageInfo, error) {
 	// 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
@@ -429,7 +429,7 @@ func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, buc
 		return nil, fmt.Errorf("failed to stat object: %w", err)
 	}
 
-	return &ObjectInfo{
+	return &ObjectStorageInfo{
 		Size:         objInfo.Size,
 		ContentType:  objInfo.ContentType,
 		LastModified: objInfo.LastModified,
@@ -479,7 +479,7 @@ func (s *EmbeddingService) embedObjectContent(
 	engineID uint,
 	bucket, objectKey string,
 	modality embedding.Modality,
-	objInfo *ObjectInfo,
+	objInfo *ObjectStorageInfo,
 ) ([]float32, string, error) {
 	// 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
@@ -612,7 +612,7 @@ func (s *EmbeddingService) createMinioClient(engine *commonModels.Engine) (*mini
 }
 
 // buildMetadata 构建向量的 metadata（用于搜索展示和定位）
-func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectInfo) (datatypes.JSON, error) {
+func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectStorageInfo) (datatypes.JSON, error) {
 	// 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")

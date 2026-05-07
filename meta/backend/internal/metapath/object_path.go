@@ -47,8 +47,8 @@ func SplitObjectPath(path string) (string, string) {
 }
 
 // PrepareObjectPaths 准备对象路径列表（去重、排序）。
-// 优先级：paths > fallback > scanner.AllowedBuckets()。
-func PrepareObjectPaths(paths, fallback []string, scanner format.ObjectStorageScanner) []string {
+// 优先级：paths > fallback。
+func PrepareObjectPaths(paths, fallback []string) []string {
 	pathSet := map[string]struct{}{}
 	for _, p := range paths {
 		clean := SanitizeObjectPath(p)
@@ -60,15 +60,6 @@ func PrepareObjectPaths(paths, fallback []string, scanner format.ObjectStorageSc
 	if len(pathSet) == 0 {
 		for _, p := range fallback {
 			clean := SanitizeObjectPath(p)
-			if clean != "" {
-				pathSet[clean] = struct{}{}
-			}
-		}
-	}
-
-	if len(pathSet) == 0 && scanner != nil {
-		for _, bucket := range scanner.AllowedBuckets() {
-			clean := SanitizeObjectPath(bucket)
 			if clean != "" {
 				pathSet[clean] = struct{}{}
 			}

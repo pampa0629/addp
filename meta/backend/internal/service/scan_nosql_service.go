@@ -177,15 +177,11 @@ func (s *NoSQLScanService) scanCatalogItems(
 		if attrs == nil {
 			attrs = models.JSONMap{}
 		}
-		for k, v := range node.Attributes {
-			attrs[k] = v
-		}
-		if itemType == "relationship" {
-			attrs["count"] = count
+		if itemType == "collection" {
+			metaattr.ApplyDocumentCollectionStatistics(attrs, count, sizeBytes)
 		} else {
-			attrs["document_count"] = count
+			metaattr.ApplyGraphItemAttributes(attrs, itemType, count, node.Attributes)
 		}
-		attrs["size_bytes"] = sizeBytes
 		metaattr.ApplyNoSQLDataItemAttributes(attrs, itemType)
 
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)

@@ -50,7 +50,6 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 
 		setExtractionAttribute(baseAttrs, "metadata_extracted", true)
 		setExtractionAttribute(baseAttrs, "extracted_metadata", buildExtractedMetadataPayload(meta.ExtractedMetadata))
-		metaattr.SetExtension(baseAttrs, "document", "file_type_friendly", meta.ExtractedMetadata.BasicInfo.FileType)
 		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
 			metaattr.SetStorage(baseAttrs, "content_type", meta.ExtractedMetadata.BasicInfo.ContentType)
 		}
@@ -83,7 +82,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 	baseAttrs models.JSONMap,
 	fullPath string,
 ) models.JSONMap {
-	bucket, _ := baseAttrs["bucket"].(string)
+	bucket := commonJSON.String(baseAttrs, "storage", "bucket")
 	dir, name := commonModels.SplitObjectPath(fullPath)
 	fullName := commonModels.JoinObjectPath(bucket, dir, name)
 	fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
@@ -227,7 +226,9 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 
 		setExtractionAttribute(enhancedAttrs, "metadata_extracted", true)
 		setExtractionAttribute(enhancedAttrs, "extracted_metadata", buildExtractedMetadataPayload(metadata))
-		setExtractionAttribute(enhancedAttrs, "schema_info", metadata.SchemaInfo)
+		if metadata.SchemaInfo != nil {
+			setExtractionAttribute(enhancedAttrs, "schema_info", metadata.SchemaInfo)
+		}
 		applyExtractedMetadataExtensions(enhancedAttrs, metadata)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
@@ -285,6 +286,10 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 			metaattr.SetExtension(attrs, "document", key, value)
 		case "statistics":
 			metaattr.SetExtension(attrs, "statistics", key, value)
+		case "spatial":
+			if values, ok := value.(map[string]interface{}); ok {
+				metaattr.UpsertNested(attrs, "capabilities", "spatial", values)
+			}
 		default:
 			metaattr.SetExtension(attrs, "unqualified", key, value)
 		}
@@ -297,7 +302,7 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 
 func standardExtensionForMetadataKey(key string) string {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "width", "height", "format", "color_space", "bit_depth", "has_alpha",
+	case "kind", "width", "height", "format", "color_space", "color_mode", "bit_depth", "has_alpha",
 		"duration", "duration_seconds", "codec", "frame_rate", "sample_rate", "channels":
 		return "media"
 	case "document_type", "title", "author", "keywords", "page_count", "word_count",
@@ -305,6 +310,8 @@ func standardExtensionForMetadataKey(key string) string {
 		return "document"
 	case "row_count", "column_count", "feature_count", "object_count", "record_count":
 		return "statistics"
+	case "spatial":
+		return "spatial"
 	default:
 		return ""
 	}

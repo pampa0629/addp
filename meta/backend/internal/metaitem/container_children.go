@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 
@@ -146,6 +147,8 @@ func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, re
 	children := make([]map[string]interface{}, 0, len(analysis.Metadata.Tables))
 	spatialColumns := make([]map[string]interface{}, 0)
 	primaryGeometryColumn := ""
+	geoPackageExtent := geoPackageLayersExtent(layerByTable)
+	hasSpatialIndex := geoPackageHasSpatialIndex(ctx, db, layerByTable)
 	for _, table := range analysis.Metadata.Tables {
 		if geoPackage && isGeoPackageSystemTable(table.Name) {
 			continue
@@ -161,12 +164,15 @@ func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, re
 			if primaryGeometryColumn == "" {
 				primaryGeometryColumn = layer.GeometryColumn
 			}
-			spatialColumns = append(spatialColumns, map[string]interface{}{
+			spatialColumn := map[string]interface{}{
 				"name":          layer.GeometryColumn,
 				"table_name":    table.Name,
 				"geometry_type": layer.GeometryType,
-				"srid":          layer.SRID,
-			})
+			}
+			if layer.SRID > 0 {
+				spatialColumn["srid"] = layer.SRID
+			}
+			spatialColumns = append(spatialColumns, spatialColumn)
 		}
 		children = append(children, map[string]interface{}{
 			"name":      childName,
@@ -196,11 +202,15 @@ func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, re
 		"children_truncated": (analysis.Metadata.TableCount + analysis.Metadata.ViewCount) > len(children),
 	})
 	if geoPackage && len(spatialColumns) > 0 {
-		metaattr.UpsertNested(attrs, "capabilities", "spatial", map[string]interface{}{
+		spatialAttrs := map[string]interface{}{
 			"geometry_columns":        spatialColumns,
 			"primary_geometry_column": primaryGeometryColumn,
-			"has_spatial_index":       false,
-		})
+			"has_spatial_index":       hasSpatialIndex,
+		}
+		if geoPackageExtent != nil {
+			spatialAttrs["extent"] = geoPackageExtent
+		}
+		metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
 	}
 	return nil
 }
@@ -226,11 +236,16 @@ type geoPackageLayer struct {
 	GeometryColumn string
 	GeometryType   string
 	SRID           int
+	MinX           sql.NullFloat64
+	MinY           sql.NullFloat64
+	MaxX           sql.NullFloat64
+	MaxY           sql.NullFloat64
 }
 
 func readGeoPackageLayers(ctx context.Context, db *sql.DB) map[string]geoPackageLayer {
 	query := `
-		SELECT c.table_name, COALESCE(c.identifier, c.table_name), g.column_name, g.geometry_type_name, g.srs_id
+		SELECT c.table_name, COALESCE(c.identifier, c.table_name), g.column_name, g.geometry_type_name, g.srs_id,
+		       c.min_x, c.min_y, c.max_x, c.max_y
 		FROM gpkg_contents c
 		JOIN gpkg_geometry_columns g ON g.table_name = c.table_name
 		WHERE c.data_type = 'features'
@@ -244,12 +259,61 @@ func readGeoPackageLayers(ctx context.Context, db *sql.DB) map[string]geoPackage
 	result := map[string]geoPackageLayer{}
 	for rows.Next() {
 		var layer geoPackageLayer
-		if err := rows.Scan(&layer.TableName, &layer.Identifier, &layer.GeometryColumn, &layer.GeometryType, &layer.SRID); err != nil {
+		if err := rows.Scan(&layer.TableName, &layer.Identifier, &layer.GeometryColumn, &layer.GeometryType, &layer.SRID, &layer.MinX, &layer.MinY, &layer.MaxX, &layer.MaxY); err != nil {
 			continue
 		}
 		result[layer.TableName] = layer
 	}
 	return result
+}
+
+func geoPackageLayersExtent(layers map[string]geoPackageLayer) []float64 {
+	if len(layers) == 0 {
+		return nil
+	}
+	var extent []float64
+	for _, layer := range layers {
+		if !layer.MinX.Valid || !layer.MinY.Valid || !layer.MaxX.Valid || !layer.MaxY.Valid {
+			continue
+		}
+		values := []float64{layer.MinX.Float64, layer.MinY.Float64, layer.MaxX.Float64, layer.MaxY.Float64}
+		if !validExtent(values) {
+			continue
+		}
+		if extent == nil {
+			extent = append([]float64(nil), values...)
+			continue
+		}
+		extent[0] = math.Min(extent[0], values[0])
+		extent[1] = math.Min(extent[1], values[1])
+		extent[2] = math.Max(extent[2], values[2])
+		extent[3] = math.Max(extent[3], values[3])
+	}
+	return extent
+}
+
+func validExtent(values []float64) bool {
+	if len(values) != 4 || values[0] > values[2] || values[1] > values[3] {
+		return false
+	}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func geoPackageHasSpatialIndex(ctx context.Context, db *sql.DB, layers map[string]geoPackageLayer) bool {
+	for _, layer := range layers {
+		indexTable := "rtree_" + layer.TableName + "_" + layer.GeometryColumn
+		var exists int
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM sqlite_master WHERE type IN ('table', 'virtual table') AND name = ? LIMIT 1`, indexTable).Scan(&exists)
+		if err == nil && exists == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func isGeoPackageSystemTable(name string) bool {

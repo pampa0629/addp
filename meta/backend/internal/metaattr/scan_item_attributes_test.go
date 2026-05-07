@@ -47,17 +47,41 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 			Fields:    []string{"name"},
 			IndexType: "btree",
 		}},
+		Stats: map[string]interface{}{
+			"document_count": int64(12),
+			"index_count":    int64(1),
+			"avg_doc_size":   int64(256),
+		},
+		Attributes: map[string]interface{}{
+			"database":        "db1",
+			"collection":      "people",
+			"is_sampled":      true,
+			"sample_size":     10,
+			"schema_type":     "dynamic",
+			"total_documents": int64(12),
+		},
 	})
 
 	typeInfo := attrs["type_info"].(map[string]interface{})
 	table := typeInfo["table"].(map[string]interface{})
+	capabilities := attrs["capabilities"].(map[string]interface{})
+	statistics := capabilities["statistics"].(map[string]interface{})
 	if _, ok := table["fields"]; !ok {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
 	if _, ok := table["indexes"]; !ok {
 		t.Fatalf("type_info.table.indexes missing: %#v", table)
 	}
-	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil {
+	if table["is_sampled"] != true || table["schema_type"] != "dynamic" {
+		t.Fatalf("type_info.table sampling attrs missing: %#v", table)
+	}
+	if table["row_count"] != int64(12) {
+		t.Fatalf("type_info.table.row_count missing: %#v", table)
+	}
+	if statistics["sample_size"] != 10 || statistics["index_count"] != int64(1) || statistics["avg_doc_size"] != int64(256) {
+		t.Fatalf("capabilities.statistics missing: %#v", statistics)
+	}
+	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil || attrs["database"] != nil || attrs["collection"] != nil {
 		t.Fatalf("legacy flat/schema fields should not be written: %#v", attrs)
 	}
 }
@@ -74,5 +98,48 @@ func TestApplyNoSQLDataItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	}
 	if item["format"] != nil {
 		t.Fatalf("native NoSQL item should not write item.format: %#v", item)
+	}
+}
+
+func TestApplyDocumentCollectionStatisticsWritesStandardSections(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	ApplyDocumentCollectionStatistics(attrs, 42, 2048)
+
+	typeInfo := attrs["type_info"].(map[string]interface{})
+	table := typeInfo["table"].(map[string]interface{})
+	storage := attrs["storage"].(map[string]interface{})
+	if table["row_count"] != int64(42) {
+		t.Fatalf("document collection counts not standardized: %#v", attrs)
+	}
+	if typeInfo["document"] != nil {
+		t.Fatalf("document collection count should not be duplicated in type_info.document: %#v", typeInfo)
+	}
+	if storage["total_size"] != int64(2048) {
+		t.Fatalf("storage.total_size missing: %#v", storage)
+	}
+}
+
+func TestApplyGraphItemAttributesWritesTypeInfoGraph(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	ApplyGraphItemAttributes(attrs, "relationship", 7, map[string]interface{}{
+		"from_labels": []string{"Person"},
+		"to_labels":   []interface{}{"Company"},
+	})
+
+	graph := attrs["type_info"].(map[string]interface{})["graph"].(map[string]interface{})
+	if graph["edge_count"] != int64(7) || graph["relationship"] != true {
+		t.Fatalf("type_info.graph relationship attrs missing: %#v", graph)
+	}
+	fromLabels := graph["from_labels"].([]string)
+	toLabels := graph["to_labels"].([]string)
+	if len(fromLabels) != 1 || fromLabels[0] != "Person" || len(toLabels) != 1 || toLabels[0] != "Company" {
+		t.Fatalf("graph labels not preserved: %#v", graph)
+	}
+	if attrs["count"] != nil || attrs["from_labels"] != nil || attrs["to_labels"] != nil {
+		t.Fatalf("legacy graph attrs should not be written: %#v", attrs)
 	}
 }

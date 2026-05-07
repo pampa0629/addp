@@ -163,7 +163,7 @@ mindmap
 **元数据管理体系,包括层次结构、Parser 体系和统一数据结构**
 
 - 元数据层次结构 (数据节点 Node、数据项 Item)
-- Parser 体系架构 (FileTableParser、DBTableParser、DocCollectionParser、ObjectInfoParser)
+- Parser / Extractor 体系架构 (FileTableParser、DBTableParser、DocCollectionParser、FileMetadataExtractor)
 - TableInfo 统一数据结构
 - ExtensionInfo 扩展机制
 - 元数据扫描流程

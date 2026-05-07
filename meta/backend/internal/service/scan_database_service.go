@@ -12,6 +12,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
@@ -145,23 +146,9 @@ func (s *DatabaseScanService) scanTables(
 		return 0, 0, fmt.Errorf("failed to list tables: %w", err)
 	}
 
-	// ScannerTableInfo 是旧 Scanner 适配层结构，数据库扫描在此处做一次边界转换。
-	// 新的 item 语义写入 attrs，不再扩展 ScannerTableInfo。
-	tables := make([]format.ScannerTableInfo, len(pluginTables))
-	for i, t := range pluginTables {
-		tables[i] = format.ScannerTableInfo{
-			Name:         t.TableName,
-			Type:         "BASE TABLE", // plugin.TableInfo 没有 Type 字段，默认为 BASE TABLE
-			Comment:      "",           // plugin.TableInfo 没有 Comment 字段
-			RowCount:     t.RowCount,
-			SizeBytes:    t.SizeBytes,
-			LastModified: t.LastModified, // 表的最后修改时间（用于增量扫描判断）
-		}
-	}
-
 	s.log.Info("扫描到的表",
 		"schema", schemaName,
-		"tables_count", len(tables),
+		"tables_count", len(pluginTables),
 	)
 
 	totalTables := 0
@@ -169,23 +156,23 @@ func (s *DatabaseScanService) scanTables(
 	scannedTables := make(map[string]bool)
 
 	// 处理每张表
-	for i, tableInfo := range tables {
-		s.log.Info(fmt.Sprintf("处理第 %d/%d 张表", i+1, len(tables)),
-			"table_name", tableInfo.Name,
+	for i, tableInfo := range pluginTables {
+		s.log.Info(fmt.Sprintf("处理第 %d/%d 张表", i+1, len(pluginTables)),
+			"table_name", tableInfo.TableName,
 			"row_count", tableInfo.RowCount,
 		)
 
-		scannedTables[tableInfo.Name] = true
+		scannedTables[tableInfo.TableName] = true
 
 		// 检查是否需要更新
-		existingItem := existingTableMap[tableInfo.Name]
+		existingItem := existingTableMap[tableInfo.TableName]
 		needsUpdate := scanchange.ShouldUpdateTable(existingItem, tableInfo)
 
 		// 浅度扫描且表未变化，跳过
 		if !isDeepScan && existingItem != nil && !needsUpdate {
 			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
-				"table", tableInfo.Name,
+				"table", tableInfo.TableName,
 			)
 			totalTables++
 			continue
@@ -196,29 +183,29 @@ func (s *DatabaseScanService) scanTables(
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
-				"table", tableInfo.Name,
+				"table", tableInfo.TableName,
 				"error", err,
 			)
 			continue
 		}
 
 		// 持久化表元数据
-		fullName := metapath.ComposeNodeFullName(tableInfo.Name, schemaNode, ".")
+		fullName := metapath.ComposeNodeFullName(tableInfo.TableName, schemaNode, ".")
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
+		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
-				"table", tableInfo.Name,
+				"table", tableInfo.TableName,
 				"error", err,
 			)
 			continue
 		}
 
 		s.log.Info("表元数据写入成功",
-			"table", tableInfo.Name,
+			"table", tableInfo.TableName,
 			"item_id", item.ID,
 		)
 
@@ -271,6 +258,7 @@ func (s *DatabaseScanService) listTables(
 		tables = append(tables, plugin.TableInfo{
 			Schema:    schemaName,
 			TableName: node.Name,
+			Kind:      node.Kind,
 			RowCount:  rowCount,
 			SizeBytes: sizeBytes,
 		})
@@ -309,33 +297,23 @@ func (s *DatabaseScanService) scanTableDetails(
 	metadataProvider plugin.ItemMetadataProvider,
 	db *gorm.DB,
 	schemaName string,
-	tableInfo format.ScannerTableInfo,
+	tableInfo plugin.TableInfo,
 	existingItem *models.MetaItem,
 	isDeepScan bool,
-) ([]format.ScannerFieldInfo, models.JSONMap, error) {
-	var fields []format.ScannerFieldInfo
+) ([]format.FieldInfo, models.JSONMap, error) {
+	var fields []format.FieldInfo
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
+		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.TableName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
 
-		// ScannerFieldInfo 是旧 Scanner 适配层结构，字段级标准语义后续应收口到 format.FieldInfo。
-		fields = make([]format.ScannerFieldInfo, len(pluginColumns))
-		for i, col := range pluginColumns {
-			fields[i] = format.ScannerFieldInfo{
-				Name:         col.ColumnName,
-				DataType:     col.DataType,
-				IsNullable:   col.IsNullable,
-				IsPrimaryKey: col.IsPrimaryKey,
-				Comment:      col.Comment,
-			}
-		}
+		fields = databaseFieldInfo(pluginColumns)
 
 		s.log.Info("字段扫描成功",
-			"table", tableInfo.Name,
+			"table", tableInfo.TableName,
 			"field_count", len(fields),
 		)
 		// 提取主键信息
@@ -349,7 +327,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 如果有主键，查询主键约束名
 		var primaryKeyName string
 		if len(primaryKeyColumns) > 0 && db != nil {
-			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
+			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.TableName)
 		}
 
 		tableMetadata := map[string]interface{}{
@@ -357,7 +335,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			"primary_key_name": primaryKeyName,
 			"has_primary_key":  len(primaryKeyColumns) > 0,
 		}
-		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.BuildFieldAttributes(fields), tableMetadata, tableInfo.Type, tableInfo.Comment)
+		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributesFromFormat(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
 		if len(primaryKeyColumns) > 0 {
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
@@ -366,11 +344,11 @@ func (s *DatabaseScanService) scanTableDetails(
 
 		// 扫描空间元数据（仅 PostgreSQL）
 		if resource.EngineType == "postgresql" && db != nil {
-			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
+			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.TableName)
 			if spatialMeta != nil {
 				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialCapabilityFromMetadata(spatialMeta))
 				s.log.Info("空间元数据扫描成功",
-					"table", tableInfo.Name,
+					"table", tableInfo.TableName,
 					"geometry_column", spatialMeta.GeometryColumn,
 				)
 			}
@@ -381,17 +359,43 @@ func (s *DatabaseScanService) scanTableDetails(
 			attrs = existingItem.Attributes
 			metaattr.SetStorage(attrs, "schema_name", schemaName)
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
-				"table_type":    tableInfo.Type,
-				"table_comment": tableInfo.Comment,
+				"table_type":    tableType(tableInfo),
+				"table_comment": tableComment(tableInfo),
 			})
 		} else {
-			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableInfo.Type, tableInfo.Comment)
+			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableType(tableInfo), tableComment(tableInfo))
 		}
 	}
 	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 
 	return fields, attrs, nil
+}
+
+func databaseFieldInfo(columns []plugin.ColumnInfo) []format.FieldInfo {
+	fields := make([]format.FieldInfo, 0, len(columns))
+	for _, col := range columns {
+		fields = append(fields, format.FieldInfo{
+			Name:         col.ColumnName,
+			Type:         format.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
+			OriginalType: col.DataType,
+			Nullable:     col.IsNullable,
+			IsPrimaryKey: col.IsPrimaryKey,
+			Comment:      col.Comment,
+		})
+	}
+	return fields
+}
+
+func tableType(table plugin.TableInfo) string {
+	if table.Kind != "" {
+		return table.Kind
+	}
+	return "table"
+}
+
+func tableComment(table plugin.TableInfo) string {
+	return table.Comment
 }
 
 func (s *DatabaseScanService) listColumns(

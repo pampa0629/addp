@@ -43,13 +43,13 @@ func ListObjects(
 	catalogProvider plugin.CatalogProvider,
 	bucketName, prefix string,
 	recursive bool,
-) ([]plugin.ObjectInfo, error) {
+) ([]plugin.ObjectStorageEntry, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), CatalogPath(resource.ID, bucketName, prefix), plugin.ListOptions{Recursive: recursive})
 	if err != nil {
 		return nil, err
 	}
 
-	objects := make([]plugin.ObjectInfo, 0, len(nodes))
+	objects := make([]plugin.ObjectStorageEntry, 0, len(nodes))
 	for _, node := range nodes {
 		if !node.IsItem {
 			continue
@@ -60,7 +60,7 @@ func ListObjects(
 			key = parsedKey
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
-		object := plugin.ObjectInfo{
+		object := plugin.ObjectStorageEntry{
 			Bucket:      bucketName,
 			Key:         key,
 			Size:        size,
@@ -109,7 +109,7 @@ func CatalogPath(engineID uint, bucketName, prefix string) plugin.CatalogPath {
 
 func ConvertObjectsToMetadata(
 	ctx context.Context,
-	objects []plugin.ObjectInfo,
+	objects []plugin.ObjectStorageEntry,
 	bucket string,
 	deepScan bool,
 	resource *commonModels.Engine,

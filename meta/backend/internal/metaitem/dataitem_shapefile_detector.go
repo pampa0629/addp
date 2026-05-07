@@ -257,7 +257,6 @@ func enrichShapefileInfo(
 		"geometry_columns": []map[string]interface{}{{
 			"name":          "geometry",
 			"geometry_type": geometryType,
-			"srid":          0,
 			"dimension":     2,
 			"nullable":      false,
 		}},

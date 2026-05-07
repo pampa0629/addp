@@ -259,6 +259,11 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		SELECT
 			t.table_schema as schema,
 			t.table_name,
+			CASE
+				WHEN t.table_type = 'VIEW' THEN 'view'
+				WHEN t.table_type = 'BASE TABLE' THEN 'table'
+				ELSE lower(replace(t.table_type, ' ', '_'))
+			END AS table_kind,
 			COALESCE(pg_total_relation_size(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name)), 0) as size_bytes,
 			GREATEST(
 				s.last_autoanalyze,
@@ -270,7 +275,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		LEFT JOIN pg_stat_user_tables s
 			ON t.table_schema = s.schemaname AND t.table_name = s.relname
 		WHERE t.table_schema = $1
-		  AND t.table_type = 'BASE TABLE'
+		  AND t.table_type IN ('BASE TABLE', 'VIEW')
 		ORDER BY t.table_name
 	`
 

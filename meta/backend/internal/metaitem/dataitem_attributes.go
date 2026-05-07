@@ -44,24 +44,52 @@ func MergeDataItemAttributes(attrs map[string]interface{}, item *DetectedItem) {
 		return
 	}
 	for k, v := range BuildAttributes(item) {
-		switch k {
-		case "path", "size", "content_type":
+		if isLegacyFlatStorageKey(k) {
 			continue
+		}
+		switch k {
+		case "storage", "item", "type_info", "format_info", "capabilities":
+			attrs[k] = mergeAttributeSection(attrs[k], v)
 		default:
 			attrs[k] = v
 		}
 	}
 }
 
-func mergeAttributeSection(existing interface{}, additions map[string]interface{}) map[string]interface{} {
+func mergeAttributeSection(existing interface{}, additions interface{}) map[string]interface{} {
 	merged := map[string]interface{}{}
-	if section, ok := existing.(map[string]interface{}); ok {
-		for k, v := range section {
-			merged[k] = v
-		}
+	for k, v := range interfaceMap(existing) {
+		merged[k] = v
 	}
-	for k, v := range additions {
+	for k, v := range interfaceMap(additions) {
+		if isLegacyFlatStorageKey(k) {
+			continue
+		}
 		merged[k] = v
 	}
 	return merged
+}
+
+func interfaceMap(value interface{}) map[string]interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v
+	case map[string]string:
+		result := map[string]interface{}{}
+		for k, item := range v {
+			result[k] = item
+		}
+		return result
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+func isLegacyFlatStorageKey(key string) bool {
+	switch key {
+	case "bucket", "path", "name", "size", "file_type", "content_type", "last_modified_at", "object_count":
+		return true
+	default:
+		return false
+	}
 }

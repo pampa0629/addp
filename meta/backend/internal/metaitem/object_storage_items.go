@@ -241,14 +241,19 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	attrs := models.JSONMap{
-		"bucket":       meta.Bucket,
-		"path":         dir,
-		"name":         name,
-		"file_type":    meta.FileType,
-		"object_count": meta.ObjectCount,
+		"storage": map[string]interface{}{
+			"bucket":       meta.Bucket,
+			"path":         dir,
+			"name":         name,
+			"total_size":   meta.SizeBytes,
+			"object_count": meta.ObjectCount,
+		},
+	}
+	if meta.FileType != "" {
+		metaattr.SetStorage(attrs, "file_type", meta.FileType)
 	}
 	if meta.LastModified != nil {
-		attrs["last_modified_at"] = meta.LastModified
+		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
 	}
 	MergeDataItemAttributes(attrs, dataItem)
 	ApplyContainerSummary(attrs, dataItem)

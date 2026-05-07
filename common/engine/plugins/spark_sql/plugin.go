@@ -411,6 +411,7 @@ func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema str
 		tableInfo := plugin.TableInfo{
 			Schema:    schema,
 			TableName: tableName,
+			Kind:      plugin.CatalogKindTable,
 			RowCount:  0,
 			SizeBytes: 0,
 		}

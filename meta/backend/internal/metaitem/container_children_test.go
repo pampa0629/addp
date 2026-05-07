@@ -82,10 +82,11 @@ func TestEnrichGeoPackageContainerChildrenWritesLayersAndSpatialCapability(t *te
 
 	data := sqliteDatabaseBytes(t, func(db *sql.DB) {
 		stmts := []string{
-			`CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, srs_id INTEGER)`,
+			`CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, srs_id INTEGER, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE)`,
 			`CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER)`,
 			`CREATE TABLE roads (id INTEGER PRIMARY KEY, geom BLOB, name TEXT)`,
-			`INSERT INTO gpkg_contents(table_name, data_type, identifier, srs_id) VALUES ('roads', 'features', 'Road Layer', 4326)`,
+			`CREATE VIRTUAL TABLE rtree_roads_geom USING rtree(id, minx, maxx, miny, maxy)`,
+			`INSERT INTO gpkg_contents(table_name, data_type, identifier, srs_id, min_x, min_y, max_x, max_y) VALUES ('roads', 'features', 'Road Layer', 4326, 120.0, 30.0, 121.0, 31.0)`,
 			`INSERT INTO gpkg_geometry_columns(table_name, column_name, geometry_type_name, srs_id) VALUES ('roads', 'geom', 'LINESTRING', 4326)`,
 		}
 		for _, stmt := range stmts {
@@ -109,6 +110,17 @@ func TestEnrichGeoPackageContainerChildrenWritesLayersAndSpatialCapability(t *te
 	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
 	if spatial["primary_geometry_column"] != "geom" {
 		t.Fatalf("spatial = %#v", spatial)
+	}
+	if spatial["has_spatial_index"] != true {
+		t.Fatalf("spatial index = %#v", spatial)
+	}
+	extent := spatial["extent"].([]float64)
+	if len(extent) != 4 || extent[0] != 120.0 || extent[3] != 31.0 {
+		t.Fatalf("extent = %#v", extent)
+	}
+	columns := spatial["geometry_columns"].([]map[string]interface{})
+	if columns[0]["srid"] != 4326 {
+		t.Fatalf("geometry_columns = %#v", columns)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	commonFormat "github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
@@ -23,7 +22,7 @@ var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta it
 // 1. 解析 ResourceLocator URI
 // 2. 选择合适的 PreviewProvider（通过 Registry）
 // 3. 执行预览
-// 4. 组装 PreviewResult（引用 Common 的 TableInfo/ObjectInfo）
+// 4. 组装 PreviewResult
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
@@ -76,10 +75,6 @@ type Pagination struct {
 type PreviewResult struct {
 	PreviewType string      `json:"preview_type"` // "table"/"object"/"node"/"unsupported"
 	Data        interface{} `json:"data"`         // 预览数据
-
-	// 元数据部分（引用 Common 的 Info 结构）
-	TableInfo  *commonFormat.TableInfo  `json:"table_info,omitempty"`  // 当 PreviewType="table"
-	ObjectInfo *commonFormat.ObjectInfo `json:"object_info,omitempty"` // 当 PreviewType="object"
 
 	// 预览上下文元数据
 	Metadata *PreviewMetadata `json:"metadata"`

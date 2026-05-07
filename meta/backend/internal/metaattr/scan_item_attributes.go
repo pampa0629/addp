@@ -68,9 +68,7 @@ func BuildDocumentCollectionAttributes(itemMetadata *plugin.ItemMetadata) models
 		return attrs
 	}
 
-	for key, value := range itemMetadata.Attributes {
-		attrs[key] = value
-	}
+	applyDocumentCollectionMetadata(attrs, itemMetadata)
 	if len(itemMetadata.Indexes) > 0 {
 		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"indexes": IndexAttributes(itemMetadata.Indexes)})
 	}
@@ -78,6 +76,69 @@ func BuildDocumentCollectionAttributes(itemMetadata *plugin.ItemMetadata) models
 		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": DocumentFieldAttributes(itemMetadata.Fields)})
 	}
 	return attrs
+}
+
+func applyDocumentCollectionMetadata(attrs models.JSONMap, itemMetadata *plugin.ItemMetadata) {
+	if itemMetadata == nil || attrs == nil {
+		return
+	}
+
+	table := map[string]interface{}{}
+	statistics := map[string]interface{}{}
+	if v, ok := itemMetadata.Attributes["is_sampled"]; ok {
+		table["is_sampled"] = v
+	}
+	if v, ok := itemMetadata.Attributes["schema_type"]; ok {
+		table["schema_type"] = v
+	}
+	if v, ok := itemMetadata.Attributes["sample_size"]; ok {
+		statistics["sample_size"] = v
+	}
+	if count := firstPresent(itemMetadata.Stats, itemMetadata.Attributes, "document_count", "total_documents"); count != nil {
+		table["row_count"] = count
+	}
+	if v, ok := itemMetadata.Stats["index_count"]; ok {
+		statistics["index_count"] = v
+	}
+	if v, ok := itemMetadata.Stats["avg_doc_size"]; ok {
+		statistics["avg_doc_size"] = v
+	}
+
+	UpsertNested(attrs, "type_info", "table", table)
+	UpsertNested(attrs, "capabilities", "statistics", statistics)
+}
+
+func ApplyDocumentCollectionStatistics(attrs models.JSONMap, documentCount, sizeBytes int64) {
+	if attrs == nil {
+		return
+	}
+	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": documentCount})
+	SetStorage(attrs, "total_size", sizeBytes)
+}
+
+func ApplyGraphItemAttributes(attrs models.JSONMap, itemType string, count int64, sourceAttributes map[string]interface{}) {
+	if attrs == nil {
+		return
+	}
+
+	graphAttrs := map[string]interface{}{}
+	switch itemType {
+	case "label":
+		graphAttrs["label"] = true
+		graphAttrs["node_count"] = count
+	case "relationship":
+		graphAttrs["relationship"] = true
+		graphAttrs["edge_count"] = count
+		if values := stringSliceAttribute(sourceAttributes["from_labels"]); len(values) > 0 {
+			graphAttrs["from_labels"] = values
+		}
+		if values := stringSliceAttribute(sourceAttributes["to_labels"]); len(values) > 0 {
+			graphAttrs["to_labels"] = values
+		}
+	default:
+		graphAttrs["item_count"] = count
+	}
+	UpsertNested(attrs, "type_info", "graph", graphAttrs)
 }
 
 func IndexAttributes(indexes []plugin.IndexInfo) []map[string]interface{} {
@@ -91,6 +152,40 @@ func IndexAttributes(indexes []plugin.IndexInfo) []map[string]interface{} {
 		})
 	}
 	return result
+}
+
+func stringSliceAttribute(raw interface{}) []string {
+	switch values := raw.(type) {
+	case []string:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if value != "" {
+				result = append(result, value)
+			}
+		}
+		return result
+	case []interface{}:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if str, ok := value.(string); ok && str != "" {
+				result = append(result, str)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func firstPresent(primary, secondary map[string]interface{}, keys ...string) interface{} {
+	for _, values := range []map[string]interface{}{primary, secondary} {
+		for _, key := range keys {
+			if value, ok := values[key]; ok {
+				return value
+			}
+		}
+	}
+	return nil
 }
 
 func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{} {

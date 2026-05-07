@@ -255,11 +255,15 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		SELECT
 			database as schema,
 			name as table_name,
+			CASE
+				WHEN engine LIKE '%View%' THEN 'view'
+				ELSE 'table'
+			END AS table_kind,
+			comment,
 			total_rows as row_count,
 			total_bytes as size_bytes
 		FROM system.tables
 		WHERE database = ?
-		  AND engine NOT LIKE '%View%'
 		ORDER BY name
 	`
 

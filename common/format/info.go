@@ -36,19 +36,6 @@ type FieldInfo struct {
 	OccurrenceRate float64 // 字段出现率（0.0-1.0），仅用于文档数据库采样推断
 }
 
-// ObjectInfo 对象信息（与 TableInfo 并列，用于非结构化数据）
-type ObjectInfo struct {
-	// 基础信息
-	Key         string    // 对象键（完整路径）
-	SizeBytes   int64     // 对象大小（字节）
-	ModifiedAt  time.Time // 最后修改时间
-	ContentType string    // MIME 类型
-	ETag        string    // ETag（可选）
-
-	// 扩展信息
-	Extensions []ExtensionInfo
-}
-
 // GetExtension 获取指定类型的扩展信息
 func (t *TableInfo) GetExtension(extensionType string) ExtensionInfo {
 	for _, ext := range t.Extensions {
@@ -127,29 +114,4 @@ func (t *TableInfo) GetField(name string) *FieldInfo {
 // HasField 判断是否存在指定字段
 func (t *TableInfo) HasField(name string) bool {
 	return t.GetField(name) != nil
-}
-
-// ObjectInfo 的扩展方法
-func (o *ObjectInfo) GetExtension(extensionType string) ExtensionInfo {
-	for _, ext := range o.Extensions {
-		if ext.ExtensionType() == extensionType {
-			return ext
-		}
-	}
-	return nil
-}
-
-func (o *ObjectInfo) HasExtension(extensionType string) bool {
-	return o.GetExtension(extensionType) != nil
-}
-
-func (o *ObjectInfo) GetImageInfo() *ImageInfo {
-	ext := o.GetExtension("image")
-	if ext == nil {
-		return nil
-	}
-	if img, ok := ext.(*ImageInfo); ok {
-		return img
-	}
-	return nil
 }

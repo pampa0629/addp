@@ -6,19 +6,17 @@ import (
 )
 
 // Registry 是解析器的全局注册中心
-// 支持四种类型的解析器：
+// 支持三种类型的解析器：
 //  1. FileTableParser（文件表解析器）
 //  2. DBTableParser（数据库表解析器）
-//  3. ObjectInfoParser（对象信息解析器）
-//  4. DocCollectionParser（文档集合解析器）
+//  3. DocCollectionParser（文档集合解析器）
 type Registry struct {
 	mu sync.RWMutex
 
 	// 新接口
-	fileTableParsers      map[FormatType]FileTableParser  // key: FormatType (e.g., FormatCSV, FormatShapefile)
-	dbTableParsers        map[string]DBTableParser        // key: engine type (e.g., "postgresql", "mysql")
-	objectInfoParsers     map[string]ObjectInfoParser     // key: content type (e.g., "image/jpeg", "application/pdf")
-	docCollectionParsers  map[string]DocCollectionParser  // key: engine type (e.g., "mongodb", "couchdb")
+	fileTableParsers     map[FormatType]FileTableParser // key: FormatType (e.g., FormatCSV, FormatShapefile)
+	dbTableParsers       map[string]DBTableParser       // key: engine type (e.g., "postgresql", "mysql")
+	docCollectionParsers map[string]DocCollectionParser // key: engine type (e.g., "mongodb", "couchdb")
 }
 
 var (
@@ -30,7 +28,6 @@ func NewRegistry() *Registry {
 	return &Registry{
 		fileTableParsers:     make(map[FormatType]FileTableParser),
 		dbTableParsers:       make(map[string]DBTableParser),
-		objectInfoParsers:    make(map[string]ObjectInfoParser),
 		docCollectionParsers: make(map[string]DocCollectionParser),
 	}
 }
@@ -163,70 +160,6 @@ func (r *Registry) ListEngineTypes() []string {
 	return types
 }
 
-// ============ ObjectInfoParser 注册 ============
-
-// RegisterObjectInfoParser 注册对象信息解析器到全局注册中心
-func RegisterObjectInfoParser(parser ObjectInfoParser) error {
-	return globalRegistry.RegisterObjectParser(parser)
-}
-
-// RegisterObjectParser 注册对象信息解析器
-func (r *Registry) RegisterObjectParser(parser ObjectInfoParser) error {
-	if parser == nil {
-		return fmt.Errorf("object info parser cannot be nil")
-	}
-
-	contentTypes := parser.SupportedContentTypes()
-	if len(contentTypes) == 0 {
-		return fmt.Errorf("object info parser must support at least one content type")
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, contentType := range contentTypes {
-		r.objectInfoParsers[contentType] = parser
-	}
-
-	return nil
-}
-
-// GetObjectInfoParser 获取指定内容类型的对象信息解析器
-func GetObjectInfoParser(contentType string) (ObjectInfoParser, error) {
-	return globalRegistry.GetObjectParser(contentType)
-}
-
-// GetObjectParser 获取指定内容类型的对象信息解析器
-func (r *Registry) GetObjectParser(contentType string) (ObjectInfoParser, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	parser, ok := r.objectInfoParsers[contentType]
-	if !ok {
-		return nil, fmt.Errorf("no object info parser registered for content type: %s", contentType)
-	}
-
-	return parser, nil
-}
-
-// ListSupportedContentTypes 列出所有已注册的内容类型
-func ListSupportedContentTypes() []string {
-	return globalRegistry.ListContentTypes()
-}
-
-// ListContentTypes 列出所有已注册的内容类型
-func (r *Registry) ListContentTypes() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	types := make([]string, 0, len(r.objectInfoParsers))
-	for contentType := range r.objectInfoParsers {
-		types = append(types, contentType)
-	}
-
-	return types
-}
-
 // ============ DocCollectionParser 注册 ============
 
 // RegisterDocCollectionParser 注册文档集合解析器到全局注册中心
@@ -290,4 +223,3 @@ func (r *Registry) ListDocEngineTypes() []string {
 
 	return types
 }
-

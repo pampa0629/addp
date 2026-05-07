@@ -86,7 +86,7 @@ func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdap
 			Name:   table.TableName,
 			Path:   appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.TableName),
 			Term:   CatalogTermTable,
-			Kind:   CatalogKindTable,
+			Kind:   tableCatalogKind(table),
 			IsItem: true,
 			Stats: map[string]interface{}{
 				"row_count":  table.RowCount,
@@ -130,11 +130,15 @@ func ResolveTabularCatalogPath(ctx context.Context, adapter TabularMetadataAdapt
 	if err != nil {
 		return nil, err
 	}
+	kind := item.Kind
+	if kind == "" {
+		kind = CatalogKindTable
+	}
 	return &CatalogNode{
 		Name:   last.Name,
 		Path:   path,
 		Term:   CatalogTermTable,
-		Kind:   CatalogKindTable,
+		Kind:   kind,
 		IsItem: true,
 		Stats:  item.Stats,
 	}, nil
@@ -183,7 +187,7 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 
 	return &ItemMetadata{
 		Path:   path,
-		Kind:   CatalogKindTable,
+		Kind:   catalogKindFromTableName(ctx, adapter, db, namespace, table),
 		Fields: fields,
 		Stats:  stats,
 		Attributes: map[string]interface{}{
@@ -191,6 +195,30 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 			"table":     table,
 		},
 	}, nil
+}
+
+func catalogKindFromTableName(ctx context.Context, adapter TabularMetadataAdapter, db *gorm.DB, namespace, tableName string) string {
+	if adapter.ListTables == nil {
+		return CatalogKindTable
+	}
+	tables, err := adapter.ListTables(ctx, db, namespace)
+	if err != nil {
+		return CatalogKindTable
+	}
+	for _, table := range tables {
+		if table.TableName == tableName {
+			return tableCatalogKind(table)
+		}
+	}
+	return CatalogKindTable
+}
+
+func tableCatalogKind(table TableInfo) string {
+	kind := table.Kind
+	if kind == "" {
+		kind = CatalogKindTable
+	}
+	return kind
 }
 
 func (a TabularMetadataAdapter) validate() error {
