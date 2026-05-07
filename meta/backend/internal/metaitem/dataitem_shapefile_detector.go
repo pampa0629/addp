@@ -70,11 +70,11 @@ func (d *shapefileItemDetector) Detect(ctx context.Context, files []plugin.FileE
 	return ok
 }
 
-func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
+func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
 	matches := matchShapefileItems(input.Files)
-	result := &dataitem.DetectionResult{
-		Items:  []*dataitem.DetectedItem{},
-		Claims: dataitem.ResourceClaimSet{},
+	result := &DetectionResult{
+		Items:  []*DetectedItem{},
+		Claims: ResourceClaimSet{},
 	}
 	for _, match := range matches {
 		info, err := d.extractMatchedItemInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, match)
@@ -88,7 +88,7 @@ func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input dataitem
 		if info.SizeBytes != nil {
 			totalSize = *info.SizeBytes
 		}
-		item := &dataitem.DetectedItem{
+		item := &DetectedItem{
 			ItemType:       d.ItemType(),
 			Organization:   shapefileItemRule.Organization,
 			DataType:       shapefileItemRule.DataType,
@@ -115,7 +115,7 @@ func (d *shapefileItemDetector) ExtractItemInfo(
 	engineID uint,
 	dirPath string,
 	files []plugin.FileEntry,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	match, ok := matchShapefileItem(files)
 	if !ok {
 		return nil, fmt.Errorf("no complete shapefile component set in directory: %s", dirPath)
@@ -129,7 +129,7 @@ func (d *shapefileItemDetector) extractMatchedItemInfo(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	match shapefileItemMatch,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	totalSize := int64(0)
 	componentFiles := make([]string, 0, len(match.files))
 	extensions := make([]string, 0, len(match.exts))
@@ -144,7 +144,7 @@ func (d *shapefileItemDetector) extractMatchedItemInfo(
 	sort.Strings(extensions)
 
 	entryPath := match.files[".shp"].Path
-	info := &dataitem.CompositeItemInfo{
+	info := &CompositeItemInfo{
 		Organization:   shapefileItemRule.Organization,
 		DataType:       shapefileItemRule.DataType,
 		Format:         shapefileItemRule.Format,
@@ -173,7 +173,7 @@ func enrichShapefileInfo(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	match shapefileItemMatch,
-	info *dataitem.CompositeItemInfo,
+	info *CompositeItemInfo,
 ) {
 	if contentReader == nil || info == nil {
 		return
@@ -326,7 +326,7 @@ func shapefileCatalogPathForContent(engineID uint, path string) plugin.CatalogPa
 	}
 }
 
-func upsertShapefileItemSection(info *dataitem.CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
+func upsertShapefileItemSection(info *CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
 	if info.Attributes == nil {
 		info.Attributes = map[string]interface{}{}
 	}

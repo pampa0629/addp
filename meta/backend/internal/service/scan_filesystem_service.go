@@ -159,7 +159,7 @@ func (s *FileSystemScanService) scanDirectory(
 
 	totalItems := 0
 
-	claimedPaths := dataitem.ResourceClaimSet{}
+	claimedPaths := metaitem.ResourceClaimSet{}
 
 	// 根目录允许非独占组合识别（如根目录下的 Shapefile），但不允许被目录树 detector 整体吞掉。
 	// 子目录走完整组合识别入口；只有 whole scope 等明确独占范围时才停止后续探测。
@@ -219,7 +219,7 @@ func (s *FileSystemScanService) scanDirectory(
 		if claimedPaths[file.Path] {
 			continue
 		}
-		detected := dataitem.InferSingleResourceItem(file)
+		detected := metaitem.InferSingleResourceItem(file)
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
 			itemType := metaitem.FileSystemSingleFileItemType(detected)
 			itemName := file.Name
@@ -272,7 +272,7 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	tenantID uint,
 	parentNode *models.MetaNode,
 	dirPath string,
-	detected *dataitem.DetectedItem,
+	detected *metaitem.DetectedItem,
 ) bool {
 	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
@@ -311,10 +311,10 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	file plugin.FileEntry,
-	detected *dataitem.DetectedItem,
+	detected *metaitem.DetectedItem,
 ) (models.JSONMap, []format.FieldInfo, error) {
 	if detected == nil {
-		detected = dataitem.InferSingleResourceItem(file)
+		detected = metaitem.InferSingleResourceItem(file)
 	}
 	if detected.ItemType == "lake_table" && commonParquet.IsLakeTableFileType(detected.Format) {
 		info, err := metaitem.ExtractLakeTableSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
@@ -327,7 +327,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 				info.SizeBytes = &file.Size
 			}
 			sizeBytes := *info.SizeBytes
-			detected = &dataitem.DetectedItem{
+			detected = &metaitem.DetectedItem{
 				ItemType:       "lake_table",
 				Organization:   info.Organization,
 				DataType:       info.DataType,
@@ -346,6 +346,17 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
 	metaitem.ApplyContainerSummary(attrs, detected)
+	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {
+		reader, err := contentReader.OpenContent(ctx, connInfo, metapath.FileCatalogPathFromFSPath(resource.ID, file.Path), plugin.ReadOptions{})
+		if err != nil {
+			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
+			return attrs, detected.Fields, nil
+		}
+		defer reader.Close()
+		if err := metaitem.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
+			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
+		}
+	}
 	return attrs, detected.Fields, nil
 }
 
@@ -358,7 +369,7 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*dataitem.DetectionResult, error) {
+) (*metaitem.DetectionResult, error) {
 	var recursiveFiles []plugin.FileEntry
 	var recursiveSubdirs []plugin.DirEntry
 	if len(subdirs) > 0 {
@@ -369,7 +380,7 @@ func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
 		}
 	}
 
-	return metaitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
+	return metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
 		ContentReader:    contentReader,
 		ConnInfo:         connInfo,
 		EngineID:         resource.ID,
@@ -389,8 +400,8 @@ func resolveNonExclusiveScopeItems(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*dataitem.DetectionResult, error) {
-	return metaitem.ResolveNonExclusiveItems(ctx, dataitem.DirectoryResolveInput{
+) (*metaitem.DetectionResult, error) {
+	return metaitem.ResolveNonExclusiveItems(ctx, metaitem.DirectoryResolveInput{
 		ContentReader: contentReader,
 		ConnInfo:      connInfo,
 		EngineID:      resource.ID,

@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
-	item := dataitem.InferSingleResource(dataitem.SingleResourceInput{
+	item := InferSingleResource(SingleResourceInput{
 		Name:        "roads.geojson",
 		Path:        "bucket/roads.geojson",
 		Size:        42,
@@ -45,7 +45,7 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 }
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
-	item := &dataitem.DetectedItem{
+	item := &DetectedItem{
 		ItemType:     "lake_table",
 		Organization: dataitem.OrganizationWhole,
 		DataType:     dataitem.DataTypeTable,
@@ -62,7 +62,7 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 }
 
 func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
-	item := &dataitem.DetectedItem{
+	item := &DetectedItem{
 		Organization: dataitem.OrganizationSingle,
 		DataType:     dataitem.DataTypeDocument,
 		Attributes: map[string]interface{}{

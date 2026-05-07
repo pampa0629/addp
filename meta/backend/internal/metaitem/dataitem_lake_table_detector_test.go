@@ -117,7 +117,7 @@ func TestLakeTableDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	t.Parallel()
 
 	d := &lakeTableItemDetector{}
-	result, err := d.ResolveItems(context.Background(), dataitem.DirectoryResolveInput{
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
 		DirPath: "dataset",
 		Subdirs: []plugin.DirEntry{
 			{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},

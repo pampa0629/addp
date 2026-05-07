@@ -1,7 +1,5 @@
 package dataitem
 
-import "github.com/addp/common/format"
-
 // Organization 描述引擎资源如何组织成一个 data item。
 type Organization string
 
@@ -22,21 +20,6 @@ const (
 	DataTypeGraph     DataType = "graph"
 	DataTypeUnknown   DataType = "unknown"
 )
-
-// CompositeItemInfo 是组合形态 detector 提取出的元信息。
-type CompositeItemInfo struct {
-	Fields         []format.FieldInfo
-	Attributes     map[string]interface{}
-	Organization   Organization
-	DataType       DataType
-	Format         string
-	EntryPath      string
-	ComponentFiles []string
-	SizeBytes      *int64
-}
-
-// ResourceClaimSet 记录 detector 已认领的源资源路径。
-type ResourceClaimSet map[string]bool
 
 // ComponentMatchScope 描述多文件组件匹配范围。
 type ComponentMatchScope string
@@ -96,25 +79,4 @@ type FormatRule struct {
 	Components *ComponentRule
 	Container  *ContainerRule
 	WholeScope *WholeScopeRule
-}
-
-// DetectionResult 是统一识别入口在一个扫描范围内产出的 item 集合。
-type DetectionResult struct {
-	Items     []*DetectedItem
-	Claims    ResourceClaimSet
-	Exclusive bool
-}
-
-// DetectedItem 是组合形态推断后的标准化 item 表达。
-type DetectedItem struct {
-	ItemType       string
-	Organization   Organization
-	DataType       DataType
-	Format         string
-	PhysicalPath   string
-	EntryPath      string
-	ComponentFiles []string
-	SizeBytes      int64
-	Fields         []format.FieldInfo
-	Attributes     map[string]interface{}
 }

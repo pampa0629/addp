@@ -9,7 +9,7 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func FileSystemDetectedItemName(dirPath string, item *dataitem.DetectedItem) (name, fullName string) {
+func FileSystemDetectedItemName(dirPath string, item *DetectedItem) (name, fullName string) {
 	if item == nil {
 		return inferFileSystemItemName(dirPath)
 	}
@@ -24,7 +24,7 @@ func FileSystemDetectedItemName(dirPath string, item *dataitem.DetectedItem) (na
 	return inferFileSystemItemName(dirPath)
 }
 
-func FileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
+func FileSystemSingleFileItemType(item *DetectedItem) string {
 	if item == nil {
 		return "file"
 	}
@@ -39,7 +39,7 @@ func FileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
 	return "file"
 }
 
-func ApplyContainerSummary(attrs models.JSONMap, detected *dataitem.DetectedItem) {
+func ApplyContainerSummary(attrs models.JSONMap, detected *DetectedItem) {
 	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
 		return
 	}

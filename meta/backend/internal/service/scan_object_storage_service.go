@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -255,38 +255,23 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 	// 清理未在本次扫描中出现的旧item
 	if isDeepScan && len(scannedFingerprints) > 0 {
 		for bucketName := range processedBuckets {
-			var existingItems []models.MetaItem
-			bucketNode := bucketNodes[bucketName]
-			if bucketNode == nil {
+			if bucketNodes[bucketName] == nil {
 				continue
 			}
-
-			if err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ?",
-				tenantID, engineID, "object").
-				Where("attributes->'storage'->>'bucket' = ?", bucketName).
-				Find(&existingItems).Error; err != nil {
+			deletedItems, err := s.repo.SoftDeleteObjectItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints)
+			if err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
 					"bucket", bucketName,
 					"error", err,
 				)
 				continue
 			}
-
-			for _, item := range existingItems {
-				if !scannedFingerprints[item.Fingerprint] {
-					s.log.Info("对象已不存在，标记删除",
-						"bucket", bucketName,
-						"fingerprint", item.Fingerprint,
-						"name", item.Name,
-					)
-					if err := s.db.Delete(&item).Error; err != nil {
-						s.log.Warn("软删除对象元数据失败",
-							"bucket", bucketName,
-							"fingerprint", item.Fingerprint,
-							"error", err,
-						)
-					}
-				}
+			for _, item := range deletedItems {
+				s.log.Info("对象已不存在，标记删除",
+					"bucket", bucketName,
+					"fingerprint", item.Fingerprint,
+					"name", item.Name,
+				)
 			}
 		}
 	}
@@ -320,13 +305,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 
 		// 更新子目录节点的统计信息和扫描状态
 		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"completed"
-		now := time.Now()
-		if err := s.db.Model(agg.Node).Updates(map[string]interface{}{
-			"item_count":       agg.ItemCount,
-			"total_size_bytes": agg.TotalSize,
-			"scan_status":      "completed",
-			"scanned_at":       now,
-		}).Error; err != nil {
+		if err := s.repo.FinalizeObjectPrefixNode(agg.Node, agg.ItemCount, agg.TotalSize); err != nil {
 			s.log.Warn("更新子目录节点统计信息失败",
 				"node_id", nodeID,
 				"node_name", agg.Node.Name,
@@ -399,28 +378,14 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		s.log.Info("处理scanPathPrefix建立基础父节点",
 			"scanPathPrefix", scanPathPrefix,
 			"bucket", bucketNode.Name)
-		prefixSegments := strings.Split(metapath.SanitizeObjectPath(scanPathPrefix), "/")
-		currentParent := bucketNode
-		for idx, segment := range prefixSegments {
-			fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
-			pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
-			attrs := models.JSONMap{
-				"bucket": bucketNode.Name,
-				"path":   pathSoFar + "/", // ✅ 路径规范：目录路径必须以 / 结尾
-			}
-			childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
-			if err != nil {
-				return objects, err
-			}
-			s.log.Info("创建/找到前缀节点",
-				"segment", segment,
-				"node_id", childNode.ID,
-				"node_name", childNode.Name,
-				"fullName", fullName)
-			currentParent = childNode
-			scanstats.EnsureNodeAggregate(stats, childNode)
+		node, err := s.repo.EnsureObjectPrefixPath(tenantID, engineID, bucketNode, scanPathPrefix)
+		if err != nil {
+			return objects, err
 		}
-		basePrefixNode = currentParent
+		if node != nil && node != bucketNode {
+			basePrefixNode = node
+			scanstats.EnsureNodeAggregate(stats, node)
+		}
 		s.log.Info("scanPathPrefix处理完成",
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
@@ -513,14 +478,11 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		}
 
 		// 检查记录是否已存在（包括软删除的记录）
-		var existingItem models.MetaItem
-		itemExists := s.db.Unscoped().Where("fingerprint = ?", itemPlan.Fingerprint).First(&existingItem).Error == nil
-
-		var existingItemForChange *models.MetaItem
-		if itemExists {
-			existingItemForChange = &existingItem
+		existingItem, itemExists, err := s.repo.FindItemByFingerprintUnscoped(itemPlan.Fingerprint)
+		if err != nil {
+			return objects, err
 		}
-		needsUpdate := scanchange.ShouldUpdateObject(existingItemForChange, meta)
+		needsUpdate := scanchange.ShouldUpdateObject(existingItem, meta)
 
 		// 浅度扫描时，如果对象未变化，跳过更新（保留已有的深度元数据）
 		if !strings.EqualFold(scanDepth, "deep") && itemExists && !needsUpdate {
@@ -579,6 +541,18 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
 			metaattr.SetStorage(enhancedAttrs, "physical_path", physicalPath)
+		}
+		metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
+		if itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
+			reader, err := readableProvider.OpenContent(context.Background(), connInfo, objectCatalogPathForContent(engineID, meta.Bucket, meta.Path), plugin.ReadOptions{})
+			if err != nil {
+				s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", meta.Bucket, "path", meta.Path, "error", err)
+			} else {
+				if err := metaitem.EnrichContainerChildren(context.Background(), enhancedAttrs, itemPlan.DataItem, reader); err != nil {
+					s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", meta.Bucket, "path", meta.Path, "error", err)
+				}
+				_ = reader.Close()
+			}
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -668,36 +642,14 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	if basePrefixNode != nil {
 		parent = basePrefixNode
 	}
-
-	parentPrefix := metaitem.ParentObjectPath(prefix)
-	relative := strings.Trim(parentPrefix, "/")
-	if scanPathPrefix != "" && strings.HasPrefix(relative, strings.Trim(scanPathPrefix, "/")) {
-		relative = strings.TrimPrefix(relative, strings.Trim(scanPathPrefix, "/"))
-		relative = strings.Trim(relative, "/")
+	parentNode, createdNodes, err := s.repo.EnsureObjectPrefixRelativePath(tenantID, engineID, bucketNode, parent, metaitem.ParentObjectPath(prefix), scanPathPrefix)
+	if err != nil {
+		return nil, err
 	}
-	if relative == "" {
-		return parent, nil
+	for _, node := range createdNodes {
+		scanstats.EnsureNodeAggregate(stats, node)
 	}
-	current := parent
-	segments := strings.Split(relative, "/")
-	for idx, segment := range segments {
-		if segment == "" {
-			continue
-		}
-		fullName := metapath.ComposeNodeFullName(segment, current, "/")
-		pathSoFar := metapath.JoinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
-		attrs := models.JSONMap{
-			"bucket": bucketNode.Name,
-			"path":   pathSoFar + "/",
-		}
-		childNode, err := s.repo.UpsertNode(tenantID, engineID, current, "prefix", segment, &fullName, attrs)
-		if err != nil {
-			return nil, err
-		}
-		current = childNode
-		scanstats.EnsureNodeAggregate(stats, childNode)
-	}
-	return current, nil
+	return parentNode, nil
 }
 
 // ============================================================================
@@ -712,4 +664,30 @@ func (s *ObjectStorageScanService) FetchObjectContent(
 	maxSize int64,
 ) ([]byte, string, error) {
 	return s.clientManager.FetchObjectContent(ctx, engineID, tenantID, bucket, objectPath, maxSize)
+}
+
+func objectCatalogPathForContent(engineID uint, bucket, objectPath string) plugin.CatalogPath {
+	segments := []plugin.CatalogSegment{{
+		Term: plugin.CatalogTermBucket,
+		Kind: plugin.CatalogKindBucket,
+		Name: bucket,
+	}}
+	parts := strings.Split(strings.Trim(objectPath, "/"), "/")
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		term := plugin.CatalogTermPrefix
+		kind := plugin.CatalogKindPrefix
+		if i == len(parts)-1 {
+			term = plugin.CatalogTermObject
+			kind = plugin.CatalogKindObject
+		}
+		segments = append(segments, plugin.CatalogSegment{Term: term, Kind: kind, Name: part})
+	}
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+		Segments: segments,
+	}
 }

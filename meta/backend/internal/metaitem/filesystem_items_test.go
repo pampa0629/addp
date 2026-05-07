@@ -10,7 +10,7 @@ import (
 func TestFileSystemDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileSystemDetectedItemName("/shp", &dataitem.DetectedItem{
+	name, fullName := FileSystemDetectedItemName("/shp", &DetectedItem{
 		Organization: dataitem.OrganizationMulti,
 		EntryPath:    "/shp/farmland.shp",
 	})
@@ -26,7 +26,7 @@ func TestFileSystemDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 func TestFileSystemDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileSystemDetectedItemName("/lake/sales", &dataitem.DetectedItem{
+	name, fullName := FileSystemDetectedItemName("/lake/sales", &DetectedItem{
 		Organization: dataitem.OrganizationWhole,
 		EntryPath:    "/lake/sales/_metadata",
 	})
@@ -42,7 +42,7 @@ func TestFileSystemDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	t.Parallel()
 
-	got := FileSystemSingleFileItemType(&dataitem.DetectedItem{
+	got := FileSystemSingleFileItemType(&DetectedItem{
 		Format:       "csv",
 		Organization: dataitem.OrganizationSingle,
 	})
@@ -50,7 +50,7 @@ func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 		t.Fatalf("itemType = %q, want table", got)
 	}
 
-	got = FileSystemSingleFileItemType(&dataitem.DetectedItem{
+	got = FileSystemSingleFileItemType(&DetectedItem{
 		Format:       "sqlite",
 		Organization: dataitem.OrganizationSingle,
 	})
@@ -63,7 +63,7 @@ func TestApplyContainerSummaryWritesStandardTypeInfo(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyContainerSummary(attrs, &dataitem.DetectedItem{
+	ApplyContainerSummary(attrs, &DetectedItem{
 		DataType: dataitem.DataTypeContainer,
 	})
 

@@ -48,7 +48,7 @@ func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
 func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	t.Parallel()
 
-	got := ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+	got := ObjectStorageSingleFileItemType(&DetectedItem{
 		Format:       "geojson",
 		Organization: dataitem.OrganizationSingle,
 	})
@@ -56,7 +56,7 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 		t.Fatalf("itemType = %q, want table", got)
 	}
 
-	got = ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+	got = ObjectStorageSingleFileItemType(&DetectedItem{
 		Format:       "pdf",
 		Organization: dataitem.OrganizationSingle,
 	})
@@ -64,7 +64,7 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 		t.Fatalf("pdf itemType = %q, want file", got)
 	}
 
-	got = ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+	got = ObjectStorageSingleFileItemType(&DetectedItem{
 		Format:       "parquet",
 		Organization: dataitem.OrganizationSingle,
 	})
@@ -79,7 +79,7 @@ func TestObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	name, objectPath := ObjectStorageCompositeName(ObjectStorageCompositeItem{
 		Bucket: "addp",
 		Prefix: "lake",
-		Item: &dataitem.DetectedItem{
+		Item: &DetectedItem{
 			Organization: dataitem.OrganizationSingle,
 			EntryPath:    "addp/lake/sales.parquet",
 		},
@@ -152,7 +152,7 @@ func TestPlanObjectStorageCompositeItemBuildsStandardAttributes(t *testing.T) {
 	plan, ok := PlanObjectStorageCompositeItem(7, ObjectStorageCompositeItem{
 		Bucket: "addp",
 		Prefix: "datasets/roads",
-		Item: &dataitem.DetectedItem{
+		Item: &DetectedItem{
 			ItemType:     "table",
 			DataType:     dataitem.DataTypeTable,
 			Organization: dataitem.OrganizationMulti,

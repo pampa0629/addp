@@ -80,7 +80,7 @@ func TestDetectorResolveItemsDetectsMultipleShapefiles(t *testing.T) {
 		{Name: "readme.pdf", Path: "/shp/readme.pdf", Size: 70},
 	}
 
-	result, err := d.ResolveItems(context.Background(), dataitem.DirectoryResolveInput{
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
 		DirPath: "/shp",
 		Files:   files,
 	})

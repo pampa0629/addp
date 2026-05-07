@@ -19,8 +19,8 @@ import (
 type ObjectStorageCompositeItem struct {
 	Bucket string
 	Prefix string
-	Item   *dataitem.DetectedItem
-	Claims dataitem.ResourceClaimSet
+	Item   *DetectedItem
+	Claims ResourceClaimSet
 }
 
 type ObjectStorageCompositeDetectionError struct {
@@ -69,7 +69,7 @@ func DetectObjectStorageCompositeItems(
 			continue
 		}
 		files := objectMetasToFileEntries(bucket, group)
-		detection, err := ResolveItems(ctx, dataitem.DirectoryResolveInput{
+		detection, err := ResolveItems(ctx, DirectoryResolveInput{
 			ContentReader: contentReader,
 			ConnInfo:      connInfo,
 			EngineID:      engineID,
@@ -107,9 +107,9 @@ func DetectObjectStorageCompositeItems(
 	return skipPaths, items, warnings
 }
 
-func InferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *dataitem.DetectedItem {
+func InferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *DetectedItem {
 	physicalPath := meta.Bucket + "/" + meta.Path
-	return dataitem.InferSingleResource(dataitem.SingleResourceInput{
+	return InferSingleResource(SingleResourceInput{
 		Name:   objectName,
 		Path:   physicalPath,
 		Size:   meta.SizeBytes,
@@ -138,7 +138,7 @@ func ObjectStorageCompositeName(composite ObjectStorageCompositeItem) (name, obj
 	return name, objectPath
 }
 
-func ObjectStorageCompositeMode(item *dataitem.DetectedItem) string {
+func ObjectStorageCompositeMode(item *DetectedItem) string {
 	if item == nil {
 		return "directory"
 	}
@@ -154,7 +154,7 @@ func ObjectStorageCompositeMode(item *dataitem.DetectedItem) string {
 	}
 }
 
-func ObjectStorageSingleFileItemType(item *dataitem.DetectedItem) string {
+func ObjectStorageSingleFileItemType(item *DetectedItem) string {
 	if item == nil {
 		return "object"
 	}
@@ -182,7 +182,7 @@ type ObjectStorageSingleItemPlan struct {
 	FullName    string
 	Fingerprint string
 	Attributes  models.JSONMap
-	DataItem    *dataitem.DetectedItem
+	DataItem    *DetectedItem
 }
 
 type ObjectStorageCompositeItemPlan struct {

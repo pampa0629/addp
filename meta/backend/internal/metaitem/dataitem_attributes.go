@@ -3,7 +3,7 @@ package metaitem
 import "github.com/addp/common/dataitem"
 
 // BuildAttributes 将 Meta 扫描得到的 item 语义合并为可落库 attributes。
-func BuildAttributes(item *dataitem.DetectedItem) map[string]interface{} {
+func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	if item == nil {
 		return map[string]interface{}{}
 	}
@@ -39,7 +39,7 @@ func BuildAttributes(item *dataitem.DetectedItem) map[string]interface{} {
 	return attrs
 }
 
-func MergeDataItemAttributes(attrs map[string]interface{}, item *dataitem.DetectedItem) {
+func MergeDataItemAttributes(attrs map[string]interface{}, item *DetectedItem) {
 	if attrs == nil || item == nil {
 		return
 	}

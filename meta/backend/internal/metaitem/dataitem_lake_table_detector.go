@@ -69,8 +69,8 @@ func (d *lakeTableItemDetector) ItemType() string {
 
 func (d *lakeTableItemDetector) ResolveItems(
 	ctx context.Context,
-	input dataitem.DirectoryResolveInput,
-) (*dataitem.DetectionResult, error) {
+	input DirectoryResolveInput,
+) (*DetectionResult, error) {
 	files := input.Files
 	subdirs := input.Subdirs
 	if len(input.RecursiveFiles) > 0 {
@@ -91,7 +91,7 @@ func (d *lakeTableItemDetector) ResolveItems(
 	if info.SizeBytes != nil {
 		totalSize = *info.SizeBytes
 	}
-	item := &dataitem.DetectedItem{
+	item := &DetectedItem{
 		ItemType:       d.ItemType(),
 		Organization:   info.Organization,
 		DataType:       info.DataType,
@@ -103,12 +103,12 @@ func (d *lakeTableItemDetector) ResolveItems(
 		Fields:         info.Fields,
 		Attributes:     info.Attributes,
 	}
-	claims := dataitem.ResourceClaimSet{}
+	claims := ResourceClaimSet{}
 	for _, path := range item.ComponentFiles {
 		claims[path] = true
 	}
-	return &dataitem.DetectionResult{
-		Items:     []*dataitem.DetectedItem{item},
+	return &DetectionResult{
+		Items:     []*DetectedItem{item},
 		Claims:    claims,
 		Exclusive: item.Organization == dataitem.OrganizationWhole,
 	}, nil
@@ -314,10 +314,10 @@ func lakeTableMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath 
 	return "single"
 }
 
-func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *dataitem.CompositeItemInfo {
+func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *CompositeItemInfo {
 	totalSize := lakeTableSize(files)
 	formatName := detectFormat(files)
-	return &dataitem.CompositeItemInfo{
+	return &CompositeItemInfo{
 		Organization:   lakeTableOrganization(files, subdirs, dirPath),
 		DataType:       dataitem.DataTypeTable,
 		Format:         formatName,
@@ -336,7 +336,7 @@ func (d *lakeTableItemDetector) extractLakeTableInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	files, err := validateLakeTableFiles(files, dirPath)
 	if err != nil {
 		return nil, err
@@ -365,7 +365,7 @@ func (d *lakeTableItemDetector) extractLakeTableInfo(
 	totalSize := lakeTableSize(files)
 	formatName := detectFormat(files)
 	fieldsData := lakeTableFieldAttributes(tableInfo.Fields)
-	return &dataitem.CompositeItemInfo{
+	return &CompositeItemInfo{
 		Fields:         tableInfo.Fields,
 		Organization:   lakeTableOrganization(files, subdirs, dirPath),
 		DataType:       dataitem.DataTypeTable,
@@ -385,7 +385,7 @@ func (d *lakeTableItemDetector) ExtractItemInfo(
 	engineID uint,
 	dirPath string,
 	files []plugin.FileEntry,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	return d.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
 }
 
@@ -397,7 +397,7 @@ func extractLakeTableWholeScopeInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	detector := &lakeTableItemDetector{}
 	if !detector.Detect(ctx, files, subdirs) {
 		return nil, fmt.Errorf("directory is not a lake table dataset: %s", dirPath)
@@ -414,13 +414,13 @@ func ExtractLakeTableSingleFileInfo(
 	engineID uint,
 	filePath string,
 	fileSize int64,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	format := ext[1:] // 去掉点号，如 "parquet"
 
 	// 非 parquet 格式暂不解析 Schema
 	if ext != ".parquet" {
-		return &dataitem.CompositeItemInfo{
+		return &CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
 			Format:         format,
@@ -441,7 +441,7 @@ func ExtractLakeTableSingleFileInfo(
 	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
-		return &dataitem.CompositeItemInfo{
+		return &CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
 			Format:         "parquet",
@@ -462,7 +462,7 @@ func ExtractLakeTableSingleFileInfo(
 		})
 	}
 
-	return &dataitem.CompositeItemInfo{
+	return &CompositeItemInfo{
 		Fields:         tableInfo.Fields,
 		Organization:   dataitem.OrganizationSingle,
 		DataType:       dataitem.DataTypeTable,
@@ -475,13 +475,13 @@ func ExtractLakeTableSingleFileInfo(
 }
 
 // buildBasicInfo 构建基础信息（无 Schema）
-func buildBasicInfo(files []plugin.FileEntry, dirPath string) *dataitem.CompositeItemInfo {
+func buildBasicInfo(files []plugin.FileEntry, dirPath string) *CompositeItemInfo {
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
 	}
 	format := detectFormat(files)
-	return &dataitem.CompositeItemInfo{
+	return &CompositeItemInfo{
 		Organization:   dataitem.OrganizationWhole,
 		DataType:       dataitem.DataTypeTable,
 		Format:         format,

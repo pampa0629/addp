@@ -15,7 +15,7 @@ func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
 		{Name: "readme.pdf", Path: "/shp/readme.pdf"},
 	}
 
-	got := unclaimedFileEntries(files, dataitem.ResourceClaimSet{
+	got := unclaimedFileEntries(files, ResourceClaimSet{
 		"/shp/roads.shp": true,
 		"/shp/roads.shx": true,
 	})
@@ -28,17 +28,17 @@ func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
 func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
 	first := &testScopeDetector{
 		priority: 20,
-		result: &dataitem.DetectionResult{
-			Items:  []*dataitem.DetectedItem{{ItemType: "table", Organization: dataitem.OrganizationMulti, EntryPath: "/shp/roads.shp"}},
-			Claims: dataitem.ResourceClaimSet{"/shp/roads.shp": true},
+		result: &DetectionResult{
+			Items:  []*DetectedItem{{ItemType: "table", Organization: dataitem.OrganizationMulti, EntryPath: "/shp/roads.shp"}},
+			Claims: ResourceClaimSet{"/shp/roads.shp": true},
 		},
 	}
-	second := &testScopeDetector{priority: 10, result: &dataitem.DetectionResult{Claims: dataitem.ResourceClaimSet{}}}
+	second := &testScopeDetector{priority: 10, result: &DetectionResult{Claims: ResourceClaimSet{}}}
 	old := metaItemDetectors
-	metaItemDetectors = []dataitem.CompositeItemDetector{first, second}
+	metaItemDetectors = []CompositeItemDetector{first, second}
 	defer func() { metaItemDetectors = old }()
 
-	_, err := ResolveItems(context.Background(), dataitem.DirectoryResolveInput{
+	_, err := ResolveItems(context.Background(), DirectoryResolveInput{
 		Files: []plugin.FileEntry{
 			{Name: "roads.shp", Path: "/shp/roads.shp"},
 			{Name: "readme.pdf", Path: "/shp/readme.pdf"},
@@ -54,7 +54,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
 
 type testScopeDetector struct {
 	priority  int
-	result    *dataitem.DetectionResult
+	result    *DetectionResult
 	seenFiles []plugin.FileEntry
 }
 
@@ -69,7 +69,7 @@ func (d *testScopeDetector) ExtractItemInfo(
 	engineID uint,
 	dirPath string,
 	files []plugin.FileEntry,
-) (*dataitem.CompositeItemInfo, error) {
+) (*CompositeItemInfo, error) {
 	return nil, nil
 }
 
@@ -77,7 +77,7 @@ func (d *testScopeDetector) Priority() int { return d.priority }
 
 func (d *testScopeDetector) ItemType() string { return "test" }
 
-func (d *testScopeDetector) ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
+func (d *testScopeDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
 	d.seenFiles = input.Files
 	return d.result, nil
 }

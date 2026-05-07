@@ -9,7 +9,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-var metaItemDetectors = []dataitem.CompositeItemDetector{
+var metaItemDetectors = []CompositeItemDetector{
 	&shapefileItemDetector{},
 	&lakeTableItemDetector{},
 }
@@ -20,8 +20,8 @@ func init() {
 	}
 }
 
-func sortedMetaItemDetectors() []dataitem.CompositeItemDetector {
-	result := make([]dataitem.CompositeItemDetector, len(metaItemDetectors))
+func sortedMetaItemDetectors() []CompositeItemDetector {
+	result := make([]CompositeItemDetector, len(metaItemDetectors))
 	copy(result, metaItemDetectors)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Priority() > result[j].Priority()
@@ -31,14 +31,14 @@ func sortedMetaItemDetectors() []dataitem.CompositeItemDetector {
 
 func validateMetaItemDetectors() error {
 	for _, detector := range metaItemDetectors {
-		if provider, ok := detector.(dataitem.FormatRulesProvider); ok {
+		if provider, ok := detector.(FormatRulesProvider); ok {
 			for _, rule := range provider.Rules() {
 				if err := dataitem.ValidateFormatRule(rule); err != nil {
 					return fmt.Errorf("invalid meta item detector rule: %w", err)
 				}
 			}
 		}
-		if provider, ok := detector.(dataitem.FormatRuleProvider); ok {
+		if provider, ok := detector.(FormatRuleProvider); ok {
 			if err := dataitem.ValidateFormatRule(provider.Rule()); err != nil {
 				return fmt.Errorf("invalid meta item detector rule: %w", err)
 			}
@@ -48,10 +48,10 @@ func validateMetaItemDetectors() error {
 }
 
 // ResolveItems 使用 Meta 模块注册的 detector 从扫描范围内识别 0..N 个数据项。
-func ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
-	result := &dataitem.DetectionResult{
-		Items:  []*dataitem.DetectedItem{},
-		Claims: dataitem.ResourceClaimSet{},
+func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+	result := &DetectionResult{
+		Items:  []*DetectedItem{},
+		Claims: ResourceClaimSet{},
 	}
 	for _, detector := range sortedMetaItemDetectors() {
 		detectorInput := input
@@ -62,7 +62,7 @@ func ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*d
 			break
 		}
 
-		if scoped, ok := detector.(dataitem.ScopeItemDetector); ok {
+		if scoped, ok := detector.(ScopeItemDetector); ok {
 			scopeResult, err := scoped.ResolveItems(ctx, detectorInput)
 			if err != nil {
 				return nil, err
@@ -102,7 +102,7 @@ func ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*d
 			return nil, err
 		}
 		if info == nil {
-			info = &dataitem.CompositeItemInfo{}
+			info = &CompositeItemInfo{}
 		}
 
 		totalSize := sumFileEntrySize(detectorInput.Files)
@@ -130,7 +130,7 @@ func ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*d
 			componentFiles = fileEntryPaths(detectorInput.Files)
 		}
 
-		item := &dataitem.DetectedItem{
+		item := &DetectedItem{
 			ItemType:       detector.ItemType(),
 			Organization:   organization,
 			DataType:       dataType,
@@ -154,13 +154,13 @@ func ResolveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*d
 	return result, nil
 }
 
-func ResolveNonExclusiveItems(ctx context.Context, input dataitem.DirectoryResolveInput) (*dataitem.DetectionResult, error) {
-	result := &dataitem.DetectionResult{
-		Items:  []*dataitem.DetectedItem{},
-		Claims: dataitem.ResourceClaimSet{},
+func ResolveNonExclusiveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+	result := &DetectionResult{
+		Items:  []*DetectedItem{},
+		Claims: ResourceClaimSet{},
 	}
 	for _, detector := range sortedMetaItemDetectors() {
-		scoped, ok := detector.(dataitem.ScopeItemDetector)
+		scoped, ok := detector.(ScopeItemDetector)
 		if !ok {
 			continue
 		}
@@ -186,7 +186,7 @@ func ResolveNonExclusiveItems(ctx context.Context, input dataitem.DirectoryResol
 	return result, nil
 }
 
-func unclaimedFileEntries(files []plugin.FileEntry, claims dataitem.ResourceClaimSet) []plugin.FileEntry {
+func unclaimedFileEntries(files []plugin.FileEntry, claims ResourceClaimSet) []plugin.FileEntry {
 	if len(files) == 0 || len(claims) == 0 {
 		return files
 	}

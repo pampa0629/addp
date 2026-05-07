@@ -17,20 +17,20 @@
 > 后续新会话优先阅读本节，再查看未完成复选框。
 
 - 最近更新时间：2026-05-07
-- 当前状态：旧 attributes 读取/写入、旧枚举、旧过渡入口、旧路径查询已清理；`common/attributes` 已迁移为 `common/jsonmap`；Meta attributes 落库构造、detector registry、扫描 resolver、Shapefile detector、Parquet whole-scope detector 已收口到 `meta/backend/internal/metaitem`。`meta/backend/internal/service` 已继续按职责拆分：attributes helper、format 字段 attributes 转换、schema fields 写入、关系表 / 文档集合 attributes 构造、空间能力 attributes 构造和 NoSQL item attributes 写入进入 `metaattr`；扫描仓储和 item 查询映射进入 `repository`；数据库 / NoSQL / 对象存储增量变化判断进入 `scanchange`；对象元数据提取器进入 `extractor`；对象/文件路径规则进入 `metapath`；文本截断常量和 helper 进入 `metatext`；对象存储复合 item 检测/命名、对象存储 single/composite item 计划、对象数据项 attributes 合并、对象扫描相对路径计划进入 `metaitem`，对象存储客户端缓存、配置解析、CatalogProvider 对象列举/转换和内容读取进入 `objectstore`；Catalog 根节点列举和 Schema / NoSQL / 文件系统根路径转换进入 `metacatalog`；引擎 storage family 能力分类进入 `enginecap`；扫描节点统计聚合进入 `scanstats`；cleanup 事件解析与 Meilisearch / MinIO / 数据库清理器进入 `metacleanup`；扫描任务参数读取、调度表达式构造、任务模型构造、执行配置构造/解析、scanDepth 规范化、扫描结果响应/metadata 构造、继承扫描目标计算、扫描完成事件构造、任务执行记录构造、执行状态字段构造、立即执行记录器和执行进度 reporter 进入 `scantask`；元数据查询 attributes 解析、Lite DTO 转换、名称解析和字段类型标准化进入 `metaquery`。代码侧不保留旧数据兼容。
+- 当前状态：旧 attributes 读取/写入、旧枚举、旧过渡入口、旧路径查询已清理；`common/attributes` 已迁移为 `common/jsonmap`；Meta attributes 落库构造、detector registry、扫描 resolver、Shapefile detector、Parquet whole-scope detector、Meta item 识别模型、claims、resolver 输入、detector 接口、single resource 推断和容器 children 枚举已收口到 `meta/backend/internal/metaitem`。`meta/backend/internal/service` 已继续按职责拆分：attributes helper、format 字段 attributes 转换、schema fields 写入、关系表 / 文档集合 attributes 构造、空间能力 attributes 构造和 NoSQL item attributes 写入进入 `metaattr`；扫描仓储、item 查询映射、对象存储 prefix 节点持久化、旧对象软删除和 fingerprint 查询进入 `repository`；数据库 / NoSQL / 对象存储增量变化判断进入 `scanchange`；对象元数据提取器进入 `extractor`；对象/文件路径规则进入 `metapath`；文本截断常量和 helper 进入 `metatext`；对象存储复合 item 检测/命名、对象存储 single/composite item 计划、对象数据项 attributes 合并、对象扫描相对路径计划进入 `metaitem`，对象存储客户端缓存、配置解析、CatalogProvider 对象列举/转换和内容读取进入 `objectstore`；Catalog 根节点列举和 Schema / NoSQL / 文件系统根路径转换进入 `metacatalog`；引擎 storage family 能力分类进入 `enginecap`；扫描节点统计聚合进入 `scanstats`；cleanup 事件解析与 Meilisearch / MinIO / 数据库清理器进入 `metacleanup`；扫描任务参数读取、调度表达式构造、任务模型构造、执行配置构造/解析、scanDepth 规范化、扫描结果响应/metadata 构造、继承扫描目标计算、扫描完成事件构造、任务执行记录构造、执行状态字段构造、立即执行记录器和执行进度 reporter 进入 `scantask`；元数据查询 attributes 解析、Lite DTO 转换、名称解析和字段类型标准化进入 `metaquery`。代码侧不保留旧数据兼容。
 - 最近架构共识：
   - `common/jsonmap` 只是 decoded JSON map 读写工具，不承载 attributes 规范语义；`common/attributes` 包已删除。
   - `data_type` 是平台通用概念，仍应放 common 层；`format`、各类 type info / format info parser 和 analyzer 也属于 common/format。
   - 构成 meta item 的资源组织方式、识别、claims、exclusive、`component_files`、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块职责；跨模块需要时通过 Meta Client 消费结果，不把识别逻辑下沉到 common。
-  - 当前 `common/dataitem` 仍保留 detector 接口 / 结果模型 / 规则类型；全局 registry、统一 resolver、attributes 落库构造和内置 detector 实现已迁回 Meta。
-- 本轮判断：下一步应先收口 `common/dataitem` 的 Meta 语义，而不是继续优先拆 `meta/backend/internal/service`。理由是 `DetectedItem`、`DetectionResult`、`DirectoryResolveInput`、`ResourceClaimSet`、detector 接口和 `InferSingleResource*` 当前主要服务 Meta item 识别；如果继续留在 common，会让 Meta item 组织/识别语义持续泄漏到共享层。先把这些迁入或包裹到 `metaitem`，再拆 service，边界会更干净。
+  - `common/dataitem` 只保留 `DataType`、`Organization`、`FormatRule`、内置 single resource 规则和格式 / data_type 推断等跨模块纯概念；`DetectedItem`、`DetectionResult`、`DirectoryResolveInput`、`ResourceClaimSet`、`CompositeItemInfo`、detector 接口和 `InferSingleResource*` 已迁入 Meta `metaitem`。
+- 本轮判断：`common/dataitem` Meta 语义已出清，service 已继续拆出对象存储 prefix 持久化和旧对象清理；Excel / SQLite / GeoPackage 容器内部枚举已接入 NFS / 对象存储 single 容器扫描路径。下一步应继续收口 `TableInfo / ObjectInfo / Scanner*` canonical model 和 ObjectInfo 存储/类型信息拆分，再处理剩余 spatial 映射与真实重扫验证。
 - 下一步优先级：
-  1. 先收口 `common/dataitem` 边界：`DetectedItem`、`DetectionResult`、`DirectoryResolveInput`、`ResourceClaimSet`、`CompositeItemInfo`、detector 接口和 `InferSingleResource*` 当前主要服务 Meta item 识别，应迁入或包裹到 `meta/backend/internal/metaitem`；`common/dataitem` 只保留 `DataType`、`Organization`、`FormatRule`、内置单资源规则等可跨模块复用的纯概念/规则。迁移前先改文档确认边界，再做代码。
-  2. 再继续拆 `meta/backend/internal/service` 剩余大文件：优先拆 `scan_service.go` 的扫描路由/自动扫描编排、`scan_task_service.go` 的调度注册与执行状态机、`scan_object_storage_service.go` 的 bucket/prefix 持久化子流程。目标不是单纯压行数，而是让 service 只保留编排和事务边界。
-  3. 边界收口后，接入 Excel / SQLite / GeoPackage 容器内部真实枚举，把 sheet/table/layer 写入 `type_info.container.children`，同时补 GeoPackage spatial 映射。
+  1. 收口 `TableInfo / ObjectInfo / Scanner*` canonical model：删除或替换 `ScannerTableInfo / ScannerFieldInfo` 旧适配层，确认 `ObjectInfo` 的存储侧信息进入 `storage`，媒体 / 文档信息进入 `type_info.media` / `type_info.document`。
+  2. 继续拆 `meta/backend/internal/service` 剩余大文件中职责清晰的持久化 helper；`scan_service.go` 的扫描路由 / 自动扫描编排和 `scan_task_service.go` 的调度注册 / 执行状态机仍需谨慎拆，目标是 service 只保留编排和事务边界。
+  3. 对齐剩余 spatial 映射：GeoPackage 已写入 layer 级 `geometry_columns` / `primary_geometry_column` / `srid` / `has_spatial_index=false`，后续补 extent、空间索引识别和 GeoTIFF 真实 extent / CRS。
   4. 最后做真实环境旧数据清空与 meta 重扫，验证 CSV、GeoJSON、Shapefile、Excel、SQLite、GeoPackage、图片、PDF 的新 attributes 端到端生成。
 - 当前阻塞：第三方插件 manifest、Manager preview 插件 manifest、Registry 能力发现视图仍需规范确认；真实重扫和端到端验证需要运行环境与样例数据。
-- 最近验证：`go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service` 通过。
+- 最近验证：`go test ./common/jsonmap ./common/dataitem ./common/format/parquet ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service` 通过。
 
 ## 一、文档整理
 
@@ -67,10 +67,10 @@
 
 ### 新会话优先实现顺序
 
-1. 先做 `common/dataitem` 边界收口设计和迁移：把 Meta item 识别结果、claims、resolver 输入、detector 接口和 single resource 推断迁到 `metaitem`，或先在 `metaitem` 建同名模型再逐步替换调用方。
-2. 迁移后运行 `rg "dataitem\\.(DetectedItem|DetectionResult|DirectoryResolveInput|ResourceClaimSet|CompositeItemInfo|CompositeItemDetector|ScopeItemDetector|InferSingleResource)" --glob '*.go'`，目标是除 `common/dataitem` 自身测试外，业务代码不再依赖这些 Meta 语义。
-3. 再拆 `meta/backend/internal/service`：`scan_service.go` 拆扫描路由/自动扫描编排，`scan_task_service.go` 拆调度注册器与执行状态机，`scan_object_storage_service.go` 拆 bucket/prefix 持久化与旧对象清理。
-4. 边界收口后，再推进容器内部 children 枚举、Scanner* 删除、ObjectInfo 拆分和 spatial 映射对齐。
+1. 先收口 `TableInfo / ObjectInfo / Scanner*` canonical model：`ScannerTableInfo / ScannerFieldInfo` 不再扩展并最终删除，`ObjectInfo` 按 `storage`、`type_info.media`、`type_info.document` 拆分。
+2. 继续拆 `meta/backend/internal/service` 剩余大文件中职责明确的 helper：扫描路由 / 自动扫描编排、调度注册 / 执行状态机和对象扫描持久化子流程按事务边界谨慎拆分。
+3. 补齐 GeoPackage spatial extent / 空间索引识别、GeoTIFF 真实 extent / CRS，以及 PostGIS、Shapefile、GeoJSON、GeoPackage、GeoTIFF 的字段口径对齐。
+4. 做真实环境旧数据清空与 meta 重扫，验证 CSV、GeoJSON、Shapefile、Excel、SQLite、GeoPackage、图片、PDF 的新 attributes 端到端生成。
 
 ### 具体任务
 
@@ -104,13 +104,14 @@
   - 结论：关系表、文档集合和对象存储对象的“是否需要更新”判断进入 `scanchange`；`scan_database_service.go`、`scan_nosql_service.go` 和 `scan_object_storage_service.go` 只负责扫描流程与落库编排。
 - [x] 删除 `service` 中无调用的旧对象存储扫描入口和旧兼容方法。
   - 结论：已删除未调用的 `scanObjectStoragePaths` 旧 ObjectStorageScanner 入口、`ScanService` 中空转 repository / extractor 私有代理方法，以及 `EngineService.UpdateConnectionStatus` 旧兼容方法；对象存储扫描统一走 CatalogProvider。
+- [x] 将对象存储 prefix 持久化和旧对象清理从 `service` 继续拆出。
+  - 结论：扫描路径 prefix 建树、复合 item 相对 prefix 建树、旧对象按 fingerprint 软删除、对象 fingerprint 查询和 prefix 节点完成状态更新进入 `repository`；`scan_object_storage_service.go` 保留对象扫描、属性增强、索引和统计编排。
 - [x] 更新 detector 输出模型，统一 `organization=single|multi|whole`。
 - [x] 删除标准 attributes 中的 `entry_path` 写入和读取；主资源、whole scope 根范围统一使用 `meta_item.full_name`。
 - [x] `organization=whole` 写入 `item.scope_exclusive=true`、`item.claim_policy=whole_scope`，并确保覆盖范围内其他资源不再落 item。
 - [x] 禁止对象存储跨 bucket、跨目录、跨 sibling prefix 认领；manifest 外部引用先诊断，不生成跨范围 item。
-- [ ] 容器类只生成外层 item，内部对象写入 `type_info.container.children`。
-  - 已完成：NFS / 对象存储 single 容器 item 不展开内部 meta item；外层 item 写入 `type_info.container.children=[]`、`child_count=0`、`resource_count=1` 作为未枚举摘要。
-  - 剩余：Excel / SQLite / GeoPackage 的真实内部 sheet/table/layer 枚举尚未接入 meta 扫描阶段的 `type_info.container.children`。接入前先完成 common/jsonmap 与 Meta item 识别职责拆分，避免把容器 attributes 构造继续放错层。
+- [x] 容器类只生成外层 item，内部对象写入 `type_info.container.children`。
+  - 结论：NFS / 对象存储 single 容器 item 不展开内部 meta item；Excel sheet、SQLite table/view、GeoPackage layer 已在 Meta 扫描阶段写入 `type_info.container.children`，并写入 `format_info.excel/sqlite/geopackage` 摘要。GeoPackage layer 同步写入 `capabilities.spatial.geometry_columns`、`primary_geometry_column`、`srid`、`has_spatial_index=false`。
 - [x] Shapefile 按 `multi` 验证 claims、`meta_item.full_name` 主文件、`component_files`。
 - [ ] Iceberg 等整体数据集按 `whole` 验证 Exclusive 和 claims。
 - [x] 引擎原生 item 按 `single` 验证，不引入 `engine_native`。
@@ -118,22 +119,20 @@
 - [ ] TableInfo / ObjectInfo / Scanner* 模型收口：以新 `type_info` 语义重新确认 canonical model；`ScannerTableInfo / ScannerFieldInfo` 不再扩展并最终删除。
   - 已完成：数据库表字段、NoSQL 字段 / 索引、文件解析字段等主要写入路径已改为 `type_info.table`。
   - 剩余：`ScannerTableInfo / ScannerFieldInfo` 旧适配层尚未删除；canonical model 还需单独收口。收口时需遵守新边界：type info 模型在 common/format，Meta attributes 落库构造在 Meta。
-- [ ] `common/dataitem` Meta 语义出清。
-  - 当前复核：`common/dataitem` 仍包含 `DetectedItem`、`DetectionResult`、`DirectoryResolveInput`、`ResourceClaimSet`、`CompositeItemInfo`、detector 接口和 `InferSingleResource*`；这些类型当前业务调用集中在 Meta 模块，已不适合作为 common 对外概念继续扩散。
-  - 建议拆法：`common/dataitem` 保留 `DataType`、`Organization`、`FormatRule`、内置单资源格式规则和格式到 data_type 的纯规则；`metaitem` 承接检测输入/输出、claims、detector 接口、single resource 推断、attributes 落库前的 item plan。
-  - 验收口径：业务代码不再引用 `dataitem.DetectedItem` / `DetectionResult` / `DirectoryResolveInput` / `ResourceClaimSet` / detector 接口；Meta 内部统一引用 `metaitem` 模型。
+- [x] `common/dataitem` Meta 语义出清。
+  - 结论：`DetectedItem`、`DetectionResult`、`DirectoryResolveInput`、`ResourceClaimSet`、`CompositeItemInfo`、detector 接口和 `InferSingleResource*` 已迁入 `meta/backend/internal/metaitem`；`common/dataitem` 只保留 `DataType`、`Organization`、`FormatRule`、内置 single resource 规则和格式 / data_type 推断。`rg "dataitem\\.(DetectedItem|DetectionResult|DirectoryResolveInput|ResourceClaimSet|CompositeItemInfo|CompositeItemDetector|ScopeItemDetector|InferSingleResource|SingleResourceInput|InferSingleResourceItem)" --glob '*.go'` 无业务命中。
 - [ ] ObjectInfo 拆分：存储侧对象信息进入 `storage`，媒体和文档信息进入 `type_info.media` / `type_info.document`。
 - [ ] 文档集合采样结构确认进入 `type_info.table`、`type_info.document` 或后续单独规范。
 - [ ] 图 label / relationship 结构确认进入 `type_info.graph`。
 - [ ] `capabilities.spatial` 按最小字段集落地：`geometry_columns`、`primary_geometry_column`、`extent`、`has_spatial_index`。
-  - 已完成：Shapefile 与 PostGIS 写入 `capabilities.spatial.geometry_columns` / `primary_geometry_column` / `extent` / `has_spatial_index`；PostGIS 扫描已停止写旧 `spatial_metadata`；GeoJSON single item 写入默认 `geometry` / `srid=4326` / `has_spatial_index=false`；GeoTIFF/TIFF single item 先写入 spatial 能力壳（`extent=null`、`has_spatial_index=false`）；Meta 查询与 Manager 后端空间读取已切到 `capabilities.spatial`。
-  - 剩余：GeoPackage 映射需结合 container 内部 layer 枚举；GeoTIFF 真实 extent / CRS 需接入栅格元数据读取。
+  - 已完成：Shapefile 与 PostGIS 写入 `capabilities.spatial.geometry_columns` / `primary_geometry_column` / `extent` / `has_spatial_index`；PostGIS 扫描已停止写旧 `spatial_metadata`；GeoJSON single item 写入默认 `geometry` / `srid=4326` / `has_spatial_index=false`；GeoTIFF/TIFF single item 先写入 spatial 能力壳（`extent=null`、`has_spatial_index=false`）；GeoPackage layer 枚举写入 `geometry_columns` / `primary_geometry_column` / `srid` / `has_spatial_index=false`；Meta 查询与 Manager 后端空间读取已切到 `capabilities.spatial`。
+  - 剩余：GeoPackage extent / 空间索引识别仍需补充；GeoTIFF 真实 extent / CRS 需接入栅格元数据读取。
 - [x] Geometry 字段类型只写声明或格式可确定类型；PostGIS 声明为 `geometry` 时就写 `geometry`，不扫描全表推断实际类型。
 - [ ] `srid` 与 `crs` 二选一：能确定 EPSG/SRID 编号写 `srid`；不能确定编号但有 CRS 描述写 `crs`。
 - [x] GeoTIFF / 栅格影像空间语义先可写 `capabilities.spatial` 的范围和坐标参考；是否新增 raster 能力后续再讨论。
 - [ ] PostGIS、Shapefile、GeoJSON、GeoPackage、GeoTIFF 的 spatial 字段映射对齐。
-  - 已完成：PostGIS、Shapefile、GeoJSON、GeoTIFF/TIFF 最小映射。
-  - 剩余：GeoPackage 需在 container/layer 枚举落地后补齐；GeoTIFF/TIFF 目前只有能力壳，真实范围和 CRS 仍待 extractor。
+  - 已完成：PostGIS、Shapefile、GeoJSON、GeoPackage、GeoTIFF/TIFF 最小映射。
+  - 剩余：GeoPackage extent / 空间索引识别仍待补齐；GeoTIFF/TIFF 目前只有能力壳，真实范围和 CRS 仍待 extractor。
 - [ ] Manager 空间预览依赖字段和缺失降级策略确认。
 
 ## 四、验证清单
@@ -154,4 +153,4 @@
 
 ### 最近验证记录
 
-- 2026-05-07：通过 `go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service`。
+- 2026-05-07：通过 `go test ./common/jsonmap ./common/dataitem ./common/format/parquet ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service`。
