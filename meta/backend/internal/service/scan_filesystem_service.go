@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
-	"strings"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
@@ -223,7 +221,7 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 		detected := dataitem.InferSingleResourceItem(file)
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
-			itemType := fileSystemSingleFileItemType(detected)
+			itemType := metaitem.FileSystemSingleFileItemType(detected)
 			itemName := file.Name
 			fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
@@ -276,12 +274,12 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	dirPath string,
 	detected *dataitem.DetectedItem,
 ) bool {
-	attrs := toJSONMap(metaitem.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
-		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
+		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
 
-	itemName, fullName := inferDetectedItemName(dirPath, detected)
+	itemName, fullName := metaitem.FileSystemDetectedItemName(dirPath, detected)
 	_, upsertErr := s.repo.UpsertItem(
 		tenantID, resource.ID, parentNode,
 		detected.ItemType, itemName, fullName,
@@ -322,7 +320,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 		info, err := metaitem.ExtractLakeTableSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
 			s.log.Warn("提取 single 资源湖表信息失败，使用基础资源属性", "path", file.Path, "error", err)
-			return toJSONMap(metaitem.BuildAttributes(detected)), nil, nil
+			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
 		}
 		if info != nil {
 			if info.SizeBytes == nil {
@@ -343,23 +341,12 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			}
 		}
 	}
-	attrs := toJSONMap(metaitem.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
-		setSchemaFields(attrs, fieldAttributesFromFormat(detected.Fields))
+		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
-	applyContainerSummary(attrs, detected)
+	metaitem.ApplyContainerSummary(attrs, detected)
 	return attrs, detected.Fields, nil
-}
-
-func applyContainerSummary(attrs models.JSONMap, detected *dataitem.DetectedItem) {
-	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
-		return
-	}
-	metaattr.UpsertNested(attrs, "type_info", "container", map[string]interface{}{
-		"children":       []map[string]interface{}{},
-		"child_count":    0,
-		"resource_count": 1,
-	})
 }
 
 func (s *FileSystemScanService) resolveFileSystemDirectoryItems(
@@ -521,84 +508,4 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 		})
 	}
 	return files, subdirs, nil
-}
-
-func toJSONMap(attrs map[string]interface{}) models.JSONMap {
-	result := models.JSONMap{}
-	for k, v := range attrs {
-		result[k] = v
-	}
-	return result
-}
-
-func fieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
-	fieldsData := make([]map[string]interface{}, 0, len(fields))
-	for _, f := range fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":          f.Name,
-			"type":          string(f.Type),
-			"original_type": f.OriginalType,
-			"nullable":      f.Nullable,
-		})
-	}
-	return fieldsData
-}
-
-func setSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
-	if attrs == nil || len(fields) == 0 {
-		return
-	}
-	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
-}
-
-// inferItemName 从路径推断数据项名称
-// 路径格式：bucket/schema/table/ → name="table", fullName="bucket/schema/table"
-func inferItemName(dirPath string) (name, fullName string) {
-	cleaned := strings.Trim(dirPath, "/")
-	parts := strings.Split(cleaned, "/")
-	if len(parts) == 0 {
-		return "unknown", dirPath
-	}
-	name = parts[len(parts)-1]
-	fullName = cleaned
-	return
-}
-
-func inferDetectedItemName(dirPath string, item *dataitem.DetectedItem) (name, fullName string) {
-	if item == nil {
-		return inferItemName(dirPath)
-	}
-	switch item.Organization {
-	case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
-		if item.EntryPath != "" {
-			cleaned := strings.Trim(item.EntryPath, "/")
-			if cleaned != "" {
-				return filepath.Base(cleaned), cleaned
-			}
-		}
-	case dataitem.OrganizationWhole:
-		return inferItemName(dirPath)
-	}
-	if item.EntryPath != "" {
-		cleaned := strings.Trim(item.EntryPath, "/")
-		if cleaned != "" {
-			return filepath.Base(cleaned), cleaned
-		}
-	}
-	return inferItemName(dirPath)
-}
-
-func fileSystemSingleFileItemType(item *dataitem.DetectedItem) string {
-	if item == nil {
-		return "file"
-	}
-	if item.ItemType != "" {
-		return item.ItemType
-	}
-	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
-		rule.Organization == dataitem.OrganizationSingle &&
-		rule.ItemType != "" {
-		return rule.ItemType
-	}
-	return "file"
 }

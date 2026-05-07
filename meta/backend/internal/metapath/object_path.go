@@ -16,6 +16,18 @@ func SanitizeObjectPath(path string) string {
 	return path
 }
 
+func JoinObjectPathParts(parts ...string) string {
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		cleaned = append(cleaned, part)
+	}
+	return strings.Join(cleaned, "/")
+}
+
 // SplitObjectPath 分割对象路径为 bucket 和相对路径。
 // 例如："my-bucket/folder/file.txt" -> ("my-bucket", "folder/file.txt")。
 func SplitObjectPath(path string) (string, string) {

@@ -2,6 +2,7 @@ package metaitem
 
 import (
 	"testing"
+	"time"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
@@ -89,5 +90,96 @@ func TestObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	}
 	if objectPath != "lake/sales.parquet" {
 		t.Fatalf("objectPath = %q, want lake/sales.parquet", objectPath)
+	}
+}
+
+func TestPlanObjectStorageRelativePathRemovesScanPrefix(t *testing.T) {
+	t.Parallel()
+
+	plan := PlanObjectStorageRelativePath("datasets/roads/roads.shp", "datasets")
+	if plan.ExactBase {
+		t.Fatal("child path should not be treated as exact base")
+	}
+	if len(plan.Segments) != 2 || plan.Segments[0] != "roads" || plan.Segments[1] != "roads.shp" {
+		t.Fatalf("segments = %#v, want roads/roads.shp", plan.Segments)
+	}
+}
+
+func TestPlanObjectStorageRelativePathDetectsExactScanPrefix(t *testing.T) {
+	t.Parallel()
+
+	plan := PlanObjectStorageRelativePath("datasets", "datasets")
+	if !plan.ExactBase {
+		t.Fatal("exact scan prefix should be detected")
+	}
+	if len(plan.Segments) != 0 {
+		t.Fatalf("segments = %#v, want none", plan.Segments)
+	}
+}
+
+func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
+	t.Parallel()
+
+	modifiedAt := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	plan := PlanObjectStorageSingleItem(7, format.ObjectMetadata{
+		Bucket:       "addp",
+		Path:         "datasets/roads.geojson",
+		NodeType:     "object",
+		FileType:     "geojson",
+		SizeBytes:    128,
+		LastModified: &modifiedAt,
+	}, "datasets/roads.geojson")
+
+	if plan.ItemType != "table" || plan.ItemName != "roads.geojson" {
+		t.Fatalf("item identity = %#v", plan)
+	}
+	if plan.FullName != "addp/datasets/roads.geojson" || plan.Fingerprint == "" {
+		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
+	}
+	item := plan.Attributes["item"].(map[string]interface{})
+	if item["data_type"] != string(dataitem.DataTypeTable) || item["format"] != "geojson" {
+		t.Fatalf("item attrs = %#v", item)
+	}
+	storage := plan.Attributes["storage"].(map[string]interface{})
+	if storage["physical_path"] != "addp/datasets/roads.geojson" || storage["total_size"] != int64(128) {
+		t.Fatalf("storage attrs = %#v", storage)
+	}
+}
+
+func TestPlanObjectStorageCompositeItemBuildsStandardAttributes(t *testing.T) {
+	t.Parallel()
+
+	plan, ok := PlanObjectStorageCompositeItem(7, ObjectStorageCompositeItem{
+		Bucket: "addp",
+		Prefix: "datasets/roads",
+		Item: &dataitem.DetectedItem{
+			ItemType:     "table",
+			DataType:     dataitem.DataTypeTable,
+			Organization: dataitem.OrganizationMulti,
+			EntryPath:    "addp/datasets/roads/roads.shp",
+			SizeBytes:    256,
+			Fields: []format.FieldInfo{{
+				Name: "id",
+				Type: format.FieldTypeInt,
+			}},
+		},
+	})
+	if !ok {
+		t.Fatal("composite item plan should be created")
+	}
+	if plan.ItemName != "roads.shp" || plan.ParentPath != "datasets/roads/" {
+		t.Fatalf("plan identity = %#v", plan)
+	}
+	if plan.FullName != "addp/datasets/roads/roads.shp" || plan.Fingerprint == "" {
+		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
+	}
+	storage := plan.Attributes["storage"].(map[string]interface{})
+	if storage["bucket"] != "addp" || storage["path"] != "datasets/roads/" || storage["name"] != "roads.shp" {
+		t.Fatalf("storage attrs = %#v", storage)
+	}
+	typeInfo := plan.Attributes["type_info"].(map[string]interface{})
+	table := typeInfo["table"].(map[string]interface{})
+	if table["fields"] == nil {
+		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
 }

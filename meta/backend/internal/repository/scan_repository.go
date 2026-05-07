@@ -416,6 +416,25 @@ func (r *ScanRepository) GetItemsByNode(nodeID uint) ([]*models.MetaItem, error)
 	return items, err
 }
 
+func (r *ScanRepository) GetItemsByNodeAndType(tenantID, engineID, nodeID uint, itemType string) ([]models.MetaItem, error) {
+	var items []models.MetaItem
+	err := r.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
+		tenantID, engineID, nodeID, itemType).Find(&items).Error
+	return items, err
+}
+
+func (r *ScanRepository) GetItemsByNodeAndTypeMap(tenantID, engineID, nodeID uint, itemType string) map[string]*models.MetaItem {
+	items, err := r.GetItemsByNodeAndType(tenantID, engineID, nodeID, itemType)
+	if err != nil {
+		return map[string]*models.MetaItem{}
+	}
+	result := make(map[string]*models.MetaItem, len(items))
+	for i := range items {
+		result[items[i].Name] = &items[i]
+	}
+	return result
+}
+
 // GetNodeByID 根据 ID 获取节点
 func (r *ScanRepository) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 	var node models.MetaNode

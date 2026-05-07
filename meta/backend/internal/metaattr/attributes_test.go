@@ -112,3 +112,21 @@ func TestUpsertSectionMergesExistingSection(t *testing.T) {
 		t.Fatalf("type_info.table.fields missing after merge: %#v", table)
 	}
 }
+
+func TestSetSchemaFieldsWritesPartitionOnly(t *testing.T) {
+	t.Parallel()
+
+	fields := []map[string]interface{}{{"name": "id", "type": "integer"}}
+	attrs := models.JSONMap{}
+
+	SetSchemaFields(attrs, fields)
+
+	if attrs["fields"] != nil {
+		t.Fatalf("flat fields should not be written: %#v", attrs)
+	}
+	typeInfo := attrs["type_info"].(map[string]interface{})
+	table := typeInfo["table"].(map[string]interface{})
+	if table["fields"] == nil {
+		t.Fatalf("type_info.table.fields missing: %#v", table)
+	}
+}

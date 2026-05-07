@@ -14,6 +14,7 @@ import (
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
@@ -97,7 +98,11 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 
 	// 6. 完成扫描
 	var totalSize int64
-	for _, item := range getTableItems(s.db, tenantID, engineID, schemaNode.ID) {
+	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, "table")
+	if err != nil {
+		return 0, tables, fields, err
+	}
+	for _, item := range tableItems {
 		if item.SizeBytes != nil {
 			totalSize += *item.SizeBytes
 		}
@@ -125,7 +130,7 @@ func (s *DatabaseScanService) scanTables(
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
 
 	// 查询已存在的表
-	existingTableMap := getExistingTableMap(s.db, tenantID, engineID, schemaNode.ID)
+	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, "table")
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
@@ -174,7 +179,7 @@ func (s *DatabaseScanService) scanTables(
 
 		// 检查是否需要更新
 		existingItem := existingTableMap[tableInfo.Name]
-		needsUpdate := shouldUpdateTable(existingItem, tableInfo)
+		needsUpdate := scanchange.ShouldUpdateTable(existingItem, tableInfo)
 
 		// 浅度扫描且表未变化，跳过
 		if !isDeepScan && existingItem != nil && !needsUpdate {
@@ -347,25 +352,12 @@ func (s *DatabaseScanService) scanTableDetails(
 			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
 		}
 
-		fieldsAttr := metaattr.BuildFieldAttributes(fields)
 		tableMetadata := map[string]interface{}{
 			"primary_key":      primaryKeyColumns,
 			"primary_key_name": primaryKeyName,
 			"has_primary_key":  len(primaryKeyColumns) > 0,
 		}
-		attrs = models.JSONMap{
-			"storage": map[string]interface{}{
-				"schema_name": schemaName,
-			},
-			"type_info": map[string]interface{}{
-				"table": map[string]interface{}{
-					"fields":         fieldsAttr,
-					"table_metadata": tableMetadata,
-					"table_type":     tableInfo.Type,
-					"table_comment":  tableInfo.Comment,
-				},
-			},
-		}
+		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.BuildFieldAttributes(fields), tableMetadata, tableInfo.Type, tableInfo.Comment)
 		if len(primaryKeyColumns) > 0 {
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
@@ -376,7 +368,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		if resource.EngineType == "postgresql" && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialCapabilityFromMetadata(spatialMeta))
+				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialCapabilityFromMetadata(spatialMeta))
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
@@ -393,17 +385,7 @@ func (s *DatabaseScanService) scanTableDetails(
 				"table_comment": tableInfo.Comment,
 			})
 		} else {
-			attrs = models.JSONMap{
-				"storage": map[string]interface{}{
-					"schema_name": schemaName,
-				},
-				"type_info": map[string]interface{}{
-					"table": map[string]interface{}{
-						"table_type":    tableInfo.Type,
-						"table_comment": tableInfo.Comment,
-					},
-				},
-			}
+			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableInfo.Type, tableInfo.Comment)
 		}
 	}
 	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
@@ -473,31 +455,6 @@ func (s *DatabaseScanService) scanSpatialMetadata(ctx context.Context, db *gorm.
 	return spatialMeta
 }
 
-func spatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[string]interface{} {
-	if spatialMeta == nil || spatialMeta.GeometryColumn == "" {
-		return map[string]interface{}{}
-	}
-
-	geometryColumn := map[string]interface{}{
-		"name":          spatialMeta.GeometryColumn,
-		"geometry_type": "geometry",
-	}
-	if spatialMeta.SRID > 0 {
-		geometryColumn["srid"] = spatialMeta.SRID
-	}
-
-	values := map[string]interface{}{
-		"geometry_columns":        []map[string]interface{}{geometryColumn},
-		"primary_geometry_column": spatialMeta.GeometryColumn,
-		"has_spatial_index":       spatialMeta.HasSpatialIndex,
-	}
-	if len(spatialMeta.Extent) == 4 {
-		values["extent"] = spatialMeta.Extent
-		values["extent_srid"] = spatialMeta.ExtentSRID
-	}
-	return values
-}
-
 // deleteRemovedTables 软删除已移除的表
 func (s *DatabaseScanService) deleteRemovedTables(
 	tenantID, engineID uint,
@@ -524,66 +481,6 @@ func (s *DatabaseScanService) deleteRemovedTables(
 			}
 		}
 	}
-}
-
-// 辅助函数
-
-func getExistingTableMap(db *gorm.DB, tenantID, engineID, nodeID uint) map[string]*models.MetaItem {
-	var existingItems []models.MetaItem
-	if err := db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ?",
-		tenantID, engineID, nodeID, "table").Find(&existingItems).Error; err != nil {
-		return make(map[string]*models.MetaItem)
-	}
-
-	existingTableMap := make(map[string]*models.MetaItem)
-	for i := range existingItems {
-		existingTableMap[existingItems[i].Name] = &existingItems[i]
-	}
-	return existingTableMap
-}
-
-func getTableItems(db *gorm.DB, tenantID, engineID, nodeID uint) []models.MetaItem {
-	var items []models.MetaItem
-	db.Where("tenant_id = ? AND engine_id = ? AND node_id = ?",
-		tenantID, engineID, nodeID).Find(&items)
-	return items
-}
-
-func shouldUpdateTable(existingItem *models.MetaItem, tableInfo format.ScannerTableInfo) bool {
-	if existingItem == nil {
-		return true
-	}
-
-	// 表的修改时间变化（优先判断）
-	// 如果表有 LastModified 且数据库中有 DataUpdatedAt，则比较时间戳
-	if tableInfo.LastModified != nil && existingItem.DataUpdatedAt != nil {
-		if tableInfo.LastModified.After(*existingItem.DataUpdatedAt) {
-			return true // 表有更新，需要重新扫描
-		}
-		// 表的 LastModified 早于或等于上次扫描时间，且有时间戳记录，说明表未变化
-		// 即使行数/大小有差异也可能是统计信息不准确，跳过扫描
-		return false
-	}
-
-	// 如果没有时间戳信息，降级到行数/大小比较（传统逻辑）
-
-	// 行数变化
-	if existingItem.RowCount != nil && *existingItem.RowCount != tableInfo.RowCount {
-		return true
-	}
-
-	// 大小变化
-	if existingItem.SizeBytes != nil && *existingItem.SizeBytes != tableInfo.SizeBytes {
-		return true
-	}
-
-	// 之前未记录行数或大小
-	if (existingItem.RowCount == nil && tableInfo.RowCount != 0) ||
-		(existingItem.SizeBytes == nil && tableInfo.SizeBytes != 0) {
-		return true
-	}
-
-	return false
 }
 
 // queryPrimaryKeyName 查询主键约束名称

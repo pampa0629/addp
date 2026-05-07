@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	pathpkg "path"
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -19,6 +17,7 @@ import (
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/objectstore"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/scanstats"
 	"gorm.io/gorm"
 )
@@ -462,55 +461,34 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"scanPathPrefix", scanPathPrefix,
 			"basePrefixNode", basePrefixNode.Name)
 
-		// 重要：处理scanPathPrefix相关的路径，避免重复创建节点
-		// Scanner在扫描子目录时会返回包含scanPathPrefix的路径
-		var segmentsToProcess []string
-		skipReason := ""
-		if scanPathPrefix != "" && trimmed == scanPathPrefix {
-			// 情况1：trimmed刚好等于scanPathPrefix（Scanner返回的prefix汇总对象）
-			// 跳过segment处理，basePrefixNode已经创建了这个节点
-			skipReason = "trimmed==scanPathPrefix"
-			if meta.NodeType == "prefix" {
-				scanstats.EnsureNodeAggregate(stats, basePrefixNode)
-			}
-			// 不处理segments
-		} else if scanPathPrefix != "" && strings.HasPrefix(trimmed, scanPathPrefix+"/") {
-			// 情况2：trimmed以"scanPathPrefix/"开头（Scanner的dirAgg中间目录）
-			// 去掉scanPathPrefix前缀，只处理剩余部分
-			skipReason = "trimmed以scanPathPrefix/开头，去掉前缀"
-			remaining := strings.TrimPrefix(trimmed, scanPathPrefix+"/")
-			if remaining != "" {
-				segmentsToProcess = strings.Split(remaining, "/")
-			}
-		} else if trimmed != "" {
-			// 情况3：正常路径，不包含scanPathPrefix前缀
-			segmentsToProcess = strings.Split(trimmed, "/")
-		} else if includeBucketAggregate {
-			// 情况4：空路径，统计bucket
-			skipReason = "空路径"
+		pathPlan := metaitem.PlanObjectStorageRelativePath(trimmed, scanPathPrefix)
+		if pathPlan.ExactBase && meta.NodeType == "prefix" {
+			scanstats.EnsureNodeAggregate(stats, basePrefixNode)
+		}
+		if pathPlan.SkipReason == "空路径" && includeBucketAggregate {
 			scanstats.EnsureNodeAggregate(stats, bucketNode)
 		}
 
-		if skipReason != "" {
+		if pathPlan.SkipReason != "" {
 			s.log.Info("跳过或特殊处理",
-				"reason", skipReason,
-				"segmentsToProcess", segmentsToProcess)
-		} else if len(segmentsToProcess) > 0 {
+				"reason", pathPlan.SkipReason,
+				"segmentsToProcess", pathPlan.Segments)
+		} else if len(pathPlan.Segments) > 0 {
 			s.log.Info("准备处理segments",
-				"segmentsToProcess", segmentsToProcess)
+				"segmentsToProcess", pathPlan.Segments)
 		}
 
 		// 处理segments（如果有）
-		if len(segmentsToProcess) > 0 {
-			for idx, segment := range segmentsToProcess {
-				isLast := idx == len(segmentsToProcess)-1
+		if len(pathPlan.Segments) > 0 {
+			for idx, segment := range pathPlan.Segments {
+				isLast := idx == len(pathPlan.Segments)-1
 				if meta.NodeType == "object" && isLast {
 					break
 				}
 				fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
 				attrs := models.JSONMap{
 					"bucket": meta.Bucket,
-					"path":   strings.Join(segmentsToProcess[:idx+1], "/") + "/", // ✅ 路径规范：目录路径必须以 / 结尾
+					"path":   strings.Join(pathPlan.Segments[:idx+1], "/") + "/", // 路径规范：目录路径必须以 / 结尾
 				}
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
@@ -529,55 +507,20 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			continue
 		}
 
-		objectName := pathpkg.Base(strings.Trim(meta.Path, "/"))
-		if objectName == "" {
-			objectName = trimmed
-		}
-		objectName = strings.Trim(objectName, "/")
-		if objectName == "" {
-			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
-		}
-
-		dataItem := metaitem.InferObjectStorageDataItem(meta, objectName)
-		itemType := "object"
-		itemName := objectName
-		if inferredType := metaitem.ObjectStorageSingleFileItemType(dataItem); inferredType != "object" {
-			itemType = inferredType
-		}
-
-		// 构建基础属性
-		// 按照路径统一规范：拆分为 bucket、path（目录，以/结尾）、name（文件名）
-		dir, name := commonModels.SplitObjectPath(meta.Path)
-		attrs := models.JSONMap{
-			"bucket":       meta.Bucket,
-			"path":         dir,  // 目录路径（以 / 结尾）
-			"name":         name, // 文件名（原始，含扩展名）
-			"file_type":    meta.FileType,
-			"object_count": meta.ObjectCount,
-		}
-		if meta.LastModified != nil {
-			attrs["last_modified_at"] = meta.LastModified
-		}
-		mergeDataItemAttributes(attrs, dataItem)
-		applyContainerSummary(attrs, dataItem)
-
-		// 生成fingerprint - 两步计算方式
-		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
-		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+		itemPlan := metaitem.PlanObjectStorageSingleItem(engineID, meta, trimmed)
 		if scannedFingerprints != nil {
-			scannedFingerprints[fingerprint] = true
+			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
 
 		// 检查记录是否已存在（包括软删除的记录）
 		var existingItem models.MetaItem
-		itemExists := s.db.Unscoped().Where("fingerprint = ?", fingerprint).First(&existingItem).Error == nil
+		itemExists := s.db.Unscoped().Where("fingerprint = ?", itemPlan.Fingerprint).First(&existingItem).Error == nil
 
-		// 增量更新逻辑：对比 LastModifiedAt 和 SizeBytes
-		needsUpdate := !itemExists || // 新对象
-			(existingItem.DataUpdatedAt != nil && meta.LastModified != nil && !existingItem.DataUpdatedAt.Equal(*meta.LastModified)) || // 修改时间变化
-			(existingItem.SizeBytes != nil && *existingItem.SizeBytes != meta.SizeBytes) || // 大小变化
-			(existingItem.DataUpdatedAt == nil && meta.LastModified != nil) || // 之前未记录修改时间
-			(existingItem.SizeBytes == nil && meta.SizeBytes != 0) // 之前未记录大小
+		var existingItemForChange *models.MetaItem
+		if itemExists {
+			existingItemForChange = &existingItem
+		}
+		needsUpdate := scanchange.ShouldUpdateObject(existingItemForChange, meta)
 
 		// 浅度扫描时，如果对象未变化，跳过更新（保留已有的深度元数据）
 		if !strings.EqualFold(scanDepth, "deep") && itemExists && !needsUpdate {
@@ -603,17 +546,17 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		if strings.EqualFold(scanDepth, "deep") {
 			// 深度扫描：提取详细元数据（用于文件预览/搜索）
 			// 传递meta.Path用于正确的fingerprint生成
-			enhancedAttrs = s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, meta, attrs, meta.Path)
+			enhancedAttrs = s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, meta, itemPlan.Attributes, meta.Path)
 		} else if itemExists {
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
 			// 但仍需要更新node_id（文件可能移动到了不同的目录）
 			enhancedAttrs = existingItem.Attributes // 使用已有的attributes
-			for k, v := range attrs {
+			for k, v := range itemPlan.Attributes {
 				enhancedAttrs[k] = v
 			}
 		} else {
 			// 浅层扫描 + 新记录：使用基础属性
-			enhancedAttrs = attrs
+			enhancedAttrs = itemPlan.Attributes
 		}
 
 		sizeVal := meta.SizeBytes
@@ -626,26 +569,26 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"meta.Path", meta.Path,
 			"trimmed", trimmed,
 			"scanPathPrefix", scanPathPrefix,
-			"calculated_fullName", fullName,
+			"calculated_fullName", itemPlan.FullName,
 			"currentParent_id", currentParent.ID,
 			"currentParent_name", currentParent.Name,
-			"objectName", objectName)
+			"objectName", itemPlan.ObjectName)
 
 		// 湖表属性（itemType 和 itemName 已在上方确定）
-		if itemType == "lake_table" {
+		if itemPlan.ItemType == "lake_table" {
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
 			metaattr.SetStorage(enhancedAttrs, "physical_path", physicalPath)
 		}
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
+		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
 		if err != nil {
 			return objects, err
 		}
 
 		// 只在deep扫描时索引（basic扫描的数据不完整）
 		if scanDepth == "deep" {
-			s.indexer.IndexObjectAsset(resource, tenantID, engineID, meta, trimmed, fullName, item)
+			s.indexer.IndexObjectAsset(resource, tenantID, engineID, meta, trimmed, itemPlan.FullName, item)
 		}
 
 		objects++
@@ -665,20 +608,6 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	return objects, nil
 }
 
-func mergeDataItemAttributes(attrs models.JSONMap, item *dataitem.DetectedItem) {
-	if item == nil {
-		return
-	}
-	for k, v := range metaitem.BuildAttributes(item) {
-		switch k {
-		case "path", "size", "content_type":
-			continue
-		default:
-			attrs[k] = v
-		}
-	}
-}
-
 func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
@@ -693,31 +622,21 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		if composite.Item == nil {
 			continue
 		}
+		itemPlan, ok := metaitem.PlanObjectStorageCompositeItem(engineID, composite)
+		if !ok {
+			continue
+		}
+
+		if scannedFingerprints != nil {
+			scannedFingerprints[itemPlan.Fingerprint] = true
+		}
 		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, composite.Prefix, scanPathPrefix, stats)
 		if err != nil {
 			return count, err
 		}
 
-		itemName, objectPath := metaitem.ObjectStorageCompositeName(composite)
-		parentPath := metaitem.ParentObjectPath(objectPath)
-		fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
-
-		attrs := toJSONMap(metaitem.BuildAttributes(composite.Item))
-		if len(composite.Item.Fields) > 0 {
-			setSchemaFields(attrs, fieldAttributesFromFormat(composite.Item.Fields))
-		}
-		metaattr.SetStorage(attrs, "bucket", composite.Bucket)
-		metaattr.SetStorage(attrs, "path", parentPath)
-		metaattr.SetStorage(attrs, "name", itemName)
-		metaattr.SetItem(attrs, "mode", metaitem.ObjectStorageCompositeMode(composite.Item))
-
-		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
-		if scannedFingerprints != nil {
-			scannedFingerprints[fingerprint] = true
-		}
-
-		sizeVal := composite.Item.SizeBytes
-		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, composite.Item.ItemType, itemName, fullName, attrs, nil, &sizeVal, nil); err != nil {
+		sizeVal := itemPlan.SizeBytes
+		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, nil, &sizeVal, nil); err != nil {
 			return count, err
 		}
 		count++
@@ -732,7 +651,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 			updatedNodes[node.ID] = true
 			agg := scanstats.EnsureNodeAggregate(stats, node)
 			agg.ItemCount++
-			agg.TotalSize += composite.Item.SizeBytes
+			agg.TotalSize += itemPlan.SizeBytes
 		}
 	}
 	return count, nil
@@ -766,7 +685,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 			continue
 		}
 		fullName := metapath.ComposeNodeFullName(segment, current, "/")
-		pathSoFar := joinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
+		pathSoFar := metapath.JoinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
 		attrs := models.JSONMap{
 			"bucket": bucketNode.Name,
 			"path":   pathSoFar + "/",
@@ -779,18 +698,6 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 		scanstats.EnsureNodeAggregate(stats, childNode)
 	}
 	return current, nil
-}
-
-func joinObjectPathParts(parts ...string) string {
-	cleaned := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.Trim(part, "/")
-		if part == "" {
-			continue
-		}
-		cleaned = append(cleaned, part)
-	}
-	return strings.Join(cleaned, "/")
 }
 
 // ============================================================================

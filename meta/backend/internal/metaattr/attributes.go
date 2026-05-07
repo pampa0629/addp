@@ -118,3 +118,31 @@ func BuildFieldAttributes(fields []format.ScannerFieldInfo) []map[string]interfa
 	}
 	return result
 }
+
+func JSONMap(attrs map[string]interface{}) models.JSONMap {
+	result := models.JSONMap{}
+	for k, v := range attrs {
+		result[k] = v
+	}
+	return result
+}
+
+func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
+	fieldsData := make([]map[string]interface{}, 0, len(fields))
+	for _, f := range fields {
+		fieldsData = append(fieldsData, map[string]interface{}{
+			"name":          f.Name,
+			"type":          string(f.Type),
+			"original_type": f.OriginalType,
+			"nullable":      f.Nullable,
+		})
+	}
+	return fieldsData
+}
+
+func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
+	if attrs == nil || len(fields) == 0 {
+		return
+	}
+	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
+}

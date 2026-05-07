@@ -1,8 +1,16 @@
 package scantask
 
 import (
+	"fmt"
+	"strings"
+
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+)
+
+const (
+	ScanDepthBasic = "basic"
+	ScanDepthDeep  = "deep"
 )
 
 type ExecutionConfig struct {
@@ -77,4 +85,21 @@ func TaskParameters(namespaces, objectPaths []string, scanDepth string) models.J
 		"object_paths": objectPaths,
 		"scan_depth":   scanDepth,
 	}
+}
+
+func NormalizeScanDepth(scanDepth, defaultDepth string) (string, error) {
+	if defaultDepth == "" {
+		defaultDepth = ScanDepthBasic
+	}
+	if scanDepth == "" {
+		scanDepth = defaultDepth
+	}
+	scanDepth = strings.ToLower(scanDepth)
+	if scanDepth == "shallow" {
+		return "", fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
+	}
+	if scanDepth != ScanDepthBasic && scanDepth != ScanDepthDeep {
+		return "", fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
+	}
+	return scanDepth, nil
 }

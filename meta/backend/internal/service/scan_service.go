@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -16,7 +15,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/enginecap"
-	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
@@ -140,31 +138,6 @@ func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	}
 }
 
-// verifyResourceAccess 验证租户是否有权限访问资源
-// 返回 nil 表示有权限，返回错误表示无权限或资源不存在
-func (s *ScanService) verifyResourceAccess(engineID, tenantID uint, token string) error {
-	// 通过 ResourceService 获取资源（内部已包含租户校验）
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID, token)
-	if err != nil {
-		s.log.Warn("资源访问验证失败",
-			"engine_id", engineID,
-			"tenant_id", tenantID,
-			"error", err)
-		return metaErrors.ErrEngineAccessDenied
-	}
-
-	// 非超级管理员（tenant_id > 0）必须验证租户匹配
-	if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
-		s.log.Warn("跨租户访问被拒绝",
-			"engine_id", engineID,
-			"resource_tenant_id", resource.TenantID,
-			"request_tenant_id", tenantID)
-		return metaErrors.ErrEngineAccessDenied
-	}
-
-	return nil
-}
-
 // cleanupStaleScanLocks 清理所有残留的扫描锁
 // 在服务启动时调用，清理上次服务异常退出时未清理的锁
 func (s *ScanService) cleanupStaleScanLocks() {
@@ -235,34 +208,10 @@ func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary
 
 	// 异步发布，不阻塞主流程
 	go func() {
-		// 从 summary 中提取扫描信息
-		scannedNodes := []string{}
-		scannedItemsCount := 0
-		scanType := events.ScanTypeDatabase // 默认为数据库扫描
-
-		if namespacesScanned, ok := summary["namespaces_scanned"].(int); ok && namespacesScanned > 0 {
-			scanType = events.ScanTypeDatabase
-		}
-		if objectsScanned, ok := summary["objects_scanned"].(int); ok && objectsScanned > 0 {
-			scanType = events.ScanTypeObjectStorage
-			scannedItemsCount = objectsScanned
-		}
-		if itemsScanned, ok := summary["items_scanned"].(int); ok {
-			scannedItemsCount += itemsScanned
-		}
-
-		event := events.ScanCompletedEvent{
-			EngineID:          engineID,
-			TenantID:          tenantID,
-			ScanType:          scanType,
-			ScannedNodes:      scannedNodes,
-			ScannedItemsCount: scannedItemsCount,
-			Timestamp:         time.Now(),
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		event := scantask.ScanCompletedEvent(engineID, tenantID, commonModels.JSONMap(summary), time.Now())
 		if err := s.scanEventPublisher.PublishScanCompleted(ctx, event); err != nil {
 			s.log.Error("发布扫描完成事件失败",
 				"engine_id", engineID,
@@ -270,21 +219,6 @@ func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary
 				"error", err)
 		}
 	}()
-}
-
-type nodeAggregate struct {
-	node      *models.MetaNode
-	itemCount int
-	totalSize int64
-}
-
-func ensureNodeAggregate(stats map[uint]*nodeAggregate, node *models.MetaNode) *nodeAggregate {
-	if agg, ok := stats[node.ID]; ok {
-		return agg
-	}
-	agg := &nodeAggregate{node: node}
-	stats[node.ID] = agg
-	return agg
 }
 
 // AutoScanUnscanned 自动扫描所有未扫描的资源
@@ -321,18 +255,8 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
 	}
 
-	completedAt := time.Now()
-	durationMs := completedAt.Sub(startTime).Milliseconds()
-
-	return &models.ScanResponse{
-		Status:            "success",
-		Message:           fmt.Sprintf("Successfully scanned %d engines", len(scannedResourceIDs)),
-		NamespacesScanned: totalSchemas,
-		ItemsScanned:      totalTables,
-		FieldsScanned:     totalFields,
-		DurationMs:        durationMs,
-		StartedAt:         startTime.Format("2006-01-02 15:04:05"),
-	}, nil
+	counts := scantask.ScanCounts{Namespaces: totalSchemas, Items: totalTables, Fields: totalFields}
+	return scantask.AutoScanResponse(len(scannedResourceIDs), counts, startTime, time.Now()), nil
 }
 
 // ScanEngine 扫描指定引擎
@@ -375,20 +299,9 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		directExecID = execID
 	}
 
-	// 标准化 scanDepth 参数
-	if scanDepth == "" {
-		scanDepth = "basic" // 默认使用基础扫描
-	}
-	scanDepth = strings.ToLower(scanDepth)
-
-	// 标准化深度值：统一使用 basic/deep 命名
-	if scanDepth == "shallow" {
-		return nil, fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
-	}
-
-	// 验证有效值
-	if scanDepth != "basic" && scanDepth != "deep" {
-		return nil, fmt.Errorf("unsupported scan depth %q: use basic or deep", scanDepth)
+	scanDepth, err = scantask.NormalizeScanDepth(scanDepth, scantask.ScanDepthBasic)
+	if err != nil {
+		return nil, err
 	}
 
 	startFields := append(connectionLogFields(resource),
@@ -461,24 +374,18 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	}
 
 	if directExecID != "" {
-		resultMeta := commonModels.JSONMap{
-			"namespaces_scanned": schemas,
-			"items_scanned":      tables,
-			"fields_scanned":     fields,
-		}
+		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{Namespaces: schemas, Items: tables, Fields: fields})
 		s.immediateRecorder.Complete(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
 		s.publishScanCompletedEvent(resource.ID, effectiveTenantID, models.JSONMap(resultMeta))
 	}
 
-	return &models.ScanResponse{
-		Status:            "success",
-		Message:           "Scan completed successfully",
-		NamespacesScanned: schemas,
-		ItemsScanned:      tables,
-		FieldsScanned:     fields,
-		DurationMs:        durationMs,
-		StartedAt:         startTime.Format("2006-01-02 15:04:05"),
-	}, nil
+	return scantask.NewScanResponse(
+		"success",
+		"Scan completed successfully",
+		scantask.ScanCounts{Namespaces: schemas, Items: tables, Fields: fields},
+		startTime,
+		completedAt,
+	), nil
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema

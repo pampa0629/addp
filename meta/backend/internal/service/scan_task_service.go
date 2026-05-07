@@ -14,7 +14,6 @@ import (
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -280,28 +279,17 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		}
 	}
 
-	startTime := time.Now()
-	userIDInt := int(userID)
-	execution := &commonModels.TaskExecution{
-		TenantID:    int(tenantID),
-		ExecutionID: uuid.New().String(),
-		Module:      commonModels.ModuleMeta,
-		TaskType:    "scan",
-		Status:      commonModels.ExecutionStatusPending,
-		TriggerType: commonModels.TriggerTypeManual,
-		TriggeredBy: &userIDInt,
-		ExecutionConfig: scantask.ManualExecutionConfig(
-			req.EngineID,
-			scantask.NormalizeStorageType(resource.EngineType),
-			req.Namespaces,
-			req.ObjectPaths,
-			req.ScanDepth,
-			token,
-		),
-		StartedAt: &startTime,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	execution := scantask.NewManualExecution(
+		tenantID,
+		userID,
+		req.EngineID,
+		scantask.NormalizeStorageType(resource.EngineType),
+		req.Namespaces,
+		req.ObjectPaths,
+		req.ScanDepth,
+		token,
+		time.Now(),
+	)
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return nil, err
@@ -346,12 +334,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	}
 
 	start := time.Now()
-	if err := s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{
-		"status":       commonModels.ExecutionStatusRunning,
-		"started_at":   start,
-		"current_step": "任务开始执行",
-		"updated_at":   time.Now(),
-	}); err != nil {
+	if err := s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.RunningExecutionFields(start, time.Now())); err != nil {
 		return err
 	}
 
@@ -375,16 +358,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	durationMs := completeTime.Sub(start).Milliseconds()
 
 	if scanErr != nil {
-		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{
-			"status":            commonModels.ExecutionStatusFailed,
-			"completed_at":      completeTime,
-			"execution_time_ms": durationMs,
-			"current_step":      fmt.Sprintf("执行失败: %v", scanErr),
-			"error_details": commonModels.JSONMap{
-				"message": scanErr.Error(),
-			},
-			"updated_at": time.Now(),
-		})
+		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.FailedExecutionFields(scanErr, completeTime, durationMs, time.Now()))
 
 		if exec.SourceTaskID != nil {
 			s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonModels.ExecutionStatusFailed, completeTime, exec.TenantID)
@@ -392,22 +366,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		return scanErr
 	}
 
-	metadata := commonModels.JSONMap{
-		"namespaces_scanned": resp.NamespacesScanned,
-		"items_scanned":      resp.ItemsScanned,
-		"fields_scanned":     resp.FieldsScanned,
-		"storage_type":       execConfig.StorageType,
-	}
-
-	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{
-		"status":            commonModels.ExecutionStatusSuccess,
-		"completed_at":      completeTime,
-		"execution_time_ms": durationMs,
-		"progress":          100,
-		"current_step":      "执行完成",
-		"metadata":          metadata,
-		"updated_at":        time.Now(),
-	})
+	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.SuccessfulExecutionFields(resp, execConfig.StorageType, completeTime, durationMs, time.Now()))
 
 	if exec.SourceTaskID != nil {
 		s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonModels.ExecutionStatusSuccess, completeTime, exec.TenantID)
@@ -419,15 +378,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 // backfillTaskStatus 回写 ScanTask 的最近执行状态字段
 func (s *ScanTaskService) backfillTaskStatus(taskID uint, executionID string, status string, completedAt time.Time, tenantID int) {
 	next := s.computeNextRunTime(taskID)
-	taskUpdate := map[string]interface{}{
-		"last_run_at":           completedAt,
-		"last_execution_id":     executionID,
-		"last_execution_status": status,
-		"updated_at":            time.Now(),
-	}
-	if next != nil {
-		taskUpdate["next_run_at"] = *next
-	}
+	taskUpdate := scantask.TaskStatusBackfillFields(executionID, status, completedAt, next, time.Now())
 	if err := s.db.Model(&models.ScanTask{}).Where("id = ? AND tenant_id = ?", taskID, tenantID).Updates(taskUpdate).Error; err != nil {
 		s.log.Warn("更新任务执行状态失败", "task_id", taskID, "error", err)
 	}
@@ -516,27 +467,12 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		return nil, errors.New("任务名称不能为空")
 	}
 
-	params := scantask.TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth)
-
-	task := &models.ScanTask{
-		TenantID:    tenantID,
-		EngineID:    req.EngineID,
-		Name:        req.Name,
-		Description: req.Description,
-		Schedule:    req.Schedule,
-		Enabled:     req.Enabled,
-		Parameters:  params,
-		CreatedBy:   userID,
-		UpdatedBy:   userID,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-
+	now := time.Now()
+	var nextRunAt *time.Time
 	if req.Schedule != "" {
-		if next := s.nextTimeFromSpec(req.Schedule, time.Now()); next != nil {
-			task.NextRunAt = next
-		}
+		nextRunAt = s.nextTimeFromSpec(req.Schedule, now)
 	}
+	task := scantask.NewTaskFromUpsertRequest(tenantID, userID, req, now, nextRunAt)
 
 	if err := s.db.Create(task).Error; err != nil {
 		return nil, err
@@ -558,22 +494,12 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 		return nil, err
 	}
 
-	params := scantask.TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth)
-
-	task.Name = req.Name
-	task.Description = req.Description
-	task.EngineID = req.EngineID
-	task.Schedule = req.Schedule
-	task.Enabled = req.Enabled
-	task.Parameters = params
-	task.UpdatedBy = userID
-	task.UpdatedAt = time.Now()
-
+	now := time.Now()
+	var nextRunAt *time.Time
 	if req.Schedule != "" {
-		task.NextRunAt = s.nextTimeFromSpec(req.Schedule, time.Now())
-	} else {
-		task.NextRunAt = nil
+		nextRunAt = s.nextTimeFromSpec(req.Schedule, now)
 	}
+	scantask.ApplyUpsertRequest(task, userID, req, now, nextRunAt)
 
 	if err := s.db.Save(task).Error; err != nil {
 		return nil, err
@@ -608,25 +534,7 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 
-	startTime := time.Now()
-	userIDInt := int(userID)
-	taskIDInt := int(taskID)
-
-	execution := &commonModels.TaskExecution{
-		TenantID:        int(tenantID),
-		ExecutionID:     uuid.New().String(),
-		Module:          commonModels.ModuleMeta,
-		TaskType:        "scan",
-		SourceTaskID:    &taskIDInt,
-		SourceTaskName:  &task.Name,
-		Status:          commonModels.ExecutionStatusPending,
-		TriggerType:     commonModels.TriggerTypeManual,
-		TriggeredBy:     &userIDInt,
-		ExecutionConfig: scantask.TaskExecutionConfig(task.EngineID, storageType, task.Parameters, "deep"),
-		StartedAt:       &startTime,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
+	execution := scantask.NewTaskManualExecution(task, userID, storageType, time.Now())
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return nil, err
@@ -680,23 +588,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 
-	startTime := time.Now()
-	taskIDInt := int(taskID)
-
-	execution := &commonModels.TaskExecution{
-		TenantID:        int(task.TenantID),
-		ExecutionID:     uuid.New().String(),
-		Module:          commonModels.ModuleMeta,
-		TaskType:        "scan",
-		SourceTaskID:    &taskIDInt,
-		SourceTaskName:  &task.Name,
-		Status:          commonModels.ExecutionStatusPending,
-		TriggerType:     commonModels.TriggerTypeSchedule,
-		ExecutionConfig: scantask.TargetExecutionConfig(task.EngineID, storageType, targets.Namespaces, targets.ObjectPaths, "deep"),
-		StartedAt:       &startTime,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
+	execution := scantask.NewScheduledExecution(&task, storageType, targets, time.Now())
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return err
@@ -704,13 +596,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 
 	now := time.Now()
 	next := s.nextTimeFromSpec(task.Schedule, now)
-	taskUpdate := map[string]interface{}{
-		"last_run_at": now,
-		"updated_at":  now,
-	}
-	if next != nil {
-		taskUpdate["next_run_at"] = *next
-	}
+	taskUpdate := scantask.ScheduledTaskTriggerFields(now, next, time.Now())
 	if err := s.db.Model(&models.ScanTask{}).Where("id = ?", task.ID).Updates(taskUpdate).Error; err != nil {
 		s.log.Warn("更新任务定时信息失败", "task_id", task.ID, "error", err)
 	}
@@ -783,30 +669,15 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 
 	var existingTask models.ScanTask
 	err := s.db.Where("engine_id = ? AND tenant_id = ? AND name LIKE ?",
-		resource.ID, tenantID, "自动扫描%").First(&existingTask).Error
-
-	taskName := fmt.Sprintf("自动扫描 - %s", resource.Name)
+		resource.ID, tenantID, scantask.AutomaticTaskPattern()).First(&existingTask).Error
 
 	cronExpr, err := scantask.BuildCronExpressionFromScanConfig(s.exprBuilder, scanConfig)
 	if err != nil {
 		return fmt.Errorf("构建 Cron 表达式失败: %w", err)
 	}
 
-	parameters := models.JSONMap{
-		"scan_depth": "deep",
-	}
-
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		task := &models.ScanTask{
-			TenantID:    tenantID,
-			EngineID:    resource.ID,
-			Name:        taskName,
-			Description: "由存储引擎注册时自动创建",
-			Schedule:    cronExpr,
-			Enabled:     true,
-			Parameters:  parameters,
-		}
-
+		task := scantask.NewAutomaticTask(resource, tenantID, cronExpr)
 		if err := s.db.Create(task).Error; err != nil {
 			return fmt.Errorf("创建自动扫描任务失败: %w", err)
 		}
@@ -825,24 +696,12 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 		return fmt.Errorf("查询已有任务失败: %w", err)
 	}
 
-	updates := map[string]interface{}{
-		"name":       taskName,
-		"schedule":   cronExpr,
-		"enabled":    scanConfig.Enabled,
-		"parameters": parameters,
-		"updated_at": time.Now(),
-	}
-
-	if err := s.db.Model(&existingTask).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&existingTask).Updates(scantask.AutomaticTaskUpdates(resource, cronExpr, time.Now())).Error; err != nil {
 		return fmt.Errorf("更新自动扫描任务失败: %w", err)
 	}
 
 	s.unscheduleTask(existingTask.ID)
-	updatedTask := existingTask
-	updatedTask.Name = taskName
-	updatedTask.Schedule = cronExpr
-	updatedTask.Enabled = scanConfig.Enabled
-	updatedTask.Parameters = parameters
+	updatedTask := scantask.ApplyAutomaticTaskUpdate(existingTask, resource, cronExpr)
 
 	if err := s.scheduleTask(&updatedTask); err != nil {
 		s.log.Warn("重新调度任务失败", "task_id", updatedTask.ID, "error", err)
@@ -859,7 +718,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 // DeleteTaskByResourceID 删除指定资源关联的所有自动扫描任务
 func (s *ScanTaskService) DeleteTaskByResourceID(engineID uint) error {
 	var tasks []models.ScanTask
-	if err := s.db.Where("engine_id = ? AND name LIKE ?", engineID, "自动扫描%").Find(&tasks).Error; err != nil {
+	if err := s.db.Where("engine_id = ? AND name LIKE ?", engineID, scantask.AutomaticTaskPattern()).Find(&tasks).Error; err != nil {
 		return fmt.Errorf("查询资源关联任务失败: %w", err)
 	}
 

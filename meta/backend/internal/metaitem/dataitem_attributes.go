@@ -39,6 +39,20 @@ func BuildAttributes(item *dataitem.DetectedItem) map[string]interface{} {
 	return attrs
 }
 
+func MergeDataItemAttributes(attrs map[string]interface{}, item *dataitem.DetectedItem) {
+	if attrs == nil || item == nil {
+		return
+	}
+	for k, v := range BuildAttributes(item) {
+		switch k {
+		case "path", "size", "content_type":
+			continue
+		default:
+			attrs[k] = v
+		}
+	}
+}
+
 func mergeAttributeSection(existing interface{}, additions map[string]interface{}) map[string]interface{} {
 	merged := map[string]interface{}{}
 	if section, ok := existing.(map[string]interface{}); ok {

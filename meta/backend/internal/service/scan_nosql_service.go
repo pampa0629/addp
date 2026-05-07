@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
@@ -76,7 +76,11 @@ func (s *NoSQLScanService) ScanDatabase(
 
 	// 3. 完成扫描
 	var totalSize int64
-	for _, item := range getCollectionItems(s.db, tenantID, resource.ID, dbNode.ID) {
+	collectionItems, err := s.repo.GetItemsByNodeAndType(tenantID, resource.ID, dbNode.ID, "collection")
+	if err != nil {
+		return 0, totalObjects, totalFields, err
+	}
+	for _, item := range collectionItems {
 		if item.SizeBytes != nil {
 			totalSize += *item.SizeBytes
 		}
@@ -115,7 +119,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 
 	s.log.Info("扫描到的 NoSQL catalog item", "database", databaseName, "item_count", len(nodes))
 
-	existingCollectionMap := getExistingCollectionMap(s.db, tenantID, resource.ID, dbNode.ID)
+	existingCollectionMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, resource.ID, dbNode.ID, "collection")
 	scannedByType := map[string]map[string]bool{
 		"collection":   {},
 		"label":        {},
@@ -146,7 +150,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 		scannedByType[itemType][node.Name] = true
 
 		existingItem := existingCollectionMap[collInfo.Name]
-		needsUpdate := shouldUpdateCollection(existingItem, collInfo)
+		needsUpdate := scanchange.ShouldUpdateCollection(existingItem, collInfo)
 
 		if !strings.EqualFold(scanDepth, "deep") && existingItem != nil && !needsUpdate {
 			totalItems++
@@ -165,7 +169,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 			if err != nil {
 				s.log.Warn("文档集合 Schema 采样失败", "database", databaseName, "collection", collInfo.Name, "error", err)
 			} else {
-				attrs = buildDocCollectionAttributesFromMetadata(itemMetadata)
+				attrs = metaattr.BuildDocumentCollectionAttributes(itemMetadata)
 				totalFields += len(itemMetadata.Fields)
 			}
 		}
@@ -182,7 +186,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 			attrs["document_count"] = count
 		}
 		attrs["size_bytes"] = sizeBytes
-		applyNoSQLDataItemAttributes(attrs, itemType)
+		metaattr.ApplyNoSQLDataItemAttributes(attrs, itemType)
 
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
 		rowCount := count
@@ -217,91 +221,6 @@ func documentCollectionCatalogPath(engineID uint, database, collection string) p
 			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: collection},
 		},
 	}
-}
-
-// buildDocCollectionAttributesFromMetadata 构建文档集合的属性
-func buildDocCollectionAttributesFromMetadata(itemMetadata *plugin.ItemMetadata) models.JSONMap {
-	attrs := models.JSONMap{}
-
-	if itemMetadata == nil {
-		return attrs
-	}
-
-	for key, value := range itemMetadata.Attributes {
-		attrs[key] = value
-	}
-	if len(itemMetadata.Indexes) > 0 {
-		indexes := make([]map[string]interface{}, 0, len(itemMetadata.Indexes))
-		for _, idx := range itemMetadata.Indexes {
-			indexes = append(indexes, map[string]interface{}{
-				"name":       idx.Name,
-				"fields":     idx.Fields,
-				"is_unique":  idx.IsUnique,
-				"index_type": idx.IndexType,
-			})
-		}
-		metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"indexes": indexes})
-	}
-	if len(itemMetadata.Fields) > 0 {
-		fields := buildDocFieldAttributes(itemMetadata.Fields)
-		metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
-	}
-
-	return attrs
-}
-
-// buildDocFieldAttributes 构建文档字段属性列表
-func buildDocFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(fields))
-	for _, field := range fields {
-		fieldAttr := map[string]interface{}{
-			"name":           field.Name,
-			"type":           field.Type,
-			"original_type":  field.NativeType,
-			"nullable":       field.Nullable,
-			"is_primary_key": field.PrimaryKey,
-		}
-
-		if field.Attributes != nil {
-			if occurrenceRate, ok := field.Attributes["occurrence_rate"]; ok {
-				fieldAttr["occurrence_rate"] = occurrenceRate
-			}
-		}
-
-		result = append(result, fieldAttr)
-	}
-	return result
-}
-
-// shouldUpdateCollection 判断集合是否需要更新
-func shouldUpdateCollection(existingItem *models.MetaItem, newInfo plugin.CollectionInfo) bool {
-	if existingItem == nil {
-		return true
-	}
-
-	// 如果文档数量变化，需要更新
-	if existingItem.RowCount != nil && *existingItem.RowCount != newInfo.DocumentCount {
-		return true
-	}
-
-	// 如果大小变化超过 10%，需要更新
-	if existingItem.SizeBytes != nil && newInfo.SizeBytes > 0 {
-		oldSize := *existingItem.SizeBytes
-		change := float64(abs64(newInfo.SizeBytes-oldSize)) / float64(oldSize)
-		if change > 0.1 {
-			return true
-		}
-	}
-
-	return false
-}
-
-// abs64 返回 int64 的绝对值
-func abs64(n int64) int64 {
-	if n < 0 {
-		return -n
-	}
-	return n
 }
 
 // softDeleteMissingItemsByType 按 item_type 软删除不存在的数据项
@@ -339,27 +258,6 @@ func (s *NoSQLScanService) softDeleteLegacyGraphTableItems(tenantID, engineID, d
 	}
 }
 
-// getExistingCollectionMap 获取已存在的集合映射
-func getExistingCollectionMap(db *gorm.DB, tenantID, engineID, dbNodeID uint) map[string]*models.MetaItem {
-	var items []models.MetaItem
-	db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, dbNodeID, "collection").Find(&items)
-
-	result := make(map[string]*models.MetaItem)
-	for i := range items {
-		result[items[i].Name] = &items[i]
-	}
-	return result
-}
-
-// getCollectionItems 获取集合项列表
-func getCollectionItems(db *gorm.DB, tenantID, engineID, dbNodeID uint) []models.MetaItem {
-	var items []models.MetaItem
-	db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, dbNodeID, "collection").Find(&items)
-	return items
-}
-
 func noSQLItemType(node plugin.CatalogNode) string {
 	switch node.Kind {
 	case plugin.CatalogKindCollection:
@@ -378,16 +276,4 @@ func countStatKey(itemType string) string {
 		return "count"
 	}
 	return "document_count"
-}
-
-func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType string) {
-	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
-	switch itemType {
-	case "collection":
-		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
-	case "label", "relationship":
-		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeGraph))
-	default:
-		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeUnknown))
-	}
 }

@@ -52,49 +52,6 @@ func TestNoSQLItemType(t *testing.T) {
 	}
 }
 
-func TestBuildDocCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
-	t.Parallel()
-
-	attrs := buildDocCollectionAttributesFromMetadata(&plugin.ItemMetadata{
-		Fields: []plugin.FieldInfo{{
-			Name: "name",
-			Type: "string",
-		}},
-		Indexes: []plugin.IndexInfo{{
-			Name:      "name_idx",
-			Fields:    []string{"name"},
-			IndexType: "btree",
-		}},
-	})
-
-	typeInfo := attrs["type_info"].(map[string]interface{})
-	table := typeInfo["table"].(map[string]interface{})
-	if _, ok := table["fields"]; !ok {
-		t.Fatalf("type_info.table.fields missing: %#v", table)
-	}
-	if _, ok := table["indexes"]; !ok {
-		t.Fatalf("type_info.table.indexes missing: %#v", table)
-	}
-	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil {
-		t.Fatalf("legacy flat/schema fields should not be written: %#v", attrs)
-	}
-}
-
-func TestApplyNoSQLDataItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
-	t.Parallel()
-
-	attrs := models.JSONMap{}
-	applyNoSQLDataItemAttributes(attrs, "collection")
-
-	item := attrs["item"].(map[string]interface{})
-	if item["organization"] != "single" || item["data_type"] != "table" {
-		t.Fatalf("item attrs = %#v", item)
-	}
-	if item["format"] != nil {
-		t.Fatalf("native NoSQL item should not write item.format: %#v", item)
-	}
-}
-
 func TestSoftDeleteLegacyGraphTableItems(t *testing.T) {
 	t.Parallel()
 

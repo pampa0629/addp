@@ -60,3 +60,29 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 		t.Fatalf("whole item attrs = %#v", itemAttrs)
 	}
 }
+
+func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
+	item := &dataitem.DetectedItem{
+		Organization: dataitem.OrganizationSingle,
+		DataType:     dataitem.DataTypeDocument,
+		Attributes: map[string]interface{}{
+			"path":         "legacy/path",
+			"size":         int64(10),
+			"content_type": "text/plain",
+			"custom":       "ok",
+		},
+	}
+	attrs := map[string]interface{}{"bucket": "demo"}
+
+	MergeDataItemAttributes(attrs, item)
+
+	if attrs["path"] != nil || attrs["size"] != nil || attrs["content_type"] != nil {
+		t.Fatalf("legacy flat storage fields should be skipped: %#v", attrs)
+	}
+	if attrs["custom"] != "ok" {
+		t.Fatalf("custom attr = %#v", attrs["custom"])
+	}
+	if attrs["item"] == nil {
+		t.Fatalf("item section missing: %#v", attrs)
+	}
+}
