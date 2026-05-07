@@ -453,8 +453,7 @@ const props = defineProps({
       { label: 'MinIO', value: 'minio' },
       { label: 'Neo4j', value: 'neo4j' },
       { label: 'NFS 文件系统', value: 'nfs' },
-      { label: 'Apache Spark', value: 'spark' },
-      { label: 'SpatiaLite/SQLite', value: 'spatialite' }
+      { label: 'Apache Spark', value: 'spark' }
     ])
   },
   showActiveSwitch: {

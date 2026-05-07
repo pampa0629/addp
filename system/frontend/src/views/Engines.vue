@@ -576,12 +576,6 @@ const storageEngineTypeOptions = computed(() => ([
     icon: '✨',
     label: 'Apache Spark',
     desc: t('system.engine.registerPanel.types.spark')
-  },
-  {
-    value: 'spatialite',
-    icon: '💾',
-    label: 'SpatiaLite/SQLite',
-    desc: t('system.engine.registerPanel.types.spatialite')
   }
 ]))
 
@@ -855,7 +849,6 @@ const engineTypeMap = computed(() => ({
   'neo4j': 'Neo4j',
   'nfs': t('system.engine.typeNfs'),
   'spark': 'Apache Spark',
-  'spatialite': 'SpatiaLite/SQLite',
   'database': 'Database',
   'compute_engine': 'Compute Engine'
 }))

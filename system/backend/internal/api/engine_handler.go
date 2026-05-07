@@ -179,6 +179,8 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrBuiltinResourceImmutable):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrUnsupportedEngineType):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
@@ -592,6 +594,11 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 	}
 
 	fmt.Printf("[RegisterEngine] 📥 收到引擎注册请求: type=%s, name=%s\n", req.EngineType, req.Name)
+
+	if err := h.engineService.ValidateSystemEngineType(req.EngineType); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// 1. 自动填充 host（从请求来源 IP，规范化回环地址）
 	clientIP := c.ClientIP()

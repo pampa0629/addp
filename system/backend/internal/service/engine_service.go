@@ -23,7 +23,13 @@ var (
 	ErrResourceNotFound         = errors.New("资源不存在")
 	ErrResourceForbidden        = errors.New("没有权限访问该资源")
 	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
+	ErrUnsupportedEngineType    = errors.New("不支持的系统引擎类型")
 )
+
+var disallowedSystemEngineTypes = map[string]struct{}{
+	"sqlite":     {},
+	"spatialite": {},
+}
 
 type EngineService struct {
 	repo           *repository.EngineRepository
@@ -42,6 +48,10 @@ func NewEngineService(repo *repository.EngineRepository, userRepo *repository.Us
 }
 
 func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) (*models.Engine, error) {
+	if err := s.validateSystemEngineType(req.EngineType, req.Capabilities); err != nil {
+		return nil, err
+	}
+
 	// 获取创建者信息以确定租户
 	user, err := s.userRepo.GetByID(createdBy)
 	if err != nil {
@@ -116,6 +126,9 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID uint, createdBy *uint) (*models.Engine, error) {
 	if req == nil {
 		return nil, errors.New("无效的请求数据")
+	}
+	if err := s.validateSystemEngineType(req.EngineType, req.Capabilities); err != nil {
+		return nil, err
 	}
 
 	// 验证扫描配置
@@ -810,6 +823,31 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	return capabilitiesJSON
 }
 
+func (s *EngineService) validateSystemEngineType(engineType string, capabilities *models.JSONString) error {
+	engineTypeLower := strings.ToLower(strings.TrimSpace(engineType))
+	if _, disallowed := disallowedSystemEngineTypes[engineTypeLower]; disallowed {
+		return fmt.Errorf("%w: %s 是 Transfer 本地文件连接器，不能注册到 System 统一引擎表", ErrUnsupportedEngineType, engineTypeLower)
+	}
+
+	if capabilities != nil && *capabilities != "" {
+		return nil
+	}
+
+	generatedCapabilities, err := dbbridge.GenerateCapabilities(engineTypeLower)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrUnsupportedEngineType, engineTypeLower)
+	}
+
+	if err := s.validateCapabilities(toJSONStringPtr(generatedCapabilities)); err != nil {
+		return fmt.Errorf("引擎类型 %s 能力声明无效: %w", engineTypeLower, err)
+	}
+	return nil
+}
+
+func (s *EngineService) ValidateSystemEngineType(engineType string) error {
+	return s.validateSystemEngineType(engineType, nil)
+}
+
 // RefreshAllEngineCapabilities 将已注册引擎的能力声明统一刷新为当前插件体系结构。
 // ADDP 当前不保留旧 capabilities 结构；未知插件类型保留为 unknown 族的新结构。
 func (s *EngineService) RefreshAllEngineCapabilities() error {
@@ -985,6 +1023,9 @@ func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *ui
 
 // CreateEngine 创建引擎
 func (s *EngineService) CreateEngine(engine *models.Engine) error {
+	if err := s.validateSystemEngineType(engine.EngineType, engine.Capabilities); err != nil {
+		return err
+	}
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
 		engine.Capabilities = toJSONStringPtr(capabilities)
@@ -997,6 +1038,9 @@ func (s *EngineService) CreateEngine(engine *models.Engine) error {
 
 // UpdateEngine 更新引擎
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
+	if err := s.validateSystemEngineType(engine.EngineType, engine.Capabilities); err != nil {
+		return err
+	}
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
 		engine.Capabilities = toJSONStringPtr(capabilities)

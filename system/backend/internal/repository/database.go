@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
+	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/pkg/utils"
-	commonUtils "github.com/addp/common/utils"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -61,6 +61,22 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
+}
+
+// RemoveLocalFileEnginesFromSystem 删除误注册到 System 的本地文件型连接器。
+// SQLite/SpatiaLite 文件路径只在 Transfer 本地引擎执行面有意义，System 后端无法保证可访问这些路径。
+func RemoveLocalFileEnginesFromSystem(db *gorm.DB) error {
+	result := db.Exec(`
+		DELETE FROM system.engines
+		WHERE lower(engine_type) IN ('sqlite', 'spatialite')
+	`)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("✅ 已清理 %d 个误注册到 System 的 SQLite/SpatiaLite 引擎\n", result.RowsAffected)
+	}
+	return nil
 }
 
 // InitSuperAdmin 初始化超级管理员用户
@@ -309,5 +325,3 @@ func CreateModuleRegistryIndexes(db *gorm.DB) error {
 	log.Println("✅ 模块注册表索引已创建")
 	return nil
 }
-
-

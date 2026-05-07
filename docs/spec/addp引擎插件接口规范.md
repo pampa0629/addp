@@ -25,12 +25,11 @@ Engine Plugin 是 ADDP 对外部数据系统和内部运行时的控制面入口
 type EnginePlugin interface {
     Type() string
     DisplayName() string
-    EngineCategory() string
+    EngineOrigin() string
     DefaultPort() int
     RequiredFields() []string
     SensitiveFields() []string
     ValidateConnectionInfo(ConnectionInfo) error
-    BuildConnectionString(ConnectionInfo) (string, error)
     TestConnection(context.Context, ConnectionInfo) error
     Capabilities() EngineCapabilities
 }
@@ -39,9 +38,37 @@ type EnginePlugin interface {
 要求：
 
 - `Type()` 必须稳定、小写、唯一，如 `postgresql`、`minio`、`neo4j`。
-- `TestConnection()` 必须执行需要认证的最小真实操作，不能只做网络连通检查。
+- `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
+- `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
+- `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
+- `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力声明。
-- `BuildConnectionString()` 是当前接口保留项；不适合连接串表达的引擎可返回可读描述或错误，但上层不应依赖它发现能力。
+
+`EngineOrigin()` 取值：
+
+| 值 | 含义 |
+| --- | --- |
+| `general` | 用户熟悉的通用现成技术或主流引擎，如 PostgreSQL、MySQL、MinIO、Neo4j。 |
+| `extension` | 按 ADDP 扩展规范实现的引擎或运行时，如 Python Workflow、Math Workflow。 |
+
+### DSNProvider
+
+数据库类 driver / 连接池确实需要 DSN 时，实现可选 `DSNProvider`：
+
+```go
+type DSNProvider interface {
+    EnginePlugin
+    BuildDSN(connInfo ConnectionInfo) (string, error)
+}
+```
+
+规则：
+
+- SQL、MongoDB、Neo4j 等需要底层 driver DSN 的插件可以实现 `DSNProvider`。
+- MinIO、S3、NFS、Workflow、Script 不需要实现 `DSNProvider`。
+- System 不依赖 `DSNProvider` 管理引擎连接。
+- `BuildDSN()` 返回值不得持久化到 System，不得作为跨模块能力判断依据。
+- 非数据库引擎不得返回 JSON 字符串冒充 connection string。
 
 ---
 
@@ -111,10 +138,31 @@ type StoreProvider interface {
 
 - `ContentReadableProvider.OpenContent()`：读取对象或文件内容。
 - `ContentWritableProvider.CreateContent()`：写对象或文件内容。
+- `RangeReadableProvider.OpenRange()`：按 byte range 读取对象或文件内容。
+- `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：批量读取表、集合或图数据。
 - `BatchWritableProvider.WriteBatch()`：批量写入表、集合或图数据。
 
-对象存储和文件系统不得互相继承；二者最多共享内容读写 provider。
+对象存储和文件系统不得互相继承，不共享 CatalogModel 和 CatalogAdapter；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
+
+```go
+type RangeReadableProvider interface {
+    StoreProvider
+    OpenRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
+}
+
+type RangeWritableProvider interface {
+    StoreProvider
+    WriteRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
+}
+```
+
+说明：
+
+- `range_read` / `range_write` 是 ADDP 能力层对称术语。
+- 对文件系统，`range_write` 底层可由 `pwrite`、`WriteAt` 或 seek + write 实现。
+- 对象存储通常支持 `range_read`，通常不支持 `range_write`。
+- `atomic_rename`、`transactions`、`formats` 不作为 Store 顶层能力；如后续有真实调用方，再在具体 Provider 能力中设计。
 
 ### QueryRuntimeProvider
 
@@ -164,10 +212,10 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
-- Manager：使用 Meta 树构建探查树，预览时组合 `ItemMetadataProvider`、`ContentReadableProvider` 和 query runtime。
+- Manager：使用 Meta 树构建探查树；结构化数据预览优先使用 `PreviewProvider` 或 `BatchReadableProvider`，query runtime 只作为只读 sample query 退路；对象/文件预览优先使用 `PreviewProvider` 或 `ContentReadableProvider` 加格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`。
 - Service：发布查询服务时使用 query runtime 和 Meta item/spatial 元数据。
-- Transfer：执行面暂由 Transfer 自己负责，后续通过 `TransferAdapter` 生成 Reader/Writer 配置。
+- Transfer：执行面暂由 Transfer 自己负责，后续通过 `TransferAdapter` 生成 Reader/Writer 配置；高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
 
 ---
 
@@ -177,4 +225,6 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - 不得把所有目录层级统一硬编码为 schema/table。
 - 不得把对象存储当作 POSIX 文件系统建模。
 - 不得让插件返回 JSON 字符串形式的 capabilities。
+- 不得让非 DSN 引擎返回 JSON 字符串冒充 connection string。
 - 不得在 capabilities 中保存任务级运行参数。
+- 不得在 `CatalogProvider` / `ItemMetadataProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。

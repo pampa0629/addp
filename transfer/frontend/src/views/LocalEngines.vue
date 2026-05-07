@@ -75,6 +75,7 @@
       ref="storageFormRef"
       v-model="form"
       :is-edit="isEdit"
+      :type-options="localEngineTypeOptions"
     />
 
     <template #footer>
@@ -118,6 +119,14 @@ const form = ref({
 const SENSITIVE_PLACEHOLDER = '********'
 
 const dialogTitle = computed(() => isEdit.value ? t('transfer.localEngines.editTitle') : t('transfer.localEngines.addTitle'))
+
+const localEngineTypeOptions = [
+  { label: 'PostgreSQL', value: 'postgresql' },
+  { label: 'MySQL', value: 'mysql' },
+  { label: 'MinIO', value: 'minio' },
+  { label: 'Amazon S3', value: 's3' },
+  { label: 'SpatiaLite/SQLite', value: 'spatialite' }
+]
 
 const resourceTypeMap = {
   'postgresql': 'PostgreSQL',

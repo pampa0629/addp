@@ -279,8 +279,7 @@
           "minio": "S3-compatible object storage",
           "neo4j": "Graph database",
           "nfs": "Network file system",
-          "spark": "Distributed compute engine",
-          "spatialite": "Lightweight local file database"
+          "spark": "Distributed compute engine"
         }
       },
       "msg": {

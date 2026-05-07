@@ -42,9 +42,10 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
         EngineType:    p.Type(),
         EngineFamily:  "tabular",
         Storage: &plugin.StorageCapabilities{
-            Families: []string{"tabular"},
-            Catalog:  &plugin.CatalogCapability{Supported: true, RealTime: true},
-            Metadata: &plugin.MetadataCapability{Supported: true, FieldSchema: true},
+            CatalogModel: plugin.TabularCatalogModel("database"),
+            Catalog:      &plugin.CatalogCapability{Supported: true, RealTime: true},
+            Metadata:     &plugin.MetadataCapability{Supported: true, FieldSchema: true},
+            Store:        &plugin.StoreCapability{BatchRead: true},
         },
     }
 }
@@ -54,7 +55,15 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 - `storage.catalog.supported=true` 时必须实现 `CatalogProvider`。
 - `storage.metadata.supported=true` 时必须实现 `ItemMetadataProvider` 或采样 provider。
+- `storage.store.stream_read=true` 时必须实现 `ContentReadableProvider`。
+- `storage.store.stream_write=true` 时必须实现 `ContentWritableProvider`。
+- `storage.store.range_read=true` 时必须实现 `RangeReadableProvider` 或在 `OpenContent` 中明确支持 offset / length。
+- `storage.store.range_write=true` 时必须实现 `RangeWritableProvider`。
+- `storage.store.batch_read=true` 时必须实现 `BatchReadableProvider`。
+- `storage.store.batch_write=true` 时必须实现 `BatchWritableProvider`。
 - `compute.query.supported=true` 时必须实现对应 query runtime provider。
+
+`storage.families`、`store.read`、`store.write`、`store.random_write`、`store.atomic_rename`、`store.transactions`、`store.formats` 不再作为新增插件能力声明字段。
 
 ---
 
@@ -68,6 +77,13 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - ResourceLocator 的 path segments 如何由 full_name 转换。
 
 路径规则必须写入 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
+
+对象存储和文件系统必须分别建模：
+
+- 对象存储：`bucket -> prefix -> object`。
+- 文件系统：`root -> directory -> file`。
+
+二者不得共享 CatalogModel 或 CatalogAdapter；最多共享内容流接口、MIME 推断、格式解析等底层 helper。NFS 必须保留 `name="."` 的 root meta_node，用于容纳挂载根目录下直接存在的文件。
 
 ---
 

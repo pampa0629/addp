@@ -138,6 +138,13 @@ meta_node 存储结构：        用户看到的树：
 root 节点在数据库中存在（作为顶层子节点的父节点），但在展示层透明化——
 其子节点直接挂到引擎节点下，用户不感知 root 这一层。
 
+NFS 必须创建 root meta_node，且 root 的 `name` 必须为 `.`。这是文件系统路径模型的结构性要求：
+
+- NFS 的 `export_path` 属于连接配置，不得暴露为数据路径，也不得进入 `full_name`。
+- 挂载根目录下直接存在的文件必须有父 node 容纳；该父 node 就是 root meta_node。
+- root meta_node 是元数据树结构根，不是用户真实数据路径的一部分。
+- 当前 NFS 实现中以 `.` 作为唯一 root 的效果是正确的，后续重构不得省略或改错。
+
 root 节点字段规范：
 
 | 字段 | 值 |
@@ -268,3 +275,25 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 - Neo4j：`database + "." + label`
 
 文件系统各节点 full_name 的计算由 `filesystem_scan_service` 负责，遵循本文第二节的规则。
+
+---
+
+## 七、对象存储与文件系统模型边界
+
+对象存储和文件系统在树形浏览和内容流读取上有相似性，但路径模型和 catalog 模型不能共享：
+
+| 维度 | 对象存储（MinIO/S3） | 文件系统（NFS、本地 FS） |
+| --- | --- | --- |
+| 根节点 | bucket，有业务含义，可见，可有多个 | root，结构性根，通常一个 |
+| 中间层 | prefix，通常是 key 前缀，不一定真实存在 | directory，真实目录实体 |
+| 叶子 | object | file |
+| 路径起点 | bucket | 挂载点内 `/` 或本地 `/` |
+| root 是否进入 full_name | bucket 进入 full_name | root 不进入 NFS full_name |
+
+规范要求：
+
+- 对象存储使用 `bucket -> prefix -> object`。
+- 文件系统使用 `root -> directory -> file`。
+- 对象存储和文件系统不得共享 CatalogModel 或 CatalogAdapter。
+- 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
+- Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。

@@ -52,7 +52,6 @@ type EngineCapabilities struct {
 
 ```go
 type StorageCapabilities struct {
-    Families     []string            `json:"families"`
     CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
     Catalog      *CatalogCapability  `json:"catalog,omitempty"`
     Metadata     *MetadataCapability `json:"metadata,omitempty"`
@@ -62,17 +61,7 @@ type StorageCapabilities struct {
 }
 ```
 
-`families` 可选值：
-
-| 值 | 含义 |
-| --- | --- |
-| `tabular` | 表格型存储。 |
-| `document` | 文档型存储。 |
-| `graph` | 图存储。 |
-| `object` | 对象存储。 |
-| `file` | 文件系统语义存储。 |
-| `vector` | 向量存储，预留。 |
-| `search` | 搜索索引，预留。 |
+`storage` 是否存在表示引擎是否具备存储能力。存储主类型由顶层 `engine_family` 表达，不再额外声明 `storage.families`；上层功能判断必须读取具体 capability，而不是根据 family 猜能力。
 
 ### CatalogModelSpec
 
@@ -138,21 +127,29 @@ type MetadataCapability struct {
 
 ```go
 type StoreCapability struct {
-    Read         bool     `json:"read"`
-    Write        bool     `json:"write"`
-    BatchRead    bool     `json:"batch_read,omitempty"`
-    BatchWrite   bool     `json:"batch_write,omitempty"`
-    StreamRead   bool     `json:"stream_read,omitempty"`
-    StreamWrite  bool     `json:"stream_write,omitempty"`
-    RangeRead    bool     `json:"range_read,omitempty"`
-    RandomWrite  bool     `json:"random_write,omitempty"`
-    AtomicRename bool     `json:"atomic_rename,omitempty"`
-    Transactions bool     `json:"transactions,omitempty"`
-    Formats      []string `json:"formats,omitempty"`
+    StreamRead  bool `json:"stream_read,omitempty"`
+    StreamWrite bool `json:"stream_write,omitempty"`
+    RangeRead   bool `json:"range_read,omitempty"`
+    RangeWrite  bool `json:"range_write,omitempty"`
+    BatchRead   bool `json:"batch_read,omitempty"`
+    BatchWrite  bool `json:"batch_write,omitempty"`
 }
 ```
 
-对象存储通常声明 `stream_read`、`stream_write`、`range_read`，不声明 `random_write` 和 `atomic_rename`。文件系统是否支持随机写、原子 rename，必须按真实能力声明。
+字段说明：
+
+| 字段 | 含义 |
+| --- | --- |
+| `stream_read` | 顺序流式读取单个对象、文件或二进制内容。 |
+| `stream_write` | 顺序流式创建或覆盖单个对象、文件内容。 |
+| `range_read` | 从指定 byte range 读取内容。 |
+| `range_write` | 向指定 byte range / offset 写入内容。 |
+| `batch_read` | 按批次读取结构化 item，如表、集合、图数据。 |
+| `batch_write` | 按批次写入结构化 item。 |
+
+`read` / `write` 总开关无独立调用价值，不进入核心能力声明；展示层可由细分能力派生。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段：原子重命名、事务、格式支持如有真实调用方，应在对应 Provider 或 Transfer / Query 等更具体能力中声明。
+
+对象存储通常声明 `stream_read`、`range_read`，是否声明 `stream_write` 必须取决于是否提供对应写 Provider；对象存储通常不声明 `range_write`。文件系统是否支持 `range_write` 必须按真实能力和 Provider 实现声明。
 
 ---
 
@@ -276,6 +273,13 @@ type PreviewCapabilities struct {
 - `schema_version` 必须存在且等于 `engine.capabilities/v1`。
 - 声明 `storage.catalog.supported=true` 的插件必须实现 `CatalogProvider`。
 - 声明 `storage.metadata.supported=true` 的插件必须实现 `ItemMetadataProvider` 或明确的采样 provider。
+- `storage.catalog_model` 是对外 CatalogModel 事实源；如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
+- 声明 `storage.store.stream_read=true` 的插件必须实现 `ContentReadableProvider`。
+- 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
+- 声明 `storage.store.range_read=true` 的插件必须实现 `RangeReadableProvider`，或在 `ContentReadableProvider.OpenContent()` 中明确支持 offset / length。
+- 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
+- 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
+- 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
@@ -292,10 +296,10 @@ PostgreSQL 示例：
   "engine_type": "postgresql",
   "engine_family": "tabular",
   "storage": {
-    "families": ["tabular"],
+    "catalog_model": {"path_version": "catalog.path/v1", "root_term": "server", "levels": []},
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
     "metadata": {"supported": true, "field_schema": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true},
-    "store": {"read": true, "write": true, "batch_read": true, "batch_write": true, "transactions": true, "formats": ["table"]}
+    "store": {"batch_read": true, "batch_write": true}
   },
   "compute": {
     "query": {"supported": true, "languages": ["sql"], "default_language": "sql", "result_kinds": ["table", "scalar"]}
@@ -312,12 +316,12 @@ MinIO 示例：
   "engine_type": "minio",
   "engine_family": "object",
   "storage": {
-    "families": ["object"],
+    "catalog_model": {"path_version": "catalog.path/v1", "root_term": "service", "levels": []},
     "catalog": {"supported": true, "real_time": true},
     "metadata": {"supported": true, "native_metadata": true},
-    "store": {"read": true, "write": true, "stream_read": true, "stream_write": true, "range_read": true, "formats": ["csv", "geojson", "json", "parquet", "shapefile"]},
+    "store": {"stream_read": true, "range_read": true},
     "semantics": ["bucket", "prefix_listing", "object", "stream_read", "range_read"],
-    "not_supported": ["posix_random_write", "atomic_rename", "real_directory"]
+    "not_supported": ["range_write", "real_directory"]
   },
   "preview": {"supported": true, "modes": ["object_parse", "raw_text", "binary_metadata"], "max_bytes": 10485760, "uses_composer": true}
 }

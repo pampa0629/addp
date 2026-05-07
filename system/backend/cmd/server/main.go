@@ -72,6 +72,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 清理误注册到 System 的本地文件型连接器。SQLite/SpatiaLite 仅保留在 Transfer 本地引擎。
+	if err := repository.RemoveLocalFileEnginesFromSystem(db); err != nil {
+		logger.L().Error("清理本地文件型引擎失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 创建模块注册表索引
 	if err := repository.CreateModuleRegistryIndexes(db); err != nil {
 		logger.L().Error("模块注册表索引创建失败", "error", err)

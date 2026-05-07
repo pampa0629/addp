@@ -680,6 +680,7 @@
         ref="localResourceFormRef"
         v-model="localResourceForm"
         :is-edit="localResourceDialogMode === 'edit'"
+        :type-options="localEngineTypeOptions"
       />
       <template #footer>
         <el-button @click="localResourceDialogVisible = false">{{ t('transfer.taskWizard.cancel') }}</el-button>
@@ -762,6 +763,13 @@ const localResourceForm = ref({
   is_active: true,
   connection_info: {}
 })
+const localEngineTypeOptions = [
+  { label: 'PostgreSQL', value: 'postgresql' },
+  { label: 'MySQL', value: 'mysql' },
+  { label: 'MinIO', value: 'minio' },
+  { label: 'Amazon S3', value: 's3' },
+  { label: 'SpatiaLite/SQLite', value: 'spatialite' }
+]
 const savingLocalResource = ref(false)
 const testingLocalResource = ref(false)
 const syncingLocalResource = ref(false)
