@@ -290,14 +290,14 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		Status:      commonModels.ExecutionStatusPending,
 		TriggerType: commonModels.TriggerTypeManual,
 		TriggeredBy: &userIDInt,
-		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":    req.EngineID,
-			"storage_type": scantask.NormalizeStorageType(resource.EngineType),
-			"namespaces":   req.Namespaces,
-			"object_paths": req.ObjectPaths,
-			"scan_depth":   req.ScanDepth,
-			"token":        token,
-		},
+		ExecutionConfig: scantask.ManualExecutionConfig(
+			req.EngineID,
+			scantask.NormalizeStorageType(resource.EngineType),
+			req.Namespaces,
+			req.ObjectPaths,
+			req.ScanDepth,
+			token,
+		),
 		StartedAt: &startTime,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -322,39 +322,19 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		return err
 	}
 
-	// 从 ExecutionConfig 中恢复参数
-	var engineID uint
-	var namespaces, objectPaths []string
-	var scanDepth, token, storageType string
-
-	if exec.ExecutionConfig != nil {
-		if v, ok := exec.ExecutionConfig["engine_id"]; ok {
-			switch val := v.(type) {
-			case float64:
-				engineID = uint(val)
-			case int:
-				engineID = uint(val)
-			}
-		}
-		storageType, _ = exec.ExecutionConfig["storage_type"].(string)
-		scanDepth, _ = exec.ExecutionConfig["scan_depth"].(string)
-		token, _ = exec.ExecutionConfig["token"].(string)
-		namespaces = scantask.StringSliceFromInterface(exec.ExecutionConfig["namespaces"])
-		objectPaths = scantask.StringSliceFromInterface(exec.ExecutionConfig["object_paths"])
-	}
-
-	if engineID == 0 {
+	execConfig := scantask.ParseExecutionConfig(exec.ExecutionConfig)
+	if execConfig.EngineID == 0 {
 		return fmt.Errorf("执行配置缺少 engine_id: execution_id=%s", executionID)
 	}
 
 	// 任务完成后清理去重标记
 	defer func() {
 		if s.dedupService != nil {
-			taskKey := s.dedupService.GenerateTaskKey(uint(exec.TenantID), engineID, exec.TriggerType)
+			taskKey := s.dedupService.GenerateTaskKey(uint(exec.TenantID), execConfig.EngineID, exec.TriggerType)
 			if err := s.dedupService.ClearTask(context.Background(), taskKey); err != nil {
 				s.log.Warn("清除任务标记失败", "execution_id", executionID, "error", err)
 			}
-			if err := s.dedupService.UpdateLastScanTime(context.Background(), engineID); err != nil {
+			if err := s.dedupService.UpdateLastScanTime(context.Background(), execConfig.EngineID); err != nil {
 				s.log.Warn("更新最后扫描时间失败", "execution_id", executionID, "error", err)
 			}
 		}
@@ -375,14 +355,22 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		return err
 	}
 
-	if scanDepth == "" {
-		scanDepth = "deep"
+	if execConfig.ScanDepth == "" {
+		execConfig.ScanDepth = "deep"
 	}
 
 	reporter := scantask.NewExecProgressReporter(s, executionID, exec.TenantID)
 	reporter.Message("任务开始执行")
 
-	resp, scanErr := s.scanService.ScanEngineWithDepth(engineID, uint(exec.TenantID), namespaces, objectPaths, token, scanDepth, reporter)
+	resp, scanErr := s.scanService.ScanEngineWithDepth(
+		execConfig.EngineID,
+		uint(exec.TenantID),
+		execConfig.Namespaces,
+		execConfig.ObjectPaths,
+		execConfig.Token,
+		execConfig.ScanDepth,
+		reporter,
+	)
 	completeTime := time.Now()
 	durationMs := completeTime.Sub(start).Milliseconds()
 
@@ -408,7 +396,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		"namespaces_scanned": resp.NamespacesScanned,
 		"items_scanned":      resp.ItemsScanned,
 		"fields_scanned":     resp.FieldsScanned,
-		"storage_type":       storageType,
+		"storage_type":       execConfig.StorageType,
 	}
 
 	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{
@@ -528,11 +516,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		return nil, errors.New("任务名称不能为空")
 	}
 
-	params := models.JSONMap{
-		"namespaces":   req.Namespaces,
-		"object_paths": req.ObjectPaths,
-		"scan_depth":   req.ScanDepth,
-	}
+	params := scantask.TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth)
 
 	task := &models.ScanTask{
 		TenantID:    tenantID,
@@ -574,11 +558,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 		return nil, err
 	}
 
-	params := models.JSONMap{
-		"namespaces":   req.Namespaces,
-		"object_paths": req.ObjectPaths,
-		"scan_depth":   req.ScanDepth,
-	}
+	params := scantask.TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth)
 
 	task.Name = req.Name
 	task.Description = req.Description
@@ -633,25 +613,19 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 	taskIDInt := int(taskID)
 
 	execution := &commonModels.TaskExecution{
-		TenantID:       int(tenantID),
-		ExecutionID:    uuid.New().String(),
-		Module:         commonModels.ModuleMeta,
-		TaskType:       "scan",
-		SourceTaskID:   &taskIDInt,
-		SourceTaskName: &task.Name,
-		Status:         commonModels.ExecutionStatusPending,
-		TriggerType:    commonModels.TriggerTypeManual,
-		TriggeredBy:    &userIDInt,
-		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":    task.EngineID,
-			"storage_type": storageType,
-			"namespaces":   scantask.JSONMapStringSlice(task.Parameters, "namespaces"),
-			"object_paths": scantask.JSONMapStringSlice(task.Parameters, "object_paths"),
-			"scan_depth":   scantask.JSONMapString(task.Parameters, "scan_depth", "deep"),
-		},
-		StartedAt: &startTime,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		TenantID:        int(tenantID),
+		ExecutionID:     uuid.New().String(),
+		Module:          commonModels.ModuleMeta,
+		TaskType:        "scan",
+		SourceTaskID:    &taskIDInt,
+		SourceTaskName:  &task.Name,
+		Status:          commonModels.ExecutionStatusPending,
+		TriggerType:     commonModels.TriggerTypeManual,
+		TriggeredBy:     &userIDInt,
+		ExecutionConfig: scantask.TaskExecutionConfig(task.EngineID, storageType, task.Parameters, "deep"),
+		StartedAt:       &startTime,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -695,9 +669,9 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 		}
 	}
 
-	targetSchemas, targetPaths := s.computeInheritedTargets(&task)
+	targets := s.computeInheritedTargets(&task)
 
-	if len(targetSchemas) == 0 && len(targetPaths) == 0 {
+	if len(targets.Namespaces) == 0 && len(targets.ObjectPaths) == 0 {
 		s.log.Info("所有目标均已配置独立调度，跳过引擎级扫描",
 			"task_id", taskID,
 			"engine_id", task.EngineID)
@@ -710,24 +684,18 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 	taskIDInt := int(taskID)
 
 	execution := &commonModels.TaskExecution{
-		TenantID:       int(task.TenantID),
-		ExecutionID:    uuid.New().String(),
-		Module:         commonModels.ModuleMeta,
-		TaskType:       "scan",
-		SourceTaskID:   &taskIDInt,
-		SourceTaskName: &task.Name,
-		Status:         commonModels.ExecutionStatusPending,
-		TriggerType:    commonModels.TriggerTypeSchedule,
-		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":    task.EngineID,
-			"storage_type": storageType,
-			"namespaces":   targetSchemas,
-			"object_paths": targetPaths,
-			"scan_depth":   "deep",
-		},
-		StartedAt: &startTime,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		TenantID:        int(task.TenantID),
+		ExecutionID:     uuid.New().String(),
+		Module:          commonModels.ModuleMeta,
+		TaskType:        "scan",
+		SourceTaskID:    &taskIDInt,
+		SourceTaskName:  &task.Name,
+		Status:          commonModels.ExecutionStatusPending,
+		TriggerType:     commonModels.TriggerTypeSchedule,
+		ExecutionConfig: scantask.TargetExecutionConfig(task.EngineID, storageType, targets.Namespaces, targets.ObjectPaths, "deep"),
+		StartedAt:       &startTime,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -752,48 +720,23 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 }
 
 // computeInheritedTargets 计算继承目标（排除已有独立调度的schema/bucket）
-func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]string, []string) {
+func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) scantask.TargetSet {
 	if task == nil || task.Parameters == nil {
-		return []string{}, []string{}
+		return scantask.TargetSet{Namespaces: []string{}, ObjectPaths: []string{}}
 	}
-
-	allSchemas := scantask.JSONMapStringSlice(task.Parameters, "namespaces")
-	allPaths := scantask.JSONMapStringSlice(task.Parameters, "object_paths")
 
 	var independentTasks []models.ScanTask
 	if err := s.db.Where("engine_id = ? AND id != ? AND enabled = ?",
 		task.EngineID, task.ID, true).Find(&independentTasks).Error; err != nil {
 		s.log.Warn("查询独立调度任务失败", "engine_id", task.EngineID, "error", err)
-		return allSchemas, allPaths
+		return scantask.TargetsFromParameters(task.Parameters)
 	}
 
-	scheduledSchemas := make(map[string]bool)
-	scheduledPaths := make(map[string]bool)
-
-	for _, t := range independentTasks {
-		for _, s := range scantask.JSONMapStringSlice(t.Parameters, "namespaces") {
-			scheduledSchemas[s] = true
-		}
-		for _, p := range scantask.JSONMapStringSlice(t.Parameters, "object_paths") {
-			scheduledPaths[p] = true
-		}
+	independentParams := make([]models.JSONMap, 0, len(independentTasks))
+	for _, independent := range independentTasks {
+		independentParams = append(independentParams, independent.Parameters)
 	}
-
-	targetSchemas := []string{}
-	for _, schemaName := range allSchemas {
-		if !scheduledSchemas[schemaName] {
-			targetSchemas = append(targetSchemas, schemaName)
-		}
-	}
-
-	targetPaths := []string{}
-	for _, pathStr := range allPaths {
-		if !scheduledPaths[pathStr] {
-			targetPaths = append(targetPaths, pathStr)
-		}
-	}
-
-	return targetSchemas, targetPaths
+	return scantask.InheritedTargets(task.Parameters, independentParams)
 }
 
 func (s *ScanTaskService) lookupStorageType(engineID, tenantID uint) string {

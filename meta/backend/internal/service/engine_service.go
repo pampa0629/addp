@@ -564,7 +564,6 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 				s.log.Info("资源已删除，关联任务已清理", "engine_id", event.EngineID)
 			}
 		}
-		// TODO: 可以考虑删除相关的元数据（meta_node, meta_item）
 
 	default:
 		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
@@ -652,37 +651,4 @@ func (s *EngineService) TriggerConnectionCheck(engineID uint) {
 			s.log.Debug("已触发System刷新连接状态", "engine_id", engineID)
 		}
 	}()
-}
-
-// UpdateConnectionStatus 更新资源连接状态（调用System内部API）
-// 用于Meta模块在检测连接状态后更新缓存
-// 注意：此方法已废弃，建议使用TriggerConnectionCheck让System自己检测
-// 保留是为了向后兼容
-func (s *EngineService) UpdateConnectionStatus(engineID uint, status, message string) error {
-	s.ensureInternalClient()
-	if s.internalClient == nil {
-		return fmt.Errorf("internal client not available")
-	}
-
-	url := fmt.Sprintf("%s/internal/engines/%d/connection-status", s.systemURL, engineID)
-	payload := map[string]string{
-		"connection_status": status,
-		"check_message":     message,
-	}
-
-	if err := s.internalClient.DoRequest("PUT", url, payload, nil); err != nil {
-		return fmt.Errorf("failed to update connection status: %w", err)
-	}
-
-	// 更新本地缓存
-	s.cacheMu.Lock()
-	if entry, exists := s.engineCache[engineID]; exists {
-		now := time.Now()
-		entry.resource.ConnectionStatus = status
-		entry.resource.LastCheckAt = &now
-		entry.resource.CheckMessage = message
-	}
-	s.cacheMu.Unlock()
-
-	return nil
 }

@@ -12,13 +12,13 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
+	"github.com/addp/meta/internal/enginecap"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/extractor"
-	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scantask"
@@ -272,63 +272,10 @@ func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary
 	}()
 }
 
-func isObjectStorageType(resourceType string) bool {
-	switch strings.ToLower(resourceType) {
-	case "s3", "minio", "oss", "object_storage", "object-storage":
-		return true
-	default:
-		return false
-	}
-}
-
 type nodeAggregate struct {
 	node      *models.MetaNode
 	itemCount int
 	totalSize int64
-}
-
-func (s *ScanService) upsertNode(tenantID, engineID uint, parent *models.MetaNode, nodeType, name string, fullName *string, attrs models.JSONMap) (*models.MetaNode, error) {
-	return s.repo.UpsertNode(tenantID, engineID, parent, nodeType, name, fullName, attrs)
-}
-
-func (s *ScanService) resetNodeState(node *models.MetaNode, status string) error {
-	return s.repo.ResetNodeState(node, status)
-}
-
-func (s *ScanService) finalizeNodeState(node *models.MetaNode, status string, itemCount int, totalSize int64, errMsg string) error {
-	return s.repo.FinalizeNodeState(node, status, itemCount, totalSize, errMsg)
-}
-
-func (s *ScanService) hardDeleteItemsByNode(nodeID uint) error {
-	return s.repo.HardDeleteItemsByNode(nodeID)
-}
-
-func (s *ScanService) hardDeleteDescendantNodes(node *models.MetaNode) error {
-	return s.repo.HardDeleteDescendantNodes(node)
-}
-
-func (s *ScanService) upsertItem(
-	tenantID, engineID uint,
-	node *models.MetaNode,
-	itemType, name, fullName string,
-	attrs models.JSONMap,
-	rowCount, sizeBytes *int64,
-	dataUpdated *time.Time,
-) (*models.MetaItem, error) {
-	return s.repo.UpsertItem(tenantID, engineID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, dataUpdated)
-}
-
-// upsertItemSelective 选择性更新item
-// 当attrs为nil时，不更新attributes字段（用于basic扫描保留deep扫描的元数据）
-func (s *ScanService) upsertItemSelective(
-	tenantID, engineID uint,
-	node *models.MetaNode,
-	itemType, name, fullName string,
-	attrs models.JSONMap,
-	rowCount, sizeBytes *int64,
-	dataUpdated *time.Time,
-) (*models.MetaItem, error) {
-	return s.repo.UpsertItemSelective(tenantID, engineID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, dataUpdated)
 }
 
 func ensureNodeAggregate(stats map[uint]*nodeAggregate, node *models.MetaNode) *nodeAggregate {
@@ -464,7 +411,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	family := storageFamily(p)
+	family := enginecap.StorageFamily(p)
 
 	// 根据能力族路由到对应的扫描服务
 	if family == "document" || family == "graph" {
@@ -550,14 +497,14 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	family := storageFamily(p0)
+	family := enginecap.StorageFamily(p0)
 
 	if family == "document" || family == "graph" {
 		if _, ok := p0.(plugin.CatalogProvider); !ok {
 			return 0, 0, 0, fmt.Errorf("engine %s declares %s storage but does not implement CatalogProvider", resource.EngineType, family)
 		}
 		catalogProvider := p0.(plugin.CatalogProvider)
-		databasesInfo, err := s.listNoSQLDatabases(context.Background(), resource, catalogProvider)
+		databasesInfo, err := metacatalog.NoSQLDatabases(context.Background(), resource, catalogProvider)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("failed to list namespaces: %w", err)
 		}
@@ -593,7 +540,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 
 	if family == "file" {
 		// 文件系统类型（NFS 等）—— 写入 root/dir/file/lake_table 语义节点
-		paths, err := s.listFileSystemRootPaths(resource, p0)
+		paths, err := metacatalog.FileSystemRootPaths(context.Background(), resource, p0)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("failed to list roots: %w", err)
 		}
@@ -618,7 +565,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return totalRoots, totalItems, 0, nil
 	}
 
-	schemasInfo, err := s.listSchemaInfos(resource, p0)
+	schemasInfo, err := metacatalog.SchemaInfos(context.Background(), resource, p0)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to list schemas: %w", err)
 	}
@@ -709,58 +656,6 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	return totalSchemas, totalTables, totalFields, nil
 }
 
-func (s *ScanService) listFileSystemRootPaths(resource *commonModels.Engine, p plugin.EnginePlugin) ([]string, error) {
-	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
-		nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
-			EngineID: resource.ID,
-		}, plugin.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		paths := make([]string, 0, len(nodes))
-		for _, node := range nodes {
-			if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-				paths = append(paths, raw)
-				continue
-			}
-			paths = append(paths, node.Path.StringPath())
-		}
-		return paths, nil
-	}
-	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
-}
-
-func (s *ScanService) listSchemaInfos(resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.SchemaInfo, error) {
-	if catalogProvider, ok := p.(plugin.CatalogProvider); ok {
-		nodes, err := catalogProvider.ListChildren(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
-			EngineID: resource.ID,
-		}, plugin.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		schemas := make([]plugin.SchemaInfo, 0, len(nodes))
-		for _, node := range nodes {
-			tableCount := 0
-			if count, ok := int64Stat(node.Stats, "table_count"); ok {
-				tableCount = int(count)
-			}
-			schemas = append(schemas, plugin.SchemaInfo{
-				Name:       node.Name,
-				TableCount: tableCount,
-			})
-		}
-		return schemas, nil
-	}
-	return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
-}
-
-// scanResourceSchemas 扫描资源的指定命名空间列表
-func (s *ScanService) scanResourceSchemas(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string) (int, int, int, error) {
-	return s.scanResourceSchemasWithReporter(resource, tenantID, namespaces, scanLogID, scanDepth, nil)
-}
-
 func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
@@ -785,7 +680,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 
-		schemasInfo, err := s.listSchemaInfos(resource, p)
+		schemasInfo, err := metacatalog.SchemaInfos(context.Background(), resource, p)
 		if err != nil {
 			return 0, 0, 0, err
 		}
@@ -922,7 +817,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 			reporter.Message("列出所有数据库...")
 		}
 
-		databasesInfo, err := s.listNoSQLDatabases(ctx, resource, catalogProvider)
+		databasesInfo, err := metacatalog.NoSQLDatabases(ctx, resource, catalogProvider)
 		if err != nil {
 			return 0, 0, 0, err
 		}
@@ -1017,33 +912,6 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 	return totalDatabases, totalCollections, totalFields, nil
 }
 
-func (s *ScanService) listNoSQLDatabases(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-	}, plugin.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	databases := make([]plugin.DatabaseInfo, 0, len(nodes))
-	for _, node := range nodes {
-		if !node.IsContainer {
-			continue
-		}
-		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
-		databases = append(databases, plugin.DatabaseInfo{
-			Name:      node.Name,
-			SizeBytes: sizeBytes,
-		})
-	}
-	return databases, nil
-}
-
-// scanSingleSchema 扫描单个Schema（表+字段）
-func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths []string) (int, int, int, error) {
-	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, "deep", nil)
-}
-
 // scanFileSystemResourceWithReporter 扫描文件系统资源（湖表检测 + 对象存储回退）
 func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, reporter)
@@ -1079,43 +947,6 @@ func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonMode
 	return buckets, objects, 0, nil
 }
 
-// persistObjectMetas 持久化对象元数据到数据库
-//
-// 职责划分：
-// 1. 目录树构建：根据对象路径构建层级目录节点
-// 2. 对象元数据持久化：保存对象的基本信息和增强元数据
-// 3. 文档向量化：为支持的文档类型生成向量嵌入（如果启用）
-// 4. 搜索索引更新：将对象信息同步到Meilisearch
-// 5. 统计聚合：更新各层级节点的统计信息（对象数、总大小）
-//
-// 参数：
-//   - resource: 数据源引擎配置
-//   - tenantID: 租户ID
-//   - engineID: 引擎ID
-//   - bucketNode: Bucket节点
-//   - metas: 对象元数据列表
-//   - stats: 节点统计聚合map
-//   - includeBucketAggregate: 是否包含bucket级别的聚合
-//   - scanDepth: 扫描深度
-//   - scanPathPrefix: 扫描路径前缀
-//   - scannedFingerprints: 已扫描对象的指纹集合
-//
-// 返回：(持久化对象数量, error)
-func (s *ScanService) persistObjectMetas(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, metas []format.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
-	// 委托给 ObjectStorageScanService
-	return s.objectScanService.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, stats, includeBucketAggregate, scanDepth, scanPathPrefix, scannedFingerprints)
-}
-
-// extractEnhancedMetadata 使用插件提取增强的元数据 (代理到 metadataExtractor)
-func (s *ScanService) extractEnhancedMetadata(engineID uint, meta format.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
-	return s.metadataExtractor.ExtractEnhancedMetadata(engineID, meta, baseAttrs)
-}
-
-// extractEnhancedMetadataWithCache 带缓存检查的元数据提取 (代理到 metadataExtractor)
-func (s *ScanService) extractEnhancedMetadataWithCache(engineID uint, meta format.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
-	return s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, meta, baseAttrs, fullPath)
-}
-
 // GetObjectMetadata 获取指定对象的元数据 (代理到 metadataExtractor)
 func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey string) (*models.MetaItem, error) {
 	return s.metadataExtractor.GetObjectMetadata(tenantID, engineID, objectKey)
@@ -1124,46 +955,6 @@ func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey strin
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
 func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*format.ExtractedMetadata, error) {
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
-}
-
-func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, path string) error {
-	clean := metapath.SanitizeObjectPath(path)
-	if s.indexerService != nil {
-		s.indexerService.DeleteObjectsFromIndex(tenantID, engineID, bucketName, clean)
-	}
-	if clean == "" {
-		if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
-			return err
-		}
-		return s.hardDeleteItemsByNode(bucketNode.ID)
-	}
-
-	var targetNodes []models.MetaNode
-	if err := s.db.
-		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
-		Where("node_type = ?", "prefix").
-		Where("(attributes -> 'storage' ->> 'bucket') = ?", bucketName).
-		Where("(attributes -> 'storage' ->> 'path') = ? OR (attributes -> 'storage' ->> 'path') LIKE ?", clean, clean+"/%").
-		Find(&targetNodes).Error; err != nil {
-		return fmt.Errorf("failed to query prefix nodes for cleanup: %w", err)
-	}
-
-	if len(targetNodes) > 0 {
-		ids := make([]uint, 0, len(targetNodes))
-		for _, node := range targetNodes {
-			ids = append(ids, node.ID)
-		}
-
-		if err := s.db.Unscoped().Where("node_id IN ?", ids).Delete(&models.MetaItem{}).Error; err != nil {
-			return fmt.Errorf("failed to delete object items for prefix: %w", err)
-		}
-
-		if err := s.db.Unscoped().Where("id IN ?", ids).Delete(&models.MetaNode{}).Error; err != nil {
-			return fmt.Errorf("failed to delete prefix nodes: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // ============================================================================
@@ -1238,22 +1029,4 @@ func (s *ScanService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLi
 // GetItemByID 按 ID 查询 MetaItem
 func (s *ScanService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
 	return s.metadataQueryService.GetItemByID(tenantID, itemID)
-}
-
-func storageFamily(p plugin.EnginePlugin) string {
-	if p == nil {
-		return ""
-	}
-	caps := p.Capabilities()
-	if caps.Storage == nil {
-		return ""
-	}
-	for _, family := range caps.Storage.Families {
-		normalized := strings.ToLower(family)
-		switch normalized {
-		case "object", "file", "tabular", "document", "graph":
-			return normalized
-		}
-	}
-	return ""
 }

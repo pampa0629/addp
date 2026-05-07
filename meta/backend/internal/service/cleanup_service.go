@@ -124,7 +124,7 @@ func (s *CleanupService) scheduleCleanup(ctx context.Context) {
 // runCleanup 执行清理任务
 func (s *CleanupService) runCleanup(ctx context.Context) {
 	startTime := time.Now()
-	s.log.Info("开始清理软删除记录和历史扫描记录", "retention_days", s.retentionDays)
+	s.log.Info("开始清理软删除记录", "retention_days", s.retentionDays)
 
 	expiryTime := time.Now().AddDate(0, 0, -s.retentionDays)
 
@@ -154,15 +154,11 @@ func (s *CleanupService) runCleanup(ctx context.Context) {
 		s.log.Info("清理 meta_node 完成", "deleted_count", nodesDeleted)
 	}
 
-	// scan_task_runs 表已废弃（由 common.task_executions 统一管理），清理逻辑跳过
-	var scansDeleted int64
-
 	s.log.Info("清理任务完成",
 		"duration", time.Since(startTime),
 		"items_deleted", itemsDeleted,
 		"nodes_deleted", nodesDeleted,
-		"scans_deleted", scansDeleted,
-		"total_deleted", itemsDeleted+nodesDeleted+scansDeleted)
+		"total_deleted", itemsDeleted+nodesDeleted)
 }
 
 // ManualCleanup 手动触发清理
