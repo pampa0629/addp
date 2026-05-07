@@ -18,7 +18,10 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
+	"github.com/addp/meta/internal/extractor"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/search"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -27,7 +30,7 @@ import (
 // ScanService 统一扫描服务
 type ScanService struct {
 	db                   *gorm.DB
-	repo                 *ScanRepository           // 数据访问层
+	repo                 *metaRepo.ScanRepository  // 数据访问层
 	dbScanService        *DatabaseScanService      // 数据库扫描服务
 	nosqlScanService     *NoSQLScanService         // NoSQL 数据库扫描服务
 	objectScanService    *ObjectStorageScanService // 对象存储扫描服务
@@ -40,7 +43,7 @@ type ScanService struct {
 	indexerService       *IndexerService                     // 索引服务（独立）
 	spatialService       *SpatialMetadataService             // 空间元数据服务（独立）
 	scanEventPublisher   *events.ScanEventPublisher          // 扫描事件发布器
-	metadataExtractor    *MetadataExtractor                  // 元数据提取器
+	metadataExtractor    *extractor.MetadataExtractor        // 元数据提取器
 	dedupService         *ScanDedupService                   // 扫描去重服务（可选）
 	taskExecutionRepo    *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 }
@@ -57,13 +60,13 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		engineService = NewEngineService(db, "", "", nil) // nil Redis client for fallback
 	}
 
-	repo := NewScanRepository(db)
+	repo := metaRepo.NewScanRepository(db)
 	log := logger.With("component", "scan_service")
 
 	// 创建独立的服务（消除循环依赖）
 	indexerService := NewIndexerService(nil, log)         // indexer 稍后通过 SetIndexer 注入
 	spatialService := NewSpatialMetadataService(nil, log) // config 稍后通过 SetConfig 注入
-	metadataExtractor := NewMetadataExtractor(db)
+	metadataExtractor := extractor.NewMetadataExtractor(db)
 
 	s := &ScanService{
 		db:                db,
@@ -327,28 +330,6 @@ func (s *ScanService) upsertItemSelective(
 	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
 	return s.repo.UpsertItemSelective(tenantID, engineID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, dataUpdated)
-}
-
-func buildFieldAttributes(fields []format.ScannerFieldInfo) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(fields))
-	for _, field := range fields {
-		result = append(result, map[string]interface{}{
-			"name":              field.Name,
-			"ordinal_position":  field.OrdinalPosition,
-			"data_type":         field.DataType,
-			"column_type":       field.ColumnType,
-			"is_nullable":       field.IsNullable,
-			"default_value":     field.DefaultValue,
-			"comment":           field.Comment,
-			"is_primary_key":    field.IsPrimaryKey,
-			"is_unique_key":     field.IsUniqueKey,
-			"character_set":     field.CharacterSet,
-			"collation":         field.Collation,
-			"numeric_precision": field.NumericPrecision,
-			"numeric_scale":     field.NumericScale,
-		})
-	}
-	return result
 }
 
 func ensureNodeAggregate(stats map[uint]*nodeAggregate, node *models.MetaNode) *nodeAggregate {
@@ -1201,7 +1182,7 @@ func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, obj
 }
 
 func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {
-	base := sanitizeObjectPath(basePath)
+	base := metapath.SanitizeObjectPath(basePath)
 	if len(metas) == 0 {
 		return metas
 	}
@@ -1213,7 +1194,7 @@ func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) [
 			continue
 		}
 
-		relative := sanitizeObjectPath(meta.Path)
+		relative := metapath.SanitizeObjectPath(meta.Path)
 		trimmed := relative
 		if base != "" {
 			switch {
@@ -1242,7 +1223,7 @@ func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) [
 }
 
 func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, path string) error {
-	clean := sanitizeObjectPath(path)
+	clean := metapath.SanitizeObjectPath(path)
 	if s.indexerService != nil {
 		s.indexerService.DeleteObjectsFromIndex(tenantID, engineID, bucketName, clean)
 	}

@@ -1,12 +1,12 @@
-package service
+package repository
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 
 	"gorm.io/gorm"
@@ -47,88 +47,6 @@ func composeNodeFullName(name string, parent *models.MetaNode, separator string)
 		separator = "."
 	}
 	return fmt.Sprintf("%s%s%s", parent.FullName, separator, name)
-}
-
-func normalizeMetaItemAttributes(attrs models.JSONMap) models.JSONMap {
-	if attrs == nil {
-		return nil
-	}
-
-	normalized := models.JSONMap{}
-	normalized["schema_version"] = 1
-
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "capabilities"} {
-		normalized[section] = sectionJSONMap(attrs, section)
-	}
-	return normalized
-}
-
-func sectionJSONMap(attrs models.JSONMap, key string) map[string]interface{} {
-	if section, ok := attrs[key].(map[string]interface{}); ok {
-		return section
-	}
-	if section, ok := attrs[key].(models.JSONMap); ok {
-		return map[string]interface{}(section)
-	}
-	return map[string]interface{}{}
-}
-
-func upsertSection(attrs models.JSONMap, key string, values map[string]interface{}) {
-	if attrs == nil || len(values) == 0 {
-		return
-	}
-	section := sectionJSONMap(attrs, key)
-	for k, v := range values {
-		section[k] = v
-	}
-	attrs[key] = section
-}
-
-func setStorageAttribute(attrs models.JSONMap, key string, value interface{}) {
-	if attrs == nil {
-		return
-	}
-	upsertSection(attrs, "storage", map[string]interface{}{key: value})
-}
-
-func setItemAttribute(attrs models.JSONMap, key string, value interface{}) {
-	if attrs == nil {
-		return
-	}
-	upsertSection(attrs, "item", map[string]interface{}{key: value})
-}
-
-func setExtensionAttribute(attrs models.JSONMap, namespace string, key string, value interface{}) {
-	if attrs == nil || namespace == "" || key == "" {
-		return
-	}
-	namespace = strings.ToLower(strings.TrimSpace(namespace))
-	switch namespace {
-	case "media", "document":
-		upsertNestedSection(attrs, "type_info", namespace, map[string]interface{}{key: value})
-	case "spatial", "statistics", "extraction", "semantic", "temporal", "partitioning", "indexing":
-		upsertNestedSection(attrs, "capabilities", namespace, map[string]interface{}{key: value})
-	default:
-		upsertNestedSection(attrs, "format_info", "unqualified", map[string]interface{}{key: value})
-	}
-}
-
-func upsertNestedSection(attrs models.JSONMap, section string, namespace string, values map[string]interface{}) {
-	if attrs == nil || section == "" || namespace == "" || len(values) == 0 {
-		return
-	}
-	sectionAttrs := sectionJSONMap(attrs, section)
-	namespaceAttrs := map[string]interface{}{}
-	if existing, ok := sectionAttrs[namespace].(map[string]interface{}); ok {
-		for k, v := range existing {
-			namespaceAttrs[k] = v
-		}
-	}
-	for k, v := range values {
-		namespaceAttrs[k] = v
-	}
-	sectionAttrs[namespace] = namespaceAttrs
-	attrs[section] = sectionAttrs
 }
 
 // ============================================================================
@@ -353,7 +271,7 @@ func (r *ScanRepository) UpsertItemSelective(
 	rowCount, sizeBytes *int64,
 	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
-	attrs = normalizeMetaItemAttributes(attrs)
+	attrs = metaattr.Normalize(attrs)
 
 	// 生成数据指纹
 	fingerprint, err := r.generateFingerprint(engineID, node, itemType, name, fullName, attrs)

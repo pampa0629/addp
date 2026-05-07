@@ -14,6 +14,7 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -21,7 +22,7 @@ import (
 // 提供Manager和Transfer模块的元数据查询接口
 type MetadataQueryService struct {
 	db             *gorm.DB
-	repo           *ScanRepository
+	repo           *metaRepo.ScanRepository
 	spatialService *SpatialMetadataService
 	engineService  *EngineService
 	log            *slog.Logger
@@ -31,7 +32,7 @@ type MetadataQueryService struct {
 func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService, engineService *EngineService, log *slog.Logger) *MetadataQueryService {
 	return &MetadataQueryService{
 		db:             db,
-		repo:           NewScanRepository(db),
+		repo:           metaRepo.NewScanRepository(db),
 		spatialService: spatialService,
 		engineService:  engineService,
 		log:            log,

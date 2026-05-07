@@ -17,8 +17,12 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/extractor"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
@@ -29,9 +33,9 @@ import (
 type ObjectStorageScanService struct {
 	db                *gorm.DB
 	log               *slog.Logger
-	repo              *ScanRepository    // 数据访问层
-	metadataExtractor *MetadataExtractor // 元数据提取器
-	indexer           *IndexerService    // 索引服务
+	repo              *metaRepo.ScanRepository     // 数据访问层
+	metadataExtractor *extractor.MetadataExtractor // 元数据提取器
+	indexer           *IndexerService              // 索引服务
 	objectClients     map[uint]*minio.Client
 	objectClientMu    sync.Mutex
 }
@@ -47,8 +51,8 @@ type objectStorageCompositeItem struct {
 func NewObjectStorageScanService(
 	db *gorm.DB,
 	log *slog.Logger,
-	repo *ScanRepository,
-	metadataExtractor *MetadataExtractor,
+	repo *metaRepo.ScanRepository,
+	metadataExtractor *extractor.MetadataExtractor,
 	indexer *IndexerService,
 ) *ObjectStorageScanService {
 	return &ObjectStorageScanService{
@@ -164,7 +168,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
 		}
-		bucketName, prefix := s.splitObjectPath(rawPath)
+		bucketName, prefix := metapath.SplitObjectPath(rawPath)
 		if bucketName == "" {
 			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
 			if reporter != nil {
@@ -387,7 +391,7 @@ func (s *ObjectStorageScanService) listObjects(resource *commonModels.Engine, ca
 		}
 		key := strings.TrimPrefix(node.Path.StringPath(), bucketName+"/")
 		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			_, parsedKey := splitObjectPath(raw)
+			_, parsedKey := metapath.SplitObjectPath(raw)
 			key = parsedKey
 		}
 		size, _ := int64Stat(node.Stats, "size_bytes")
@@ -656,19 +660,6 @@ func (s *ObjectStorageScanService) createMinIOClient(connInfo commonModels.Conne
 	return minio.New(endpoint, opts)
 }
 
-// splitObjectPath 分割对象路径为 bucket 和 prefix
-func (s *ObjectStorageScanService) splitObjectPath(path string) (bucket, prefix string) {
-	path = strings.TrimSpace(path)
-	path = strings.Trim(path, "/")
-
-	parts := strings.SplitN(path, "/", 2)
-	bucket = parts[0]
-	if len(parts) > 1 {
-		prefix = parts[1]
-	}
-	return
-}
-
 // scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）- 保留原方法用于向后兼容
 //
 // 职责划分：
@@ -725,7 +716,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
 		}
-		bucketName, relativePath := splitObjectPath(rawPath)
+		bucketName, relativePath := metapath.SplitObjectPath(rawPath)
 		if bucketName == "" {
 			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
 			if reporter != nil {
@@ -973,10 +964,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		s.log.Info("处理scanPathPrefix建立基础父节点",
 			"scanPathPrefix", scanPathPrefix,
 			"bucket", bucketNode.Name)
-		prefixSegments := strings.Split(sanitizeObjectPath(scanPathPrefix), "/")
+		prefixSegments := strings.Split(metapath.SanitizeObjectPath(scanPathPrefix), "/")
 		currentParent := bucketNode
 		for idx, segment := range prefixSegments {
-			fullName := composeNodeFullName(segment, currentParent, "/")
+			fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
 			pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
 			attrs := models.JSONMap{
 				"bucket": bucketNode.Name,
@@ -1022,7 +1013,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		currentParent := basePrefixNode
 
 		// 然后处理相对路径（相对于scanPathPrefix）
-		trimmed := sanitizeObjectPath(meta.Path)
+		trimmed := metapath.SanitizeObjectPath(meta.Path)
 
 		// 调试日志：记录每个meta对象的处理
 		s.log.Info("处理meta对象",
@@ -1077,7 +1068,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 				if meta.NodeType == "object" && isLast {
 					break
 				}
-				fullName := composeNodeFullName(segment, currentParent, "/")
+				fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
 				attrs := models.JSONMap{
 					"bucket": meta.Bucket,
 					"path":   strings.Join(segmentsToProcess[:idx+1], "/") + "/", // ✅ 路径规范：目录路径必须以 / 结尾
@@ -1205,7 +1196,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		if itemType == "lake_table" {
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
-			setStorageAttribute(enhancedAttrs, "physical_path", physicalPath)
+			metaattr.SetStorage(enhancedAttrs, "physical_path", physicalPath)
 		}
 
 		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemType, itemName, fullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
@@ -1372,10 +1363,10 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		if len(composite.item.Fields) > 0 {
 			setSchemaFields(attrs, fieldAttributesFromFormat(composite.item.Fields))
 		}
-		setStorageAttribute(attrs, "bucket", composite.bucket)
-		setStorageAttribute(attrs, "path", parentPath)
-		setStorageAttribute(attrs, "name", itemName)
-		setItemAttribute(attrs, "mode", objectStorageCompositeMode(composite.item))
+		metaattr.SetStorage(attrs, "bucket", composite.bucket)
+		metaattr.SetStorage(attrs, "path", parentPath)
+		metaattr.SetStorage(attrs, "name", itemName)
+		metaattr.SetItem(attrs, "mode", objectStorageCompositeMode(composite.item))
 
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
@@ -1431,7 +1422,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 		if segment == "" {
 			continue
 		}
-		fullName := composeNodeFullName(segment, current, "/")
+		fullName := metapath.ComposeNodeFullName(segment, current, "/")
 		pathSoFar := joinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
 		attrs := models.JSONMap{
 			"bucket": bucketNode.Name,

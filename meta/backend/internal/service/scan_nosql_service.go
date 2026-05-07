@@ -9,7 +9,9 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
@@ -20,12 +22,12 @@ type NoSQLScanService struct {
 	db             *gorm.DB
 	log            *slog.Logger
 	indexer        *search.Indexer
-	repo           *ScanRepository // 数据访问层
-	indexerService *IndexerService // 索引服务
+	repo           *metaRepo.ScanRepository // 数据访问层
+	indexerService *IndexerService          // 索引服务
 }
 
 // NewNoSQLScanService 创建 NoSQL 扫描服务
-func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *ScanRepository, indexerService *IndexerService) *NoSQLScanService {
+func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, indexerService *IndexerService) *NoSQLScanService {
 	return &NoSQLScanService{
 		db:             db,
 		log:            log,
@@ -238,11 +240,11 @@ func buildDocCollectionAttributesFromMetadata(itemMetadata *plugin.ItemMetadata)
 				"index_type": idx.IndexType,
 			})
 		}
-		upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"indexes": indexes})
+		metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"indexes": indexes})
 	}
 	if len(itemMetadata.Fields) > 0 {
 		fields := buildDocFieldAttributes(itemMetadata.Fields)
-		upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
+		metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
 	}
 
 	return attrs
@@ -379,13 +381,13 @@ func countStatKey(itemType string) string {
 }
 
 func applyNoSQLDataItemAttributes(attrs models.JSONMap, itemType string) {
-	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
+	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
 	switch itemType {
 	case "collection":
-		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))
+		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 	case "label", "relationship":
-		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeGraph))
+		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeGraph))
 	default:
-		setItemAttribute(attrs, "data_type", string(dataitem.DataTypeUnknown))
+		metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeUnknown))
 	}
 }

@@ -10,7 +10,10 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
@@ -21,13 +24,13 @@ type DatabaseScanService struct {
 	db             *gorm.DB
 	log            *slog.Logger
 	indexer        *search.Indexer
-	repo           *ScanRepository         // 数据访问层
-	spatialService *SpatialMetadataService // 空间元数据扫描服务
-	indexerService *IndexerService         // 索引服务
+	repo           *metaRepo.ScanRepository // 数据访问层
+	spatialService *SpatialMetadataService  // 空间元数据扫描服务
+	indexerService *IndexerService          // 索引服务
 }
 
 // NewDatabaseScanService 创建数据库扫描服务
-func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *ScanRepository, spatialService *SpatialMetadataService, indexerService *IndexerService) *DatabaseScanService {
+func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, spatialService *SpatialMetadataService, indexerService *IndexerService) *DatabaseScanService {
 	return &DatabaseScanService{
 		db:             db,
 		log:            log,
@@ -195,7 +198,7 @@ func (s *DatabaseScanService) scanTables(
 		}
 
 		// 持久化表元数据
-		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
+		fullName := metapath.ComposeNodeFullName(tableInfo.Name, schemaNode, ".")
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
@@ -344,7 +347,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
 		}
 
-		fieldsAttr := buildFieldAttributes(fields)
+		fieldsAttr := metaattr.BuildFieldAttributes(fields)
 		tableMetadata := map[string]interface{}{
 			"primary_key":      primaryKeyColumns,
 			"primary_key_name": primaryKeyName,
@@ -364,7 +367,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			},
 		}
 		if len(primaryKeyColumns) > 0 {
-			upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{
+			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
 			})
 		}
@@ -373,7 +376,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		if resource.EngineType == "postgresql" && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				upsertNestedSection(attrs, "capabilities", "spatial", spatialCapabilityFromMetadata(spatialMeta))
+				metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialCapabilityFromMetadata(spatialMeta))
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
@@ -384,8 +387,8 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 浅度扫描：保留已有字段信息
 		if existingItem != nil && existingItem.Attributes != nil {
 			attrs = existingItem.Attributes
-			setStorageAttribute(attrs, "schema_name", schemaName)
-			upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{
+			metaattr.SetStorage(attrs, "schema_name", schemaName)
+			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"table_type":    tableInfo.Type,
 				"table_comment": tableInfo.Comment,
 			})
@@ -403,8 +406,8 @@ func (s *DatabaseScanService) scanTableDetails(
 			}
 		}
 	}
-	setItemAttribute(attrs, "organization", string(dataitem.OrganizationSingle))
-	setItemAttribute(attrs, "data_type", string(dataitem.DataTypeTable))
+	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
+	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 
 	return fields, attrs, nil
 }

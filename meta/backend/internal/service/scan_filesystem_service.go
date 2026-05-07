@@ -13,8 +13,11 @@ import (
 	commonParquet "github.com/addp/common/format/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +26,7 @@ import (
 type FileSystemScanService struct {
 	db      *gorm.DB
 	log     *slog.Logger
-	repo    *ScanRepository
+	repo    *metaRepo.ScanRepository
 	indexer *IndexerService
 }
 
@@ -31,7 +34,7 @@ type FileSystemScanService struct {
 func NewFileSystemScanService(
 	db *gorm.DB,
 	log *slog.Logger,
-	repo *ScanRepository,
+	repo *metaRepo.ScanRepository,
 	indexer *IndexerService,
 ) *FileSystemScanService {
 	return &FileSystemScanService{
@@ -108,7 +111,7 @@ func (s *FileSystemScanService) ScanPaths(
 		// 创建根节点（root）
 		// full_name 按规范：NFS 为 ""，本地FS 为 "/" 或 "C:/" 等
 		// NFS 引擎的 root 标识为空字符串，路径由引擎配置的 export_path 决定
-		rootFullName := rootFSIdentifier(resource.EngineType, rootPath)
+		rootFullName := metapath.RootFSIdentifier(resource.EngineType, rootPath)
 		rootAttrs := models.JSONMap{"path": rootPath}
 		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, &rootFullName, rootAttrs)
 		if err != nil {
@@ -222,7 +225,7 @@ func (s *FileSystemScanService) scanDirectory(
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
 			itemType := fileSystemSingleFileItemType(detected)
 			itemName := file.Name
-			fullName := joinFSPath(parentNode.FullName, itemName)
+			fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
 				itemType, itemName, fullName,
@@ -245,7 +248,7 @@ func (s *FileSystemScanService) scanDirectory(
 	for _, subdir := range subdirs {
 		subdirName := subdir.Name
 		subdirAttrs := models.JSONMap{"path": subdir.Path}
-		subdirFullName := joinFSPath(parentNode.FullName, subdirName)
+		subdirFullName := metapath.JoinFSPath(parentNode.FullName, subdirName)
 		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)
 		if err != nil {
 			s.log.Warn("创建子目录节点失败", "path", subdir.Path, "error", err)
@@ -352,7 +355,7 @@ func applyContainerSummary(attrs models.JSONMap, detected *dataitem.DetectedItem
 	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
 		return
 	}
-	upsertNestedSection(attrs, "type_info", "container", map[string]interface{}{
+	metaattr.UpsertNested(attrs, "type_info", "container", map[string]interface{}{
 		"children":       []map[string]interface{}{},
 		"child_count":    0,
 		"resource_count": 1,
@@ -447,7 +450,7 @@ func (s *FileSystemScanService) listDirectory(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]plugin.FileEntry, []plugin.DirEntry, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, metapath.FileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -487,7 +490,7 @@ func (s *FileSystemScanService) listDirectoryRecursive(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]plugin.FileEntry, []plugin.DirEntry, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, metapath.FileCatalogPathFromFSPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -545,56 +548,7 @@ func setSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	upsertNestedSection(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
-}
-
-func fileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {
-	path := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermRoot,
-			Kind: plugin.CatalogKindRoot,
-			Name: "/",
-		}},
-	}
-	trimmed := strings.Trim(rawPath, "/")
-	if trimmed == "" || trimmed == "." {
-		return path
-	}
-	for _, part := range strings.Split(trimmed, "/") {
-		if part == "" {
-			continue
-		}
-		path.Segments = append(path.Segments, plugin.CatalogSegment{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindPrefix,
-			Name: part,
-		})
-	}
-	return path
-}
-
-// joinFSPath 拼接文件系统路径
-// 规范：full_name = root + path + name，root 为 "" 时不加前缀 "/"
-func joinFSPath(parent, name string) string {
-	if parent == "" {
-		return name
-	}
-	return parent + "/" + name
-}
-
-// rootFSIdentifier 返回文件系统根节点的 full_name 标识
-// NFS: "" (挂载点由引擎配置决定，不进入路径)
-// 本地FS: "/" (Linux/macOS) 或 "C:/" 等 (Windows，直接用 rootPath)
-func rootFSIdentifier(engineType, rootPath string) string {
-	switch strings.ToLower(engineType) {
-	case "nfs", "nas":
-		return ""
-	default:
-		// 本地文件系统：rootPath 本身就是 root 标识（如 "/" 或 "C:/"）
-		return rootPath
-	}
+	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
 }
 
 // inferItemName 从路径推断数据项名称

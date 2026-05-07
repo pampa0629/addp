@@ -11,13 +11,9 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
-)
-
-const (
-	documentPreviewRuneLimit = 400
-	documentContentRuneLimit = 20000
 )
 
 // IndexerService 负责管理 Meilisearch 索引
@@ -114,8 +110,8 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	delete(metadata, "plain_text")
 
 	// 准备文档内容字段
-	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
-	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
+	truncatedContent := metatext.TruncateRunes(plainText, metatext.DocumentContentRuneLimit)
+	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
 	// 拆分meta.Path为目录和文件名
 	// meta.Path 是完整路径（如 "image/开会.jpg"）
