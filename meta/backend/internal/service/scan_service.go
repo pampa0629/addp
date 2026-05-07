@@ -15,15 +15,14 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scantask"
 	"github.com/addp/meta/internal/search"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -40,12 +39,12 @@ type ScanService struct {
 	config               *config.Config
 	log                  *slog.Logger
 	indexer              *search.Indexer
-	indexerService       *IndexerService                     // 索引服务（独立）
-	spatialService       *SpatialMetadataService             // 空间元数据服务（独立）
-	scanEventPublisher   *events.ScanEventPublisher          // 扫描事件发布器
-	metadataExtractor    *extractor.MetadataExtractor        // 元数据提取器
-	dedupService         *ScanDedupService                   // 扫描去重服务（可选）
-	taskExecutionRepo    *commonRepo.TaskExecutionRepository // 统一执行记录仓库
+	indexerService       *IndexerService              // 索引服务（独立）
+	spatialService       *SpatialMetadataService      // 空间元数据服务（独立）
+	scanEventPublisher   *events.ScanEventPublisher   // 扫描事件发布器
+	metadataExtractor    *extractor.MetadataExtractor // 元数据提取器
+	dedupService         *ScanDedupService            // 扫描去重服务（可选）
+	immediateRecorder    *scantask.ImmediateExecutionRecorder
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -76,7 +75,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		metadataExtractor: metadataExtractor,
 		indexerService:    indexerService,
 		spatialService:    spatialService,
-		taskExecutionRepo: commonRepo.NewTaskExecutionRepository(db),
+		immediateRecorder: scantask.NewImmediateExecutionRecorder(db),
 	}
 
 	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
@@ -422,7 +421,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 
 	var directExecID string
 	if reporter == nil {
-		execID, createErr := s.createImmediateExecution(resource, effectiveTenantID, namespaces, objectPaths, startTime)
+		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, namespaces, objectPaths, startTime)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -493,7 +492,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
 		}
 		if directExecID != "" {
-			s.failImmediateExecution(directExecID, int(effectiveTenantID), err, startTime)
+			s.immediateRecorder.Fail(directExecID, int(effectiveTenantID), err, startTime)
 		}
 		return nil, err
 	}
@@ -520,7 +519,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 			"items_scanned":      tables,
 			"fields_scanned":     fields,
 		}
-		s.completeImmediateExecution(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
+		s.immediateRecorder.Complete(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
 		s.publishScanCompletedEvent(resource.ID, effectiveTenantID, models.JSONMap(resultMeta))
 	}
 
@@ -533,60 +532,6 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		DurationMs:        durationMs,
 		StartedAt:         startTime.Format("2006-01-02 15:04:05"),
 	}, nil
-}
-
-func (s *ScanService) createImmediateExecution(resource *commonModels.Engine, tenantID uint, namespaces, objectPaths []string, startTime time.Time) (string, error) {
-	if resource == nil {
-		return "", fmt.Errorf("resource is required to create immediate execution")
-	}
-
-	execID := uuid.New().String()
-	engineIDInt := int(resource.ID)
-	exec := &commonModels.TaskExecution{
-		TenantID:    int(tenantID),
-		ExecutionID: execID,
-		Module:      commonModels.ModuleMeta,
-		TaskType:    "scan",
-		Status:      commonModels.ExecutionStatusRunning,
-		TriggerType: commonModels.TriggerTypeAPI,
-		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":    engineIDInt,
-			"namespaces":   namespaces,
-			"object_paths": objectPaths,
-		},
-		StartedAt: &startTime,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	if err := s.taskExecutionRepo.Create(context.Background(), exec); err != nil {
-		return "", fmt.Errorf("failed to create immediate execution record: %w", err)
-	}
-	return execID, nil
-}
-
-func (s *ScanService) failImmediateExecution(execID string, tenantID int, scanErr error, startTime time.Time) {
-	completedAt := time.Now()
-	durationMs := completedAt.Sub(startTime).Milliseconds()
-	_ = s.taskExecutionRepo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
-		"status":            commonModels.ExecutionStatusFailed,
-		"error_details":     commonModels.JSONMap{"message": scanErr.Error()},
-		"execution_time_ms": durationMs,
-		"completed_at":      completedAt,
-		"updated_at":        time.Now(),
-	})
-}
-
-func (s *ScanService) completeImmediateExecution(execID string, tenantID int, meta commonModels.JSONMap, startTime, completedAt time.Time) {
-	durationMs := completedAt.Sub(startTime).Milliseconds()
-	_ = s.taskExecutionRepo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
-		"status":            commonModels.ExecutionStatusSuccess,
-		"metadata":          meta,
-		"execution_time_ms": durationMs,
-		"progress":          100,
-		"completed_at":      completedAt,
-		"updated_at":        time.Now(),
-	})
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema
@@ -1179,47 +1124,6 @@ func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey strin
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
 func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*format.ExtractedMetadata, error) {
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
-}
-
-func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {
-	base := metapath.SanitizeObjectPath(basePath)
-	if len(metas) == 0 {
-		return metas
-	}
-
-	filtered := make([]format.ObjectMetadata, 0, len(metas))
-	for _, meta := range metas {
-		if meta.NodeType == "bucket" {
-			filtered = append(filtered, meta)
-			continue
-		}
-
-		relative := metapath.SanitizeObjectPath(meta.Path)
-		trimmed := relative
-		if base != "" {
-			switch {
-			case trimmed == base:
-				trimmed = ""
-			case strings.HasPrefix(trimmed, base+"/"):
-				trimmed = strings.TrimPrefix(trimmed, base+"/")
-			}
-		}
-
-		switch strings.ToLower(meta.NodeType) {
-		case "prefix":
-			if trimmed == "" || !strings.Contains(trimmed, "/") {
-				filtered = append(filtered, meta)
-			}
-		case "object":
-			if trimmed != "" && strings.Contains(trimmed, "/") {
-				continue
-			}
-			filtered = append(filtered, meta)
-		default:
-			filtered = append(filtered, meta)
-		}
-	}
-	return filtered
 }
 
 func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, path string) error {

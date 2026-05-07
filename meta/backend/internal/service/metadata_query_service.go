@@ -7,12 +7,8 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/mappers/mysql"
-	_ "github.com/addp/common/format/mappers/postgresql"
-	_ "github.com/addp/common/format/mappers/spatialite"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
@@ -68,7 +64,7 @@ func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]mod
 
 	result := make([]models.MetaItemLite, len(items))
 	for i, item := range items {
-		result[i] = convertToMetaItemLite(item)
+		result[i] = metaquery.ToMetaItemLite(item)
 	}
 	return result, nil
 }
@@ -93,7 +89,7 @@ func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, nam
 
 	result := make([]models.MetaItemLite, len(items))
 	for i, item := range items {
-		result[i] = convertToMetaItemLite(item)
+		result[i] = metaquery.ToMetaItemLite(item)
 	}
 	return result, nil
 }
@@ -143,17 +139,17 @@ func (s *MetadataQueryService) GetItemFieldDetailsByName(engineID uint, namespac
 
 	var item models.MetaItem
 	err := s.db.Where("tenant_id = ? AND node_id IN (?) AND (name = ? OR full_name = ?) AND deleted_at IS NULL",
-		tenantID, nodeIDs, itemName, qualifiedName(namespace, itemName)).
+		tenantID, nodeIDs, itemName, metaquery.QualifiedName(namespace, itemName)).
 		First(&item).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			s.log.Info("数据项未在元数据中找到，尝试从引擎动态查询", "namespace", namespace, "itemName", itemName)
-			return s.queryFieldsFromDatabase(engineID, qualifiedName(namespace, itemName), tenantID)
+			return s.queryFieldsFromDatabase(engineID, metaquery.QualifiedName(namespace, itemName), tenantID)
 		}
 		return nil, fmt.Errorf("查询数据项元数据失败: %w", err)
 	}
 
-	return fieldsFromMetaItem(item)
+	return metaquery.FieldsFromMetaItem(item)
 }
 
 func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
@@ -161,40 +157,7 @@ func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([
 	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
 		return nil, fmt.Errorf("item metadata not found: %w", err)
 	}
-	return fieldsFromMetaItem(item)
-}
-
-func fieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) {
-	fieldsList, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields")
-	if !ok {
-		return []commonModels.FieldInfo{}, nil
-	}
-
-	fieldInfos := make([]commonModels.FieldInfo, 0, len(fieldsList))
-	for _, fieldData := range fieldsList {
-		fieldMap, ok := fieldData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		dataType := toString(fieldMap["data_type"])
-
-		info := commonModels.FieldInfo{
-			Name:         toString(fieldMap["name"]),
-			DataType:     dataType,
-			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
-			IsNullable:   toBool(fieldMap["is_nullable"]),
-			Comment:      toString(fieldMap["comment"]),
-			// ← 关键: 从元数据中提取空间字段信息
-			IsSpatial:    toBool(fieldMap["is_spatial"]),
-			GeometryType: toString(fieldMap["geometry_type"]),
-			SRID:         int(toInt(fieldMap["srid"])),
-		}
-
-		fieldInfos = append(fieldInfos, info)
-	}
-
-	return fieldInfos, nil
+	return metaquery.FieldsFromMetaItem(item)
 }
 
 // queryFieldsFromDatabase 从数据库动态查询表的字段信息
@@ -221,7 +184,7 @@ func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName 
 	}
 
 	// 3. 解析表名（支持 schema.table 格式）
-	schemaName, tablePart := parseTableName(tableName)
+	schemaName, tablePart := metaquery.ParseTableName(tableName)
 	if schemaName == "" {
 		schemaName = "public" // 默认 schema
 	}
@@ -269,7 +232,7 @@ func (s *MetadataQueryService) queryFieldsFromMetadataProvider(
 			IsNullable:   field.Nullable,
 			IsPrimaryKey: field.PrimaryKey,
 			Comment:      field.Comment,
-			IsSpatial:    isSpatialDataType(dataType),
+			IsSpatial:    metaquery.IsSpatialDataType(dataType),
 		}
 		if geometryType, ok := field.Attributes["geometry_type"].(string); ok {
 			info.GeometryType = geometryType
@@ -290,25 +253,6 @@ func namespaceTermForPlugin(p plugin.EnginePlugin) string {
 		}
 	}
 	return plugin.CatalogTermDatabase
-}
-
-// parseTableName 解析表名，支持 schema.table 格式
-func parseTableName(tableName string) (schema, table string) {
-	parts := strings.SplitN(tableName, ".", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return "", parts[0]
-}
-
-func qualifiedName(namespace, itemName string) string {
-	if namespace == "" {
-		return itemName
-	}
-	if strings.Contains(itemName, ".") || strings.Contains(itemName, "/") {
-		return itemName
-	}
-	return namespace + "." + itemName
 }
 
 // ============================================================================
@@ -341,17 +285,17 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	// 转换为 Lite 模型
 	topNodesLite := make([]models.MetaNodeLite, len(topNodes))
 	for i, node := range topNodes {
-		topNodesLite[i] = convertToMetaNodeLite(node)
+		topNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
 
 	childNodesLite := make([]models.MetaNodeLite, len(childNodes))
 	for i, node := range childNodes {
-		childNodesLite[i] = convertToMetaNodeLite(node)
+		childNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
 
 	itemsLite := make([]models.MetaItemLite, len(items))
 	for i, item := range items {
-		itemsLite[i] = convertToMetaItemLite(item)
+		itemsLite[i] = metaquery.ToMetaItemLite(item)
 	}
 
 	return &models.MetadataTreeResponse{
@@ -368,7 +312,7 @@ func (s *MetadataQueryService) GetNodeByPath(tenantID, engineID uint, nodePath s
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND full_name = ?", tenantID, engineID, nodePath).
 		First(&node).Error
 	if err == nil {
-		result := convertToMetaNodeLite(node)
+		result := metaquery.ToMetaNodeLite(node)
 		return &result, nil
 	}
 
@@ -379,7 +323,7 @@ func (s *MetadataQueryService) GetNodeByPath(tenantID, engineID uint, nodePath s
 		return nil, fmt.Errorf("node not found: %w", err)
 	}
 
-	result := convertToMetaNodeLite(node)
+	result := metaquery.ToMetaNodeLite(node)
 	return &result, nil
 }
 
@@ -401,7 +345,7 @@ func (s *MetadataQueryService) GetItemByPath(tenantID, engineID uint, bucketName
 		return nil, fmt.Errorf("item not found: %w", err)
 	}
 
-	result := convertToMetaItemLite(item)
+	result := metaquery.ToMetaItemLite(item)
 	return &result, nil
 }
 
@@ -422,7 +366,7 @@ func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.
 
 	result := make([]models.MetaNodeLite, len(nodes))
 	for i, node := range nodes {
-		result[i] = convertToMetaNodeLite(node)
+		result[i] = metaquery.ToMetaNodeLite(node)
 	}
 
 	return result, nil
@@ -445,7 +389,7 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 
 	result := make([]models.MetaItemLite, len(items))
 	for i, item := range items {
-		result[i] = convertToMetaItemLite(item)
+		result[i] = metaquery.ToMetaItemLite(item)
 	}
 
 	return result, nil
@@ -456,14 +400,14 @@ func (s *MetadataQueryService) GetItemSpatialMetadataByName(tenantID, engineID u
 
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND deleted_at IS NULL", tenantID, engineID, itemName).
 		Where("(attributes->>'schema' = ? OR attributes->>'namespace' = ? OR full_name = ?)",
-			namespace, namespace, qualifiedName(namespace, itemName)).
+			namespace, namespace, metaquery.QualifiedName(namespace, itemName)).
 		First(&item).Error
 
 	if err != nil {
 		return nil, fmt.Errorf("item metadata not found: %w", err)
 	}
 
-	return spatialMetadataFromItem(item)
+	return metaquery.SpatialMetadataFromItem(item)
 }
 
 func (s *MetadataQueryService) GetItemSpatialMetadataByID(tenantID, itemID uint) (*models.SpatialMetadataResponse, error) {
@@ -471,175 +415,7 @@ func (s *MetadataQueryService) GetItemSpatialMetadataByID(tenantID, itemID uint)
 	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
 		return nil, fmt.Errorf("item metadata not found: %w", err)
 	}
-	return spatialMetadataFromItem(item)
-}
-
-func spatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataResponse, error) {
-	spatialMeta := &models.SpatialMetadataResponse{
-		Fields: []models.FieldInfo{},
-	}
-
-	// 提取 capabilities.spatial
-	if spatialData, ok := spatialMetadataAttribute(item.Attributes); ok {
-		if geomCol, ok := spatialData["primary_geometry_column"].(string); ok {
-			spatialMeta.GeometryColumn = geomCol
-		}
-		if columns, ok := spatialData["geometry_columns"].([]interface{}); ok && len(columns) > 0 {
-			for _, rawColumn := range columns {
-				if first, ok := rawColumn.(map[string]interface{}); ok {
-					if spatialMeta.GeometryColumn != "" && toString(first["name"]) != spatialMeta.GeometryColumn {
-						continue
-					}
-					spatialMeta.GeometryColumn = toString(first["name"])
-					spatialMeta.SRID = int(toInt(first["srid"]))
-					if geomType := toString(first["geometry_type"]); geomType != "" {
-						spatialMeta.GeometryTypes = []string{geomType}
-					}
-					break
-				}
-				if first, ok := rawColumn.(models.JSONMap); ok {
-					if spatialMeta.GeometryColumn != "" && toString(first["name"]) != spatialMeta.GeometryColumn {
-						continue
-					}
-					spatialMeta.GeometryColumn = toString(first["name"])
-					spatialMeta.SRID = int(toInt(first["srid"]))
-					if geomType := toString(first["geometry_type"]); geomType != "" {
-						spatialMeta.GeometryTypes = []string{geomType}
-					}
-					break
-				}
-			}
-		}
-		if columns, ok := spatialData["geometry_columns"].([]map[string]interface{}); ok && len(columns) > 0 {
-			for _, column := range columns {
-				if spatialMeta.GeometryColumn != "" && toString(column["name"]) != spatialMeta.GeometryColumn {
-					continue
-				}
-				spatialMeta.GeometryColumn = toString(column["name"])
-				spatialMeta.SRID = int(toInt(column["srid"]))
-				if geomType := toString(column["geometry_type"]); geomType != "" {
-					spatialMeta.GeometryTypes = []string{geomType}
-				}
-				break
-			}
-		}
-		if srid, ok := spatialData["srid"].(float64); ok {
-			spatialMeta.SRID = int(srid)
-		}
-		if extentSRID, ok := spatialData["extent_srid"].(float64); ok {
-			spatialMeta.ExtentSRID = int(extentSRID)
-		}
-		if extent, ok := spatialData["extent"].([]interface{}); ok {
-			spatialMeta.Extent = make([]float64, len(extent))
-			for i, v := range extent {
-				if f, ok := v.(float64); ok {
-					spatialMeta.Extent[i] = f
-				}
-			}
-		}
-		// 提取 geometry_types
-		if geomTypes, ok := spatialData["geometry_types"].([]interface{}); ok {
-			spatialMeta.GeometryTypes = make([]string, 0, len(geomTypes))
-			for _, v := range geomTypes {
-				if s, ok := v.(string); ok {
-					spatialMeta.GeometryTypes = append(spatialMeta.GeometryTypes, s)
-				}
-			}
-		}
-	}
-
-	// 提取 table_metadata
-	if tableMeta, ok := mapAttributeFromSection(item.Attributes, "type_info.table", "table_metadata"); ok {
-		if pk, ok := tableMeta["primary_key"].(string); ok {
-			spatialMeta.PrimaryKey = pk
-		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok {
-			if len(pkArray) > 0 {
-				if pkStr, ok := pkArray[0].(string); ok {
-					spatialMeta.PrimaryKey = pkStr
-				}
-			}
-		}
-	}
-
-	// 提取字段信息
-	if fields, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields"); ok {
-		for _, f := range fields {
-			if fieldMap, ok := f.(map[string]interface{}); ok {
-				fieldInfo := models.FieldInfo{
-					Name:         toString(fieldMap["name"]),
-					DataType:     toString(fieldMap["data_type"]),
-					IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
-				}
-				spatialMeta.Fields = append(spatialMeta.Fields, fieldInfo)
-			}
-		}
-	}
-
-	// 提取表记录数（从 meta_item.row_count）
-	if item.RowCount != nil {
-		spatialMeta.RowCount = *item.RowCount
-	}
-
-	return spatialMeta, nil
-}
-
-func attributeFromSection(attrs models.JSONMap, section, key string) (interface{}, bool) {
-	if attrs == nil {
-		return nil, false
-	}
-	if value := commonJSON.Value(attrs, section, key); value != nil {
-		return value, true
-	}
-	return nil, false
-}
-
-func mapAttributeFromSection(attrs models.JSONMap, section, key string) (map[string]interface{}, bool) {
-	value, ok := attributeFromSection(attrs, section, key)
-	if !ok {
-		return nil, false
-	}
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return typed, true
-	case models.JSONMap:
-		return map[string]interface{}(typed), true
-	default:
-		return nil, false
-	}
-}
-
-func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]interface{}, bool) {
-	value, ok := attributeFromSection(attrs, section, key)
-	if !ok {
-		return nil, false
-	}
-	switch typed := value.(type) {
-	case []interface{}:
-		return typed, true
-	case []map[string]interface{}:
-		result := make([]interface{}, 0, len(typed))
-		for _, item := range typed {
-			result = append(result, item)
-		}
-		return result, true
-	default:
-		return nil, false
-	}
-}
-
-func spatialMetadataAttribute(attrs models.JSONMap) (map[string]interface{}, bool) {
-	value := commonJSON.ValueFromSections(attrs, "spatial", "capabilities")
-	if value == nil {
-		return nil, false
-	}
-	switch spatial := value.(type) {
-	case map[string]interface{}:
-		return spatial, true
-	case models.JSONMap:
-		return map[string]interface{}(spatial), true
-	default:
-		return nil, false
-	}
+	return metaquery.SpatialMetadataFromItem(item)
 }
 
 func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {

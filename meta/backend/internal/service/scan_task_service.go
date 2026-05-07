@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -293,7 +292,7 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		TriggeredBy: &userIDInt,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    req.EngineID,
-			"storage_type": normalizeStorageType(resource.EngineType),
+			"storage_type": scantask.NormalizeStorageType(resource.EngineType),
 			"namespaces":   req.Namespaces,
 			"object_paths": req.ObjectPaths,
 			"scan_depth":   req.ScanDepth,
@@ -340,8 +339,8 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		storageType, _ = exec.ExecutionConfig["storage_type"].(string)
 		scanDepth, _ = exec.ExecutionConfig["scan_depth"].(string)
 		token, _ = exec.ExecutionConfig["token"].(string)
-		namespaces = extractSliceFromInterface(exec.ExecutionConfig["namespaces"])
-		objectPaths = extractSliceFromInterface(exec.ExecutionConfig["object_paths"])
+		namespaces = scantask.StringSliceFromInterface(exec.ExecutionConfig["namespaces"])
+		objectPaths = scantask.StringSliceFromInterface(exec.ExecutionConfig["object_paths"])
 	}
 
 	if engineID == 0 {
@@ -380,7 +379,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		scanDepth = "deep"
 	}
 
-	reporter := newExecProgressReporter(s, executionID, exec.TenantID)
+	reporter := scantask.NewExecProgressReporter(s, executionID, exec.TenantID)
 	reporter.Message("任务开始执行")
 
 	resp, scanErr := s.scanService.ScanEngineWithDepth(engineID, uint(exec.TenantID), namespaces, objectPaths, token, scanDepth, reporter)
@@ -451,6 +450,10 @@ func (s *ScanTaskService) updateExecutionProgress(executionID string, tenantID i
 	if err := s.taskExecutionRepo.UpdateFields(context.Background(), executionID, tenantID, fields); err != nil {
 		s.log.Warn("更新执行进度失败", "execution_id", executionID, "error", err)
 	}
+}
+
+func (s *ScanTaskService) UpdateExecutionProgress(executionID string, tenantID int, fields map[string]interface{}) {
+	s.updateExecutionProgress(executionID, tenantID, fields)
 }
 
 // GetExecution 获取执行详情
@@ -642,9 +645,9 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":    task.EngineID,
 			"storage_type": storageType,
-			"namespaces":   extractJSONMapSlice(task.Parameters, "namespaces"),
-			"object_paths": extractJSONMapSlice(task.Parameters, "object_paths"),
-			"scan_depth":   extractJSONMapString(task.Parameters, "scan_depth", "deep"),
+			"namespaces":   scantask.JSONMapStringSlice(task.Parameters, "namespaces"),
+			"object_paths": scantask.JSONMapStringSlice(task.Parameters, "object_paths"),
+			"scan_depth":   scantask.JSONMapString(task.Parameters, "scan_depth", "deep"),
 		},
 		StartedAt: &startTime,
 		CreatedAt: time.Now(),
@@ -754,8 +757,8 @@ func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]stri
 		return []string{}, []string{}
 	}
 
-	allSchemas := extractJSONMapSlice(task.Parameters, "namespaces")
-	allPaths := extractJSONMapSlice(task.Parameters, "object_paths")
+	allSchemas := scantask.JSONMapStringSlice(task.Parameters, "namespaces")
+	allPaths := scantask.JSONMapStringSlice(task.Parameters, "object_paths")
 
 	var independentTasks []models.ScanTask
 	if err := s.db.Where("engine_id = ? AND id != ? AND enabled = ?",
@@ -768,10 +771,10 @@ func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]stri
 	scheduledPaths := make(map[string]bool)
 
 	for _, t := range independentTasks {
-		for _, s := range extractJSONMapSlice(t.Parameters, "namespaces") {
+		for _, s := range scantask.JSONMapStringSlice(t.Parameters, "namespaces") {
 			scheduledSchemas[s] = true
 		}
-		for _, p := range extractJSONMapSlice(t.Parameters, "object_paths") {
+		for _, p := range scantask.JSONMapStringSlice(t.Parameters, "object_paths") {
 			scheduledPaths[p] = true
 		}
 	}
@@ -793,21 +796,13 @@ func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]stri
 	return targetSchemas, targetPaths
 }
 
-func normalizeStorageType(resourceType string) string {
-	normalized := strings.ToLower(strings.TrimSpace(resourceType))
-	if normalized == "" {
-		return "unknown"
-	}
-	return strings.ReplaceAll(normalized, " ", "_")
-}
-
 func (s *ScanTaskService) lookupStorageType(engineID, tenantID uint) string {
 	resource, err := s.engineService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
 		s.log.Warn("获取资源存储类型失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
 		return "unknown"
 	}
-	return normalizeStorageType(resource.EngineType)
+	return scantask.NormalizeStorageType(resource.EngineType)
 }
 
 func (s *ScanTaskService) computeNextRunTime(taskID uint) *time.Time {
@@ -849,7 +844,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 
 	taskName := fmt.Sprintf("自动扫描 - %s", resource.Name)
 
-	cronExpr, err := s.buildCronExpressionFromScanConfig(scanConfig)
+	cronExpr, err := scantask.BuildCronExpressionFromScanConfig(s.exprBuilder, scanConfig)
 	if err != nil {
 		return fmt.Errorf("构建 Cron 表达式失败: %w", err)
 	}
@@ -933,217 +928,4 @@ func (s *ScanTaskService) DeleteTaskByResourceID(engineID uint) error {
 	}
 
 	return nil
-}
-
-func parseScheduleTime(scheduleTime string) (hour, minute int) {
-	if scheduleTime == "" {
-		return 0, 0
-	}
-	parts := strings.Split(scheduleTime, ":")
-	if len(parts) == 2 {
-		if h, err := strconv.Atoi(parts[0]); err == nil {
-			hour = h
-		}
-		if m, err := strconv.Atoi(parts[1]); err == nil {
-			minute = m
-		}
-	}
-	return hour, minute
-}
-
-func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels.ScanConfig) (string, error) {
-	if config == nil {
-		return "", errors.New("扫描配置为空")
-	}
-
-	switch config.ScheduleType {
-	case "manual":
-		return "", nil
-	case "cron":
-		if config.CronExpression == "" {
-			return "", errors.New("Cron 类型必须提供 cron_expression")
-		}
-		if err := s.exprBuilder.Validate(config.CronExpression); err != nil {
-			return "", fmt.Errorf("无效的 Cron 表达式: %w", err)
-		}
-		return config.CronExpression, nil
-	case "daily":
-		hour, minute := parseScheduleTime(config.ScheduleTime)
-		return fmt.Sprintf("%d %d * * *", minute, hour), nil
-	case "weekly":
-		hour, minute := parseScheduleTime(config.ScheduleTime)
-		days := "0"
-		if len(config.ScheduleValue) > 0 {
-			dayStrs := make([]string, len(config.ScheduleValue))
-			for i, day := range config.ScheduleValue {
-				dayStrs[i] = strconv.Itoa(day)
-			}
-			days = strings.Join(dayStrs, ",")
-		}
-		return fmt.Sprintf("%d %d * * %s", minute, hour, days), nil
-	case "monthly":
-		hour, minute := parseScheduleTime(config.ScheduleTime)
-		dates := "1"
-		if len(config.ScheduleValue) > 0 {
-			dateStrs := make([]string, len(config.ScheduleValue))
-			for i, date := range config.ScheduleValue {
-				dateStrs[i] = strconv.Itoa(date)
-			}
-			dates = strings.Join(dateStrs, ",")
-		}
-		return fmt.Sprintf("%d %d %s * *", minute, hour, dates), nil
-	default:
-		return "", fmt.Errorf("不支持的调度类型: %s", config.ScheduleType)
-	}
-}
-
-// execProgressReporter 将扫描进度写入 common.task_executions
-type execProgressReporter struct {
-	service     *ScanTaskService
-	executionID string
-	tenantID    int
-
-	total         int
-	mu            sync.Mutex
-	stats         map[string]int64
-	lastFlushTime time.Time
-	updateCount   int
-}
-
-func newExecProgressReporter(service *ScanTaskService, executionID string, tenantID int) *execProgressReporter {
-	return &execProgressReporter{
-		service:       service,
-		executionID:   executionID,
-		tenantID:      tenantID,
-		stats:         make(map[string]int64),
-		lastFlushTime: time.Now(),
-	}
-}
-
-func (r *execProgressReporter) SetTotal(total int) {
-	r.mu.Lock()
-	r.total = total
-	r.mu.Unlock()
-}
-
-func (r *execProgressReporter) Advance(label string, completed, total int, meta map[string]interface{}) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.total = total
-	for k, v := range meta {
-		switch val := v.(type) {
-		case int:
-			r.stats[k] += int64(val)
-		case int64:
-			r.stats[k] += val
-		case float64:
-			r.stats[k] += int64(val)
-		}
-	}
-
-	r.updateCount++
-
-	shouldFlush := completed == total ||
-		time.Since(r.lastFlushTime) >= 5*time.Second ||
-		r.updateCount >= 5
-
-	if shouldFlush {
-		progress := calcProgressPercent(completed, total)
-		currentStep := fmt.Sprintf("已完成 %d/%d，最新完成: %s", completed, total, label)
-
-		statsClone := make(commonModels.JSONMap)
-		for k, v := range r.stats {
-			statsClone[k] = v
-		}
-
-		r.mu.Unlock()
-		r.service.updateExecutionProgress(r.executionID, r.tenantID, map[string]interface{}{
-			"progress":     int(progress),
-			"current_step": currentStep,
-			"metadata":     statsClone,
-		})
-		r.mu.Lock()
-		r.lastFlushTime = time.Now()
-		r.updateCount = 0
-	}
-}
-
-func (r *execProgressReporter) Message(message string) {
-	r.service.updateExecutionProgress(r.executionID, r.tenantID, map[string]interface{}{
-		"current_step": message,
-	})
-}
-
-func calcProgressPercent(done, total int) float64 {
-	if total <= 0 {
-		return 0
-	}
-	return float64(done) * 100.0 / float64(total)
-}
-
-// extractJSONMapSlice 从 JSONMap 中提取字符串数组
-func extractJSONMapSlice(m models.JSONMap, key string) []string {
-	if m == nil {
-		return nil
-	}
-	raw, ok := m[key]
-	if !ok {
-		return nil
-	}
-	arr, ok := raw.([]interface{})
-	if !ok {
-		return nil
-	}
-	result := make([]string, 0, len(arr))
-	for _, v := range arr {
-		if s, ok := v.(string); ok {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-// extractJSONMapString 从 JSONMap 中提取字符串，缺失时返回默认值
-func extractJSONMapString(m models.JSONMap, key, defaultVal string) string {
-	if m == nil {
-		return defaultVal
-	}
-	v, ok := m[key]
-	if !ok {
-		return defaultVal
-	}
-	if s, ok := v.(string); ok && s != "" {
-		return s
-	}
-	return defaultVal
-}
-
-// extractSliceFromInterface 从 interface{} 中提取字符串数组
-func extractSliceFromInterface(raw interface{}) []string {
-	if raw == nil {
-		return nil
-	}
-	arr, ok := raw.([]interface{})
-	if !ok {
-		return nil
-	}
-	result := make([]string, 0, len(arr))
-	for _, v := range arr {
-		if s, ok := v.(string); ok {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-func cloneJSONMap(m models.JSONMap) models.JSONMap {
-	if m == nil {
-		return nil
-	}
-	clone := models.JSONMap{}
-	for k, v := range m {
-		clone[k] = v
-	}
-	return clone
 }

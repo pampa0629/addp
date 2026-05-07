@@ -127,3 +127,44 @@ func RootFSIdentifier(engineType, rootPath string) string {
 		return rootPath
 	}
 }
+
+func FilterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {
+	base := SanitizeObjectPath(basePath)
+	if len(metas) == 0 {
+		return metas
+	}
+
+	filtered := make([]format.ObjectMetadata, 0, len(metas))
+	for _, meta := range metas {
+		if meta.NodeType == "bucket" {
+			filtered = append(filtered, meta)
+			continue
+		}
+
+		relative := SanitizeObjectPath(meta.Path)
+		trimmed := relative
+		if base != "" {
+			switch {
+			case trimmed == base:
+				trimmed = ""
+			case strings.HasPrefix(trimmed, base+"/"):
+				trimmed = strings.TrimPrefix(trimmed, base+"/")
+			}
+		}
+
+		switch strings.ToLower(meta.NodeType) {
+		case "prefix":
+			if trimmed == "" || !strings.Contains(trimmed, "/") {
+				filtered = append(filtered, meta)
+			}
+		case "object":
+			if trimmed != "" && strings.Contains(trimmed, "/") {
+				continue
+			}
+			filtered = append(filtered, meta)
+		default:
+			filtered = append(filtered, meta)
+		}
+	}
+	return filtered
+}

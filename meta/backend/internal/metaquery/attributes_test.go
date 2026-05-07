@@ -1,4 +1,4 @@
-package service
+package metaquery
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 	t.Parallel()
 
-	fields, err := fieldsFromMetaItem(models.MetaItem{
+	fields, err := FieldsFromMetaItem(models.MetaItem{
 		Attributes: models.JSONMap{
 			"fields": []interface{}{
 				map[string]interface{}{"name": "legacy_id", "data_type": "text"},
@@ -24,7 +24,7 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("fieldsFromMetaItem() error = %v", err)
+		t.Fatalf("FieldsFromMetaItem() error = %v", err)
 	}
 	if len(fields) != 1 || fields[0].Name != "id" || fields[0].DataType != "integer" || !fields[0].IsPrimaryKey {
 		t.Fatalf("fields = %#v, want partitioned id field", fields)
@@ -34,7 +34,7 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	t.Parallel()
 
-	meta, err := spatialMetadataFromItem(models.MetaItem{
+	meta, err := SpatialMetadataFromItem(models.MetaItem{
 		Attributes: models.JSONMap{
 			"capabilities": map[string]interface{}{
 				"spatial": map[string]interface{}{
@@ -61,7 +61,7 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("spatialMetadataFromItem() error = %v", err)
+		t.Fatalf("SpatialMetadataFromItem() error = %v", err)
 	}
 	if meta.GeometryColumn != "shape" || meta.SRID != 4326 || meta.PrimaryKey != "id" {
 		t.Fatalf("spatial metadata = %#v, want partitioned spatial metadata", meta)

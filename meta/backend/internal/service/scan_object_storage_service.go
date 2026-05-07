@@ -3,13 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	pathpkg "path"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/addp/common/dataitem"
@@ -22,9 +19,8 @@ import (
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/objectstore"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
 )
 
@@ -36,15 +32,8 @@ type ObjectStorageScanService struct {
 	repo              *metaRepo.ScanRepository     // 数据访问层
 	metadataExtractor *extractor.MetadataExtractor // 元数据提取器
 	indexer           *IndexerService              // 索引服务
-	objectClients     map[uint]*minio.Client
-	objectClientMu    sync.Mutex
-}
-
-type objectStorageCompositeItem struct {
-	bucket string
-	prefix string
-	item   *dataitem.DetectedItem
-	claims dataitem.ResourceClaimSet
+	clientManager     *objectstore.ClientManager
+	inlineExtractor   *extractor.InlineObjectMetadataExtractor
 }
 
 // NewObjectStorageScanService 创建对象存储扫描服务
@@ -55,14 +44,16 @@ func NewObjectStorageScanService(
 	metadataExtractor *extractor.MetadataExtractor,
 	indexer *IndexerService,
 ) *ObjectStorageScanService {
-	return &ObjectStorageScanService{
+	service := &ObjectStorageScanService{
 		db:                db,
 		log:               log,
 		repo:              repo,
 		metadataExtractor: metadataExtractor,
 		indexer:           indexer,
-		objectClients:     make(map[uint]*minio.Client),
+		clientManager:     objectstore.NewClientManager(db),
 	}
+	service.inlineExtractor = extractor.NewInlineObjectMetadataExtractor(service.clientManager, log)
+	return service
 }
 
 // ============================================================================
@@ -471,12 +462,12 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 		}
 
 		// 深度扫描时提取元数据（仅针对图片，且文件大小<100MB）
-		if isDeepScan && s.shouldExtractMetadata(obj.ContentType, obj.Size) {
+		if isDeepScan && s.inlineExtractor.ShouldExtract(obj.ContentType, obj.Size) {
 			s.log.Info("尝试提取图片元数据",
 				"key", obj.Key,
 				"content_type", obj.ContentType,
 				"size", obj.Size)
-			if extractedMeta := s.extractObjectMetadataInline(context.Background(), resource, bucket, obj.Key, obj.ContentType, obj.Size, obj.LastModified, obj.ETag); extractedMeta != nil {
+			if extractedMeta := s.inlineExtractor.Extract(context.Background(), resource, bucket, obj.Key, obj.ContentType, obj.Size, obj.LastModified, obj.ETag); extractedMeta != nil {
 				s.log.Info("成功提取图片元数据",
 					"key", obj.Key,
 					"width", extractedMeta.CustomAttrs["width"],
@@ -491,173 +482,6 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 	}
 
 	return metas
-}
-
-// shouldExtractMetadata 判断是否应该在扫描时提取元数据
-func (s *ObjectStorageScanService) shouldExtractMetadata(contentType string, sizeBytes int64) bool {
-	// 只对图片类型进行提取
-	if !strings.HasPrefix(contentType, "image/") {
-		s.log.Debug("跳过非图片类型", "content_type", contentType)
-		return false
-	}
-
-	// 限制文件大小（100MB）
-	const maxSizeForExtraction = 100 * 1024 * 1024
-	if sizeBytes > maxSizeForExtraction {
-		s.log.Debug("文件过大，跳过元数据提取", "size", sizeBytes)
-		return false
-	}
-
-	return true
-}
-
-// extractObjectMetadataInline 内联提取对象元数据（在扫描时调用）
-func (s *ObjectStorageScanService) extractObjectMetadataInline(
-	ctx context.Context,
-	resource *commonModels.Engine,
-	bucket, key, contentType string,
-	size int64,
-	lastModified time.Time,
-	etag string,
-) *format.ExtractedMetadata {
-	// 获取对象信息解析器
-	s.log.Debug("正在获取对象信息解析器", "content_type", contentType, "key", key)
-	parser, err := format.GetObjectInfoParser(contentType)
-	if err != nil {
-		s.log.Debug("获取解析器失败，尝试通配符匹配",
-			"content_type", contentType,
-			"error", err,
-			"key", key)
-		// 支持通配符匹配（如 "image/*"）
-		if strings.HasPrefix(contentType, "image/") {
-			s.log.Debug("尝试使用 image/* 通配符", "key", key)
-			parser, err = format.GetObjectInfoParser("image/*")
-			if err != nil {
-				s.log.Warn("通配符解析器也失败",
-					"content_type", contentType,
-					"error", err,
-					"key", key)
-				return nil
-			}
-			s.log.Debug("成功获取 image/* 解析器", "key", key)
-		} else {
-			s.log.Debug("无可用的元数据解析器",
-				"content_type", contentType,
-				"key", key)
-			return nil
-		}
-	} else {
-		s.log.Debug("成功获取解析器", "content_type", contentType, "key", key)
-	}
-
-	// 获取或创建 MinIO 客户端
-	s.objectClientMu.Lock()
-	client, ok := s.objectClients[resource.ID]
-	if !ok {
-		// 创建新客户端
-		var createErr error
-		client, createErr = s.createMinIOClient(resource.ConnectionInfo)
-		if createErr != nil {
-			s.objectClientMu.Unlock()
-			s.log.Warn("创建对象存储客户端失败",
-				"engine_id", resource.ID,
-				"error", createErr)
-			return nil
-		}
-		s.objectClients[resource.ID] = client
-	}
-	s.objectClientMu.Unlock()
-
-	// 只读取前 16KB 用于元数据提取（对于图片足够了）
-	const headerSize = 16 * 1024
-	opts := minio.GetObjectOptions{}
-	if size > headerSize {
-		// 使用 Range 请求只获取头部
-		opts.SetRange(0, headerSize-1)
-	}
-
-	// 获取对象内容
-	obj, err := client.GetObject(ctx, bucket, key, opts)
-	if err != nil {
-		s.log.Warn("获取对象内容失败",
-			"bucket", bucket,
-			"key", key,
-			"error", err)
-		return nil
-	}
-	defer obj.Close()
-
-	// 构建基础信息
-	basicInfo := format.ObjectBasicInfo{
-		Key:         key,
-		SizeBytes:   size,
-		ContentType: contentType,
-		ETag:        etag,
-		ModifiedAt:  lastModified,
-	}
-
-	// 调用解析器提取元数据
-	objectInfo, err := parser.ParseObjectInfo(ctx, obj, basicInfo)
-	if err != nil {
-		s.log.Debug("提取对象元数据失败",
-			"bucket", bucket,
-			"key", key,
-			"error", err)
-		return nil
-	}
-
-	// 转换为 ExtractedMetadata
-	extractedMeta := &format.ExtractedMetadata{
-		BasicInfo: format.BasicMetadata{
-			FileName:     filepath.Base(key),
-			FileType:     contentType,
-			Size:         size,
-			ContentType:  contentType,
-			LastModified: lastModified,
-			ETag:         etag,
-		},
-		CustomAttrs: make(map[string]interface{}),
-	}
-
-	// 提取 ImageInfo
-	if imageInfo := objectInfo.GetImageInfo(); imageInfo != nil {
-		extractedMeta.CustomAttrs["width"] = imageInfo.Width
-		extractedMeta.CustomAttrs["height"] = imageInfo.Height
-		extractedMeta.CustomAttrs["format"] = imageInfo.Format
-		extractedMeta.CustomAttrs["color_space"] = imageInfo.ColorSpace
-		if imageInfo.BitDepth > 0 {
-			extractedMeta.CustomAttrs["bit_depth"] = imageInfo.BitDepth
-		}
-		if imageInfo.HasAlpha {
-			extractedMeta.CustomAttrs["has_alpha"] = true
-		}
-	}
-
-	s.log.Debug("成功提取对象元数据",
-		"bucket", bucket,
-		"key", key,
-		"attrs", extractedMeta.CustomAttrs)
-
-	return extractedMeta
-}
-
-// createMinIOClient 创建 MinIO 客户端
-func (s *ObjectStorageScanService) createMinIOClient(connInfo commonModels.ConnectionInfo) (*minio.Client, error) {
-	endpoint := getStringFromConn(connInfo, "endpoint")
-	accessKey := getStringFromConn(connInfo, "access_key")
-	secretKey := getStringFromConn(connInfo, "secret_key")
-	useSSL := getBoolFromConn(connInfo, "use_ssl")
-
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
-	}
-
-	opts := &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	}
-
-	return minio.New(endpoint, opts)
 }
 
 // scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）- 保留原方法用于向后兼容
@@ -748,7 +572,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		}
 
 		if !strings.EqualFold(scanDepth, "deep") {
-			metas = filterObjectMetasForDepth(metas, relativePath)
+			metas = metapath.FilterObjectMetasForDepth(metas, relativePath)
 		}
 
 		bucketNode, ok := bucketNodes[bucketName]
@@ -990,7 +814,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
-	compositeSkipPaths, compositeItems := s.detectObjectStorageCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+	compositeSkipPaths, compositeItems, compositeWarnings := metaitem.DetectObjectStorageCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+	for _, warning := range compositeWarnings {
+		s.log.Warn("对象存储组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
+	}
 	compositeCount, err := s.persistObjectStorageCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints)
 	if err != nil {
 		return objects, err
@@ -1099,10 +926,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
 		}
 
-		dataItem := inferObjectStorageDataItem(meta, objectName)
+		dataItem := metaitem.InferObjectStorageDataItem(meta, objectName)
 		itemType := "object"
 		itemName := objectName
-		if inferredType := objectStorageSingleFileItemType(dataItem); inferredType != "object" {
+		if inferredType := metaitem.ObjectStorageSingleFileItemType(dataItem); inferredType != "object" {
 			itemType = inferredType
 		}
 
@@ -1226,16 +1053,6 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	return objects, nil
 }
 
-func inferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *dataitem.DetectedItem {
-	physicalPath := meta.Bucket + "/" + meta.Path
-	return dataitem.InferSingleResource(dataitem.SingleResourceInput{
-		Name:   objectName,
-		Path:   physicalPath,
-		Size:   meta.SizeBytes,
-		Format: meta.FileType,
-	})
-}
-
 func mergeDataItemAttributes(attrs models.JSONMap, item *dataitem.DetectedItem) {
 	if item == nil {
 		return
@@ -1250,96 +1067,10 @@ func mergeDataItemAttributes(attrs models.JSONMap, item *dataitem.DetectedItem) 
 	}
 }
 
-func (s *ObjectStorageScanService) detectObjectStorageCompositeItems(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	metas []format.ObjectMetadata,
-) (map[string]bool, []objectStorageCompositeItem) {
-	skipPaths := map[string]bool{}
-	if contentReader == nil {
-		return skipPaths, nil
-	}
-
-	groups := objectMetasByParentPrefix(metas)
-	items := make([]objectStorageCompositeItem, 0)
-	groupKeys := make([]string, 0, len(groups))
-	for groupKey := range groups {
-		groupKeys = append(groupKeys, groupKey)
-	}
-	sort.Slice(groupKeys, func(i, j int) bool {
-		_, leftPrefix := splitObjectCompositeGroupKey(groupKeys[i])
-		_, rightPrefix := splitObjectCompositeGroupKey(groupKeys[j])
-		leftDepth := strings.Count(strings.Trim(leftPrefix, "/"), "/")
-		rightDepth := strings.Count(strings.Trim(rightPrefix, "/"), "/")
-		if leftDepth != rightDepth {
-			return leftDepth > rightDepth
-		}
-		return groupKeys[i] < groupKeys[j]
-	})
-
-	for _, groupKey := range groupKeys {
-		group := unclaimedObjectMetas(groups[groupKey], skipPaths)
-		if len(group) < 2 {
-			continue
-		}
-		bucket, prefix := splitObjectCompositeGroupKey(groupKey)
-		if prefix == "" {
-			continue
-		}
-		files := objectMetasToFileEntries(bucket, group)
-		detection, err := metaitem.ResolveItems(ctx, dataitem.DirectoryResolveInput{
-			ContentReader: contentReader,
-			ConnInfo:      connInfo,
-			EngineID:      engineID,
-			DirPath:       bucket + "/" + prefix,
-			Files:         files,
-		})
-		if err != nil {
-			s.log.Warn("对象存储组合项检测失败", "bucket", bucket, "prefix", prefix, "error", err)
-			continue
-		}
-		if detection == nil || len(detection.Items) == 0 {
-			continue
-		}
-		for path, claimed := range detection.Claims {
-			if claimed {
-				skipPaths[objectPathFromClaim(bucket, path)] = true
-			}
-		}
-		for _, detected := range detection.Items {
-			if detected == nil {
-				continue
-			}
-			items = append(items, objectStorageCompositeItem{
-				bucket: bucket,
-				prefix: prefix,
-				item:   detected,
-				claims: detection.Claims,
-			})
-		}
-	}
-	return skipPaths, items
-}
-
-func unclaimedObjectMetas(group []format.ObjectMetadata, skipPaths map[string]bool) []format.ObjectMetadata {
-	if len(group) == 0 || len(skipPaths) == 0 {
-		return group
-	}
-	filtered := make([]format.ObjectMetadata, 0, len(group))
-	for _, meta := range group {
-		if !skipPaths[meta.Path] {
-			filtered = append(filtered, meta)
-		}
-	}
-	return filtered
-}
-
 func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
-	items []objectStorageCompositeItem,
+	items []metaitem.ObjectStorageCompositeItem,
 	stats map[uint]*nodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
@@ -1347,34 +1078,34 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 ) (int, error) {
 	count := 0
 	for _, composite := range items {
-		if composite.item == nil {
+		if composite.Item == nil {
 			continue
 		}
-		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, composite.prefix, scanPathPrefix, stats)
+		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, composite.Prefix, scanPathPrefix, stats)
 		if err != nil {
 			return count, err
 		}
 
-		itemName, objectPath := inferObjectStorageCompositeName(composite)
-		parentPath := parentObjectPath(objectPath)
-		fullName := commonModels.JoinObjectPath(composite.bucket, parentPath, itemName)
+		itemName, objectPath := metaitem.ObjectStorageCompositeName(composite)
+		parentPath := metaitem.ParentObjectPath(objectPath)
+		fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 
-		attrs := toJSONMap(metaitem.BuildAttributes(composite.item))
-		if len(composite.item.Fields) > 0 {
-			setSchemaFields(attrs, fieldAttributesFromFormat(composite.item.Fields))
+		attrs := toJSONMap(metaitem.BuildAttributes(composite.Item))
+		if len(composite.Item.Fields) > 0 {
+			setSchemaFields(attrs, fieldAttributesFromFormat(composite.Item.Fields))
 		}
-		metaattr.SetStorage(attrs, "bucket", composite.bucket)
+		metaattr.SetStorage(attrs, "bucket", composite.Bucket)
 		metaattr.SetStorage(attrs, "path", parentPath)
 		metaattr.SetStorage(attrs, "name", itemName)
-		metaattr.SetItem(attrs, "mode", objectStorageCompositeMode(composite.item))
+		metaattr.SetItem(attrs, "mode", metaitem.ObjectStorageCompositeMode(composite.Item))
 
 		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
 		}
 
-		sizeVal := composite.item.SizeBytes
-		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, composite.item.ItemType, itemName, fullName, attrs, nil, &sizeVal, nil); err != nil {
+		sizeVal := composite.Item.SizeBytes
+		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, composite.Item.ItemType, itemName, fullName, attrs, nil, &sizeVal, nil); err != nil {
 			return count, err
 		}
 		count++
@@ -1389,7 +1120,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 			updatedNodes[node.ID] = true
 			agg := ensureNodeAggregate(stats, node)
 			agg.itemCount++
-			agg.totalSize += composite.item.SizeBytes
+			agg.totalSize += composite.Item.SizeBytes
 		}
 	}
 	return count, nil
@@ -1407,7 +1138,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 		parent = basePrefixNode
 	}
 
-	parentPrefix := parentObjectPath(prefix)
+	parentPrefix := metaitem.ParentObjectPath(prefix)
 	relative := strings.Trim(parentPrefix, "/")
 	if scanPathPrefix != "" && strings.HasPrefix(relative, strings.Trim(scanPathPrefix, "/")) {
 		relative = strings.TrimPrefix(relative, strings.Trim(scanPathPrefix, "/"))
@@ -1438,116 +1169,6 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	return current, nil
 }
 
-func objectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]format.ObjectMetadata {
-	groups := map[string][]format.ObjectMetadata{}
-	for _, meta := range metas {
-		if meta.NodeType != "object" {
-			continue
-		}
-		parent := strings.Trim(parentObjectPath(meta.Path), "/")
-		if parent == "" {
-			continue
-		}
-		key := meta.Bucket + "\x00" + parent
-		groups[key] = append(groups[key], meta)
-	}
-	return groups
-}
-
-func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []plugin.FileEntry {
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].Path < metas[j].Path
-	})
-	files := make([]plugin.FileEntry, 0, len(metas))
-	for _, meta := range metas {
-		modifiedAt := time.Time{}
-		if meta.LastModified != nil {
-			modifiedAt = *meta.LastModified
-		}
-		files = append(files, plugin.FileEntry{
-			Name:       pathpkg.Base(meta.Path),
-			Path:       bucket + "/" + meta.Path,
-			Size:       meta.SizeBytes,
-			ModifiedAt: modifiedAt,
-		})
-	}
-	return files
-}
-
-func splitObjectCompositeGroupKey(key string) (string, string) {
-	parts := strings.SplitN(key, "\x00", 2)
-	if len(parts) != 2 {
-		return "", ""
-	}
-	return parts[0], parts[1]
-}
-
-func parentObjectPath(path string) string {
-	dir := pathpkg.Dir(strings.Trim(path, "/"))
-	if dir == "." || dir == "/" {
-		return ""
-	}
-	return strings.Trim(dir, "/") + "/"
-}
-
-func objectPathFromClaim(bucket, claimPath string) string {
-	trimmed := strings.Trim(claimPath, "/")
-	prefix := strings.Trim(bucket, "/") + "/"
-	return strings.TrimPrefix(trimmed, prefix)
-}
-
-func inferObjectStorageCompositeName(composite objectStorageCompositeItem) (name, objectPath string) {
-	if composite.item != nil {
-		switch composite.item.Organization {
-		case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
-			if composite.item.EntryPath != "" {
-				objectPath = objectPathFromClaim(composite.bucket, composite.item.EntryPath)
-				if objectPath != "" {
-					return pathpkg.Base(objectPath), objectPath
-				}
-			}
-		}
-	}
-	objectPath = strings.Trim(composite.prefix, "/")
-	name = pathpkg.Base(objectPath)
-	if name == "" {
-		name = "dataset"
-		objectPath = name
-	}
-	return name, objectPath
-}
-
-func objectStorageCompositeMode(item *dataitem.DetectedItem) string {
-	if item == nil {
-		return "directory"
-	}
-	switch item.Organization {
-	case dataitem.OrganizationSingle:
-		return "single"
-	case dataitem.OrganizationMulti:
-		return "multi"
-	case dataitem.OrganizationWhole:
-		return "whole"
-	default:
-		return "directory"
-	}
-}
-
-func objectStorageSingleFileItemType(item *dataitem.DetectedItem) string {
-	if item == nil {
-		return "object"
-	}
-	if item.ItemType != "" {
-		return item.ItemType
-	}
-	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
-		rule.Organization == dataitem.OrganizationSingle &&
-		rule.ItemType != "" {
-		return rule.ItemType
-	}
-	return "object"
-}
-
 func joinObjectPathParts(parts ...string) string {
 	cleaned := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -1571,170 +1192,5 @@ func (s *ObjectStorageScanService) FetchObjectContent(
 	bucket, objectPath string,
 	maxSize int64,
 ) ([]byte, string, error) {
-	// 获取对象存储客户端
-	client, err := s.getObjectClient(engineID, tenantID)
-	if err != nil {
-		return nil, "", err
-	}
-
-	// 获取对象
-	obj, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get object: %w", err)
-	}
-	defer obj.Close()
-
-	// 读取对象内容（限制大小）
-	var content []byte
-	if maxSize > 0 {
-		content = make([]byte, maxSize)
-		n, err := io.ReadFull(obj, content)
-		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-			return nil, "", fmt.Errorf("failed to read object: %w", err)
-		}
-		content = content[:n]
-	} else {
-		content, err = io.ReadAll(obj)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to read object: %w", err)
-		}
-	}
-
-	// 推断 MIME 类型
-	mimeType := detectMimeType(objectPath, content)
-
-	return content, mimeType, nil
-}
-
-// getObjectClient 获取或创建 MinIO 客户端
-func (s *ObjectStorageScanService) getObjectClient(engineID, tenantID uint) (*minio.Client, error) {
-	s.objectClientMu.Lock()
-	defer s.objectClientMu.Unlock()
-
-	// 检查缓存
-	if client, ok := s.objectClients[engineID]; ok {
-		return client, nil
-	}
-
-	// 查询引擎配置
-	var resource commonModels.Engine
-	if err := s.db.Where("id = ? AND tenant_id = ?", engineID, tenantID).First(&resource).Error; err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
-	}
-
-	// 解析对象存储配置
-	cfg, err := parseObjectStorageConfig(resource.ConnectionInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	// 创建 MinIO 客户端
-	opts := &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
-	}
-	if cfg.Region != "" {
-		opts.Region = cfg.Region
-	}
-	if cfg.PathStyle {
-		opts.BucketLookup = minio.BucketLookupPath
-	}
-
-	client, err := minio.New(cfg.Endpoint, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	// 缓存客户端
-	s.objectClients[engineID] = client
-	return client, nil
-}
-
-// ============================================================================
-// 辅助方法
-// ============================================================================
-
-func detectMimeType(path string, content []byte) string {
-	// 基于扩展名推断
-	ext := pathpkg.Ext(path)
-	if ext != "" {
-		// 这里可以使用 mime.TypeByExtension，但为了简单起见先返回扩展名
-		return "application/octet-stream"
-	}
-	return "application/octet-stream"
-}
-
-// objectStorageConfig MinIO/S3 配置
-type objectStorageConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Region    string
-	UseSSL    bool
-	PathStyle bool
-}
-
-// parseObjectStorageConfig 解析对象存储配置
-func parseObjectStorageConfig(info commonModels.ConnectionInfo) (*objectStorageConfig, error) {
-	cfg := &objectStorageConfig{}
-
-	cfg.Endpoint = getStringFromConn(info, "endpoint")
-	cfg.AccessKey = getStringFromConn(info, "access_key")
-	cfg.SecretKey = getStringFromConn(info, "secret_key")
-	cfg.Region = getStringFromConn(info, "region")
-	cfg.UseSSL = getBoolFromConn(info, "use_ssl")
-	cfg.PathStyle = getBoolFromConn(info, "path_style")
-
-	if cfg.Endpoint == "" {
-		return nil, fmt.Errorf("object storage endpoint is empty")
-	}
-	if cfg.AccessKey == "" || cfg.SecretKey == "" {
-		return nil, fmt.Errorf("object storage credentials missing")
-	}
-
-	return cfg, nil
-}
-
-// getStringFromConn 从连接配置中获取字符串值
-func getStringFromConn(info commonModels.ConnectionInfo, key string) string {
-	if raw, ok := info[key]; ok {
-		switch v := raw.(type) {
-		case string:
-			return v
-		case fmt.Stringer:
-			return v.String()
-		case float64:
-			return fmt.Sprintf("%.0f", v)
-		case int64:
-			return fmt.Sprintf("%d", v)
-		case int:
-			return fmt.Sprintf("%d", v)
-		case bool:
-			if v {
-				return "true"
-			}
-			return "false"
-		}
-	}
-	return ""
-}
-
-// getBoolFromConn 从连接配置中获取布尔值
-func getBoolFromConn(info commonModels.ConnectionInfo, key string) bool {
-	if raw, ok := info[key]; ok {
-		switch v := raw.(type) {
-		case bool:
-			return v
-		case string:
-			lower := strings.ToLower(strings.TrimSpace(v))
-			return lower == "true" || lower == "1" || lower == "yes"
-		case float64:
-			return v != 0
-		case int:
-			return v != 0
-		case int64:
-			return v != 0
-		}
-	}
-	return false
+	return s.clientManager.FetchObjectContent(ctx, engineID, tenantID, bucket, objectPath, maxSize)
 }

@@ -1,4 +1,4 @@
-package service
+package metaitem
 
 import (
 	"testing"
@@ -47,24 +47,24 @@ func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
 func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	t.Parallel()
 
-	got := objectStorageSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "geojson",
+	got := ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:       "geojson",
 		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "table" {
 		t.Fatalf("itemType = %q, want table", got)
 	}
 
-	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "pdf",
+	got = ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:       "pdf",
 		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "file" {
 		t.Fatalf("pdf itemType = %q, want file", got)
 	}
 
-	got = objectStorageSingleFileItemType(&dataitem.DetectedItem{
-		Format:          "parquet",
+	got = ObjectStorageSingleFileItemType(&dataitem.DetectedItem{
+		Format:       "parquet",
 		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "lake_table" {
@@ -72,15 +72,15 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	}
 }
 
-func TestInferObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
+func TestObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	t.Parallel()
 
-	name, objectPath := inferObjectStorageCompositeName(objectStorageCompositeItem{
-		bucket: "addp",
-		prefix: "lake",
-		item: &dataitem.DetectedItem{
+	name, objectPath := ObjectStorageCompositeName(ObjectStorageCompositeItem{
+		Bucket: "addp",
+		Prefix: "lake",
+		Item: &dataitem.DetectedItem{
 			Organization: dataitem.OrganizationSingle,
-			EntryPath:       "addp/lake/sales.parquet",
+			EntryPath:    "addp/lake/sales.parquet",
 		},
 	})
 

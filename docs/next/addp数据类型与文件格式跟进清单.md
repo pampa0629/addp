@@ -17,7 +17,7 @@
 > 后续新会话优先阅读本节，再查看未完成复选框。
 
 - 最近更新时间：2026-05-07
-- 当前状态：旧 attributes 读取/写入、旧枚举、旧过渡入口、旧路径查询已清理；`common/attributes` 已迁移为 `common/jsonmap`；Meta attributes 落库构造、detector registry、扫描 resolver、Shapefile detector、Parquet whole-scope detector 已收口到 `meta/backend/internal/metaitem`。`meta/backend/internal/service` 已继续按职责拆分：attributes helper 进入 `metaattr`，扫描仓储进入 `repository`，对象元数据提取器进入 `extractor`，对象/文件路径规则进入 `metapath`，文本截断常量和 helper 进入 `metatext`。代码侧不保留旧数据兼容。
+- 当前状态：旧 attributes 读取/写入、旧枚举、旧过渡入口、旧路径查询已清理；`common/attributes` 已迁移为 `common/jsonmap`；Meta attributes 落库构造、detector registry、扫描 resolver、Shapefile detector、Parquet whole-scope detector 已收口到 `meta/backend/internal/metaitem`。`meta/backend/internal/service` 已继续按职责拆分：attributes helper 进入 `metaattr`，扫描仓储进入 `repository`，对象元数据提取器进入 `extractor`，对象/文件路径规则进入 `metapath`，文本截断常量和 helper 进入 `metatext`；对象存储复合 item 检测/命名进入 `metaitem`，对象存储客户端缓存、配置解析和内容读取进入 `objectstore`；扫描任务参数读取、调度表达式构造和执行进度 reporter 进入 `scantask`。代码侧不保留旧数据兼容。
 - 最近架构共识：
   - `common/jsonmap` 只是 decoded JSON map 读写工具，不承载 attributes 规范语义；`common/attributes` 包已删除。
   - `data_type` 是平台通用概念，仍应放 common 层；`format`、各类 type info / format info parser 和 analyzer 也属于 common/format。
@@ -25,11 +25,11 @@
   - 当前 `common/dataitem` 仍保留 detector 接口 / 结果模型 / 规则类型；全局 registry、统一 resolver、attributes 落库构造和内置 detector 实现已迁回 Meta。
 - 下一步优先级：
   1. 继续拆分 `common/dataitem` 中仍偏 Meta 的 `DetectedItem` / `DetectionResult` / detector 接口归属，决定迁入 `metaitem` 后 common 是否只保留 `DataType`、`Organization`、`FormatRule` 等纯概念。
-  2. 继续梳理 `meta/backend/internal/service` 剩余大文件，优先按 scanner 编排、对象存储持久化、扫描任务调度、索引读取 helper 等职责拆分，避免 service 目录再次堆积。
+  2. 继续梳理 `meta/backend/internal/service` 剩余大文件，优先按对象存储持久化、扫描任务状态机、索引读取 helper 等职责拆分，避免 service 目录再次堆积。
   3. 边界收口后，再接入 Excel / SQLite / GeoPackage 容器内部 `type_info.container.children` 真实枚举。
   4. 删除旧数据后重新触发 meta 扫描，验证新 attributes 端到端生成。
 - 当前阻塞：第三方插件 manifest、Manager preview 插件 manifest、Registry 能力发现视图仍需规范确认；真实重扫和端到端验证需要运行环境与样例数据。
-- 最近验证：`go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/repository ./meta/backend/internal/service ./manager/backend/internal/service` 通过。
+- 最近验证：`go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service` 通过。
 
 ## 一、文档整理
 
@@ -67,7 +67,7 @@
 ### 新会话优先实现顺序
 
 1. 继续拆分 `common/dataitem` 中仍偏 Meta 的 `DetectedItem` / `DetectionResult` / detector 接口归属。
-2. 继续梳理 `meta/backend/internal/service` 剩余扫描和任务相关大文件，按 scanner / extractor / repository / metapath / metaattr / metatext / indexer 等职责拆分。
+2. 继续梳理 `meta/backend/internal/service` 剩余扫描和任务相关大文件，按 scanner / extractor / repository / metapath / metaattr / metatext / metaitem / objectstore / scantask / indexer 等职责拆分。
 3. 边界收口后，再推进容器内部 children 枚举、Scanner* 删除、ObjectInfo 拆分和 spatial 映射对齐。
 
 ### 具体任务
@@ -88,6 +88,10 @@
   - 结论：`common/dataitem/shapefile` 已删除；`common/format/parquet` 保留 Parser、lake table 基础判断和 Manager 预览读取函数。Meta item 识别实现位于 `meta/backend/internal/metaitem`。
 - [x] 将 Meta attributes helper、扫描仓储、对象元数据提取、路径规则和文本截断 helper 从 `service` 拆出。
   - 结论：`metaattr` 负责标准 attributes 分区和字段 attributes 构造；`repository.ScanRepository` 负责扫描仓储；`extractor.MetadataExtractor` 负责对象元数据提取、缓存和按需提取；`metapath` 负责对象路径、FS CatalogPath 和 full_name 拼接规则；`metatext` 负责文档内容/预览截断常量和 helper。`service` 保留扫描编排和业务流程。
+- [x] 将对象存储复合 item 检测和对象存储客户端管理从 `service` 拆出。
+  - 结论：对象存储目录候选分组、claims 过滤、复合 item 命名、单资源 item type 推断已进入 `metaitem/object_storage_items.go`；MinIO/S3 配置解析、客户端缓存、对象内容读取已进入 `objectstore.ClientManager`。`scan_object_storage_service.go` 保留扫描编排、对象元数据转换和持久化流程。
+- [x] 将扫描任务 helper 从 `service` 拆出。
+  - 结论：扫描任务 JSON 参数读取、存储类型规范化、Cron 表达式构造、执行进度 reporter 已进入 `scantask`。`scan_task_service.go` 保留任务生命周期、调度注册、执行状态流转和数据库编排。
 - [x] 更新 detector 输出模型，统一 `organization=single|multi|whole`。
 - [x] 删除标准 attributes 中的 `entry_path` 写入和读取；主资源、whole scope 根范围统一使用 `meta_item.full_name`。
 - [x] `organization=whole` 写入 `item.scope_exclusive=true`、`item.claim_policy=whole_scope`，并确保覆盖范围内其他资源不再落 item。
@@ -134,4 +138,4 @@
 
 ### 最近验证记录
 
-- 2026-05-07：通过 `go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/repository ./meta/backend/internal/service ./manager/backend/internal/service`。
+- 2026-05-07：通过 `go test ./common/jsonmap ./common/dataitem/... ./common/format/parquet ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service`。
