@@ -2,16 +2,13 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/spatial"
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // GeoJSONHandler GeoJSON API 处理器
@@ -80,55 +77,16 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 		return
 	}
 
-	// 4. 构建连接字符串
-	connStr, err := dbbridge.BuildDSN(engine)
+	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
-		logger.L().Error("Failed to build connection string", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})
-		return
-	}
-
-	// 5. 连接数据库
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
-	if err != nil {
-		logger.L().Error("Failed to connect to database", "error", err)
+		logger.L().Error("Failed to get PostGIS pool", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection failed"})
 		return
 	}
-	sqlDB, _ := db.DB()
-	defer sqlDB.Close()
 
 	// 6. 查询 GeoJSON 数据
 	offset := (page - 1) * pageSize
-
-	// 使用 ST_AsGeoJSON 直接生成 GeoJSON 格式的几何
-	// 注意：必须在子查询中先计算 row_number()，不能在聚合函数内使用窗口函数
-	// COALESCE 确保空结果返回空数组而不是 null
-	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
-	query := fmt.Sprintf(`
-		SELECT jsonb_build_object(
-			'type', 'FeatureCollection',
-			'features', COALESCE(
-				jsonb_agg(
-					jsonb_build_object(
-						'type', 'Feature',
-						'id', row.row_id,
-						'geometry', ST_AsGeoJSON(row."%s")::jsonb,
-						'properties', to_jsonb(row.*) - '%s' - 'row_id'
-					)
-				),
-				'[]'::jsonb
-			)
-		) as geojson
-		FROM (
-			SELECT
-				row_number() OVER () as row_id,
-				*
-			FROM "%s"."%s"
-			ORDER BY ctid
-			LIMIT %d OFFSET %d
-		) row
-	`, geomColumn, geomColumn, schema, table, pageSize, offset)
+	query := spatial.BuildPostGISGeoJSONPageQuery(schema, table, geomColumn, pageSize, offset)
 
 	var geojsonStr string
 	err = db.Raw(query).Scan(&geojsonStr).Error
@@ -199,23 +157,12 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 		return
 	}
 
-	// 3. 构建连接字符串
-	connStr, err := dbbridge.BuildDSN(engine)
+	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
-		logger.L().Error("Failed to build connection string", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})
-		return
-	}
-
-	// 4. 连接数据库
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
-	if err != nil {
-		logger.L().Error("Failed to connect to database", "error", err)
+		logger.L().Error("Failed to get PostGIS pool", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection failed"})
 		return
 	}
-	sqlDB, _ := db.DB()
-	defer sqlDB.Close()
 
 	// 5. 查询元数据
 	type Metadata struct {
@@ -228,7 +175,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 
 	// 查询记录数
 	// 重要：使用双引号括起 schema 和表名以保留大小写
-	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, schema, table)
+	countQuery := spatial.BuildPostGISCountQuery(schema, table)
 	if err := db.Raw(countQuery).Scan(&metadata.Count).Error; err != nil {
 		logger.L().Error("Failed to query count", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query count failed"})
@@ -237,17 +184,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 
 	// 查询范围
 	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
-	extentQuery := fmt.Sprintf(`
-		SELECT
-			ST_XMin(extent) as min_lng,
-			ST_YMin(extent) as min_lat,
-			ST_XMax(extent) as max_lng,
-			ST_YMax(extent) as max_lat
-		FROM (
-			SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
-			FROM "%s"."%s"
-		) subquery
-	`, geomColumn, schema, table)
+	extentQuery := spatial.BuildPostGISExtentQuery(schema, table, geomColumn)
 
 	var minLng, minLat, maxLng, maxLat float64
 	err = db.Raw(extentQuery).Row().Scan(&minLng, &minLat, &maxLng, &maxLat)
@@ -259,7 +196,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 
 	// 单独查询原始 SRID (所有几何应该有相同的 SRID)
 	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
-	sridQuery := fmt.Sprintf(`SELECT ST_SRID("%s") FROM "%s"."%s" LIMIT 1`, geomColumn, schema, table)
+	sridQuery := spatial.BuildPostGISSRIDQuery(schema, table, geomColumn)
 	err = db.Raw(sridQuery).Scan(&metadata.SRID).Error
 	if err != nil {
 		logger.L().Error("Failed to query SRID", "error", err)

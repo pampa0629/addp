@@ -8,10 +8,6 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
-	"github.com/lib/pq"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // QueryTableRowCount 查询表的记录数
@@ -42,26 +38,13 @@ func QueryTableRowCount(
 		return 0, fmt.Errorf("failed to get engine: %w", err)
 	}
 
-	// 2. 构建连接字符串
-	connStr, err := dbbridge.BuildDSN(engine)
-	if err != nil {
-		return 0, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	// 3. 连接数据库
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
+	// 2. 获取 PostGIS 连接池
+	db, err := GetPostGISPool(engine, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get sql.DB: %w", err)
-	}
-	defer sqlDB.Close()
-
 	// 4. 查询记录数（优先使用统计估算值，回退到 COUNT(*））
-	// 重要：使用 pq.QuoteIdentifier 保留标识符大小写
 	var count int64
 
 	// 4.1 优先使用 pg_stat_user_tables 的估算值（几乎瞬时，适用于大表）
@@ -78,7 +61,7 @@ func QueryTableRowCount(
 	}
 
 	// 4.2 回退：使用 COUNT(*) 精确查询（可能很慢）
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schema), pq.QuoteIdentifier(table))
+	query := BuildPostGISCountQuery(schema, table)
 	err = db.Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to query record count: %w", err)
@@ -120,14 +103,8 @@ func QueryExtent(
 		return nil, "", fmt.Errorf("failed to get engine: %w", err)
 	}
 
-	// 2. 构建连接字符串
-	connStr, err := dbbridge.BuildDSN(engine)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	// 3. 连接数据库
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
+	// 2. 获取 PostGIS 连接池
+	db, err := GetPostGISPool(engine, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -136,7 +113,6 @@ func QueryExtent(
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get sql.DB: %w", err)
 	}
-	defer sqlDB.Close()
 
 	// 4. 从 PostGIS geometry_columns 获取几何列信息
 	var geomInfo struct {

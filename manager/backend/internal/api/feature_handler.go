@@ -7,10 +7,9 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
-	pq "github.com/lib/pq"
 )
 
 // FeatureHandler 处理要素相关的请求（用于地图与表格关联）
@@ -84,43 +83,24 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证资源类型（只支持 PostgreSQL）
-	if resource.EngineType != "postgresql" {
+	// 4. 验证资源类型（当前为空间预览的 PostGIS 专用能力）
+	if !spatial.IsPostGISEngine(resource.EngineType) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql engines are supported"})
 		return
 	}
 
-	// 5. 构建数据库连接（resource 已经是 *commonModels.Engine 类型，无需转换）
-	connStr, err := dbbridge.BuildDSN(resource)
+	// 5. 获取 PostGIS 连接池
+	db, err := spatial.GetPostGISPool(resource, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build connection string"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get database connection"})
 		return
 	}
 
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})
-		return
-	}
-	defer db.Close()
-
-	// 6. 构建安全的 SQL 查询（使用 pq.QuoteIdentifier 防止 SQL 注入）
-	qSchema := pq.QuoteIdentifier(schema)
-	qTable := pq.QuoteIdentifier(table)
-	qGeom := pq.QuoteIdentifier(geomCol)
-	qPrimaryKey := pq.QuoteIdentifier(primaryKey)
-
-	sqlStr := fmt.Sprintf(`
-		SELECT
-			ST_X(ST_Centroid(ST_Transform(%s, 4326))) AS lon,
-			ST_Y(ST_Centroid(ST_Transform(%s, 4326))) AS lat
-		FROM %s.%s
-		WHERE %s = $1
-	`, qGeom, qGeom, qSchema, qTable, qPrimaryKey)
+	sqlStr := spatial.BuildPostGISFeatureCentroidQuery(schema, table, geomCol, primaryKey)
 
 	// 7. 执行查询
 	var lon, lat sql.NullFloat64
-	err = db.QueryRowContext(c.Request.Context(), sqlStr, featureIDStr).Scan(&lon, &lat)
+	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&lon, &lat)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "feature not found"})
@@ -198,49 +178,25 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证资源类型（只支持 PostgreSQL）
-	if resource.EngineType != "postgresql" {
+	// 4. 验证资源类型（当前为空间预览的 PostGIS 专用能力）
+	if !spatial.IsPostGISEngine(resource.EngineType) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql engines are supported"})
 		return
 	}
 
-	// 5. 构建数据库连接
-	connStr, err := dbbridge.BuildDSN(resource)
+	// 5. 获取 PostGIS 连接池
+	db, err := spatial.GetPostGISPool(resource, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build connection string"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get database connection"})
 		return
 	}
 
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})
-		return
-	}
-	defer db.Close()
-
-	// 6. 构建安全的 SQL 查询（获取 GeoJSON 格式的几何）
-	qSchema := pq.QuoteIdentifier(schema)
-	qTable := pq.QuoteIdentifier(table)
-	qGeom := pq.QuoteIdentifier(geomCol)
-	qPrimaryKey := pq.QuoteIdentifier(primaryKey)
-
-	sqlStr := fmt.Sprintf(`
-		SELECT
-			ST_AsGeoJSON(ST_Transform(%s, 4326)) AS geojson,
-			ST_X(ST_Centroid(ST_Transform(%s, 4326))) AS lon,
-			ST_Y(ST_Centroid(ST_Transform(%s, 4326))) AS lat,
-			ST_XMin(ST_Transform(%s, 4326)) AS min_lon,
-			ST_YMin(ST_Transform(%s, 4326)) AS min_lat,
-			ST_XMax(ST_Transform(%s, 4326)) AS max_lon,
-			ST_YMax(ST_Transform(%s, 4326)) AS max_lat
-		FROM %s.%s
-		WHERE %s = $1
-	`, qGeom, qGeom, qGeom, qGeom, qGeom, qGeom, qGeom, qSchema, qTable, qPrimaryKey)
+	sqlStr := spatial.BuildPostGISFeatureGeometryQuery(schema, table, geomCol, primaryKey)
 
 	// 7. 执行查询
 	var geojson sql.NullString
 	var lon, lat, minLon, minLat, maxLon, maxLat sql.NullFloat64
-	err = db.QueryRowContext(c.Request.Context(), sqlStr, featureIDStr).Scan(&geojson, &lon, &lat, &minLon, &minLat, &maxLon, &maxLat)
+	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&geojson, &lon, &lat, &minLon, &minLat, &maxLon, &maxLat)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "feature not found"})

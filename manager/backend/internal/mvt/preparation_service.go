@@ -2,13 +2,11 @@ package mvt
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -28,45 +26,22 @@ func NewPreparationService(managerDB *gorm.DB, resourceService ResourceService) 
 
 // getEngineDB 获取引擎数据库连接
 func (ps *PreparationService) getEngineDB(ctx context.Context, engineID, tenantID uint) (*gorm.DB, error) {
-	// 1. 获取引擎配置
 	engine, err := ps.resourceService.GetEngine(engineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
-
-	// 2. 构建连接字符串
-	connStr, err := dbbridge.BuildDSN(engine)
+	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build connection string: %w", err)
+		return nil, err
 	}
-
-	// 3. 创建数据库连接
-	sqlDB, err := sql.Open("pgx", connStr)
+	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to get sql db from pool: %w", err)
 	}
-
-	// 4. 配置连接参数
-	sqlDB.SetMaxOpenConns(5)
-	sqlDB.SetMaxIdleConns(2)
-	sqlDB.SetConnMaxLifetime(5 * time.Minute)
-
-	// 5. 验证连接
 	if err := sqlDB.PingContext(ctx); err != nil {
-		sqlDB.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-
-	// 6. 创建 GORM DB 实例
-	gormDB, err := gorm.Open(postgres.New(postgres.Config{
-		Conn: sqlDB,
-	}), &gorm.Config{})
-	if err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("failed to create gorm db: %w", err)
-	}
-
-	return gormDB, nil
+	return db, nil
 }
 
 // RunPreparationChecks 运行所有准备检查
@@ -77,14 +52,6 @@ func (ps *PreparationService) RunPreparationChecks(ctx context.Context, tenantID
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine db: %w", err)
 	}
-
-	// 确保在函数结束时关闭连接
-	defer func() {
-		sqlDB, _ := engineDB.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
-	}()
 
 	status := &models.PreparationStatus{
 		Version:     "1.0",
@@ -205,7 +172,7 @@ func (ps *PreparationService) checkAndCreateMaterializedView(ctx context.Context
 	}
 
 	// 物化视图名称
-	mvName := fmt.Sprintf("%s_mv3857", table)
+	mvName := spatial.PostGISMaterializedViewName(table)
 
 	// 快速检查：物化视图是否已存在（仅检查，不创建）
 	var mvExists int
@@ -256,7 +223,7 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 		// 当前表已经是物化视图，直接在物化视图上检查索引
 		indexGeomColumn := "geom_3857" // 物化视图的几何列固定为 geom_3857
 		indexTable := table
-		indexName := fmt.Sprintf("idx_%s_%s_gist", indexTable, indexGeomColumn)
+		indexName := spatial.PostGISGISTIndexName(indexTable, indexGeomColumn)
 
 		// 检查索引是否存在且有效
 		var indexValid bool
@@ -283,7 +250,7 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 		// 索引不存在或无效
 		if indexCheckErr == nil && !indexValid {
 			// 索引存在但无效，先删除
-			dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s.%s", schema, indexName)
+			dropSQL := spatial.BuildPostGISDropIndexSQL(schema, indexName)
 			engineDB.WithContext(ctx).Exec(dropSQL)
 		}
 
@@ -316,7 +283,7 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 	var indexGeomColumn string
 	var indexTable string
 
-	mvName := fmt.Sprintf("%s_mv3857", table)
+	mvName := spatial.PostGISMaterializedViewName(table)
 
 	if sourceSRID != 3857 {
 		// 源表不是 3857，应该在物化视图上建立索引
@@ -349,7 +316,7 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 	}
 
 	// 索引名称
-	indexName := fmt.Sprintf("idx_%s_%s_gist", indexTable, indexGeomColumn)
+	indexName := spatial.PostGISGISTIndexName(indexTable, indexGeomColumn)
 
 	// 快速检查：索引是否已存在且有效（检查 indisvalid 字段）
 	var indexValid bool
@@ -376,7 +343,7 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 
 	// 如果索引存在但无效（INVALID），先删除
 	if indexCheckErr == nil && !indexValid {
-		dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s.%s", schema, indexName)
+		dropSQL := spatial.BuildPostGISDropIndexSQL(schema, indexName)
 		engineDB.WithContext(ctx).Exec(dropSQL)
 	}
 
@@ -409,7 +376,7 @@ func (ps *PreparationService) checkAndAnalyze(ctx context.Context, engineDB *gor
 		targetTable = table
 	} else {
 		// 否则检查是否存在对应的物化视图
-		mvName := fmt.Sprintf("%s_mv3857", table)
+		mvName := spatial.PostGISMaterializedViewName(table)
 		var mvExists int
 		engineDB.WithContext(ctx).Raw(
 			`SELECT COUNT(*) FROM pg_matviews
@@ -462,12 +429,6 @@ func (ps *PreparationService) GetMaterializedViewName(ctx context.Context, engin
 	if err != nil {
 		return "", fmt.Errorf("failed to get engine db: %w", err)
 	}
-	defer func() {
-		sqlDB, _ := engineDB.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
-	}()
 
 	// 获取源表的 SRID
 	var sourceSRID int
@@ -497,15 +458,9 @@ func (ps *PreparationService) RefreshMaterializedView(ctx context.Context, engin
 	if err != nil {
 		return fmt.Errorf("failed to get engine db: %w", err)
 	}
-	defer func() {
-		sqlDB, _ := engineDB.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
-	}()
 
-	mvName := fmt.Sprintf("%s_mv3857", table)
-	refreshSQL := fmt.Sprintf(`REFRESH MATERIALIZED VIEW CONCURRENTLY %s.%s`, schema, mvName)
+	mvName := spatial.PostGISMaterializedViewName(table)
+	refreshSQL := spatial.BuildPostGISRefreshMaterializedViewSQL(schema, mvName)
 	return engineDB.WithContext(ctx).Exec(refreshSQL).Error
 }
 
@@ -537,14 +492,6 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 		return fmt.Errorf("failed to get engine db: %w", err)
 	}
 
-	// 确保在函数结束时关闭连接
-	defer func() {
-		sqlDB, _ := engineDB.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
-	}()
-
 	// 遍历所有检查项，对于 action_required=true 的项目执行相应操作
 	for i, check := range prepStatus.Checks {
 		actionRequired := false
@@ -562,7 +509,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 		case "materialized_view":
 			// 执行物化视图创建
 			if check.Status == "failed" {
-				mvName := fmt.Sprintf("%s_mv3857", table)
+				mvName := spatial.PostGISMaterializedViewName(table)
 				mvFullName := fmt.Sprintf("%s.%s", schema, mvName)
 
 				// 查询主键列名
@@ -577,7 +524,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 				var selectClause string
 				if pkColumn != "" {
 					// 有主键，保留原始主键列名（不重命名，用双引号包裹以保留大小写）
-					selectClause = fmt.Sprintf(`"%s"`, pkColumn)
+					selectClause = spatial.QuotePostGISIdentifier(pkColumn)
 					prepStatus.Checks[i].Details["primary_key"] = pkColumn
 				} else {
 					// 没有主键，生成临时ID
@@ -586,16 +533,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 					prepStatus.Checks[i].Details["warning"] = "源表无主键，使用 row_number() 生成临时ID"
 				}
 
-				// 创建物化视图（转换为 3857）
-				// 注意：列名用双引号包裹以保留大小写（PostgreSQL 区分大小写）
-				createMVSQL := fmt.Sprintf(`
-					CREATE MATERIALIZED VIEW %s AS
-					SELECT
-						%s,
-						ST_Transform("%s", 3857) AS geom_3857
-					FROM "%s"."%s"
-					WHERE "%s" IS NOT NULL
-				`, mvFullName, selectClause, geomColumn, schema, table, geomColumn)
+				createMVSQL := spatial.BuildPostGISCreate3857MaterializedViewSQL(schema, table, mvName, geomColumn, selectClause)
 
 				if err := engineDB.WithContext(ctx).Exec(createMVSQL).Error; err != nil {
 					prepStatus.Checks[i].Status = "failed"
@@ -628,12 +566,9 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 				}
 
 				// indexTableFull 格式为 "schema.table"，需要分离并使用物化视图名称
-				mvName := fmt.Sprintf("%s_mv3857", table)
-
 				// 创建 GIST 空间索引（使用 CONCURRENTLY 避免锁表）
-				createIndexSQL := fmt.Sprintf(`
-					CREATE INDEX CONCURRENTLY "%s" ON "%s"."%s" USING GIST ("%s")
-				`, indexName, schema, mvName, indexColumn)
+				indexTable := spatial.PostGISMaterializedViewName(table)
+				createIndexSQL := spatial.BuildPostGISCreateGISTIndexSQL(schema, indexTable, indexName, indexColumn, true)
 
 				if err := engineDB.WithContext(ctx).Exec(createIndexSQL).Error; err != nil {
 					prepStatus.Checks[i].Status = "failed"
@@ -658,7 +593,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 					}
 				}
 
-				analyzeSQL := fmt.Sprintf("ANALYZE \"%s\".\"%s\"", schema, targetTable)
+				analyzeSQL := spatial.BuildPostGISAnalyzeSQL(schema, targetTable)
 				if err := engineDB.WithContext(ctx).Exec(analyzeSQL).Error; err != nil {
 					// ANALYZE失败但不中断流程
 					prepStatus.Checks[i].Status = "warning"

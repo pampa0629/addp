@@ -4,28 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"sync"
 	"time"
 
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // TileGenerator MVT 瓦片生成器
 // 负责连接 PostgreSQL/PostGIS 并生成 MVT 瓦片
 type TileGenerator struct {
 	resourceService ResourceService // 用于获取数据源连接信息
-
-	// ✅ 连接池管理 (按 engineID 缓存)
-	dbPools   map[uint]*sql.DB
-	poolMutex sync.RWMutex
-
-	// 连接池配置
-	maxDBConns int // 每个数据库的最大连接数
+	poolConfig      *plugin.PoolConfig
 }
 
 // ResourceService 资源服务接口（避免循环依赖）
@@ -39,11 +30,13 @@ func NewTileGenerator(resourceService ResourceService, maxDBConns int) *TileGene
 	if maxDBConns <= 0 {
 		maxDBConns = 10 // 默认值
 	}
+	poolConfig := plugin.DefaultPoolConfig()
+	poolConfig.MaxOpenConns = maxDBConns
+	poolConfig.MaxIdleConns = maxDBConns
 
 	return &TileGenerator{
 		resourceService: resourceService,
-		dbPools:         make(map[uint]*sql.DB),
-		maxDBConns:      maxDBConns,
+		poolConfig:      poolConfig,
 	}
 }
 
@@ -57,7 +50,7 @@ type TileGenerationParams struct {
 	SRID               int
 	PrimaryKey         string
 	Z, X, Y            int
-	MaxZoom            int                                 // 最大 zoom 级别（用于分层 Extent 策略）
+	MaxZoom            int                              // 最大 zoom 级别（用于分层 Extent 策略）
 	OptimizationConfig *commonModels.OptimizationConfig // v3.0 优化配置
 }
 
@@ -181,13 +174,7 @@ func (g *TileGenerator) VerifySRID(
 		return 0, fmt.Errorf("failed to get db pool: %w", err)
 	}
 
-	// 查询几何列的 SRID
-	query := fmt.Sprintf(`
-		SELECT ST_SRID("%s")
-		FROM "%s"."%s"
-		WHERE "%s" IS NOT NULL
-		LIMIT 1
-	`, geomColumn, schema, table, geomColumn)
+	query := spatial.BuildPostGISSRIDQuery(schema, table, geomColumn)
 
 	var actualSRID int
 	err = db.QueryRowContext(ctx, query).Scan(&actualSRID)
@@ -223,18 +210,7 @@ func (g *TileGenerator) GetSpatialExtent(
 		return nil, fmt.Errorf("failed to get db pool: %w", err)
 	}
 
-	// 查询范围（转换为 WGS84）
-	query := fmt.Sprintf(`
-		SELECT
-			ST_XMin(extent) as min_lng,
-			ST_YMin(extent) as min_lat,
-			ST_XMax(extent) as max_lng,
-			ST_YMax(extent) as max_lat
-		FROM (
-			SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
-			FROM "%s"."%s"
-		) t
-	`, geomColumn, schema, table)
+	query := spatial.BuildPostGISExtentQuery(schema, table, geomColumn)
 
 	var minLng, minLat, maxLng, maxLat sql.NullFloat64
 	err = db.QueryRowContext(ctx, query).Scan(&minLng, &minLat, &maxLng, &maxLat)
@@ -268,92 +244,26 @@ func (g *TileGenerator) GetAllColumns(ctx context.Context, db *sql.DB, schema, t
 // 连接池管理（从 service/mvt_service.go 迁移）
 // ============================================================================
 
-// getOrCreateDBPool 获取或创建数据库连接池 (线程安全)
+// getOrCreateDBPool 获取或创建数据库连接池。底层连接池由 common dbbridge/plugin 统一管理。
 func (g *TileGenerator) getOrCreateDBPool(ctx context.Context, engineID, tenantID uint) (*sql.DB, error) {
-	// 1. 先尝试读锁获取已有连接池
-	g.poolMutex.RLock()
-	if pool, exists := g.dbPools[engineID]; exists {
-		g.poolMutex.RUnlock()
-		// 验证连接是否有效
-		if err := pool.PingContext(ctx); err == nil {
-			return pool, nil
-		} else {
-			logger.L().Warn("数据库连接池失效，准备重建", "engine_id", engineID, "error", err)
-		}
-	} else {
-		g.poolMutex.RUnlock()
-	}
-
-	// 2. 使用写锁创建新连接池
-	g.poolMutex.Lock()
-	defer g.poolMutex.Unlock()
-
-	// 双重检查 (可能其他 goroutine 已创建)
-	if pool, exists := g.dbPools[engineID]; exists {
-		if err := pool.PingContext(ctx); err == nil {
-			return pool, nil
-		}
-		// 关闭失效连接池
-		pool.Close()
-		delete(g.dbPools, engineID)
-	}
-
-	// 3. 获取资源配置
 	resource, err := g.resourceService.GetEngine(engineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource: %w", err)
 	}
 
-	// 4. 构建连接字符串
-	connStr, err := g.buildDSN(resource)
+	gormDB, err := spatial.GetPostGISPool(resource, g.poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build connection string: %w", err)
+		return nil, err
 	}
 
-	// 5. 创建连接池
-	db, err := sql.Open("pgx", connStr)
+	db, err := gormDB.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to get sql db from pool: %w", err)
 	}
-
-	// 6. 配置连接池参数
-	// ✅ 使用配置的连接数，而不是硬编码
-	db.SetMaxOpenConns(g.maxDBConns)       // 最大打开连接数
-	db.SetMaxIdleConns(g.maxDBConns)       // 最大空闲连接数（与最大连接数相同，避免频繁创建销毁）
-	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大存活时间
-	db.SetConnMaxIdleTime(1 * time.Minute) // 连接最大空闲时间
-
-	// 7. 验证连接
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-
-	// 8. 缓存连接池
-	g.dbPools[engineID] = db
-	logger.L().Info("✅ 创建数据库连接池",
-		"engine_id", engineID,
-		"max_open_conns", g.maxDBConns,
-		"max_idle_conns", g.maxDBConns)
-
 	return db, nil
-}
-
-// buildDSN 构建 PostgreSQL 连接字符串
-func (g *TileGenerator) buildDSN(engine *commonModels.Engine) (string, error) {
-	connStr, err := dbbridge.BuildDSN(engine)
-	if err != nil {
-		return "", fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	// Docker 环境特殊处理 (如果连接字符串包含 localhost)
-	if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
-		// 简单替换 (更健壮的实现需要解析 DSN)
-		// dbbridge.BuildDSN 已经处理了 localhost 替换
-		// 如果需要额外处理，可以在这里添加
-	}
-
-	return connStr, nil
 }
 
 // getPrimaryKeyColumn 查询表的主键列名
@@ -411,22 +321,7 @@ func (g *TileGenerator) getAllColumns(ctx context.Context, db *sql.DB, schema, t
 
 // Close 关闭所有连接池 (服务关闭时调用)
 func (g *TileGenerator) Close() error {
-	g.poolMutex.Lock()
-	defer g.poolMutex.Unlock()
-
-	var errs []error
-	for engineID, pool := range g.dbPools {
-		if err := pool.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close pool for engine %d: %w", engineID, err))
-		}
-	}
-
-	g.dbPools = make(map[uint]*sql.DB)
-
-	if len(errs) > 0 {
-		return fmt.Errorf("close pools failed: %v", errs)
-	}
-
+	plugin.CloseAllPools()
 	logger.L().Info("✅ 所有数据库连接池已关闭")
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
@@ -25,7 +26,7 @@ type QuickViewService struct {
 	tileGen     *TileGenerator
 	minioClient *minio.Client
 	bucket      string
-	db          *gorm.DB // 数据库连接（用于保存准备状态）
+	db          *gorm.DB            // 数据库连接（用于保存准备状态）
 	prepService *PreparationService // 准备阶段服务
 }
 
@@ -38,12 +39,12 @@ type QuickViewConfig struct {
 	GeomColumn         string
 	SRID               int
 	PrimaryKey         string
-	Extent             []float64                           // [minLng, minLat, maxLng, maxLat]
-	MinZoom            int                                 // 自动计算或指定
+	Extent             []float64 // [minLng, minLat, maxLng, maxLat]
+	MinZoom            int       // 自动计算或指定
 	MaxZoom            int
 	Concurrency        int
 	Fingerprint        string
-	OptimizationConfig *commonModels.OptimizationConfig    // v2.0 优化配置
+	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
 }
 
 // MinIOConfig MinIO 配置
@@ -178,7 +179,7 @@ func (s *QuickViewService) GenerateMixed(
 	// 原始 SRID 是在 actualSRID 中
 	if actualSRID != 3857 {
 		// 需要使用物化视图，修改配置
-		cfg.Table = fmt.Sprintf("%s_mv3857", cfg.Table)
+		cfg.Table = spatial.PostGISMaterializedViewName(cfg.Table)
 		cfg.GeomColumn = "geom_3857"
 		logger.L().Info("🔄 启用物化视图（坐标系转换）",
 			"original_srid", actualSRID,
@@ -188,7 +189,6 @@ func (s *QuickViewService) GenerateMixed(
 		logger.L().Info("✅ 原始表已是 3857 坐标系，无需物化视图",
 			"srid", actualSRID)
 	}
-
 
 	// 1.5 精准统计信息采集（Phase 1诊断）
 	stats, err := s.collectStatistics(ctx, cfg)
@@ -507,7 +507,7 @@ func (s *QuickViewService) GenerateMixed(
 			// 继续处理
 		}
 
-	// 每个瓦片都检查Redis取消标志（性能影响<1%，用户体验最佳）
+		// 每个瓦片都检查Redis取消标志（性能影响<1%，用户体验最佳）
 		if progressTracker != nil && progressTracker.IsCancelled(ctx) {
 			logger.L().Warn("⚠️  瓦片生成被用户取消（Redis标志）",
 				"processed", processedTiles,
@@ -943,8 +943,8 @@ func (s *QuickViewService) processTile(
 		Z:                  coord.Z,
 		X:                  coord.X,
 		Y:                  coord.Y,
-		MaxZoom:            cfg.MaxZoom,                 // 传递最大 zoom 级别
-		OptimizationConfig: cfg.OptimizationConfig,      // v3.0 传递优化配置
+		MaxZoom:            cfg.MaxZoom,            // 传递最大 zoom 级别
+		OptimizationConfig: cfg.OptimizationConfig, // v3.0 传递优化配置
 	}
 
 	mvtData, err := s.tileGen.GenerateTile(ctx, params)
@@ -1118,10 +1118,10 @@ func (s *QuickViewService) DeleteTiles(ctx context.Context, tenantID uint, finge
 
 // StatisticsInfo 统计信息结构
 type StatisticsInfo struct {
-	TableRows            int64
-	LastAnalyzeAgeHours  int
-	NeedsAnalyze         bool
-	Bounds               [4]float64 // [minLng, minLat, maxLng, maxLat]
+	TableRows           int64
+	LastAnalyzeAgeHours int
+	NeedsAnalyze        bool
+	Bounds              [4]float64 // [minLng, minLat, maxLng, maxLat]
 }
 
 // prepareFor3857MVT 准备 3857 物化视图和索引（如果需要）
@@ -1145,7 +1145,7 @@ func (s *QuickViewService) prepareFor3857MVT(
 		return fmt.Errorf("failed to get db connection: %w", err)
 	}
 
-	mvTable := fmt.Sprintf("%s_3857", cfg.Table)
+	mvTable := cfg.Table + "_3857"
 	mvFullName := fmt.Sprintf("%s.%s", cfg.Schema, mvTable)
 	indexName := fmt.Sprintf("idx_%s_geom", mvTable)
 
@@ -1177,10 +1177,15 @@ func (s *QuickViewService) prepareFor3857MVT(
 			CREATE MATERIALIZED VIEW %s AS
 			SELECT
 				id,
-				ST_Transform("%s", 3857)::geometry(GEOMETRY, 3857) AS geom_3857
-			FROM "%s"."%s"
-			WHERE "%s" IS NOT NULL
-		`, mvFullName, cfg.GeomColumn, cfg.Schema, cfg.Table, cfg.GeomColumn)
+				ST_Transform(%s, 3857)::geometry(GEOMETRY, 3857) AS geom_3857
+			FROM %s
+			WHERE %s IS NOT NULL
+		`,
+			spatial.QualifiedPostGISTable(cfg.Schema, mvTable),
+			spatial.QuotePostGISIdentifier(cfg.GeomColumn),
+			spatial.QualifiedPostGISTable(cfg.Schema, cfg.Table),
+			spatial.QuotePostGISIdentifier(cfg.GeomColumn),
+		)
 
 		if _, err := conn.ExecContext(ctx, createMVSQL); err != nil {
 			return fmt.Errorf("failed to create materialized view: %w", err)
@@ -1210,9 +1215,7 @@ func (s *QuickViewService) prepareFor3857MVT(
 			"estimated_time", "可能需要数分钟")
 
 		// 创建 GIST 空间索引
-		createIndexSQL := fmt.Sprintf(`
-			CREATE INDEX %s ON %s USING GIST (geom_3857)
-		`, indexName, mvFullName)
+		createIndexSQL := spatial.BuildPostGISCreateGISTIndexSQL(cfg.Schema, mvTable, indexName, "geom_3857", false)
 
 		if _, err := conn.ExecContext(ctx, createIndexSQL); err != nil {
 			return fmt.Errorf("failed to create spatial index: %w", err)
@@ -1225,7 +1228,7 @@ func (s *QuickViewService) prepareFor3857MVT(
 
 	// 5. 执行 ANALYZE 更新统计信息
 	logger.L().Info("🔄 更新物化视图统计信息", "table", mvFullName)
-	analyzeSQL := fmt.Sprintf("ANALYZE %s", mvFullName)
+	analyzeSQL := spatial.BuildPostGISAnalyzeSQL(cfg.Schema, mvTable)
 	if _, err := conn.ExecContext(ctx, analyzeSQL); err != nil {
 		logger.L().Warn("⚠️ ANALYZE 执行失败，继续", "error", err)
 	} else {
@@ -1284,8 +1287,10 @@ func (s *QuickViewService) collectStatistics(
 		geomCol = "geom_3857"
 	}
 
-	boundRow := conn.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT ST_Extent(\"%s\") as bounds FROM \"%s\".\"%s\"", geomCol, cfg.Schema, table))
+	boundRow := conn.QueryRowContext(ctx, fmt.Sprintf("SELECT ST_Extent(%s) as bounds FROM %s",
+		spatial.QuotePostGISIdentifier(geomCol),
+		spatial.QualifiedPostGISTable(cfg.Schema, table),
+	))
 	var boundsWKT *string
 	if err := boundRow.Scan(&boundsWKT); err != nil {
 		logger.L().Warn("Failed to get spatial bounds", "error", err)
@@ -1324,10 +1329,10 @@ func parseBoundsFromWKT(wkt string) ([4]float64, error) {
 
 // ResourceMetrics 资源监控指标
 type ResourceMetrics struct {
-	CPUPercent     float64
-	MemoryMB       float64
-	DBConnections  int
-	QueryTimeMs    float64
+	CPUPercent    float64
+	MemoryMB      float64
+	DBConnections int
+	QueryTimeMs   float64
 }
 
 // getResourceMetrics 采集资源监控指标
@@ -1363,4 +1368,3 @@ func (s *QuickViewService) getResourceMetrics(ctx context.Context, cfg QuickView
 func isAlreadyMaterializedView(tableName string) bool {
 	return strings.HasSuffix(tableName, "_mv3857")
 }
-
