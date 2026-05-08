@@ -16,7 +16,7 @@
 | `tenant_id` | INTEGER | NULLABLE, INDEX | 租户ID，NULL表示系统级引擎（仅SuperAdmin可见） |
 | `name` | VARCHAR(255) | NOT NULL, INDEX | 显示名称（中文或英文） |
 | `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/python_workflow等） |
-| `engine_category` | VARCHAR(50) | NOT NULL, DEFAULT 'standard' | 引擎分类：standard（标准）/extension（扩展） |
+| `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
 | `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
@@ -56,16 +56,16 @@
 | `idx_engines_name` | `name` | 普通索引 | 按名称查询 |
 | `idx_engines_type` | `engine_type` | 普通索引 | 按类型查询 |
 | `idx_engines_tenant` | `tenant_id` | 普通索引 | 租户隔离 |
-| `idx_engines_category` | `engine_category` | 普通索引 | 按分类查询 |
+| `idx_engines_origin` | `engine_origin` | 普通索引 | 按来源查询 |
 | `idx_engines_builtin` | `is_builtin` | 普通索引 | 查询内置引擎 |
 | `idx_engines_connection_status` | `connection_status` | 普通索引 | 按连接状态查询 |
 | `idx_builtin_engine_type` | `engine_type` | 唯一索引（WHERE is_builtin=true） | 内置引擎类型唯一 |
 
 ---
 
-## 三、引擎分类说明
+## 三、引擎来源说明
 
-### 3.1 Standard 引擎（标准引擎）
+### 3.1 General 引擎（通用引擎）
 
 **定义**：直接连接的数据库和存储引擎
 
@@ -83,7 +83,7 @@
 {
   "name": "生产PostgreSQL",
   "engine_type": "postgresql",
-  "engine_category": "standard",
+  "engine_origin": "general",
   "connection_info": {
     "host": "localhost",
     "port": 5432,
@@ -112,7 +112,7 @@
 {
   "name": "Python工作流引擎",
   "engine_type": "python_workflow",
-  "engine_category": "extension",
+  "engine_origin": "extension",
   "connection_info": {
     "protocol": "http",
     "host": "localhost",
@@ -377,7 +377,7 @@ GET /api/engines?engine_type={type}&is_active={true|false}
       "tenant_id": 1,
       "name": "生产PostgreSQL",
       "engine_type": "postgresql",
-      "engine_category": "standard",
+      "engine_origin": "general",
       "connection_info": {
         "host": "localhost",
         "port": 5432,
@@ -647,7 +647,7 @@ curl -X POST http://localhost:8180/api/engines \
   -d '{
     "name": "Python工作流引擎",
     "engine_type": "python_workflow",
-    "engine_category": "extension",
+    "engine_origin": "extension",
     "connection_info": {
       "protocol": "http",
       "host": "localhost",

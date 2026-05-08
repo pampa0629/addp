@@ -351,8 +351,8 @@ definitions:
         type: integer
       description:
         type: string
-      engine_category:
-        description: 引擎分类：standard（标准引擎）或 extension（扩展引擎）
+      engine_origin:
+        description: 引擎来源：general 或 extension
         type: string
       engine_type:
         description: 引擎类型（postgresql, mysql, python_workflow等）
@@ -389,8 +389,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_system_internal_models.ConnectionInfo'
       description:
         type: string
-      engine_category:
-        description: 引擎分类：standard/extension
+      engine_origin:
+        description: 引擎来源：general/extension
         type: string
       engine_type:
         type: string

@@ -51,6 +51,9 @@ func getEnv(key, defaultValue string) string {
 }
 
 func AutoMigrate(db *gorm.DB) error {
+	if err := migrateEngineOrigin(db); err != nil {
+		return err
+	}
 	return db.AutoMigrate(
 		&models.Tenant{},
 		&models.User{},
@@ -61,6 +64,54 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
+}
+
+func migrateEngineOrigin(db *gorm.DB) error {
+	return db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'engine_category'
+				) AND NOT EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'engine_origin'
+				) THEN
+					ALTER TABLE system.engines RENAME COLUMN engine_category TO engine_origin;
+				END IF;
+
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'engine_origin'
+				) THEN
+					UPDATE system.engines
+					SET engine_origin = CASE
+						WHEN engine_origin = 'standard' THEN 'general'
+						WHEN engine_origin IN ('general', 'extension') THEN engine_origin
+						ELSE 'general'
+					END;
+
+					ALTER TABLE system.engines
+						ALTER COLUMN engine_origin SET DEFAULT 'general',
+						ALTER COLUMN engine_origin SET NOT NULL;
+				END IF;
+
+				IF to_regclass('system.idx_engines_category') IS NOT NULL THEN
+					ALTER INDEX system.idx_engines_category RENAME TO idx_engines_origin;
+				END IF;
+			END IF;
+		END $$;
+	`).Error
 }
 
 // RemoveLocalFileEnginesFromSystem 删除误注册到 System 的本地文件型连接器。

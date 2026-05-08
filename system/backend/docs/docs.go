@@ -2538,8 +2538,8 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "engine_category": {
-                    "description": "引擎分类：standard（标准引擎）或 extension（扩展引擎）",
+                "engine_origin": {
+                    "description": "引擎来源：general 或 extension",
                     "type": "string"
                 },
                 "engine_type": {
@@ -2599,8 +2599,8 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "engine_category": {
-                    "description": "引擎分类：standard/extension",
+                "engine_origin": {
+                    "description": "引擎来源：general/extension",
                     "type": "string"
                 },
                 "engine_type": {

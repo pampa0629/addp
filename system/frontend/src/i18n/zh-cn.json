@@ -118,12 +118,12 @@
     "engine": {
       "title": "引擎管理",
       "typeNfs": "NFS 文件系统",
-      "addStorage": "注册标准引擎",
+      "addStorage": "注册通用引擎",
       "addCompute": "注册扩展引擎",
       "filter": "过滤:",
       "filterStorage": "存储",
       "filterCompute": "计算",
-      "filterStandard": "标准引擎",
+      "filterGeneral": "通用引擎",
       "filterExtension": "扩展引擎",
       "filterBuiltin": "内置",
       "columns": {
@@ -133,7 +133,7 @@
         "connection": "连接",
         "status": "状态",
         "capabilities": "能力",
-        "category": "分类",
+        "category": "来源",
         "builtin": "注册/内置",
         "createdAt": "创建时间",
         "actions": "操作"
@@ -143,7 +143,7 @@
         "disabled": "禁用"
       },
       "category": {
-        "standard": "标准",
+        "general": "通用",
         "extension": "扩展"
       },
       "builtin": {
@@ -174,8 +174,8 @@
       },
       "typeSelection": {
         "title": "选择引擎类型",
-        "storage": "标准引擎",
-        "storageDesc": "数据库、对象存储等标准数据引擎服务",
+        "storage": "通用存储引擎",
+        "storageDesc": "数据库、对象存储等通用数据引擎服务",
         "compute": "计算引擎",
         "computeDesc": "提供计算能力的服务"
       },
@@ -190,7 +190,7 @@
       },
       "dialog": {
         "add": "新建引擎",
-        "addStorage": "新建标准引擎",
+        "addStorage": "新建通用存储引擎",
         "addCompute": "新建计算引擎",
         "edit": "编辑引擎",
         "details": "引擎详情 - {name}",
@@ -205,14 +205,14 @@
           "id": "ID",
           "name": "名称",
           "engineType": "引擎类型",
-          "category": "引擎分类",
+          "category": "引擎来源",
           "registration": "注册方式",
           "status": "激活状态",
           "createdAt": "创建时间",
           "updatedAt": "更新时间",
           "description": "描述",
           "none": "无",
-          "standardEngine": "标准引擎",
+          "generalEngine": "通用引擎",
           "extensionEngine": "扩展引擎",
           "builtinEngine": "内置引擎",
           "userRegistered": "用户注册"
@@ -267,7 +267,7 @@
         }
       },
       "registerPanel": {
-        "title": "选择标准引擎类型",
+        "title": "选择通用引擎类型",
         "subtitle": "左侧选择引擎，右侧填写连接信息",
         "editLockedHint": "编辑状态下不允许切换引擎类型",
         "types": {

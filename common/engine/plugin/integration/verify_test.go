@@ -163,7 +163,7 @@ func TestObjectStoragePlugins(t *testing.T) {
 
 			// 验证类别
 			if p.EngineOrigin() != "general" {
-				t.Errorf("expected general 'standard', got '%s'", p.EngineOrigin())
+				t.Errorf("expected engine origin general, got '%s'", p.EngineOrigin())
 			}
 
 			capabilities := p.Capabilities()

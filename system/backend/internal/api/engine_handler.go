@@ -620,7 +620,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 		newEngine := models.Engine{
 			Name:             req.Name,
 			EngineType:       req.EngineType,
-			EngineCategory:   "extension", // 存量字段，保存 engine origin；工作流引擎为 extension
+			EngineOrigin:     "extension",
 			Description:      req.Description,
 			ConnectionInfo:   req.ConnectionInfo,
 			IsActive:         true,

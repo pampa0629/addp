@@ -38,8 +38,8 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - 不是所有模块都是任务提供者：Console / Gateway / Monitor 不暴露任务接口
 
 **关于 Engine**：
-- `engine_category = 'standard'`：用户手动注册的数据引擎（PostgreSQL/MySQL/MinIO 等）
-- `engine_category = 'extension'`：系统自动注册的计算引擎（Python Workflow/Spark/Jupyter）
+- `engine_origin = 'general'`：用户手动注册的数据引擎（PostgreSQL/MySQL/MinIO 等）
+- `engine_origin = 'extension'`：系统自动注册的计算引擎（Python Workflow/Spark/Jupyter）
 - `is_builtin = true`：内置引擎，tenant_id = null，全局可见
 - `capabilities` JSONB 字段声明引擎的存储/计算能力，各模块按需使用
 
@@ -217,7 +217,7 @@ erDiagram
         uint tenant_id FK "内置引擎时为 null"
         string name
         string engine_type "postgresql|mysql|minio|python_workflow|..."
-        string engine_category "standard | extension"
+        string engine_origin "general | extension"
         bool is_builtin
         json connection_info
         json capabilities "存储/计算能力声明(JSONB)"

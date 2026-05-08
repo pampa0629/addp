@@ -21,7 +21,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="引擎类别">
+      <el-form-item label="能力分组">
         <el-select
           v-model="selectedCategory"
           placeholder="全部"
@@ -30,7 +30,7 @@
           @change="$emit('update:selectedCategory', selectedCategory)"
         >
           <el-option label="全部" value="" />
-          <el-option label="标准引擎" value="storage" />
+          <el-option label="存储引擎" value="storage" />
           <el-option label="计算引擎" value="compute" />
         </el-select>
       </el-form-item>

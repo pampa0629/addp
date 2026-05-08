@@ -165,7 +165,7 @@ register_engine() {
 {
   "name": "${name}",
   "engine_type": "${engine_type}",
-  "engine_category": "standard",
+  "engine_origin": "general",
   "connection_info": ${connection_info},
   "description": "${description}",
   "scan_config": {

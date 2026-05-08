@@ -89,9 +89,9 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 		IsActive:       true,
 	}
 
-	// 设置引擎分类（如果提供）
-	if req.EngineCategory != "" {
-		engine.EngineCategory = req.EngineCategory
+	// 设置引擎来源（如果提供）
+	if req.EngineOrigin != "" {
+		engine.EngineOrigin = req.EngineOrigin
 	}
 
 	// 保存能力声明（如果提供）

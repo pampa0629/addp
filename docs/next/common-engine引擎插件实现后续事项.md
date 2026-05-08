@@ -237,8 +237,8 @@ registry / factory / 注释 / 错误消息仍有 `database plugin`、`unsupporte
 ## 四、剩余后续事项
 
 - PostgreSQL、ClickHouse、Spark SQL 的 metadata 查询仍可继续抽成方言 helper，但当前重复面已从连接、DSN、pool 和 MySQL-compatible metadata 层收敛，不影响新规范落地。
-- `engine_category` 仍是数据库/API 存量字段名，但代码语义保存 engine origin：`general` / `extension`。是否重命名字段属于独立迁移事项。
-- `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md` 中仍有旧示例值 `standard`，这些是模块历史文档，不属于本 common-engine 唯一跟进清单；若后续整理模块文档，应同步改为 `general`。
+- `engine_category` 数据库/API 字段已迁移为 `engine_origin`；启动时会把旧列和值 `standard` 幂等迁移为 `engine_origin = general`。
+- `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md` 已同步字段名和值。
 
 ## 五、验证记录
 

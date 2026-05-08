@@ -89,7 +89,7 @@ var WorkflowStandards = map[string]WorkflowStandard{
 }
 
 // BuildBaseURL 从 connection_info 构建 base_url
-// 用于扩展引擎（engine_category = "extension"）
+// 用于扩展引擎（engine_origin = "extension"）
 func BuildBaseURL(connInfo ConnectionInfo) (string, error) {
 	protocol := "http"
 	if p, ok := connInfo["protocol"].(string); ok && p != "" {

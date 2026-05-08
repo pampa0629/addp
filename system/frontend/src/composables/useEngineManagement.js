@@ -24,8 +24,8 @@ export function useEngineManagement() {
     's3': 'S3'
   }
 
-  // 引擎类别映射
-  const engineCategoryMap = {
+  // 引擎能力分组映射
+  const engineCapabilityGroupMap = {
     'postgresql': 'storage',
     'mysql': 'storage',
     'doris': 'storage',
@@ -52,10 +52,10 @@ export function useEngineManagement() {
   }
 
   /**
-   * 获取引擎类别 (storage/compute)
+   * 获取引擎能力分组 (storage/compute)
    */
-  const getEngineCategory = (engineType) => {
-    return engineCategoryMap[engineType] || 'storage'
+  const getEngineCapabilityGroup = (engineType) => {
+    return engineCapabilityGroupMap[engineType] || 'storage'
   }
 
   /**
@@ -177,7 +177,7 @@ export function useEngineManagement() {
     engines,
     loading,
     getEngineTypeText,
-    getEngineCategory,
+    getEngineCapabilityGroup,
     getConnectionStatus,
     loadEngines,
     createEngine,

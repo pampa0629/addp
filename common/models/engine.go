@@ -144,10 +144,10 @@ func (s *ScanConfig) Scan(value interface{}) error {
 // Engine 引擎信息（对应 system.engines 表）
 type Engine struct {
 	ID             uint           `gorm:"column:id" json:"id"`
-	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                                   // 租户ID，SuperAdmin创建的引擎为null
-	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"`                           // 显示名称（原 display_name）
-	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                      // 引擎类型（postgresql, mysql, python_workflow等）
-	EngineCategory string         `gorm:"column:engine_category;not null;default:'general'" json:"engine_category"` // 存量字段；取值使用 engine origin：general 或 extension
+	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                              // 租户ID，SuperAdmin创建的引擎为null
+	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"`                      // 显示名称（原 display_name）
+	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                 // 引擎类型（postgresql, mysql, python_workflow等）
+	EngineOrigin   string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
 	ScanConfig     *ScanConfig    `gorm:"column:scan_config;type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）

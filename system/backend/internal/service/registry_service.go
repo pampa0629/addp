@@ -82,10 +82,9 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	// 不存在，创建新记录
-	// engine_category 是存量字段，当前保存 engine origin：general / extension。
-	engineCategory := "general"
+	engineOrigin := "general"
 	if p, err := plugin.Get(req.EngineType); err == nil && p != nil {
-		engineCategory = p.EngineOrigin()
+		engineOrigin = p.EngineOrigin()
 	}
 
 	// 内置引擎使用插件的 DisplayName()，非内置引擎使用请求中的 Name
@@ -99,7 +98,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	resource := &localModels.Engine{
 		Name:           engineName,
 		EngineType:     req.EngineType,
-		EngineCategory: engineCategory,
+		EngineOrigin:   engineOrigin,
 		Description:    req.Description,
 		ConnectionInfo: connectionInfo,
 		IsBuiltin:      req.IsBuiltin,

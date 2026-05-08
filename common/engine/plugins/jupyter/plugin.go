@@ -41,21 +41,18 @@ func (p *JupyterPlugin) SensitiveFields() []string {
 }
 
 func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{
-		SchemaVersion: plugin.CapabilitiesSchemaVersion,
-		EngineType:    p.Type(),
-		EngineFamily:  "script",
-		Preview: &plugin.PreviewCapabilities{
-			Supported: false,
-		},
+	caps := plugin.NewScriptCapabilities(p.Type(), []string{"notebook", "lab"}, []string{"python"})
+	caps.Preview = &plugin.PreviewCapabilities{
+		Supported: false,
 	}
+	return caps
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *JupyterPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
+func (p *JupyterPlugin) RuntimeEndpoint(ctx context.Context, connInfo plugin.ConnectionInfo) (string, error) {
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
 	port := plugin.GetInt(connInfo, "port")
 	protocol := plugin.GetString(connInfo, "protocol")
@@ -63,13 +60,46 @@ func (p *JupyterPlugin) TestConnection(ctx context.Context, connInfo plugin.Conn
 	if protocol == "" {
 		protocol = "http"
 	}
-
 	if host == "" || port == 0 {
-		return fmt.Errorf("missing required fields: host, port")
+		return "", fmt.Errorf("missing required fields: host, port")
+	}
+
+	return fmt.Sprintf("%s://%s:%d", protocol, host, port), nil
+}
+
+func (p *JupyterPlugin) OpenSession(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.ScriptSessionRequest) (*plugin.ScriptSession, error) {
+	endpoint, err := p.RuntimeEndpoint(ctx, connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	mode := req.Mode
+	if mode == "" {
+		mode = "lab"
+	}
+	language := req.Language
+	if language == "" {
+		language = "python"
+	}
+
+	return &plugin.ScriptSession{
+		ID:       "jupyter",
+		Endpoint: endpoint,
+		Metadata: map[string]interface{}{
+			"mode":     mode,
+			"language": language,
+		},
+	}, nil
+}
+
+func (p *JupyterPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
+	endpoint, err := p.RuntimeEndpoint(ctx, connInfo)
+	if err != nil {
+		return err
 	}
 
 	// 构建健康检查 URL
-	healthURL := fmt.Sprintf("%s://%s:%d/health", protocol, host, port)
+	healthURL := fmt.Sprintf("%s/health", endpoint)
 	fmt.Printf("[JupyterPlugin] 🔗 准备连接: %s\n", healthURL)
 
 	// 创建 HTTP 客户端，设置超时

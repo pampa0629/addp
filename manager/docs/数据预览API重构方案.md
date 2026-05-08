@@ -116,7 +116,7 @@ Response:
       "id": 59,
       "name": "pg库",
       "engine_type": "postgresql",
-      "engine_category": "standard",
+      "engine_origin": "general",
       ...
     }
   ]

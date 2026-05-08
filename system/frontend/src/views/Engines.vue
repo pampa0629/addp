@@ -17,7 +17,7 @@
         <el-checkbox-group v-model="selectedCategories" @change="handleFilterChange">
           <el-checkbox value="storage">{{ t('system.engine.filterStorage') }}</el-checkbox>
           <el-checkbox value="compute">{{ t('system.engine.filterCompute') }}</el-checkbox>
-          <el-checkbox value="standard">{{ t('system.engine.filterStandard') }}</el-checkbox>
+          <el-checkbox value="general">{{ t('system.engine.filterGeneral') }}</el-checkbox>
           <el-checkbox value="extension">{{ t('system.engine.filterExtension') }}</el-checkbox>
           <el-checkbox value="builtin">{{ t('system.engine.filterBuiltin') }}</el-checkbox>
         </el-checkbox-group>
@@ -78,11 +78,11 @@
           </template>
         </el-table-column>
 
-        <!-- 引擎分类 -->
+        <!-- 引擎来源 -->
         <el-table-column :label="t('system.engine.columns.category')" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.engine_category === 'standard' ? 'success' : 'warning'" size="small">
-              {{ row.engine_category === 'standard' ? t('system.engine.category.standard') : t('system.engine.category.extension') }}
+            <el-tag :type="row.engine_origin === 'general' ? 'success' : 'warning'" size="small">
+              {{ row.engine_origin === 'general' ? t('system.engine.category.general') : t('system.engine.category.extension') }}
             </el-tag>
           </template>
         </el-table-column>
@@ -182,7 +182,7 @@
       :width="isStorageLayout ? '980px' : '600px'"
       @close="resetForm"
     >
-      <!-- 标准引擎表单（左侧类型选择 + 右侧连接信息） -->
+      <!-- 通用存储引擎表单（左侧类型选择 + 右侧连接信息） -->
       <template v-if="isStorageLayout">
         <div class="storage-layout">
           <aside class="engine-type-sidebar">
@@ -226,7 +226,7 @@
         </div>
       </template>
 
-      <!-- 标准引擎表单（非双栏场景兜底） -->
+      <!-- 通用存储引擎表单（非双栏场景兜底） -->
       <StorageEngineForm
         v-else-if="!isComputeEngineForm"
         ref="storageFormRef"
@@ -276,8 +276,8 @@
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.category')">
-                <el-tag :type="selectedEngine.engine_category === 'standard' ? 'success' : 'warning'">
-                  {{ selectedEngine.engine_category === 'standard' ? t('system.engine.dialog.basicInfo.standardEngine') : t('system.engine.dialog.basicInfo.extensionEngine') }}
+                <el-tag :type="selectedEngine.engine_origin === 'general' ? 'success' : 'warning'">
+                  {{ selectedEngine.engine_origin === 'general' ? t('system.engine.dialog.basicInfo.generalEngine') : t('system.engine.dialog.basicInfo.extensionEngine') }}
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.registration')">
@@ -477,11 +477,11 @@ const pageSize = ref(10)
 const total = ref(0)
 
 // 能力过滤
-const selectedCategories = ref(['storage', 'compute', 'standard', 'extension', 'builtin']) // 默认显示全部引擎
+const selectedCategories = ref(['storage', 'compute', 'general', 'extension', 'builtin']) // 默认显示全部引擎
 
 // 引擎类型选择对话框
 const typeSelectionVisible = ref(false)
-const selectedEngineCategory = ref('')
+const selectedEngineCapabilityGroup = ref('')
 
 // 资源表单对话框
 const dialogVisible = ref(false)
@@ -507,14 +507,14 @@ const form = ref({
 
 const dialogTitle = computed(() => {
   if (isEdit.value) return t('system.engine.dialog.edit')
-  if (selectedEngineCategory.value === 'storage') return t('system.engine.dialog.addStorage')
-  if (selectedEngineCategory.value === 'compute') return t('system.engine.dialog.addCompute')
+  if (selectedEngineCapabilityGroup.value === 'storage') return t('system.engine.dialog.addStorage')
+  if (selectedEngineCapabilityGroup.value === 'compute') return t('system.engine.dialog.addCompute')
   return t('system.engine.dialog.add')
 })
 
 // 是否使用计算引擎表单
 const isComputeEngineForm = computed(() => {
-  return selectedEngineCategory.value === 'compute' ||
+  return selectedEngineCapabilityGroup.value === 'compute' ||
          (isEdit.value && form.value.engine_type === 'compute_engine')
 })
 
@@ -602,28 +602,28 @@ const filteredEngines = computed(() => {
     const hasStorage = hasStorageCapability(caps)
     const hasCompute = hasComputeCapability(caps)
     const isBuiltin = engine.is_builtin
-    const engineCategory = engine.engine_category
+    const engineOrigin = engine.engine_origin
 
     const matchesCapability =
       (selectedCategories.value.includes('storage') && hasStorage) ||
       (selectedCategories.value.includes('compute') && hasCompute)
 
-    const matchesEngineCategory =
-      (selectedCategories.value.includes('standard') && engineCategory === 'standard') ||
-      (selectedCategories.value.includes('extension') && engineCategory === 'extension')
+    const matchesEngineOrigin =
+      (selectedCategories.value.includes('general') && engineOrigin === 'general') ||
+      (selectedCategories.value.includes('extension') && engineOrigin === 'extension')
 
     const matchesBuiltin = selectedCategories.value.includes('builtin') || !isBuiltin
 
     const hasCapabilityFilter = selectedCategories.value.includes('storage') || selectedCategories.value.includes('compute')
-    const hasCategoryFilter = selectedCategories.value.includes('standard') || selectedCategories.value.includes('extension')
+    const hasOriginFilter = selectedCategories.value.includes('general') || selectedCategories.value.includes('extension')
 
     let matches = true
-    if (hasCapabilityFilter && hasCategoryFilter) {
-      matches = matchesCapability && matchesEngineCategory
+    if (hasCapabilityFilter && hasOriginFilter) {
+      matches = matchesCapability && matchesEngineOrigin
     } else if (hasCapabilityFilter) {
       matches = matchesCapability
-    } else if (hasCategoryFilter) {
-      matches = matchesEngineCategory
+    } else if (hasOriginFilter) {
+      matches = matchesEngineOrigin
     } else {
       matches = false
     }
@@ -670,9 +670,7 @@ const parseCapabilitiesJSON = (capabilitiesJSON) => {
 }
 
 const hasStorageCapability = (caps) => {
-  return caps.schema_version === 'engine.capabilities/v1' &&
-    Array.isArray(caps.storage?.families) &&
-    caps.storage.families.length > 0
+  return caps.schema_version === 'engine.capabilities/v1' && Boolean(caps.storage)
 }
 
 const hasComputeCapability = (caps) => {
@@ -815,9 +813,7 @@ const parseCapabilities = (capabilitiesJSON) => {
   const tags = []
 
   if (hasStorageCapability(caps)) {
-    caps.storage.families.forEach(family => {
-      tags.push(getStorageTypeLabel(family))
-    })
+    tags.push(getStorageTypeLabel(caps.engine_family))
   }
 
   if (hasComputeCapability(caps)) {
@@ -941,7 +937,7 @@ const selectStorageEngineType = (engineType) => {
 const showAddStorageDialog = () => {
   isEdit.value = false
   editId.value = null
-  selectedEngineCategory.value = 'storage'
+  selectedEngineCapabilityGroup.value = 'storage'
   resetForm()
   form.value = {
     ...form.value,
@@ -953,13 +949,13 @@ const showAddStorageDialog = () => {
 const showAddComputeDialog = () => {
   isEdit.value = false
   editId.value = null
-  selectedEngineCategory.value = 'compute'
+  selectedEngineCapabilityGroup.value = 'compute'
   resetForm()
   dialogVisible.value = true
 }
 
 const confirmEngineType = (category) => {
-  selectedEngineCategory.value = category
+  selectedEngineCapabilityGroup.value = category
   typeSelectionVisible.value = false
   dialogVisible.value = true
 }
@@ -969,7 +965,7 @@ const editEngine = (row) => {
   editId.value = row.id
 
   if (row.engine_type === 'compute_engine') {
-    selectedEngineCategory.value = 'compute'
+    selectedEngineCapabilityGroup.value = 'compute'
 
     form.value = {
       unique_identifier: row.unique_identifier || '',
@@ -989,7 +985,7 @@ const editEngine = (row) => {
       is_active: row.is_active
     }
   } else {
-    selectedEngineCategory.value = 'storage'
+    selectedEngineCapabilityGroup.value = 'storage'
 
     form.value = {
       engine_type: row.engine_type,
@@ -1223,7 +1219,7 @@ onMounted(() => {
   color: var(--addp-text-secondary);
 }
 
-/* 标准引擎注册双栏布局 */
+/* 通用存储引擎注册双栏布局 */
 .storage-layout {
   display: flex;
   gap: 12px;
