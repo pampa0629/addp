@@ -29,9 +29,9 @@ import (
 	_ "github.com/addp/common/engine/plugins/spark_workflow"
 )
 
-// BuildConnectionString 使用插件系统构建连接字符串
-func BuildConnectionString(engine *models.Engine) (string, error) {
-	return plugin.BuildConnectionString(toPluginEngine(engine))
+// BuildDSN 使用插件系统构建连接字符串
+func BuildDSN(engine *models.Engine) (string, error) {
+	return plugin.BuildDSN(toPluginEngine(engine))
 }
 
 // TestConnection 使用插件系统测试连接
@@ -73,7 +73,7 @@ func GetAllPlugins() map[string]PluginInfo {
 		result[dbType] = PluginInfo{
 			Type:            p.Type(),
 			DisplayName:     p.DisplayName(),
-			Category:        p.EngineCategory(),
+			Origin:          p.EngineOrigin(),
 			DefaultPort:     p.DefaultPort(),
 			RequiredFields:  p.RequiredFields(),
 			SensitiveFields: p.SensitiveFields(),
@@ -87,7 +87,7 @@ func GetAllPlugins() map[string]PluginInfo {
 type PluginInfo struct {
 	Type            string   `json:"type"`
 	DisplayName     string   `json:"display_name"`
-	Category        string   `json:"category"`
+	Origin          string   `json:"origin"`
 	DefaultPort     int      `json:"default_port"`
 	RequiredFields  []string `json:"required_fields"`
 	SensitiveFields []string `json:"sensitive_fields"`

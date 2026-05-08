@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -80,4 +81,49 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 	}
 
 	return &QueryResult{Columns: columns, Rows: resultRows}, nil
+}
+
+// ReadSQLBatch adapts SQLQueryRuntimeProvider to BatchReadableProvider.
+func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error) {
+	query := strings.TrimSpace(opts.Query)
+	if query == "" {
+		if len(path.Segments) < 2 {
+			return nil, fmt.Errorf("SQL batch read requires item path or query")
+		}
+		namespace := path.Segments[len(path.Segments)-2].Name
+		item := path.Segments[len(path.Segments)-1].Name
+		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit)
+	}
+	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit})
+	if err != nil {
+		return nil, err
+	}
+	return QueryResultToBatchData(result, opts.Offset), nil
+}
+
+func sampleSQLForEngine(engineType, namespace, item string, limit int) string {
+	if limit <= 0 {
+		limit = 1000
+	}
+	switch engineType {
+	case "mysql", "doris", "spark":
+		return fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT %d", namespace, item, limit)
+	default:
+		return fmt.Sprintf("SELECT * FROM \"%s\".\"%s\" LIMIT %d", namespace, item, limit)
+	}
+}
+
+func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {
+	if result == nil {
+		return &BatchData{Offset: offset}
+	}
+	fields := make([]FieldInfo, 0, len(result.Columns))
+	for _, column := range result.Columns {
+		fields = append(fields, FieldInfo{Name: column})
+	}
+	return &BatchData{
+		Rows:   result.Rows,
+		Fields: fields,
+		Offset: offset,
+	}
 }

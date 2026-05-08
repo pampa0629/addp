@@ -29,8 +29,8 @@ func (p *SparkSQLPlugin) DisplayName() string {
 	return "Apache Spark"
 }
 
-func (p *SparkSQLPlugin) EngineCategory() string {
-	return "standard"
+func (p *SparkSQLPlugin) EngineOrigin() string {
+	return "general"
 }
 
 func (p *SparkSQLPlugin) DefaultPort() int {
@@ -54,6 +54,10 @@ func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
 
 func (p *SparkSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.TabularCatalogModel("database")
+}
+
+func (p *SparkSQLPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func (p *SparkSQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
@@ -99,11 +103,15 @@ func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connect
 	return executeSparkSQL(ctx, connInfo, sql)
 }
 
+func (p *SparkSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+}
+
 func (p *SparkSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *SparkSQLPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
+func (p *SparkSQLPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
 	port := plugin.GetInt(connInfo, "port")
 	if port == 0 {
@@ -225,56 +233,13 @@ func ParseConnectionString(connStr string) (host string, port int, database stri
 // CreateConnectionPool 创建GORM连接池
 // 注意：Apache Spark 使用Thrift协议，这里创建一个兼容的连接池
 func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
-	// 解析连接参数
-	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-	port := plugin.GetInt(connInfo, "port")
-	if port == 0 {
-		port = p.DefaultPort()
-	}
-
-	database := plugin.GetString(connInfo, "database")
-	if database == "" {
-		database = "default"
-	}
-
-	user := plugin.GetString(connInfo, "user")
-	password := plugin.GetString(connInfo, "password")
-
-	if host == "" {
+	parts := plugin.ParseDriverConnInfo(connInfo, p.DefaultPort(), "default")
+	if parts.Host == "" {
 		return nil, fmt.Errorf("missing required field: host")
 	}
 
-	// Apache Spark 通过Thrift协议，我们使用MySQL兼容模式
-	// 构建DSN: user:password@tcp(host:port)/database
-	var dsn string
-	if user != "" && password != "" {
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
-	} else if user != "" {
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/%s", user, host, port, database)
-	} else {
-		dsn = fmt.Sprintf("tcp(%s:%d)/%s", host, port, database)
-	}
-
-	// 创建GORM连接（使用MySQL驱动，因为 Apache Spark 兼容MySQL协议）
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		DisableAutomaticPing: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
-	}
-
-	// 获取底层的 *sql.DB 并配置连接池
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-	}
-
-	// 配置连接池参数
-	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
-
-	return db, nil
+	dsn := plugin.MySQLStyleDSN(parts.User, parts.Password, parts.Host, parts.Port, parts.Database, nil)
+	return plugin.OpenGORMPool(mysql.Open(dsn), poolConfig)
 }
 
 // GetDialect 获取数据库方言

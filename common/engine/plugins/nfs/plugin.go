@@ -2,7 +2,6 @@ package nfs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -19,10 +18,10 @@ func init() {
 	plugin.Register(&NFSPlugin{})
 }
 
-func (p *NFSPlugin) Type() string           { return "nfs" }
-func (p *NFSPlugin) DisplayName() string    { return "NFS 文件系统" }
-func (p *NFSPlugin) EngineCategory() string { return "standard" }
-func (p *NFSPlugin) DefaultPort() int       { return 2049 }
+func (p *NFSPlugin) Type() string         { return "nfs" }
+func (p *NFSPlugin) DisplayName() string  { return "NFS 文件系统" }
+func (p *NFSPlugin) EngineOrigin() string { return "general" }
+func (p *NFSPlugin) DefaultPort() int     { return 2049 }
 
 func (p *NFSPlugin) RequiredFields() []string {
 	return []string{"server", "export_path"}
@@ -39,7 +38,6 @@ func (p *NFSPlugin) Capabilities() plugin.EngineCapabilities {
 func (p *NFSPlugin) StoreSemantics() plugin.StoreSemantics {
 	capabilities := p.Capabilities()
 	return plugin.StoreSemantics{
-		Families:     capabilities.Storage.Families,
 		Semantics:    capabilities.Storage.Semantics,
 		NotSupported: capabilities.Storage.NotSupported,
 	}
@@ -49,8 +47,8 @@ func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
 
-func (p *NFSPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
-	return plugin.FileSystemCatalogAdapter{
+func (p *NFSPlugin) fileCatalogAdapter() plugin.FileCatalogAdapter {
+	return plugin.FileCatalogAdapter{
 		ListRootsFunc:       p.listRoots,
 		ListDirectoryFunc:   p.listDirectory,
 		GetFileMetadataFunc: p.getFileMetadata,
@@ -58,31 +56,27 @@ func (p *NFSPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
 }
 
 func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileSystemCatalogChildren(ctx, p.fileSystemCatalogAdapter(), connInfo, parent.EngineID, parent, plugin.CatalogTermRoot, opts)
+	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogAdapter(), connInfo, parent.EngineID, parent, opts)
 }
 
 func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileSystemCatalogPath(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path, plugin.CatalogTermRoot)
+	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileSystemItem(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.DescribeFileItem(ctx, p.fileCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	return p.readFile(ctx, connInfo, path.StringPath())
 }
 
-func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
-	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
+func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+	return p.OpenFileForWrite(ctx, connInfo, path.StringPath())
 }
 
-func (p *NFSPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal NFS connection info: %w", err)
-	}
-	return string(bytes), nil
+func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
+	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
 // TestConnection 通过 listRoots 验证连通性

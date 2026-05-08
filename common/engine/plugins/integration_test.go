@@ -9,24 +9,36 @@ import (
 	// 导入所有插件以触发 init() 注册
 	_ "github.com/addp/common/engine/plugins/clickhouse"
 	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/jupyter"
+	_ "github.com/addp/common/engine/plugins/math_workflow"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/mongodb"
 	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/neo4j"
+	_ "github.com/addp/common/engine/plugins/nfs"
 	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/python_workflow"
 	_ "github.com/addp/common/engine/plugins/s3"
 	_ "github.com/addp/common/engine/plugins/spark_sql"
+	_ "github.com/addp/common/engine/plugins/spark_workflow"
 )
 
 func TestAllPluginsRegistered(t *testing.T) {
 	expectedTypes := []string{
 		"clickhouse",
 		"doris",
+		"jupyter",
+		"math_workflow",
 		"minio",
 		"mongodb",
 		"mysql",
+		"neo4j",
+		"nfs",
 		"postgresql",
+		"python_workflow",
 		"s3",
 		"spark",
+		"spark_workflow",
 	}
 
 	registeredTypes := plugin.List()
@@ -50,8 +62,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 8 {
-		t.Errorf("Expected 8 plugins, got %d", len(plugins))
+	if len(plugins) != 14 {
+		t.Errorf("Expected 14 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -64,9 +76,15 @@ func TestGetAllPlugins(t *testing.T) {
 		{"doris", "Apache Doris"},
 		{"spark", "Apache Spark"},
 		{"clickhouse", "ClickHouse"},
+		{"jupyter", "Jupyter Engine"},
+		{"math_workflow", "Math Workflow"},
 		{"mongodb", "MongoDB"},
+		{"neo4j", "Neo4j"},
+		{"nfs", "NFS 文件系统"},
 		{"minio", "MinIO"},
+		{"python_workflow", "Python Workflow"},
 		{"s3", "Amazon S3"},
+		{"spark_workflow", "Spark Workflow"},
 	}
 
 	for _, tc := range testCases {
@@ -85,17 +103,23 @@ func TestGetAllPlugins(t *testing.T) {
 
 func TestPluginCapabilities(t *testing.T) {
 	testCases := []struct {
-		dbType   string
-		category string
+		dbType string
+		origin string
 	}{
-		{"postgresql", "standard"},
-		{"mysql", "standard"},
-		{"doris", "standard"},
-		{"clickhouse", "standard"},
-		{"mongodb", "standard"},
-		{"spark", "standard"},
-		{"minio", "standard"},
-		{"s3", "standard"},
+		{"postgresql", "general"},
+		{"mysql", "general"},
+		{"doris", "general"},
+		{"clickhouse", "general"},
+		{"mongodb", "general"},
+		{"spark", "general"},
+		{"minio", "general"},
+		{"s3", "general"},
+		{"nfs", "general"},
+		{"neo4j", "general"},
+		{"python_workflow", "extension"},
+		{"spark_workflow", "extension"},
+		{"math_workflow", "extension"},
+		{"jupyter", "extension"},
 	}
 
 	for _, tc := range testCases {
@@ -105,9 +129,9 @@ func TestPluginCapabilities(t *testing.T) {
 			continue
 		}
 
-		if p.EngineCategory() != tc.category {
-			t.Errorf("Expected category '%s' for '%s', got '%s'",
-				tc.category, tc.dbType, p.EngineCategory())
+		if p.EngineOrigin() != tc.origin {
+			t.Errorf("Expected origin '%s' for '%s', got '%s'",
+				tc.origin, tc.dbType, p.EngineOrigin())
 		}
 
 		// 验证能力声明不为空
@@ -135,6 +159,12 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"spark", 10000},
 		{"minio", 9000},
 		{"s3", 443},
+		{"nfs", 2049},
+		{"neo4j", 7687},
+		{"python_workflow", 8099},
+		{"spark_workflow", 8098},
+		{"math_workflow", 8089},
+		{"jupyter", 8097},
 	}
 
 	for _, tc := range testCases {
@@ -164,6 +194,12 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"spark", "host"},
 		{"minio", "endpoint"},
 		{"s3", "access_key"},
+		{"nfs", "server"},
+		{"neo4j", "password"},
+		{"python_workflow", "host"},
+		{"spark_workflow", "port"},
+		{"math_workflow", "host"},
+		{"jupyter", "port"},
 	}
 
 	for _, tc := range testCases {
@@ -190,13 +226,25 @@ func TestPluginRequiredFields(t *testing.T) {
 }
 
 func TestPluginSensitiveFields(t *testing.T) {
-	// 所有插件都应该有 password 或 secret_key 作为敏感字段
 	allPlugins := plugin.GetAll()
 
 	for dbType, p := range allPlugins {
+		if p.EngineOrigin() == "extension" || dbType == "nfs" {
+			continue
+		}
 		sensitiveFields := p.SensitiveFields()
 		if len(sensitiveFields) == 0 {
 			t.Errorf("Plugin '%s' has no sensitive fields defined", dbType)
 		}
+	}
+}
+
+func TestPluginCapabilitiesMatchProviders(t *testing.T) {
+	for engineType, p := range plugin.GetAll() {
+		t.Run(engineType, func(t *testing.T) {
+			if err := plugin.ValidatePluginCapabilities(p); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

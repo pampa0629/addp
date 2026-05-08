@@ -28,9 +28,9 @@ func (p *Neo4jPlugin) DisplayName() string {
 	return "Neo4j"
 }
 
-// EngineCategory 返回引擎分类
-func (p *Neo4jPlugin) EngineCategory() string {
-	return "standard"
+// EngineOrigin 返回引擎分类
+func (p *Neo4jPlugin) EngineOrigin() string {
+	return "general"
 }
 
 // DefaultPort 返回默认端口（Bolt 协议）
@@ -49,59 +49,15 @@ func (p *Neo4jPlugin) SensitiveFields() []string {
 }
 
 func (p *Neo4jPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{
-		SchemaVersion: plugin.CapabilitiesSchemaVersion,
-		EngineType:    p.Type(),
-		EngineFamily:  "graph",
-		Storage: &plugin.StorageCapabilities{
-			Families: []string{"graph"},
-			CatalogModel: &plugin.CatalogModelSpec{
-				PathVersion: plugin.CatalogPathVersion,
-				RootTerm:    "server",
-				Levels: []plugin.CatalogLevelSpec{
-					{Term: "database", Kinds: []string{"namespace"}, Container: true},
-					{Term: "label", Kinds: []string{"label", "relationship"}, Item: true},
-				},
-			},
-			Catalog: &plugin.CatalogCapability{
-				Supported:       true,
-				RealTime:        true,
-				SystemFiltering: true,
-				NodeKinds:       []string{"namespace", "label", "relationship"},
-			},
-			Metadata: &plugin.MetadataCapability{
-				Supported:      true,
-				FieldSchema:    true,
-				Statistics:     true,
-				NativeMetadata: true,
-			},
-			Store: &plugin.StoreCapability{
-				Read:       true,
-				Write:      true,
-				BatchRead:  true,
-				BatchWrite: true,
-			},
-		},
-		Compute: &plugin.ComputeCapabilities{
-			Query: &plugin.QueryCapability{
-				Supported:       true,
-				Languages:       []string{"cypher"},
-				DefaultLanguage: "cypher",
-				ResultKinds:     []string{"table", "graph"},
-				SupportsExplain: true,
-			},
-		},
-		Preview: &plugin.PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"graph_sample", "tabular_rows"},
-			MaxRows:      1000,
-			UsesComposer: true,
-		},
-	}
+	return plugin.NewGraphCapabilities(p.Type())
 }
 
 func (p *Neo4jPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.GraphCatalogModel()
+}
+
+func (p *Neo4jPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func (p *Neo4jPlugin) graphCatalogAdapter() plugin.GraphCatalogAdapter {
@@ -142,24 +98,39 @@ func (p *Neo4jPlugin) ExecuteRuntimeGraphQuery(ctx context.Context, connInfo plu
 	return p.executeGraphQuery(ctx, connInfo, cypher)
 }
 
+func (p *Neo4jPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	query := opts.Query
+	if query == "" {
+		if len(path.Segments) == 0 {
+			return nil, fmt.Errorf("Neo4j batch read requires item path or query")
+		}
+		label := escapeCypherLabel(path.Segments[len(path.Segments)-1].Name)
+		limit := opts.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		query = fmt.Sprintf("MATCH (n:`%s`) RETURN n LIMIT %d", label, limit)
+	}
+	result, err := p.executeQuery(ctx, connInfo, query)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.QueryResultToBatchData(result, opts.Offset), nil
+}
+
 // ValidateConnectionInfo 验证连接信息
 func (p *Neo4jPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-// BuildConnectionString 构建 Bolt 连接字符串
-func (p *Neo4jPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-	port := plugin.GetInt(connInfo, "port")
-	if port == 0 {
-		port = p.DefaultPort()
-	}
-
-	if host == "" {
+// BuildDSN 构建 Bolt 连接字符串
+func (p *Neo4jPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	parts := plugin.ParseDriverConnInfo(connInfo, p.DefaultPort(), "")
+	if parts.Host == "" {
 		return "", fmt.Errorf("missing required Neo4j connection info: host")
 	}
 
-	return fmt.Sprintf("bolt://%s:%d", host, port), nil
+	return fmt.Sprintf("bolt://%s:%d", parts.Host, parts.Port), nil
 }
 
 // TestConnection 测试 Neo4j 连接
@@ -190,18 +161,14 @@ func (p *Neo4jPlugin) TestConnection(ctx context.Context, connInfo plugin.Connec
 
 // createDriver 创建 Neo4j driver（内部辅助方法）
 func (p *Neo4jPlugin) createDriver(ctx context.Context, connInfo plugin.ConnectionInfo) (neo4jdriver.DriverWithContext, error) {
-	boltURI, err := p.BuildConnectionString(connInfo)
+	boltURI, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	user := plugin.GetString(connInfo, "user")
-	if user == "" {
-		user = plugin.GetString(connInfo, "username")
-	}
-	password := plugin.GetString(connInfo, "password")
+	parts := plugin.ParseDriverConnInfo(connInfo, p.DefaultPort(), "")
 
-	auth := neo4jdriver.BasicAuth(user, password, "")
+	auth := neo4jdriver.BasicAuth(parts.User, parts.Password, "")
 	driver, err := neo4jdriver.NewDriverWithContext(boltURI, auth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Neo4j driver: %w", err)

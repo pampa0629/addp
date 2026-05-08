@@ -5,7 +5,7 @@
 **内容**:
 
 - [client/system.go](common/client/system.go) - SystemClient 用于与 System 模块通信
-- [models/engine.go](common/models/engine.go) - 共享的 Engine 模型和 BuildConnectionString 工具
+- [models/engine.go](common/models/engine.go) - 共享的 Engine 模型和 `connection_info` 结构
 - [config/loader.go](common/config/loader.go) - 集中式配置加载,带回退
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/format` - 通用文件格式、类型信息、格式信息、parser / extractor / analyzer
@@ -20,7 +20,6 @@ replace github.com/addp/common => ../../common
 // 使用别名导入以避免冲突
 import (
     commonClient "github.com/addp/common/client"
-    commonModels "github.com/addp/common/models"
 )
 
 // 使用 SystemClient 获取引擎
@@ -28,8 +27,9 @@ client := commonClient.NewSystemClient(systemURL, jwtToken)
 engines, err := client.ListEngines("postgresql")
 engine, err := client.GetEngine(engineID)
 
-// 构建连接字符串 (自动解密密码)
-connStr, err := commonModels.BuildConnectionString(engine)
+// 使用 connection_info 作为连接信息事实源
+// 需要底层 driver DSN 的数据库类引擎，由对应 engine plugin 的 DSNProvider.BuildDSN() 构建
+connInfo := engine.ConnectionInfo
 ```
 
 **关键设计原则**:
@@ -37,6 +37,7 @@ connStr, err := commonModels.BuildConnectionString(engine)
 - 最小外部依赖 (仅 Go 标准库)
 - 所有模块使用相同的 SystemClient 实现
 - Engine 模型在所有服务中是规范的
+- `connection_info` 是所有引擎连接信息的统一事实源；DSN 不是所有引擎的通用抽象
 - 通用数据类型和格式能力可以放入 common,但 Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块
 - common 的破坏性更改会影响所有模块 - 彻底测试
 

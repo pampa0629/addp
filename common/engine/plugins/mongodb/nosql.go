@@ -382,7 +382,7 @@ func (p *MongoDBPlugin) IsSystemDatabase(databaseName string) bool {
 
 func (p *MongoDBPlugin) openClient(ctx context.Context, connInfo plugin.ConnectionInfo) (*mongo.Client, error) {
 	// 构建连接字符串
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}

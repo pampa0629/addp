@@ -16,7 +16,6 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 		EngineType:    engineType,
 		EngineFamily:  "tabular",
 		Storage: &StorageCapabilities{
-			Families: []string{"tabular"},
 			CatalogModel: &CatalogModelSpec{
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "server",
@@ -41,12 +40,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				NativeMetadata:  true,
 			},
 			Store: &StoreCapability{
-				Read:         true,
-				Write:        opts.Write,
-				BatchRead:    true,
-				BatchWrite:   opts.Write,
-				Transactions: opts.Transactions,
-				Formats:      []string{"table"},
+				BatchRead: true,
 			},
 		},
 		Compute: &ComputeCapabilities{
@@ -96,7 +90,6 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 type TabularCapabilityOptions struct {
 	Write           bool
 	BulkWrite       bool
-	Transactions    bool
 	SpatialMetadata bool
 	SupportsExplain bool
 	SupportsCancel  bool
@@ -111,7 +104,6 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "object",
 		Storage: &StorageCapabilities{
-			Families: []string{"object"},
 			CatalogModel: &CatalogModelSpec{
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "service",
@@ -131,15 +123,11 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				NativeMetadata: true,
 			},
 			Store: &StoreCapability{
-				Read:        true,
-				Write:       true,
-				StreamRead:  true,
-				StreamWrite: true,
-				RangeRead:   true,
-				Formats:     []string{"csv", "geojson", "json", "parquet", "shapefile"},
+				StreamRead: true,
+				RangeRead:  true,
 			},
 			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read"},
-			NotSupported: []string{"posix_random_write", "atomic_rename", "real_directory"},
+			NotSupported: []string{"range_write", "real_directory"},
 		},
 		Transfer: &TransferCapabilities{
 			Read:  true,
@@ -160,26 +148,136 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 }
 
 func NewFileCapabilities(engineType string) EngineCapabilities {
-	caps := NewObjectCapabilities(engineType)
-	caps.EngineFamily = "file"
-	caps.Storage.Families = []string{"file"}
-	caps.Storage.CatalogModel = &CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    "root",
-		Levels: []CatalogLevelSpec{
-			{Term: "directory", Kinds: []string{"directory"}, Container: true},
-			{Term: "file", Kinds: []string{"file"}, Item: true},
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		EngineFamily:  "file",
+		Storage: &StorageCapabilities{
+			CatalogModel: &CatalogModelSpec{
+				PathVersion: CatalogPathVersion,
+				RootTerm:    "root",
+				Levels: []CatalogLevelSpec{
+					{Term: "directory", Kinds: []string{"directory"}, Container: true, Optional: true},
+					{Term: "file", Kinds: []string{"file"}, Item: true},
+				},
+			},
+			Catalog: &CatalogCapability{
+				Supported: true,
+				RealTime:  true,
+				NodeKinds: []string{"root", "directory", "file"},
+			},
+			Metadata: &MetadataCapability{
+				Supported:      true,
+				NativeMetadata: true,
+			},
+			Store: &StoreCapability{
+				StreamRead:  true,
+				StreamWrite: true,
+			},
+			Semantics: []string{"root", "directory", "file", "stream_read", "stream_write"},
+		},
+		Transfer: &TransferCapabilities{
+			Read:  true,
+			Write: true,
+			ConnectorTypes: map[string]string{
+				"reader": "nfs",
+				"writer": "nfs",
+			},
+			SupportedFormats: []string{"csv", "geojson", "json", "parquet", "shapefile"},
+		},
+		Preview: &PreviewCapabilities{
+			Supported:    true,
+			Modes:        []string{"file_parse", "raw_text", "binary_metadata"},
+			MaxBytes:     10 * 1024 * 1024,
+			UsesComposer: true,
 		},
 	}
-	caps.Storage.Catalog.NodeKinds = []string{"directory", "file"}
-	caps.Storage.Semantics = []string{"directory", "file", "stream_read", "stream_write"}
-	caps.Storage.NotSupported = nil
-	caps.Transfer.ConnectorTypes = map[string]string{
-		"reader": "nfs",
-		"writer": "nfs",
+}
+
+func NewDocumentCapabilities(engineType string) EngineCapabilities {
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		EngineFamily:  "document",
+		Storage: &StorageCapabilities{
+			CatalogModel: PtrCatalogModel(DocumentCatalogModel()),
+			Catalog: &CatalogCapability{
+				Supported: true,
+				RealTime:  true,
+				NodeKinds: []string{"database", "collection"},
+			},
+			Metadata: &MetadataCapability{
+				Supported:      true,
+				FieldSchema:    true,
+				Statistics:     true,
+				Indexes:        true,
+				Sampling:       true,
+				NativeMetadata: true,
+			},
+			Store: &StoreCapability{
+				BatchRead: true,
+			},
+			Semantics: []string{"database", "collection", "document"},
+		},
+		Compute: &ComputeCapabilities{
+			Query: &QueryCapability{
+				Supported:       true,
+				Languages:       []string{"mql"},
+				DefaultLanguage: "mql",
+				ResultKinds:     []string{"document", "table"},
+			},
+		},
+		Transfer: &TransferCapabilities{
+			Read:             true,
+			Write:            true,
+			BulkWrite:        true,
+			SupportedFormats: []string{"document", "json"},
+		},
+		Preview: &PreviewCapabilities{
+			Supported:    true,
+			Modes:        []string{"document_samples"},
+			MaxRows:      1000,
+			UsesComposer: true,
+		},
 	}
-	caps.Preview.Modes = []string{"file_parse", "raw_text", "binary_metadata"}
-	return caps
+}
+
+func NewGraphCapabilities(engineType string) EngineCapabilities {
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		EngineFamily:  "graph",
+		Storage: &StorageCapabilities{
+			CatalogModel: PtrCatalogModel(GraphCatalogModel()),
+			Catalog: &CatalogCapability{
+				Supported: true,
+				RealTime:  true,
+				NodeKinds: []string{"database", "label", "relationship"},
+			},
+			Metadata: &MetadataCapability{
+				Supported:      true,
+				NativeMetadata: true,
+			},
+			Store: &StoreCapability{
+				BatchRead: true,
+			},
+			Semantics: []string{"database", "label", "relationship", "node", "edge"},
+		},
+		Compute: &ComputeCapabilities{
+			Query: &QueryCapability{
+				Supported:       true,
+				Languages:       []string{"cypher"},
+				DefaultLanguage: "cypher",
+				ResultKinds:     []string{"graph", "table"},
+			},
+		},
+		Preview: &PreviewCapabilities{
+			Supported:    true,
+			Modes:        []string{"graph_sample"},
+			MaxRows:      1000,
+			UsesComposer: true,
+		},
+	}
 }
 
 func NewWorkflowCapabilities(engineType, runtimeAPI string) EngineCapabilities {
@@ -194,6 +292,20 @@ func NewWorkflowCapabilities(engineType, runtimeAPI string) EngineCapabilities {
 				DynamicOperators: true,
 			},
 		},
+	}
+}
+
+func PtrCatalogModel(model CatalogModelSpec) *CatalogModelSpec {
+	return &model
+}
+
+func StoreSemanticsFromCapabilities(caps EngineCapabilities) StoreSemantics {
+	if caps.Storage == nil {
+		return StoreSemantics{}
+	}
+	return StoreSemantics{
+		Semantics:    caps.Storage.Semantics,
+		NotSupported: caps.Storage.NotSupported,
 	}
 }
 

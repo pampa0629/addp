@@ -2,7 +2,6 @@ package math_workflow
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,7 +24,7 @@ func (p *MathWorkflowPlugin) DisplayName() string {
 	return "Math Workflow"
 }
 
-func (p *MathWorkflowPlugin) EngineCategory() string {
+func (p *MathWorkflowPlugin) EngineOrigin() string {
 	return "extension" // Math Workflow 是扩展引擎
 }
 
@@ -49,13 +48,16 @@ func (p *MathWorkflowPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionIn
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *MathWorkflowPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	// 工作流引擎返回 JSON 格式的连接信息
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal Math Workflow connection info: %w", err)
-	}
-	return string(bytes), nil
+func (p *MathWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.RuntimeBaseURL(connInfo)
+}
+
+func (p *MathWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+	return plugin.HTTPListOperators(ctx, connInfo)
+}
+
+func (p *MathWorkflowPlugin) ExecuteWorkflow(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
+	return plugin.HTTPExecuteWorkflow(ctx, connInfo, req)
 }
 
 func (p *MathWorkflowPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {

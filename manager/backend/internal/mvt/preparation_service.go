@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -14,7 +14,7 @@ import (
 
 // PreparationService 准备阶段服务
 type PreparationService struct {
-	managerDB       *gorm.DB       // Manager 数据库连接（用于 QuickView 记录）
+	managerDB       *gorm.DB        // Manager 数据库连接（用于 QuickView 记录）
 	resourceService ResourceService // 资源服务（用于获取引擎配置）
 }
 
@@ -35,7 +35,7 @@ func (ps *PreparationService) getEngineDB(ctx context.Context, engineID, tenantI
 	}
 
 	// 2. 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -582,7 +582,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 				} else {
 					// 没有主键，生成临时ID
 					selectClause = "row_number() OVER () AS id"
-					prepStatus.Checks[i].Details["primary_key"] = "id"  // 生成的ID列名为 id
+					prepStatus.Checks[i].Details["primary_key"] = "id" // 生成的ID列名为 id
 					prepStatus.Checks[i].Details["warning"] = "源表无主键，使用 row_number() 生成临时ID"
 				}
 

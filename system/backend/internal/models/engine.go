@@ -13,7 +13,7 @@ type JSONString = commonModels.JSONString
 type EngineCreateRequest struct {
 	Name           string         `json:"name" binding:"required"` // 显示名称（中文或英文）
 	EngineType     string         `json:"engine_type" binding:"required"`
-	EngineCategory string         `json:"engine_category"` // 引擎分类：standard/extension
+	EngineCategory string         `json:"engine_category"` // 存量字段，保存 engine origin：general/extension
 	ConnectionInfo ConnectionInfo `json:"connection_info" binding:"required"`
 	Description    string         `json:"description"`
 	Capabilities   *JSONString    `json:"capabilities"` // 能力声明JSON

@@ -29,7 +29,7 @@ func HasStorageCapability(resource *models.Engine) bool {
 		return false
 	}
 
-	return cap.Storage != nil && len(cap.Storage.Families) > 0
+	return cap.Storage != nil
 }
 
 // HasStorageType 检查资源是否具有指定类型的存储能力
@@ -143,13 +143,7 @@ func hasStorageFamily(capabilities *engineplugin.EngineCapabilities, storageType
 		return false
 	}
 
-	for _, family := range capabilities.Storage.Families {
-		if family == storageType {
-			return true
-		}
-	}
-
-	return false
+	return capabilities.EngineFamily == storageType
 }
 
 func supportsDevMode(capabilities *engineplugin.EngineCapabilities, devMode string) bool {

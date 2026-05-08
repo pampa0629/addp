@@ -20,8 +20,8 @@ func TestGenerateDefaultCapabilitiesUsesStructuredPluginSchema(t *testing.T) {
 	if capabilities.SchemaVersion != engineplugin.CapabilitiesSchemaVersion {
 		t.Fatalf("schema version = %q, want %q", capabilities.SchemaVersion, engineplugin.CapabilitiesSchemaVersion)
 	}
-	if capabilities.Storage == nil || len(capabilities.Storage.Families) != 1 || capabilities.Storage.Families[0] != "tabular" {
-		t.Fatalf("storage families = %#v, want [tabular]", capabilities.Storage)
+	if capabilities.EngineFamily != "tabular" || capabilities.Storage == nil {
+		t.Fatalf("engine family/storage = %q/%#v, want tabular storage", capabilities.EngineFamily, capabilities.Storage)
 	}
 }
 

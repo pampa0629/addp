@@ -9,7 +9,7 @@ import (
 type MockPlugin struct {
 	TypeValue            string
 	DisplayNameValue     string
-	EngineCategoryValue  string
+	EngineOriginValue    string
 	DefaultPortValue     int
 	RequiredFieldsValue  []string
 	SensitiveFieldsValue []string
@@ -17,7 +17,7 @@ type MockPlugin struct {
 
 func (m *MockPlugin) Type() string              { return m.TypeValue }
 func (m *MockPlugin) DisplayName() string       { return m.DisplayNameValue }
-func (m *MockPlugin) EngineCategory() string    { return m.EngineCategoryValue }
+func (m *MockPlugin) EngineOrigin() string      { return m.EngineOriginValue }
 func (m *MockPlugin) DefaultPort() int          { return m.DefaultPortValue }
 func (m *MockPlugin) RequiredFields() []string  { return m.RequiredFieldsValue }
 func (m *MockPlugin) SensitiveFields() []string { return m.SensitiveFieldsValue }
@@ -31,7 +31,7 @@ func (m *MockPlugin) Capabilities() EngineCapabilities {
 func (m *MockPlugin) TestConnection(ctx context.Context, connInfo ConnectionInfo) error {
 	return nil
 }
-func (m *MockPlugin) BuildConnectionString(connInfo ConnectionInfo) (string, error) {
+func (m *MockPlugin) BuildDSN(connInfo ConnectionInfo) (string, error) {
 	return "mock://connection", nil
 }
 func (m *MockPlugin) ValidateConnectionInfo(connInfo ConnectionInfo) error {

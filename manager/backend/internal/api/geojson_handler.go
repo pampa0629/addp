@@ -7,8 +7,8 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -81,7 +81,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	}
 
 	// 4. 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		logger.L().Error("Failed to build connection string", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})
@@ -200,7 +200,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	}
 
 	// 3. 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		logger.L().Error("Failed to build connection string", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to database"})

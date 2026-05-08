@@ -16,14 +16,10 @@ func (p *sampleCatalogProvider) Type() string { return "sample" }
 
 func (p *sampleCatalogProvider) DisplayName() string { return "Sample" }
 
-func (p *sampleCatalogProvider) EngineCategory() string { return "standard" }
+func (p *sampleCatalogProvider) EngineOrigin() string { return "general" }
 
 func (p *sampleCatalogProvider) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
 	return nil
-}
-
-func (p *sampleCatalogProvider) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	return "", nil
 }
 
 func (p *sampleCatalogProvider) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

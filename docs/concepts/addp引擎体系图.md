@@ -68,10 +68,14 @@ classDiagram
     class EnginePlugin {
         +Type()
         +DisplayName()
-        +EngineCategory()
+        +EngineOrigin()
         +ValidateConnectionInfo()
         +TestConnection()
         +Capabilities()
+    }
+
+    class DSNProvider {
+        +BuildDSN()
     }
 
     class CatalogModelProvider {
@@ -95,6 +99,26 @@ classDiagram
         +OpenContent()
     }
 
+    class ContentWritableProvider {
+        +CreateContent()
+    }
+
+    class RangeReadableProvider {
+        +OpenRange()
+    }
+
+    class RangeWritableProvider {
+        +WriteRange()
+    }
+
+    class BatchReadableProvider {
+        +ReadBatch()
+    }
+
+    class BatchWritableProvider {
+        +WriteBatch()
+    }
+
     class QueryRuntimeProvider {
         +QueryLanguages()
         +GenerateSampleQuery()
@@ -113,8 +137,14 @@ classDiagram
     EnginePlugin <|-- CatalogModelProvider
     EnginePlugin <|-- CatalogProvider
     EnginePlugin <|-- ItemMetadataProvider
+    EnginePlugin <|-- DSNProvider
     EnginePlugin <|-- StoreProvider
     StoreProvider <|-- ContentReadableProvider
+    StoreProvider <|-- ContentWritableProvider
+    StoreProvider <|-- RangeReadableProvider
+    StoreProvider <|-- RangeWritableProvider
+    StoreProvider <|-- BatchReadableProvider
+    StoreProvider <|-- BatchWritableProvider
     EnginePlugin <|-- QueryRuntimeProvider
     EnginePlugin <|-- WorkflowRuntimeProvider
     EnginePlugin <|-- ScriptRuntimeProvider
@@ -126,12 +156,12 @@ classDiagram
 
 | 模块 | 消费方式 |
 | --- | --- |
-| System | 调用 `EnginePlugin` 做连接测试、连接信息校验和 capabilities 刷新。 |
+| System | 调用 `EnginePlugin` 做连接测试、连接信息校验和 capabilities 刷新；连接信息统一保存为 `connection_info` map。 |
 | Meta | 调用 `CatalogProvider` 和 `ItemMetadataProvider` 扫描真实目录与叶子元数据。 |
-| Manager | 使用 Meta 树展示探查目录，预览时组合 metadata、content read 和 query runtime。 |
+| Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
-| Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 TransferAdapter 统一配置来源。 |
+| Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 TransferAdapter 统一配置来源；高吞吐读写优先消费 batch / stream 能力。 |
 
 ---
 

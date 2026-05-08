@@ -21,7 +21,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 ### models
 共享的数据模型：
 - `Resource`: 资源信息结构体
-- `BuildConnectionString()`: 根据资源信息构建数据库连接字符串
+- `Engine`: 引擎配置模型，`ConnectionInfo` 是连接信息事实源
 
 ## 使用方法
 
@@ -40,15 +40,11 @@ replace github.com/yourusername/addp/common => ../common
 ```go
 import (
     "github.com/yourusername/addp/common/client"
-    "github.com/yourusername/addp/common/models"
 )
 
 // 使用 SystemClient
 sysClient := client.NewSystemClient("http://localhost:8180", token)
 engine, err := sysClient.GetEngine(1)
-
-// 构建连接字符串
-connStr, err := models.BuildConnectionString(engine)
 ```
 
 ## 设计原则

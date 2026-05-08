@@ -2,9 +2,7 @@ package clickhouse
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"time"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/addp/common/engine/plugin"
@@ -30,9 +28,9 @@ func (p *ClickHousePlugin) DisplayName() string {
 	return "ClickHouse"
 }
 
-// EngineCategory 返回引擎分类
-func (p *ClickHousePlugin) EngineCategory() string {
-	return "standard"
+// EngineOrigin 返回引擎分类
+func (p *ClickHousePlugin) EngineOrigin() string {
+	return "general"
 }
 
 // DefaultPort 返回默认端口
@@ -61,6 +59,10 @@ func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 
 func (p *ClickHousePlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.TabularCatalogModel("database")
+}
+
+func (p *ClickHousePlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func (p *ClickHousePlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
@@ -106,71 +108,30 @@ func (p *ClickHousePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Conne
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
+func (p *ClickHousePlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+}
+
 // ValidateConnectionInfo 验证连接信息
 func (p *ClickHousePlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-// BuildConnectionString 构建连接字符串
-func (p *ClickHousePlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-	port := plugin.GetInt(connInfo, "port")
-	if port == 0 {
-		port = p.DefaultPort()
-	}
-
-	// 兼容两种字段名：username 和 user
-	user := plugin.GetString(connInfo, "user")
-	if user == "" {
-		user = plugin.GetString(connInfo, "username")
-	}
-
-	password := plugin.GetString(connInfo, "password")
-	database := plugin.GetString(connInfo, "database")
-
-	if host == "" || user == "" {
-		return "", fmt.Errorf("missing required ClickHouse connection info (host, user)")
-	}
-
-	// ClickHouse DSN 格式：tcp://host:port?username=xxx&password=xxx&database=xxx
-	return plugin.ClickHouseStyleDSN(user, password, host, port, database, map[string]string{
+// BuildDSN 构建连接字符串
+func (p *ClickHousePlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.BuildClickHouseDSN(connInfo, p.DefaultPort(), map[string]string{
 		"dial_timeout":       "10s",
 		"max_execution_time": "60",
-	}), nil
+	})
 }
 
 // TestConnection 测试数据库连接
 func (p *ClickHousePlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-	// 构建 DSN
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
-
-	// 连接数据库
-	db, err := sql.Open("clickhouse", connStr)
-	if err != nil {
-		return fmt.Errorf("failed to open connection: %w", err)
-	}
-	defer db.Close()
-
-	// 设置连接超时
-	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// 测试连接
-	if err := db.PingContext(testCtx); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// 执行简单查询验证
-	var version string
-	err = db.QueryRowContext(testCtx, "SELECT version()").Scan(&version)
-	if err != nil {
-		return fmt.Errorf("failed to query version: %w", err)
-	}
-
-	return nil
+	return plugin.TestSQLConnection(ctx, "clickhouse", connStr, "SELECT version()")
 }
 
 // SupportsTransactions 实现 SQLDatabasePlugin 接口
@@ -188,32 +149,12 @@ func (p *ClickHousePlugin) DefaultDialect() string {
 
 // CreateConnectionPool 创建GORM连接池
 func (p *ClickHousePlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
-	// 构建连接字符串
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	// 创建GORM连接
-	db, err := gorm.Open(clickhouse.Open(connStr), &gorm.Config{
-		DisableAutomaticPing: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
-	}
-
-	// 获取底层的 *sql.DB 并配置连接池
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-	}
-
-	// 配置连接池参数
-	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
-
-	return db, nil
+	return plugin.OpenGORMPool(clickhouse.Open(connStr), poolConfig)
 }
 
 // GetDialect 获取数据库方言

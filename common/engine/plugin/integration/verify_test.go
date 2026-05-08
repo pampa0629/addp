@@ -35,19 +35,19 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 			if p.DisplayName() == "" {
 				t.Error("DisplayName() should not be empty")
 			}
-			if p.EngineCategory() == "" {
-				t.Error("EngineCategory() should not be empty")
+			if p.EngineOrigin() == "" {
+				t.Error("EngineOrigin() should not be empty")
 			}
 
-			category := p.EngineCategory()
-			t.Logf("Plugin: %s, Category: %s", dbType, category)
+			general := p.EngineOrigin()
+			t.Logf("Plugin: %s, Origin: %s", dbType, general)
 
 			// 2. 按类别验证
-			switch category {
-			case "standard":
+			switch general {
+			case "general":
 				capabilities := p.Capabilities()
-				if capabilities.Storage == nil || len(capabilities.Storage.Families) == 0 {
-					t.Errorf("standard engine should declare storage capabilities")
+				if capabilities.EngineFamily == "" || capabilities.Storage == nil {
+					t.Errorf("general engine should declare engine_family and storage capabilities")
 					return
 				}
 
@@ -80,7 +80,7 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 				t.Logf("%s declares compute capabilities ✓", dbType)
 
 			default:
-				t.Errorf("unknown EngineCategory: %s", category)
+				t.Errorf("unknown EngineOrigin: %s", general)
 			}
 		})
 	}
@@ -98,8 +98,8 @@ func TestRelationalDBPlugins(t *testing.T) {
 			}
 
 			// 验证类别
-			if p.EngineCategory() != "standard" {
-				t.Errorf("expected category 'standard', got '%s'", p.EngineCategory())
+			if p.EngineOrigin() != "general" {
+				t.Errorf("expected engine origin general, got '%s'", p.EngineOrigin())
 			}
 
 			capabilities := p.Capabilities()
@@ -162,8 +162,8 @@ func TestObjectStoragePlugins(t *testing.T) {
 			}
 
 			// 验证类别
-			if p.EngineCategory() != "standard" {
-				t.Errorf("expected category 'standard', got '%s'", p.EngineCategory())
+			if p.EngineOrigin() != "general" {
+				t.Errorf("expected general 'standard', got '%s'", p.EngineOrigin())
 			}
 
 			capabilities := p.Capabilities()

@@ -824,9 +824,9 @@ func convertManagerEngineToCommon(managerEngine *models.Engine) *commonModels.En
 		CreatedAt:      managerEngine.CreatedAt,
 		UpdatedAt:      managerEngine.UpdatedAt,
 		// Common 的 Engine 有额外字段，使用默认值
-		EngineCategory:   "standard", // 默认为标准引擎
-		ScanConfig:       nil,        // Manager 不维护扫描配置
-		ConnectionStatus: "unknown",  // 默认未知状态
+		EngineCategory:   "general", // 存量字段，保存 engine origin
+		ScanConfig:       nil,       // Manager 不维护扫描配置
+		ConnectionStatus: "unknown", // 默认未知状态
 		LastCheckAt:      nil,
 		CheckMessage:     "",
 	}

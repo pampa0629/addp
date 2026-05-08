@@ -2,7 +2,6 @@ package spark_workflow
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,7 +24,7 @@ func (p *SparkWorkflowPlugin) DisplayName() string {
 	return "Spark Workflow"
 }
 
-func (p *SparkWorkflowPlugin) EngineCategory() string {
+func (p *SparkWorkflowPlugin) EngineOrigin() string {
 	return "extension"
 }
 
@@ -49,13 +48,16 @@ func (p *SparkWorkflowPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionI
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *SparkWorkflowPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	// 工作流引擎返回 JSON 格式的连接信息
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal Spark Workflow connection info: %w", err)
-	}
-	return string(bytes), nil
+func (p *SparkWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.RuntimeBaseURL(connInfo)
+}
+
+func (p *SparkWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+	return plugin.HTTPListOperators(ctx, connInfo)
+}
+
+func (p *SparkWorkflowPlugin) ExecuteWorkflow(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
+	return plugin.HTTPExecuteWorkflow(ctx, connInfo, req)
 }
 
 func (p *SparkWorkflowPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {

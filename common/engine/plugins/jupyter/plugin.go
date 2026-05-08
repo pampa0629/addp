@@ -2,7 +2,6 @@ package jupyter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,7 +24,7 @@ func (p *JupyterPlugin) DisplayName() string {
 	return "Jupyter Engine"
 }
 
-func (p *JupyterPlugin) EngineCategory() string {
+func (p *JupyterPlugin) EngineOrigin() string {
 	return "extension" // Jupyter 是扩展引擎
 }
 
@@ -42,20 +41,18 @@ func (p *JupyterPlugin) SensitiveFields() []string {
 }
 
 func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook"}, []string{"python", "shell"})
+	return plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    p.Type(),
+		EngineFamily:  "script",
+		Preview: &plugin.PreviewCapabilities{
+			Supported: false,
+		},
+	}
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
-}
-
-func (p *JupyterPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	// 工作流引擎返回 JSON 格式的连接信息
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal Jupyter connection info: %w", err)
-	}
-	return string(bytes), nil
 }
 
 func (p *JupyterPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {

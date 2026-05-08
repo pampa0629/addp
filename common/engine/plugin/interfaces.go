@@ -30,9 +30,9 @@ type EnginePlugin interface {
 	// 例如: "PostgreSQL", "MySQL", "Apache Doris", "Python Workflow"
 	DisplayName() string
 
-	// EngineCategory 返回引擎分类
-	// 可选值: "standard" (标准引擎，如 PostgreSQL/MySQL), "extension" (扩展引擎，如工作流引擎)
-	EngineCategory() string
+	// EngineOrigin 返回引擎来源。
+	// 可选值: "general"（用户熟悉的通用现成技术）, "extension"（按 ADDP 扩展规范实现的引擎或运行时）
+	EngineOrigin() string
 
 	// TestConnection 测试引擎连接是否真正可用。
 	//
@@ -43,10 +43,6 @@ type EnginePlugin interface {
 	//   - NoSQL 数据库：至少执行一次需要权限的命令（如 ListDatabases、SHOW DATABASES）
 	//   - 对象存储：至少执行一次需要认证的 API 调用（如 ListBuckets）
 	TestConnection(ctx context.Context, connInfo ConnectionInfo) error
-
-	// BuildConnectionString 根据连接信息构建连接字符串
-	// 返回的格式取决于具体引擎类型
-	BuildConnectionString(connInfo ConnectionInfo) (string, error)
 
 	// ValidateConnectionInfo 验证连接信息的完整性和有效性
 	// 在创建/更新引擎前调用，进行字段检查
@@ -66,6 +62,13 @@ type EnginePlugin interface {
 
 	// Capabilities 返回结构化引擎能力声明
 	Capabilities() EngineCapabilities
+}
+
+// DSNProvider 是需要底层 driver DSN 的引擎可选实现。
+// connection_info 仍是统一事实源；DSN 不进入 System 持久化，也不作为能力判断依据。
+type DSNProvider interface {
+	EnginePlugin
+	BuildDSN(connInfo ConnectionInfo) (string, error)
 }
 
 // StoragePlugin 存储引擎标记接口。

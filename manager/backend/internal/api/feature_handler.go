@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
 	pq "github.com/lib/pq"
@@ -91,7 +91,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	}
 
 	// 5. 构建数据库连接（resource 已经是 *commonModels.Engine 类型，无需转换）
-	connStr, err := commonModels.BuildConnectionString(resource)
+	connStr, err := dbbridge.BuildDSN(resource)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build connection string"})
 		return
@@ -205,7 +205,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	}
 
 	// 5. 构建数据库连接
-	connStr, err := commonModels.BuildConnectionString(resource)
+	connStr, err := dbbridge.BuildDSN(resource)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build connection string"})
 		return

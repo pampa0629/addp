@@ -32,9 +32,9 @@ func (p *MongoDBPlugin) DisplayName() string {
 	return "MongoDB"
 }
 
-// EngineCategory 返回引擎分类
-func (p *MongoDBPlugin) EngineCategory() string {
-	return "standard"
+// EngineOrigin 返回引擎分类
+func (p *MongoDBPlugin) EngineOrigin() string {
+	return "general"
 }
 
 // DefaultPort 返回默认端口
@@ -53,66 +53,15 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 }
 
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{
-		SchemaVersion: plugin.CapabilitiesSchemaVersion,
-		EngineType:    p.Type(),
-		EngineFamily:  "document",
-		Storage: &plugin.StorageCapabilities{
-			Families: []string{"document"},
-			CatalogModel: &plugin.CatalogModelSpec{
-				PathVersion: plugin.CatalogPathVersion,
-				RootTerm:    "server",
-				Levels: []plugin.CatalogLevelSpec{
-					{Term: "database", Kinds: []string{"namespace"}, Container: true},
-					{Term: "collection", Kinds: []string{"collection"}, Item: true},
-				},
-			},
-			Catalog: &plugin.CatalogCapability{
-				Supported:       true,
-				RealTime:        true,
-				SystemFiltering: true,
-				NodeKinds:       []string{"namespace", "collection"},
-			},
-			Metadata: &plugin.MetadataCapability{
-				Supported:      true,
-				FieldSchema:    true,
-				Statistics:     true,
-				Indexes:        true,
-				Sampling:       true,
-				NativeMetadata: true,
-			},
-			Store: &plugin.StoreCapability{
-				Read:       true,
-				Write:      true,
-				BatchRead:  true,
-				BatchWrite: true,
-				Formats:    []string{"document", "json"},
-			},
-		},
-		Compute: &plugin.ComputeCapabilities{
-			Query: &plugin.QueryCapability{
-				Supported:       true,
-				Languages:       []string{"mql"},
-				DefaultLanguage: "mql",
-				ResultKinds:     []string{"table", "document"},
-			},
-		},
-		Transfer: &plugin.TransferCapabilities{
-			Read:             true,
-			Write:            true,
-			SupportedFormats: []string{"document", "json"},
-		},
-		Preview: &plugin.PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"document_samples", "tabular_rows"},
-			MaxRows:      1000,
-			UsesComposer: true,
-		},
-	}
+	return plugin.NewDocumentCapabilities(p.Type())
 }
 
 func (p *MongoDBPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.DocumentCatalogModel()
+}
+
+func (p *MongoDBPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func (p *MongoDBPlugin) documentCatalogAdapter() plugin.DocumentCatalogAdapter {
@@ -152,35 +101,44 @@ func (p *MongoDBPlugin) ExecuteDocumentQuery(ctx context.Context, connInfo plugi
 	return p.executeQuery(ctx, connInfo, command)
 }
 
+func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	query := opts.Query
+	if query == "" {
+		collection := ""
+		if len(path.Segments) > 0 {
+			collection = path.Segments[len(path.Segments)-1].Name
+		}
+		if collection == "" {
+			return nil, fmt.Errorf("MongoDB batch read requires collection path or query")
+		}
+		limit := opts.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		query = fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": %d}`, collection, limit)
+	}
+	result, err := p.ExecuteDocumentQuery(ctx, connInfo, query, plugin.QueryOptions{Limit: opts.Limit})
+	if err != nil {
+		return nil, err
+	}
+	return plugin.QueryResultToBatchData(result, opts.Offset), nil
+}
+
 // ValidateConnectionInfo 验证连接信息
 func (p *MongoDBPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-// BuildConnectionString 构建连接字符串
-func (p *MongoDBPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-	port := plugin.GetInt(connInfo, "port")
-	if port == 0 {
-		port = p.DefaultPort()
-	}
-
-	// 兼容两种字段名：username 和 user
-	user := plugin.GetString(connInfo, "user")
-	if user == "" {
-		user = plugin.GetString(connInfo, "username")
-	}
-
-	password := plugin.GetString(connInfo, "password")
-	database := plugin.GetString(connInfo, "database")
+// BuildDSN 构建连接字符串
+func (p *MongoDBPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	parts := plugin.ParseDriverConnInfo(connInfo, p.DefaultPort(), "")
 	authSource := plugin.GetString(connInfo, "auth_source")
 
-	if host == "" {
+	if parts.Host == "" {
 		return "", fmt.Errorf("missing required MongoDB connection info: host")
 	}
 
-	// MongoDB DSN 格式：mongodb://[username:password@]host:port/database?authSource=authSource
-	return plugin.MongoDBStyleDSN(user, password, host, port, database, authSource), nil
+	return plugin.MongoDBStyleDSN(parts.User, parts.Password, parts.Host, parts.Port, parts.Database, authSource), nil
 }
 
 // TestConnection 测试数据库连接
@@ -208,7 +166,7 @@ func (p *MongoDBPlugin) TestConnection(ctx context.Context, connInfo plugin.Conn
 
 // createClient 创建 MongoDB 客户端（内部辅助方法）
 func (p *MongoDBPlugin) createClient(ctx context.Context, connInfo plugin.ConnectionInfo) (*mongo.Client, error) {
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -231,17 +189,17 @@ func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin
 
 	client, err := p.createClient(ctx, connInfo)
 	if err != nil {
-		return fallback, "json"
+		return fallback, "mql"
 	}
 	defer client.Disconnect(ctx) //nolint:errcheck
 
 	database := plugin.GetString(connInfo, "database")
 	names, err := client.Database(database).ListCollectionNames(ctx, bson.M{})
 	if err != nil || len(names) == 0 {
-		return fallback, "json"
+		return fallback, "mql"
 	}
 
-	return fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": 10}`, names[0]), "json"
+	return fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": 10}`, names[0]), "mql"
 }
 
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径

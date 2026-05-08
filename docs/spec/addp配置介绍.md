@@ -38,7 +38,6 @@
 ```go
 import (
     commonClient "github.com/addp/common/client"
-    commonModels "github.com/addp/common/models"
 )
 
 // 使用 JWT token 创建客户端
@@ -50,8 +49,9 @@ engines, err := client.ListEngines("postgresql")
 // 获取特定引擎
 engine, err := client.GetEngine(engineID)
 
-// 构建连接字符串 (密码自动解密)
-connStr, err := commonModels.BuildConnectionString(engine)
+// 使用 engine.ConnectionInfo 作为连接信息事实源
+// 需要底层 driver DSN 的数据库类引擎，由对应 engine plugin 的 DSNProvider.BuildDSN() 构建
+connInfo := engine.ConnectionInfo
 ```
 
 **模块 .env 文件**:

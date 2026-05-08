@@ -2,7 +2,6 @@ package python_workflow
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,7 +24,7 @@ func (p *PythonWorkflowPlugin) DisplayName() string {
 	return "Python Workflow"
 }
 
-func (p *PythonWorkflowPlugin) EngineCategory() string {
+func (p *PythonWorkflowPlugin) EngineOrigin() string {
 	return "extension"
 }
 
@@ -49,13 +48,16 @@ func (p *PythonWorkflowPlugin) ValidateConnectionInfo(connInfo plugin.Connection
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *PythonWorkflowPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	// 工作流引擎返回 JSON 格式的连接信息
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal Python Workflow connection info: %w", err)
-	}
-	return string(bytes), nil
+func (p *PythonWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.RuntimeBaseURL(connInfo)
+}
+
+func (p *PythonWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+	return plugin.HTTPListOperators(ctx, connInfo)
+}
+
+func (p *PythonWorkflowPlugin) ExecuteWorkflow(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
+	return plugin.HTTPExecuteWorkflow(ctx, connInfo, req)
 }
 
 func (p *PythonWorkflowPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {

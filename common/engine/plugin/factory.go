@@ -23,19 +23,24 @@ func TestConnection(ctx context.Context, engine *Engine) error {
 	return plugin.TestConnection(ctx, engine.ConnectionInfo)
 }
 
-// BuildConnectionString 统一入口：构建连接字符串
-// 自动查找对应类型的插件并调用其 BuildConnectionString 方法
-func BuildConnectionString(engine *Engine) (string, error) {
+// BuildDSN 统一入口：为需要 driver DSN 的引擎构建 DSN。
+// DSN 是可选 provider 能力，不是所有引擎的基础接口能力。
+func BuildDSN(engine *Engine) (string, error) {
 	if engine == nil {
 		return "", fmt.Errorf("engine cannot be nil")
 	}
 
-	plugin, err := Get(engine.EngineType)
+	enginePlugin, err := Get(engine.EngineType)
 	if err != nil {
 		return "", err
 	}
 
-	return plugin.BuildConnectionString(engine.ConnectionInfo)
+	dsnProvider, ok := enginePlugin.(DSNProvider)
+	if !ok {
+		return "", fmt.Errorf("engine type %s does not support DSN", engine.EngineType)
+	}
+
+	return dsnProvider.BuildDSN(engine.ConnectionInfo)
 }
 
 // ValidateConnectionInfo 统一入口：验证连接信息
@@ -100,14 +105,14 @@ func GetDisplayName(engineType string) (string, error) {
 	return plugin.DisplayName(), nil
 }
 
-// GetEngineCategory 获取指定类型的引擎分类
-func GetEngineCategory(engineType string) (string, error) {
+// GetEngineOrigin 获取指定类型的引擎来源
+func GetEngineOrigin(engineType string) (string, error) {
 	plugin, err := Get(engineType)
 	if err != nil {
 		return "", err
 	}
 
-	return plugin.EngineCategory(), nil
+	return plugin.EngineOrigin(), nil
 }
 
 // === 连接池管理相关方法 ===

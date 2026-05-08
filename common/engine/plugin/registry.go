@@ -18,7 +18,7 @@ var globalRegistry = &Registry{
 	plugins: make(map[string]EnginePlugin),
 }
 
-// Register 注册数据库插件
+// Register 注册引擎插件
 // 通常在插件包的 init() 函数中调用
 // 如果类型已注册，会被新插件覆盖（允许插件替换）
 func Register(plugin EnginePlugin) {
@@ -26,44 +26,44 @@ func Register(plugin EnginePlugin) {
 		panic("cannot register nil plugin")
 	}
 
-	dbType := strings.ToLower(plugin.Type())
-	if dbType == "" {
+	engineType := strings.ToLower(plugin.Type())
+	if engineType == "" {
 		panic("plugin type cannot be empty")
 	}
 
 	globalRegistry.mu.Lock()
 	defer globalRegistry.mu.Unlock()
 
-	globalRegistry.plugins[dbType] = plugin
+	globalRegistry.plugins[engineType] = plugin
 }
 
-// Get 获取指定类型的数据库插件
-// dbType: 数据库类型（不区分大小写）
+// Get 获取指定类型的引擎插件
+// engineType: 引擎类型（不区分大小写）
 // 返回插件实例，如果未找到返回 error
-func Get(dbType string) (EnginePlugin, error) {
-	dbType = strings.ToLower(dbType)
+func Get(engineType string) (EnginePlugin, error) {
+	engineType = strings.ToLower(engineType)
 
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
 
-	plugin, ok := globalRegistry.plugins[dbType]
+	plugin, ok := globalRegistry.plugins[engineType]
 	if !ok {
-		return nil, fmt.Errorf("unsupported database type: %s (available types: %s)",
-			dbType, strings.Join(List(), ", "))
+		return nil, fmt.Errorf("unsupported engine type: %s (available types: %s)",
+			engineType, strings.Join(List(), ", "))
 	}
 
 	return plugin, nil
 }
 
-// List 列出所有已注册的数据库类型
+// List 列出所有已注册的引擎类型
 // 返回排序后的类型列表
 func List() []string {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
 
 	types := make([]string, 0, len(globalRegistry.plugins))
-	for dbType := range globalRegistry.plugins {
-		types = append(types, dbType)
+	for engineType := range globalRegistry.plugins {
+		types = append(types, engineType)
 	}
 
 	sort.Strings(types)
@@ -86,24 +86,24 @@ func GetAll() map[string]EnginePlugin {
 }
 
 // Has 检查指定类型的插件是否已注册
-func Has(dbType string) bool {
-	dbType = strings.ToLower(dbType)
+func Has(engineType string) bool {
+	engineType = strings.ToLower(engineType)
 
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
 
-	_, ok := globalRegistry.plugins[dbType]
+	_, ok := globalRegistry.plugins[engineType]
 	return ok
 }
 
 // Unregister 注销指定类型的插件（主要用于测试）
-func Unregister(dbType string) {
-	dbType = strings.ToLower(dbType)
+func Unregister(engineType string) {
+	engineType = strings.ToLower(engineType)
 
 	globalRegistry.mu.Lock()
 	defer globalRegistry.mu.Unlock()
 
-	delete(globalRegistry.plugins, dbType)
+	delete(globalRegistry.plugins, engineType)
 }
 
 // Clear 清空所有注册的插件（主要用于测试）

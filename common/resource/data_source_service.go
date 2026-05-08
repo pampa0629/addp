@@ -319,8 +319,8 @@ func (s *DataSourceService) filterEngines(engines []*models.Engine, filters Engi
 		}
 
 		for _, engine := range engines {
-			engineCategory := getEngineCategory(engine.EngineType)
-			if dataSourceTypeSet[engineCategory] {
+			nodeType := getDataSourceNodeType(engine.EngineType)
+			if dataSourceTypeSet[nodeType] {
 				filtered = append(filtered, engine)
 			}
 		}
@@ -362,8 +362,8 @@ func isDatabaseEngine(engineType string) bool {
 	return databaseTypes[strings.ToLower(engineType)]
 }
 
-// getEngineCategory 获取引擎类别
-func getEngineCategory(engineType string) string {
+// getDataSourceNodeType 获取数据源树节点类别，不表示 engine origin。
+func getDataSourceNodeType(engineType string) string {
 	switch strings.ToLower(engineType) {
 	case "postgresql", "mysql", "doris", "clickhouse", "mongodb", "spark_sql":
 		return "database"

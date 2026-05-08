@@ -20,7 +20,6 @@ type EngineCapabilities struct {
 }
 
 type StorageCapabilities struct {
-	Families     []string            `json:"families"`
 	CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
 	Catalog      *CatalogCapability  `json:"catalog,omitempty"`
 	Metadata     *MetadataCapability `json:"metadata,omitempty"`
@@ -65,17 +64,12 @@ type MetadataCapability struct {
 }
 
 type StoreCapability struct {
-	Read         bool     `json:"read"`
-	Write        bool     `json:"write"`
-	BatchRead    bool     `json:"batch_read,omitempty"`
-	BatchWrite   bool     `json:"batch_write,omitempty"`
-	StreamRead   bool     `json:"stream_read,omitempty"`
-	StreamWrite  bool     `json:"stream_write,omitempty"`
-	RangeRead    bool     `json:"range_read,omitempty"`
-	RandomWrite  bool     `json:"random_write,omitempty"`
-	AtomicRename bool     `json:"atomic_rename,omitempty"`
-	Transactions bool     `json:"transactions,omitempty"`
-	Formats      []string `json:"formats,omitempty"`
+	StreamRead  bool `json:"stream_read,omitempty"`
+	StreamWrite bool `json:"stream_write,omitempty"`
+	RangeRead   bool `json:"range_read,omitempty"`
+	RangeWrite  bool `json:"range_write,omitempty"`
+	BatchRead   bool `json:"batch_read,omitempty"`
+	BatchWrite  bool `json:"batch_write,omitempty"`
 }
 
 type ComputeCapabilities struct {

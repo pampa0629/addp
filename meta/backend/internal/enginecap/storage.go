@@ -1,10 +1,6 @@
 package enginecap
 
-import (
-	"strings"
-
-	"github.com/addp/common/engine/plugin"
-)
+import "github.com/addp/common/engine/plugin"
 
 func StorageFamily(p plugin.EnginePlugin) string {
 	if p == nil {
@@ -14,12 +10,9 @@ func StorageFamily(p plugin.EnginePlugin) string {
 	if caps.Storage == nil {
 		return ""
 	}
-	for _, family := range caps.Storage.Families {
-		normalized := strings.ToLower(family)
-		switch normalized {
-		case "object", "file", "tabular", "document", "graph":
-			return normalized
-		}
+	switch caps.EngineFamily {
+	case "object", "file", "tabular", "document", "graph":
+		return caps.EngineFamily
 	}
 	return ""
 }

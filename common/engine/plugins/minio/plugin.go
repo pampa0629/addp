@@ -2,17 +2,14 @@ package minio
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/objectstore"
 	miniogo "github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // MinIOPlugin MinIO 对象存储插件
@@ -30,8 +27,8 @@ func (p *MinIOPlugin) DisplayName() string {
 	return "MinIO"
 }
 
-func (p *MinIOPlugin) EngineCategory() string {
-	return "standard"
+func (p *MinIOPlugin) EngineOrigin() string {
+	return "general"
 }
 
 func (p *MinIOPlugin) DefaultPort() int {
@@ -53,7 +50,6 @@ func (p *MinIOPlugin) Capabilities() plugin.EngineCapabilities {
 func (p *MinIOPlugin) StoreSemantics() plugin.StoreSemantics {
 	capabilities := p.Capabilities()
 	return plugin.StoreSemantics{
-		Families:     capabilities.Storage.Families,
 		Semantics:    capabilities.Storage.Semantics,
 		NotSupported: capabilities.Storage.NotSupported,
 	}
@@ -63,8 +59,8 @@ func (p *MinIOPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
-func (p *MinIOPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter {
-	return plugin.FileSystemCatalogAdapter{
+func (p *MinIOPlugin) objectCatalogAdapter() plugin.ObjectCatalogAdapter {
+	return plugin.ObjectCatalogAdapter{
 		ListRootsFunc:       p.listRoots,
 		ListDirectoryFunc:   p.listDirectory,
 		GetFileMetadataFunc: p.getFileMetadata,
@@ -72,106 +68,34 @@ func (p *MinIOPlugin) fileSystemCatalogAdapter() plugin.FileSystemCatalogAdapter
 }
 
 func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileSystemCatalogChildren(ctx, p.fileSystemCatalogAdapter(), connInfo, parent.EngineID, parent, plugin.CatalogTermBucket, opts)
+	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogAdapter(), connInfo, parent.EngineID, parent, opts)
 }
 
 func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileSystemCatalogPath(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path, plugin.CatalogTermBucket)
+	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *MinIOPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileSystemItem(ctx, p.fileSystemCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.DescribeObjectItem(ctx, p.objectCatalogAdapter(), connInfo, path.EngineID, path)
 }
 
 func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.readFile(ctx, connInfo, path.StringPath())
+	return p.readFile(ctx, connInfo, path.StringPath(), opts)
+}
+
+func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	if opts.Length <= 0 {
+		return nil, fmt.Errorf("range read requires positive length")
+	}
+	return p.readFile(ctx, connInfo, path.StringPath(), opts)
 }
 
 func (p *MinIOPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-func (p *MinIOPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	// 对象存储返回 JSON 格式的连接信息
-	bytes, err := json.Marshal(connInfo)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal MinIO connection info: %w", err)
-	}
-	return string(bytes), nil
-}
-
 func (p *MinIOPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-	// 规范化 endpoint
-	endpoint := p.normalizeEndpoint(plugin.GetString(connInfo, "endpoint"))
-	accessKey := plugin.GetString(connInfo, "access_key")
-	secretKey := plugin.GetString(connInfo, "secret_key")
-	useSSL := plugin.GetBool(connInfo, "use_ssl")
-	bucket := plugin.GetString(connInfo, "bucket")
-
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
-	}
-
-	// 初始化 MinIO 客户端
-	client, err := miniogo.New(endpoint, &miniogo.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	// 设置超时
-	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// 测试连接 - 列出存储桶
-	buckets, err := client.ListBuckets(testCtx)
-	if err != nil {
-		return fmt.Errorf("failed to list buckets: %w", err)
-	}
-
-	// 如果指定了 bucket，检查是否存在
-	if bucket != "" {
-		found := false
-		for _, b := range buckets {
-			if b.Name == bucket {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("bucket '%s' not found", bucket)
-		}
-	}
-
-	return nil
-}
-
-// normalizeEndpoint 规范化 endpoint 中的 localhost
-func (p *MinIOPlugin) normalizeEndpoint(endpoint string) string {
-	if endpoint == "" {
-		return ""
-	}
-
-	// 提取主机名和端口部分
-	hostPart := endpoint
-	portPart := ""
-
-	for i := len(endpoint) - 1; i >= 0; i-- {
-		if endpoint[i] == ':' {
-			hostPart = endpoint[:i]
-			portPart = endpoint[i:] // 包含冒号
-			break
-		}
-	}
-
-	// 如果是 localhost 或 127.0.0.1，使用 NormalizeHost 处理
-	if hostPart == "localhost" || hostPart == "127.0.0.1" {
-		return plugin.NormalizeHost(hostPart) + portPart
-	}
-
-	return endpoint
+	return objectstore.TestConnection(ctx, connInfo, false, true)
 }
 
 func (p *MinIOPlugin) defaultBucket() string {
@@ -208,49 +132,12 @@ func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.Connectio
 
 // InferContentType 根据对象键推断 MIME 类型
 func (p *MinIOPlugin) inferContentType(objectKey string) string {
-	ext := strings.ToLower(filepath.Ext(objectKey))
-
-	// 1. 使用标准库
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
-		return mimeType
-	}
-
-	// 2. 自定义类型映射（空间数据格式）
-	customTypes := map[string]string{
-		".geojson": "application/geo+json",
-		".shp":     "application/x-shapefile",
-		".shx":     "application/x-shapefile",
-		".dbf":     "application/x-dbf",
-		".prj":     "application/x-shapefile-prj",
-		".kml":     "application/vnd.google-earth.kml+xml",
-		".kmz":     "application/vnd.google-earth.kmz",
-		".gpx":     "application/gpx+xml",
-		".gml":     "application/gml+xml",
-		".tif":     "image/tiff",
-		".tiff":    "image/tiff",
-	}
-	if mimeType, ok := customTypes[ext]; ok {
-		return mimeType
-	}
-
-	return "application/octet-stream"
+	return objectstore.InferContentType(objectKey)
 }
 
 // createClient 创建 MinIO 客户端（辅助方法）
 func (p *MinIOPlugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Client, error) {
-	endpoint := p.normalizeEndpoint(plugin.GetString(connInfo, "endpoint"))
-	accessKey := plugin.GetString(connInfo, "access_key")
-	secretKey := plugin.GetString(connInfo, "secret_key")
-	useSSL := plugin.GetBool(connInfo, "use_ssl")
-
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
-	}
-
-	return miniogo.New(endpoint, &miniogo.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
+	return objectstore.NewClient(connInfo, false, true)
 }
 
 // listDirectory 列出路径下的直接子内容（非递归）
@@ -262,7 +149,7 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 	}
 
 	// 解析 bucket 和 prefix
-	bucket, prefix := splitBucketPrefix(path)
+	bucket, prefix := objectstore.SplitBucketPrefix(path)
 	if bucket == "" {
 		return nil, nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
 	}
@@ -309,18 +196,29 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 
 // readFile 流式读取文件内容
 // path 格式：bucket/key
-func (p *MinIOPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func (p *MinIOPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	bucket, key := splitBucketPrefix(path)
+	bucket, key := objectstore.SplitBucketPrefix(path)
 	if bucket == "" || key == "" {
 		return nil, fmt.Errorf("invalid path: %s (expected bucket/key)", path)
 	}
 
-	obj, err := client.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{})
+	getOpts := miniogo.GetObjectOptions{}
+	if opts.Offset > 0 || opts.Length > 0 {
+		end := int64(0)
+		if opts.Length > 0 {
+			end = opts.Offset + opts.Length - 1
+		}
+		if err := getOpts.SetRange(opts.Offset, end); err != nil {
+			return nil, fmt.Errorf("invalid range read options: %w", err)
+		}
+	}
+
+	obj, err := client.GetObject(ctx, bucket, key, getOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
@@ -335,7 +233,7 @@ func (p *MinIOPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Conne
 		return nil, err
 	}
 
-	bucket, key := splitBucketPrefix(path)
+	bucket, key := objectstore.SplitBucketPrefix(path)
 	if bucket == "" || key == "" {
 		return nil, fmt.Errorf("invalid path: %s (expected bucket/key)", path)
 	}
@@ -375,14 +273,4 @@ func (p *MinIOPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionI
 		}
 	}
 	return result, nil
-}
-
-// splitBucketPrefix 将 "bucket/prefix/..." 拆分为 bucket 和 prefix
-func splitBucketPrefix(path string) (bucket, prefix string) {
-	path = strings.TrimPrefix(path, "/")
-	idx := strings.Index(path, "/")
-	if idx < 0 {
-		return path, ""
-	}
-	return path[:idx], path[idx+1:]
 }

@@ -296,7 +296,14 @@ PostgreSQL 示例：
   "engine_type": "postgresql",
   "engine_family": "tabular",
   "storage": {
-    "catalog_model": {"path_version": "catalog.path/v1", "root_term": "server", "levels": []},
+    "catalog_model": {
+      "path_version": "catalog.path/v1",
+      "root_term": "server",
+      "levels": [
+        {"term": "schema", "kinds": ["schema"], "container": true},
+        {"term": "relation", "kinds": ["table", "view", "materialized_view"], "container": false, "item": true}
+      ]
+    },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
     "metadata": {"supported": true, "field_schema": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true},
     "store": {"batch_read": true, "batch_write": true}
@@ -316,7 +323,15 @@ MinIO 示例：
   "engine_type": "minio",
   "engine_family": "object",
   "storage": {
-    "catalog_model": {"path_version": "catalog.path/v1", "root_term": "service", "levels": []},
+    "catalog_model": {
+      "path_version": "catalog.path/v1",
+      "root_term": "service",
+      "levels": [
+        {"term": "bucket", "kinds": ["bucket"], "container": true},
+        {"term": "prefix", "kinds": ["prefix"], "container": true, "optional": true},
+        {"term": "object", "kinds": ["object"], "container": false, "item": true}
+      ]
+    },
     "catalog": {"supported": true, "real_time": true},
     "metadata": {"supported": true, "native_metadata": true},
     "store": {"stream_read": true, "range_read": true},

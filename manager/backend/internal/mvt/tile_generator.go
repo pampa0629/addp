@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
@@ -340,7 +341,7 @@ func (g *TileGenerator) getOrCreateDBPool(ctx context.Context, engineID, tenantI
 
 // buildDSN 构建 PostgreSQL 连接字符串
 func (g *TileGenerator) buildDSN(engine *commonModels.Engine) (string, error) {
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		return "", fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -348,7 +349,7 @@ func (g *TileGenerator) buildDSN(engine *commonModels.Engine) (string, error) {
 	// Docker 环境特殊处理 (如果连接字符串包含 localhost)
 	if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
 		// 简单替换 (更健壮的实现需要解析 DSN)
-		// 这里假设 BuildConnectionString 已经处理了 localhost 替换
+		// dbbridge.BuildDSN 已经处理了 localhost 替换
 		// 如果需要额外处理，可以在这里添加
 	}
 

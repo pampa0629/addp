@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/dbbridge"
 	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -43,7 +43,7 @@ func QueryTableRowCount(
 	}
 
 	// 2. 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		return 0, fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -121,7 +121,7 @@ func QueryExtent(
 	}
 
 	// 2. 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to build connection string: %w", err)
 	}

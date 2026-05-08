@@ -48,6 +48,16 @@ type ContentWritableProvider interface {
 	CreateContent(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts WriteOptions) (io.WriteCloser, error)
 }
 
+type RangeReadableProvider interface {
+	StoreProvider
+	OpenRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
+}
+
+type RangeWritableProvider interface {
+	StoreProvider
+	WriteRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
+}
+
 type BatchReadableProvider interface {
 	StoreProvider
 	ReadBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error)
@@ -174,7 +184,6 @@ type FieldInfo struct {
 }
 
 type StoreSemantics struct {
-	Families     []string `json:"families,omitempty"`
 	Semantics    []string `json:"semantics,omitempty"`
 	NotSupported []string `json:"not_supported,omitempty"`
 }

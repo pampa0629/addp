@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	commonModels "github.com/addp/common/models"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -141,7 +142,7 @@ func (c *EngineConnector) CloseAll() {
 // createConnection 创建数据库连接
 func (c *EngineConnector) createConnection(engine *commonModels.Engine) (*gorm.DB, error) {
 	// 构建连接字符串
-	connStr, err := commonModels.BuildConnectionString(engine)
+	connStr, err := dbbridge.BuildDSN(engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}

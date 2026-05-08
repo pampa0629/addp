@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/lib/pq"
@@ -30,9 +29,9 @@ func (p *PostgreSQLPlugin) DisplayName() string {
 	return "PostgreSQL"
 }
 
-// EngineCategory 返回引擎分类
-func (p *PostgreSQLPlugin) EngineCategory() string {
-	return "standard"
+// EngineOrigin 返回引擎分类
+func (p *PostgreSQLPlugin) EngineOrigin() string {
+	return "general"
 }
 
 // DefaultPort 返回默认端口
@@ -54,7 +53,6 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
 		Write:           true,
 		BulkWrite:       true,
-		Transactions:    true,
 		SpatialMetadata: true,
 		SupportsExplain: true,
 		SupportsCancel:  true,
@@ -64,6 +62,10 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 
 func (p *PostgreSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.TabularCatalogModel("schema")
+}
+
+func (p *PostgreSQLPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func (p *PostgreSQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
@@ -109,72 +111,27 @@ func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Conne
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
+func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+}
+
 // ValidateConnectionInfo 验证连接信息
 func (p *PostgreSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
-// BuildConnectionString 构建连接字符串
-func (p *PostgreSQLPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-	port := plugin.GetInt(connInfo, "port")
-	if port == 0 {
-		port = p.DefaultPort()
-	}
-
-	// 兼容两种字段名：username 和 user
-	user := plugin.GetString(connInfo, "user")
-	if user == "" {
-		user = plugin.GetString(connInfo, "username")
-	}
-
-	password := plugin.GetString(connInfo, "password")
-	database := plugin.GetString(connInfo, "database")
-	sslMode := plugin.GetString(connInfo, "sslmode")
-	if sslMode == "" {
-		sslMode = "disable"
-	}
-
-	if host == "" || user == "" {
-		return "", fmt.Errorf("missing required PostgreSQL connection info (host, user)")
-	}
-
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, database, sslMode), nil
+// BuildDSN 构建连接字符串
+func (p *PostgreSQLPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.BuildPostgreSQLDSN(connInfo, p.DefaultPort())
 }
 
 // TestConnection 测试数据库连接
 func (p *PostgreSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-	// 构建 DSN
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
-
-	// 连接数据库
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return fmt.Errorf("failed to open connection: %w", err)
-	}
-	defer db.Close()
-
-	// 设置连接超时
-	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// 测试连接
-	if err := db.PingContext(testCtx); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// 执行简单查询验证
-	var version string
-	err = db.QueryRowContext(testCtx, "SELECT version()").Scan(&version)
-	if err != nil {
-		return fmt.Errorf("failed to query version: %w", err)
-	}
-
-	return nil
+	return plugin.TestSQLConnection(ctx, "postgres", connStr, "SELECT version()")
 }
 
 // SupportsTransactions 实现 SQLDatabasePlugin 接口
@@ -191,33 +148,12 @@ func (p *PostgreSQLPlugin) DefaultDialect() string {
 
 // CreateConnectionPool 创建GORM连接池
 func (p *PostgreSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
-	// 构建连接字符串
-	connStr, err := p.BuildConnectionString(connInfo)
+	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	// 创建GORM连接
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{
-		// 禁用自动ping，我们手动控制
-		DisableAutomaticPing: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
-	}
-
-	// 获取底层的 *sql.DB 并配置连接池
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-	}
-
-	// 配置连接池参数
-	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
-
-	return db, nil
+	return plugin.OpenGORMPool(postgres.Open(connStr), poolConfig)
 }
 
 // GetDialect 获取数据库方言
@@ -295,28 +231,8 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		fullTableName := fmt.Sprintf("%s.%s", schema, tables[i].TableName)
 		err := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&rowCount).Error
 		if err == nil && rowCount.Valid {
-			// 如果 reltuples = -1，说明表从未 ANALYZE，主动触发 ANALYZE 更新统计信息
-			if rowCount.Int64 == -1 {
-				// 执行 ANALYZE（采样分析，快速）
-				analyzeQuery := fmt.Sprintf("ANALYZE %s.%s",
-					db.Statement.Quote(schema),
-					db.Statement.Quote(tables[i].TableName))
-				analyzeErr := db.WithContext(ctx).Exec(analyzeQuery).Error
-				if analyzeErr == nil {
-					// ANALYZE 成功后重新读取 reltuples
-					var updatedCount sql.NullInt64
-					rereadErr := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&updatedCount).Error
-					if rereadErr == nil && updatedCount.Valid {
-						tables[i].RowCount = updatedCount.Int64
-					} else {
-						// 读取失败，保持 -1
-						tables[i].RowCount = rowCount.Int64
-					}
-				} else {
-					// ANALYZE 失败（可能是权限问题），保持 -1
-					tables[i].RowCount = rowCount.Int64
-				}
-			} else {
+			// reltuples = -1 表示统计未知；Catalog Provider 必须只读，不主动 ANALYZE。
+			if rowCount.Int64 >= 0 {
 				tables[i].RowCount = rowCount.Int64
 			}
 		}

@@ -347,21 +347,23 @@ type DSNProvider interface {
 - 逐步清理 `common/models.BuildConnectionString()` 和上层旧调用路径。
 - 数据库类内部仍可使用 DSN helper 创建连接池和测试连接。
 
-## 十二、规范修订清单
+## 十二、规范修订状态
 
-- [ ] `addp引擎能力声明规范.md`：删除 `StoreCapability.read/write`。
-- [ ] `addp引擎能力声明规范.md`：新增或确认 `range_read` / `range_write`，并删除 `random_write` 命名。
-- [ ] `addp引擎能力声明规范.md`：暂不保留 `atomic_rename`、`transactions`、`formats` 作为 Store 顶层字段。
-- [ ] `addp引擎能力声明规范.md`：删除 `storage.families`。
-- [ ] `addp引擎能力声明规范.md`：明确 CatalogModel 对外事实源为 `storage.catalog_model`。
-- [ ] `addp引擎插件接口规范.md`：补充 StoreCapability 与 Provider 映射。
-- [ ] `addp引擎插件接口规范.md`：新增或确认 `RangeReadableProvider` / `RangeWritableProvider`。
-- [ ] `addp引擎插件接口规范.md`：明确 Catalog / Metadata Provider 默认只读。
-- [ ] `addp引擎插件接口规范.md`：将 `EngineCategory` 调整为 `EngineOrigin`，取值 `general` / `extension`。
-- [ ] `addp引擎插件接口规范.md`：保留 `connection_info` map 作为统一连接信息事实源。
-- [ ] `addp引擎插件接口规范.md`：将 `BuildConnectionString()` 从基础接口移除，改为可选 `DSNProvider.BuildDSN()`。
-- [ ] `addp存储引擎路径体系规范.md`：强化 NFS root meta node 必须存在，`name="."`。
-- [ ] `addp存储引擎路径体系规范.md`：明确对象存储和文件系统不共享 CatalogModel / CatalogAdapter。
+以下正式规范已按本文结论完成同步，后续工作转入代码迁移和测试补强，唯一跟进文档为 `docs/next/common-engine引擎插件实现后续事项.md`。
+
+- [x] `addp引擎能力声明规范.md`：删除 `StoreCapability.read/write`。
+- [x] `addp引擎能力声明规范.md`：新增或确认 `range_read` / `range_write`，并删除 `random_write` 命名。
+- [x] `addp引擎能力声明规范.md`：暂不保留 `atomic_rename`、`transactions`、`formats` 作为 Store 顶层字段。
+- [x] `addp引擎能力声明规范.md`：删除 `storage.families`。
+- [x] `addp引擎能力声明规范.md`：明确 CatalogModel 对外事实源为 `storage.catalog_model`。
+- [x] `addp引擎插件接口规范.md`：补充 StoreCapability 与 Provider 映射。
+- [x] `addp引擎插件接口规范.md`：新增或确认 `RangeReadableProvider` / `RangeWritableProvider`。
+- [x] `addp引擎插件接口规范.md`：明确 Catalog / Metadata Provider 默认只读。
+- [x] `addp引擎插件接口规范.md`：将 `EngineCategory` 调整为 `EngineOrigin`，取值 `general` / `extension`。
+- [x] `addp引擎插件接口规范.md`：保留 `connection_info` map 作为统一连接信息事实源。
+- [x] `addp引擎插件接口规范.md`：将 `BuildConnectionString()` 从基础接口移除，改为可选 `DSNProvider.BuildDSN()`。
+- [x] `addp存储引擎路径体系规范.md`：强化 NFS root meta node 必须存在，`name="."`。
+- [x] `addp存储引擎路径体系规范.md`：明确对象存储和文件系统不共享 CatalogModel / CatalogAdapter。
 
 ## 参考来源
 
