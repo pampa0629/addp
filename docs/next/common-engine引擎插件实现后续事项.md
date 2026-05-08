@@ -28,6 +28,10 @@
 - capabilities validator 已覆盖插件注册、CatalogModel 一致性、Store / Query / Workflow / Script 能力声明与 Provider 实现一致性。
 - System 后端已生成 `capabilities_view`，引擎详情页已改为能力摘要、能力卡片、目录链路、扩展区和“查看 JSON”树形视图。
 - Format Registry 第一阶段已落地，`transfer.supported_formats` 已从各引擎能力 builder 手写清单改为按引擎家族派生。
+- Manager 对象存储预览主路径已 Provider 化：`object_preview.go`、`preview_provider_file.go` 和视频流读取不再自行构造 MinIO/S3 client，统一通过 `CatalogProvider` / `ItemMetadataProvider` / `ContentReadableProvider` / `RangeReadableProvider` 读取。
+- Manager 私有 `EngineConnector` 已删除；数据库连接池不再由 Manager 重复维护，统一通过 `dbbridge.GetOrCreatePool()` / `common/engine/plugin` pool factory。
+- Manager Feature / GeoJSON / MVT 相关路径已明确为 PostgreSQL/PostGIS 专用 adapter，不作为通用空间能力冒充；连接池、PostGIS 支持判断、标识符引用和主要 SQL builder 已集中到 `common/spatial/postgis.go`。
+- MVT 准备阶段仍保留创建/刷新物化视图、空间索引和 `ANALYZE` 的执行面语义；这部分不是只读 Catalog/Metadata Provider，不应塞进 engine plugin。
 
 ---
 
@@ -44,14 +48,11 @@
 - Meta 扫描主路径、Manager 新版 `database-table` / `filesystem` / `lake-table` / `graph` preview provider、Graph 查询主路径整体已使用 `CatalogProvider`、`ItemMetadataProvider`、`ContentReadableProvider`、`QueryRuntimeProvider`、`GraphQueryProvider` 或 `dbbridge`。
 - 下列位置仍存在需要推进的硬编码或绕过点：
   - `manager/backend/internal/service/object_preview.go`
-    - 现状：直接判断 `minio` / `s3` / `oss` / `object_storage`，自行构造 MinIO client，并直接调用 `StatObject`、`GetObject`、`ListObjects`。
-    - 方向：改为通过 `CatalogProvider` 列目录，通过 `ContentReadableProvider` 读对象，通过 `ItemMetadataProvider` 获取对象元数据；与 `preview_provider_filesystem.go` 的 Provider 化实现对齐。
+    - 状态：已完成。对象目录、元数据、内容读取已改为通过 Provider；`preview_provider_file.go` 也同步改为 Provider 读取，避免文件表预览保留对象存储直连旁路。
   - `manager/backend/internal/service/engine_connector.go`
-    - 现状：使用 `dbbridge.BuildDSN()` 后继续按 `postgresql` / `mysql` / `doris` 选择 GORM driver，自建连接池缓存。
-    - 方向：删除或收敛到 `dbbridge.GetOrCreatePool()` / `common/engine/plugin` 连接池工厂，避免 Manager 再维护一套引擎连接逻辑。
+    - 状态：已删除。相关构造链路已从 `PreviewResolver` 和 router 中移除。
   - `manager/backend/internal/api/feature_handler.go`、`manager/backend/internal/api/geojson_handler.go`、`common/spatial/query.go`、`manager/backend/internal/mvt/preparation_service.go`、`manager/backend/internal/mvt/tile_generator.go`
-    - 现状：PostGIS / MVT / GeoJSON 相关路径直接限定 PostgreSQL 或直接使用 `postgres` / `pgx` driver。
-    - 方向：先明确这些接口是否定位为 PostgreSQL/PostGIS 专用能力；若是，应至少通过插件能力或集中 spatial adapter 判断支持性，连接池优先复用 `dbbridge`；若要面向通用空间能力，需要先补充 common engine 的空间查询/渲染能力边界。
+    - 状态：已完成第一阶段收口。当前结论是这些接口属于 PostgreSQL/PostGIS 专用预览/渲染能力，已集中到 `common/spatial/postgis.go`；连接池优先复用 `dbbridge` / plugin pool，不再自行 `sql.Open("postgres"/"pgx")` 或 `gorm.Open(postgres.Open(...))`。
   - `manager/backend/internal/service/preview_provider_database.go`
     - 现状：执行已走 `SQLQueryRuntimeProvider`，但分页 SQL、COUNT SQL、标识符引用和 PostGIS 渲染仍按 `engine_type` 分支。
     - 方向：短期可抽到 common SQL dialect helper；长期评估由 `SQLQueryRuntimeProvider` 或专门的 SQL preview composer 提供方言能力，避免 Manager 复制方言判断。
@@ -70,7 +71,7 @@
 - [x] P0：替换 `manager/backend/internal/service/object_preview.go` 中的 MinIO/S3 直连，统一走 object/file Store Provider。
 - [x] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
 - [x] P1：整理 Manager 空间预览、Feature、GeoJSON、MVT 的 PostgreSQL/PostGIS 专用路径，形成集中 spatial adapter；连接池不再自行打开。
-- [ ] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
+- [x] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
 - [ ] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。
 - [ ] P2：为 DuckDB 联邦挂载设计窄接口或集中适配层，避免新增引擎时继续修改多处 switch。
 - [ ] P3：清理仅用于展示分类、图标、前端过滤的硬编码清单，逐步改为 capabilities / catalog model 派生；这类不阻塞核心 Provider 收口。
@@ -84,6 +85,32 @@ go test ./service/backend/internal/service ./service/backend/internal/service/da
 go test ./develop/backend/internal/service ./common/duckdb
 git diff --check
 ```
+
+接力记录（2026-05-08）：
+
+- 已完成并验证 P0 / 第一个 P1。主要改动文件：
+  - `manager/backend/internal/service/object_preview.go`
+  - `manager/backend/internal/service/preview_provider_file.go`
+  - `manager/backend/internal/service/metadata_service.go`
+  - `manager/backend/internal/service/preview_resolver.go`
+  - `manager/backend/internal/api/router.go`
+  - `common/spatial/postgis.go`
+  - `common/spatial/query.go`
+  - `manager/backend/internal/api/feature_handler.go`
+  - `manager/backend/internal/api/geojson_handler.go`
+  - `manager/backend/internal/mvt/preparation_service.go`
+  - `manager/backend/internal/mvt/tile_generator.go`
+  - `manager/backend/internal/mvt/quick_view_service.go`
+- 已删除 `manager/backend/internal/service/engine_connector.go`。
+- 已执行验证：
+  - `go test ./manager/backend/internal/service ./manager/backend/internal/api ./manager/backend/internal/mvt`
+  - `go test ./service/backend/internal/service ./service/backend/internal/service/data`
+  - `go test ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge ./common/spatial`
+  - `git diff --check`
+- 已完成“P1：抽取 SQL dialect helper”。新增 `common/sqldialect` 普通 helper 包，覆盖标识符引用、qualified table、COUNT、LIMIT/OFFSET、sample SQL 和 PostGIS 预览表达式；`manager/backend/internal/service/preview_provider_database.go`、`service/backend/internal/service/query_executor_service.go`、`common/engine/plugin` 与 `common/dbbridge` 已复用该 helper。
+- 边界保持不变：SQL dialect helper 暂不进入 engine plugin Provider 接口；长期若要成为 Provider，需要先补充 SQL preview composer / dialect 能力边界文档。
+- 已执行验证：
+  - `go test ./common/sqldialect ./common/engine/plugin ./common/dbbridge ./manager/backend/internal/service ./service/backend/internal/service`
 
 ### 2. 能力边界状态继续精细化
 

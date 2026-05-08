@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/sqldialect"
 	"gorm.io/gorm"
 )
 
@@ -105,12 +106,7 @@ func sampleSQLForEngine(engineType, namespace, item string, limit int) string {
 	if limit <= 0 {
 		limit = 1000
 	}
-	switch engineType {
-	case "mysql", "doris", "spark":
-		return fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT %d", namespace, item, limit)
-	default:
-		return fmt.Sprintf("SELECT * FROM \"%s\".\"%s\" LIMIT %d", namespace, item, limit)
-	}
+	return sqldialect.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, 0)
 }
 
 func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {

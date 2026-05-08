@@ -3,8 +3,8 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/addp/common/sqldialect"
 	"gorm.io/gorm"
 )
 
@@ -300,20 +300,7 @@ func namespaceTermForPlugin(p EnginePlugin) string {
 }
 
 func countSQLForEngine(engineType, schema, table string) string {
-	switch strings.ToLower(engineType) {
-	case "mysql", "doris", "clickhouse", "spark_sql", "spark":
-		return fmt.Sprintf("SELECT COUNT(*) AS total FROM `%s`.`%s`", escapeBacktickIdentifier(schema), escapeBacktickIdentifier(table))
-	default:
-		return fmt.Sprintf("SELECT COUNT(*) AS total FROM \"%s\".\"%s\"", escapeDoubleQuoteIdentifier(schema), escapeDoubleQuoteIdentifier(table))
-	}
-}
-
-func escapeBacktickIdentifier(identifier string) string {
-	return strings.ReplaceAll(identifier, "`", "``")
-}
-
-func escapeDoubleQuoteIdentifier(identifier string) string {
-	return strings.ReplaceAll(identifier, `"`, `""`)
+	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
 }
 
 func int64Stat(stats map[string]interface{}, key string) (int64, bool) {

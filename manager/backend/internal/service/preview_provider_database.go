@@ -8,6 +8,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 )
@@ -161,41 +162,30 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	offset, limit int,
 	columns []plugin.ColumnInfo,
 ) ([]map[string]interface{}, error) {
-	// 根据引擎类型构建查询
-	var query string
-	switch strings.ToLower(engineType) {
-	case "postgresql":
-		// PostgreSQL: 处理空间字段（ST_AsText 转为 WKT 格式，更易读）
+	dialect := sqldialect.ForEngine(engineType)
+	selectExpr := "*"
+	if dialect.IsPostgreSQL() {
 		selectColumns := make([]string, 0, len(columns)*2)
 		for _, col := range columns {
 			if p.isSpatialType(col.DataType) {
-				// 空间字段：转换为 WKT 格式（如 MULTIPOLYGON (((120.175...）））
-				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewWKTExpr(col), col.ColumnName))
-				selectColumns = append(selectColumns, fmt.Sprintf("%s AS \"%s\"", databasePreviewRenderExpr(col), renderGeometryColumnName(col.ColumnName)))
+				selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
+					databasePreviewWKTExpr(col),
+					dialect.QuoteIdentifier(col.ColumnName),
+				))
+				selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
+					databasePreviewRenderExpr(col),
+					dialect.QuoteIdentifier(renderGeometryColumnName(col.ColumnName)),
+				))
 			} else {
-				// 普通字段：列名加双引号，确保大小写敏感
-				selectColumns = append(selectColumns, fmt.Sprintf("\"%s\"", col.ColumnName))
+				selectColumns = append(selectColumns, dialect.QuoteIdentifier(col.ColumnName))
 			}
 		}
-		query = fmt.Sprintf("SELECT %s FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",
-			strings.Join(selectColumns, ", "), schema, table, limit, offset)
-
-	case "mysql", "doris":
-		// MySQL/Doris: 使用反引号
-		query = fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT %d OFFSET %d",
-			schema, table, limit, offset)
-
-	case "clickhouse":
-		// ClickHouse: 使用反引号
-		query = fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT %d OFFSET %d",
-			schema, table, limit, offset)
-
-	default:
-		// 默认：使用双引号
-		query = fmt.Sprintf("SELECT * FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",
-			schema, table, limit, offset)
+		if len(selectColumns) > 0 {
+			selectExpr = strings.Join(selectColumns, ", ")
+		}
 	}
 
+	query := dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
 	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
 		EngineID:   engineID,
 		EngineType: engineType,
@@ -213,17 +203,11 @@ func renderGeometryColumnName(column string) string {
 }
 
 func databasePreviewWKTExpr(col plugin.ColumnInfo) string {
-	if isGeographyType(col.DataType) {
-		return fmt.Sprintf("ST_AsText(\"%s\"::geometry)", col.ColumnName)
-	}
-	return fmt.Sprintf("ST_AsText(\"%s\")", col.ColumnName)
+	return sqldialect.PostGISWKTExpression(col.ColumnName, col.DataType)
 }
 
 func databasePreviewRenderExpr(col plugin.ColumnInfo) string {
-	if isGeographyType(col.DataType) {
-		return fmt.Sprintf("CASE WHEN \"%s\" IS NULL THEN NULL ELSE ST_AsGeoJSON(\"%s\"::geometry) END", col.ColumnName, col.ColumnName)
-	}
-	return fmt.Sprintf("CASE WHEN \"%s\" IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform(\"%s\", 4326)) END", col.ColumnName, col.ColumnName)
+	return sqldialect.PostGISRenderGeoJSONExpression(col.ColumnName, col.DataType)
 }
 
 func buildDatabaseRenderGeometryColumns(geometryColumns []string, rows []map[string]interface{}) map[string]string {
@@ -265,7 +249,7 @@ func rowsContainColumn(rows []map[string]interface{}, column string) bool {
 
 // detectGeometryColumns 检测几何列（仅 PostgreSQL + PostGIS）
 func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, columns []plugin.ColumnInfo) []string {
-	if strings.ToLower(engineType) != "postgresql" {
+	if !sqldialect.ForEngine(engineType).IsPostgreSQL() {
 		return []string{}
 	}
 
@@ -281,19 +265,7 @@ func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, 
 
 // isSpatialType 判断是否为空间类型
 func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
-	dataTypeLower := strings.ToLower(dataType)
-	// 支持完整匹配和前缀匹配
-	// 例如: "geometry", "geography", "GEOMETRY(MULTIPOLYGON, 4326)", "USER-DEFINED"
-	return dataTypeLower == "geometry" ||
-		dataTypeLower == "geography" ||
-		strings.HasPrefix(dataTypeLower, "geometry(") ||
-		strings.HasPrefix(dataTypeLower, "geography(") ||
-		dataTypeLower == "user-defined" // PostGIS 几何类型有时显示为 USER-DEFINED
-}
-
-func isGeographyType(dataType string) bool {
-	dataTypeLower := strings.ToLower(dataType)
-	return dataTypeLower == "geography" || strings.HasPrefix(dataTypeLower, "geography(")
+	return sqldialect.IsPostGISSpatialType(dataType)
 }
 
 func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
@@ -387,12 +359,7 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 }
 
 func databasePreviewCountQuery(engineType, schema, table string) string {
-	switch strings.ToLower(engineType) {
-	case "mysql", "doris", "clickhouse":
-		return fmt.Sprintf("SELECT COUNT(*) AS total FROM `%s`.`%s`", schema, table)
-	default:
-		return fmt.Sprintf("SELECT COUNT(*) AS total FROM \"%s\".\"%s\"", schema, table)
-	}
+	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
 }
 
 func databaseInt64Stat(stats map[string]interface{}, key string) (int64, bool) {

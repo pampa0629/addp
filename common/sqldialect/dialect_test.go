@@ -1,0 +1,75 @@
+package sqldialect
+
+import "testing"
+
+func TestQuoteIdentifier(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		engineType string
+		identifier string
+		want       string
+	}{
+		{name: "postgresql double quote", engineType: "postgresql", identifier: `city"name`, want: `"city""name"`},
+		{name: "mysql backtick", engineType: "mysql", identifier: "city`name", want: "`city``name`"},
+		{name: "clickhouse backtick", engineType: "clickhouse", identifier: "events", want: "`events`"},
+		{name: "default double quote", engineType: "unknown", identifier: "Events", want: `"Events"`},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ForEngine(tt.engineType).QuoteIdentifier(tt.identifier); got != tt.want {
+				t.Fatalf("QuoteIdentifier() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectTableSQL(t *testing.T) {
+	t.Parallel()
+
+	got := ForEngine("postgresql").SelectTableSQL(`"id", "name"`, "public", "Cities", `name IS NOT NULL`, `id DESC`, 10, 20)
+	want := `SELECT "id", "name" FROM "public"."Cities" WHERE name IS NOT NULL ORDER BY id DESC LIMIT 10 OFFSET 20`
+	if got != want {
+		t.Fatalf("SelectTableSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestCountTableSQL(t *testing.T) {
+	t.Parallel()
+
+	got := ForEngine("mysql").CountTableSQL("analytics", "events", "kind = 'click'")
+	want := "SELECT COUNT(*) AS total FROM `analytics`.`events` WHERE kind = 'click'"
+	if got != want {
+		t.Fatalf("CountTableSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestPaginateQuerySQL(t *testing.T) {
+	t.Parallel()
+
+	got := PaginateQuerySQL("SELECT * FROM t", 50, 100)
+	want := "SELECT * FROM t LIMIT 50 OFFSET 100"
+	if got != want {
+		t.Fatalf("PaginateQuerySQL() = %q, want %q", got, want)
+	}
+}
+
+func TestPostGISExpressions(t *testing.T) {
+	t.Parallel()
+
+	wkt := PostGISWKTExpression(`geo"col`, "geography")
+	if wkt != `ST_AsText("geo""col"::geometry)` {
+		t.Fatalf("PostGISWKTExpression() = %q", wkt)
+	}
+
+	render := PostGISRenderGeoJSONExpression("geom", "geometry")
+	want := `CASE WHEN "geom" IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform("geom", 4326)) END`
+	if render != want {
+		t.Fatalf("PostGISRenderGeoJSONExpression() = %q, want %q", render, want)
+	}
+}

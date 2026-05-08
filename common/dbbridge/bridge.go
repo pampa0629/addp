@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
+	"github.com/addp/common/sqldialect"
 	"github.com/beltran/gohive"
 	"gorm.io/gorm"
 
@@ -279,16 +280,7 @@ func generateCatalogSampleQuery(ctx context.Context, cp plugin.CatalogProvider, 
 }
 
 func tableSampleSQL(engineType, namespace, table string) string {
-	return fmt.Sprintf("SELECT *\nFROM %s.%s\nLIMIT 10", quoteSQLIdentifier(engineType, namespace), quoteSQLIdentifier(engineType, table))
-}
-
-func quoteSQLIdentifier(engineType, identifier string) string {
-	switch strings.ToLower(engineType) {
-	case "mysql", "doris", "clickhouse", "spark", "spark_sql":
-		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
-	default:
-		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
-	}
+	return sqldialect.SelectAllSampleSQL(engineType, namespace, table, 10)
 }
 
 func rowCountStat(stats map[string]interface{}) int64 {

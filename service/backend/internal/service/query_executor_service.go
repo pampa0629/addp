@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/duckdb"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/sqldialect"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 	"gorm.io/gorm"
@@ -45,9 +46,9 @@ type QueryParams struct {
 	Format   string `form:"format"` // json, csv, geojson
 
 	// Table 模式参数
-	Filter  string `form:"filter"`   // WHERE 条件
-	Fields  string `form:"fields"`   // 返回字段列表（逗号分隔）
-	OrderBy string `form:"orderBy"`  // 排序
+	Filter  string `form:"filter"`  // WHERE 条件
+	Fields  string `form:"fields"`  // 返回字段列表（逗号分隔）
+	OrderBy string `form:"orderBy"` // 排序
 }
 
 // QueryResult 查询结果
@@ -257,7 +258,7 @@ func (s *QueryExecutorService) executeDuckDBSQLQuery(
 	defer session.Close()
 
 	// 获取总数
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS _q", session.RewrittenSQL)
+	countSQL := sqldialect.CountSubquerySQL(session.RewrittenSQL, "_q")
 	var total int64
 	row := session.Conn.QueryRowContext(execCtx, countSQL)
 	if err := row.Scan(&total); err != nil {
@@ -266,7 +267,7 @@ func (s *QueryExecutorService) executeDuckDBSQLQuery(
 
 	// 分页查询
 	offset := (params.Page - 1) * params.PageSize
-	paginatedSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", session.RewrittenSQL, params.PageSize, offset)
+	paginatedSQL := sqldialect.PaginateQuerySQL(session.RewrittenSQL, params.PageSize, offset)
 	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, paginatedSQL)
 	if err != nil {
 		return nil, err
@@ -293,6 +294,7 @@ func (s *QueryExecutorService) executeTableQuery(
 ) ([]map[string]interface{}, int64, error) {
 	schema := service.SchemaName
 	table := service.TargetTable
+	dialect := sqldialect.ForEngine(engineType)
 
 	// 1. 构建 SELECT 字段列表
 	selectFields := "*"
@@ -304,7 +306,7 @@ func (s *QueryExecutorService) executeTableQuery(
 		quotedFields := make([]string, len(fields))
 		for i, field := range fields {
 			field = strings.TrimSpace(field)
-			quotedFields[i] = s.quoteIdentifier(engineType, field)
+			quotedFields[i] = dialect.QuoteIdentifier(field)
 		}
 		selectFields = strings.Join(quotedFields, ", ")
 	} else {
@@ -313,7 +315,7 @@ func (s *QueryExecutorService) executeTableQuery(
 		if len(defaultFields) > 0 {
 			quotedFields := make([]string, len(defaultFields))
 			for i, field := range defaultFields {
-				quotedFields[i] = s.quoteIdentifier(engineType, field)
+				quotedFields[i] = dialect.QuoteIdentifier(field)
 			}
 			selectFields = strings.Join(quotedFields, ", ")
 		}
@@ -322,20 +324,16 @@ func (s *QueryExecutorService) executeTableQuery(
 	// 2. 处理空间字段（如果有）
 	if service.HasGeometry() {
 		geomColumn = service.GetGeometryColumn()
-		if strings.ToLower(engineType) == "postgresql" && geomColumn != "" {
+		if dialect.IsPostgreSQL() && geomColumn != "" {
 			// 如果是 SELECT *，需要先获取所有列名，然后显式构建字段列表
 			if strings.TrimSpace(selectFields) == "*" {
-				tableName := s.quoteIdentifier(engineType, schema) + "." + s.quoteIdentifier(engineType, table)
-				selectFields = s.buildSelectFieldsWithGeometry(ctx, db, tableName, geomColumn, engineType)
+				selectFields = s.buildSelectFieldsWithGeometry(ctx, db, schema, table, geomColumn, engineType)
 			} else {
 				// 替换几何列为 ST_AsGeoJSON 格式
 				selectFields = s.replaceGeometryColumn(selectFields, geomColumn, engineType)
 			}
 		}
 	}
-
-	// 3. 构建查询表达式
-	tableName := s.quoteIdentifier(engineType, schema) + "." + s.quoteIdentifier(engineType, table)
 
 	// 4. 构建 WHERE 条件
 	var whereClause string
@@ -356,7 +354,7 @@ func (s *QueryExecutorService) executeTableQuery(
 	}
 
 	// 6. 获取总数（不带 LIMIT）
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s%s", tableName, whereClause)
+	countQuery := dialect.CountTableSQL(schema, table, params.Filter)
 	var total int64
 	if err := db.WithContext(ctx).Raw(countQuery).Scan(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
@@ -366,8 +364,7 @@ func (s *QueryExecutorService) executeTableQuery(
 	offset := (params.Page - 1) * params.PageSize
 	limit := params.PageSize
 
-	query := fmt.Sprintf("SELECT %s FROM %s%s%s LIMIT %d OFFSET %d",
-		selectFields, tableName, whereClause, orderByClause, limit, offset)
+	query := dialect.SelectTableSQL(selectFields, schema, table, whereClause, orderByClause, limit, offset)
 
 	var rows []map[string]interface{}
 	if err := db.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
@@ -387,7 +384,7 @@ func (s *QueryExecutorService) executeSQLQuery(
 	sqlQuery := service.SqlQuery
 
 	// 1. 获取总数（使用子查询）
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS subquery", sqlQuery)
+	countQuery := sqldialect.CountSubquerySQL(sqlQuery, "subquery")
 	var total int64
 	if err := db.WithContext(ctx).Raw(countQuery).Scan(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
@@ -397,7 +394,7 @@ func (s *QueryExecutorService) executeSQLQuery(
 	offset := (params.Page - 1) * params.PageSize
 	limit := params.PageSize
 
-	paginatedQuery := fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlQuery, limit, offset)
+	paginatedQuery := sqldialect.PaginateQuerySQL(sqlQuery, limit, offset)
 
 	var rows []map[string]interface{}
 	if err := db.WithContext(ctx).Raw(paginatedQuery).Scan(&rows).Error; err != nil {
@@ -407,20 +404,10 @@ func (s *QueryExecutorService) executeSQLQuery(
 	return rows, total, nil
 }
 
-// quoteIdentifier 根据数据库类型引用标识符
-func (s *QueryExecutorService) quoteIdentifier(engineType, identifier string) string {
-	engineTypeLower := strings.ToLower(engineType)
-	switch engineTypeLower {
-	case "mysql", "doris", "clickhouse":
-		return "`" + identifier + "`"
-	default: // postgresql 等
-		return "\"" + identifier + "\""
-	}
-}
-
 // replaceGeometryColumn 替换几何列为空间函数
 func (s *QueryExecutorService) replaceGeometryColumn(selectFields, geomColumn, engineType string) string {
-	if strings.ToLower(engineType) != "postgresql" {
+	dialect := sqldialect.ForEngine(engineType)
+	if !dialect.IsPostgreSQL() {
 		return selectFields
 	}
 
@@ -430,8 +417,8 @@ func (s *QueryExecutorService) replaceGeometryColumn(selectFields, geomColumn, e
 	}
 
 	// 替换几何列为 ST_AsGeoJSON
-	quotedGeomColumn := s.quoteIdentifier(engineType, geomColumn)
-	replacement := fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quotedGeomColumn, quotedGeomColumn)
+	quotedGeomColumn := dialect.QuoteIdentifier(geomColumn)
+	replacement := sqldialect.PostGISGeoJSONSelectExpression(geomColumn)
 
 	// 简单替换（实际应该更智能地解析 SQL）
 	selectFields = strings.ReplaceAll(selectFields, quotedGeomColumn, replacement)
@@ -540,7 +527,8 @@ func (s *QueryExecutorService) FormatAsGeoJSON(
 func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
 	ctx context.Context,
 	db *gorm.DB,
-	tableName string,
+	schema string,
+	table string,
 	geomColumn string,
 	engineType string,
 ) string {
@@ -548,17 +536,6 @@ func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
 	var columns []struct {
 		ColumnName string `gorm:"column:column_name"`
 	}
-
-	// 从表名中提取 schema 和 table
-	parts := strings.Split(tableName, ".")
-	if len(parts) != 2 {
-		// 如果无法解析表名，返回 *
-		return "*"
-	}
-
-	// 去掉引号
-	schema := strings.Trim(parts[0], "\"`")
-	table := strings.Trim(parts[1], "\"`")
 
 	query := `
 		SELECT column_name
@@ -577,13 +554,14 @@ func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
 	}
 
 	// 构建字段列表
+	dialect := sqldialect.ForEngine(engineType)
 	fieldList := make([]string, len(columns))
 	for i, col := range columns {
-		quotedCol := s.quoteIdentifier(engineType, col.ColumnName)
+		quotedCol := dialect.QuoteIdentifier(col.ColumnName)
 
 		// 如果是几何列，使用 ST_AsGeoJSON 转换
 		if col.ColumnName == geomColumn {
-			fieldList[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quotedCol, quotedCol)
+			fieldList[i] = sqldialect.PostGISGeoJSONSelectExpression(col.ColumnName)
 		} else {
 			fieldList[i] = quotedCol
 		}
