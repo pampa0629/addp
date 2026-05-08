@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
-	"github.com/minio/minio-go/v7"
 )
 
 // FileTablePreviewProvider 通用文件表预览 Provider
@@ -25,15 +25,28 @@ func (p *FileTablePreviewProvider) Name() string {
 	return "builtin:file-table"
 }
 
-func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	// 创建 MinIO 客户端
-	minioClient, connBucket, err := createMinioClientFromEngine(req.Engine)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create minio client: %w", err)
+func objectStorageContentReaderForPreview(req *PreviewRequest) (plugin.ConnectionInfo, string, plugin.ContentReadableProvider, error) {
+	if req == nil || req.Engine == nil {
+		return nil, "", nil, fmt.Errorf("engine is required")
 	}
+	pl, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	}
+	contentReader, ok := pl.(plugin.ContentReadableProvider)
+	if !ok {
+		return nil, "", nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
+	}
+	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
+	bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return connInfo, bucket, contentReader, nil
+}
 
-	// 解析 bucket
-	bucket, err := resolveBucket(connBucket, req.Schema)
+func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	connInfo, bucket, contentReader, err := objectStorageContentReaderForPreview(req)
 	if err != nil {
 		return nil, err
 	}
@@ -54,17 +67,18 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	// Shapefile 需要特殊处理：下载所有组件文件
 	if formatType == format.FormatShapefile {
-		return p.previewShapefile(ctx, minioClient, bucket, fullPath, parser, opts, req)
+		return p.previewShapefile(ctx, contentReader, connInfo, bucket, fullPath, parser, opts, req)
 	}
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, minioClient, bucket, fullPath, formatType, parser, opts, req)
+	return p.previewStreamable(ctx, contentReader, connInfo, bucket, fullPath, formatType, parser, opts, req)
 }
 
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
 func (p *FileTablePreviewProvider) previewStreamable(
 	ctx context.Context,
-	client *minio.Client,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
 	bucket, fullPath string,
 	formatType format.FormatType,
 	parser format.FileTableParser,
@@ -72,7 +86,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	// 获取对象流
-	object, err := client.GetObject(ctx, bucket, fullPath, minio.GetObjectOptions{})
+	object, err := openObjectStorageContent(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
@@ -104,7 +118,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	offset := req.Page * pageSize
 
 	// 重新获取对象流（用于读取数据）
-	object, err = client.GetObject(ctx, bucket, fullPath, minio.GetObjectOptions{})
+	object, err = openObjectStorageContent(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
@@ -152,14 +166,15 @@ func (p *FileTablePreviewProvider) previewStreamable(
 // previewShapefile 处理 Shapefile 格式（需要下载所有组件文件）
 func (p *FileTablePreviewProvider) previewShapefile(
 	ctx context.Context,
-	client *minio.Client,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
 	bucket, fullPath string,
 	parser format.FileTableParser,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	// 下载所有 shapefile 组件文件到临时目录
-	tempDir, basePath, err := p.downloadShapefileComponents(ctx, client, bucket, fullPath)
+	tempDir, basePath, err := p.downloadShapefileComponents(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download shapefile: %w", err)
 	}
@@ -245,7 +260,9 @@ func (p *FileTablePreviewProvider) previewShapefile(
 // downloadShapefileComponents 下载 shapefile 的所有组件文件
 func (p *FileTablePreviewProvider) downloadShapefileComponents(
 	ctx context.Context,
-	client *minio.Client,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
 	bucket, fullPath string,
 ) (tempDir string, basePath string, err error) {
 	// 提取基础路径（去掉扩展名）
@@ -264,7 +281,7 @@ func (p *FileTablePreviewProvider) downloadShapefileComponents(
 	// 下载主文件 .shp
 	shpPath := basePathRemote + ".shp"
 	localShpPath := filepath.Join(tempDir, filepath.Base(shpPath))
-	if err := p.downloadFile(ctx, client, bucket, shpPath, localShpPath); err != nil {
+	if err := p.downloadFile(ctx, contentReader, connInfo, engineID, bucket, shpPath, localShpPath); err != nil {
 		os.RemoveAll(tempDir)
 		return "", "", fmt.Errorf("failed to download .shp file: %w", err)
 	}
@@ -276,15 +293,15 @@ func (p *FileTablePreviewProvider) downloadShapefileComponents(
 		remotePath := basePathRemote + extension
 		localPath := basePathLocal + extension
 		// 忽略可选文件的下载错误
-		_ = p.downloadFile(ctx, client, bucket, remotePath, localPath)
+		_ = p.downloadFile(ctx, contentReader, connInfo, engineID, bucket, remotePath, localPath)
 	}
 
 	return tempDir, basePathLocal, nil
 }
 
 // downloadFile 从对象存储下载文件
-func (p *FileTablePreviewProvider) downloadFile(ctx context.Context, client *minio.Client, bucket, objectKey, destPath string) error {
-	object, err := client.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
+func (p *FileTablePreviewProvider) downloadFile(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectKey, destPath string) error {
+	object, err := openObjectStorageContent(ctx, contentReader, connInfo, engineID, bucket, objectKey)
 	if err != nil {
 		return err
 	}

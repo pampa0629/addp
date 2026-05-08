@@ -136,9 +136,8 @@ func SetupRouter(
 		api.POST("/import", importHandler.ImportData)
 
 		// 数据探查 API（Manager 核心功能，直接挂在 /api/manager 下）
-		engineConnector := service.NewEngineConnector(systemClient)
 		previewRegistry := metadataService.PreviewRegistry()
-		previewResolver := service.NewPreviewResolver(previewRegistry, systemClient, metaClient, engineConnector)
+		previewResolver := service.NewPreviewResolver(previewRegistry, systemClient, metaClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 

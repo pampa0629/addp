@@ -25,10 +25,9 @@ var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta it
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
-	registry        *PreviewRegistry
-	systemClient    *commonClient.SystemClient
-	metaClient      *commonClient.MetaClient
-	engineConnector *EngineConnector
+	registry     *PreviewRegistry
+	systemClient *commonClient.SystemClient
+	metaClient   *commonClient.MetaClient
 }
 
 // NewPreviewResolver 创建预览解析器
@@ -36,20 +35,15 @@ func NewPreviewResolver(
 	registry *PreviewRegistry,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
-	engineConnector *EngineConnector,
 ) *PreviewResolver {
 	if registry == nil {
 		registry = NewPreviewRegistry()
 	}
-	if engineConnector == nil {
-		engineConnector = NewEngineConnector(systemClient)
-	}
 
 	return &PreviewResolver{
-		registry:        registry,
-		systemClient:    systemClient,
-		metaClient:      metaClient,
-		engineConnector: engineConnector,
+		registry:     registry,
+		systemClient: systemClient,
+		metaClient:   metaClient,
 	}
 }
 

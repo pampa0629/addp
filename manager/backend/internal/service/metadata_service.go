@@ -15,10 +15,10 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
-	"github.com/minio/minio-go/v7"
 )
 
 type MetadataService struct {
@@ -428,14 +428,15 @@ func (s *MetadataService) StreamVideo(
 		return nil, 0, "", "", fmt.Errorf("resource type %s does not support video streaming", resource.EngineType)
 	}
 
-	// 创建MinIO client
-	cfg, err := buildObjectStorageConfig(resource.ConnectionInfo)
+	pl, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return nil, 0, "", "", fmt.Errorf("failed to build storage config: %w", err)
+		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	client, err := newMinioClient(cfg)
-	if err != nil {
-		return nil, 0, "", "", fmt.Errorf("failed to create minio client: %w", err)
+	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
+	contentReader, _ := pl.(plugin.ContentReadableProvider)
+	rangeReader, _ := pl.(plugin.RangeReadableProvider)
+	if contentReader == nil {
+		return nil, 0, "", "", fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
 	// 解析objectKey（格式：bucket/path/to/file.mp4）
@@ -445,15 +446,16 @@ func (s *MetadataService) StreamVideo(
 	}
 	bucket := parts[0]
 	objectPath := parts[1]
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
 	// 获取对象信息
-	objInfo, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
+	meta, err := getObjectPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
 	}
 
 	// 推断Content-Type
-	contentType := objInfo.ContentType
+	contentType := meta.ContentType
 	if contentType == "" {
 		// 根据扩展名推断
 		ext := strings.ToLower(filepath.Ext(objectPath))
@@ -477,10 +479,9 @@ func (s *MetadataService) StreamVideo(
 		}
 	}
 
-	// 处理Range请求
-	opts := minio.GetObjectOptions{}
 	var contentLength int64
 	var contentRange string
+	var readOptions plugin.ReadOptions
 
 	if rangeHeader != "" {
 		// 解析Range header (格式: "bytes=start-end")
@@ -497,40 +498,40 @@ func (s *MetadataService) StreamVideo(
 			if rangeParts[1] != "" {
 				end, err = strconv.ParseInt(rangeParts[1], 10, 64)
 				if err != nil {
-					end = objInfo.Size - 1
+					end = meta.Size - 1
 				}
 			} else {
-				end = objInfo.Size - 1
+				end = meta.Size - 1
 			}
 
 			// 确保范围有效
 			if start < 0 {
 				start = 0
 			}
-			if end >= objInfo.Size {
-				end = objInfo.Size - 1
+			if end >= meta.Size {
+				end = meta.Size - 1
 			}
 			if start > end {
 				return nil, 0, "", "", fmt.Errorf("invalid range: start > end")
 			}
 
-			// 设置Range
-			err = opts.SetRange(start, end)
-			if err != nil {
-				return nil, 0, "", "", fmt.Errorf("failed to set range: %w", err)
-			}
-
 			contentLength = end - start + 1
-			contentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, objInfo.Size)
+			contentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, meta.Size)
+			readOptions = plugin.ReadOptions{Offset: start, Length: contentLength}
 		}
 	} else {
 		// 没有Range，返回完整内容
-		contentLength = objInfo.Size
+		contentLength = meta.Size
 		contentRange = ""
 	}
 
 	// 获取对象流
-	reader, err := client.GetObject(ctx, bucket, objectPath, opts)
+	var reader io.ReadCloser
+	if readOptions.Length > 0 && rangeReader != nil {
+		reader, err = rangeReader.OpenRange(ctx, connInfo, objectStorageObjectCatalogPath(resource.ID, bucket, objectPath), readOptions)
+	} else {
+		reader, err = contentReader.OpenContent(ctx, connInfo, objectStorageObjectCatalogPath(resource.ID, bucket, objectPath), readOptions)
+	}
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)
 	}

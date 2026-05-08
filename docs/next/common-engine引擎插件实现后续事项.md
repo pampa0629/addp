@@ -67,8 +67,8 @@
 
 推进顺序建议：
 
-- [ ] P0：替换 `manager/backend/internal/service/object_preview.go` 中的 MinIO/S3 直连，统一走 object/file Store Provider。
-- [ ] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
+- [x] P0：替换 `manager/backend/internal/service/object_preview.go` 中的 MinIO/S3 直连，统一走 object/file Store Provider。
+- [x] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
 - [ ] P1：整理 Manager 空间预览、Feature、GeoJSON、MVT 的 PostgreSQL/PostGIS 专用路径，形成集中 spatial adapter；连接池不再自行打开。
 - [ ] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
 - [ ] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。

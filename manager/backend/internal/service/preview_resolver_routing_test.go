@@ -21,7 +21,7 @@ func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models
 func TestResolveProviderByMetaUsesItemType(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:lake-table"})
-	resolver := NewPreviewResolver(registry, nil, nil, nil)
+	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
 		Locator:  &resource.ResourceLocator{},
@@ -41,7 +41,7 @@ func TestResolveProviderByMetaUsesItemType(t *testing.T) {
 func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
-	resolver := NewPreviewResolver(registry, nil, nil, nil)
+	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
 		Locator: &resource.ResourceLocator{},
@@ -66,7 +66,7 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
-	resolver := NewPreviewResolver(registry, nil, nil, nil)
+	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
 		Locator: &resource.ResourceLocator{},
@@ -129,7 +129,7 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 }
 
 func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
-	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, nil)
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
 		Locator: &resource.ResourceLocator{
 			Path: []string{"bucket", "table.parquet"},
@@ -147,7 +147,7 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 }
 
 func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
-	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, nil)
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
 		Locator:  &resource.ResourceLocator{},
 		Engine:   &commonModels.Engine{EngineType: "minio"},

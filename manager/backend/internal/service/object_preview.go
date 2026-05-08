@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,13 +15,12 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
 )
 
@@ -88,15 +86,6 @@ func (p *objectStoragePreviewProvider) Name() string {
 	return "builtin:object-storage"
 }
 
-type objectStorageConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Region    string
-	UseSSL    bool
-	PathStyle bool
-}
-
 func isObjectStorageType(resourceType string) bool {
 	switch strings.ToLower(resourceType) {
 	case "minio", "s3", "oss", "object_storage", "object-storage":
@@ -125,34 +114,6 @@ func isMetaNotFoundError(err error) bool {
 	return strings.Contains(errMsg, "404") ||
 		strings.Contains(errMsg, "not found") ||
 		strings.Contains(errMsg, "record not found")
-}
-
-// createMinioClientFromEngine 从 Engine 创建 MinIO 客户端
-// 返回: MinIO 客户端、bucket 名称（可能为空）、错误
-func createMinioClientFromEngine(engine *models.Engine) (*minio.Client, string, error) {
-	connInfo := engine.ConnectionInfo
-
-	endpoint, _ := connInfo["endpoint"].(string)
-	accessKey, _ := connInfo["access_key"].(string)
-	secretKey, _ := connInfo["secret_key"].(string)
-	useSSL, _ := connInfo["use_ssl"].(bool)
-	bucket, _ := connInfo["bucket"].(string)
-
-	// endpoint, accessKey, secretKey 是必需的
-	// bucket 可以为空(从 schema 参数获取)
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, "", fmt.Errorf("missing required connection info")
-	}
-
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-
-	return client, bucket, nil
 }
 
 // resolveBucket 解析最终的 bucket 名称
@@ -231,19 +192,20 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	decrypted, err := p.metadataRepo.DecryptConnectionInfo(resource.ConnectionInfo)
+	connInfo, err := p.decryptedConnectionInfo(resource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt connection info: %w", err)
 	}
 
-	cfg, err := buildObjectStorageConfig(decrypted)
+	pl, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-
-	client, err := newMinioClient(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init minio client: %w", err)
+	catalogProvider, _ := pl.(plugin.CatalogProvider)
+	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
+	contentReader, _ := pl.(plugin.ContentReadableProvider)
+	if catalogProvider == nil {
+		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -294,7 +256,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			preview.Object.SizeBytes = node.TotalSizeBytes
 			preview.Object.ObjectCount = int64(node.ItemCount)
 		}
-		children, err := listImmediateChildren(ctx, client, bucket, objectPath)
+		children, err := listObjectPreviewChildren(ctx, catalogProvider, connInfo, resource.ID, bucket, objectPath)
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +271,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
-	stat, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
+	stat, err := getObjectPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat object %s: %w", objectPath, err)
 	}
@@ -336,16 +298,13 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		preview.Object.SizeBytes = stat.Size
 	}
 
-	if !stat.LastModified.IsZero() {
-		mod := stat.LastModified
+	if !stat.ModifiedAt.IsZero() {
+		mod := stat.ModifiedAt
 		preview.Object.LastModified = &mod
 	}
 
 	metadata := map[string]string{
 		"etag": stat.ETag,
-	}
-	for k, v := range stat.UserMetadata {
-		metadata[strings.ToLower(k)] = v
 	}
 	if len(metadata) > 0 {
 		preview.Object.Metadata = metadata
@@ -379,10 +338,10 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			// 优先支持复合流式处理（如 Shapefile 等多文件场景）
 			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+					return openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 				siblingProvider := func(path string) (io.ReadCloser, error) {
-					return getObjectStream(ctx, client, bucket, path)
+					return readObjectStorageSibling(ctx, contentReader, connInfo, resource.ID, bucket, path)
 				}
 
 				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, req, streamer, siblingProvider)
@@ -398,7 +357,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 				}
 			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+					return openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 
 				content, truncated, err := streamHandler.HandleStream(ctx, req, streamer)
@@ -419,7 +378,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 					if limitBytes <= 0 {
 						limitBytes = maxTextPreviewBytes
 					}
-					reader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+					reader, err := openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 					if err != nil {
 						return nil, false, fmt.Errorf("failed to get object: %w", err)
 					}
@@ -458,7 +417,9 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		hasExtracted := preview.Object.ExtractedMetadata != nil
 
 		if extractorAvailable && !hasExtracted {
-			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, client)
+			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, func() (io.ReadCloser, error) {
+				return openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+			})
 			if extracted != nil {
 				preview.Object.ExtractedMetadata = extracted
 				if preview.Object.Attributes == nil {
@@ -682,7 +643,7 @@ func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
 	ctx context.Context,
 	resourceID uint,
 	bucket, objectPath string,
-	client *minio.Client,
+	openContent func() (io.ReadCloser, error),
 ) map[string]interface{} {
 	// 获取Meta服务URL和token（从环境变量或配置）
 	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
@@ -698,7 +659,7 @@ func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
 
 	// 下载对象内容（用于提取元数据）
 	objectKey := bucket + "/" + objectPath
-	objReader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+	objReader, err := openContent()
 	if err != nil {
 		return nil
 	}
@@ -734,178 +695,171 @@ func getTokenFromContext(ctx context.Context) string {
 	return ""
 }
 
-func buildObjectStorageConfig(info models.ConnectionInfo) (*objectStorageConfig, error) {
-	getString := func(key string) string {
-		if v, ok := info[key]; ok {
-			switch val := v.(type) {
-			case string:
-				return val
-			case fmt.Stringer:
-				return val.String()
-			case float64:
-				return fmt.Sprintf("%.0f", val)
-			}
+func (p *objectStoragePreviewProvider) decryptedConnectionInfo(engine *models.Engine) (plugin.ConnectionInfo, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("engine is required")
+	}
+	connInfo := engine.ConnectionInfo
+	if p != nil && p.metadataRepo != nil {
+		decrypted, err := p.metadataRepo.DecryptConnectionInfo(engine.ConnectionInfo)
+		if err != nil {
+			return nil, err
 		}
-		return ""
+		connInfo = decrypted
 	}
-
-	parseBool := func(key string) bool {
-		v, ok := info[key]
-		if !ok {
-			return false
-		}
-		switch val := v.(type) {
-		case bool:
-			return val
-		case string:
-			return strings.EqualFold(val, "true") || val == "1"
-		case float64:
-			return val != 0
-		default:
-			return false
-		}
-	}
-
-	cfg := &objectStorageConfig{
-		Endpoint:  normalizeEndpoint(getString("endpoint")),
-		AccessKey: getString("access_key"),
-		SecretKey: getString("secret_key"),
-		Region:    getString("region"),
-		UseSSL:    parseBool("use_ssl"),
-		PathStyle: parseBool("path_style"),
-	}
-
-	if cfg.Endpoint == "" {
-		host := getString("host")
-		port := getString("port")
-		if host != "" {
-			cfg.Endpoint = normalizeEndpoint(host)
-			if port != "" && !strings.Contains(cfg.Endpoint, ":") {
-				cfg.Endpoint = fmt.Sprintf("%s:%s", cfg.Endpoint, port)
-			}
-		}
-	}
-
-	if cfg.Endpoint == "" {
-		return nil, fmt.Errorf("missing endpoint for object storage")
-	}
-	if cfg.AccessKey == "" || cfg.SecretKey == "" {
-		return nil, fmt.Errorf("missing access credentials for object storage")
-	}
-
-	return cfg, nil
+	return plugin.ConnectionInfo(connInfo), nil
 }
 
-func newMinioClient(cfg *objectStorageConfig) (*minio.Client, error) {
-	opts := &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
+func objectStorageCatalogPath(engineID uint, bucket, objectPath string, isContainer bool) plugin.CatalogPath {
+	path := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
 	}
-	if cfg.Region != "" {
-		opts.Region = cfg.Region
+	bucket = strings.Trim(bucket, "/")
+	if bucket == "" {
+		return path
 	}
-	if cfg.PathStyle {
-		opts.BucketLookup = minio.BucketLookupPath
-	}
-	return minio.New(cfg.Endpoint, opts)
-}
-
-func getObjectStream(ctx context.Context, client *minio.Client, bucket, key string) (io.ReadCloser, error) {
-	cleanKey := strings.TrimLeft(key, "/")
-	if cleanKey == "" {
-		return nil, fs.ErrNotExist
-	}
-
-	if _, err := client.StatObject(ctx, bucket, cleanKey, minio.StatObjectOptions{}); err != nil {
-		if isObjectNotFoundErr(err) {
-			return nil, fs.ErrNotExist
-		}
-		return nil, err
-	}
-
-	reader, err := client.GetObject(ctx, bucket, cleanKey, minio.GetObjectOptions{})
-	if err != nil {
-		if isObjectNotFoundErr(err) {
-			return nil, fs.ErrNotExist
-		}
-		return nil, err
-	}
-	return reader, nil
-}
-
-func isObjectNotFoundErr(err error) bool {
-	if errors.Is(err, fs.ErrNotExist) {
-		return true
-	}
-	resp := minio.ToErrorResponse(err)
-	if resp.Code == "NoSuchKey" || resp.Code == "NoSuchBucket" {
-		return true
-	}
-	return resp.StatusCode == http.StatusNotFound
-}
-
-func listImmediateChildren(ctx context.Context, client *minio.Client, bucket, path string) ([]models.ObjectPreviewChild, error) {
-	cleanPrefix := strings.Trim(path, "/")
-	listPrefix := cleanPrefix
-	if listPrefix != "" && !strings.HasSuffix(listPrefix, "/") {
-		listPrefix += "/"
-	}
-
-	objectCh := client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-		Prefix:    listPrefix,
-		Recursive: false,
+	path.Segments = append(path.Segments, plugin.CatalogSegment{
+		Term: plugin.CatalogTermBucket,
+		Kind: plugin.CatalogKindBucket,
+		Name: bucket,
 	})
+	trimmed := strings.Trim(objectPath, "/")
+	if trimmed == "" {
+		return path
+	}
+	parts := strings.Split(trimmed, "/")
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		isLast := i == len(parts)-1
+		segment := plugin.CatalogSegment{
+			Term: plugin.CatalogTermPrefix,
+			Kind: plugin.CatalogKindPrefix,
+			Name: part,
+		}
+		if isLast && !isContainer {
+			segment.Term = plugin.CatalogTermObject
+			segment.Kind = plugin.CatalogKindObject
+		}
+		path.Segments = append(path.Segments, segment)
+	}
+	return path
+}
 
-	dirSeen := make(map[string]struct{})
-	var children []models.ObjectPreviewChild
+func objectStorageDirectoryCatalogPath(engineID uint, bucket, prefix string) plugin.CatalogPath {
+	return objectStorageCatalogPath(engineID, bucket, prefix, true)
+}
 
-	for object := range objectCh {
-		if object.Err != nil {
-			return nil, object.Err
-		}
-		relative := strings.TrimPrefix(object.Key, listPrefix)
-		relative = strings.Trim(relative, "/")
-		if relative == "" {
+func objectStorageObjectCatalogPath(engineID uint, bucket, objectPath string) plugin.CatalogPath {
+	return objectStorageCatalogPath(engineID, bucket, objectPath, false)
+}
+
+func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, objectStorageDirectoryCatalogPath(engineID, bucket, prefix), plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	children := make([]models.ObjectPreviewChild, 0, len(nodes))
+	for _, node := range nodes {
+		if isReservedSegment(node.Name) {
 			continue
 		}
-		parts := strings.Split(relative, "/")
-		name := parts[0]
-		if isReservedSegment(name) {
-			continue
+		childType := "object"
+		contentType := stringAttribute(node.Attributes, "content_type")
+		if node.IsContainer {
+			childType = "prefix"
+			contentType = "application/x-directory"
 		}
-		childPath := joinObjectPath(cleanPrefix, name)
-		if len(parts) > 1 || strings.HasSuffix(object.Key, "/") {
-			if _, exists := dirSeen[name]; exists {
-				continue
-			}
-			dirSeen[name] = struct{}{}
-			children = append(children, models.ObjectPreviewChild{
-				Name:        name,
-				Path:        childPath,
-				Type:        "prefix",
-				ContentType: "application/x-directory",
-			})
-			continue
+		childPath := strings.TrimPrefix(catalogNodePhysicalPath(node), strings.Trim(bucket, "/")+"/")
+		if childPath == "" {
+			childPath = joinObjectPath(prefix, node.Name)
 		}
 		child := models.ObjectPreviewChild{
-			Name:        name,
+			Name:        node.Name,
 			Path:        childPath,
-			Type:        "object",
-			SizeBytes:   object.Size,
-			ContentType: inferContentType(childPath, object.ContentType),
+			Type:        childType,
+			SizeBytes:   int64Stat(node.Stats, "size_bytes"),
+			ContentType: inferContentType(childPath, contentType),
 		}
-		if !object.LastModified.IsZero() {
-			mod := object.LastModified
+		if modifiedAt, ok := node.Attributes["modified_at"].(time.Time); ok && !modifiedAt.IsZero() {
+			mod := modifiedAt
 			child.LastModified = &mod
 		}
 		children = append(children, child)
 	}
-
 	sort.Slice(children, func(i, j int) bool {
 		return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
 	})
-
 	return children, nil
+}
+
+func getObjectPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
+	if metadataProvider == nil {
+		return nil, fs.ErrNotExist
+	}
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, objectStorageObjectCatalogPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return itemMetadataToFileMetadata(item, bucket+"/"+strings.Trim(objectPath, "/")), nil
+}
+
+func openObjectStorageContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (io.ReadCloser, error) {
+	if contentReader == nil {
+		return nil, fs.ErrNotExist
+	}
+	return contentReader.OpenContent(ctx, connInfo, objectStorageObjectCatalogPath(engineID, bucket, objectPath), plugin.ReadOptions{})
+}
+
+func readObjectStorageSibling(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, path string) (io.ReadCloser, error) {
+	if contentReader == nil {
+		return nil, fs.ErrNotExist
+	}
+	var lastErr error
+	for _, candidate := range candidateObjectSiblingPathVariants(bucket, path) {
+		reader, err := openObjectStorageContent(ctx, contentReader, connInfo, engineID, bucket, candidate)
+		if err == nil {
+			return reader, nil
+		}
+		if isFileSystemNotFoundErr(err) {
+			if lastErr == nil {
+				lastErr = err
+			}
+			continue
+		}
+		lastErr = err
+	}
+	if lastErr == nil || isFileSystemNotFoundErr(lastErr) {
+		return nil, fs.ErrNotExist
+	}
+	return nil, lastErr
+}
+
+func candidateObjectSiblingPathVariants(bucket, path string) []string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil
+	}
+	bucket = strings.Trim(bucket, "/")
+	withoutLeading := strings.TrimLeft(trimmed, "/")
+	withoutBucket := strings.TrimPrefix(withoutLeading, bucket+"/")
+	candidates := []string{withoutBucket, withoutLeading, trimmed}
+	seen := make(map[string]struct{}, len(candidates))
+	unique := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimLeft(candidate, "/")
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		unique = append(unique, candidate)
+	}
+	return unique
 }
 
 func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {
@@ -999,13 +953,6 @@ func isGenericContentType(contentType string) bool {
 		return true
 	}
 	return false
-}
-
-func normalizeEndpoint(endpoint string) string {
-	endpoint = strings.TrimSpace(endpoint)
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	return endpoint
 }
 
 func isReservedSegment(segment string) bool {
