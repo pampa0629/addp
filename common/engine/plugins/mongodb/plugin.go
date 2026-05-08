@@ -66,10 +66,10 @@ func (p *MongoDBPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *MongoDBPlugin) documentCatalogCallbacks() plugin.DocumentCatalogCallbacks {
 	return plugin.DocumentCatalogCallbacks{
-		Plugin:               p,
-		ListDatabasesFunc:    p.listDatabases,
-		ListCollectionsFunc:  p.listCollections,
-		IsSystemDatabaseFunc: p.IsSystemDatabase,
+		ListDatabasesFunc:      p.listDatabases,
+		ListCollectionsFunc:    p.listCollections,
+		GetCollectionStatsFunc: p.getCollectionStats,
+		IsSystemDatabaseFunc:   p.IsSystemDatabase,
 	}
 }
 
@@ -82,7 +82,7 @@ func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.Connect
 }
 
 func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeDocumentItem(ctx, p, path.EngineID, connInfo, path, opts)
+	return plugin.DescribeDocumentItem(ctx, p.documentCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 
 func (p *MongoDBPlugin) QueryLanguages() []string {

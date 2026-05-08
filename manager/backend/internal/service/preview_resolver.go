@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
@@ -572,7 +571,7 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 
 	meta := &models.ItemMetadata{
 		ItemType:        itemType,
-		ItemTypeI18nKey: plugin.TermI18nKey(itemType),
+		ItemTypeI18nKey: "engine.term." + itemType,
 		FullName:        req.Metadata.FullName,
 		Attributes:      mapToMetaAttributes(req.Metadata.Attributes),
 		ScannedAt:       req.Metadata.LastScanAt,

@@ -149,21 +149,12 @@
 
 ### 4.1 术语 i18n key 生成
 
-```go
-// TermI18nKey 将通用英文术语转换为 i18n key。
-// term: 通用英文术语，如 "schema", "database", "label", "relationship", "table", "view"
-// 返回: i18n key，如 "engine.term.schema"
-func TermI18nKey(term string) string {
-    return "engine.term." + term
-}
-```
-
 **设计原则**：
 - `EnginePlugin` 不变，不感知 meta 的 node/item 概念
-- 插件无需实现术语翻译接口，默认规则 `"engine.term.schema"` / `"engine.term.table"` 已足够
+- 插件无需实现术语翻译接口，后端按 `"engine.term." + term` 规则填充 i18n key
 - 若后续确实需要引擎级自定义映射，应通过 `EngineCapabilities` 的 catalog model 声明序列化表达，而不是新增插件私有接口
 
-后端在构建 `TreeNode` 时，通过 `TermI18nKey(nodeType)` 填入 `typeLabel` 字段（语义从"已翻译文本"改为"i18n key"）。前端用该 key 查 i18n 字典，找不到时 fallback 到 key 本身（直接显示英文 type 名）。
+后端在构建 `TreeNode` 时，按 `engine.term.<nodeType>` 规则填入 `typeLabel` 字段（语义从"已翻译文本"改为"i18n key"）。前端用该 key 查 i18n 字典，找不到时 fallback 到 key 本身（直接显示英文 type 名）。
 
 i18n 字典（前端 `locales/zh-CN.json` 等）统一维护 `engine.term.*` 命名空间：
 
@@ -308,8 +299,8 @@ GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...
 - Neo4j node type 修订
 
 ### 阶段二：后端基础改造
-1. `common/engine/plugin/interfaces.go` 新增 `TermI18nKey()` 辅助函数（不修改 `EnginePlugin`）
-2. `TreeNode` 增加 `TypeLabel` 字段（i18n key），`TreeBuilder.convertMetaNode` 通过 `TermI18nKey` 填充
+1. `TreeNode` 增加 `TypeLabel` 字段（i18n key），`TreeBuilder.convertMetaNode` 按 `engine.term.<nodeType>` 规则填充
+2. `PreviewResolver` 按 `engine.term.<itemType>` 规则填充预览项类型 i18n key
 3. `ExplorerService` 构建树时沿用 Meta 节点类型，不引入插件私有术语映射接口
 4. 预览响应增加 `ItemMeta` 结构（含 i18n key + key-value attributes），`PreviewResolver` 从 meta 模块读取并填充
 

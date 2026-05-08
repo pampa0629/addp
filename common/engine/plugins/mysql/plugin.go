@@ -70,12 +70,12 @@ func (p *MySQLPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
-		Plugin:        p,
-		NamespaceTerm: "database",
-		ListSchemas:   p.listSchemas,
-		ListTables:    p.listTables,
-		ListColumns:   p.listColumns,
-		RowCount:      p.getTableRowCount,
+		NamespaceTerm:         "database",
+		ListSchemas:           p.listSchemas,
+		ListTables:            p.listTables,
+		ListColumns:           p.listColumns,
+		RowCount:              p.getTableRowCount,
+		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }
 
@@ -175,7 +175,7 @@ func (p *MySQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	return mysqlMetadataDialect.RowCount(ctx, db, schema, table)
 }
 
-// IsSystemSchema 判断是否为系统 Schema
-func (p *MySQLPlugin) IsSystemSchema(schemaName string) bool {
+// isSystemSchema 判断是否为系统 Schema
+func (p *MySQLPlugin) isSystemSchema(schemaName string) bool {
 	return mysqlMetadataDialect.IsSystemSchema(schemaName)
 }

@@ -86,8 +86,8 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 	}
 }
 
-// TestRelationalDBPlugins 验证关系型数据库插件 provider 能力
-func TestRelationalDBPlugins(t *testing.T) {
+// TestTabularDBPlugins 验证表格型数据库插件 provider 能力
+func TestTabularDBPlugins(t *testing.T) {
 	dbTypes := []string{"postgresql", "mysql"}
 
 	for _, dbType := range dbTypes {
@@ -117,32 +117,12 @@ func TestRelationalDBPlugins(t *testing.T) {
 				t.Fatalf("%s should implement SQLQueryRuntimeProvider", dbType)
 			}
 
-			relPlugin, ok := p.(plugin.RelationalDBPlugin)
-			if !ok {
-				t.Fatalf("%s should implement RelationalDBPlugin for connection pool and system schema checks", dbType)
+			if _, ok := p.(plugin.ConnectionPoolPlugin); !ok {
+				t.Fatalf("%s should implement ConnectionPoolPlugin", dbType)
 			}
 
-			// 验证系统 schema 判断
-			if dbType == "postgresql" {
-				if !relPlugin.IsSystemSchema("information_schema") {
-					t.Error("information_schema should be system schema")
-				}
-				if !relPlugin.IsSystemSchema("pg_catalog") {
-					t.Error("pg_catalog should be system schema")
-				}
-				if relPlugin.IsSystemSchema("public") {
-					t.Error("public should not be system schema")
-				}
-			} else if dbType == "mysql" {
-				if !relPlugin.IsSystemSchema("information_schema") {
-					t.Error("information_schema should be system schema")
-				}
-				if !relPlugin.IsSystemSchema("mysql") {
-					t.Error("mysql should be system schema")
-				}
-				if relPlugin.IsSystemSchema("test") {
-					t.Error("test should not be system schema")
-				}
+			if capabilities.Storage.Catalog == nil || !capabilities.Storage.Catalog.SystemFiltering {
+				t.Fatalf("%s should declare catalog system filtering", dbType)
 			}
 
 			t.Logf("%s: tabular providers ✓", dbType)

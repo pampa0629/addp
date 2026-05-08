@@ -68,17 +68,6 @@ type BatchWritableProvider interface {
 	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts BatchWriteOptions) error
 }
 
-type PreviewProvider interface {
-	EnginePlugin
-	PreviewItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts PreviewOptions) (*PreviewResult, error)
-}
-
-type TransferAdapter interface {
-	EnginePlugin
-	BuildReaderConfig(ctx context.Context, engine Engine, item CatalogPath, opts TransferReadOptions) (*TransferConnectorConfig, error)
-	BuildWriterConfig(ctx context.Context, engine Engine, target CatalogPath, opts TransferWriteOptions) (*TransferConnectorConfig, error)
-}
-
 type QueryRuntimeProvider interface {
 	EnginePlugin
 	QueryLanguages() []string
@@ -217,37 +206,6 @@ type BatchData struct {
 	Fields   []FieldInfo              `json:"fields,omitempty"`
 	Metadata map[string]interface{}   `json:"metadata,omitempty"`
 	Offset   int64                    `json:"offset,omitempty"`
-}
-
-type PreviewOptions struct {
-	Mode     string
-	MaxRows  int
-	MaxBytes int64
-}
-
-type PreviewResult struct {
-	Mode     string                   `json:"mode"`
-	Fields   []FieldInfo              `json:"fields,omitempty"`
-	Rows     []map[string]interface{} `json:"rows,omitempty"`
-	Graph    *GraphData               `json:"graph,omitempty"`
-	Metadata map[string]interface{}   `json:"metadata,omitempty"`
-}
-
-type TransferReadOptions struct {
-	Format    string
-	BatchSize int
-}
-
-type TransferWriteOptions struct {
-	Format    string
-	BatchSize int
-	Mode      string
-}
-
-type TransferConnectorConfig struct {
-	Type      string                 `json:"type"`
-	Config    map[string]interface{} `json:"config"`
-	BatchSize int                    `json:"batch_size,omitempty"`
 }
 
 type SampleQueryOptions struct {

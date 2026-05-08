@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -341,7 +340,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
 
 	// 获取 typeLabel（i18n key）
-	typeLabel := plugin.TermI18nKey(node.NodeType)
+	typeLabel := "engine.term." + node.NodeType
 
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头

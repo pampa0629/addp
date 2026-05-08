@@ -64,7 +64,7 @@ func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.Con
 	result := make([]plugin.CollectionInfo, 0, len(collections))
 	for _, collName := range collections {
 		// 获取集合统计信息
-		stats, err := p.GetCollectionStats(ctx, connInfo, database, collName)
+		stats, err := p.getCollectionStats(ctx, connInfo, database, collName)
 		if err != nil {
 			// 如果获取统计失败，使用默认值
 			result = append(result, plugin.CollectionInfo{
@@ -87,8 +87,8 @@ func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.Con
 	return result, nil
 }
 
-// GetCollectionStats returns collection statistics.
-func (p *MongoDBPlugin) GetCollectionStats(ctx context.Context, connInfo plugin.ConnectionInfo, database, collection string) (*plugin.CollectionStats, error) {
+// getCollectionStats returns collection statistics.
+func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.ConnectionInfo, database, collection string) (*plugin.CollectionStats, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -222,7 +222,7 @@ func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plu
 		return left > right
 	})
 
-	stats, err := p.GetCollectionStats(ctx, connInfo, database, collection)
+	stats, err := p.getCollectionStats(ctx, connInfo, database, collection)
 	if err != nil {
 		count, _ := coll.EstimatedDocumentCount(ctx)
 		stats = &plugin.CollectionStats{DocumentCount: count}

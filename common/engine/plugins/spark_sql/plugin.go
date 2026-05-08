@@ -62,12 +62,12 @@ func (p *SparkSQLPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *SparkSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
-		Plugin:        p,
-		NamespaceTerm: "database",
-		ListSchemas:   p.listSchemas,
-		ListTables:    p.listTables,
-		ListColumns:   p.listColumns,
-		RowCount:      p.getTableRowCount,
+		NamespaceTerm:         "database",
+		ListSchemas:           p.listSchemas,
+		ListTables:            p.listTables,
+		ListColumns:           p.listColumns,
+		RowCount:              p.getTableRowCount,
+		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }
 
@@ -464,7 +464,7 @@ func (p *SparkSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sche
 	return count, nil
 }
 
-func (p *SparkSQLPlugin) IsSystemSchema(schemaName string) bool {
+func (p *SparkSQLPlugin) isSystemSchema(schemaName string) bool {
 	systemSchemas := map[string]bool{
 		"information_schema": true,
 		"sys":                true,

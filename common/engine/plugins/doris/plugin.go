@@ -72,12 +72,12 @@ func (p *DorisPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *DorisPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
-		Plugin:        p,
-		NamespaceTerm: "database",
-		ListSchemas:   p.listSchemas,
-		ListTables:    p.listTables,
-		ListColumns:   p.listColumns,
-		RowCount:      p.getTableRowCount,
+		NamespaceTerm:         "database",
+		ListSchemas:           p.listSchemas,
+		ListTables:            p.listTables,
+		ListColumns:           p.listColumns,
+		RowCount:              p.getTableRowCount,
+		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }
 
@@ -175,8 +175,8 @@ func (p *DorisPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	return dorisMetadataDialect.RowCount(ctx, db, schema, table)
 }
 
-// IsSystemSchema 判断是否为系统 Schema
+// isSystemSchema 判断是否为系统 Schema
 // Doris 兼容 MySQL 协议，系统 schema 同 MySQL
-func (p *DorisPlugin) IsSystemSchema(schemaName string) bool {
+func (p *DorisPlugin) isSystemSchema(schemaName string) bool {
 	return dorisMetadataDialect.IsSystemSchema(schemaName)
 }

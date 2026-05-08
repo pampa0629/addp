@@ -17,7 +17,7 @@ type Engine struct {
 	ConnectionInfo ConnectionInfo
 }
 
-// ============ 第一层：EnginePlugin（所有引擎基础接口）============
+// ============ 基础接口 ============
 
 // EnginePlugin 所有引擎的基础接口
 // 所有引擎（数据库、对象存储、计算引擎）都必须实现此接口
@@ -71,7 +71,7 @@ type DSNProvider interface {
 	BuildDSN(connInfo ConnectionInfo) (string, error)
 }
 
-// ============ 第三层：存储引擎细分 ============
+// ============ 可选 Provider 与专项接口 ============
 
 // ConnectionPoolPlugin SQL数据库连接池管理接口
 // 关系型数据库应该实现此接口以提供连接池能力
@@ -86,29 +86,6 @@ type ConnectionPoolPlugin interface {
 	// GetDialect 获取数据库方言（用于GORM）
 	// 返回值: "postgres", "mysql", "sqlite" 等
 	GetDialect() string
-}
-
-// RelationalDBPlugin 关系型数据库插件。
-// 真实目录与字段元数据统一由 CatalogProvider / ItemMetadataProvider 暴露；
-// 该接口仅保留 SQL/tabular 引擎的连接池和系统 schema 判断能力。
-type RelationalDBPlugin interface {
-	EnginePlugin
-	ConnectionPoolPlugin
-
-	// IsSystemSchema 判断是否为系统 Schema
-	// 不同数据库的系统 Schema 不同，由各插件自己实现
-	// 例如 PostgreSQL: pg_catalog, information_schema
-	//      MySQL: information_schema, mysql, performance_schema
-	IsSystemSchema(schemaName string) bool
-}
-
-// DocumentDBPlugin 文档型数据库专项元数据增强接口。
-// database/collection 列表统一由 CatalogProvider 暴露。
-type DocumentDBPlugin interface {
-	EnginePlugin
-
-	// GetCollectionStats 获取 Collection 统计信息
-	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
 }
 
 // ============ 数据结构定义 ============
@@ -232,17 +209,6 @@ type GraphData struct {
 
 // GraphQueryResult 图查询结果（同时包含表格数据和图数据）
 type GraphQueryResult struct {
-	QueryResult            // 嵌入表格结果（向后兼容）
+	QueryResult            // Cypher 的表格结果/统计结果
 	GraphData   *GraphData `json:"graph_data,omitempty"`
-}
-
-// ============ 术语 i18n ============
-
-// TermI18nKey 获取术语的 i18n key。
-//
-// 术语来源于 catalog term / node type / item type，默认规则统一为
-// "engine.term." + term。若后续需要引擎级自定义映射，应通过
-// EngineCapabilities 的 catalog model 声明序列化表达，而不是新增插件私有接口。
-func TermI18nKey(term string) string {
-	return "engine.term." + term
 }

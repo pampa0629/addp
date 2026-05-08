@@ -32,12 +32,12 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 }
 
 type TabularCatalogCallbacks struct {
-	Plugin        RelationalDBPlugin
-	NamespaceTerm string
-	ListSchemas   func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
-	ListTables    func(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
-	ListColumns   func(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
-	RowCount      func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
+	NamespaceTerm         string
+	ListSchemas           func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
+	ListTables            func(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
+	ListColumns           func(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
+	RowCount              func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
+	IsSystemNamespaceFunc func(namespace string) bool
 }
 
 // ListTabularCatalogChildren maps tabular callbacks to CatalogProvider.
@@ -58,7 +58,7 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 		}
 		nodes := make([]CatalogNode, 0, len(schemas))
 		for _, schema := range schemas {
-			if callbacks.Plugin.IsSystemSchema(schema.Name) {
+			if callbacks.isSystemNamespace(schema.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{
@@ -222,9 +222,6 @@ func tableCatalogKind(table TableInfo) string {
 }
 
 func (a TabularCatalogCallbacks) validate() error {
-	if a.Plugin == nil {
-		return fmt.Errorf("tabular catalog callbacks plugin cannot be nil")
-	}
 	if a.ListSchemas == nil || a.ListTables == nil || a.ListColumns == nil {
 		return fmt.Errorf("tabular catalog callbacks is incomplete")
 	}
@@ -236,4 +233,11 @@ func (a TabularCatalogCallbacks) namespaceTerm() string {
 		return a.NamespaceTerm
 	}
 	return CatalogTermDatabase
+}
+
+func (a TabularCatalogCallbacks) isSystemNamespace(namespace string) bool {
+	if a.IsSystemNamespaceFunc == nil {
+		return false
+	}
+	return a.IsSystemNamespaceFunc(namespace)
 }

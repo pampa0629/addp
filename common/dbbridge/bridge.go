@@ -180,18 +180,6 @@ func CountItemRows(ctx context.Context, engine *models.Engine, namespace, item s
 	return plugin.CountItemRows(ctx, toPluginEngine(engine), namespace, item)
 }
 
-// === 辅助方法 ===
-
-// SupportsConnectionPool 检查指定类型是否支持连接池
-func SupportsConnectionPool(engineType string) bool {
-	return plugin.SupportsConnectionPool(engineType)
-}
-
-// SupportsMetadataQuery 检查指定类型是否支持元数据查询
-func SupportsMetadataQuery(engineType string) bool {
-	return plugin.SupportsMetadataQuery(engineType)
-}
-
 // ============ 统一查询执行 ============
 
 // SupportsDirectQuery 检查引擎是否实现了非 SQL 原生查询运行时（MongoDB/Neo4j 等）

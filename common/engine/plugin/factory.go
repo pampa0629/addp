@@ -95,26 +95,6 @@ func GetDefaultPort(engineType string) (int, error) {
 	return plugin.DefaultPort(), nil
 }
 
-// GetDisplayName 获取指定类型的显示名称
-func GetDisplayName(engineType string) (string, error) {
-	plugin, err := Get(engineType)
-	if err != nil {
-		return "", err
-	}
-
-	return plugin.DisplayName(), nil
-}
-
-// GetEngineOrigin 获取指定类型的引擎来源
-func GetEngineOrigin(engineType string) (string, error) {
-	plugin, err := Get(engineType)
-	if err != nil {
-		return "", err
-	}
-
-	return plugin.EngineOrigin(), nil
-}
-
 // === 连接池管理相关方法 ===
 
 // CreateConnectionPoolDirect 直接创建连接池（不缓存）
@@ -307,32 +287,6 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 	}
 
 	return 0, fmt.Errorf("row count query returned non-numeric result")
-}
-
-// === 辅助方法 ===
-
-// SupportsConnectionPool 检查指定类型是否支持连接池
-func SupportsConnectionPool(engineType string) bool {
-	plugin, err := Get(engineType)
-	if err != nil {
-		return false
-	}
-
-	_, ok := plugin.(ConnectionPoolPlugin)
-	return ok
-}
-
-// SupportsMetadataQuery 检查指定类型是否支持元数据查询
-func SupportsMetadataQuery(engineType string) bool {
-	plugin, err := Get(engineType)
-	if err != nil {
-		return false
-	}
-
-	capabilities := plugin.Capabilities()
-	return capabilities.Storage != nil &&
-		capabilities.Storage.Metadata != nil &&
-		capabilities.Storage.Metadata.Supported
 }
 
 func namespaceTermForPlugin(p EnginePlugin) string {

@@ -67,12 +67,12 @@ func (p *ClickHousePlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *ClickHousePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
-		Plugin:        p,
-		NamespaceTerm: "database",
-		ListSchemas:   p.listSchemas,
-		ListTables:    p.listTables,
-		ListColumns:   p.listColumns,
-		RowCount:      p.getTableRowCount,
+		NamespaceTerm:         "database",
+		ListSchemas:           p.listSchemas,
+		ListTables:            p.listTables,
+		ListColumns:           p.listColumns,
+		RowCount:              p.getTableRowCount,
+		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }
 
@@ -250,8 +250,8 @@ func (p *ClickHousePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sc
 	return count, nil
 }
 
-// IsSystemSchema 判断是否为系统 Database
-func (p *ClickHousePlugin) IsSystemSchema(schemaName string) bool {
+// isSystemSchema 判断是否为系统 Database
+func (p *ClickHousePlugin) isSystemSchema(schemaName string) bool {
 	systemDatabases := map[string]bool{
 		"system":             true,
 		"information_schema": true,

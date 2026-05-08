@@ -23,10 +23,10 @@ func DocumentCatalogModel() CatalogModelSpec {
 }
 
 type DocumentCatalogCallbacks struct {
-	Plugin               DocumentDBPlugin
-	ListDatabasesFunc    func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
-	ListCollectionsFunc  func(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
-	IsSystemDatabaseFunc func(databaseName string) bool
+	ListDatabasesFunc      func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
+	ListCollectionsFunc    func(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
+	GetCollectionStatsFunc func(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
+	IsSystemDatabaseFunc   func(databaseName string) bool
 }
 
 func ListDocumentCatalogChildren(ctx context.Context, callbacks DocumentCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
@@ -98,20 +98,23 @@ func ResolveDocumentCatalogPath(ctx context.Context, callbacks DocumentCatalogCa
 	if len(path.Segments) == 1 {
 		return &CatalogNode{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, IsContainer: true}, nil
 	}
-	meta, err := DescribeDocumentItem(ctx, callbacks.Plugin, engineID, connInfo, path, MetadataOptions{})
+	meta, err := DescribeDocumentItem(ctx, callbacks, engineID, connInfo, path, MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return &CatalogNode{Name: last.Name, Path: path, Term: CatalogTermCollection, Kind: CatalogKindCollection, IsItem: true, Stats: meta.Stats}, nil
 }
 
-func DescribeDocumentItem(ctx context.Context, docPlugin DocumentDBPlugin, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+func DescribeDocumentItem(ctx context.Context, callbacks DocumentCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
 	if len(path.Segments) < 2 {
 		return nil, fmt.Errorf("document item path requires database and collection segments")
 	}
+	if callbacks.GetCollectionStatsFunc == nil {
+		return nil, fmt.Errorf("document catalog callbacks GetCollectionStatsFunc is nil")
+	}
 	database := path.Segments[0].Name
 	collection := path.Segments[len(path.Segments)-1].Name
-	stats, err := docPlugin.GetCollectionStats(ctx, connInfo, database, collection)
+	stats, err := callbacks.GetCollectionStatsFunc(ctx, connInfo, database, collection)
 	if err != nil {
 		return nil, err
 	}
