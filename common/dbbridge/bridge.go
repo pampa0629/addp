@@ -206,7 +206,7 @@ func SupportsDirectQuery(engineType string) bool {
 	if _, ok := p.(plugin.DocumentQueryRuntimeProvider); ok {
 		return true
 	}
-	if _, ok := p.(plugin.GraphQueryRuntimeProvider); ok {
+	if _, ok := p.(plugin.GraphQueryProvider); ok {
 		return true
 	}
 	return false
@@ -389,15 +389,15 @@ func ExecuteQuery(ctx context.Context, engine *models.Engine, query string) (*pl
 }
 
 // ExecuteGraphQuery 统一图查询执行入口
-// 对支持 GraphQueryRuntimeProvider 的引擎（Neo4j 等）同时返回表格数据和图结构数据（节点/关系）
+// 对支持 GraphQueryProvider 的引擎（Neo4j 等）同时返回表格数据和图结构数据（节点/关系）
 // 对其他引擎回退到 ExecuteQuery 并包装结果（GraphData 为 nil）
 func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.GraphQueryResult, error) {
 	engineType := strings.ToLower(engine.EngineType)
 
 	p, err := plugin.Get(engineType)
 	if err == nil {
-		if gqp, ok := p.(plugin.GraphQueryRuntimeProvider); ok {
-			return gqp.ExecuteRuntimeGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
+		if gqp, ok := p.(plugin.GraphQueryProvider); ok {
+			return gqp.ExecuteGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
 				EngineID:   engine.ID,
 				EngineType: engine.EngineType,
 			})

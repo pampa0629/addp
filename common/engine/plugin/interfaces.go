@@ -71,18 +71,6 @@ type DSNProvider interface {
 	BuildDSN(connInfo ConnectionInfo) (string, error)
 }
 
-// StoragePlugin 存储引擎标记接口。
-// 具体能力由 Capabilities、CatalogProvider、ItemMetadataProvider、StoreProvider 等表达。
-type StoragePlugin interface {
-	EnginePlugin
-}
-
-// ComputePlugin 计算引擎标记接口。
-// 具体能力由 Capabilities、QueryRuntimeProvider、WorkflowRuntimeProvider、ScriptRuntimeProvider 等表达。
-type ComputePlugin interface {
-	EnginePlugin
-}
-
 // ============ 第三层：存储引擎细分 ============
 
 // ConnectionPoolPlugin SQL数据库连接池管理接口
@@ -104,7 +92,7 @@ type ConnectionPoolPlugin interface {
 // 真实目录与字段元数据统一由 CatalogProvider / ItemMetadataProvider 暴露；
 // 该接口仅保留 SQL/tabular 引擎的连接池和系统 schema 判断能力。
 type RelationalDBPlugin interface {
-	StoragePlugin
+	EnginePlugin
 	ConnectionPoolPlugin
 
 	// IsSystemSchema 判断是否为系统 Schema
@@ -117,7 +105,7 @@ type RelationalDBPlugin interface {
 // DocumentDBPlugin 文档型数据库专项元数据增强接口。
 // database/collection 列表统一由 CatalogProvider 暴露。
 type DocumentDBPlugin interface {
-	StoragePlugin
+	EnginePlugin
 
 	// GetCollectionStats 获取 Collection 统计信息
 	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
@@ -198,22 +186,6 @@ type IndexInfo struct {
 	IndexType string   // 索引类型（如 "btree", "hash", "text"）
 }
 
-// BucketInfo Bucket 信息
-type BucketInfo struct {
-	Name         string    // Bucket 名称
-	CreationDate time.Time // 创建时间
-}
-
-// ObjectStorageEntry 对象存储条目。
-type ObjectStorageEntry struct {
-	Bucket       string    // 所属 Bucket
-	Key          string    // 对象键（完整路径）
-	Size         int64     // 对象大小（字节）
-	LastModified time.Time // 最后修改时间
-	ContentType  string    // MIME 类型
-	ETag         string    // ETag（可选）
-}
-
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）
 type QueryResult struct {
 	Columns []string                 // 有序列名列表
@@ -234,12 +206,6 @@ type RelationshipTypeInfo struct {
 	Count      int64    `json:"count"`
 	FromLabels []string `json:"from_labels"`
 	ToLabels   []string `json:"to_labels"`
-}
-
-// GraphSchema 图数据库 Schema 信息（节点标签 + 关系类型）
-type GraphSchema struct {
-	NodeLabels    []NodeLabelInfo        `json:"node_labels"`
-	Relationships []RelationshipTypeInfo `json:"relationships"`
 }
 
 // GraphNode 图节点（用于图可视化）
@@ -268,16 +234,6 @@ type GraphData struct {
 type GraphQueryResult struct {
 	QueryResult            // 嵌入表格结果（向后兼容）
 	GraphData   *GraphData `json:"graph_data,omitempty"`
-}
-
-// GraphDBPlugin 图数据库专项元数据增强接口。
-// database/label/relationship 列表统一由 CatalogProvider 暴露。
-type GraphDBPlugin interface {
-	StoragePlugin
-
-	// GetGraphSchema 获取图数据库完整 Schema（节点标签 + 关系类型 + 连接关系）
-	// 供图可视化和元数据展示使用
-	GetGraphSchema(ctx context.Context, connInfo ConnectionInfo, database string) (*GraphSchema, error)
 }
 
 // ============ 术语 i18n ============

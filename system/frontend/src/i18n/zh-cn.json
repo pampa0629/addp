@@ -297,6 +297,186 @@
         "detailFailed": "获取引擎详情失败",
         "fillRequired": "请完整填写必填信息",
         "computeTestHint": "计算引擎需要在保存后通过健康检查端点测试"
+      },
+      "capabilityView": {
+        "actions": {
+          "viewJson": "查看 JSON"
+        },
+        "status": {
+          "available": "可用",
+          "engine_unavailable": "引擎不具备",
+          "addp_pending": "ADDP 暂未支持",
+          "unknown": "未知"
+        },
+        "summary": {
+          "engineFamily": "引擎族",
+          "catalog": "可浏览实时目录",
+          "contentRead": "可读取内容",
+          "rangeRead": "支持范围读取",
+          "transferRead": "可作为传输来源",
+          "transferWrite": "可作为传输目标",
+          "preview": "支持内容预览",
+          "query": "支持查询",
+          "workflow": "支持工作流",
+          "script": "支持脚本"
+        },
+        "sections": {
+          "storage": "存储能力",
+          "compute": "计算能力",
+          "transfer": "传输适配",
+          "preview": "预览能力",
+          "extensions": "扩展能力"
+        },
+        "items": {
+          "catalog": "目录浏览",
+          "metadata": "元数据采集",
+          "contentRead": "内容读取",
+          "contentWrite": "内容写入",
+          "semantics": "语义说明",
+          "notSupported": "明确不支持",
+          "query": "查询",
+          "workflow": "工作流",
+          "script": "脚本 / Notebook",
+          "transfer": "传输能力",
+          "transferRead": "作为来源",
+          "transferWrite": "作为目标",
+          "formats": "支持格式",
+          "checkpoint": "检查点恢复",
+          "preview": "内容预览"
+        },
+        "reasons": {
+          "engineNoQuery": "该引擎本身不提供查询运行时。",
+          "addpTransferPending": "该引擎理论上可以参与数据传输，但 ADDP 当前尚未实现对应适配。",
+          "addpPreviewPending": "该引擎理论上可以预览内容，但 ADDP 当前尚未实现对应预览链路。"
+        },
+        "values": {
+          "realTime": "实时目录",
+          "search": "可搜索",
+          "filter": "可过滤",
+          "systemFiltering": "隐藏系统对象",
+          "container": "容器",
+          "item": "数据项",
+          "optional": "可选",
+          "fieldSchema": "字段结构",
+          "statistics": "统计信息",
+          "indexes": "索引",
+          "constraints": "约束",
+          "spatialMetadata": "空间元数据",
+          "sampling": "采样推断",
+          "nativeMetadata": "原生属性",
+          "streamRead": "流式读取",
+          "rangeRead": "范围读取",
+          "batchRead": "批量读取",
+          "streamWrite": "流式写入",
+          "rangeWrite": "范围写入",
+          "batchWrite": "批量写入",
+          "defaultLanguage": "默认语言",
+          "readOnly": "只读",
+          "queryPlan": "查询计划",
+          "cancel": "可取消",
+          "dynamicOperators": "动态算子",
+          "reader": "读取连接器",
+          "writer": "写入连接器",
+          "parallelRead": "并行读取",
+          "parallelWrite": "并行写入",
+          "bulkWrite": "批量写入",
+          "maxRows": "最多行数",
+          "maxBytes": "最大读取",
+          "directPreview": "引擎直接预览"
+        },
+        "engineFamily": {
+          "tabular": "表格数据",
+          "object": "对象存储",
+          "file": "文件系统",
+          "document": "文档数据",
+          "graph": "图数据库",
+          "workflow": "工作流引擎",
+          "script": "脚本引擎"
+        },
+        "catalog": {
+          "server": "服务",
+          "service": "服务",
+          "root": "根目录",
+          "schema": "Schema",
+          "database": "数据库",
+          "table": "表",
+          "relation": "关系",
+          "bucket": "桶",
+          "prefix": "前缀",
+          "object": "对象",
+          "directory": "目录",
+          "file": "文件",
+          "collection": "集合",
+          "label": "标签",
+          "relationship": "关系"
+        },
+        "kind": {
+          "namespace": "命名空间",
+          "table": "表",
+          "view": "视图",
+          "bucket": "桶",
+          "prefix": "前缀",
+          "object": "对象",
+          "directory": "目录",
+          "file": "文件",
+          "database": "数据库",
+          "collection": "集合",
+          "label": "标签",
+          "relationship": "关系",
+          "materializedView": "物化视图",
+          "externalTable": "外部表"
+        },
+        "semantic": {
+          "bucket": "桶",
+          "object": "对象",
+          "database": "数据库",
+          "collection": "集合",
+          "document": "文档",
+          "root": "根目录",
+          "directory": "目录",
+          "file": "文件",
+          "node": "节点",
+          "edge": "边",
+          "prefixListing": "前缀列表",
+          "streamRead": "流式读取",
+          "rangeRead": "范围读取"
+        },
+        "not_supported": {
+          "rangeWrite": "范围写入",
+          "realDirectory": "真实目录"
+        },
+        "language": {
+          "sql": "SQL",
+          "mql": "MQL",
+          "cypher": "Cypher",
+          "python": "Python",
+          "searchDsl": "搜索 DSL"
+        },
+        "result_kind": {
+          "table": "表格",
+          "document": "文档",
+          "graph": "图",
+          "scalar": "单值"
+        },
+        "mode": {
+          "notebook": "Notebook",
+          "tabularRows": "表格行预览",
+          "documentSamples": "文档样本",
+          "graphSample": "图样本",
+          "fileParse": "文件解析",
+          "objectParse": "对象解析",
+          "rawText": "文本预览",
+          "binaryMetadata": "二进制元数据"
+        },
+        "format": {
+          "csv": "CSV",
+          "geojson": "GeoJSON",
+          "json": "JSON",
+          "parquet": "Parquet",
+          "shapefile": "Shapefile",
+          "table": "表格",
+          "document": "文档"
+        }
       }
     },
     "app": {

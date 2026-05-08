@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metapath"
 )
@@ -19,7 +18,7 @@ type InlineMetadataExtractor interface {
 	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string) *format.ExtractedMetadata
 }
 
-func ListBuckets(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.BucketInfo, error) {
+func ListBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogNode, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
@@ -28,10 +27,10 @@ func ListBuckets(ctx context.Context, resource *commonModels.Engine, catalogProv
 		return nil, err
 	}
 
-	buckets := make([]plugin.BucketInfo, 0, len(nodes))
+	buckets := make([]plugin.CatalogNode, 0, len(nodes))
 	for _, node := range nodes {
 		if node.Kind == plugin.CatalogKindBucket {
-			buckets = append(buckets, plugin.BucketInfo{Name: node.Name})
+			buckets = append(buckets, node)
 		}
 	}
 	return buckets, nil
@@ -43,36 +42,17 @@ func ListObjects(
 	catalogProvider plugin.CatalogProvider,
 	bucketName, prefix string,
 	recursive bool,
-) ([]plugin.ObjectStorageEntry, error) {
+) ([]plugin.CatalogNode, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), CatalogPath(resource.ID, bucketName, prefix), plugin.ListOptions{Recursive: recursive})
 	if err != nil {
 		return nil, err
 	}
 
-	objects := make([]plugin.ObjectStorageEntry, 0, len(nodes))
+	objects := make([]plugin.CatalogNode, 0, len(nodes))
 	for _, node := range nodes {
-		if !node.IsItem {
-			continue
+		if node.IsItem {
+			objects = append(objects, node)
 		}
-		key := strings.TrimPrefix(node.Path.StringPath(), bucketName+"/")
-		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			_, parsedKey := metapath.SplitObjectPath(raw)
-			key = parsedKey
-		}
-		size, _ := int64Stat(node.Stats, "size_bytes")
-		object := plugin.ObjectStorageEntry{
-			Bucket:      bucketName,
-			Key:         key,
-			Size:        size,
-			ContentType: commonJSON.String(node.Attributes, "storage", "content_type"),
-		}
-		if modifiedAt := commonJSON.TimePtr(node.Attributes, "storage", "modified_at"); modifiedAt != nil {
-			object.LastModified = *modifiedAt
-		}
-		if etag := commonJSON.String(node.Attributes, "storage", "etag"); etag != "" {
-			object.ETag = etag
-		}
-		objects = append(objects, object)
 	}
 	return objects, nil
 }
@@ -109,7 +89,7 @@ func CatalogPath(engineID uint, bucketName, prefix string) plugin.CatalogPath {
 
 func ConvertObjectsToMetadata(
 	ctx context.Context,
-	objects []plugin.ObjectStorageEntry,
+	objects []plugin.CatalogNode,
 	bucket string,
 	deepScan bool,
 	resource *commonModels.Engine,
@@ -117,22 +97,75 @@ func ConvertObjectsToMetadata(
 ) []format.ObjectMetadata {
 	metas := make([]format.ObjectMetadata, 0, len(objects))
 	for _, obj := range objects {
-		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
+		key := ObjectKeyFromNode(obj, bucket)
+		size, _ := int64Stat(obj.Stats, "size_bytes")
+		contentType := stringAttribute(obj.Attributes, "content_type")
+		lastModified := timeAttribute(obj.Attributes, "modified_at")
+		etag := stringAttribute(obj.Attributes, "etag")
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(key)), ".")
 		meta := format.ObjectMetadata{
 			Bucket:       bucket,
-			Path:         obj.Key,
+			Path:         key,
 			NodeType:     "object",
 			FileType:     ext,
-			SizeBytes:    obj.Size,
+			SizeBytes:    size,
 			ObjectCount:  1,
-			LastModified: &obj.LastModified,
+			LastModified: lastModified,
 		}
-		if deepScan && inlineExtractor != nil && inlineExtractor.ShouldExtract(obj.ContentType, obj.Size) {
-			meta.ExtractedMetadata = inlineExtractor.Extract(ctx, resource, bucket, obj.Key, obj.ContentType, obj.Size, obj.LastModified, obj.ETag)
+		if deepScan && inlineExtractor != nil && lastModified != nil && inlineExtractor.ShouldExtract(contentType, size) {
+			meta.ExtractedMetadata = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag)
 		}
 		metas = append(metas, meta)
 	}
 	return metas
+}
+
+func ObjectKeyFromNode(node plugin.CatalogNode, bucket string) string {
+	rawPath := stringAttribute(node.Attributes, "path")
+	if rawPath == "" {
+		rawPath = node.Path.StringPath()
+	}
+	if rawPath != "" {
+		_, key := metapath.SplitObjectPath(rawPath)
+		if key != "" {
+			return key
+		}
+	}
+	return strings.TrimPrefix(node.Path.StringPath(), bucket+"/")
+}
+
+func stringAttribute(attrs map[string]interface{}, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	if value, ok := raw.(string); ok {
+		return value
+	}
+	return fmt.Sprintf("%v", raw)
+}
+
+func timeAttribute(attrs map[string]interface{}, key string) *time.Time {
+	if attrs == nil {
+		return nil
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch value := raw.(type) {
+	case time.Time:
+		return &value
+	case string:
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
 }
 
 func int64Stat(stats map[string]interface{}, key string) (int64, bool) {

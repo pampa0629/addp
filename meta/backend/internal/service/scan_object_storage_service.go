@@ -91,7 +91,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 
 	// 如果仍然没有路径，列出所有 buckets
 	if len(paths) == 0 {
-		buckets, err := objectstore.ListBuckets(context.Background(), resource, catalogProvider)
+		buckets, err := objectstore.ListBucketNodes(context.Background(), resource, catalogProvider)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
 		}

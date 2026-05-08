@@ -9,3 +9,10 @@ type ErrorResponse struct {
 type SuccessResponse struct {
 	Message string `json:"message" example:"操作成功"`
 }
+
+// EngineResponse 引擎响应
+type EngineResponse struct {
+	Engine
+	Capabilities     map[string]interface{} `json:"capabilities,omitempty"`
+	CapabilitiesView *CapabilitiesView      `json:"capabilities_view,omitempty"`
+}

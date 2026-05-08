@@ -143,7 +143,7 @@ type StoreProvider interface {
 - `BatchReadableProvider.ReadBatch()`：批量读取表、集合或图数据。
 - `BatchWritableProvider.WriteBatch()`：批量写入表、集合或图数据。
 
-对象存储和文件系统不得互相继承，不共享 CatalogModel 和 CatalogAdapter；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
+对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 
 ```go
 type RangeReadableProvider interface {
@@ -166,7 +166,7 @@ type RangeWritableProvider interface {
 
 ### QueryRuntimeProvider
 
-查询是计算能力，不等于表格型存储目录能力。
+普通查询是计算能力，不等于表格型存储目录能力。普通查询返回 `QueryResult`，面向表格化、文档化或标量结果消费方，例如 Develop 查询编辑器、Manager 表格预览和查询服务。
 
 ```go
 type QueryRuntimeProvider interface {
@@ -181,7 +181,15 @@ type QueryRuntimeProvider interface {
 
 - `SQLQueryRuntimeProvider.ExecuteSQL()`
 - `DocumentQueryRuntimeProvider.ExecuteDocumentQuery()`
-- `GraphQueryRuntimeProvider.ExecuteRuntimeGraphQuery()`
+
+图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。
+
+```go
+type GraphQueryProvider interface {
+    EnginePlugin
+    ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, cypher string, opts QueryOptions) (*GraphQueryResult, error)
+}
+```
 
 GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helper，不是领域主接口。
 
@@ -198,13 +206,13 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 | 引擎 | 推荐接口组合 |
 | --- | --- |
-| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `StoragePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `StoragePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DocumentMetadataSamplingProvider` + `DocumentQueryRuntimeProvider` |
-| Neo4j | `EnginePlugin` + `StoragePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `GraphDBPlugin` + `GraphQueryRuntimeProvider` |
-| MinIO / S3 | `EnginePlugin` + `StoragePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
-| NFS | `EnginePlugin` + `StoragePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
-| Python / Spark / Math Workflow | `EnginePlugin` + `ComputePlugin` + `WorkflowRuntimeProvider` |
-| Jupyter | `EnginePlugin` + `ComputePlugin` + `ScriptRuntimeProvider` |
+| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DocumentMetadataSamplingProvider` + `DocumentQueryRuntimeProvider` |
+| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
+| MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
+| NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
+| Python / Spark / Math Workflow | `EnginePlugin` + `WorkflowRuntimeProvider` |
+| Jupyter | `EnginePlugin` + `ScriptRuntimeProvider` |
 
 ---
 
@@ -212,9 +220,9 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
-- Manager：使用 Meta 树构建探查树；结构化数据预览优先使用 `PreviewProvider` 或 `BatchReadableProvider`，query runtime 只作为只读 sample query 退路；对象/文件预览优先使用 `PreviewProvider` 或 `ContentReadableProvider` 加格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`。
-- Service：发布查询服务时使用 query runtime 和 Meta item/spatial 元数据。
+- Manager：使用 Meta 树构建探查树；结构化数据预览优先使用 `PreviewProvider` 或 `BatchReadableProvider`，普通 query runtime 只作为只读 sample query 退路；图 label / relationship 预览可以使用 `GraphQueryProvider` 采样后表格化展示；对象/文件预览优先使用 `PreviewProvider` 或 `ContentReadableProvider` 加格式解析。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphQueryProvider`。
+- Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。
 - Transfer：执行面暂由 Transfer 自己负责，后续通过 `TransferAdapter` 生成 Reader/Writer 配置；高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
 
 ---

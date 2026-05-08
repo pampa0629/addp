@@ -60,24 +60,24 @@ func (p *S3Plugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
-func (p *S3Plugin) objectCatalogAdapter() plugin.ObjectCatalogAdapter {
-	return plugin.ObjectCatalogAdapter{
-		ListRootsFunc:       p.listRoots,
-		ListDirectoryFunc:   p.listDirectory,
-		GetFileMetadataFunc: p.getFileMetadata,
+func (p *S3Plugin) objectCatalogCallbacks() plugin.ObjectCatalogCallbacks {
+	return plugin.ObjectCatalogCallbacks{
+		ListRootsFunc:         p.listRoots,
+		ListDirectoryFunc:     p.listDirectory,
+		GetObjectMetadataFunc: p.getFileMetadata,
 	}
 }
 
 func (p *S3Plugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogAdapter(), connInfo, parent.EngineID, parent, opts)
+	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
 func (p *S3Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *S3Plugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeObjectItem(ctx, p.objectCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.DescribeObjectItem(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -108,28 +108,6 @@ func (p *S3Plugin) supportsSSL() bool {
 }
 
 // === object storage helpers ===
-
-// ListBuckets 列出所有 Bucket
-func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.BucketInfo, error) {
-	client, err := p.createClient(connInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	buckets, err := client.ListBuckets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list buckets: %w", err)
-	}
-
-	result := make([]plugin.BucketInfo, len(buckets))
-	for i, b := range buckets {
-		result[i] = plugin.BucketInfo{
-			Name:         b.Name,
-			CreationDate: b.CreationDate,
-		}
-	}
-	return result, nil
-}
 
 // InferContentType 根据对象键推断 MIME 类型
 func (p *S3Plugin) inferContentType(objectKey string) string {

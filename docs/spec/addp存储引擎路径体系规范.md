@@ -12,7 +12,7 @@
 | `doris` | Apache Doris | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
 | `mongodb` | MongoDB | CatalogProvider + ItemMetadataProvider + DocumentQueryRuntimeProvider |
-| `neo4j` | Neo4j | CatalogProvider + GraphQueryRuntimeProvider |
+| `neo4j` | Neo4j | CatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
 | `minio` | MinIO | CatalogProvider + ContentReadableProvider |
 | `s3` | Amazon S3 | CatalogProvider + ContentReadableProvider |
 | `nfs` | NFS 文件系统 | CatalogProvider + ContentReadableProvider |
@@ -294,6 +294,6 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 - 对象存储使用 `bucket -> prefix -> object`。
 - 文件系统使用 `root -> directory -> file`。
-- 对象存储和文件系统不得共享 CatalogModel 或 CatalogAdapter。
+- 对象存储和文件系统不得共享 CatalogModel 或 catalog 拼装实现。
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。

@@ -1,5 +1,7 @@
 package plugin
 
+import formatcap "github.com/addp/common/format/capability"
+
 func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabilityOptions) EngineCapabilities {
 	if namespaceTerm == "" {
 		namespaceTerm = "database"
@@ -62,7 +64,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				"reader": "jdbc",
 				"writer": opts.WriterConnector,
 			},
-			SupportedFormats: []string{"table"},
+			SupportedFormats: formatcap.ListTransferFormatsForEngineFamily(formatcap.EngineFamilyTabular),
 			PreferredWriter:  opts.WriterConnector,
 		},
 		Preview: &PreviewCapabilities{
@@ -136,7 +138,7 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				"reader": "s3",
 				"writer": "s3",
 			},
-			SupportedFormats: []string{"csv", "geojson", "json", "parquet", "shapefile"},
+			SupportedFormats: formatcap.ListTransferFormatsForEngineFamily(formatcap.EngineFamilyObject),
 		},
 		Preview: &PreviewCapabilities{
 			Supported:    true,
@@ -183,7 +185,7 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				"reader": "nfs",
 				"writer": "nfs",
 			},
-			SupportedFormats: []string{"csv", "geojson", "json", "parquet", "shapefile"},
+			SupportedFormats: formatcap.ListTransferFormatsForEngineFamily(formatcap.EngineFamilyFile),
 		},
 		Preview: &PreviewCapabilities{
 			Supported:    true,
@@ -231,7 +233,7 @@ func NewDocumentCapabilities(engineType string) EngineCapabilities {
 			Read:             true,
 			Write:            true,
 			BulkWrite:        true,
-			SupportedFormats: []string{"document", "json"},
+			SupportedFormats: formatcap.ListTransferFormatsForEngineFamily(formatcap.EngineFamilyDocument),
 		},
 		Preview: &PreviewCapabilities{
 			Supported:    true,

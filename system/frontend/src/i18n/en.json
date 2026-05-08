@@ -297,6 +297,186 @@
         "detailFailed": "Failed to get engine details",
         "fillRequired": "Please fill in all required fields",
         "computeTestHint": "Compute engines need to be tested via health check endpoint after saving"
+      },
+      "capabilityView": {
+        "actions": {
+          "viewJson": "View JSON"
+        },
+        "status": {
+          "available": "Available",
+          "engine_unavailable": "Not native to engine",
+          "addp_pending": "Pending in ADDP",
+          "unknown": "Unknown"
+        },
+        "summary": {
+          "engineFamily": "Engine family",
+          "catalog": "Live catalog browsing",
+          "contentRead": "Content readable",
+          "rangeRead": "Range read",
+          "transferRead": "Transfer source",
+          "transferWrite": "Transfer target",
+          "preview": "Content preview",
+          "query": "Query",
+          "workflow": "Workflow",
+          "script": "Script"
+        },
+        "sections": {
+          "storage": "Storage Capabilities",
+          "compute": "Compute Capabilities",
+          "transfer": "Transfer Adapter",
+          "preview": "Preview Capabilities",
+          "extensions": "Extensions"
+        },
+        "items": {
+          "catalog": "Catalog browsing",
+          "metadata": "Metadata collection",
+          "contentRead": "Content read",
+          "contentWrite": "Content write",
+          "semantics": "Semantics",
+          "notSupported": "Explicitly not supported",
+          "query": "Query",
+          "workflow": "Workflow",
+          "script": "Script / Notebook",
+          "transfer": "Transfer capability",
+          "transferRead": "As source",
+          "transferWrite": "As target",
+          "formats": "Supported formats",
+          "checkpoint": "Checkpoint recovery",
+          "preview": "Content preview"
+        },
+        "reasons": {
+          "engineNoQuery": "This engine does not provide a query runtime by nature.",
+          "addpTransferPending": "This engine can theoretically participate in transfer, but ADDP has not implemented the adapter yet.",
+          "addpPreviewPending": "This engine can theoretically preview content, but ADDP has not implemented the preview path yet."
+        },
+        "values": {
+          "realTime": "Live catalog",
+          "search": "Searchable",
+          "filter": "Filterable",
+          "systemFiltering": "Hide system objects",
+          "container": "Container",
+          "item": "Item",
+          "optional": "Optional",
+          "fieldSchema": "Field schema",
+          "statistics": "Statistics",
+          "indexes": "Indexes",
+          "constraints": "Constraints",
+          "spatialMetadata": "Spatial metadata",
+          "sampling": "Sampling",
+          "nativeMetadata": "Native metadata",
+          "streamRead": "Stream read",
+          "rangeRead": "Range read",
+          "batchRead": "Batch read",
+          "streamWrite": "Stream write",
+          "rangeWrite": "Range write",
+          "batchWrite": "Batch write",
+          "defaultLanguage": "Default language",
+          "readOnly": "Read-only",
+          "queryPlan": "Query plan",
+          "cancel": "Cancelable",
+          "dynamicOperators": "Dynamic operators",
+          "reader": "Reader",
+          "writer": "Writer",
+          "parallelRead": "Parallel read",
+          "parallelWrite": "Parallel write",
+          "bulkWrite": "Bulk write",
+          "maxRows": "Max rows",
+          "maxBytes": "Max bytes",
+          "directPreview": "Direct preview"
+        },
+        "engineFamily": {
+          "tabular": "Tabular",
+          "object": "Object Storage",
+          "file": "File System",
+          "document": "Document",
+          "graph": "Graph DB",
+          "workflow": "Workflow Engine",
+          "script": "Script Engine"
+        },
+        "catalog": {
+          "server": "Server",
+          "service": "Service",
+          "root": "Root",
+          "schema": "Schema",
+          "database": "Database",
+          "table": "Table",
+          "relation": "Relation",
+          "bucket": "Bucket",
+          "prefix": "Prefix",
+          "object": "Object",
+          "directory": "Directory",
+          "file": "File",
+          "collection": "Collection",
+          "label": "Label",
+          "relationship": "Relationship"
+        },
+        "kind": {
+          "namespace": "Namespace",
+          "table": "Table",
+          "view": "View",
+          "bucket": "Bucket",
+          "prefix": "Prefix",
+          "object": "Object",
+          "directory": "Directory",
+          "file": "File",
+          "database": "Database",
+          "collection": "Collection",
+          "label": "Label",
+          "relationship": "Relationship",
+          "materializedView": "Materialized view",
+          "externalTable": "External table"
+        },
+        "semantic": {
+          "bucket": "Bucket",
+          "object": "Object",
+          "database": "Database",
+          "collection": "Collection",
+          "document": "Document",
+          "root": "Root",
+          "directory": "Directory",
+          "file": "File",
+          "node": "Node",
+          "edge": "Edge",
+          "prefixListing": "Prefix listing",
+          "streamRead": "Stream read",
+          "rangeRead": "Range read"
+        },
+        "not_supported": {
+          "rangeWrite": "Range write",
+          "realDirectory": "Real directory"
+        },
+        "language": {
+          "sql": "SQL",
+          "mql": "MQL",
+          "cypher": "Cypher",
+          "python": "Python",
+          "searchDsl": "Search DSL"
+        },
+        "result_kind": {
+          "table": "Table",
+          "document": "Document",
+          "graph": "Graph",
+          "scalar": "Scalar"
+        },
+        "mode": {
+          "notebook": "Notebook",
+          "tabularRows": "Tabular rows",
+          "documentSamples": "Document samples",
+          "graphSample": "Graph sample",
+          "fileParse": "File parse",
+          "objectParse": "Object parse",
+          "rawText": "Raw text",
+          "binaryMetadata": "Binary metadata"
+        },
+        "format": {
+          "csv": "CSV",
+          "geojson": "GeoJSON",
+          "json": "JSON",
+          "parquet": "Parquet",
+          "shapefile": "Shapefile",
+          "table": "Table",
+          "document": "Document"
+        }
       }
     },
     "app": {

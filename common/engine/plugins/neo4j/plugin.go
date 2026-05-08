@@ -60,9 +60,8 @@ func (p *Neo4jPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *Neo4jPlugin) graphCatalogAdapter() plugin.GraphCatalogAdapter {
-	return plugin.GraphCatalogAdapter{
-		Plugin:                    p,
+func (p *Neo4jPlugin) graphCatalogCallbacks() plugin.GraphCatalogCallbacks {
+	return plugin.GraphCatalogCallbacks{
 		ListDatabasesFunc:         p.listDatabases,
 		ListNodeLabelsFunc:        p.listNodeLabels,
 		ListRelationshipTypesFunc: p.listRelationshipTypes,
@@ -71,15 +70,15 @@ func (p *Neo4jPlugin) graphCatalogAdapter() plugin.GraphCatalogAdapter {
 }
 
 func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListGraphCatalogChildren(ctx, p.graphCatalogAdapter(), parent.EngineID, connInfo, parent, opts)
+	return plugin.ListGraphCatalogChildren(ctx, p.graphCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
 func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveGraphCatalogPath(ctx, p.graphCatalogAdapter(), path.EngineID, connInfo, path)
+	return plugin.ResolveGraphCatalogPath(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
 func (p *Neo4jPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeGraphItem(ctx, p, path.EngineID, connInfo, path, opts)
+	return plugin.DescribeGraphItem(ctx, path.EngineID, connInfo, path, opts)
 }
 
 func (p *Neo4jPlugin) QueryLanguages() []string {
@@ -94,7 +93,7 @@ func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.C
 	return p.executeQuery(ctx, connInfo, req.Query)
 }
 
-func (p *Neo4jPlugin) ExecuteRuntimeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
+func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	return p.executeGraphQuery(ctx, connInfo, cypher)
 }
 
@@ -186,7 +185,7 @@ func getDatabase(connInfo plugin.ConnectionInfo) string {
 	return db
 }
 
-// listDatabases lists databases for the catalog adapter.
+// listDatabases lists databases for the catalog callbacks.
 // Neo4j CE 只有一个默认数据库 "neo4j"
 func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
@@ -246,8 +245,6 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	}
 	return false
 }
-
-// ============ GraphDBPlugin 接口实现 ============
 
 // listNodeLabels 列出所有节点标签。
 func (p *Neo4jPlugin) listNodeLabels(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.NodeLabelInfo, error) {
@@ -382,19 +379,6 @@ RETURN from, to, cnt ORDER BY cnt DESC LIMIT 5`, escapeCypherLabel(relType)),
 	}
 
 	return relTypes, nil
-}
-
-// GetGraphSchema 实现 GraphDBPlugin 接口 - 获取图数据库完整 Schema
-func (p *Neo4jPlugin) GetGraphSchema(ctx context.Context, connInfo plugin.ConnectionInfo, database string) (*plugin.GraphSchema, error) {
-	labels, err := p.listNodeLabels(ctx, connInfo, database)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get node labels: %w", err)
-	}
-	rels, err := p.listRelationshipTypes(ctx, connInfo, database)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relationship types: %w", err)
-	}
-	return &plugin.GraphSchema{NodeLabels: labels, Relationships: rels}, nil
 }
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。

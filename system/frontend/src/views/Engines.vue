@@ -260,7 +260,7 @@
     <el-dialog
       v-model="detailsVisible"
       :title="t('system.engine.dialog.details', { name: selectedEngine?.name || '' })"
-      width="800px"
+      width="920px"
       destroy-on-close
     >
       <div v-loading="detailsLoading" style="min-height: 300px">
@@ -317,110 +317,92 @@
           <!-- 能力声明标签页 -->
           <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="selectedEngine.capabilities">
             <div class="capability-detail">
-              <el-descriptions :column="2" border size="small" style="margin-bottom: 20px">
-                <el-descriptions-item :label="t('system.engine.dialog.capabilities.schemaVersion')">
-                  {{ parsedSelectedCapabilities.schema_version || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('system.engine.dialog.capabilities.engineFamily')">
-                  {{ getCapabilityFamilyLabel(parsedSelectedCapabilities.engine_family) }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('system.engine.dialog.capabilities.engineType')">
-                  {{ parsedSelectedCapabilities.engine_type || selectedEngine.engine_type }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('system.engine.dialog.capabilities.sections')">
+              <div class="capability-toolbar">
+                <div class="capability-summary">
                   <el-tag
-                    v-for="section in getCapabilitySections(parsedSelectedCapabilities)"
-                    :key="section"
+                    v-for="badge in selectedCapabilitiesView.summary"
+                    :key="badge.id"
                     size="small"
                     effect="plain"
-                    style="margin: 2px"
+                    :type="getCapabilityStatusTagType(badge.status)"
                   >
-                    {{ section }}
+                    {{ getCapabilityViewText(badge) }}
                   </el-tag>
-                </el-descriptions-item>
-              </el-descriptions>
-
-              <div v-if="hasStorageCapability(parsedSelectedCapabilities)" class="capability-section">
-                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.storageCapabilities') }}</div>
-                <el-descriptions :column="2" border size="small">
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.families')" :span="2">
-                    <el-tag
-                      v-for="family in parsedSelectedCapabilities.storage.families"
-                      :key="family"
-                      size="small"
-                      style="margin: 2px"
-                    >
-                      {{ getStorageTypeLabel(family) }}
-                    </el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.catalogModel')" :span="2">
-                    {{ getCatalogModelSummary(parsedSelectedCapabilities.storage.catalog_model) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.catalog')">
-                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.catalog) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.metadata')">
-                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.metadata) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.store')" :span="2">
-                    {{ formatCapabilityFlags(parsedSelectedCapabilities.storage.store) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item v-if="parsedSelectedCapabilities.storage.semantics?.length" :label="t('system.engine.dialog.capabilities.semantics')" :span="2">
-                    {{ joinCapabilityValues(parsedSelectedCapabilities.storage.semantics) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item v-if="parsedSelectedCapabilities.storage.not_supported?.length" :label="t('system.engine.dialog.capabilities.notSupported')" :span="2">
-                    {{ joinCapabilityValues(parsedSelectedCapabilities.storage.not_supported) }}
-                  </el-descriptions-item>
-                </el-descriptions>
+                </div>
+                <el-button size="small" @click="jsonViewVisible = true">
+                  {{ t('system.engine.capabilityView.actions.viewJson') }}
+                </el-button>
               </div>
 
-              <div v-if="hasComputeCapability(parsedSelectedCapabilities)" class="capability-section">
-                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.computeCapabilities') }}</div>
-                <el-table :data="getComputeCapabilityRows(parsedSelectedCapabilities)" border size="small">
-                  <el-table-column prop="type" :label="t('system.engine.dialog.capabilities.type')" width="130">
-                    <template #default="{ row }">
-                      {{ getComputeTypeLabel(row.type) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="languages" :label="t('system.engine.dialog.capabilities.languages')" min-width="160">
-                    <template #default="{ row }">
-                      {{ joinCapabilityValues(row.languages) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="modes" :label="t('system.engine.dialog.capabilities.modes')" min-width="160">
-                    <template #default="{ row }">
-                      {{ joinCapabilityValues(row.modes) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="description" :label="t('system.engine.dialog.capabilities.description')" min-width="220" />
-                </el-table>
-              </div>
+              <el-empty
+                v-if="selectedCapabilitiesView.sections.length === 0"
+                :description="t('system.engine.capabilities.none')"
+              />
 
-              <div v-if="parsedSelectedCapabilities.transfer" class="capability-section">
-                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.transferCapabilities') }}</div>
-                <el-descriptions :column="2" border size="small">
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.transfer')">
-                    {{ formatCapabilityFlags(parsedSelectedCapabilities.transfer) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.formats')">
-                    {{ joinCapabilityValues(parsedSelectedCapabilities.transfer.supported_formats) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.connectorTypes')" :span="2">
-                    {{ formatKeyValueMap(parsedSelectedCapabilities.transfer.connector_types) }}
-                  </el-descriptions-item>
-                </el-descriptions>
-              </div>
+              <div
+                v-for="section in selectedCapabilitiesView.sections"
+                :key="section.id"
+                class="capability-card"
+              >
+                <div class="capability-card-header">
+                  <div>
+                    <div class="capability-section-title">{{ translateCapabilityKey(section.title_key, section.id) }}</div>
+                    <div v-if="section.description_key" class="capability-section-desc">
+                      {{ translateCapabilityKey(section.description_key) }}
+                    </div>
+                  </div>
+                  <el-tag size="small" effect="plain" :type="getCapabilityStatusTagType(section.status)">
+                    {{ getCapabilityStatusLabel(section.status) }}
+                  </el-tag>
+                </div>
 
-              <div v-if="parsedSelectedCapabilities.preview" class="capability-section">
-                <div class="capability-section-title">{{ t('system.engine.dialog.capabilities.previewCapabilities') }}</div>
-                <el-descriptions :column="2" border size="small">
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.preview')">
-                    {{ formatCapabilityFlags(parsedSelectedCapabilities.preview) }}
-                  </el-descriptions-item>
-                  <el-descriptions-item :label="t('system.engine.dialog.capabilities.modes')">
-                    {{ joinCapabilityValues(parsedSelectedCapabilities.preview.modes) }}
-                  </el-descriptions-item>
-                </el-descriptions>
+                <div v-if="section.path?.length" class="capability-path">
+                  <template v-for="(node, index) in section.path" :key="node.id || index">
+                    <div class="capability-path-node">
+                      <span>{{ getCapabilityPathLabel(node) }}</span>
+                      <el-tag
+                        v-for="tag in node.tags || []"
+                        :key="tag.id"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ getCapabilityTagText(tag) }}
+                      </el-tag>
+                    </div>
+                    <span v-if="index < section.path.length - 1" class="capability-path-arrow">→</span>
+                  </template>
+                </div>
+
+                <div v-if="section.items?.length" class="capability-items">
+                  <div
+                    v-for="item in section.items"
+                    :key="item.id"
+                    class="capability-item"
+                  >
+                    <div class="capability-item-main">
+                      <span class="capability-item-label">{{ getCapabilityItemLabel(item) }}</span>
+                      <el-tag size="small" effect="plain" :type="getCapabilityStatusTagType(item.status)">
+                        {{ getCapabilityStatusLabel(item.status) }}
+                      </el-tag>
+                    </div>
+                    <div v-if="item.reason_key" class="capability-item-reason">
+                      {{ translateCapabilityKey(item.reason_key) }}
+                    </div>
+                    <div v-if="getCapabilityItemValue(item)" class="capability-item-value">
+                      {{ getCapabilityItemValue(item) }}
+                    </div>
+                    <div v-if="item.tags?.length" class="capability-item-tags">
+                      <el-tag
+                        v-for="tag in item.tags"
+                        :key="tag.id"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ getCapabilityTagText(tag) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </el-tab-pane>
@@ -457,6 +439,30 @@
       <template #footer>
         <el-button @click="detailsVisible = false">{{ t('system.engine.dialog.close') }}</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="jsonViewVisible"
+      :title="t('system.engine.capabilityView.actions.viewJson')"
+      width="720px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-tree
+        class="capability-json-tree"
+        :data="selectedCapabilitiesView.json_view"
+        node-key="key"
+        default-expand-all
+      >
+        <template #default="{ data }">
+          <span class="capability-json-node">
+            <span class="capability-json-key">{{ data.key }}</span>
+            <span v-if="data.value !== undefined && data.value !== ''" class="capability-json-value">
+              {{ data.value }}
+            </span>
+          </span>
+        </template>
+      </el-tree>
     </el-dialog>
 </template>
 
@@ -496,6 +502,7 @@ const editId = ref(null)
 const detailsVisible = ref(false)
 const selectedEngine = ref(null)
 const detailsLoading = ref(false)
+const jsonViewVisible = ref(false)
 
 const form = ref({
   engine_type: '',
@@ -589,6 +596,23 @@ const visibleStorageEngineTypeOptions = computed(() => {
 
 const parsedSelectedCapabilities = computed(() => {
   return parseCapabilitiesJSON(selectedEngine.value?.capabilities)
+})
+
+const selectedCapabilitiesView = computed(() => {
+  const view = selectedEngine.value?.capabilities_view
+  if (view && typeof view === 'object') {
+    return {
+      summary: Array.isArray(view.summary) ? view.summary : [],
+      sections: Array.isArray(view.sections) ? view.sections : [],
+      json_view: Array.isArray(view.json_view) ? view.json_view : []
+    }
+  }
+
+  return {
+    summary: [],
+    sections: [],
+    json_view: buildFallbackJSONView(selectedEngine.value?.capabilities)
+  }
 })
 
 // 过滤后的引擎列表
@@ -871,6 +895,98 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString()
 }
 
+const translateCapabilityKey = (key, fallback = '') => {
+  if (!key) return humanizeCapabilityValue(fallback)
+  const translated = t(key)
+  if (translated && translated !== key) return translated
+  return humanizeCapabilityValue(fallback || key.split('.').pop())
+}
+
+const humanizeCapabilityValue = (value) => {
+  if (value === undefined || value === null || value === '') return '-'
+  return String(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+const getCapabilityStatusTagType = (status) => {
+  const typeMap = {
+    available: 'success',
+    engine_unavailable: 'info',
+    addp_pending: 'warning'
+  }
+  return typeMap[status] || 'info'
+}
+
+const getCapabilityStatusLabel = (status) => {
+  const key = `system.engine.capabilityView.status.${status || 'unknown'}`
+  return translateCapabilityKey(key, status || 'unknown')
+}
+
+const getCapabilityViewText = (item) => {
+  if (!item) return '-'
+  const base = item.value_key
+    ? translateCapabilityKey(item.value_key, item.value)
+    : translateCapabilityKey(item.label_key, item.value || item.id)
+  if (item.value && item.value_key && base !== item.value) {
+    return base
+  }
+  return item.value && !item.value_key ? `${base}: ${item.value}` : base
+}
+
+const getCapabilityPathLabel = (node) => {
+  if (!node) return '-'
+  return translateCapabilityKey(node.label_key, node.value || node.id)
+}
+
+const getCapabilityItemLabel = (item) => {
+  return translateCapabilityKey(item.label_key, item.value || item.id)
+}
+
+const getCapabilityItemValue = (item) => {
+  if (!item) return ''
+  if (item.value_key) return translateCapabilityKey(item.value_key, item.value)
+  return item.value || ''
+}
+
+const getCapabilityTagText = (tag) => {
+  if (!tag) return '-'
+  if (tag.label_key) {
+    const label = translateCapabilityKey(tag.label_key, tag.value || tag.id)
+    if (tag.value && label !== tag.value && !tag.label_key.includes(tag.value.replaceAll('_', '.'))) {
+      return `${label}: ${tag.value}`
+    }
+    return label
+  }
+  return tag.value || humanizeCapabilityValue(tag.id)
+}
+
+const buildFallbackJSONView = (capabilitiesJSON) => {
+  const caps = parseCapabilitiesJSON(capabilitiesJSON)
+  return buildJSONTree(caps)
+}
+
+const buildJSONTree = (value) => {
+  if (!value || typeof value !== 'object') return []
+  return Object.keys(value).sort().map(key => {
+    const item = value[key]
+    if (item && typeof item === 'object') {
+      return {
+        key,
+        children: Array.isArray(item)
+          ? item.map((child, index) => ({
+            key: String(index),
+            ...(child && typeof child === 'object'
+              ? { children: buildJSONTree(child) }
+              : { value: String(child) })
+          }))
+          : buildJSONTree(item)
+      }
+    }
+    return { key, value: item === undefined || item === null ? '' : String(item) }
+  })
+}
+
 // 获取连接状态标签
 const getConnectionStatusLabel = (status) => {
   const labelMap = {
@@ -1118,6 +1234,7 @@ const deleteEngine = (row) => {
 const viewEngineDetails = async (row) => {
   detailsLoading.value = true
   detailsVisible.value = true
+  jsonViewVisible.value = false
   selectedEngine.value = null
 
   try {
@@ -1324,19 +1441,142 @@ onMounted(() => {
 .capability-detail {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
-.capability-section {
+.capability-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capability-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capability-card {
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  background: var(--addp-bg-primary);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.capability-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .capability-section-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--addp-text-primary);
+}
+
+.capability-section-desc,
+.capability-item-reason,
+.capability-item-value {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+  line-height: 1.5;
+}
+
+.capability-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+}
+
+.capability-path-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--addp-border-color-light);
+  border-radius: 6px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-primary);
+  font-size: 12px;
+}
+
+.capability-path-arrow {
+  color: var(--addp-text-tertiary);
+}
+
+.capability-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.capability-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--addp-border-color-light);
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+}
+
+.capability-item-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.capability-item-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+  line-height: 1.5;
+}
+
+.capability-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.capability-json-tree {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  background: var(--addp-bg-primary);
+}
+
+.capability-json-node {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.capability-json-key {
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.capability-json-value {
+  color: var(--addp-text-secondary);
+  word-break: break-all;
 }
 
 /* 内置引擎行样式 */

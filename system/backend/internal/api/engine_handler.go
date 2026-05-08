@@ -17,7 +17,8 @@ import (
 
 type engineResponse struct {
 	models.Engine
-	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+	Capabilities     json.RawMessage          `json:"capabilities,omitempty"`
+	CapabilitiesView *models.CapabilitiesView `json:"capabilities_view,omitempty"`
 }
 
 type EngineHandler struct {
@@ -92,7 +93,7 @@ func (h *EngineHandler) List(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Success      200 {object} models.Engine
+// @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Router       /engines/{id} [get]
@@ -109,7 +110,7 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	commonapi.RespondSuccess(c, toEngineResponse(engine))
+	commonapi.RespondSuccess(c, toEngineDetailResponse(engine))
 }
 
 // Update godoc
@@ -120,7 +121,7 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
 // @Param        request body models.EngineUpdateRequest true "引擎更新信息 | Engine update info"
-// @Success      200 {object} models.Engine
+// @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Router       /engines/{id} [put]
@@ -401,6 +402,14 @@ func toEngineResponse(engine *models.Engine) engineResponse {
 	response := engineResponse{Engine: *engine}
 	if engine.Capabilities != nil && *engine.Capabilities != "" {
 		response.Capabilities = json.RawMessage(*engine.Capabilities)
+	}
+	return response
+}
+
+func toEngineDetailResponse(engine *models.Engine) engineResponse {
+	response := toEngineResponse(engine)
+	if engine.Capabilities != nil && *engine.Capabilities != "" {
+		response.CapabilitiesView = service.BuildCapabilitiesView(engine.Capabilities, engine.EngineType)
 	}
 	return response
 }

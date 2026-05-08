@@ -47,8 +47,8 @@ func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
 
-func (p *NFSPlugin) fileCatalogAdapter() plugin.FileCatalogAdapter {
-	return plugin.FileCatalogAdapter{
+func (p *NFSPlugin) fileCatalogCallbacks() plugin.FileCatalogCallbacks {
+	return plugin.FileCatalogCallbacks{
 		ListRootsFunc:       p.listRoots,
 		ListDirectoryFunc:   p.listDirectory,
 		GetFileMetadataFunc: p.getFileMetadata,
@@ -56,15 +56,15 @@ func (p *NFSPlugin) fileCatalogAdapter() plugin.FileCatalogAdapter {
 }
 
 func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogAdapter(), connInfo, parent.EngineID, parent, opts)
+	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
 func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileItem(ctx, p.fileCatalogAdapter(), connInfo, path.EngineID, path)
+	return plugin.DescribeFileItem(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {

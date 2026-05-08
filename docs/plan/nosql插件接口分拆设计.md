@@ -12,7 +12,7 @@
 - 目录发现统一走 `CatalogProvider.ListChildren`。
 - 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
 - MongoDB 动态字段推断可使用 `DocumentMetadataSamplingProvider`。
-- Neo4j 图查询和预览走 `GraphQueryRuntimeProvider`。
+- Neo4j 图查询和预览走 `GraphQueryProvider`。
 
 ## 落库语义
 

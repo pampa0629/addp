@@ -106,6 +106,11 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 		if _, ok := p.(QueryRuntimeProvider); !ok {
 			return fmt.Errorf("%s declares query support but does not implement QueryRuntimeProvider", p.Type())
 		}
+		if Contains(compute.Query.ResultKinds, "graph") {
+			if _, ok := p.(GraphQueryProvider); !ok {
+				return fmt.Errorf("%s declares graph query result kinds but does not implement GraphQueryProvider", p.Type())
+			}
+		}
 	}
 	if compute.Workflow != nil && compute.Workflow.Supported {
 		if _, ok := p.(WorkflowRuntimeProvider); !ok {

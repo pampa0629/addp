@@ -31,7 +31,7 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 	}
 }
 
-type TabularMetadataAdapter struct {
+type TabularCatalogCallbacks struct {
 	Plugin        RelationalDBPlugin
 	NamespaceTerm string
 	ListSchemas   func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
@@ -40,9 +40,9 @@ type TabularMetadataAdapter struct {
 	RowCount      func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
 }
 
-// ListTabularCatalogChildren adapts plugin-local tabular metadata helpers to CatalogProvider.
-func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
-	if err := adapter.validate(); err != nil {
+// ListTabularCatalogChildren maps tabular callbacks to CatalogProvider.
+func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
 	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
@@ -50,15 +50,15 @@ func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdap
 		return nil, fmt.Errorf("获取连接池失败：%w", err)
 	}
 
-	namespaceTerm := adapter.namespaceTerm()
+	namespaceTerm := callbacks.namespaceTerm()
 	if len(parent.Segments) == 0 {
-		schemas, err := adapter.ListSchemas(ctx, db)
+		schemas, err := callbacks.ListSchemas(ctx, db)
 		if err != nil {
 			return nil, err
 		}
 		nodes := make([]CatalogNode, 0, len(schemas))
 		for _, schema := range schemas {
-			if adapter.Plugin.IsSystemSchema(schema.Name) {
+			if callbacks.Plugin.IsSystemSchema(schema.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{
@@ -76,7 +76,7 @@ func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdap
 	}
 
 	namespace := parent.Segments[0].Name
-	tables, err := adapter.ListTables(ctx, db, namespace)
+	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -101,8 +101,8 @@ func ListTabularCatalogChildren(ctx context.Context, adapter TabularMetadataAdap
 }
 
 // ResolveTabularCatalogPath resolves a namespace or table node.
-func ResolveTabularCatalogPath(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, path CatalogPath) (*CatalogNode, error) {
-	if err := adapter.validate(); err != nil {
+func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath) (*CatalogNode, error) {
+	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
 	if len(path.Segments) == 0 {
@@ -120,13 +120,13 @@ func ResolveTabularCatalogPath(ctx context.Context, adapter TabularMetadataAdapt
 		return &CatalogNode{
 			Name:        last.Name,
 			Path:        path,
-			Term:        adapter.namespaceTerm(),
+			Term:        callbacks.namespaceTerm(),
 			Kind:        CatalogKindNamespace,
 			IsContainer: true,
 		}, nil
 	}
 
-	item, err := DescribeTabularItem(ctx, adapter, engine, path, MetadataOptions{})
+	item, err := DescribeTabularItem(ctx, callbacks, engine, path, MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +144,9 @@ func ResolveTabularCatalogPath(ctx context.Context, adapter TabularMetadataAdapt
 	}, nil
 }
 
-// DescribeTabularItem adapts plugin-local column helpers and table stats to ItemMetadataProvider.
-func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, engine *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
-	if err := adapter.validate(); err != nil {
+// DescribeTabularItem maps tabular column callbacks and table stats to ItemMetadataProvider.
+func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
 	if len(path.Segments) < 2 {
@@ -160,7 +160,7 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 
 	namespace := path.Segments[0].Name
 	table := path.Segments[len(path.Segments)-1].Name
-	columns, err := adapter.ListColumns(ctx, db, namespace, table)
+	columns, err := callbacks.ListColumns(ctx, db, namespace, table)
 	if err != nil {
 		return nil, err
 	}
@@ -178,8 +178,8 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 	}
 
 	stats := map[string]interface{}{}
-	if adapter.RowCount != nil {
-		rowCount, err := adapter.RowCount(ctx, db, namespace, table)
+	if callbacks.RowCount != nil {
+		rowCount, err := callbacks.RowCount(ctx, db, namespace, table)
 		if err == nil {
 			stats["row_count"] = rowCount
 		}
@@ -187,7 +187,7 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 
 	return &ItemMetadata{
 		Path:   path,
-		Kind:   catalogKindFromTableName(ctx, adapter, db, namespace, table),
+		Kind:   catalogKindFromTableName(ctx, callbacks, db, namespace, table),
 		Fields: fields,
 		Stats:  stats,
 		Attributes: map[string]interface{}{
@@ -197,11 +197,11 @@ func DescribeTabularItem(ctx context.Context, adapter TabularMetadataAdapter, en
 	}, nil
 }
 
-func catalogKindFromTableName(ctx context.Context, adapter TabularMetadataAdapter, db *gorm.DB, namespace, tableName string) string {
-	if adapter.ListTables == nil {
+func catalogKindFromTableName(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) string {
+	if callbacks.ListTables == nil {
 		return CatalogKindTable
 	}
-	tables, err := adapter.ListTables(ctx, db, namespace)
+	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
 		return CatalogKindTable
 	}
@@ -221,17 +221,17 @@ func tableCatalogKind(table TableInfo) string {
 	return kind
 }
 
-func (a TabularMetadataAdapter) validate() error {
+func (a TabularCatalogCallbacks) validate() error {
 	if a.Plugin == nil {
-		return fmt.Errorf("tabular metadata adapter plugin cannot be nil")
+		return fmt.Errorf("tabular catalog callbacks plugin cannot be nil")
 	}
 	if a.ListSchemas == nil || a.ListTables == nil || a.ListColumns == nil {
-		return fmt.Errorf("tabular metadata adapter is incomplete")
+		return fmt.Errorf("tabular catalog callbacks is incomplete")
 	}
 	return nil
 }
 
-func (a TabularMetadataAdapter) namespaceTerm() string {
+func (a TabularCatalogCallbacks) namespaceTerm() string {
 	if a.NamespaceTerm != "" {
 		return a.NamespaceTerm
 	}

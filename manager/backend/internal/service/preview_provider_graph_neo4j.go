@@ -11,7 +11,7 @@ import (
 )
 
 // GraphLabelPreviewProvider Neo4j label 预览
-// 使用 GraphQueryRuntimeProvider 采样节点属性，输出表格预览
+// 使用 GraphQueryProvider 采样节点属性，输出表格预览
 type GraphLabelPreviewProvider struct{}
 
 func NewGraphLabelPreviewProvider() PreviewProvider {
@@ -27,7 +27,7 @@ func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}
 
 	query := fmt.Sprintf("MATCH (n:`%s`) RETURN n LIMIT 50", escapeCypherIdentifier(targetName))
-	result, err := graphRuntime.ExecuteRuntimeGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
+	result, err := graphRuntime.ExecuteGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
 		EngineID:   req.Engine.ID,
 		EngineType: req.Engine.EngineType,
 	})
@@ -56,7 +56,7 @@ func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 }
 
 // GraphRelationshipPreviewProvider Neo4j relationship 预览
-// 使用 GraphQueryRuntimeProvider 采样关系属性，输出表格预览
+// 使用 GraphQueryProvider 采样关系属性，输出表格预览
 type GraphRelationshipPreviewProvider struct{}
 
 func NewGraphRelationshipPreviewProvider() PreviewProvider {
@@ -72,7 +72,7 @@ func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *Pre
 	}
 
 	query := fmt.Sprintf("MATCH ()-[r:`%s`]->() RETURN r LIMIT 50", escapeCypherIdentifier(targetName))
-	result, err := graphRuntime.ExecuteRuntimeGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
+	result, err := graphRuntime.ExecuteGraphQuery(ctx, connInfo, query, plugin.QueryOptions{
 		EngineID:   req.Engine.ID,
 		EngineType: req.Engine.EngineType,
 	})
@@ -100,7 +100,7 @@ func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *Pre
 	}, nil
 }
 
-func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryRuntimeProvider, plugin.ConnectionInfo, string, string, error) {
+func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryProvider, plugin.ConnectionInfo, string, string, error) {
 	if req == nil || req.Engine == nil {
 		return nil, nil, "", "", fmt.Errorf("invalid preview request")
 	}
@@ -110,9 +110,9 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryRuntimeProvid
 		return nil, nil, "", "", fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 
-	graphRuntime, ok := plug.(plugin.GraphQueryRuntimeProvider)
+	graphRuntime, ok := plug.(plugin.GraphQueryProvider)
 	if !ok {
-		return nil, nil, "", "", fmt.Errorf("engine %s does not implement GraphQueryRuntimeProvider", req.Engine.EngineType)
+		return nil, nil, "", "", fmt.Errorf("engine %s does not implement GraphQueryProvider", req.Engine.EngineType)
 	}
 
 	database := req.Schema

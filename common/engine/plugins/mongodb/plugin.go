@@ -64,8 +64,8 @@ func (p *MongoDBPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *MongoDBPlugin) documentCatalogAdapter() plugin.DocumentCatalogAdapter {
-	return plugin.DocumentCatalogAdapter{
+func (p *MongoDBPlugin) documentCatalogCallbacks() plugin.DocumentCatalogCallbacks {
+	return plugin.DocumentCatalogCallbacks{
 		Plugin:               p,
 		ListDatabasesFunc:    p.listDatabases,
 		ListCollectionsFunc:  p.listCollections,
@@ -74,11 +74,11 @@ func (p *MongoDBPlugin) documentCatalogAdapter() plugin.DocumentCatalogAdapter {
 }
 
 func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListDocumentCatalogChildren(ctx, p.documentCatalogAdapter(), parent.EngineID, connInfo, parent, opts)
+	return plugin.ListDocumentCatalogChildren(ctx, p.documentCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
 func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveDocumentCatalogPath(ctx, p.documentCatalogAdapter(), path.EngineID, connInfo, path)
+	return plugin.ResolveDocumentCatalogPath(ctx, p.documentCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
 func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {

@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// listDatabases lists all non-system databases for the catalog adapter.
+// listDatabases lists all non-system databases for the catalog callbacks.
 func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
@@ -44,7 +44,7 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 	return result, nil
 }
 
-// listCollections lists collections for the catalog adapter.
+// listCollections lists collections for the catalog callbacks.
 func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.CollectionInfo, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {

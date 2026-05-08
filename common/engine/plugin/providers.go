@@ -97,9 +97,12 @@ type DocumentQueryRuntimeProvider interface {
 	ExecuteDocumentQuery(ctx context.Context, connInfo ConnectionInfo, command string, opts QueryOptions) (*QueryResult, error)
 }
 
-type GraphQueryRuntimeProvider interface {
-	QueryRuntimeProvider
-	ExecuteRuntimeGraphQuery(ctx context.Context, connInfo ConnectionInfo, cypher string, opts QueryOptions) (*GraphQueryResult, error)
+// GraphQueryProvider is a dedicated runtime for graph-shaped queries and results.
+// It is intentionally separate from QueryRuntimeProvider so graph modules can
+// consume graph-specific results without coupling ordinary table-oriented query flows.
+type GraphQueryProvider interface {
+	EnginePlugin
+	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, cypher string, opts QueryOptions) (*GraphQueryResult, error)
 }
 
 type WorkflowRuntimeProvider interface {

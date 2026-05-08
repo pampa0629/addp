@@ -65,8 +65,8 @@ func (p *ClickHousePlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *ClickHousePlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
-	return plugin.TabularMetadataAdapter{
+func (p *ClickHousePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
+	return plugin.TabularCatalogCallbacks{
 		Plugin:        p,
 		NamespaceTerm: "database",
 		ListSchemas:   p.listSchemas,
@@ -77,15 +77,15 @@ func (p *ClickHousePlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapte
 }
 
 func (p *ClickHousePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *ClickHousePlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *ClickHousePlugin) QueryLanguages() []string {
@@ -132,17 +132,6 @@ func (p *ClickHousePlugin) TestConnection(ctx context.Context, connInfo plugin.C
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
 	return plugin.TestSQLConnection(ctx, "clickhouse", connStr, "SELECT version()")
-}
-
-// SupportsTransactions 实现 SQLDatabasePlugin 接口
-// ClickHouse 不支持传统事务，但支持原子性插入
-func (p *ClickHousePlugin) SupportsTransactions() bool {
-	return false
-}
-
-// DefaultDialect 实现 SQLDatabasePlugin 接口
-func (p *ClickHousePlugin) DefaultDialect() string {
-	return "clickhouse"
 }
 
 // === ConnectionPoolPlugin 接口实现 ===

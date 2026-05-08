@@ -9,13 +9,13 @@ import (
 
 func TestNFSRootCatalogNodeIsDot(t *testing.T) {
 	p := &NFSPlugin{}
-	adapter := plugin.FileCatalogAdapter{
+	callbacks := plugin.FileCatalogCallbacks{
 		ListRootsFunc: func(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 			return []plugin.RootEntry{{Name: ".", Path: "/"}}, nil
 		},
 	}
 
-	nodes, err := plugin.ListFileCatalogChildren(context.Background(), adapter, nil, 7, plugin.CatalogPath{
+	nodes, err := plugin.ListFileCatalogChildren(context.Background(), callbacks, nil, 7, plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: 7,
 	}, plugin.ListOptions{})

@@ -68,8 +68,8 @@ func (p *MySQLPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *MySQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
-	return plugin.TabularMetadataAdapter{
+func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
+	return plugin.TabularCatalogCallbacks{
 		Plugin:        p,
 		NamespaceTerm: "database",
 		ListSchemas:   p.listSchemas,
@@ -80,15 +80,15 @@ func (p *MySQLPlugin) tabularMetadataAdapter() plugin.TabularMetadataAdapter {
 }
 
 func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListTabularCatalogChildren(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
+	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveTabularCatalogPath(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
+	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *MySQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularMetadataAdapter(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *MySQLPlugin) QueryLanguages() []string {
@@ -134,14 +134,6 @@ func (p *MySQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Connec
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
 	return plugin.TestSQLConnection(ctx, "mysql", connStr, "SELECT VERSION()")
-}
-
-func (p *MySQLPlugin) SupportsTransactions() bool {
-	return true
-}
-
-func (p *MySQLPlugin) DefaultDialect() string {
-	return "mysql"
 }
 
 // === ConnectionPoolPlugin 接口实现 ===

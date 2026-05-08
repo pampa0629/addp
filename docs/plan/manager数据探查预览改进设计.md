@@ -238,7 +238,7 @@ Neo4j 的 label 和 relationship 目前没有预览 Provider，需新增：
 - **优先级**：92（高于 DatabasePreviewProvider 的 90）
 - **支持条件**：引擎类型为 neo4j，item_type 为 `label`
 - **实现**：
-  1. 通过 `GraphDBPlugin.ExecuteGraphQuery()` 采样该 label 的节点（`MATCH (n:LabelName) RETURN n LIMIT 50`）
+  1. 通过 `GraphQueryProvider.ExecuteGraphQuery()` 采样该 label 的节点（`MATCH (n:LabelName) RETURN n LIMIT 50`）
   2. 提取节点属性键值，构建列式表格
   3. 返回 TablePreview（Mode="table"）
 

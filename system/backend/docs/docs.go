@@ -830,7 +830,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Engine"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
                         }
                     },
                     "400": {
@@ -885,7 +885,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Engine"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
                         }
                     },
                     "400": {
@@ -2291,6 +2291,164 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.CapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "json_view": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode"
+                    }
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewSection"
+                    }
+                },
+                "summary": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewBadge"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityJSONNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode"
+                    }
+                },
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityPathNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewTag"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityViewBadge": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "value_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityViewItem": {
+            "type": "object",
+            "properties": {
+                "description_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "reason_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewTag"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                },
+                "value_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityViewSection": {
+            "type": "object",
+            "properties": {
+                "description_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewItem"
+                    }
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityPathNode"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CapabilityViewTag": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.CatalogListChildrenRequest": {
             "type": "object",
             "properties": {
@@ -2617,6 +2775,80 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ScanConfig"
                         }
                     ]
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineResponse": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "capabilities_view": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilitiesView"
+                },
+                "check_message": {
+                    "description": "检测结果消息（错误信息等）",
+                    "type": "string"
+                },
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_common_models.ConnectionInfo"
+                },
+                "connection_status": {
+                    "description": "连接状态缓存（优化扫描性能）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "时间戳字段",
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_origin": {
+                    "description": "引擎来源：general 或 extension",
+                    "type": "string"
+                },
+                "engine_type": {
+                    "description": "引擎类型（postgresql, mysql, python_workflow等）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_builtin": {
+                    "description": "扩展引擎字段",
+                    "type": "boolean"
+                },
+                "last_check_at": {
+                    "description": "上次检测时间",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "显示名称（原 display_name）",
+                    "type": "string"
+                },
+                "scan_config": {
+                    "description": "元数据扫描配置（可选）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.ScanConfig"
+                        }
+                    ]
+                },
+                "tenant_id": {
+                    "description": "租户ID，SuperAdmin创建的引擎为null",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
