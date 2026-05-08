@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -107,10 +108,12 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 		Locator: rootLocator,
 		Label:   engine.Name,
 		Type:    "engine",
-		Icon:    getEngineIcon(engine.EngineType),
+		Icon:    EngineIcon(engine),
 		Metadata: map[string]interface{}{
-			"engine_id":   engine.ID,
-			"engine_type": engine.EngineType,
+			"engine_id":     engine.ID,
+			"engine_type":   engine.EngineType,
+			"engine_family": engineFamily(engine),
+			"capabilities":  engine.Capabilities,
 		},
 		Children:    children,
 		HasChildren: hasChildren,
@@ -471,25 +474,69 @@ func buildEngineRootLocator(engineID uint) string {
 	return fmt.Sprintf("addp://engine/%d/path/?type=database", engineID)
 }
 
-// getEngineIcon 根据引擎类型返回图标
-func getEngineIcon(engineType string) string {
-	icons := map[string]string{
-		"postgresql":      "Database",
-		"mysql":           "Database",
-		"doris":           "Database",
-		"clickhouse":      "Database",
-		"mongodb":         "DocumentText",
-		"minio":           "FolderOpen",
-		"s3":              "FolderOpen",
-		"nfs":             "FolderOpen",
-		"nas":             "FolderOpen",
-		"python_workflow": "CodeBracket",
-		"spark_sql":       "Lightning",
+func EngineIcon(engine *models.Engine) string {
+	switch engineFamily(engine) {
+	case "object", "file":
+		return "FolderOpen"
+	case "document":
+		return "DocumentText"
+	case "graph":
+		return "Share"
+	case "workflow":
+		return "Grid"
+	case "script":
+		return "CodeBracket"
+	case "tabular":
+		return "Database"
 	}
-	if icon, ok := icons[strings.ToLower(engineType)]; ok {
-		return icon
+
+	if engine == nil {
+		return "Database"
 	}
-	return "Database"
+	switch strings.ToLower(strings.TrimSpace(engine.EngineType)) {
+	case "minio", "s3", "nfs", "nas":
+		return "FolderOpen"
+	case "mongodb":
+		return "DocumentText"
+	case "neo4j":
+		return "Share"
+	case "python_workflow", "spark_workflow", "math_workflow", "spark":
+		return "Grid"
+	case "jupyter":
+		return "CodeBracket"
+	default:
+		return "Database"
+	}
+}
+
+func engineFamily(engine *models.Engine) string {
+	if engine == nil || engine.Capabilities == nil {
+		return ""
+	}
+	var caps struct {
+		EngineFamily string `json:"engine_family"`
+		Compute      struct {
+			Workflow *struct {
+				Supported bool `json:"supported"`
+			} `json:"workflow"`
+			Script *struct {
+				Supported bool `json:"supported"`
+			} `json:"script"`
+		} `json:"compute"`
+	}
+	if err := json.Unmarshal([]byte(*engine.Capabilities), &caps); err != nil {
+		return ""
+	}
+	if caps.EngineFamily != "" {
+		return caps.EngineFamily
+	}
+	if caps.Compute.Workflow != nil && caps.Compute.Workflow.Supported {
+		return "workflow"
+	}
+	if caps.Compute.Script != nil && caps.Compute.Script.Supported {
+		return "script"
+	}
+	return ""
 }
 
 // getIconByType 根据节点类型返回图标

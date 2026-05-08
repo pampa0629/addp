@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enginesAPI } from '../api/engines'
 import { useI18n } from 'vue-i18n'
+import { getEngineFamily, parseEngineCapabilities } from '@common-ui'
 
 /**
  * 引擎管理 Composable
@@ -11,30 +12,6 @@ export function useEngineManagement() {
   const { t } = useI18n()
   const engines = ref([])
   const loading = ref(false)
-
-  // 引擎类型映射
-  const engineTypeMap = {
-    'postgresql': 'PostgreSQL',
-    'mysql': 'MySQL',
-    'doris': 'Doris',
-    'clickhouse': 'ClickHouse',
-    'mongodb': 'MongoDB',
-    'spark_sql': 'Spark SQL',
-    'minio': 'MinIO',
-    's3': 'S3'
-  }
-
-  // 引擎能力分组映射
-  const engineCapabilityGroupMap = {
-    'postgresql': 'storage',
-    'mysql': 'storage',
-    'doris': 'storage',
-    'clickhouse': 'storage',
-    'mongodb': 'storage',
-    'minio': 'storage',
-    's3': 'storage',
-    'spark_sql': 'compute'
-  }
 
   // 连接状态映射
   const getConnectionStatusMap = () => ({
@@ -48,14 +25,26 @@ export function useEngineManagement() {
    * 获取引擎类型显示文本
    */
   const getEngineTypeText = (engineType) => {
-    return engineTypeMap[engineType] || engineType
+    return String(engineType || '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b\w/g, char => char.toUpperCase())
   }
 
   /**
    * 获取引擎能力分组 (storage/compute)
    */
   const getEngineCapabilityGroup = (engineType) => {
-    return engineCapabilityGroupMap[engineType] || 'storage'
+    const caps = parseEngineCapabilities(engineType?.capabilities)
+    if (caps.compute?.workflow?.supported || caps.compute?.script?.supported) {
+      return 'compute'
+    }
+    if (caps.compute?.query?.supported && !caps.storage) {
+      return 'compute'
+    }
+    if (getEngineFamily(engineType)) {
+      return 'storage'
+    }
+    return 'storage'
   }
 
   /**

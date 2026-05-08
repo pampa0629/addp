@@ -689,28 +689,15 @@ func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *reso
 		Locator: locator,
 		Label:   engine.Name,
 		Type:    "engine",
-		Icon:    getEngineIcon(engine.EngineType),
+		Icon:    resource.EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":      engine.ID,
 			"engine_type":    engine.EngineType,
+			"capabilities":   engine.Capabilities,
 			"meta_available": false,
 		},
 		Children: []*resource.TreeNode{},
 	}
-}
-
-func getEngineIcon(engineType string) string {
-	// 复用 TreeBuilder 的逻辑（这里简化实现）
-	icons := map[string]string{
-		"postgresql": "Database",
-		"mysql":      "Database",
-		"mongodb":    "DocumentText",
-		"minio":      "FolderOpen",
-	}
-	if icon, ok := icons[engineType]; ok {
-		return icon
-	}
-	return "Database"
 }
 
 // calculateItemDepth 动态计算 Item 的深度

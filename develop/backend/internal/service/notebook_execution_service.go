@@ -12,11 +12,23 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/runtimeconn"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	_ "github.com/addp/common/engine/plugins/clickhouse"
+	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/neo4j"
+	_ "github.com/addp/common/engine/plugins/nfs"
+	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/spark_sql"
 )
 
 // NotebookExecutionService Notebook 执行服务
@@ -193,78 +205,12 @@ func (s *NotebookExecutionService) PrepareDataSourceConnections(
 			continue
 		}
 
-		// 2. 根据引擎类型生成连接信息
-		var connInfo map[string]interface{}
-
-		switch engine.EngineType {
-		case "postgresql":
-			// 获取用户名（兼容 username 和 user 字段）
-			username := engine.ConnectionInfo["username"]
-			if username == nil {
-				username = engine.ConnectionInfo["user"]
-			}
-
-			connInfo = map[string]interface{}{
-				"type":     "postgresql",
-				"host":     engine.ConnectionInfo["host"],
-				"port":     engine.ConnectionInfo["port"],
-				"database": engine.ConnectionInfo["database"],
-				"user":     username,
-				"password": engine.ConnectionInfo["password"],
-				"connection_string": fmt.Sprintf(
-					"postgresql://%s:%s@%s:%v/%s",
-					username,
-					engine.ConnectionInfo["password"],
-					engine.ConnectionInfo["host"],
-					engine.ConnectionInfo["port"],
-					engine.ConnectionInfo["database"],
-				),
-			}
-
-		case "mysql":
-			// 获取用户名（兼容 username 和 user 字段）
-			username := engine.ConnectionInfo["username"]
-			if username == nil {
-				username = engine.ConnectionInfo["user"]
-			}
-
-			connInfo = map[string]interface{}{
-				"type":     "mysql",
-				"host":     engine.ConnectionInfo["host"],
-				"port":     engine.ConnectionInfo["port"],
-				"database": engine.ConnectionInfo["database"],
-				"user":     username,
-				"password": engine.ConnectionInfo["password"],
-				"connection_string": fmt.Sprintf(
-					"mysql://%s:%s@%s:%v/%s",
-					username,
-					engine.ConnectionInfo["password"],
-					engine.ConnectionInfo["host"],
-					engine.ConnectionInfo["port"],
-					engine.ConnectionInfo["database"],
-				),
-			}
-
-		case "minio", "s3":
-			connInfo = map[string]interface{}{
-				"type":       engine.EngineType,
-				"endpoint":   engine.ConnectionInfo["endpoint"],
-				"access_key": engine.ConnectionInfo["access_key"],
-				"secret_key": engine.ConnectionInfo["secret_key"],
-				"bucket":     engine.ConnectionInfo["bucket"],
-				"secure":     false, // 开发环境
-			}
-
-		case "mongodb":
-			connInfo = map[string]interface{}{
-				"type":              "mongodb",
-				"connection_string": engine.ConnectionInfo["connection_string"],
-			}
-
-		default:
+		connInfo, err := runtimeconn.BuildNotebookConnection(engine, runtimeconn.ExportOptions{})
+		if err != nil {
 			logger.L().Warn("不支持的引擎类型，跳过",
 				"engine_id", engineID,
-				"engine_type", engine.EngineType)
+				"engine_type", engine.EngineType,
+				"error", err)
 			continue
 		}
 

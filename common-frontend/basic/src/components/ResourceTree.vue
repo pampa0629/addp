@@ -74,33 +74,8 @@
               <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
                 <span class="node-main">
                   <slot name="node-icon" :node="node" :data="data">
-                    <!-- 引擎层图标 -->
-                    <el-icon v-if="data.type === 'engine' && data.engineType === 'postgresql'">
-                      <Coin />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'mysql'">
-                      <Coin />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'doris'">
-                      <Coin />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'clickhouse'">
-                      <Coin />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'mongodb'">
-                      <Coin />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'neo4j'">
-                      <Share />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'spark'">
-                      <Grid />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && (data.engineType === 'minio' || data.engineType === 's3')">
-                      <Shop />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'engine' && (data.engineType === 'nfs' || data.engineType === 'nas')">
-                      <FolderOpened />
+                    <el-icon v-if="data.type === 'engine'">
+                      <component :is="resolveEngineIcon(data)" />
                     </el-icon>
                     <!-- 其他节点类型图标 -->
                     <el-icon v-else-if="data.type === 'schema' || data.type === 'database'">
@@ -194,6 +169,7 @@ import {
   Upload
 } from '@element-plus/icons-vue'
 import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
+import { getEngineIconName } from '../utils/engineDisplay.js'
 
 // 动作图标映射（将字符串名称映射到图标组件）
 const actionIconMap = {
@@ -212,6 +188,14 @@ const actionIconMap = {
   Shop,
   Share,
   Upload
+}
+
+const resolveEngineIcon = (data) => {
+  return actionIconMap[data.icon] || actionIconMap[getEngineIconName({
+    engine_type: data.engineType || data.metadata?.engine_type,
+    capabilities: data.capabilities || data.metadata?.capabilities,
+    engine_family: data.engineFamily || data.metadata?.engine_family
+  })] || Coin
 }
 
 const props = defineProps({

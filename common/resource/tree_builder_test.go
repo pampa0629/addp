@@ -372,7 +372,7 @@ func TestFilterTreeByType(t *testing.T) {
 	}
 }
 
-func TestGetEngineIcon(t *testing.T) {
+func TestEngineIcon(t *testing.T) {
 	tests := []struct {
 		engineType string
 		want       string
@@ -381,15 +381,15 @@ func TestGetEngineIcon(t *testing.T) {
 		{"mysql", "Database"},
 		{"MongoDB", "DocumentText"},
 		{"minio", "FolderOpen"},
-		{"python_workflow", "CodeBracket"},
+		{"python_workflow", "Grid"},
 		{"unknown", "Database"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.engineType, func(t *testing.T) {
-			got := getEngineIcon(tt.engineType)
+			got := EngineIcon(&models.Engine{EngineType: tt.engineType})
 			if got != tt.want {
-				t.Errorf("getEngineIcon(%s) = %s, want %s", tt.engineType, got, tt.want)
+				t.Errorf("EngineIcon(%s) = %s, want %s", tt.engineType, got, tt.want)
 			}
 		})
 	}

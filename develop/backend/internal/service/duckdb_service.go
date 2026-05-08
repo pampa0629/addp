@@ -169,10 +169,10 @@ func (s *DuckDBService) GetSources(ctx context.Context, tenantID uint) ([]DataSo
 			EngineType: engine.EngineType,
 		}
 
-		switch engine.EngineType {
-		case "minio", "s3":
+		switch {
+		case duckdb.IsLakeTableEngine(engine.EngineType):
 			source.Tables = s.getLakeTables(ctx, tenantID, engine)
-		case "postgresql", "mysql":
+		case duckdb.IsRelationalMountEngine(engine.EngineType):
 			source.Tables = s.getRelationalTables(ctx, tenantID, engine)
 		default:
 			continue

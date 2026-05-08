@@ -472,6 +472,7 @@ import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, EngineForm } from '@common-ui'
+import { getEngineFamilyLabelKey } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -859,36 +860,15 @@ const parseCapabilities = (capabilitiesJSON) => {
 
 const handleFilterChange = () => {}
 
-const engineTypeMap = computed(() => ({
-  'postgresql': 'PostgreSQL',
-  'mysql': 'MySQL',
-  'doris': 'Apache Doris',
-  'clickhouse': 'ClickHouse',
-  'mongodb': 'MongoDB',
-  'minio': 'MinIO',
-  'neo4j': 'Neo4j',
-  'nfs': t('system.engine.typeNfs'),
-  'spark': 'Apache Spark',
-  'database': 'Database',
-  'compute_engine': 'Compute Engine'
-}))
-
-const getEngineTypeLabel = (type) => {
-  return engineTypeMap.value[type] || type
+const getEngineTypeLabel = (type, engine = null) => {
+  if (engine?.name && engine.engine_type === type) {
+    return type
+  }
+  return humanizeCapabilityValue(type)
 }
 
 const getEngineTypeColor = (type) => {
-  const colorMap = {
-    'postgresql': 'primary',
-    'mysql': 'success',
-    'doris': 'warning',
-    'minio': 'warning',
-    'nfs': 'warning',
-    'spark': 'danger',
-    'database': 'success',
-    'compute_engine': 'info'
-  }
-  return colorMap[type] || 'info'
+  return type ? 'info' : 'info'
 }
 
 const formatDate = (dateString) => {
@@ -1251,15 +1231,8 @@ const viewEngineDetails = async (row) => {
 
 // 获取存储类型标签
 const getStorageTypeLabel = (type) => {
-  const typeMap = {
-    'tabular': t('system.engine.capabilities.tabular'),
-    'object': t('system.engine.capabilities.objectStorage'),
-    'file': t('system.engine.capabilities.file'),
-    'document': t('system.engine.capabilities.document'),
-    'graph': t('system.engine.capabilities.graphDb'),
-    'formats': t('system.engine.capabilities.formats')
-  }
-  return typeMap[type] || type
+  const key = getEngineFamilyLabelKey(type)
+  return key ? t(key) : humanizeCapabilityValue(type)
 }
 
 // 获取计算类型标签

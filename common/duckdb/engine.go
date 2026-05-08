@@ -10,6 +10,15 @@ import (
 	_ "github.com/marcboeker/go-duckdb"
 )
 
+type MountKind string
+
+const (
+	MountKindUnsupported MountKind = ""
+	MountKindObject      MountKind = "object"
+	MountKindPostgres    MountKind = "postgres"
+	MountKindMySQL       MountKind = "mysql"
+)
+
 // OpenDB 打开 DuckDB 内存连接
 func OpenDB() (*sql.DB, error) {
 	db, err := sql.Open("duckdb", "")
@@ -23,16 +32,16 @@ func OpenDB() (*sql.DB, error) {
 func MountEngines(ctx context.Context, conn *sql.Conn, engines []commonModels.Engine) error {
 	var errs []string
 	for _, engine := range engines {
-		switch engine.EngineType {
-		case "minio", "s3":
+		switch MountKindForEngine(engine.EngineType) {
+		case MountKindObject:
 			if err := MountObjectStorage(ctx, conn, engine); err != nil {
 				errs = append(errs, fmt.Sprintf("挂载 %s(%s) 失败: %v", engine.Name, engine.EngineType, err))
 			}
-		case "postgresql":
+		case MountKindPostgres:
 			if err := MountPostgres(ctx, conn, engine); err != nil {
 				errs = append(errs, fmt.Sprintf("挂载 %s(postgresql) 失败: %v", engine.Name, err))
 			}
-		case "mysql":
+		case MountKindMySQL:
 			if err := MountMySQL(ctx, conn, engine); err != nil {
 				errs = append(errs, fmt.Sprintf("挂载 %s(mysql) 失败: %v", engine.Name, err))
 			}
@@ -42,6 +51,32 @@ func MountEngines(ctx context.Context, conn *sql.Conn, engines []commonModels.En
 		return fmt.Errorf("部分引擎挂载失败: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func MountKindForEngine(engineType string) MountKind {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "minio", "s3":
+		return MountKindObject
+	case "postgresql":
+		return MountKindPostgres
+	case "mysql":
+		return MountKindMySQL
+	default:
+		return MountKindUnsupported
+	}
+}
+
+func SupportsMount(engineType string) bool {
+	return MountKindForEngine(engineType) != MountKindUnsupported
+}
+
+func IsLakeTableEngine(engineType string) bool {
+	return MountKindForEngine(engineType) == MountKindObject
+}
+
+func IsRelationalMountEngine(engineType string) bool {
+	kind := MountKindForEngine(engineType)
+	return kind == MountKindPostgres || kind == MountKindMySQL
 }
 
 // MountObjectStorage 挂载 MinIO/S3 到 DuckDB httpfs

@@ -104,6 +104,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getEngineIconName } from '../utils/engineDisplay.js'
 import {
   Folder,
   Document,
@@ -271,7 +272,7 @@ const loadEngines = async () => {
       id: `engine-${engine.id}`,
       label: engine.name,
       type: 'engine',
-      icon: getEngineIconName(engine.engine_type),
+      icon: getEngineIconName(engine),
       metadata: {
         engine_id: engine.id,
         engine_type: engine.engine_type
@@ -542,20 +543,6 @@ const getIconComponent = (iconName) => {
     DocumentText: Document
   }
   return iconMap[iconName] || Document
-}
-
-// 获取引擎图标名称
-const getEngineIconName = (engineType) => {
-  const icons = {
-    postgresql: 'Database',
-    mysql: 'Database',
-    doris: 'Database',
-    clickhouse: 'Database',
-    mongodb: 'DocumentText',
-    minio: 'Folder',
-    s3: 'Folder'
-  }
-  return icons[engineType.toLowerCase()] || 'Database'
 }
 
 // 获取当前选择（外部调用）

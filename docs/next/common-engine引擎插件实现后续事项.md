@@ -60,11 +60,9 @@
     - 现状：连接池已走 `dbbridge.GetOrCreatePool()`，但 `quoteIdentifier()` 和 PostgreSQL 空间字段处理仍按 `engine_type` 判断。
     - 方向：复用同一个 SQL dialect / spatial adapter，不在 Service 模块独立维护方言。
   - `develop/backend/internal/service/notebook_execution_service.go`
-    - 现状：Notebook 注入数据源连接对象时按 `postgresql` / `mysql` / `minio` / `s3` / `mongodb` 手工组装连接信息和 connection string。
-    - 方向：明确 Notebook 运行时需要的“外部连接描述”是否应成为插件派生能力；至少数据库类 connection string 应通过 `DSNProvider` 或新的 runtime export helper 生成。
+    - 状态：已完成。Notebook 数据源注入已改为通过 `common/runtimeconn` 从插件能力、`connection_info` 和可选 `DSNProvider` 派生运行时连接描述，不再在 Develop 模块内手写各引擎连接信息。
   - `common/duckdb/engine.go`、`develop/backend/internal/service/duckdb_service.go`
-    - 现状：DuckDB 联邦查询挂载按 `minio` / `s3` / `postgresql` / `mysql` 分支，并自行拼 DuckDB `ATTACH` / `httpfs` 配置。
-    - 方向：这是 DuckDB 适配层的真实差异，不宜简单塞进通用 DSN；后续应设计 `DuckDBAttachProvider` / `FederatedQueryConnector` 一类窄接口，或在 `common/duckdb` 内集中管理，不继续扩散到业务模块。
+    - 状态：已完成第一阶段集中。DuckDB 挂载差异仍集中在 `common/duckdb` 适配层，Develop 模块只通过 `duckdb.IsLakeTableEngine()` / `duckdb.IsRelationalMountEngine()` 判断是否纳入联邦查询 sources。
 
 推进顺序建议：
 
@@ -72,9 +70,9 @@
 - [x] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
 - [x] P1：整理 Manager 空间预览、Feature、GeoJSON、MVT 的 PostgreSQL/PostGIS 专用路径，形成集中 spatial adapter；连接池不再自行打开。
 - [x] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
-- [ ] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。
-- [ ] P2：为 DuckDB 联邦挂载设计窄接口或集中适配层，避免新增引擎时继续修改多处 switch。
-- [ ] P3：清理仅用于展示分类、图标、前端过滤的硬编码清单，逐步改为 capabilities / catalog model 派生；这类不阻塞核心 Provider 收口。
+- [x] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。
+- [x] P2：为 DuckDB 联邦挂载设计窄接口或集中适配层，避免新增引擎时继续修改多处 switch。
+- [x] P3：清理仅用于展示分类、图标、前端过滤的硬编码清单，逐步改为 capabilities / catalog model 派生；这类不阻塞核心 Provider 收口。
 
 验证建议：
 
@@ -111,6 +109,16 @@ git diff --check
 - 边界保持不变：SQL dialect helper 暂不进入 engine plugin Provider 接口；长期若要成为 Provider，需要先补充 SQL preview composer / dialect 能力边界文档。
 - 已执行验证：
   - `go test ./common/sqldialect ./common/engine/plugin ./common/dbbridge ./manager/backend/internal/service ./service/backend/internal/service`
+- 已完成 P2 / P3 第一阶段：
+  - 新增 `common/runtimeconn` 普通 helper，用于 Notebook 等运行时从插件能力、`connection_info` 和可选 `DSNProvider` 派生连接描述；Develop Notebook 注入已接入。
+  - `common/duckdb` 新增 `MountKindForEngine()`、`IsLakeTableEngine()`、`IsRelationalMountEngine()`，Develop DuckDB sources 不再自行维护挂载类型 switch。
+  - `common/resource` 引擎根图标改为优先从 `capabilities.engine_family` / compute 能力派生，Manager 降级树复用该 common 逻辑。
+  - `common-frontend/basic` 新增 `engineDisplay` 展示 helper，`ResourceTree`、`DataSourceCascader` 和 System 引擎页的展示标签/图标改为优先从 capabilities / catalog model 派生，engine_type 仅作为兜底。
+- P3 边界：Transfer 执行面、表单创建入口和明确业务模式选择仍允许保留必要的类型选项；后续若要完全移除，需要先让对应模块 API 输出能力派生的可选项。
+- 已执行验证：
+  - `go test ./common/runtimeconn ./common/duckdb ./common/resource ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge ./manager/backend/internal/service ./develop/backend/internal/service`
+  - `cd system/frontend && npm run build`
+  - `git diff --check`
 
 ### 2. 能力边界状态继续精细化
 

@@ -7,6 +7,7 @@
 
 import axios from 'axios'
 import { parseLocator as parseResourceLocator, buildLocator } from '../types/resourceLocator.js'
+export { getEngineIconName } from '../utils/engineDisplay.js'
 
 /**
  * 创建带有认证支持的 axios 实例
