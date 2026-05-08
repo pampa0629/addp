@@ -1,4 +1,4 @@
-package plugin
+package shared
 
 import (
 	"context"
@@ -6,16 +6,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	"gorm.io/gorm"
 )
 
+// MySQLCompatibleMetadataDialect provides information_schema helpers for MySQL-compatible engines.
 type MySQLCompatibleMetadataDialect struct {
 	SystemSchemas  map[string]bool
 	IncludeComment bool
 }
 
-func (d MySQLCompatibleMetadataDialect) ListSchemas(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error) {
-	var schemas []SchemaInfo
+func (d MySQLCompatibleMetadataDialect) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	var schemas []plugin.SchemaInfo
 	systemSchemas := d.systemSchemaNames()
 	query := fmt.Sprintf(`
 		SELECT
@@ -40,8 +42,8 @@ func (d MySQLCompatibleMetadataDialect) ListSchemas(ctx context.Context, db *gor
 	return schemas, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error) {
-	var tables []TableInfo
+func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	var tables []plugin.TableInfo
 	commentExpr := "'' as comment"
 	if d.IncludeComment {
 		commentExpr = "COALESCE(table_comment, '') as comment"
@@ -70,8 +72,8 @@ func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm
 	return tables, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error) {
-	var columns []ColumnInfo
+func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	var columns []plugin.ColumnInfo
 	query := `
 		SELECT
 			column_name as column_name,

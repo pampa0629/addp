@@ -33,7 +33,59 @@
 
 ## 二、剩余工作
 
-### 1. 能力边界状态继续精细化
+### 1. 上层模块残留引擎类型硬编码收口
+
+目标：除 Transfer 执行面外，上层模块访问用户注册的数据引擎时应优先消费 `common/engine` Provider 能力，不再直接按 `engine_type` 选择底层 driver / client / catalog 访问方式。
+
+排查时间：2026-05-08。
+
+当前结论：
+
+- Meta 扫描主路径、Manager 新版 `database-table` / `filesystem` / `lake-table` / `graph` preview provider、Graph 查询主路径整体已使用 `CatalogProvider`、`ItemMetadataProvider`、`ContentReadableProvider`、`QueryRuntimeProvider`、`GraphQueryProvider` 或 `dbbridge`。
+- 下列位置仍存在需要推进的硬编码或绕过点：
+  - `manager/backend/internal/service/object_preview.go`
+    - 现状：直接判断 `minio` / `s3` / `oss` / `object_storage`，自行构造 MinIO client，并直接调用 `StatObject`、`GetObject`、`ListObjects`。
+    - 方向：改为通过 `CatalogProvider` 列目录，通过 `ContentReadableProvider` 读对象，通过 `ItemMetadataProvider` 获取对象元数据；与 `preview_provider_filesystem.go` 的 Provider 化实现对齐。
+  - `manager/backend/internal/service/engine_connector.go`
+    - 现状：使用 `dbbridge.BuildDSN()` 后继续按 `postgresql` / `mysql` / `doris` 选择 GORM driver，自建连接池缓存。
+    - 方向：删除或收敛到 `dbbridge.GetOrCreatePool()` / `common/engine/plugin` 连接池工厂，避免 Manager 再维护一套引擎连接逻辑。
+  - `manager/backend/internal/api/feature_handler.go`、`manager/backend/internal/api/geojson_handler.go`、`common/spatial/query.go`、`manager/backend/internal/mvt/preparation_service.go`、`manager/backend/internal/mvt/tile_generator.go`
+    - 现状：PostGIS / MVT / GeoJSON 相关路径直接限定 PostgreSQL 或直接使用 `postgres` / `pgx` driver。
+    - 方向：先明确这些接口是否定位为 PostgreSQL/PostGIS 专用能力；若是，应至少通过插件能力或集中 spatial adapter 判断支持性，连接池优先复用 `dbbridge`；若要面向通用空间能力，需要先补充 common engine 的空间查询/渲染能力边界。
+  - `manager/backend/internal/service/preview_provider_database.go`
+    - 现状：执行已走 `SQLQueryRuntimeProvider`，但分页 SQL、COUNT SQL、标识符引用和 PostGIS 渲染仍按 `engine_type` 分支。
+    - 方向：短期可抽到 common SQL dialect helper；长期评估由 `SQLQueryRuntimeProvider` 或专门的 SQL preview composer 提供方言能力，避免 Manager 复制方言判断。
+  - `service/backend/internal/service/query_executor_service.go`
+    - 现状：连接池已走 `dbbridge.GetOrCreatePool()`，但 `quoteIdentifier()` 和 PostgreSQL 空间字段处理仍按 `engine_type` 判断。
+    - 方向：复用同一个 SQL dialect / spatial adapter，不在 Service 模块独立维护方言。
+  - `develop/backend/internal/service/notebook_execution_service.go`
+    - 现状：Notebook 注入数据源连接对象时按 `postgresql` / `mysql` / `minio` / `s3` / `mongodb` 手工组装连接信息和 connection string。
+    - 方向：明确 Notebook 运行时需要的“外部连接描述”是否应成为插件派生能力；至少数据库类 connection string 应通过 `DSNProvider` 或新的 runtime export helper 生成。
+  - `common/duckdb/engine.go`、`develop/backend/internal/service/duckdb_service.go`
+    - 现状：DuckDB 联邦查询挂载按 `minio` / `s3` / `postgresql` / `mysql` 分支，并自行拼 DuckDB `ATTACH` / `httpfs` 配置。
+    - 方向：这是 DuckDB 适配层的真实差异，不宜简单塞进通用 DSN；后续应设计 `DuckDBAttachProvider` / `FederatedQueryConnector` 一类窄接口，或在 `common/duckdb` 内集中管理，不继续扩散到业务模块。
+
+推进顺序建议：
+
+- [ ] P0：替换 `manager/backend/internal/service/object_preview.go` 中的 MinIO/S3 直连，统一走 object/file Store Provider。
+- [ ] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
+- [ ] P1：整理 Manager 空间预览、Feature、GeoJSON、MVT 的 PostgreSQL/PostGIS 专用路径，形成集中 spatial adapter；连接池不再自行打开。
+- [ ] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
+- [ ] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。
+- [ ] P2：为 DuckDB 联邦挂载设计窄接口或集中适配层，避免新增引擎时继续修改多处 switch。
+- [ ] P3：清理仅用于展示分类、图标、前端过滤的硬编码清单，逐步改为 capabilities / catalog model 派生；这类不阻塞核心 Provider 收口。
+
+验证建议：
+
+```bash
+go test ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge
+go test ./manager/backend/internal/service ./manager/backend/internal/api ./manager/backend/internal/mvt
+go test ./service/backend/internal/service ./service/backend/internal/service/data
+go test ./develop/backend/internal/service ./common/duckdb
+git diff --check
+```
+
+### 2. 能力边界状态继续精细化
 
 目标：更稳定地区分“引擎本身没有”和“ADDP 当前暂未实现”，避免都显示成笼统“不支持”。
 
@@ -48,7 +100,7 @@
 - 对“引擎理论上可做但 ADDP 尚未实现”的 Transfer、Preview、写入等能力，逐步补充 `addp_pending` 展示。
 - 不把这些状态强行塞进 `EngineCapabilities` 核心结构，优先作为 `capabilities_view` 派生结果。
 
-### 2. Format Registry 深化
+### 3. Format Registry 深化
 
 目标：在第一阶段清单集中管理基础上，把格式能力变成跨模块共同事实源。
 
@@ -64,11 +116,11 @@
 - 将最终支持格式从“引擎家族映射”演进为“引擎访问能力 × Format Registry × Transfer / Preview 实现”的完整推导结果。
 - `transfer.supported_formats` 在迁移完成前阶段性保留；迁移后评估改为纯派生展示或模块能力结果。
 
-### 3. SQL metadata 方言继续收敛
+### 4. SQL metadata 方言继续收敛
 
 PostgreSQL、ClickHouse、Spark SQL 的 metadata 查询仍可继续抽成方言 helper。当前重复面已从连接、DSN、pool 和 MySQL-compatible metadata 层收敛，不影响新规范落地。
 
-### 4. 文档同步检查
+### 5. 文档同步检查
 
 如后续修改能力展示 API 或能力字段，需要同步检查：
 

@@ -13,7 +13,7 @@ Engine Plugin 是 ADDP 对外部数据系统和内部运行时的控制面入口
 - Meta 负责扫描任务和元数据落库。
 - Manager 负责页面树、预览组合和缓存。
 - Develop 负责编辑器、执行历史和交互体验。
-- Transfer 保留自己的 Reader / Writer / DataBatch 执行面，后续通过 TransferAdapter 消费插件能力和连接配置。
+- Transfer 保留自己的 Reader / Writer / DataBatch 执行面；后续如需统一配置来源，应先形成 Transfer 模块适配层规范，再进入 common engine 稳定接口。
 
 ---
 
@@ -220,10 +220,10 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
-- Manager：使用 Meta 树构建探查树；结构化数据预览优先使用 `PreviewProvider` 或 `BatchReadableProvider`，普通 query runtime 只作为只读 sample query 退路；图 label / relationship 预览可以使用 `GraphQueryProvider` 采样后表格化展示；对象/文件预览优先使用 `PreviewProvider` 或 `ContentReadableProvider` 加格式解析。
+- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query，图 label / relationship 可使用 `GraphQueryProvider` 采样后表格化展示，对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。
-- Transfer：执行面暂由 Transfer 自己负责，后续通过 `TransferAdapter` 生成 Reader/Writer 配置；高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
+- Transfer：执行面暂由 Transfer 自己负责；后续如需统一生成 Reader/Writer 配置，应在 Transfer 模块适配层中规范化。高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
 
 ---
 

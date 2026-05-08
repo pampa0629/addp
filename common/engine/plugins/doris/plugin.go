@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-var dorisMetadataDialect = plugin.MySQLCompatibleMetadataDialect{
+var dorisMetadataDialect = shared.MySQLCompatibleMetadataDialect{
 	SystemSchemas: map[string]bool{
 		"information_schema": true,
 		"mysql":              true,

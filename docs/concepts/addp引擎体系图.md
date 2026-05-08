@@ -161,7 +161,7 @@ classDiagram
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
-| Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 TransferAdapter 统一配置来源；高吞吐读写优先消费 batch / stream 能力。 |
+| Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 Transfer 模块适配层统一配置来源；高吞吐读写优先消费 batch / stream 能力。 |
 
 ---
 

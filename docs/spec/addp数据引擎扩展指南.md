@@ -96,7 +96,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - Manager：展示探查树并预览 item。
 - Develop：筛选 query/workflow/script 引擎。
 - Service：发布查询服务或空间服务。
-- Transfer：后续通过 TransferAdapter 对接 Reader/Writer，当前 Transfer 执行面仍在模块内维护。
+- Transfer：当前执行面仍在模块内维护；后续如需统一对接 Reader/Writer，应先形成 Transfer 模块适配层规范。
 
 ---
 
