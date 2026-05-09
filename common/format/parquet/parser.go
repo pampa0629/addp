@@ -1,5 +1,5 @@
 // Package parquet 提供 Parquet 文件格式的解析能力
-// 实现 format.FileTableParser 接口，支持 Schema 推断和数据预览
+// 支持 Schema 推断和数据预览
 // 使用纯 Go 实现（github.com/parquet-go/parquet-go），无 CGO 依赖
 package parquet
 
@@ -16,18 +16,17 @@ import (
 )
 
 // Parser 实现 Parquet 格式的解析器
-// 实现 format.FileTableParser 接口
 type Parser struct{}
 
 func init() {
-	if err := format.RegisterFileTableParser(&Parser{}); err != nil {
-		panic(fmt.Sprintf("failed to register parquet parser: %v", err))
+	parser := &Parser{}
+	if err := format.RegisterTableProvider(format.NewTableProvider(
+		format.FormatParquet,
+		parser.ParseTableInfo,
+		parser.ReadPreview,
+	)); err != nil {
+		panic(fmt.Sprintf("failed to register parquet table provider: %v", err))
 	}
-}
-
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatParquet}
 }
 
 // ParseTableInfo 从 Parquet 文件中提取 TableInfo（Schema + 行数）

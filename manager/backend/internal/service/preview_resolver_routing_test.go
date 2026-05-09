@@ -49,7 +49,7 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "table",
-				"format":    "geojson",
+				"format":    "json",
 			},
 		}},
 		ItemType: "object",
@@ -74,7 +74,7 @@ func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "table",
-				"format":    "geojson",
+				"format":    "json",
 			},
 		}},
 		ItemType: "object",

@@ -117,20 +117,16 @@ graph TB
 
 ---
 
-## Parser 体系架构
+## Provider / Parser 体系架构
 
-ADDP 提供 **3 种结构 Parser 接口** 和 **1 种文件元数据 Extractor 接口**,用于从不同数据源提取详细的元数据:
+ADDP 当前将文件表能力收口到 `TableProvider`。`TableProvider` 是上层消费文件表语义的主入口；数据库表和文档集合仍保留历史 parser 入口，后续也会继续向 data type provider 收口。文件元数据增强仍由 `FileMetadataExtractor` 负责。
 
 ```mermaid
 classDiagram
-    class Parser {
+    class TableProvider {
         <<interface>>
-    }
-
-    class FileTableParser {
-        <<interface>>
-        +ParseTableInfo(filePath) TableInfo
-        +ReadPreview(filePath, limit) PreviewData
+        +DescribeTable(input) TableInfo
+        +SampleTable(input, offset, limit) Rows
     }
 
     class DBTableParser {
@@ -149,29 +145,29 @@ classDiagram
         +Extract(input) ExtractedMetadata
     }
 
-    Parser <|-- FileTableParser
-    Parser <|-- DBTableParser
-    Parser <|-- DocCollectionParser
-    Parser <|-- FileMetadataExtractor
-
-    class CSVParser {
-        实现: FileTableParser
+    class CSVProvider {
+        实现: TableProvider
         支持: CSV 文件
     }
 
-    class ShapefileParser {
-        实现: FileTableParser
-        支持: Shapefile 文件
+    class ShapefileProvider {
+        实现: TableProvider
+        支持: Shapefile 多组件文件
     }
 
-    class GeoJSONParser {
-        实现: FileTableParser
-        支持: GeoJSON 文件
+    class JSONSpatialProvider {
+        实现: TableProvider
+        支持: JSON 空间扩展结构
     }
 
-    class ExcelParser {
-        实现: FileTableParser
+    class ExcelProvider {
+        实现: TableProvider
         支持: Excel 文件
+    }
+
+    class ParquetProvider {
+        实现: TableProvider
+        支持: Parquet 文件
     }
 
     class PostgreSQLParser {
@@ -190,72 +186,69 @@ classDiagram
         特性: 采样推断 Schema
     }
 
-    class ImageParser {
+    class ImageExtractor {
         实现: FileMetadataExtractor
         支持: JPG, PNG, TIFF
     }
 
-    class VideoParser {
-        实现: FileMetadataExtractor
-        支持: MP4, AVI
-    }
-
-    class PDFParser {
+    class PDFExtractor {
         实现: FileMetadataExtractor
         支持: PDF 文档
     }
 
-    FileTableParser <|.. CSVParser
-    FileTableParser <|.. ShapefileParser
-    FileTableParser <|.. GeoJSONParser
-    FileTableParser <|.. ExcelParser
+    TableProvider <|.. CSVProvider
+    TableProvider <|.. ShapefileProvider
+    TableProvider <|.. JSONSpatialProvider
+    TableProvider <|.. ExcelProvider
+    TableProvider <|.. ParquetProvider
 
     DBTableParser <|.. PostgreSQLParser
     DBTableParser <|.. MySQLParser
 
     DocCollectionParser <|.. MongoDBParser
 
-    FileMetadataExtractor <|.. ImageParser
-    FileMetadataExtractor <|.. VideoParser
-    FileMetadataExtractor <|.. PDFParser
+    FileMetadataExtractor <|.. ImageExtractor
+    FileMetadataExtractor <|.. PDFExtractor
 ```
 
-### Parser 类型说明
+### Provider / Parser 类型说明
 
-**1. FileTableParser (文件表解析器)**:
-- **用途**: 从文件中提取表格结构元数据
-- **支持格式**: CSV、Shapefile、GeoJSON、Excel、GeoPackage
+**1. TableProvider (表数据类型 Provider)**:
+- **用途**: 从外部提供的资源流或组件读取抽象中提取表格语义。
+- **支持格式**: CSV、Shapefile、JSON 空间扩展、Excel、Parquet。
 - **核心方法**:
-  - `ParseTableInfo()`: 提取表结构(字段定义、行数、扩展信息)
-  - `ReadPreview()`: 读取预览数据(前 N 行)
-- **使用场景**: Meta 模块扫描对象存储中的文件,Manager 模块预览文件数据
+  - `DescribeTable()`: 提取表结构(字段定义、行数、扩展信息)。
+  - `SampleTable()`: 读取采样或分页数据。
+- **使用场景**: Manager 文件表预览，以及后续 Meta / Transfer 对文件表能力的统一消费。
+- **边界**: 不接 engine id，不构造读取器，不决定 item 归并，不返回 Manager 专用 DTO。
 
 **2. DBTableParser (关系型数据库表解析器)**:
-- **用途**: 从关系型数据库表提取元数据
-- **支持引擎**: PostgreSQL、MySQL、ClickHouse、Doris
+- **用途**: 从关系型数据库表提取元数据。
+- **支持引擎**: PostgreSQL、MySQL、ClickHouse、Doris。
 - **核心方法**:
-  - `ParseTableInfo()`: 提取表结构(字段定义、行数)
-- **使用场景**: Meta 模块扫描数据库表,Manager 模块预览表数据
+  - `ParseTableInfo()`: 提取表结构(字段定义、行数)。
+- **使用场景**: Meta 模块扫描数据库表,Manager 模块预览表数据。
+- **后续方向**: 迁入 engine-native 的 `TableProvider` 或 data type provider。
 
 **3. DocCollectionParser (文档型数据库集合解析器)**:
-- **用途**: 从 MongoDB、CouchDB 等文档数据库采样推断 Schema
-- **支持引擎**: MongoDB
+- **用途**: 从 MongoDB、CouchDB 等文档数据库采样推断 Schema。
+- **支持引擎**: MongoDB。
 - **核心方法**:
-  - `ParseTableInfo()`: 采样文档推断 Schema
-  - `ReadPreview()`: 读取预览文档
+  - `ParseTableInfo()`: 采样文档推断 Schema。
+  - `ReadPreview()`: 读取预览文档。
 - **关键特性**:
-  - 采样文档推断 Schema (默认采样 100 条)
-  - 支持混合类型字段 (FieldTypeMixed)
-  - 字段出现率统计 (OccurrenceRate,用于灵活 Schema)
-  - 返回 DocCollectionInfo 扩展信息
-- **使用场景**: Meta 模块扫描 MongoDB Collection,Manager 模块预览文档数据
+  - 采样文档推断 Schema (默认采样 100 条)。
+  - 支持混合类型字段 (FieldTypeMixed)。
+  - 字段出现率统计 (OccurrenceRate,用于灵活 Schema)。
+  - 返回 DocCollectionInfo 扩展信息。
+- **使用场景**: Meta 模块扫描 MongoDB Collection,Manager 模块预览文档数据。
 
 **4. FileMetadataExtractor (文件元数据提取器)**:
-- **用途**: 从文件内容提取媒体、文档、文本等增强元数据
-- **支持类型**: 图片 (JPEG、PNG、TIFF)、视频 (MP4、AVI)、文档 (PDF)
+- **用途**: 从文件内容提取媒体、文档、文本等增强元数据。
+- **支持类型**: 图片 (JPEG、PNG、TIFF)、视频 (MP4、AVI)、文档 (PDF)。
 - **核心方法**:
-  - `Extract()`: 提取 `ExtractedMetadata`
-- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据，并按 attributes 规范写入 `storage`、`type_info.media`、`type_info.document`、`capabilities.extraction`
+  - `Extract()`: 提取 `ExtractedMetadata`。
+- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据，并按 attributes 规范写入 `storage`、`type_info.media`、`type_info.document`、`capabilities.extraction`。
 
 ---
 
@@ -375,7 +368,6 @@ graph TB
     ExtensionInfo --> Spatial[SpatialInfo<br/>空间信息]
     ExtensionInfo --> CSV[CSVInfo<br/>CSV信息]
     ExtensionInfo --> Shapefile[ShapefileInfo<br/>Shapefile信息]
-    ExtensionInfo --> GeoJSON[GeoJSONInfo<br/>GeoJSON信息]
     ExtensionInfo --> Excel[ExcelInfo<br/>Excel信息]
     ExtensionInfo --> Image[ImageInfo<br/>图片信息]
     ExtensionInfo --> Video[VideoInfo<br/>视频信息]
@@ -395,7 +387,7 @@ graph TB
     classDef detail fill:#e8f5e9,stroke:#1b5e20
 
     class ExtensionInfo interface
-    class Spatial,CSV,Shapefile,GeoJSON,Excel,Image,Video,PDF,Doc extension
+    class Spatial,CSV,Shapefile,Excel,Image,Video,PDF,Doc extension
     class SpatialEx,CSVEx,DocEx,ImageEx detail
 ```
 
@@ -403,10 +395,9 @@ graph TB
 
 | ExtensionInfo 类型 | 适用数据源 | 主要字段 |
 |-------------------|-----------|---------|
-| **SpatialInfo** | Shapefile、GeoJSON、PostGIS 表 | 边界框、坐标系、要素数 |
+| **SpatialInfo** | Shapefile、JSON 空间扩展、PostGIS 表 | 边界框、坐标系、要素数 |
 | **CSVInfo** | CSV 文件 | 分隔符、字符编码、是否有表头 |
 | **ShapefileInfo** | Shapefile 文件 | .shp、.shx、.dbf、.prj 文件路径 |
-| **GeoJSONInfo** | GeoJSON 文件 | CRS、要素类型 |
 | **ExcelInfo** | Excel 文件 | 工作表列表、活动工作表 |
 | **ImageInfo** | 图片文件 (JPEG、PNG、TIFF) | 宽度、高度、格式、EXIF 信息 |
 | **VideoInfo** | 视频文件 (MP4、AVI) | 时长、分辨率、编码格式 |

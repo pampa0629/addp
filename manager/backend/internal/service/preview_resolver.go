@@ -510,7 +510,7 @@ func isNodePreview(req *PreviewResolverRequest, legacyReq *PreviewRequest) bool 
 
 func isFileTableFormat(formatName string) bool {
 	switch strings.ToLower(strings.TrimSpace(formatName)) {
-	case "csv", "tsv", "excel", "xlsx", "xls", "geojson", "shapefile", "parquet", "avro", "sqlite", "geopackage":
+	case "csv", "tsv", "excel", "xlsx", "xls", "json", "shapefile", "parquet", "avro", "sqlite", "geopackage":
 		return true
 	default:
 		return false

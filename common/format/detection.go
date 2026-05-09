@@ -13,7 +13,6 @@ type FormatType string
 const (
 	// 地理空间格式
 	FormatShapefile  FormatType = "shapefile"
-	FormatGeoJSON    FormatType = "geojson"
 	FormatGeoPackage FormatType = "geopackage"
 	FormatKML        FormatType = "kml"
 	FormatKMZ        FormatType = "kmz"
@@ -92,8 +91,6 @@ func extToFormat(ext string) FormatType {
 	// 地理空间
 	case ".shp":
 		return FormatShapefile
-	case ".geojson", ".json":
-		return FormatGeoJSON // 需要进一步验证是否为GeoJSON
 	case ".gpkg":
 		return FormatGeoPackage
 	case ".kml":
@@ -138,6 +135,8 @@ func extToFormat(ext string) FormatType {
 		return FormatSQLite
 
 	// 数据交换
+	case ".json", ".geojson":
+		return FormatJSON
 	case ".xml":
 		return FormatXML
 	case ".parquet":
@@ -240,7 +239,7 @@ func MIMEToFormat(mimeType string) FormatType {
 	switch mimeType {
 	// 地理空间
 	case "application/geo+json", "application/vnd.geo+json":
-		return FormatGeoJSON
+		return FormatJSON
 	case "application/geopackage+sqlite3":
 		return FormatGeoPackage
 	case "application/vnd.google-earth.kml+xml":
@@ -317,8 +316,6 @@ func MIMEToFormat(mimeType string) FormatType {
 func FormatToMIME(format FormatType) string {
 	switch format {
 	// 地理空间
-	case FormatGeoJSON:
-		return "application/geo+json"
 	case FormatGeoPackage:
 		return "application/geopackage+sqlite3"
 	case FormatKML:
@@ -400,7 +397,7 @@ func GuessContentType(filename string, peek []byte) string {
 // IsGeospatialFormat 判断是否为地理空间格式
 func IsGeospatialFormat(format FormatType) bool {
 	switch format {
-	case FormatShapefile, FormatGeoJSON, FormatGeoPackage, FormatKML, FormatKMZ:
+	case FormatShapefile, FormatGeoPackage, FormatKML, FormatKMZ:
 		return true
 	default:
 		return false

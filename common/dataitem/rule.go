@@ -17,7 +17,7 @@ func BuiltinSingleResourceRules() []FormatRule {
 	return []FormatRule{
 		singleResourceRule("csv", DataTypeTable, "table", []string{".csv"}),
 		singleResourceRule("tsv", DataTypeTable, "table", []string{".tsv"}),
-		singleResourceRule("geojson", DataTypeTable, "table", []string{".geojson", ".json"}),
+		singleResourceRule("json", DataTypeDocument, "file", []string{".json", ".geojson"}),
 		singleResourceRule("excel", DataTypeContainer, "file", []string{".xls", ".xlsx"}),
 		singleResourceRule("parquet", DataTypeTable, "lake_table", []string{".parquet"}),
 		singleResourceRule("orc", DataTypeTable, "lake_table", []string{".orc"}),

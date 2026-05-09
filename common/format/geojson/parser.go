@@ -39,15 +39,7 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	}
 }
 
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatGeoJSON}
-}
-
-// ============ FileTableParser 接口实现 ============
-
 // ParseTableInfo 从 GeoJSON 文件中提取 TableInfo
-// 实现 format.FileTableParser 接口
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
@@ -136,7 +128,6 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 }
 
 // ReadPreview 读取 GeoJSON 数据预览
-// 实现 format.FileTableParser 接口
 func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	iter, err := newIterator(input)
 	if err != nil {
@@ -703,8 +694,11 @@ func contextErr(ctx context.Context) error {
 
 func init() {
 	parser := NewParser(nil)
-	// 注册为 FileTableParser
-	_ = format.RegisterFileTableParser(parser)
+	_ = format.RegisterTableProvider(format.NewTableProvider(
+		format.FormatJSON,
+		parser.ParseTableInfo,
+		parser.ReadPreview,
+	))
 }
 
 // Iterator 为外部提供流式读取能力

@@ -37,6 +37,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/spark_sql"
 
 	// 导入格式解析器以触发自动注册
+	_ "github.com/addp/common/format/builtin"
 	_ "github.com/addp/common/format/document" // MongoDB/NoSQL collection parser
 )
 

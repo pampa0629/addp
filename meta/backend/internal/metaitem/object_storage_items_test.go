@@ -49,7 +49,8 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 	t.Parallel()
 
 	got := ObjectStorageSingleFileItemType(&DetectedItem{
-		Format:       "geojson",
+		ItemType:     "table",
+		Format:       "json",
 		Organization: dataitem.OrganizationSingle,
 	})
 	if got != "table" {
@@ -125,7 +126,7 @@ func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		Bucket:       "addp",
 		Path:         "datasets/roads.geojson",
 		NodeType:     "object",
-		FileType:     "geojson",
+		FileType:     "json",
 		SizeBytes:    128,
 		LastModified: &modifiedAt,
 	}, "datasets/roads.geojson")
@@ -137,8 +138,12 @@ func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
 	}
 	item := plan.Attributes["item"].(map[string]interface{})
-	if item["data_type"] != string(dataitem.DataTypeTable) || item["format"] != "geojson" {
+	if item["data_type"] != string(dataitem.DataTypeTable) || item["format"] != "json" {
 		t.Fatalf("item attrs = %#v", item)
+	}
+	spatial := plan.Attributes["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
+	if spatial["primary_geometry_column"] != "geometry" {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
 	}
 	storage := plan.Attributes["storage"].(map[string]interface{})
 	if storage["physical_path"] != "addp/datasets/roads.geojson" || storage["total_size"] != int64(128) {

@@ -40,7 +40,6 @@ type FormatType string
 const (
     // 地理空间格式
     FormatShapefile  FormatType = "shapefile"
-    FormatGeoJSON    FormatType = "geojson"
     FormatGeoPackage FormatType = "geopackage"
 
     // 表格格式
@@ -57,6 +56,9 @@ const (
 
     // 数据库格式
     FormatSQLite FormatType = "sqlite"
+
+    // 数据交换格式
+    FormatJSON FormatType = "json"
 
     // 未知格式
     FormatUnknown FormatType = "unknown"
@@ -111,7 +113,7 @@ func GuessContentType(filename string, peek []byte) string
 ```go
 // MIME → Format
 format := format.MIMEToFormat("application/geo+json")
-// format == format.FormatGeoJSON
+// format == format.FormatJSON
 
 // Format → MIME
 mimeType := format.FormatToMIME(format.FormatShapefile)
@@ -547,7 +549,7 @@ go test -cover ./...
 ### Q3: 如何处理格式检测的边界情况？
 
 **A**:
-- 对于 `.json` 文件，`DetectFormat` 会返回 `FormatGeoJSON`，但需要进一步验证是否为合法GeoJSON
+- 对于 `.json` 和 `.geojson` 文件，`DetectFormat` 都返回 `FormatJSON`；空间语义由上层通过 `capabilities.spatial` 表达
 - 对于无扩展名的文件，只能依赖Magic Bytes检测
 - 如果检测失败，返回 `FormatUnknown`，由调用方决定如何处理
 

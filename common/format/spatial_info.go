@@ -3,15 +3,15 @@ package format
 import "fmt"
 
 // SpatialInfo 空间数据扩展信息
-// 适用于: PostgreSQL/PostGIS表、Shapefile、GeoJSON、GeoPackage
+// 适用于: PostgreSQL/PostGIS表、Shapefile、JSON 空间扩展、GeoPackage
 type SpatialInfo struct {
-	GeometryColumn  string       // 几何字段名（如 "geom", "geometry", "shape"）
-	GeometryType    string       // 几何类型（Point, LineString, Polygon, MultiPoint, etc.）
-	SRID            int          // 空间参考系统 ID（如 4326 for WGS84, 3857 for Web Mercator）
-	BoundingBox     *[4]float64  // 边界框 [minX, minY, maxX, maxY]（WGS84 度）
-	HasSpatialIndex bool         // 是否有空间索引
-	IndexName       string       // 空间索引名称（如果有）
-	Dimension       int          // 维度（2D, 3D, 4D）
+	GeometryColumn  string      // 几何字段名（如 "geom", "geometry", "shape"）
+	GeometryType    string      // 几何类型（Point, LineString, Polygon, MultiPoint, etc.）
+	SRID            int         // 空间参考系统 ID（如 4326 for WGS84, 3857 for Web Mercator）
+	BoundingBox     *[4]float64 // 边界框 [minX, minY, maxX, maxY]（WGS84 度）
+	HasSpatialIndex bool        // 是否有空间索引
+	IndexName       string      // 空间索引名称（如果有）
+	Dimension       int         // 维度（2D, 3D, 4D）
 }
 
 func (s *SpatialInfo) ExtensionType() string {

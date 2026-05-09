@@ -23,8 +23,8 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) {
 		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], dataitem.DataTypeTable)
 	}
-	if itemAttrs["format"] != string(format.FormatGeoJSON) {
-		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatGeoJSON)
+	if itemAttrs["format"] != string(format.FormatJSON) {
+		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatJSON)
 	}
 	if attrs["data_type"] != nil || attrs["format"] != nil {
 		t.Fatalf("flat item fields should not be written: %#v", attrs)

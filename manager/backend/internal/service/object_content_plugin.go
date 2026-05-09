@@ -417,7 +417,7 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 	opts := format.DefaultParseOptions()
 	parser := geojson.NewParser(opts)
 
-	// 使用新的 FileTableParser 接口
+	// 使用格式解析器提取 table 语义
 	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, err

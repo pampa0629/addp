@@ -29,17 +29,6 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts}
 }
 
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{
-		format.FormatImage,
-		format.FormatJPEG,
-		format.FormatPNG,
-		format.FormatGIF,
-		format.FormatTIFF,
-	}
-}
-
 // inferColorModel 推断颜色模型
 func inferColorModel(cfg image.Config) string {
 	if cfg.ColorModel == nil {

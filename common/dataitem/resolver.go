@@ -26,16 +26,18 @@ func InferDataType(formatName, contentType string) DataType {
 	normalizedFormat := canonicalFormat(formatName)
 	switch format.FormatType(normalizedFormat) {
 	case format.FormatCSV, format.FormatExcel, format.FormatTSV,
-		format.FormatShapefile, format.FormatGeoJSON, format.FormatGeoPackage,
+		format.FormatShapefile, format.FormatGeoPackage,
 		format.FormatKML, format.FormatKMZ, format.FormatParquet, format.FormatAvro,
 		format.FormatSQLite, format.FormatPostgres, format.FormatMySQL,
-		format.FormatJSON, format.FormatXML:
+		format.FormatXML:
 		if normalizedFormat == string(format.FormatExcel) ||
 			normalizedFormat == string(format.FormatSQLite) ||
 			normalizedFormat == string(format.FormatGeoPackage) {
 			return DataTypeContainer
 		}
 		return DataTypeTable
+	case format.FormatJSON:
+		return DataTypeDocument
 	case format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF, format.FormatImage:
 		return DataTypeMedia
 	case format.FormatVideo:
@@ -89,7 +91,7 @@ func canonicalFormat(formatName string) string {
 	case "shp", "shx", "dbf", "prj", "cpg", "sbn", "sbx":
 		return string(format.FormatShapefile)
 	case "geojson":
-		return string(format.FormatGeoJSON)
+		return string(format.FormatJSON)
 	case "gpkg":
 		return string(format.FormatGeoPackage)
 	case "xls", "xlsx":

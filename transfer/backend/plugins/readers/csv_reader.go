@@ -93,7 +93,7 @@ func (r *CSVReader) Open(ctx context.Context, config pipeline.ConnectorConfig) e
 	// Create parser
 	r.parser = csvParser.NewParser(opts)
 
-	// Parse schema using new FileTableParser interface
+	// Parse schema using the shared CSV parser
 	tableInfo, err := r.parser.ParseTableInfo(ctx, r.file, opts)
 	if err != nil {
 		r.file.Close()
@@ -118,7 +118,7 @@ func (r *CSVReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
 		return nil, fmt.Errorf("reader not opened")
 	}
 
-	// Read a batch using new FileTableParser interface
+	// Read a batch using the shared CSV parser
 	records, err := r.parser.ReadPreview(ctx, r.file, r.rowOffset, int64(r.batchSize), r.opts)
 	if err != nil {
 		if err == io.EOF && len(records) == 0 {

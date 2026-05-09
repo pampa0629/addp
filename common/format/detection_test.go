@@ -18,10 +18,10 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatShapefile,
 		},
 		{
-			name:     "GeoJSON by extension",
+			name:     "GeoJSON extension is JSON format",
 			filename: "data.geojson",
 			peek:     nil,
-			want:     FormatGeoJSON,
+			want:     FormatJSON,
 		},
 		{
 			name:     "CSV by extension",
@@ -82,8 +82,8 @@ func TestMIMEToFormat(t *testing.T) {
 		mimeType string
 		want     FormatType
 	}{
-		{"application/geo+json", FormatGeoJSON},
-		{"application/vnd.geo+json", FormatGeoJSON},
+		{"application/geo+json", FormatJSON},
+		{"application/vnd.geo+json", FormatJSON},
 		{"text/csv", FormatCSV},
 		{"application/pdf", FormatPDF},
 		{"image/jpeg", FormatJPEG},
@@ -111,7 +111,6 @@ func TestFormatToMIME(t *testing.T) {
 		format FormatType
 		want   string
 	}{
-		{FormatGeoJSON, "application/geo+json"},
 		{FormatCSV, "text/csv"},
 		{FormatPDF, "application/pdf"},
 		{FormatJPEG, "image/jpeg"},
@@ -136,7 +135,6 @@ func TestIsGeospatialFormat(t *testing.T) {
 		want   bool
 	}{
 		{FormatShapefile, true},
-		{FormatGeoJSON, true},
 		{FormatGeoPackage, true},
 		{FormatKML, true},
 		{FormatCSV, false},
@@ -209,7 +207,7 @@ func TestIsTableFormat(t *testing.T) {
 		{FormatExcel, true},
 		{FormatTSV, true},
 		{FormatPDF, false},
-		{FormatGeoJSON, false},
+		{FormatJSON, false},
 	}
 
 	for _, tt := range tests {

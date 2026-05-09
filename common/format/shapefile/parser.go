@@ -26,13 +26,6 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts}
 }
 
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatShapefile}
-}
-
-// ============ FileTableParser 接口实现 ============
-
 // ParseTableInfo 从 Shapefile 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
@@ -348,6 +341,9 @@ func determineShapefileGeometryType(shapeType shp.ShapeType) string {
 
 func init() {
 	parser := NewParser(nil)
-	// 注册为 FileTableParser
-	_ = format.RegisterFileTableParser(parser)
+	_ = format.RegisterTableProvider(format.NewTableProvider(
+		format.FormatShapefile,
+		parser.ParseTableInfo,
+		parser.ReadPreview,
+	))
 }

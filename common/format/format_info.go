@@ -27,16 +27,6 @@ func (s *ShapefileInfo) ExtensionType() string {
 	return "shapefile"
 }
 
-// GeoJSONInfo GeoJSON 格式扩展信息
-type GeoJSONInfo struct {
-	FeatureCount int    // Feature 数量
-	CRS          string // 坐标系（如 "EPSG:4326"）
-}
-
-func (g *GeoJSONInfo) ExtensionType() string {
-	return "geojson"
-}
-
 // ExcelInfo Excel 格式扩展信息
 type ExcelInfo struct {
 	SheetName  string // 工作表名称

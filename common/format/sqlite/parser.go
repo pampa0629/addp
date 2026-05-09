@@ -22,11 +22,6 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts}
 }
 
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatSQLite}
-}
-
 // mapSQLiteTypeToFieldType 将 SQLite 类型映射到 FieldType
 func mapSQLiteTypeToFieldType(sqliteType string) format.FieldType {
 	// SQLite 类型不区分大小写
@@ -110,8 +105,7 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 }
 
 func init() {
-	// TODO: SQLite parser 需要实现 FileTableParser 接口（ParseTableInfo、ReadPreview 方法）
-	// 暂时不注册，等待实现新接口
+	// TODO: SQLite parser 需要实现 TableProvider 所需的 DescribeTable、SampleTable 能力后注册
 	// parser := NewParser(nil)
-	// _ = format.RegisterFileTableParser(parser)
+	// _ = format.RegisterTableProvider(format.NewTableProvider(format.FormatSQLite, parser.ParseTableInfo, parser.ReadPreview))
 }

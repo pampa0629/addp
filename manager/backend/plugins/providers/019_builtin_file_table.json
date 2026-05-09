@@ -1,0 +1,7 @@
+{
+  "name": "builtin:file-table",
+  "type": "builtin",
+  "builtin": "file-table",
+  "description": "对象存储文件表预览（CSV、JSON 空间扩展、Excel、Shapefile、Parquet 等）",
+  "enabled": true
+}

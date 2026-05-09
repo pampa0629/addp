@@ -5,16 +5,12 @@ import (
 	"sync"
 )
 
-// Registry 是解析器的全局注册中心
-// 支持三种类型的解析器：
-//  1. FileTableParser（文件表解析器）
-//  2. DBTableParser（数据库表解析器）
-//  3. DocCollectionParser（文档集合解析器）
+// Registry 是解析器的全局注册中心。
+// 这里只保留 engine-native 和 document collection 的历史解析入口；
+// 文件表能力统一走 TableProvider。
 type Registry struct {
 	mu sync.RWMutex
 
-	// 新接口
-	fileTableParsers     map[FormatType]FileTableParser // key: FormatType (e.g., FormatCSV, FormatShapefile)
 	dbTableParsers       map[string]DBTableParser       // key: engine type (e.g., "postgresql", "mysql")
 	docCollectionParsers map[string]DocCollectionParser // key: engine type (e.g., "mongodb", "couchdb")
 }
@@ -26,74 +22,9 @@ var (
 // NewRegistry 创建新的解析器注册中心
 func NewRegistry() *Registry {
 	return &Registry{
-		fileTableParsers:     make(map[FormatType]FileTableParser),
 		dbTableParsers:       make(map[string]DBTableParser),
 		docCollectionParsers: make(map[string]DocCollectionParser),
 	}
-}
-
-// ============ FileTableParser 注册 ============
-
-// RegisterFileTableParser 注册文件表解析器到全局注册中心
-func RegisterFileTableParser(parser FileTableParser) error {
-	return globalRegistry.RegisterFileParser(parser)
-}
-
-// RegisterFileParser 注册文件表解析器
-func (r *Registry) RegisterFileParser(parser FileTableParser) error {
-	if parser == nil {
-		return fmt.Errorf("file table parser cannot be nil")
-	}
-
-	formats := parser.SupportedFormats()
-	if len(formats) == 0 {
-		return fmt.Errorf("file table parser must support at least one format")
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, formatType := range formats {
-		r.fileTableParsers[formatType] = parser
-	}
-
-	return nil
-}
-
-// GetFileTableParser 获取指定格式的文件表解析器
-func GetFileTableParser(formatType FormatType) (FileTableParser, error) {
-	return globalRegistry.GetFileParser(formatType)
-}
-
-// GetFileParser 获取指定格式的文件表解析器
-func (r *Registry) GetFileParser(formatType FormatType) (FileTableParser, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	parser, ok := r.fileTableParsers[formatType]
-	if !ok {
-		return nil, fmt.Errorf("no file table parser registered for format: %s", formatType)
-	}
-
-	return parser, nil
-}
-
-// ListSupportedFileFormats 列出所有已注册的文件格式
-func ListSupportedFileFormats() []FormatType {
-	return globalRegistry.ListFileFormats()
-}
-
-// ListFileFormats 列出所有已注册的文件格式
-func (r *Registry) ListFileFormats() []FormatType {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	formats := make([]FormatType, 0, len(r.fileTableParsers))
-	for formatType := range r.fileTableParsers {
-		formats = append(formats, formatType)
-	}
-
-	return formats
 }
 
 // ============ DBTableParser 注册 ============

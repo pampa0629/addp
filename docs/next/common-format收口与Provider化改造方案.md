@@ -73,6 +73,29 @@
 
 ## 现有代码的收口顺序
 
+### 已落地的第一步
+
+本轮先删除 `geojson` 作为 `common/format` 顶层格式的事实口径：
+
+- `common/format.FormatGeoJSON` 不再存在。
+- `.geojson` 扩展名和 `application/geo+json` MIME 统一识别为 `FormatJSON`。
+- `common/format/capability` 中只保留 `json` 格式，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
+- Meta 对 `.geojson` 资源的落库语义调整为 `item.format=json`、`item.data_type=table`、`capabilities.spatial`。
+- 普通 `.json` 仍默认为 `item.data_type=document`。
+
+这一步只删除旧格式枚举，不否认 GeoJSON 作为一种 JSON 空间编码结构存在。后续 Manager 或 Transfer 如果需要表达“内容以 GeoJSON 编码输出”，应使用内容类型、空间编码或 preview kind 表达，而不是重新引入顶层 `format=geojson`。
+
+同时已经补上 `common/format` 的第一版 provider 基础入口：
+
+- 新增 `Provider` / `TableProvider` / `ProviderRegistry`。
+- 内置 CSV、Excel、JSON 空间扩展、Shapefile、Parquet 直接注册为 `TableProvider`。
+- Manager 文件表预览已从直接调用 `GetFileTableParser` 调整为调用 `GetTableProvider`。
+- Manager 启动显式导入 `common/format/builtin`，确保内置格式 provider 注册稳定。
+- 新增 `builtin:file-table` 预览插件声明，避免文件表 provider 只存在于代码工厂而没有插件声明。
+- `FileTableParser` 接口、`RegisterFileTableParser`、`GetFileTableParser` 等旧文件表注册 API 已删除。
+
+这不是最终接口，只是先把文件表主路径切到 provider。下一步应继续把 Shapefile 多组件读取、Parquet scope 读取和 Transfer batch 读写迁移到同一套 provider 语义。
+
 ### 第一阶段：能力声明收口
 
 先把 `common/format/capability` 作为事实源收稳：
@@ -93,6 +116,16 @@
 
 它们不能继续作为平台主抽象。  
 最终应被新的 provider 接口替代，并删除旧接口、旧注册入口和旧调用路径。
+
+当前代码已经完成第一处主路径替换：
+
+```text
+Manager FileTablePreviewProvider
+  旧：format.GetFileTableParser(format)
+  新：format.GetTableProvider(format)
+```
+
+旧文件表注册入口已经删除。各格式包内部仍保留 `ParseTableInfo` / `ReadPreview` 这类实现方法，但它们不再通过旧 registry 暴露给上层，而是由 `TableProvider` 统一注册和消费。
 
 ### 第三阶段：检测逻辑收敛
 
@@ -140,6 +173,17 @@
 
 尤其不要把 `geojson` 继续当成独立顶层格式事实。
 
+当前口径：
+
+| 输入 | 输出 |
+|---|---|
+| `.json` | `FormatJSON` |
+| `.geojson` | `FormatJSON` |
+| `application/json` | `FormatJSON` |
+| `application/geo+json` | `FormatJSON` |
+
+是否为空间数据不由 `FormatType` 判断，而由解析结果、Meta attributes 或 `SpatialProvider` 判断。
+
 ### 4. `common/format/parquet/lake_table.go`
 
 这一类代码说明 format 层已经开始背负组织方式和读取策略。
@@ -173,8 +217,10 @@ Shapefile 是典型的多组件格式，适合验证：
 
 ## 暂不做
 
-- 暂不在本轮一次性删除所有旧 parser，但最终必须删除旧 parser 主接口
-- 暂不在本轮重命名全部 format 包，但最终需要删除不符合新模型的旧目录和旧 API
+- 暂不在本轮一次性删除所有旧 parser，但最终必须删除旧 parser 主接口。
+- 暂不在本轮重命名全部 format 包，但最终需要删除不符合新模型的旧目录和旧 API。
+- 暂不把 Transfer 中的空间编码枚举 `geojson` 误删；那里表达的是几何编码格式，不是 ADDP 顶层 `FormatType`。
+- 暂不把 Manager 当前前端 preview kind 的 `geojson` 误删；它表达的是展示内容类型，后续要改成由 `data_type + capabilities.spatial` 组装。
 - 暂不在这里定义最终 Go 接口
 - 暂不直接改上层 Manager / Transfer 调用
 

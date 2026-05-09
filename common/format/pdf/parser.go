@@ -24,11 +24,6 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts}
 }
 
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatPDF}
-}
-
 // extractPDFMetadata 从 PDF Info 字典中提取元数据
 func extractPDFMetadata(content []byte) map[string]string {
 	metadata := make(map[string]string)

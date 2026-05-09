@@ -14,7 +14,7 @@ import (
 )
 
 // FileTablePreviewProvider 通用文件表预览 Provider
-// 自动支持所有实现了 FileTableParser 的文件格式（CSV、Excel、Shapefile、GeoJSON、Parquet 等）
+// 自动支持所有实现了 format.TableProvider 的文件格式（CSV、Excel、Shapefile、JSON 空间扩展、Parquet 等）
 type FileTablePreviewProvider struct{}
 
 func NewFileTablePreviewProvider() PreviewProvider {
@@ -56,10 +56,10 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
 	formatType := p.resolveFormat(req)
 
-	// 获取对应的 parser
-	parser, err := format.GetFileTableParser(formatType)
+	// 获取对应的格式 provider。provider 只负责从外部提供的内容流中提取 table 语义。
+	provider, err := format.GetTableProvider(formatType)
 	if err != nil {
-		return nil, fmt.Errorf("no parser for format %s: %w", formatType, err)
+		return nil, fmt.Errorf("no table provider for format %s: %w", formatType, err)
 	}
 
 	// 构建解析选项
@@ -67,11 +67,11 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	// Shapefile 需要特殊处理：下载所有组件文件
 	if formatType == format.FormatShapefile {
-		return p.previewShapefile(ctx, contentReader, connInfo, bucket, fullPath, parser, opts, req)
+		return p.previewShapefile(ctx, contentReader, connInfo, bucket, fullPath, provider, opts, req)
 	}
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, contentReader, connInfo, bucket, fullPath, formatType, parser, opts, req)
+	return p.previewStreamable(ctx, contentReader, connInfo, bucket, fullPath, formatType, provider, opts, req)
 }
 
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
@@ -81,7 +81,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	connInfo plugin.ConnectionInfo,
 	bucket, fullPath string,
 	formatType format.FormatType,
-	parser format.FileTableParser,
+	provider format.TableProvider,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
@@ -93,7 +93,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	defer object.Close()
 
 	// 解析 TableInfo（获取列信息和总行数）
-	tableInfo, err := parser.ParseTableInfo(ctx, object, opts)
+	tableInfo, err := provider.DescribeTable(ctx, object, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse table info: %w", err)
 	}
@@ -125,7 +125,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	defer object.Close()
 
 	// 读取分页数据
-	rows, err := parser.ReadPreview(ctx, object, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleTable(ctx, object, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
@@ -169,7 +169,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	bucket, fullPath string,
-	parser format.FileTableParser,
+	provider format.TableProvider,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
@@ -192,7 +192,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	defer shpFile.Close()
 
 	// 解析 TableInfo
-	tableInfo, err := parser.ParseTableInfo(ctx, shpFile, opts)
+	tableInfo, err := provider.DescribeTable(ctx, shpFile, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse shapefile info: %w", err)
 	}
@@ -224,7 +224,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	defer shpFile.Close()
 
 	// 读取分页数据
-	rows, err := parser.ReadPreview(ctx, shpFile, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleTable(ctx, shpFile, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read shapefile data: %w", err)
 	}
@@ -409,8 +409,8 @@ func (p *FileTablePreviewProvider) getContentType(formatType format.FormatType) 
 		return "text/tab-separated-values"
 	case format.FormatExcel:
 		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	case format.FormatGeoJSON:
-		return "application/geo+json"
+	case format.FormatJSON:
+		return "application/json"
 	case format.FormatShapefile:
 		return "application/x-esri-shapefile"
 	default:

@@ -212,6 +212,22 @@ TableProvider 的输出建议按平台语义组织，而不是按底层格式组
 这里的 `Describe`、`Sample`、`ReadBatch`、`WriteBatch` 不是最终 Go 方法名，只是能力分组。  
 如果某个 data source 只支持只读，那么它可以只实现前两类；如果只需要预览，也可以不实现 `WriteBatch`。
 
+当前代码已先落地一个更小的过渡形态：
+
+```text
+common/format.Provider
+common/format.TableProvider
+common/format.ProviderRegistry
+```
+
+第一版只覆盖：
+
+- `DescribeTable`
+- `SampleTable`
+
+它不接 engine id，不构造读取器，不返回 Manager DTO。  
+内置文件表格式已经直接注册为 `TableProvider`，用于把 Manager 文件表预览从旧 parser registry 迁到 provider registry。旧 `FileTableParser` 主接口和注册 API 已删除。后续再逐步补 `ReadBatch` / `WriteBatch`，并把 Transfer 读写也迁到 provider 组合路径。
+
 #### TableProvider 与 SpatialProvider
 
 `SpatialProvider` 不是另一个表类型，而是横切能力。

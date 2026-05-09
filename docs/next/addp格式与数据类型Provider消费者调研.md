@@ -147,6 +147,11 @@ Transfer 当前仍存在较多按格式和引擎类型分支的实现：
 
 这说明 Transfer 还没有完全切到“只消费 data type provider”的层次。
 
+这里需要区分两个含义：
+
+- ADDP 顶层 `format`：已经不再把 `geojson` 作为独立格式，`.geojson` 统一归入 `json + spatial`。
+- Transfer 空间编码：批量转换中仍可能需要 `geojson` 表达几何值或目标文件编码，这属于空间编码 / writer mode，不应重新污染顶层 `format`。
+
 Transfer 是后续 provider 体系中最关键的消费者，因为它同时依赖两种能力：
 
 1. **引擎能力**：数据在哪里、如何读取/写入字节流或原生记录。

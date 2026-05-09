@@ -111,7 +111,7 @@ graph LR
 | `orderBy` | 排序 | `orderBy=population desc` |
 | `page` | 页码（从 1 开始） | `page=1` |
 | `pageSize` | 每页大小 | `pageSize=100` |
-| `format` | 输出格式 | `format=json` / `format=csv` / `format=geojson` |
+| `format` | 输出编码 | `format=json` / `format=csv` / `format=spatial-json` |
 
 ### OGC API Features 端点
 

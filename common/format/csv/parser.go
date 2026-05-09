@@ -13,7 +13,6 @@ import (
 )
 
 // Parser 实现 CSV 格式的解析器
-// 实现 format.FileTableParser 接口
 type Parser struct {
 	options *format.ParseOptions
 }
@@ -25,13 +24,6 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	}
 	return &Parser{options: opts}
 }
-
-// SupportedFormats 返回支持的格式
-func (p *Parser) SupportedFormats() []format.FormatType {
-	return []format.FormatType{format.FormatCSV}
-}
-
-// ============ FileTableParser 接口实现 ============
 
 // ParseTableInfo 从 CSV 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
@@ -353,7 +345,9 @@ func DetectDelimiter(filename string) rune {
 
 func init() {
 	parser := NewParser(nil)
-	// 注册为 FileTableParser
-	_ = format.RegisterFileTableParser(parser)
+	_ = format.RegisterTableProvider(format.NewTableProvider(
+		format.FormatCSV,
+		parser.ParseTableInfo,
+		parser.ReadPreview,
+	))
 }
-

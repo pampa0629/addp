@@ -17,9 +17,9 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		"schema":           map[string]interface{}{"fields": []interface{}{"id"}},
 		"extensions":       map[string]interface{}{"document": map[string]interface{}{"title": "old"}},
 		"storage":          map[string]interface{}{"bucket": "addp", "path": "roads/"},
-		"item":             map[string]interface{}{"organization": "single", "data_type": "table", "format": "geojson"},
+		"item":             map[string]interface{}{"organization": "single", "data_type": "table", "format": "json"},
 		"type_info":        map[string]interface{}{"table": map[string]interface{}{"fields": []interface{}{"id"}}},
-		"format_info":      map[string]interface{}{"geojson": map[string]interface{}{"feature_count": 10}},
+		"format_info":      map[string]interface{}{"json": map[string]interface{}{"feature_count": 10}},
 		"capabilities":     map[string]interface{}{"spatial": map[string]interface{}{"primary_geometry_column": "geometry"}},
 	})
 
@@ -37,7 +37,7 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		}
 	}
 	item := normalized["item"].(map[string]interface{})
-	if item["organization"] != "single" || item["data_type"] != "table" || item["format"] != "geojson" {
+	if item["organization"] != "single" || item["data_type"] != "table" || item["format"] != "json" {
 		t.Fatalf("item section = %#v, want new item semantics", item)
 	}
 	if item["composition_type"] != nil || item["data_family"] != nil || item["entry_path"] != nil {

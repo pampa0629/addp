@@ -2,7 +2,6 @@ package format
 
 import (
 	"context"
-	"io"
 
 	"gorm.io/gorm"
 )
@@ -31,34 +30,6 @@ type DBTableParser interface {
 	// SupportedEngineTypes 返回支持的数据库引擎类型
 	// 例如: ["postgresql", "mysql", "clickhouse"]
 	SupportedEngineTypes() []string
-}
-
-// ============ 文件表解析器 ============
-
-// FileTableParser 文件表解析器
-// 从文件（CSV、Shapefile、GeoJSON等）中提取表格结构的元数据
-type FileTableParser interface {
-	// ParseTableInfo 从文件中提取 TableInfo
-	// 参数:
-	//   - ctx: 上下文
-	//   - input: 文件输入流
-	//   - options: 解析选项（可选，nil表示使用默认选项）
-	// 返回: TableInfo（包含字段定义、扩展信息等）
-	ParseTableInfo(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error)
-
-	// ReadPreview 读取文件的预览数据
-	// 参数:
-	//   - ctx: 上下文
-	//   - input: 文件输入流
-	//   - offset: 起始行（从0开始）
-	//   - limit: 最多读取行数（-1表示全部）
-	//   - options: 解析选项（可选，nil表示使用默认选项）
-	// 返回: 记录列表（每条记录是字段名到值的映射）
-	ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
-
-	// SupportedFormats 返回支持的文件格式
-	// 例如: [FormatCSV, FormatShapefile, FormatGeoJSON]
-	SupportedFormats() []FormatType
 }
 
 // ============ 文档数据库集合解析器 ============
