@@ -97,7 +97,6 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	defer obj.Close()
 
 	extractedMeta, err := parser.Extract(ctx, format.ExtractInput{
-		EngineID:     resource.ID,
 		ObjectKey:    key,
 		ContentType:  contentType,
 		Size:         size,

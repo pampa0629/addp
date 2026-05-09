@@ -12,7 +12,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	formatShapefile "github.com/addp/common/format/shapefile"
+	formatShapefile "github.com/addp/common/format/codecs/shapefile"
 )
 
 var (

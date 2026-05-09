@@ -1,6 +1,6 @@
 # ADDP 元数据 attributes 规范
 
-本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
+本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
 
 ## 目标结构
 

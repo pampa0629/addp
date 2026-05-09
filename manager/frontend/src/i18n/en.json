@@ -156,7 +156,6 @@
       "matchMetadata": "Metadata Match",
       "spatial": "Spatial",
       "dataTable": "Table",
-      "lakeTable": "Lake Table",
       "importData": "Import Data",
       "downloadPage": "Download",
       "loadingSchemaGraph": "Loading schema graph...",
@@ -411,8 +410,7 @@
       "label": "Label",
       "relationship": "Relationship",
       "file": "File",
-      "object": "Object",
-      "lake_table": "Lake Table"
+      "object": "Object"
     }
   },
   "meta": {

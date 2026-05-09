@@ -195,7 +195,6 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	input := format.ExtractInput{
-		EngineID:    engineID,
 		ObjectKey:   objectKey,
 		ContentType: contentType,
 		Reader:      objectReader,

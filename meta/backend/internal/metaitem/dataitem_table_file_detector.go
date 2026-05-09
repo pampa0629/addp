@@ -10,23 +10,23 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/parquet"
+	_ "github.com/addp/common/format/codecs/parquet"
 )
 
-// lakeTableFormats 支持的湖表文件格式
-var lakeTableFormats = map[string]bool{
+// tableFileFormats 支持的表格文件格式
+var tableFileFormats = map[string]bool{
 	".parquet": true,
 	".orc":     true,
 	".avro":    true,
 }
 
-var lakeTableAuxiliaryFileNames = map[string]bool{
+var tableFileAuxiliaryFileNames = map[string]bool{
 	"_success":         true,
 	"_metadata":        true,
 	"_common_metadata": true,
 }
 
-var lakeTableItemRules = []dataitem.FormatRule{
+var tableFileItemRules = []dataitem.FormatRule{
 	{
 		Format:       "parquet",
 		DataType:     dataitem.DataTypeTable,
@@ -52,23 +52,23 @@ var lakeTableItemRules = []dataitem.FormatRule{
 	},
 }
 
-// LakeTableDetector 湖表检测器。
-// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为湖表数据文件或常见辅助文件。
-type lakeTableItemDetector struct{}
+// TableFileDetector 表格文件检测器。
+// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为表格数据文件或常见辅助文件。
+type tableFileItemDetector struct{}
 
-func (d *lakeTableItemDetector) Priority() int {
+func (d *tableFileItemDetector) Priority() int {
 	return 80
 }
 
-func (d *lakeTableItemDetector) Rules() []dataitem.FormatRule {
-	return lakeTableItemRules
+func (d *tableFileItemDetector) Rules() []dataitem.FormatRule {
+	return tableFileItemRules
 }
 
-func (d *lakeTableItemDetector) ItemType() string {
+func (d *tableFileItemDetector) ItemType() string {
 	return "table"
 }
 
-func (d *lakeTableItemDetector) ResolveItems(
+func (d *tableFileItemDetector) ResolveItems(
 	ctx context.Context,
 	input DirectoryResolveInput,
 ) (*DetectionResult, error) {
@@ -81,7 +81,7 @@ func (d *lakeTableItemDetector) ResolveItems(
 	if !d.Detect(ctx, files, subdirs) {
 		return nil, nil
 	}
-	info, err := d.extractLakeTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs)
+	info, err := d.extractTableFileInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs)
 	if err != nil {
 		return nil, err
 	}
@@ -115,25 +115,25 @@ func (d *lakeTableItemDetector) ResolveItems(
 	}, nil
 }
 
-func (d *lakeTableItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
-	lakeFileCount := 0
+func (d *tableFileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+	tableFileCount := 0
 	auxiliaryFileCount := 0
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if !lakeTableFormats[ext] {
-			if isLakeTableAuxiliaryFile(f.Name) {
+		if !tableFileFormats[ext] {
+			if isTableFileAuxiliaryFile(f.Name) {
 				auxiliaryFileCount++
 				continue
 			}
 			return false
 		}
-		lakeFileCount++
+		tableFileCount++
 	}
-	if lakeFileCount == 0 {
+	if tableFileCount == 0 {
 		return false
 	}
 	if len(subdirs) == 0 {
-		return lakeFileCount == 1 || auxiliaryFileCount > 0 || hasPartLikeLakeFiles(files)
+		return tableFileCount == 1 || auxiliaryFileCount > 0 || hasPartLikeTableFiles(files)
 	}
 	return hasPartitionLikeSubdir(subdirs)
 }
@@ -151,39 +151,39 @@ func hasPartitionLikeSubdir(subdirs []plugin.DirEntry) bool {
 	return false
 }
 
-func hasPartLikeLakeFiles(files []plugin.FileEntry) bool {
-	lakeFileCount := 0
+func hasPartLikeTableFiles(files []plugin.FileEntry) bool {
+	tableFileCount := 0
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Name))
-		if !lakeTableFormats[ext] {
+		if !tableFileFormats[ext] {
 			continue
 		}
-		lakeFileCount++
+		tableFileCount++
 		name := strings.ToLower(strings.TrimSpace(filepath.Base(file.Name)))
 		if !(strings.HasPrefix(name, "part-") || strings.HasPrefix(name, "part_")) {
 			return false
 		}
 	}
-	return lakeFileCount > 1
+	return tableFileCount > 1
 }
 
-func lakeTableFiles(files []plugin.FileEntry) []plugin.FileEntry {
+func tableFiles(files []plugin.FileEntry) []plugin.FileEntry {
 	filtered := make([]plugin.FileEntry, 0, len(files))
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if lakeTableFormats[ext] {
+		if tableFileFormats[ext] {
 			filtered = append(filtered, f)
 		}
 	}
 	return filtered
 }
 
-func isLakeTableAuxiliaryFile(name string) bool {
+func isTableFileAuxiliaryFile(name string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
 	if normalized == "" {
 		return false
 	}
-	if lakeTableAuxiliaryFileNames[normalized] {
+	if tableFileAuxiliaryFileNames[normalized] {
 		return true
 	}
 	if strings.HasPrefix(normalized, ".") && strings.Contains(normalized, ".crc") {
@@ -192,10 +192,10 @@ func isLakeTableAuxiliaryFile(name string) bool {
 	return strings.HasSuffix(normalized, ".crc")
 }
 
-func directLakeTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEntry {
+func directTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEntry {
 	trimmedDir := strings.Trim(dirPath, "/")
 	filtered := make([]plugin.FileEntry, 0, len(files))
-	for _, f := range lakeTableFiles(files) {
+	for _, f := range tableFiles(files) {
 		parent := strings.Trim(filepath.ToSlash(filepath.Dir(strings.Trim(f.Path, "/"))), "/")
 		if parent == "." {
 			parent = ""
@@ -208,7 +208,7 @@ func directLakeTableFiles(files []plugin.FileEntry, dirPath string) []plugin.Fil
 }
 
 func firstReadableParquetFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
-	candidates := directLakeTableFiles(files, dirPath)
+	candidates := directTableFiles(files, dirPath)
 	for i := range candidates {
 		ext := strings.ToLower(filepath.Ext(candidates[i].Name))
 		if ext == ".parquet" {
@@ -224,39 +224,39 @@ func firstReadableParquetFile(files []plugin.FileEntry, dirPath string) *plugin.
 	return nil
 }
 
-func lakeTableEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+func tableFileEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
 	if len(subdirs) > 0 {
 		return dirPath
 	}
-	if directFiles := directLakeTableFiles(files, dirPath); len(directFiles) > 1 {
+	if directFiles := directTableFiles(files, dirPath); len(directFiles) > 1 {
 		return dirPath
 	} else if len(directFiles) == 1 {
 		return directFiles[0].Path
 	}
-	if lakeFiles := lakeTableFiles(files); len(lakeFiles) == 1 {
-		return lakeFiles[0].Path
+	if tableDataFiles := tableFiles(files); len(tableDataFiles) == 1 {
+		return tableDataFiles[0].Path
 	}
 	return dirPath
 }
 
-func lakeTableOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.Organization {
+func tableFileOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.Organization {
 	if len(subdirs) > 0 {
 		return dataitem.OrganizationWhole
 	}
-	if len(directLakeTableFiles(files, dirPath)) > 1 || len(lakeTableFiles(files)) > 1 {
+	if len(directTableFiles(files, dirPath)) > 1 || len(tableFiles(files)) > 1 {
 		return dataitem.OrganizationWhole
 	}
 	return dataitem.OrganizationSingle
 }
 
-func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
-	filtered := lakeTableFiles(files)
+func validateTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
+	filtered := tableFiles(files)
 	if len(filtered) == 0 {
-		return nil, fmt.Errorf("no lake table files in directory: %s", dirPath)
+		return nil, fmt.Errorf("no table file files in directory: %s", dirPath)
 	}
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if lakeTableFormats[ext] || isLakeTableAuxiliaryFile(f.Name) {
+		if tableFileFormats[ext] || isTableFileAuxiliaryFile(f.Name) {
 			continue
 		}
 		return nil, fmt.Errorf("directory contains files outside supported scope table formats: %s", dirPath)
@@ -264,7 +264,7 @@ func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.
 	return filtered, nil
 }
 
-func lakeTableSize(files []plugin.FileEntry) int64 {
+func tableFileSize(files []plugin.FileEntry) int64 {
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
@@ -272,7 +272,7 @@ func lakeTableSize(files []plugin.FileEntry) int64 {
 	return totalSize
 }
 
-func lakeTableFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
@@ -285,7 +285,7 @@ func lakeTableFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	return fieldsData
 }
 
-func lakeTableAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -308,28 +308,28 @@ func lakeTableAttributes(formatName string, mode string, fieldsData []map[string
 	return attrs
 }
 
-func lakeTableMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
-	if lakeTableOrganization(files, subdirs, dirPath) == dataitem.OrganizationWhole {
+func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+	if tableFileOrganization(files, subdirs, dirPath) == dataitem.OrganizationWhole {
 		return "whole"
 	}
 	return "single"
 }
 
-func lakeTableInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *CompositeItemInfo {
-	totalSize := lakeTableSize(files)
+func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *CompositeItemInfo {
+	totalSize := tableFileSize(files)
 	formatName := detectFormat(files)
 	return &CompositeItemInfo{
-		Organization:   lakeTableOrganization(files, subdirs, dirPath),
+		Organization:   tableFileOrganization(files, subdirs, dirPath),
 		DataType:       dataitem.DataTypeTable,
 		Format:         formatName,
-		EntryPath:      lakeTableEntryPath(files, subdirs, dirPath),
+		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
 	}
 }
 
-func (d *lakeTableItemDetector) extractLakeTableInfo(
+func (d *tableFileItemDetector) extractTableFileInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -338,20 +338,20 @@ func (d *lakeTableItemDetector) extractLakeTableInfo(
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
 ) (*CompositeItemInfo, error) {
-	files, err := validateLakeTableFiles(files, dirPath)
+	files, err := validateTableFiles(files, dirPath)
 	if err != nil {
 		return nil, err
 	}
 
 	firstParquet := firstReadableParquetFile(files, dirPath)
 	if firstParquet == nil {
-		return lakeTableInfoWithoutSchema(files, subdirs, dirPath), nil
+		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 	if contentReader == nil {
-		return lakeTableInfoWithoutSchema(files, subdirs, dirPath), nil
+		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, lakeTableParquetFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileParquetCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
 	}
@@ -362,23 +362,23 @@ func (d *lakeTableItemDetector) extractLakeTableInfo(
 		return nil, fmt.Errorf("failed to parse parquet schema from %s: %w", firstParquet.Path, err)
 	}
 
-	totalSize := lakeTableSize(files)
+	totalSize := tableFileSize(files)
 	formatName := detectFormat(files)
-	fieldsData := lakeTableFieldAttributes(tableInfo.Fields)
+	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
 	return &CompositeItemInfo{
 		Fields:         tableInfo.Fields,
-		Organization:   lakeTableOrganization(files, subdirs, dirPath),
+		Organization:   tableFileOrganization(files, subdirs, dirPath),
 		DataType:       dataitem.DataTypeTable,
 		Format:         formatName,
-		EntryPath:      lakeTableEntryPath(files, subdirs, dirPath),
+		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     lakeTableAttributes(formatName, lakeTableMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
 	}, nil
 }
 
-// ExtractItemInfo 提取湖表元信息（读取第一个 Parquet 文件获取 Schema）
-func (d *lakeTableItemDetector) ExtractItemInfo(
+// ExtractItemInfo 提取表格文件元信息（读取第一个 Parquet 文件获取 Schema）
+func (d *tableFileItemDetector) ExtractItemInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -386,10 +386,10 @@ func (d *lakeTableItemDetector) ExtractItemInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 ) (*CompositeItemInfo, error) {
-	return d.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
+	return d.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
 }
 
-func extractLakeTableWholeScopeInfo(
+func extractTableFileWholeScopeInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -398,16 +398,16 @@ func extractLakeTableWholeScopeInfo(
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
 ) (*CompositeItemInfo, error) {
-	detector := &lakeTableItemDetector{}
+	detector := &tableFileItemDetector{}
 	if !detector.Detect(ctx, files, subdirs) {
-		return nil, fmt.Errorf("directory is not a lake table dataset: %s", dirPath)
+		return nil, fmt.Errorf("directory is not a table file dataset: %s", dirPath)
 	}
-	return detector.extractLakeTableInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
+	return detector.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
-// ExtractLakeTableSingleFileInfo 提取单个湖表文件的元信息（模式 B：文件即表）
+// ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）
 // 目前只有 .parquet 支持 Schema 解析，.orc/.avro 返回基础信息
-func ExtractLakeTableSingleFileInfo(
+func ExtractTableFileSingleFileInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -427,11 +427,11 @@ func ExtractLakeTableSingleFileInfo(
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     lakeTableAttributes(format, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+			Attributes:     tableFileAttributes(format, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 		}, nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, lakeTableParquetFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileParquetCatalogPath(engineID, filePath), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet file %s: %w", filePath, err)
 	}
@@ -447,7 +447,7 @@ func ExtractLakeTableSingleFileInfo(
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     lakeTableAttributes("parquet", "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+			Attributes:     tableFileAttributes("parquet", "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 		}, nil
 	}
 
@@ -469,26 +469,8 @@ func ExtractLakeTableSingleFileInfo(
 		EntryPath:      filePath,
 		ComponentFiles: []string{filePath},
 		SizeBytes:      &fileSize,
-		Attributes:     lakeTableAttributes("parquet", "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+		Attributes:     tableFileAttributes("parquet", "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
 	}, nil
-}
-
-// buildBasicInfo 构建基础信息（无 Schema）
-func buildBasicInfo(files []plugin.FileEntry, dirPath string) *CompositeItemInfo {
-	var totalSize int64
-	for _, f := range files {
-		totalSize += f.Size
-	}
-	format := detectFormat(files)
-	return &CompositeItemInfo{
-		Organization:   dataitem.OrganizationWhole,
-		DataType:       dataitem.DataTypeTable,
-		Format:         format,
-		EntryPath:      dirPath,
-		ComponentFiles: filePaths(files),
-		SizeBytes:      &totalSize,
-		Attributes:     lakeTableAttributes(format, "whole", nil, files, dirPath, totalSize),
-	}
 }
 
 // detectFormat 根据文件列表检测主要格式
@@ -533,7 +515,7 @@ func filePaths(files []plugin.FileEntry) []string {
 	return paths
 }
 
-func lakeTableParquetFileCatalogPath(engineID uint, path string) plugin.CatalogPath {
+func tableFileParquetCatalogPath(engineID uint, path string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,

@@ -119,7 +119,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 100
 	}
-	offset := req.Page * pageSize
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
 
 	// 重新获取对象流（用于读取数据）
 	object, err = resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
@@ -148,11 +152,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 
 	return &models.TablePreview{
-		Mode:            PreviewModeObject,
+		Mode:            PreviewModeTable,
 		Columns:         columns,
 		Rows:            rows,
 		Total:           int(totalCount),
-		Page:            req.Page,
+		Page:            page,
 		PageSize:        pageSize,
 		GeometryColumns: geometryColumns,
 		SRID:            srid,
@@ -199,7 +203,11 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 100
 	}
-	offset := req.Page * pageSize
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
 
 	// 读取分页数据
 	rows, err := provider.SampleTableComponents(ctx, components, int64(offset), int64(pageSize), opts)
@@ -216,11 +224,11 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	}
 
 	return &models.TablePreview{
-		Mode:            PreviewModeObject,
+		Mode:            PreviewModeTable,
 		Columns:         columns,
 		Rows:            rows,
 		Total:           int(totalCount),
-		Page:            req.Page,
+		Page:            page,
 		PageSize:        pageSize,
 		GeometryColumns: geometryColumns,
 		SRID:            srid,

@@ -31,7 +31,7 @@ type ScanService struct {
 	dbScanService        *DatabaseScanService      // 数据库扫描服务
 	nosqlScanService     *NoSQLScanService         // NoSQL 数据库扫描服务
 	objectScanService    *ObjectStorageScanService // 对象存储扫描服务
-	fsScanService        *FileSystemScanService    // 文件系统扫描服务（湖表检测）
+	fsScanService        *FileSystemScanService    // 文件系统扫描服务
 	metadataQueryService *MetadataQueryService     // 元数据查询服务（独立）
 	engineService        *EngineService
 	config               *config.Config
@@ -85,7 +85,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 ObjectStorageScanService（使用独立服务，无循环依赖）
 	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
 
-	// 创建 FileSystemScanService（湖表检测）
+	// 创建 FileSystemScanService
 	s.fsScanService = NewFileSystemScanService(db, log, repo, indexerService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
@@ -819,7 +819,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 	return totalDatabases, totalCollections, totalFields, nil
 }
 
-// scanFileSystemResourceWithReporter 扫描文件系统资源（湖表检测 + 对象存储回退）
+// scanFileSystemResourceWithReporter 扫描文件系统资源。
 func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, reporter)
 	if err != nil {

@@ -1,4 +1,4 @@
-# ADDP 资源读取抽象与 Format Provider 调用链草案
+# ADDP 资源读取抽象与 Format Provider 调用链方案
 
 更新时间：2026-05-09
 

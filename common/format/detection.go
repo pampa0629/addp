@@ -195,15 +195,15 @@ func getMagicBytes(format FormatType) []byte {
 // detectByMagic 通过Magic Bytes检测格式
 func detectByMagic(peek []byte) FormatType {
 	magicMap := map[string]FormatType{
-		"%PDF":             FormatPDF,
-		"SQLite format 3":  FormatSQLite,
-		"\xFF\xD8\xFF":     FormatJPEG,
-		"\x89PNG":          FormatPNG,
-		"GIF89a":           FormatGIF,
-		"GIF87a":           FormatGIF,
-		"PK\x03\x04":       FormatUnknown, // ZIP格式，可能是DOCX/XLSX/GPKG等
-		"0000":             FormatShapefile,
-		"9994":             FormatShapefile,
+		"%PDF":            FormatPDF,
+		"SQLite format 3": FormatSQLite,
+		"\xFF\xD8\xFF":    FormatJPEG,
+		"\x89PNG":         FormatPNG,
+		"GIF89a":          FormatGIF,
+		"GIF87a":          FormatGIF,
+		"PK\x03\x04":      FormatUnknown, // ZIP格式，可能是DOCX/XLSX/GPKG等
+		"0000":            FormatShapefile,
+		"9994":            FormatShapefile,
 	}
 
 	for magic, format := range magicMap {

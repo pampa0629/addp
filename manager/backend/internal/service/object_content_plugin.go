@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/excel"
-	"github.com/addp/common/format/sqlite"
+	"github.com/addp/common/format/codecs/excel"
+	"github.com/addp/common/format/codecs/sqlite"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	_ "github.com/mattn/go-sqlite3"

@@ -8,7 +8,7 @@
 
 ## 一、背景与目标
 
-湖仓一体化第一、二阶段完成后，ADDP 平台已能识别和管理 MinIO/S3 上的 Parquet 湖表（lake_table），并在 Develop 模块的 SQL 工作台中支持 DuckDB 联邦查询。
+湖仓一体化第一、二阶段完成后，ADDP 平台已能识别和管理 MinIO/S3 上的 Parquet 表格资源（table），并在 Develop 模块的 SQL 工作台中支持 DuckDB 联邦查询。
 
 本设计的目标是：**将湖表查询能力融入 Service 模块现有的查询服务发布框架**，让用户能够像发布关系型表服务一样，将湖表发布为对外可访问的标准化数据服务（REST API）。
 
@@ -178,7 +178,7 @@ DuckDB 是嵌入式库（CGO），不是独立运行的引擎服务，**不注�
 
 各模式的处理方式：
 
-**`table` 模式（lake_table）**：无需感知 DuckDB 引擎。`engine_id` 指向 MinIO/S3 引擎，`engine_type = 'minio'/'s3'` 自动触发 DuckDB 执行路径，与 System 无关。
+**`table` 模式（湖表）**：无需感知 DuckDB 引擎。`engine_id` 指向 MinIO/S3 引擎，`engine_type = 'minio'/'s3'` 自动触发 DuckDB 执行路径，与 System 无关。
 
 **`sql` 模式（DuckDB SQL，第二阶段）**：
 - 引擎选择器末尾追加 DuckDB 虚拟条目（不来自 System，与 Develop 模块保持一致）
@@ -195,7 +195,7 @@ DuckDB 是嵌入式库（CGO），不是独立运行的引擎服务，**不注�
 ```
 用户操作：
 1. 选择 MinIO/S3 存储引擎
-2. 浏览湖表列表（前端调 Meta API，过滤 item_type='lake_table'）
+2. 浏览表格列表（前端调 Meta API，过滤 item_type='table' 且 `item.format` 为 parquet/orc/avro）
 3. 选择目标湖表
 4. 填写服务名称、访问控制等基本信息
 5. 提交
@@ -229,7 +229,7 @@ DuckDB 是嵌入式库（CGO），不是独立运行的引擎服务，**不注�
 
 ### 第一阶段：湖表查询服务（table 模式）
 
-**目标**：用户能将 MinIO/S3 上的 lake_table 发布为 REST Query 服务。
+**目标**：用户能将 MinIO/S3 上的表格资源发布为 REST Query 服务。
 
 **后端**：
 1. `common/duckdb/` — 从 Develop 模块提取 DuckDB 核心逻辑
@@ -237,7 +237,7 @@ DuckDB 是嵌入式库（CGO），不是独立运行的引擎服务，**不注�
 3. `service/backend/internal/service/query_service_service.go` — 创建服务时从 Meta 读取湖表信息，写入 data_config
 
 **前端**：
-- 表选择器支持 MinIO/S3 引擎，展示 lake_table 列表（调 Meta API）
+- 表选择器支持 MinIO/S3 引擎，展示表格列表（调 Meta API）
 - 其余 UI 与关系型表发布流程完全一致
 
 **输出格式**：JSON、CSV（第一阶段）

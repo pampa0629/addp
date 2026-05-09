@@ -24,8 +24,8 @@
 
 - Meta 从 root 递归扫描目录和文件。
 - 目录写入 `meta_node`，普通文件写入 `meta_item`。
-- Parquet 文件或目录可识别为 `lake_table`。
-- Manager 使用 locator `type=file` 或 `type=lake_table` 预览。
+- Parquet 文件或目录可识别为 `table` 语义。
+- Manager 使用 locator `type=file` 或 `type=table` 预览。
 
 ## 后续事项
 

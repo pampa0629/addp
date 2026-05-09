@@ -1,6 +1,6 @@
 # ADDP 数据格式扩展指南
 
-本文是 ADDP 数据类型、组织方式、文件格式和横切能力扩展的 next 阶段入口规范。概念边界以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
+本文是 ADDP 数据类型、组织方式、文件格式和横切能力扩展的入口规范。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
 
 ## 术语统一
 
@@ -29,15 +29,15 @@ spec 层统一采用以下术语，不保留旧术语兼容写入：
 | 文档 | 内容 |
 |---|---|
 | [ADDP 数据项 detector 规范](addp数据项detector规范.md) | `ResolveItems`、组织方式、claims、exclusive、`FormatRule` |
-| [ADDP 格式与数据类型总体模型](addp格式与数据类型总体模型.md) | engine、format、data type、attributes、provider 的整体概念分层 |
-| [ADDP Format Capability 与 Data Type Provider 接口草案](addp格式Capability与DataTypeProvider接口草案.md) | format capability、format layout 描述、data type provider、Transfer 组合模型的接口草案 |
+| [ADDP 格式与数据类型总体模型](../concepts/addp格式与数据类型总体模型.md) | engine、format、data type、attributes、provider 的整体概念分层 |
+| [ADDP Format Capability 与 Data Type Provider 接口规范](addp格式Capability与DataTypeProvider接口规范.md) | format capability、format layout 描述、data type provider、Transfer 组合模型的接口规范 |
 | [ADDP 文件格式能力接口规范](addp文件格式能力接口规范.md) | 文件格式实现哪些接口才具备识别、解析、预览、提取、写出、转换等平台能力 |
-| [ADDP 资源读取抽象与 Format Provider 调用链草案](addp资源读取抽象与FormatProvider调用链草案.md) | format provider 读取实际数据时的 ResourceReader / ComponentReader 边界和调用链 |
+| [ADDP 资源读取抽象与 Format Provider 调用链方案](../plan/addp资源读取抽象与FormatProvider调用链方案.md) | format provider 读取实际数据时的 ResourceReader / ComponentReader 边界和调用链 |
 | [ADDP 资源读取抽象规范](addp资源读取抽象规范.md) | 平台级 ResourceRef / ResourceReader / ComponentReader / NativeCursor 的最小边界 |
-| [ADDP 格式与数据类型 Provider 消费者调研](addp格式与数据类型Provider消费者调研.md) | 从 Meta、Manager、Transfer 等真实消费点反推 format capability 与 data type provider 设计 |
+| [ADDP 格式与数据类型 Provider 消费者调研](../plan/addp格式与数据类型Provider消费者调研.md) | 从 Meta、Manager、Transfer 等真实消费点反推 format capability 与 data type provider 设计 |
 | [ADDP 元数据 attributes 规范](addp元数据attributes规范.md) | `attributes.storage/item/type_info/format_info/capabilities` 分区、唯一事实源、扩展命名空间 |
 | [ADDP 内置数据格式规范](addp内置数据格式规范.md) | CSV/TSV、Excel、JSON 空间结构、Shapefile、Parquet/ORC/Avro、SQLite/GeoPackage、图片、PDF 的落地规则 |
-| [ADDP 数据类型与文件格式待规范事项](addp数据类型与文件格式待规范事项.md) | 尚未定稿、需要讨论后才能开发的事项 |
+| [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md) | 尚未定稿、需要讨论后才能开发的事项 |
 
 ## 基本原则
 
@@ -113,7 +113,7 @@ Meta 内部维护 data item detector registry 和扫描 resolver。新增或修�
 
 ### transfer
 
-`transfer` 应消费标准化后的 meta item 和 attributes，不重复判断组织方式，不重复推断字段类型。Transfer 后续事项单独记录在 [Transfer 数据类型与文件格式后续事项](transfer数据类型与文件格式后续事项.md)。
+`transfer` 应消费标准化后的 meta item 和 attributes，不重复判断组织方式，不重复推断字段类型。Transfer 后续事项单独记录在 [Transfer 数据类型与文件格式后续事项](../next/transfer数据类型与文件格式后续事项.md)。
 
 ## 新增格式步骤
 

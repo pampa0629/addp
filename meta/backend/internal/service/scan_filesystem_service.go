@@ -8,7 +8,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/parquet"
+	commonParquet "github.com/addp/common/format/codecs/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -20,7 +20,7 @@ import (
 )
 
 // FileSystemScanService 文件系统扫描服务
-// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别湖表等复合数据项
+// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别复合数据项。
 type FileSystemScanService struct {
 	db      *gorm.DB
 	log     *slog.Logger
@@ -43,7 +43,7 @@ func NewFileSystemScanService(
 	}
 }
 
-// ScanPaths 扫描文件系统路径，识别湖表等复合数据项
+// ScanPaths 扫描文件系统路径，识别复合数据项。
 func (s *FileSystemScanService) ScanPaths(
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -233,7 +233,7 @@ func (s *FileSystemScanService) scanDirectory(
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
 			} else {
 				totalItems++
-				if detected.DataType == dataitem.DataTypeTable && commonParquet.IsLakeTableFileType(detected.Format) && len(fields) > 0 {
+				if detected.DataType == dataitem.DataTypeTable && commonParquet.IsTableFileType(detected.Format) && len(fields) > 0 {
 					s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(fields))
 				}
 			}
@@ -316,8 +316,8 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && commonParquet.IsLakeTableFileType(detected.Format) {
-		info, err := metaitem.ExtractLakeTableSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
+	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && commonParquet.IsTableFileType(detected.Format) {
+		info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil

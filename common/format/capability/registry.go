@@ -19,12 +19,12 @@ const (
 )
 
 const (
-	DataTypeTable    = "table"
-	DataTypeDocument = "document"
-	DataTypeMedia    = "media"
+	DataTypeTable     = "table"
+	DataTypeDocument  = "document"
+	DataTypeMedia     = "media"
 	DataTypeContainer = "container"
-	DataTypeGraph    = "graph"
-	DataTypeFile     = "file"
+	DataTypeGraph     = "graph"
+	DataTypeFile      = "file"
 )
 
 const (
@@ -51,7 +51,7 @@ const (
 
 // Capability 声明一个格式在 ADDP 中可被哪些平台能力消费。
 //
-// 它不是文件探测规则，也不等同于 parser 注册表；parser 只说明代码里是否有解析器，
+// 它不是文件探测规则，也不等同于 Provider 注册表；Provider 只说明代码里是否有实现，
 // Capability 则用于能力声明、Transfer、Preview 等模块统一理解格式的产品语义。
 type Capability struct {
 	Format         Format

@@ -11,7 +11,7 @@ import (
 
 var metaItemDetectors = []CompositeItemDetector{
 	&shapefileItemDetector{},
-	&lakeTableItemDetector{},
+	&tableFileItemDetector{},
 }
 
 func init() {

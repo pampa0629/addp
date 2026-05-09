@@ -10,12 +10,12 @@ const (
 )
 
 const (
-	FormatDataTypeTable    = formatcap.DataTypeTable
-	FormatDataTypeDocument = formatcap.DataTypeDocument
-	FormatDataTypeMedia    = formatcap.DataTypeMedia
+	FormatDataTypeTable     = formatcap.DataTypeTable
+	FormatDataTypeDocument  = formatcap.DataTypeDocument
+	FormatDataTypeMedia     = formatcap.DataTypeMedia
 	FormatDataTypeContainer = formatcap.DataTypeContainer
-	FormatDataTypeGraph    = formatcap.DataTypeGraph
-	FormatDataTypeFile     = formatcap.DataTypeFile
+	FormatDataTypeGraph     = formatcap.DataTypeGraph
+	FormatDataTypeFile      = formatcap.DataTypeFile
 )
 
 const (

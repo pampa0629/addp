@@ -79,7 +79,7 @@
 
 - `common/format.FormatGeoJSON` 不再存在。
 - `.geojson` 扩展名和 `application/geo+json` MIME 统一识别为 `FormatJSON`。
-- 旧 `common/format/geojson` 包已删除，JSON 表格 provider 统一放到 `common/format/json`。
+- 旧 `common/format/geojson` 包已删除，JSON 表格 provider 统一放到 `common/format/codecs/json`。
 - `common/format/capability` 中只保留 `json` 格式，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
 - Meta 对 `.geojson` 资源的落库语义调整为 `item.format=json`、`item.data_type=table`、`capabilities.spatial`。
 - 普通 `.json` 仍默认为 `item.data_type=document`。
@@ -118,7 +118,7 @@ engine CatalogProvider + ContentReadableProvider
   -> Manager preview DTO
 ```
 
-`common/format/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `ResourceReader` 提供。
+`common/format/codecs/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `ResourceReader` 提供。
 
 Meta 的 lake table schema 提取也已经改为通过 `format.GetTableProvider(format.FormatParquet)` 调用 Parquet provider，不再直接 new Parquet parser。
 
@@ -141,7 +141,7 @@ Manager provider 选择也已经改为看标准 attributes：
 - `item.data_type=table` 且 `item.organization=whole` 时，走 `builtin:scope-table`。
 - `item.data_type=table` 且 `item.organization=single` / 文件表格式时，走 `builtin:file-table`。
 
-新扫描结果不再产出 `item_type=lake_table`，湖表只是 `item_type=table + item.format=parquet/orc/avro + item.organization=single/whole` 的组合语义。
+新扫描结果不再产出 `item_type=lake_table`。Parquet / ORC / Avro 这类表格文件或目录型表格 scope 只是 `item_type=table + item.format=parquet/orc/avro + item.organization=single/whole` 的组合语义。
 
 ### 第一阶段：能力声明收口
 
@@ -229,13 +229,28 @@ parser registry 已删除。当前保留两类事实源：
 
 是否为空间数据不由 `FormatType` 判断，而由解析结果、Meta attributes 或 `SpatialProvider` 判断。
 
-### 3. `common/format/parquet/lake_table.go`
+### 3. `common/format/codecs/*`
 
-这一类代码说明 format 层曾经开始背负组织方式和读取策略。
+具体内置格式实现统一放入 `common/format/codecs/*`：
 
-当前已经先删除 Parquet 直接调用 engine provider 的预览 helper，并新增 `ScopeTableProvider` 处理 scope 表读取。后续如果继续保留 `lake_table.go`，它只能作为轻量格式扩展名工具；不应再长出 engine、preview 或 item 归并逻辑。
+- `codecs/csv`
+- `codecs/excel`
+- `codecs/json`
+- `codecs/parquet`
+- `codecs/shapefile`
+- `codecs/image`
+- `codecs/pdf`
+- `codecs/sqlite`
 
-### 4. `common/format/shapefile/*`
+`codecs` 表达“格式编解码 / 解析实现”，避免 `common/format/formats` 的重复命名，也为未来第三方 format plugin 预留清晰边界。
+
+### 4. `common/format/codecs/parquet/table_file.go`
+
+这一类代码只保留 Parquet / ORC / Avro 等表格文件格式的轻量判断。
+
+当前已经先删除 Parquet 直接调用 engine provider 的预览 helper，并新增 `ScopeTableProvider` 处理 scope 表读取。原 `lake_table.go` 已改名为 `table_file.go`，避免在 `common/format` 里继续传播 lake table 概念。这里不能长出 engine、preview 或 item 归并逻辑。
+
+### 5. `common/format/codecs/shapefile/*`
 
 Shapefile 是典型的多组件格式，适合验证：
 

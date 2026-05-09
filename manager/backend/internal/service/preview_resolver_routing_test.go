@@ -152,7 +152,7 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	}
 }
 
-func TestConvertToLegacyRequestUsesScopePathForWholeLakeTable(t *testing.T) {
+func TestConvertToLegacyRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 	req := &PreviewResolverRequest{
 		Locator: &resource.ResourceLocator{
 			Path: []string{"bucket", "dataset"},
@@ -171,7 +171,7 @@ func TestConvertToLegacyRequestUsesScopePathForWholeLakeTable(t *testing.T) {
 
 	physicalPath, scopePath := previewResourcePaths(req.Metadata.Attributes)
 	if physicalPath != "" {
-		t.Fatalf("physicalPath = %q, want empty for whole lake table", physicalPath)
+		t.Fatalf("physicalPath = %q, want empty for whole scope table", physicalPath)
 	}
 	if scopePath != "bucket/dataset" {
 		t.Fatalf("scopePath = %q, want bucket/dataset", scopePath)

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	commonShapefile "github.com/addp/common/format/shapefile"
+	commonShapefile "github.com/addp/common/format/codecs/shapefile"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 	"github.com/jonas-p/go-shp"

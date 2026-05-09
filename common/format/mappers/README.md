@@ -1,57 +1,59 @@
-# Format Type Mappers
+# common/format/mappers
 
-此目录包含 `format` 系统的类型映射器实现。
+本目录存放 format 类型映射器。类型映射器只负责在数据源原生字段类型和 `format.FieldType` 之间转换，不负责连接数据库、执行 SQL、读取文件或推断 item。
 
-## 目录说明
+## 已有映射器
 
-每个子目录实现了特定数据源的类型映射逻辑，将原生数据类型映射到 `format.FieldType` 通用类型系统。
+| 目录 | 映射器名称 | 说明 |
+| --- | --- | --- |
+| `mysql/` | `mysql` | MySQL 原生类型映射 |
+| `postgresql/` | `postgresql` | PostgreSQL 原生类型映射 |
+| `spatialite/` | `spatialite` | SQLite / SpatiaLite 原生类型映射 |
 
-- **mysql/** - MySQL 类型映射器
-- **postgresql/** - PostgreSQL 类型映射器
-
-## 类型映射器职责
-
-类型映射器实现 `format.TypeMapper` 接口，提供：
-
-1. **ToCommon()** - 将数据源原生类型转换为通用类型（如 `varchar` → `FieldTypeString`）
-2. **FromCommon()** - 将通用类型转换回数据源原生类型（如 `FieldTypeString` → `TEXT`）
-
-## 使用场景
-
-这些类型映射器主要用于：
-
-- **元数据管理** - Meta 模块扫描数据库 schema 时推断字段类型
-- **Schema 推断** - Manager 模块分析数据源结构
-- **数据转换** - Transfer 模块在不同数据源间转换数据时映射类型
-
-## 与数据库插件系统的区别
-
-⚠️ **重要**：`format` 类型映射器与 `common/database/plugin` 插件系统是**两套独立的系统**：
-
-| 特性 | format 类型映射器 | database plugin 系统 |
-|------|-------------------|----------------------|
-| **位置** | `common/format/mappers/` | `common/database/plugins/` |
-| **目的** | Schema 推断、类型转换 | 数据库连接管理、查询执行 |
-| **类型系统** | `format.FieldType` (17种类型，包含空间类型) | `plugin.StandardType` (7种基础类型) |
-| **注册方式** | `format.RegisterTypeMapper()` | `plugin.Register()` |
-| **使用场景** | 元数据管理、文件格式处理 | 连接池、SQL 查询 |
-
-## 自动注册
-
-所有类型映射器通过 `common/format/builtin/init.go` 自动注册：
+## 接口
 
 ```go
-import _ "github.com/addp/common/format/builtin"  // 自动注册所有内置映射器
+type TypeMapper interface {
+    Name() string
+    ToCommon(nativeType string) FieldType
+    FromCommon(commonType FieldType) (nativeType string, size int, precision int)
+}
 ```
 
-## 添加新的类型映射器
+职责说明：
 
-1. 在此目录下创建新的子目录（如 `clickhouse/`）
-2. 实现 `format.TypeMapper` 接口
-3. 在 `init()` 函数中调用 `format.RegisterTypeMapper()`
-4. 在 `common/format/builtin/init.go` 中添加 blank import
+- `Name()`：返回注册名称，例如 `postgresql`、`mysql`、`spatialite`。
+- `ToCommon()`：把原生类型转换为 ADDP 通用字段类型。
+- `FromCommon()`：把 ADDP 通用字段类型转换为目标原生类型，并返回长度/精度提示。
 
-## 参考文档
+## 使用方式
 
-- [common/format/README.md](../README.md) - Format 系统总体介绍
-- [docs/数据库插件系统.md](../../../docs/数据库插件系统.md) - 数据库插件系统架构
+内置映射器通过 `common/format/builtin` 统一注册：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+
+mapper := format.GetTypeMapper("postgresql")
+fieldType := mapper.ToCommon("varchar(255)")
+```
+
+也可以在确实需要精确控制依赖时只 blank import 单个 mapper 包。
+
+## 与 engine plugin 的边界
+
+`TypeMapper` 和 `common/engine/plugin` 是不同层次：
+
+| 层次 | 职责 |
+| --- | --- |
+| `common/format/mappers` | 字段类型转换 |
+| `common/engine/plugin` | engine capability、连接、目录、内容读写和原生查询 |
+
+新增映射器不应引入 engine 连接参数，也不应直接依赖具体 engine provider。需要连接、鉴权、列举、读取或写入时，应由上层通过 engine/resource 能力完成。
+
+## 新增映射器
+
+1. 在本目录下创建子目录，例如 `clickhouse/`。
+2. 实现 `format.TypeMapper`。
+3. 在包内 `init()` 中调用 `format.RegisterTypeMapper()`。
+4. 如需默认注册，在 `common/format/builtin/init.go` 添加 blank import。
+5. 增加类型映射测试，覆盖常见原生类型、空间类型和未知类型。

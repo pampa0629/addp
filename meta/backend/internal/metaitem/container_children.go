@@ -11,9 +11,9 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/excel"
+	"github.com/addp/common/format/codecs/excel"
+	commonSQLite "github.com/addp/common/format/codecs/sqlite"
 	spatialiteMapper "github.com/addp/common/format/mappers/spatialite"
-	commonSQLite "github.com/addp/common/format/sqlite"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"

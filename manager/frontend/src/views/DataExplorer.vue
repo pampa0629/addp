@@ -77,7 +77,7 @@ const treeRef = ref(null)
 // 控制搜索显示（可选功能，暂时隐藏）
 const showSearch = ref(false)
 
-const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object', 'lake_table'])
+const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
 
 // 计算属性：兼容旧版 PreviewPanel 的 selectedNode 格式

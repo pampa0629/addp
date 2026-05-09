@@ -1,8 +1,8 @@
-# ADDP Format Capability 与 Data Type Provider 接口草案
+# ADDP Format Capability 与 Data Type Provider 接口规范
 
 更新时间：2026-05-09
 
-本文只讨论概念边界，不定义最终 Go 代码。
+本文定义 format capability 与 data type provider 的概念边界和接口方向。具体 Go 接口应在落地时遵守本文边界，并以代码评审确认最终形态。
 
 ## 结论
 
@@ -239,7 +239,7 @@ common/format.ProviderRegistry
 
 当前 Manager lake table 预览、Manager object content 的 GeoJSON / Parquet 内容预览，以及 Meta lake table schema 提取都已经走 `TableProvider` / `ScopeTableProvider`，不再直接依赖具体 parser 或 engine 绑定 helper。
 
-代码口径上，JSON 表格 provider 位于 `common/format/json`。它支持 GeoJSON FeatureCollection 这类 JSON 空间表结构，但注册的顶层格式仍然是 `FormatJSON`。
+代码口径上，JSON 表格 provider 位于 `common/format/codecs/json`。它支持 GeoJSON FeatureCollection 这类 JSON 空间表结构，但注册的顶层格式仍然是 `FormatJSON`。
 
 #### TableProvider 与 SpatialProvider
 

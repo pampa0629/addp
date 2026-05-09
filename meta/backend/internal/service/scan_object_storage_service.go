@@ -9,7 +9,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/parquet"
+	commonParquet "github.com/addp/common/format/codecs/parquet"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
@@ -540,7 +540,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		// 文件表属性（itemType 和 itemName 已在上方确定）
 		if itemPlan.DataItem != nil &&
 			itemPlan.DataItem.DataType == dataitem.DataTypeTable &&
-			commonParquet.IsLakeTableFileType(itemPlan.DataItem.Format) {
+			commonParquet.IsTableFileType(itemPlan.DataItem.Format) {
 			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
 			physicalPath := meta.Bucket + "/" + meta.Path
 			metaattr.SetStorage(enhancedAttrs, "physical_path", physicalPath)

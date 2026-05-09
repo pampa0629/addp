@@ -181,7 +181,7 @@ func shouldFallbackToEWKB(err error) bool {
 	}
 
 	return false
-} 
+}
 
 func geomToShape(geometry geom.T) (shp.Shape, error) {
 	switch g := geometry.(type) {

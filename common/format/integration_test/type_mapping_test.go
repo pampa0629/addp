@@ -89,6 +89,42 @@ func TestMySQLTypeMapperToCommon(t *testing.T) {
 	}
 }
 
+func TestSpatiaLiteTypeMapperToCommon(t *testing.T) {
+	mapper := format.GetTypeMapper("spatialite")
+	if mapper == nil {
+		t.Fatal("spatialite type mapper is not registered")
+	}
+
+	tests := []struct {
+		sqliteType string
+		want       format.FieldType
+	}{
+		{"text", format.FieldTypeString},
+		{"varchar(255)", format.FieldTypeString},
+		{"integer", format.FieldTypeInt},
+		{"bigint", format.FieldTypeInt},
+		{"real", format.FieldTypeDouble},
+		{"boolean", format.FieldTypeBool},
+		{"datetime", format.FieldTypeTimestamp},
+		{"blob", format.FieldTypeBytes},
+		{"geometry", format.FieldTypeGeometry},
+		{"point", format.FieldTypePoint},
+		{"linestring", format.FieldTypeLineString},
+		{"polygon", format.FieldTypePolygon},
+		{"multipoint", format.FieldTypeMultiPoint},
+		{"custom_type", format.FieldTypeString},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.sqliteType, func(t *testing.T) {
+			got := mapper.ToCommon(tt.sqliteType)
+			if got != tt.want {
+				t.Errorf("SpatiaLiteToCommon(%q) = %v, want %v", tt.sqliteType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestShapefileTypeMapperDBFToCommon(t *testing.T) {
 	mapper := format.GetTypeMapper("shapefile")
 	if mapper == nil {

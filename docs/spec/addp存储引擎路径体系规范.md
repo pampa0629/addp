@@ -57,7 +57,7 @@ full_name 以 bucket 开头，包含完整的层级路径：
 | bucket 节点 | `addp` |
 | prefix 节点 | `addp/image` |
 | object 数据项 | `addp/image/photo.jpg` |
-| lake_table | `addp/data/orders` |
+| table | `addp/data/orders` |
 
 ### 文件系统（NFS）
 
@@ -70,7 +70,7 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 | dir 节点（嵌套） | `gis-data/shp` | 多级目录 |
 | file 数据项 | `gis-data/sample.csv` | 目录内的文件 |
 | file 数据项（根目录） | `README.md` | 挂载根下的文件 |
-| lake_table | `gis-data/orders` | 目录识别为湖表 |
+| table | `gis-data/orders` | 目录识别为表格资源 |
 
 **NFS 物理路径转换公式**：`物理路径 = "/" + full_name`
 
@@ -241,7 +241,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 2. 创建 root `meta_node`，`full_name = ""`
 3. 递归扫描 `/` 下的所有目录和文件
 4. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`
-5. 文件识别为 lake_table 或 file，创建 `meta_item`，`full_name = 文件相对路径`
+5. 文件识别为 table 或 file，创建 `meta_item`，`full_name = 文件相对路径`
 
 ### 关系型数据库扫描流程
 

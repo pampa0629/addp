@@ -96,7 +96,7 @@ watch(() => props.selectedNode?.locator, () => {
   itemPage.value = 1
 })
 
-const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object', 'lake_table'])
+const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object'])
 
 const nodeChildren = computed(() => (props.children || []).filter(n => !itemTypes.has(n.type)))
 const itemChildren = computed(() => (props.children || []).filter(n => itemTypes.has(n.type)))

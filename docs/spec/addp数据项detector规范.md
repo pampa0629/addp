@@ -1,6 +1,6 @@
 # ADDP 数据项 detector 规范
 
-本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md) 为准。
+本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
 
 ## 核心结论
 

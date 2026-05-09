@@ -26,7 +26,7 @@ Meta 目前已经在做两类工作：
 1. **item 归并与识别**
    - `meta/backend/internal/metaitem/dataitem_resolver.go`
    - `meta/backend/internal/metaitem/dataitem_shapefile_detector.go`
-   - `meta/backend/internal/metaitem/dataitem_lake_table_detector.go`
+   - `meta/backend/internal/metaitem/dataitem_table_file_detector.go`
    - `meta/backend/internal/metaitem/single_resource.go`
 
    这部分决定：
@@ -42,7 +42,7 @@ Meta 目前已经在做两类工作：
 2. **格式信息 / 元数据 / item capability 结果提取**
    - `meta/backend/internal/extractor/metadata_extractor.go`
    - `meta/backend/internal/metaitem/dataitem_shapefile_detector.go`
-   - `meta/backend/internal/metaitem/dataitem_lake_table_detector.go`
+   - `meta/backend/internal/metaitem/dataitem_table_file_detector.go`
 
    这里会把结果归到：
 
@@ -116,10 +116,10 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 | 当前路径 | 长期来源形态 | 长期入口 |
 |---|---|---|
 | 文件表预览 | single / multi 文件表 | `TableProvider.Sample` 经 `ResourceReader` / `ComponentReader` |
-| 湖表预览 | scope 表 | `TableProvider.Sample` 经 `ResourceReader` + scope list |
+| 目录型表格预览 | scope 表 | `TableProvider.Sample` 经 `ResourceReader` + scope list |
 | 数据库表预览 | engine-native 表 | `TableProvider.Sample` 经 `NativeCursor` |
 
-湖表不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.organization=single/whole` 区分单文件表和目录型表。
+Parquet/ORC/Avro 这类表格文件或目录型表格 scope 不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.organization=single/whole` 区分单文件表和目录型表。
 
 因此 Manager 后端至少需要以下 provider 形态：
 

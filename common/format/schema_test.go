@@ -177,4 +177,3 @@ func TestSchemaIsGeospatial(t *testing.T) {
 		})
 	}
 }
-

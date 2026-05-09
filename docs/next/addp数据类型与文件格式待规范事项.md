@@ -4,11 +4,11 @@
 
 本文只记录“数据类型、文件格式、组织方式、横切能力、attributes 治理”中尚未形成正式规范、需要先讨论确认的事项。已确认或正在整理的 next 阶段文档包括：
 
-- [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md)
-- [ADDP 数据格式扩展指南](addp数据格式扩展指南.md)
-- [ADDP 数据项 detector 规范](addp数据项detector规范.md)
-- [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)
-- [ADDP 内置数据格式规范](addp内置数据格式规范.md)
+- [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)
+- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
+- [ADDP 数据项 detector 规范](../spec/addp数据项detector规范.md)
+- [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
+- [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md)
 - [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)
 
 当前阶段不保留旧 attributes、旧枚举和旧平铺字段兼容。旧数据可删除后重新 meta 扫描；与新规范矛盾的数据和代码应尽早暴露并修正。
@@ -81,7 +81,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 
 ## 五、第三方插件扩展声明机制
 
-该事项先单独形成构想文档：[第三方插件扩展声明构想](addp第三方插件扩展声明构想.md)。
+该事项先单独形成构想文档：[第三方插件扩展声明构想](../plan/addp第三方插件扩展声明构想.md)。
 
 待讨论重点：
 
@@ -93,7 +93,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 
 ## 六、Manager 内容预览插件能力描述
 
-该事项先单独形成构想文档：[Manager 内容预览插件能力构想](addpManager内容预览插件能力构想.md)。
+该事项先单独形成构想文档：[Manager 内容预览插件能力构想](../plan/addpManager内容预览插件能力构想.md)。
 
 待讨论重点：
 
@@ -125,7 +125,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 
 ## 九、Registry 与能力发现层收口
 
-该事项先单独形成构想文档：[Registry 与能力发现层构想](addpRegistry与能力发现层构想.md)。
+该事项先单独形成构想文档：[Registry 与能力发现层构想](../plan/addpRegistry与能力发现层构想.md)。
 
 待讨论重点：
 

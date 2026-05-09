@@ -156,7 +156,6 @@
       "matchMetadata": "元数据匹配",
       "spatial": "空间",
       "dataTable": "数据表",
-      "lakeTable": "湖表",
       "importData": "导入数据",
       "downloadPage": "下载",
       "loadingSchemaGraph": "正在加载 Schema 图...",
@@ -411,8 +410,7 @@
       "label": "Label",
       "relationship": "Relationship",
       "file": "File",
-      "object": "Object",
-      "lake_table": "Lake Table"
+      "object": "Object"
     }
   },
   "meta": {

@@ -31,9 +31,9 @@
 | ClickHouse | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
 | MongoDB | Catalog/MetadataSampling/DocumentRuntime | `database` | `collection` |
 | Neo4j | Catalog/Metadata/GraphRuntime | `database` | `label` / `relationship` |
-| MinIO | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `lake_table` |
-| S3 | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `lake_table` |
-| NFS | Catalog/Metadata/ContentReadable | `root`（透明）/ `dir` | `file` / `lake_table` |
+| MinIO | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `table` |
+| S3 | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `table` |
+| NFS | Catalog/Metadata/ContentReadable | `root`（透明）/ `dir` | `file` / `table` |
 
 代码与规范已对齐（NoSQL 接口分拆 + Neo4j node type 修订均已完成）。
 
@@ -141,7 +141,7 @@
 | `relationship` | 图关系属性表格（采样关系的属性键值） | **新增** GraphRelationshipPreviewProvider |
 | `file` | 文件内容预览（文本/图片/空间数据等） | FileSystemPreviewProvider |
 | `object` | 对象内容预览（同上） | ObjectStoragePreviewProvider |
-| `lake_table` | Parquet/ORC 表格预览 | LakeTablePreviewProvider |
+| `table` | Parquet/ORC 表格预览 | ScopeTablePreviewProvider |
 
 ---
 
@@ -174,7 +174,7 @@ i18n 字典（前端 `locales/zh-CN.json` 等）统一维护 `engine.term.*` 命
       "relationship": "Relationship",
       "file": "File",
       "object": "Object",
-      "lake_table": "Lake Table"
+      "table": "Table"
     }
   }
 }

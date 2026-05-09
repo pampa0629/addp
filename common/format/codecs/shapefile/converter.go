@@ -195,4 +195,3 @@ func signedArea(coords []geom.Coord) float64 {
 	}
 	return area / 2
 }
- 

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/format/shapefile"
+	"github.com/addp/common/format/codecs/shapefile"
 	"github.com/addp/common/logger"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
@@ -96,7 +96,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	prjText, _ := downloadSiblingText(fullPath, ".prj", siblingProvider)
 	cpgText, _ := downloadSiblingText(fullPath, ".cpg", siblingProvider)
 
-	// 使用 common/format/shapefile 的 Reader
+	// 使用 common/format/codecs/shapefile 的 Reader
 	reader, err := shapefile.Open(shpPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("打开 shapefile 失败: %w", err)
@@ -131,7 +131,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 
 	for _, feature := range allFeatures {
-		// 使用 common/format/shapefile 的 ShapeToGeoJSON 转换几何为 GeoJSON
+		// 使用 common/format/codecs/shapefile 的 ShapeToGeoJSON 转换几何为 GeoJSON
 		geometry, err := shapefile.ShapeToGeoJSON(feature.Geometry)
 		if err != nil {
 			logger.L().Warn("Shapefile 预览: 几何转换失败", "path", req.Path+req.Name, "error", err)
