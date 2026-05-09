@@ -369,8 +369,8 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 // calculateItemDepth 动态计算 Item 的深度
 // 根据 ItemType 和 FullName 计算节点在树中的深度
 func calculateItemDepth(itemType, fullName string) int {
-	// 对象存储类型（object/lake_table）：根据路径中的斜杠数量计算
-	if itemType == "object" || itemType == "lake_table" {
+	// 对象存储类型（object）：根据路径中的斜杠数量计算
+	if itemType == "object" {
 		segments := strings.Split(strings.Trim(fullName, "/"), "/")
 		return len(segments)
 	}
@@ -417,9 +417,9 @@ func parsePathForEngine(engineType string, fullName string, nodeType string) []s
 		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
-	case "bucket", "prefix", "directory", "object", "root", "dir", "file", "lake_table":
-		// MinIO/S3: bucket/prefix/object/lake_table 使用斜杠分隔
-		// 文件系统: root/dir/file/lake_table 使用斜杠分隔
+	case "bucket", "prefix", "directory", "object", "root", "dir", "file":
+		// MinIO/S3: bucket/prefix/object 使用斜杠分隔
+		// 文件系统: root/dir/file 使用斜杠分隔
 		// 注意：文件系统 full_name 可能以 "/" 开头，需去掉首尾斜杠，避免产生空路径段
 		return splitSlashPath(fullName)
 	default:
@@ -461,7 +461,6 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"relationship": TypeRelationship,
 		"object":       TypeObject,
 		"file":         TypeFile,
-		"lake_table":   TypeLakeTable,
 	}
 	if t, ok := mapping[metaNodeType]; ok {
 		return t
@@ -555,7 +554,6 @@ func getIconByType(nodeType string) string {
 		"relationship": "DocumentText",
 		"object":       "Document",
 		"file":         "Document",
-		"lake_table":   "Table",
 	}
 	if icon, ok := icons[nodeType]; ok {
 		return icon

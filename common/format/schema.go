@@ -139,65 +139,6 @@ func (s *Schema) Validate() error {
 	return nil
 }
 
-// TypeMapping 类型转换器（已弃用：请使用 TypeMapper 接口和注册表机制）
-// 保留此类型仅用于向后兼容，新代码应使用 format.GetTypeMapper("postgresql") 等
-type TypeMapping struct{}
-
-// PostgreSQLToCommon 将PostgreSQL类型转换为通用类型
-// 已弃用：使用 format.GetTypeMapper("postgresql").ToCommon(pgType)
-func (m *TypeMapping) PostgreSQLToCommon(pgType string) FieldType {
-	mapper := GetTypeMapper("postgresql")
-	if mapper == nil {
-		return FieldTypeUnknown
-	}
-	return mapper.ToCommon(pgType)
-}
-
-// MySQLToCommon 将MySQL类型转换为通用类型
-// 已弃用：使用 format.GetTypeMapper("mysql").ToCommon(mysqlType)
-func (m *TypeMapping) MySQLToCommon(mysqlType string) FieldType {
-	mapper := GetTypeMapper("mysql")
-	if mapper == nil {
-		return FieldTypeUnknown
-	}
-	return mapper.ToCommon(mysqlType)
-}
-
-// ShapefileDBFToCommon 将Shapefile DBF类型转换为通用类型
-// 已弃用：使用 format.GetTypeMapper("shapefile").ToCommon(string(dbfType))
-func (m *TypeMapping) ShapefileDBFToCommon(dbfType byte) FieldType {
-	mapper := GetTypeMapper("shapefile")
-	if mapper == nil {
-		return FieldTypeUnknown
-	}
-	return mapper.ToCommon(string(dbfType))
-}
-
-// CommonToPostgreSQL 将通用类型转换为PostgreSQL类型
-// 已弃用：使用 format.GetTypeMapper("postgresql").FromCommon(commonType)
-func (m *TypeMapping) CommonToPostgreSQL(commonType FieldType) string {
-	mapper := GetTypeMapper("postgresql")
-	if mapper == nil {
-		return "TEXT"
-	}
-	nativeType, _, _ := mapper.FromCommon(commonType)
-	return nativeType
-}
-
-// CommonToShapefileDBF 将通用类型转换为Shapefile DBF类型
-// 已弃用：使用 format.GetTypeMapper("shapefile").FromCommon(commonType)
-func (m *TypeMapping) CommonToShapefileDBF(commonType FieldType) (dbfType byte, size uint8, precision uint8) {
-	mapper := GetTypeMapper("shapefile")
-	if mapper == nil {
-		return 'C', 254, 0
-	}
-	typeStr, sizeInt, precisionInt := mapper.FromCommon(commonType)
-	if len(typeStr) > 0 {
-		return typeStr[0], uint8(sizeInt), uint8(precisionInt)
-	}
-	return 'C', 254, 0
-}
-
 // IsNumeric 判断字段类型是否为数值类型
 func IsNumeric(fieldType FieldType) bool {
 	switch fieldType {

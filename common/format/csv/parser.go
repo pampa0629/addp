@@ -219,12 +219,6 @@ func (p *Parser) inferColumnType(rows [][]string, colIndex int) format.FieldType
 			continue
 		}
 
-		// 检查布尔值
-		if p.isBool(value) {
-			boolCount++
-			continue
-		}
-
 		// 检查整数
 		if _, err := strconv.ParseInt(value, 10, 64); err == nil {
 			intCount++
@@ -234,6 +228,12 @@ func (p *Parser) inferColumnType(rows [][]string, colIndex int) format.FieldType
 		// 检查浮点数
 		if _, err := strconv.ParseFloat(value, 64); err == nil {
 			floatCount++
+			continue
+		}
+
+		// 检查布尔值。数值型 1/0 已在前面归为整数。
+		if p.isBool(value) {
+			boolCount++
 			continue
 		}
 
@@ -271,12 +271,6 @@ func (p *Parser) convertValue(s string) interface{} {
 		return nil
 	}
 
-	// 尝试布尔值
-	if p.isBool(s) {
-		lower := strings.ToLower(s)
-		return lower == "true" || lower == "yes" || s == "1" || lower == "t" || lower == "y"
-	}
-
 	// 尝试整数
 	if v, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return v
@@ -285,6 +279,12 @@ func (p *Parser) convertValue(s string) interface{} {
 	// 尝试浮点数
 	if v, err := strconv.ParseFloat(s, 64); err == nil {
 		return v
+	}
+
+	// 尝试布尔值。数值型 1/0 已在前面归为数值。
+	if p.isBool(s) {
+		lower := strings.ToLower(s)
+		return lower == "true" || lower == "yes" || lower == "t" || lower == "y"
 	}
 
 	return s

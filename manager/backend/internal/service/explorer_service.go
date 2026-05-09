@@ -709,7 +709,7 @@ func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONM
 func calculateItemDepthByEngineType(engineType, itemType, fullName string, attributes commonModels.JSONMap) int {
 	// 对象存储类型（object）：根据路径中的斜杠数量计算
 	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
-	if itemType == "object" || itemType == "lake_table" || isPathSemanticMetaItem(itemType, fullName, attributes, engineType) {
+	if itemType == "object" || isPathSemanticMetaItem(itemType, fullName, attributes, engineType) {
 		segments := strings.Split(strings.Trim(fullName, "/"), "/")
 		return len(segments)
 	}

@@ -17,7 +17,6 @@ const (
 	TypeRelationship ResourceType = "relationship" // 图数据库关系类型
 	TypeObject       ResourceType = "object"       // 对象存储文件
 	TypeFile         ResourceType = "file"         // 文件系统文件（NFS/本地FS）
-	TypeLakeTable    ResourceType = "lake_table"   // 湖表（Parquet/ORC/Avro）
 	TypeDirectory    ResourceType = "directory"
 	TypeDatabase     ResourceType = "database"
 	TypeSchema       ResourceType = "schema"

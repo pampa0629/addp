@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"sync"
+
+	"github.com/addp/common/resource"
 )
 
 // Provider 是格式层能力实现的基础接口。
@@ -24,17 +26,29 @@ type TableProvider interface {
 	SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
-type tableParserProvider struct {
+type ComponentTableProvider interface {
+	TableProvider
+	DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *ParseOptions) (*TableInfo, error)
+	SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+
+type ScopeTableProvider interface {
+	TableProvider
+	DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *ParseOptions) (*TableInfo, error)
+	SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+
+type tableProviderAdapter struct {
 	formatType FormatType
 	describe   func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error)
 	sample     func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error)
 }
 
-func (p tableParserProvider) Format() FormatType {
+func (p tableProviderAdapter) Format() FormatType {
 	return p.formatType
 }
 
-func (p tableParserProvider) Capabilities() FormatCapability {
+func (p tableProviderAdapter) Capabilities() FormatCapability {
 	capability, ok := GetFormatCapability(p.formatType)
 	if ok {
 		return capability
@@ -49,11 +63,11 @@ func (p tableParserProvider) Capabilities() FormatCapability {
 	}
 }
 
-func (p tableParserProvider) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error) {
+func (p tableProviderAdapter) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
-func (p tableParserProvider) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error) {
+func (p tableProviderAdapter) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error) {
 	return p.sample(ctx, input, offset, limit, options)
 }
 
@@ -127,7 +141,17 @@ func NewTableProvider(
 	describe func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error),
 	sample func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error),
 ) TableProvider {
-	return tableParserProvider{
+	if describe == nil {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
+			return nil, fmt.Errorf("table provider %s does not implement DescribeTable", formatType)
+		}
+	}
+	if sample == nil {
+		sample = func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
+			return nil, fmt.Errorf("table provider %s does not implement SampleTable", formatType)
+		}
+	}
+	return tableProviderAdapter{
 		formatType: formatType,
 		describe:   describe,
 		sample:     sample,

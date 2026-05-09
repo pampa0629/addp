@@ -117,9 +117,9 @@ graph TB
 
 ---
 
-## Provider / Parser 体系架构
+## Provider / Extractor 体系架构
 
-ADDP 当前将文件表能力收口到 `TableProvider`。`TableProvider` 是上层消费文件表语义的主入口；数据库表和文档集合仍保留历史 parser 入口，后续也会继续向 data type provider 收口。文件元数据增强仍由 `FileMetadataExtractor` 负责。
+ADDP 当前将格式侧表格能力收口到 `TableProvider`。`TableProvider` 是上层消费文件表、组件表、scope 表语义的主入口；数据库表和文档集合属于 engine-native 数据，由 engine capability 或后续 data type provider 提供平台语义。文件元数据增强仍由 `FileMetadataExtractor` 负责。
 
 ```mermaid
 classDiagram
@@ -129,15 +129,16 @@ classDiagram
         +SampleTable(input, offset, limit) Rows
     }
 
-    class DBTableParser {
+    class ComponentTableProvider {
         <<interface>>
-        +ParseTableInfo(pool, schema, table) TableInfo
+        +DescribeTableComponents(components) TableInfo
+        +SampleTableComponents(components, offset, limit) Rows
     }
 
-    class DocCollectionParser {
+    class ScopeTableProvider {
         <<interface>>
-        +ParseTableInfo(client, db, collection) TableInfo
-        +ReadPreview(client, db, collection, limit) PreviewData
+        +DescribeTableScope(reader, scope) TableInfo
+        +SampleTableScope(reader, scope, offset, limit) Rows
     }
 
     class FileMetadataExtractor {
@@ -151,7 +152,7 @@ classDiagram
     }
 
     class ShapefileProvider {
-        实现: TableProvider
+        实现: ComponentTableProvider
         支持: Shapefile 多组件文件
     }
 
@@ -166,24 +167,8 @@ classDiagram
     }
 
     class ParquetProvider {
-        实现: TableProvider
-        支持: Parquet 文件
-    }
-
-    class PostgreSQLParser {
-        实现: DBTableParser
-        支持: PostgreSQL 表
-    }
-
-    class MySQLParser {
-        实现: DBTableParser
-        支持: MySQL 表
-    }
-
-    class MongoDBParser {
-        实现: DocCollectionParser
-        支持: MongoDB Collection
-        特性: 采样推断 Schema
+        实现: ScopeTableProvider
+        支持: Parquet 单文件和目录表
     }
 
     class ImageExtractor {
@@ -197,21 +182,18 @@ classDiagram
     }
 
     TableProvider <|.. CSVProvider
-    TableProvider <|.. ShapefileProvider
     TableProvider <|.. JSONSpatialProvider
     TableProvider <|.. ExcelProvider
-    TableProvider <|.. ParquetProvider
-
-    DBTableParser <|.. PostgreSQLParser
-    DBTableParser <|.. MySQLParser
-
-    DocCollectionParser <|.. MongoDBParser
+    TableProvider <|.. ComponentTableProvider
+    TableProvider <|.. ScopeTableProvider
+    ComponentTableProvider <|.. ShapefileProvider
+    ScopeTableProvider <|.. ParquetProvider
 
     FileMetadataExtractor <|.. ImageExtractor
     FileMetadataExtractor <|.. PDFExtractor
 ```
 
-### Provider / Parser 类型说明
+### Provider / Extractor 类型说明
 
 **1. TableProvider (表数据类型 Provider)**:
 - **用途**: 从外部提供的资源流或组件读取抽象中提取表格语义。
@@ -222,26 +204,15 @@ classDiagram
 - **使用场景**: Manager 文件表预览，以及后续 Meta / Transfer 对文件表能力的统一消费。
 - **边界**: 不接 engine id，不构造读取器，不决定 item 归并，不返回 Manager 专用 DTO。
 
-**2. DBTableParser (关系型数据库表解析器)**:
-- **用途**: 从关系型数据库表提取元数据。
-- **支持引擎**: PostgreSQL、MySQL、ClickHouse、Doris。
-- **核心方法**:
-  - `ParseTableInfo()`: 提取表结构(字段定义、行数)。
-- **使用场景**: Meta 模块扫描数据库表,Manager 模块预览表数据。
-- **后续方向**: 迁入 engine-native 的 `TableProvider` 或 data type provider。
+**2. ComponentTableProvider (多组件表 Provider)**:
+- **用途**: 从一组已确认组件中提取表格语义。
+- **典型格式**: Shapefile。
+- **边界**: 组件集合由 Meta 或上层编排提供，format provider 只负责组件解码。
 
-**3. DocCollectionParser (文档型数据库集合解析器)**:
-- **用途**: 从 MongoDB、CouchDB 等文档数据库采样推断 Schema。
-- **支持引擎**: MongoDB。
-- **核心方法**:
-  - `ParseTableInfo()`: 采样文档推断 Schema。
-  - `ReadPreview()`: 读取预览文档。
-- **关键特性**:
-  - 采样文档推断 Schema (默认采样 100 条)。
-  - 支持混合类型字段 (FieldTypeMixed)。
-  - 字段出现率统计 (OccurrenceRate,用于灵活 Schema)。
-  - 返回 DocCollectionInfo 扩展信息。
-- **使用场景**: Meta 模块扫描 MongoDB Collection,Manager 模块预览文档数据。
+**3. ScopeTableProvider (范围表 Provider)**:
+- **用途**: 从目录、prefix 或 manifest scope 中提取表格语义。
+- **典型格式**: Parquet 目录表。
+- **边界**: 范围列举和内容打开由 `common/resource.ResourceReader` 提供。
 
 **4. FileMetadataExtractor (文件元数据提取器)**:
 - **用途**: 从文件内容提取媒体、文档、文本等增强元数据。

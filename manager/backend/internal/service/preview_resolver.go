@@ -54,8 +54,9 @@ type PreviewResolverRequest struct {
 	Metadata     *commonModels.MetaNode    // 可选：Meta 节点数据
 	Pagination   *Pagination               // 分页参数
 	TenantID     *uint                     // 租户 ID
-	ItemType     string                    // 数据项类型（如 "lake_table"），来自 MetaItem
+	ItemType     string                    // 数据项类型（如 "table"），来自 MetaItem
 	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath    string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
 }
 
 // Pagination 分页参数
@@ -267,7 +268,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 	// 设置元数据（如果有）
 	if metaNode != nil {
 		req.Metadata = metaNode
-		// 从 MetaNode 的 NodeType 推断 ItemType（如 lake_table）
+		// 从 MetaNode 的 NodeType 推断 ItemType
 		if metaNode.NodeType != "" && metaNode.NodeType != "directory" && metaNode.NodeType != "bucket" && metaNode.NodeType != "dir" && metaNode.NodeType != "root" {
 			req.ItemType = metaNode.NodeType
 		}
@@ -287,22 +288,31 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			Attributes:     metaItem.Attributes,
 		}
 		req.ItemType = metaItem.ItemType
-		// 提取 physical_path（仅 single 湖表）
-		// 目录型湖表的 physical_path 是目录路径，不能当文件读
-		if physPath := stringAttribute(metaItem.Attributes, "physical_path"); physPath != "" {
-			if stringAttribute(metaItem.Attributes, "organization") == "single" {
-				req.PhysicalPath = physPath
-			}
-		}
+		req.PhysicalPath, req.ScopePath = previewResourcePaths(metaItem.Attributes)
 	}
 
 	// 5. 执行预览
 	return r.Preview(ctx, req)
 }
 
+func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, scopePath string) {
+	physPath := stringAttribute(attrs, "physical_path")
+	if physPath == "" {
+		return "", ""
+	}
+	switch stringAttribute(attrs, "organization") {
+	case "single":
+		return physPath, ""
+	case "whole":
+		return "", physPath
+	default:
+		return "", ""
+	}
+}
+
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "label", "relationship", "object", "file", "lake_table":
+	case "table", "view", "materialized_view", "collection", "label", "relationship", "object", "file":
 		return true
 	default:
 		return false
@@ -351,7 +361,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		// 1) 目录节点: path=[rootName,...subPath] -> schema=rootName, table=subPath
 		// 2) 根目录下文件: path=[fileName] -> schema="", table=fileName
 		nodeType := strings.ToLower(string(req.Locator.Type))
-		if len(req.Locator.Path) == 1 && (nodeType == "file" || nodeType == "object" || nodeType == "lake_table") {
+		if len(req.Locator.Path) == 1 && (nodeType == "file" || nodeType == "object") {
 			table = req.Locator.Path[0]
 		} else if len(req.Locator.Path) >= 1 {
 			schema = req.Locator.Path[0]
@@ -400,6 +410,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		ItemType:     req.ItemType,
 		NodeType:     string(req.Locator.Type),
 		PhysicalPath: req.PhysicalPath,
+		ScopePath:    req.ScopePath,
 		Attributes:   req.MetadataAttributes(),
 	}
 }
@@ -433,10 +444,9 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	}
 	dataType := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_type")))
 	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
+	organization := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "organization")))
 
 	switch itemType {
-	case "lake_table":
-		return []string{"builtin:lake-table"}
 	case "collection":
 		return []string{"builtin:doc-collection"}
 	case "label":
@@ -459,6 +469,9 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 
 	switch dataType {
 	case "table":
+		if organization == "whole" {
+			return []string{"builtin:scope-table"}
+		}
 		if legacyReq != nil && isFileTableFormat(formatName) && isObjectStorageType(legacyReq.Engine.EngineType) {
 			return []string{"builtin:file-table"}
 		}

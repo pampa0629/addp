@@ -26,7 +26,11 @@ func (r memoryResourceReader) Stat(_ context.Context, ref ResourceRef) (*Resourc
 }
 
 func (r memoryResourceReader) List(context.Context, ResourceRef) ([]ResourceRef, error) {
-	return nil, nil
+	refs := make([]ResourceRef, 0, len(r.data))
+	for path := range r.data {
+		refs = append(refs, NewResourceRef(path, ResourceRoleMain))
+	}
+	return refs, nil
 }
 
 func TestSameBasenameComponents(t *testing.T) {
@@ -40,6 +44,19 @@ func TestSameBasenameComponents(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("SameBasenameComponents() = %#v, want %#v", got, want)
+	}
+}
+
+func TestFirstResourceByExtension(t *testing.T) {
+	ref, err := FirstResourceByExtension(context.Background(), memoryResourceReader{data: map[string]string{
+		"lake/_SUCCESS":         "",
+		"lake/part-000.parquet": "data",
+	}}, NewResourceRef("lake", ResourceRoleScope), ".parquet")
+	if err != nil {
+		t.Fatalf("FirstResourceByExtension() error = %v", err)
+	}
+	if ref.Path != "lake/part-000.parquet" {
+		t.Fatalf("ref.Path = %q, want lake/part-000.parquet", ref.Path)
 	}
 }
 

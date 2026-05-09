@@ -46,7 +46,7 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	item := &DetectedItem{
-		ItemType:     "lake_table",
+		ItemType:     "table",
 		Organization: dataitem.OrganizationWhole,
 		DataType:     dataitem.DataTypeTable,
 		Format:       "parquet",

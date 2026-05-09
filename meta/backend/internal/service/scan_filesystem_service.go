@@ -233,8 +233,8 @@ func (s *FileSystemScanService) scanDirectory(
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
 			} else {
 				totalItems++
-				if itemType == "lake_table" && len(fields) > 0 {
-					s.log.Info("识别到 single 资源湖表", "path", file.Path, "name", itemName, "field_count", len(fields))
+				if detected.DataType == dataitem.DataTypeTable && commonParquet.IsLakeTableFileType(detected.Format) && len(fields) > 0 {
+					s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(fields))
 				}
 			}
 		} else {
@@ -316,10 +316,10 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.ItemType == "lake_table" && commonParquet.IsLakeTableFileType(detected.Format) {
+	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && commonParquet.IsLakeTableFileType(detected.Format) {
 		info, err := metaitem.ExtractLakeTableSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
-			s.log.Warn("提取 single 资源湖表信息失败，使用基础资源属性", "path", file.Path, "error", err)
+			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
 		}
 		if info != nil {
@@ -328,7 +328,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			}
 			sizeBytes := *info.SizeBytes
 			detected = &metaitem.DetectedItem{
-				ItemType:       "lake_table",
+				ItemType:       "table",
 				Organization:   info.Organization,
 				DataType:       info.DataType,
 				Format:         info.Format,

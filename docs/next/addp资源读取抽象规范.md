@@ -28,6 +28,19 @@
 
 ## 最小对象
 
+当前代码已在 `common/resource` 落地最小类型：
+
+- `ResourceRef`
+- `ResourceMetadata`
+- `ComponentRef`
+- `ResourceReader`
+- `ComponentReader`
+- `StaticComponentReader`
+- `SameBasenameComponents`
+- `FirstResourceByExtension`
+
+它们只表达平台资源读取抽象，不绑定 engine id、连接信息或具体插件类型。
+
 ### ResourceRef
 
 `ResourceRef` 表示一个已确认的资源定位，不携带凭据。
@@ -100,6 +113,29 @@
 - 按组件角色或组件引用打开内容。
 - 确保主资源和组件资源使用同一套稳定引用。
 
+当前已用 Manager Shapefile 文件表预览做第一条样板链路：
+
+```text
+Manager 编排层
+  -> objectStorageResourceReader
+  -> StaticComponentReader
+  -> format.ComponentTableProvider
+  -> Manager preview DTO
+```
+
+这条链路已经完成第一版收口：Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`，Shapefile 组件物化和解析由 format provider 内部完成。
+
+当前也已经用 Manager lake table 预览验证了 scope 表链路：
+
+```text
+Manager 编排层
+  -> fileSystemResourceReader
+  -> format.ScopeTableProvider
+  -> Manager preview DTO
+```
+
+Parquet scope provider 只通过 `ResourceReader.List` 找到 scope 内的 Parquet 资源，再通过 `ResourceReader.Open` 读取内容，不直接依赖 engine plugin。
+
 ### NativeCursor
 
 负责引擎原生批次读取。
@@ -161,6 +197,8 @@ Meta 已确认 component_files
   -> data type provider
 ```
 
+当前 Shapefile 样板暂时由 Manager 根据 format layout 构造同 basename 组件集合。后续 Meta 已确认的 `component_files` 应成为优先来源，Manager 不再按扩展名猜组件。
+
 ### whole
 
 ```text
@@ -169,6 +207,12 @@ Meta 已确认 whole scope
   -> format provider
   -> data type provider
 ```
+
+当前 Parquet lake table 预览已经先落成 `ResourceReader + scope list -> ScopeTableProvider`，用于验证 scope 表的最小读取边界。
+
+Manager 侧已经按 engine 类型适配 lake table reader：对象存储走 `objectStorageResourceReader`，文件系统走 `fileSystemResourceReader`。后续要把目录型 lake table 的 scope path、bucket、physical path 固化到 Meta attributes，之后再删除 Manager 中 `filetable` / `laketable` 两套路由名。
+
+当前 Manager 请求层已经区分 `PhysicalPath` 与 `ScopePath`：单文件表使用 `PhysicalPath`，whole/scope 表使用 `ScopePath`。对象存储 reader 会接受 `bucket/prefix` 或 `prefix` 两种 scope path 输入，并在内部归一化，避免重复拼接 bucket。
 
 ### engine-native
 
@@ -198,7 +242,7 @@ Manager 的预览需求会反向影响这层抽象的最小形状：
 
 ## 不做什么
 
-- 不在这里定义最终 Go 接口。
+- 不在这里把接口一次性扩成最终形态。
 - 不把 `engine id` 作为 format provider 的直接输入契约。
 - 不把 preview DTO 放进资源读取抽象。
 - 不把读取抽象放进 `common/format`。

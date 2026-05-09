@@ -3,13 +3,14 @@ package metaitem
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/parquet"
+	_ "github.com/addp/common/format/parquet"
 )
 
 // lakeTableFormats 支持的湖表文件格式
@@ -29,7 +30,7 @@ var lakeTableItemRules = []dataitem.FormatRule{
 	{
 		Format:       "parquet",
 		DataType:     dataitem.DataTypeTable,
-		ItemType:     "lake_table",
+		ItemType:     "table",
 		Organization: dataitem.OrganizationSingle,
 		Priority:     40,
 		Entry: dataitem.EntryRule{
@@ -39,7 +40,7 @@ var lakeTableItemRules = []dataitem.FormatRule{
 	{
 		Format:       "parquet",
 		DataType:     dataitem.DataTypeTable,
-		ItemType:     "lake_table",
+		ItemType:     "table",
 		Organization: dataitem.OrganizationWhole,
 		Priority:     80,
 		WholeScope: &dataitem.WholeScopeRule{
@@ -64,7 +65,7 @@ func (d *lakeTableItemDetector) Rules() []dataitem.FormatRule {
 }
 
 func (d *lakeTableItemDetector) ItemType() string {
-	return "lake_table"
+	return "table"
 }
 
 func (d *lakeTableItemDetector) ResolveItems(
@@ -258,7 +259,7 @@ func validateLakeTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.
 		if lakeTableFormats[ext] || isLakeTableAuxiliaryFile(f.Name) {
 			continue
 		}
-		return nil, fmt.Errorf("directory contains non-lake-table files: %s", dirPath)
+		return nil, fmt.Errorf("directory contains files outside supported scope table formats: %s", dirPath)
 	}
 	return filtered, nil
 }
@@ -356,8 +357,7 @@ func (d *lakeTableItemDetector) extractLakeTableInfo(
 	}
 	defer rc.Close()
 
-	parser := &commonParquet.Parser{}
-	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
+	tableInfo, err := describeParquetTable(ctx, rc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse parquet schema from %s: %w", firstParquet.Path, err)
 	}
@@ -437,8 +437,7 @@ func ExtractLakeTableSingleFileInfo(
 	}
 	defer rc.Close()
 
-	parser := &commonParquet.Parser{}
-	tableInfo, err := parser.ParseTableInfo(ctx, rc, nil)
+	tableInfo, err := describeParquetTable(ctx, rc)
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &CompositeItemInfo{
@@ -516,6 +515,14 @@ func detectFormat(files []plugin.FileEntry) string {
 		}
 	}
 	return best
+}
+
+func describeParquetTable(ctx context.Context, rc io.Reader) (*format.TableInfo, error) {
+	provider, err := format.GetTableProvider(format.FormatParquet)
+	if err != nil {
+		return nil, err
+	}
+	return provider.DescribeTable(ctx, rc, nil)
 }
 
 func filePaths(files []plugin.FileEntry) []string {

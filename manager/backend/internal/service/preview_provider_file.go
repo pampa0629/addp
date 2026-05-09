@@ -3,13 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -25,28 +24,29 @@ func (p *FileTablePreviewProvider) Name() string {
 	return "builtin:file-table"
 }
 
-func objectStorageContentReaderForPreview(req *PreviewRequest) (plugin.ConnectionInfo, string, plugin.ContentReadableProvider, error) {
+func objectStorageReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo, string, plugin.ContentReadableProvider, plugin.CatalogProvider, error) {
 	if req == nil || req.Engine == nil {
-		return nil, "", nil, fmt.Errorf("engine is required")
+		return nil, "", nil, nil, fmt.Errorf("engine is required")
 	}
 	pl, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+		return nil, "", nil, nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 	contentReader, ok := pl.(plugin.ContentReadableProvider)
 	if !ok {
-		return nil, "", nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
+		return nil, "", nil, nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
 	}
+	catalogProvider, _ := pl.(plugin.CatalogProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, nil, err
 	}
-	return connInfo, bucket, contentReader, nil
+	return connInfo, bucket, contentReader, catalogProvider, nil
 }
 
 func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	connInfo, bucket, contentReader, err := objectStorageContentReaderForPreview(req)
+	connInfo, bucket, contentReader, catalogProvider, err := objectStorageReaderContextForPreview(req)
 	if err != nil {
 		return nil, err
 	}
@@ -64,21 +64,25 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	// 构建解析选项
 	opts := p.buildParseOptions(formatType)
+	resourceReader := newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket)
 
-	// Shapefile 需要特殊处理：下载所有组件文件
+	// Shapefile 是多组件格式，交给组件型 table provider 消费 ComponentReader。
 	if formatType == format.FormatShapefile {
-		return p.previewShapefile(ctx, contentReader, connInfo, bucket, fullPath, provider, opts, req)
+		componentProvider, ok := provider.(format.ComponentTableProvider)
+		if !ok {
+			return nil, fmt.Errorf("format %s does not implement component table provider", formatType)
+		}
+		return p.previewShapefile(ctx, shapefileComponentReader(resourceReader, fullPath), bucket, componentProvider, opts, req)
 	}
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, contentReader, connInfo, bucket, fullPath, formatType, provider, opts, req)
+	return p.previewStreamable(ctx, resourceReader, bucket, fullPath, formatType, provider, opts, req)
 }
 
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
 func (p *FileTablePreviewProvider) previewStreamable(
 	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
+	resourceReader resource.ResourceReader,
 	bucket, fullPath string,
 	formatType format.FormatType,
 	provider format.TableProvider,
@@ -86,7 +90,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	// 获取对象流
-	object, err := openObjectStorageContent(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
+	object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
@@ -118,7 +122,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	offset := req.Page * pageSize
 
 	// 重新获取对象流（用于读取数据）
-	object, err = openObjectStorageContent(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
+	object, err = resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
@@ -166,33 +170,14 @@ func (p *FileTablePreviewProvider) previewStreamable(
 // previewShapefile 处理 Shapefile 格式（需要下载所有组件文件）
 func (p *FileTablePreviewProvider) previewShapefile(
 	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	bucket, fullPath string,
-	provider format.TableProvider,
+	components resource.ComponentReader,
+	bucket string,
+	provider format.ComponentTableProvider,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
-	// 下载所有 shapefile 组件文件到临时目录
-	tempDir, basePath, err := p.downloadShapefileComponents(ctx, contentReader, connInfo, req.Engine.ID, bucket, fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download shapefile: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
-		opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
-	}
-
-	// 打开主文件
-	shpFile, err := os.Open(basePath + ".shp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to open shapefile: %w", err)
-	}
-	defer shpFile.Close()
-
 	// 解析 TableInfo
-	tableInfo, err := provider.DescribeTable(ctx, shpFile, opts)
+	tableInfo, err := provider.DescribeTableComponents(ctx, components, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse shapefile info: %w", err)
 	}
@@ -216,15 +201,8 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	}
 	offset := req.Page * pageSize
 
-	// 重新打开文件读取数据
-	shpFile, err = os.Open(basePath + ".shp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to reopen shapefile: %w", err)
-	}
-	defer shpFile.Close()
-
 	// 读取分页数据
-	rows, err := provider.SampleTable(ctx, shpFile, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleTableComponents(ctx, components, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read shapefile data: %w", err)
 	}
@@ -255,66 +233,6 @@ func (p *FileTablePreviewProvider) previewShapefile(
 			},
 		},
 	}, nil
-}
-
-// downloadShapefileComponents 下载 shapefile 的所有组件文件
-func (p *FileTablePreviewProvider) downloadShapefileComponents(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	bucket, fullPath string,
-) (tempDir string, basePath string, err error) {
-	// 提取基础路径（去掉扩展名）
-	ext := filepath.Ext(fullPath)
-	basePathRemote := fullPath
-	if ext != "" {
-		basePathRemote = fullPath[:len(fullPath)-len(ext)]
-	}
-
-	// 创建临时目录
-	tempDir, err = os.MkdirTemp("", "shapefile-preview-*")
-	if err != nil {
-		return "", "", err
-	}
-
-	// 下载主文件 .shp
-	shpPath := basePathRemote + ".shp"
-	localShpPath := filepath.Join(tempDir, filepath.Base(shpPath))
-	if err := p.downloadFile(ctx, contentReader, connInfo, engineID, bucket, shpPath, localShpPath); err != nil {
-		os.RemoveAll(tempDir)
-		return "", "", fmt.Errorf("failed to download .shp file: %w", err)
-	}
-
-	// 下载其他组件文件（.shx, .dbf, .prj, .cpg）
-	basePathLocal := localShpPath[:len(localShpPath)-4]
-	extensions := []string{".shx", ".dbf", ".prj", ".cpg"}
-	for _, extension := range extensions {
-		remotePath := basePathRemote + extension
-		localPath := basePathLocal + extension
-		// 忽略可选文件的下载错误
-		_ = p.downloadFile(ctx, contentReader, connInfo, engineID, bucket, remotePath, localPath)
-	}
-
-	return tempDir, basePathLocal, nil
-}
-
-// downloadFile 从对象存储下载文件
-func (p *FileTablePreviewProvider) downloadFile(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectKey, destPath string) error {
-	object, err := openObjectStorageContent(ctx, contentReader, connInfo, engineID, bucket, objectKey)
-	if err != nil {
-		return err
-	}
-	defer object.Close()
-
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, object)
-	return err
 }
 
 // buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。

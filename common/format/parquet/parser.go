@@ -20,11 +20,7 @@ type Parser struct{}
 
 func init() {
 	parser := &Parser{}
-	if err := format.RegisterTableProvider(format.NewTableProvider(
-		format.FormatParquet,
-		parser.ParseTableInfo,
-		parser.ReadPreview,
-	)); err != nil {
+	if err := format.RegisterTableProvider(newTableProvider(parser)); err != nil {
 		panic(fmt.Sprintf("failed to register parquet table provider: %v", err))
 	}
 }

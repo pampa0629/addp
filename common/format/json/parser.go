@@ -1,4 +1,4 @@
-package geojson
+package jsonformat
 
 import (
 	"context"
@@ -15,13 +15,15 @@ import (
 
 const defaultGeometryField = "geometry"
 
-// Parser 提供 GeoJSON 的通用解析能力
+// Parser 提供 JSON 表格语义解析能力。
+//
+// 当前实现支持 GeoJSON FeatureCollection 这种 JSON 空间表结构。
 type Parser struct {
 	options       *format.ParseOptions
 	geometryField string
 }
 
-// NewParser 创建 GeoJSON 解析器
+// NewParser 创建 JSON 表格语义解析器。
 // geometry_field 可以通过 ParseOptions.ExtraParams["geometry_field"] 重写
 func NewParser(opts *format.ParseOptions) *Parser {
 	if opts == nil {
@@ -39,7 +41,7 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	}
 }
 
-// ParseTableInfo 从 GeoJSON 文件中提取 TableInfo
+// ParseTableInfo 从 JSON 空间表结构中提取 TableInfo。
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
@@ -117,7 +119,7 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 
 	// 构建 TableInfo
 	tableInfo := &format.TableInfo{
-		Name:       "geojson_features", // GeoJSON 没有表名，使用默认值
+		Name:       "json_features", // JSON 空间表没有稳定表名，使用默认值
 		RowCount:   &featureCount,
 		Fields:     fields,
 		PrimaryKey: []string{}, // GeoJSON 没有主键
@@ -127,7 +129,7 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 	return tableInfo, nil
 }
 
-// ReadPreview 读取 GeoJSON 数据预览
+// ReadPreview 读取 JSON 空间表预览数据。
 func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	iter, err := newIterator(input)
 	if err != nil {

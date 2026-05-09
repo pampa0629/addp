@@ -77,7 +77,7 @@ Manager 现在主要依赖两类信号：
 
 - `manager/backend/internal/service/preview_resolver.go`
 - `manager/backend/internal/service/preview_provider_file.go`
-- `manager/backend/internal/service/preview_provider_lake_table.go`
+- `manager/backend/internal/service/preview_provider_scope_table.go`
 - `manager/backend/internal/service/preview_provider_graph_neo4j.go`
 - `manager/backend/internal/service/object_content_plugin.go`
 
@@ -97,7 +97,7 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 当前代码中表预览至少有三条路径：
 
 - `preview_provider_file.go`：文件表，包含 CSV、Excel、JSON、Shapefile、Parquet 等。
-- `preview_provider_lake_table.go`：湖表，主要处理目录型或单文件 Parquet。
+- `preview_provider_scope_table.go`：scope 表，主要处理目录型或单文件 Parquet。
 - `preview_provider_database.go`：数据库原生表。
 
 这三条路径的读取方式不同，但 Manager 的最终需求高度一致：
@@ -119,7 +119,7 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 | 湖表预览 | scope 表 | `TableProvider.Sample` 经 `ResourceReader` + scope list |
 | 数据库表预览 | engine-native 表 | `TableProvider.Sample` 经 `NativeCursor` |
 
-其中 `lake_table` 可以继续作为过渡期 item_type 或历史路由信号，但不应影响 Manager 对外 preview DTO，也不应成为上层消费者必须理解的 data type。
+湖表不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.organization=single/whole` 区分单文件表和目录型表。
 
 因此 Manager 后端至少需要以下 provider 形态：
 
@@ -255,7 +255,7 @@ target:
    - 拆成资源读取、格式提取、table 组装三层。
    - 现有的 S3/文件/格式混合逻辑应下沉到资源抽象或格式 provider。
 
-3. `manager/backend/internal/service/preview_provider_lake_table.go`
+3. `manager/backend/internal/service/preview_provider_scope_table.go`
    - 长期应并入统一的 `TableProvider` 路由。
 
 4. `manager/backend/internal/service/preview_provider_database.go`

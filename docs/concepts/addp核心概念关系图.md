@@ -160,10 +160,10 @@ mindmap
 
 ### 4. [元数据体系](concepts/addp元数据体系图.md)
 
-**元数据管理体系,包括层次结构、Parser 体系和统一数据结构**
+**元数据管理体系,包括层次结构、Provider 体系和统一数据结构**
 
 - 元数据层次结构 (数据节点 Node、数据项 Item)
-- Provider / Parser / Extractor 体系架构 (TableProvider、DBTableParser、DocCollectionParser、FileMetadataExtractor)
+- Provider / Extractor 体系架构 (TableProvider、ComponentTableProvider、ScopeTableProvider、FileMetadataExtractor)
 - TableInfo 统一数据结构
 - ExtensionInfo 扩展机制
 - 元数据扫描流程

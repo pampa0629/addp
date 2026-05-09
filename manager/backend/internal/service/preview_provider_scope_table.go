@@ -1,0 +1,144 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
+	"github.com/addp/manager/internal/models"
+)
+
+// ScopeTablePreviewProvider 目录型表格预览 Provider。
+// 当前主要服务 organization=whole 的 Parquet/ORC/Avro 表格资源。
+type ScopeTablePreviewProvider struct{}
+
+func NewScopeTablePreviewProvider() PreviewProvider {
+	return &ScopeTablePreviewProvider{}
+}
+
+func (p *ScopeTablePreviewProvider) Name() string {
+	return "builtin:scope-table"
+}
+
+func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	plug, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	}
+
+	contentReader, _ := plug.(plugin.ContentReadableProvider)
+	catalogProvider, _ := plug.(plugin.CatalogProvider)
+
+	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
+	reader, err := scopeTableResourceReader(req, contentReader, catalogProvider, connInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	// 分页参数
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := int64((page - 1) * pageSize)
+	limit := int64(pageSize)
+
+	provider, err := format.GetTableProvider(format.FormatParquet)
+	if err != nil {
+		return nil, fmt.Errorf("no table provider for parquet: %w", err)
+	}
+	tableProvider, ok := provider.(format.ScopeTableProvider)
+	if !ok {
+		return nil, fmt.Errorf("parquet provider does not implement scope table provider")
+	}
+
+	var tableInfo *format.TableInfo
+	var rows []map[string]interface{}
+
+	if req.PhysicalPath != "" {
+		if contentReader == nil {
+			err = fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
+		} else {
+			ref := resource.NewResourceRef(req.PhysicalPath, resource.ResourceRoleMain)
+			input, openErr := reader.Open(ctx, ref)
+			if openErr != nil {
+				err = openErr
+			} else {
+				tableInfo, err = provider.DescribeTable(ctx, input, nil)
+				input.Close()
+			}
+			if err == nil {
+				input, openErr := reader.Open(ctx, ref)
+				if openErr != nil {
+					err = openErr
+				} else {
+					rows, err = provider.SampleTable(ctx, input, offset, limit, nil)
+					input.Close()
+				}
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read scope table preview: %w", err)
+		}
+	} else {
+		dirPath := req.ScopePath
+		if dirPath == "" {
+			dirPath = nfsPhysicalPath(req.Schema, req.Table)
+		}
+		if catalogProvider == nil || contentReader == nil {
+			err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
+		} else {
+			scope := resource.NewResourceRef(dirPath, resource.ResourceRoleScope)
+			tableInfo, err = tableProvider.DescribeTableScope(ctx, reader, scope, nil)
+			if err == nil {
+				rows, err = tableProvider.SampleTableScope(ctx, reader, scope, offset, limit, nil)
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read scope table preview: %w", err)
+		}
+	}
+
+	// 构建列名和列元数据
+	fields := tableInfo.Fields
+	columns := make([]string, 0, len(fields))
+	columnMeta := make([]models.ColumnMetadata, 0, len(fields))
+	for _, f := range fields {
+		columns = append(columns, f.Name)
+		columnMeta = append(columnMeta, models.ColumnMetadata{
+			ColumnName: f.Name,
+			DataType:   string(f.Type),
+			IsNullable: f.Nullable,
+		})
+	}
+
+	return &models.TablePreview{
+		Mode:           "table",
+		Columns:        columns,
+		ColumnMetadata: columnMeta,
+		Rows:           rows,
+		Page:           page,
+		PageSize:       pageSize,
+		Total:          len(rows),
+	}, nil
+}
+
+func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo) (resource.ResourceReader, error) {
+	if req == nil || req.Engine == nil {
+		return nil, fmt.Errorf("engine is required")
+	}
+	if isObjectStorageType(req.Engine.EngineType) {
+		bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
+		if err != nil {
+			return nil, err
+		}
+		return newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
+	}
+	return newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
+}

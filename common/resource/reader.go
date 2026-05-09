@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,43 @@ type ResourceReader interface {
 	Stat(ctx context.Context, ref ResourceRef) (*ResourceMetadata, error)
 	List(ctx context.Context, scope ResourceRef) ([]ResourceRef, error)
 }
+
+func FirstResourceByExtension(ctx context.Context, reader ResourceReader, scope ResourceRef, extensions ...string) (ResourceRef, error) {
+	if reader == nil {
+		return ResourceRef{}, ErrResourceNotFound
+	}
+	refs, err := reader.List(ctx, scope)
+	if err != nil {
+		return ResourceRef{}, err
+	}
+	allowed := normalizedExtensionSet(extensions)
+	for _, ref := range refs {
+		if ref.Role == ResourceRoleScope {
+			continue
+		}
+		if len(allowed) == 0 || allowed[strings.ToLower(filepath.Ext(ref.Path))] {
+			return ref, nil
+		}
+	}
+	return ResourceRef{}, ErrResourceNotFound
+}
+
+func normalizedExtensionSet(extensions []string) map[string]bool {
+	set := make(map[string]bool, len(extensions))
+	for _, ext := range extensions {
+		ext = strings.ToLower(strings.TrimSpace(ext))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		set[ext] = true
+	}
+	return set
+}
+
+var ErrResourceNotFound = errors.New("resource not found")
 
 type ComponentRef struct {
 	ResourceRef

@@ -39,7 +39,7 @@ func TestValidateFormatRuleRejectsWholeWithoutRule(t *testing.T) {
 	rule := FormatRule{
 		Format:       "parquet",
 		DataType:     DataTypeTable,
-		ItemType:     "lake_table",
+		ItemType:     "table",
 		Organization: OrganizationWhole,
 	}
 
@@ -67,7 +67,7 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 		if rule.Format == "geopackage" && rule.Organization == OrganizationSingle {
 			seenGeoPackage = true
 		}
-		if rule.Format == "parquet" && rule.ItemType == "lake_table" && rule.Organization == OrganizationSingle {
+		if rule.Format == "parquet" && rule.ItemType == "table" && rule.Organization == OrganizationSingle {
 			seenParquet = true
 		}
 	}

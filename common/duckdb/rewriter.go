@@ -114,7 +114,7 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 		}
 		tables := make(map[string]string)
 		for _, item := range tree.Items {
-			if item.ItemType != "lake_table" {
+			if !isLakeTableItem(item) {
 				continue
 			}
 			physicalPath := ""
@@ -137,6 +137,26 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 		}
 	}
 	return result
+}
+
+func isLakeTableItem(item commonModels.MetaItem) bool {
+	if item.ItemType != "table" {
+		return false
+	}
+	if item.Attributes == nil {
+		return false
+	}
+	dataType := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "data_type")))
+	formatName := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "format")))
+	if dataType != "" && dataType != "table" {
+		return false
+	}
+	switch formatName {
+	case "parquet", "orc", "avro":
+		return true
+	default:
+		return false
+	}
 }
 
 // RewriteWithEngines 使用已知引擎列表改写 SQL（避免重复查询 Meta）

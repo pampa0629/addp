@@ -8,7 +8,8 @@ import (
 	// 导入内置 TableProvider，触发 init() 自动注册
 	_ "github.com/addp/common/format/csv"
 	_ "github.com/addp/common/format/excel"
-	_ "github.com/addp/common/format/geojson"
+	_ "github.com/addp/common/format/json"
+	_ "github.com/addp/common/format/parquet"
 	_ "github.com/addp/common/format/shapefile"
 	// SQLite parser 暂未实现新接口，暂不导入
 	// _ "github.com/addp/common/format/sqlite"

@@ -1,4 +1,4 @@
-package geojson
+package jsonformat
 
 import (
 	"database/sql"
@@ -35,7 +35,7 @@ type GeoJSONFeatureCollection struct {
 // 示例:
 //
 //	rows, _ := db.Query("SELECT id, ST_AsGeoJSON(geom) as geometry, name FROM cities")
-//	fc, err := geojson.RowsToGeoJSON(rows, []string{"id", "geometry", "name"})
+//	fc, err := jsonformat.RowsToGeoJSON(rows, []string{"id", "geometry", "name"})
 func RowsToGeoJSON(rows *sql.Rows, columns []string) (*GeoJSONFeatureCollection, error) {
 	fc := &GeoJSONFeatureCollection{
 		Type:     "FeatureCollection",

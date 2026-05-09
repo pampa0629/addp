@@ -43,6 +43,7 @@ func TestInferDataTypeCanonicalizesCommonAliases(t *testing.T) {
 		{formatName: "jpg", want: DataTypeMedia},
 		{formatName: "xlsx", want: DataTypeContainer},
 		{formatName: "gpkg", want: DataTypeContainer},
+		{formatName: "geojson", want: DataTypeDocument},
 		{formatName: "orc", want: DataTypeTable},
 	}
 

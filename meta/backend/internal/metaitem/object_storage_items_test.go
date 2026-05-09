@@ -69,8 +69,8 @@ func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
 		Format:       "parquet",
 		Organization: dataitem.OrganizationSingle,
 	})
-	if got != "lake_table" {
-		t.Fatalf("parquet itemType = %q, want lake_table", got)
+	if got != "table" {
+		t.Fatalf("parquet itemType = %q, want table", got)
 	}
 }
 

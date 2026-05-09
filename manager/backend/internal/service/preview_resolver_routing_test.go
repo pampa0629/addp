@@ -18,23 +18,29 @@ func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models
 	return nil, nil
 }
 
-func TestResolveProviderByMetaUsesItemType(t *testing.T) {
+func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {
 	registry := NewPreviewRegistry()
-	registry.Register(namedPreviewProvider{name: "builtin:lake-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator:  &resource.ResourceLocator{},
-		Engine:   &commonModels.Engine{EngineType: "minio"},
-		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{}},
-		ItemType: "lake_table",
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type":    "table",
+				"format":       "parquet",
+				"organization": "whole",
+			},
+		}},
+		ItemType: "table",
 	}
 	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "dataset"})
 	if err != nil {
 		t.Fatalf("resolveProviderByMeta() error = %v", err)
 	}
-	if provider.Name() != "builtin:lake-table" {
-		t.Fatalf("provider = %q, want builtin:lake-table", provider.Name())
+	if provider.Name() != "builtin:scope-table" {
+		t.Fatalf("provider = %q, want builtin:scope-table", provider.Name())
 	}
 }
 
@@ -136,13 +142,39 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 		},
 		Engine:       &commonModels.Engine{EngineType: "minio"},
 		Metadata:     &commonModels.MetaNode{Attributes: map[string]interface{}{}},
-		ItemType:     "lake_table",
+		ItemType:     "table",
 		PhysicalPath: "bucket/table.parquet",
 	}
 
 	legacyReq := resolver.convertToLegacyRequest(req)
 	if legacyReq.PhysicalPath != "bucket/table.parquet" {
 		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", legacyReq.PhysicalPath)
+	}
+}
+
+func TestConvertToLegacyRequestUsesScopePathForWholeLakeTable(t *testing.T) {
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{
+			Path: []string{"bucket", "dataset"},
+		},
+		Engine: &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"storage": map[string]interface{}{
+				"physical_path": "bucket/dataset",
+			},
+			"item": map[string]interface{}{
+				"organization": "whole",
+			},
+		}},
+		ItemType: "table",
+	}
+
+	physicalPath, scopePath := previewResourcePaths(req.Metadata.Attributes)
+	if physicalPath != "" {
+		t.Fatalf("physicalPath = %q, want empty for whole lake table", physicalPath)
+	}
+	if scopePath != "bucket/dataset" {
+		t.Fatalf("scopePath = %q, want bucket/dataset", scopePath)
 	}
 }
 

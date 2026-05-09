@@ -8,7 +8,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestCSVParser_ParseSchema(t *testing.T) {
+func TestCSVParser_ParseTableInfo(t *testing.T) {
 	csvData := `name,age,score,active
 Alice,25,95.5,true
 Bob,30,87.3,false
@@ -17,13 +17,13 @@ Charlie,28,92.1,true`
 	reader := strings.NewReader(csvData)
 	parser := NewParser(nil)
 
-	schema, err := parser.ParseSchema(context.Background(), reader)
+	tableInfo, err := parser.ParseTableInfo(context.Background(), reader, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema failed: %v", err)
+		t.Fatalf("ParseTableInfo failed: %v", err)
 	}
 
-	if len(schema.Fields) != 4 {
-		t.Errorf("Expected 4 fields, got %d", len(schema.Fields))
+	if len(tableInfo.Fields) != 4 {
+		t.Errorf("Expected 4 fields, got %d", len(tableInfo.Fields))
 	}
 
 	// 检查字段类型推断
@@ -34,7 +34,7 @@ Charlie,28,92.1,true`
 		"active": format.FieldTypeBool,
 	}
 
-	for _, field := range schema.Fields {
+	for _, field := range tableInfo.Fields {
 		if expectedType, ok := expectedTypes[field.Name]; ok {
 			if field.Type != expectedType {
 				t.Errorf("Field %s: expected type %s, got %s", field.Name, expectedType, field.Type)
@@ -43,7 +43,7 @@ Charlie,28,92.1,true`
 	}
 }
 
-func TestCSVParser_ReadRecords(t *testing.T) {
+func TestCSVParser_ReadPreview(t *testing.T) {
 	csvData := `id,name,value
 1,Test,100
 2,Sample,200`
@@ -51,9 +51,9 @@ func TestCSVParser_ReadRecords(t *testing.T) {
 	reader := strings.NewReader(csvData)
 	parser := NewParser(nil)
 
-	records, err := parser.ReadRecords(context.Background(), reader, 0, -1)
+	records, err := parser.ReadPreview(context.Background(), reader, 0, -1, nil)
 	if err != nil {
-		t.Fatalf("ReadRecords failed: %v", err)
+		t.Fatalf("ReadPreview failed: %v", err)
 	}
 
 	if len(records) != 2 {
@@ -71,7 +71,7 @@ func TestCSVParser_ReadRecords(t *testing.T) {
 	}
 }
 
-func TestCSVParser_CountRecords(t *testing.T) {
+func TestCSVParser_ParseTableInfoCountsRecords(t *testing.T) {
 	csvData := `id,name
 1,Test
 2,Sample
@@ -80,13 +80,13 @@ func TestCSVParser_CountRecords(t *testing.T) {
 	reader := strings.NewReader(csvData)
 	parser := NewParser(nil)
 
-	count, err := parser.CountRecords(context.Background(), reader)
+	tableInfo, err := parser.ParseTableInfo(context.Background(), reader, nil)
 	if err != nil {
-		t.Fatalf("CountRecords failed: %v", err)
+		t.Fatalf("ParseTableInfo failed: %v", err)
 	}
 
-	if count != 3 {
-		t.Errorf("Expected 3 records, got %d", count)
+	if tableInfo.RowCount == nil || *tableInfo.RowCount != 3 {
+		t.Errorf("Expected 3 records, got %v", tableInfo.RowCount)
 	}
 }
 

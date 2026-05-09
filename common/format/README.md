@@ -1,6 +1,6 @@
-# common/format - 格式识别和Schema工具
+# common/format - 格式识别、Schema 与 Provider 工具
 
-本包提供跨模块共享的数据格式识别、类型转换和Schema标准化工具。
+本包提供跨模块共享的数据格式识别、类型转换、Schema 标准化和格式 Provider 注册工具。
 
 ---
 
@@ -22,11 +22,13 @@
 1. **格式识别统一化** - 各模块使用相同的逻辑识别文件格式
 2. **类型映射标准化** - PostgreSQL、MySQL、Shapefile等不同数据源的类型统一转换
 3. **Schema定义规范化** - 提供统一的Schema模型供各模块使用
+4. **Provider入口统一** - 表格等 data type 读取由 `ProviderRegistry` 暴露，不再通过旧 parser registry 暴露
 
 **设计原则**：
-- ✅ 提供**辅助工具**，不强制使用
-- ✅ 各模块可选择使用或自行实现
-- ✅ 最小化外部依赖（仅依赖Go标准库）
+- ✅ `FormatType` 只表达顶层格式事实，不表达业务 item
+- ✅ Provider 只返回格式 / data type 语义，不返回 Manager preview DTO
+- ✅ 读取资源由上层通过 `common/resource` 适配后传入 Provider
+- ✅ `.geojson` 统一识别为 `FormatJSON`，空间语义由 spatial capability / attributes 表达
 
 ---
 
@@ -260,82 +262,38 @@ if schema.IsGeospatial() {
 
 ## 类型映射
 
-### TypeMapping 结构
+类型映射统一通过 `TypeMapper` 注册表完成，不再使用旧的 `TypeMapping` facade。
 
 ```go
-type TypeMapping struct{}
-```
-
-### PostgreSQL 类型转换
-
-```go
-// PostgreSQL → 通用类型
-func (m *TypeMapping) PostgreSQLToCommon(pgType string) FieldType
-
-// 通用类型 → PostgreSQL
-func (m *TypeMapping) CommonToPostgreSQL(commonType FieldType) string
+type TypeMapper interface {
+    Name() string
+    ToCommon(nativeType string) FieldType
+    FromCommon(commonType FieldType) (nativeType string, size int, precision int)
+}
 ```
 
 **示例**：
 
 ```go
-mapper := &format.TypeMapping{}
-
-// PostgreSQL → 通用类型
-commonType := mapper.PostgreSQLToCommon("varchar(255)")
+mapper := format.GetTypeMapper("postgresql")
+commonType := mapper.ToCommon("varchar(255)")
 // commonType == format.FieldTypeString
 
-commonType = mapper.PostgreSQLToCommon("geometry(Point, 4326)")
-// commonType == format.FieldTypeGeometry
-
-// 通用类型 → PostgreSQL
-pgType := mapper.CommonToPostgreSQL(format.FieldTypeFloat)
-// pgType == "DOUBLE PRECISION"
+nativeType, _, _ := mapper.FromCommon(format.FieldTypeFloat)
+// nativeType == "REAL"
 ```
 
-### MySQL 类型转换
+Shapefile DBF 类型同样走注册表：
 
 ```go
-// MySQL → 通用类型
-func (m *TypeMapping) MySQLToCommon(mysqlType string) FieldType
-```
-
-**示例**：
-
-```go
-mapper := &format.TypeMapping{}
-
-commonType := mapper.MySQLToCommon("datetime")
-// commonType == format.FieldTypeTimestamp
-
-commonType = mapper.MySQLToCommon("tinyint(1)")
-// commonType == format.FieldTypeBool (MySQL的布尔类型)
-```
-
-### Shapefile DBF 类型转换
-
-```go
-// Shapefile DBF → 通用类型
-func (m *TypeMapping) ShapefileDBFToCommon(dbfType byte) FieldType
-
-// 通用类型 → Shapefile DBF
-func (m *TypeMapping) CommonToShapefileDBF(commonType FieldType) (dbfType byte, size uint8, precision uint8)
-```
-
-**示例**：
-
-```go
-mapper := &format.TypeMapping{}
-
-// DBF → 通用类型
-commonType := mapper.ShapefileDBFToCommon('C')
+mapper := format.GetTypeMapper("shapefile")
+commonType := mapper.ToCommon("C")
 // commonType == format.FieldTypeString
 
-// 通用类型 → DBF
-dbfType, size, precision := mapper.CommonToShapefileDBF(format.FieldTypeFloat)
-// dbfType == 'F' (Float)
-// size == 20 (总长度)
-// precision == 8 (小数位数)
+dbfType, size, precision := mapper.FromCommon(format.FieldTypeFloat)
+// dbfType == "F"
+// size == 13
+// precision == 6
 ```
 
 ### 类型判断工具
@@ -420,29 +378,14 @@ func (e *ShapefileExtractor) Extract(ctx context.Context, input scanner.ExtractI
 }
 ```
 
-### 示例2：在Transfer模块中使用Schema转换
+### 示例2：使用类型映射转换字段类型
 
 ```go
-// transfer/backend/internal/connector/shapefile_writer.go
-package connector
-
-import (
-    "github.com/addp/common/format"
-    "github.com/addp/transfer/pkg/pipeline"
-)
-
-func (w *ShapefileWriter) convertSchema(inputSchema *pipeline.Schema) error {
-    mapper := &format.TypeMapping{}
-
-    for _, field := range inputSchema.Fields {
-        // 将通用类型转换为Shapefile DBF类型
-        dbfType, size, precision := mapper.CommonToShapefileDBF(field.Type)
-
-        // 创建DBF字段...
-    }
-
-    return nil
-}
+mapper := format.GetTypeMapper("shapefile")
+dbfType, size, precision := mapper.FromCommon(format.FieldTypeDouble)
+// dbfType == "F"
+// size == 20
+// precision == 8
 ```
 
 ### 示例3：Manager 模块消费 Meta 标准格式
@@ -498,13 +441,16 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 
 ### 添加新数据源类型映射
 
-1. 在 `TypeMapping` 结构中添加新方法:
+1. 实现 `TypeMapper`:
    ```go
-   func (m *TypeMapping) OracleToCommon(oracleType string) FieldType
-   func (m *TypeMapping) CommonToOracle(commonType FieldType) string
+   type OracleTypeMapper struct{}
+
+   func (m *OracleTypeMapper) Name() string { return "oracle" }
+   func (m *OracleTypeMapper) ToCommon(nativeType string) format.FieldType
+   func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int, int)
    ```
 
-2. 参考现有的 `PostgreSQLToCommon` 实现
+2. 在 mapper 包的 `init()` 中调用 `format.RegisterTypeMapper(...)`。
 
 ---
 
@@ -525,14 +471,65 @@ go test -cover ./...
 
 ---
 
+## Provider 模型
+
+`common/format` 当前提供第一版表格 Provider 入口：
+
+```go
+type Provider interface {
+    Format() FormatType
+    Capabilities() FormatCapability
+}
+
+type TableProvider interface {
+    Provider
+    DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error)
+    SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+```
+
+多组件和 scope 表格来源通过扩展接口表达：
+
+```go
+type ComponentTableProvider interface {
+    TableProvider
+    DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *ParseOptions) (*TableInfo, error)
+    SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+
+type ScopeTableProvider interface {
+    TableProvider
+    DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *ParseOptions) (*TableInfo, error)
+    SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+```
+
+使用方式：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+
+provider, err := format.GetTableProvider(format.FormatParquet)
+if err != nil {
+    return err
+}
+info, err := provider.DescribeTable(ctx, input, nil)
+```
+
+内置注册包 `common/format/builtin` 会注册 CSV、Excel、JSON 空间表结构、Shapefile、Parquet 等 provider。  
+JSON provider 位于 `common/format/json`，它处理 GeoJSON FeatureCollection 这类 JSON 空间表结构，但不会重新引入 `FormatGeoJSON`。
+
+---
+
 ## FAQ
 
 ### Q1: 为什么不把所有格式解析器都放在这里？
 
-**A**: `common/format` 只提供**格式识别和类型转换**工具，不包含具体的解析逻辑。原因：
-- 各模块性能需求差异大（Meta需要快速扫描，Transfer需要高吞吐量）
-- 解析器依赖第三方库，会增加common的依赖复杂度
-- 各模块可根据需求选择最优实现
+**A**: `common/format` 可以承载跨模块共享的格式 Provider，但 Provider 边界必须克制：
+- 不绑定 Manager preview DTO
+- 不绑定 Meta item 归并逻辑
+- 不直接接 engine id 或 engine 配置
+- 不替 Transfer 做任务编排
 
 ### Q2: 什么时候应该使用 common/format？
 
@@ -542,9 +539,9 @@ go test -cover ./...
 - ✅ 需要统一的Schema模型定义
 
 不建议使用场景：
-- ❌ 模块有特殊的性能优化需求
-- ❌ 格式检测需要读取大量文件内容（超过512字节）
-- ❌ 需要格式特定的复杂验证逻辑
+- ❌ 需要决定 item organization / claims
+- ❌ 需要组装前端 preview DTO
+- ❌ 需要直接连接 engine 或执行 transfer 任务
 
 ### Q3: 如何处理格式检测的边界情况？
 

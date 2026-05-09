@@ -338,7 +338,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		// 对象存储扫描（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
 		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, effectiveTenantID, objectPaths, scanDepth, reporter)
 	} else if family == "file" {
-		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/lake_table 语义节点
+		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/table 语义节点
 		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, effectiveTenantID, objectPaths, scanDepth, reporter)
 	} else if family == "tabular" {
 		// 关系型数据库扫描（PostgreSQL、MySQL 等）
@@ -446,7 +446,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	}
 
 	if family == "file" {
-		// 文件系统类型（NFS 等）—— 写入 root/dir/file/lake_table 语义节点
+		// 文件系统类型（NFS 等）—— 写入 root/dir/file/table 语义节点
 		paths, err := metacatalog.FileSystemRootPaths(context.Background(), resource, p0)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("failed to list roots: %w", err)

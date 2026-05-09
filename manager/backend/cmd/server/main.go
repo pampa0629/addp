@@ -38,7 +38,6 @@ import (
 
 	// 导入格式解析器以触发自动注册
 	_ "github.com/addp/common/format/builtin"
-	_ "github.com/addp/common/format/document" // MongoDB/NoSQL collection parser
 )
 
 // @title           ADDP Manager API

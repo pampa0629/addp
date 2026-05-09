@@ -14,8 +14,6 @@ import (
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/excel"
-	"github.com/addp/common/format/geojson"
-	commonParquet "github.com/addp/common/format/parquet"
 	"github.com/addp/common/format/sqlite"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
@@ -415,16 +413,19 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 
 func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, error) {
 	opts := format.DefaultParseOptions()
-	parser := geojson.NewParser(opts)
+	provider, err := format.GetTableProvider(format.FormatJSON)
+	if err != nil {
+		return nil, err
+	}
 
 	// 使用格式解析器提取 table 语义
-	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(data), opts)
+	tableInfo, err := provider.DescribeTable(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, err
 	}
 
 	// 读取预览数据（前10条记录）
-	sampleRecords, _ := parser.ReadPreview(ctx, bytes.NewReader(data), 0, 10, opts)
+	sampleRecords, _ := provider.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
 
 	// 构建元数据
 	metadata := make(map[string]interface{})
@@ -990,10 +991,13 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	}
 	defer f.Close()
 
-	parser := &commonParquet.Parser{}
 	opts := format.DefaultParseOptions()
+	provider, err := format.GetTableProvider(format.FormatParquet)
+	if err != nil {
+		return nil, false, fmt.Errorf("获取 Parquet Provider 失败: %w", err)
+	}
 
-	tableInfo, err := parser.ParseTableInfo(ctx, f, opts)
+	tableInfo, err := provider.DescribeTable(ctx, f, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 Parquet Schema 失败: %w", err)
 	}
@@ -1009,7 +1013,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	if rowLimit <= 0 {
 		rowLimit = defaultParquetRowLimit
 	}
-	rows, err := parser.ReadPreview(ctx, f2, 0, rowLimit, opts)
+	rows, err := provider.SampleTable(ctx, f2, 0, rowLimit, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("读取 Parquet 预览数据失败: %w", err)
 	}
@@ -1060,10 +1064,13 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		return &models.ObjectPreviewContent{Kind: "table", Text: "Parquet 文件为空或无法读取"}, false, nil
 	}
 
-	parser := &commonParquet.Parser{}
 	opts := format.DefaultParseOptions()
+	provider, err := format.GetTableProvider(format.FormatParquet)
+	if err != nil {
+		return nil, false, fmt.Errorf("获取 Parquet Provider 失败: %w", err)
+	}
 
-	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(data), opts)
+	tableInfo, err := provider.DescribeTable(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 Parquet Schema 失败: %w", err)
 	}
@@ -1072,7 +1079,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	if rowLimit <= 0 {
 		rowLimit = defaultParquetRowLimit
 	}
-	rows, err := parser.ReadPreview(ctx, bytes.NewReader(data), 0, rowLimit, opts)
+	rows, err := provider.SampleTable(ctx, bytes.NewReader(data), 0, rowLimit, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("读取 Parquet 预览数据失败: %w", err)
 	}

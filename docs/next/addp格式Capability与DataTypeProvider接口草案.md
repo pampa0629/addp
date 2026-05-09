@@ -217,6 +217,8 @@ TableProvider 的输出建议按平台语义组织，而不是按底层格式组
 ```text
 common/format.Provider
 common/format.TableProvider
+common/format.ComponentTableProvider
+common/format.ScopeTableProvider
 common/format.ProviderRegistry
 ```
 
@@ -226,7 +228,18 @@ common/format.ProviderRegistry
 - `SampleTable`
 
 它不接 engine id，不构造读取器，不返回 Manager DTO。  
-内置文件表格式已经直接注册为 `TableProvider`，用于把 Manager 文件表预览从旧 parser registry 迁到 provider registry。旧 `FileTableParser` 主接口和注册 API 已删除。后续再逐步补 `ReadBatch` / `WriteBatch`，并把 Transfer 读写也迁到 provider 组合路径。
+内置文件表格式已经直接注册为 `TableProvider`，Manager 文件表预览也已经迁到 provider registry。旧文件表主接口和注册 API 已删除。
+
+当前已经补了两个表格来源扩展入口：
+
+- `ComponentTableProvider`：用于 Shapefile 这类多组件格式，组件读取由 `common/resource.ComponentReader` 提供。
+- `ScopeTableProvider`：用于 Parquet 目录表这类 scope 表，范围列举和内容读取由 `common/resource.ResourceReader` 提供。
+
+这两个入口仍然只返回 table 语义，不返回 Manager preview DTO。后续再逐步补 `ReadBatch` / `WriteBatch`；Transfer 读写单独处理，不和本轮 Manager 预览收口混在一起。
+
+当前 Manager lake table 预览、Manager object content 的 GeoJSON / Parquet 内容预览，以及 Meta lake table schema 提取都已经走 `TableProvider` / `ScopeTableProvider`，不再直接依赖具体 parser 或 engine 绑定 helper。
+
+代码口径上，JSON 表格 provider 位于 `common/format/json`。它支持 GeoJSON FeatureCollection 这类 JSON 空间表结构，但注册的顶层格式仍然是 `FormatJSON`。
 
 #### TableProvider 与 SpatialProvider
 

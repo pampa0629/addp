@@ -337,7 +337,7 @@ func (s *MetadataQueryService) GetItemByPath(tenantID, engineID uint, bucketName
 	}
 
 	err := s.db.Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
-		Where("item_type IN ?", []string{"object", "lake_table"}).
+		Where("item_type IN ?", []string{"object", "table"}).
 		Where("full_name = ?", fullPath).
 		First(&item).Error
 

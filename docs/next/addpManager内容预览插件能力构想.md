@@ -23,6 +23,10 @@ Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套�
 
 因此，preview manifest 中不建议再把 `filetable`、`laketable` 作为独立预览类型，而应围绕 `data_type=table`、`format`、`organization`、`capabilities` 来做匹配。
 
+当前实现已经先把底层读取链路收口到 `TableProvider` / `ComponentTableProvider` / `ScopeTableProvider`。`builtin:scope-table` 作为目录型表格来源路由，直接对应 `item.data_type=table + item.organization=whole`。
+
+Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` 的目录型表格范围；`PhysicalPath` 只用于 `organization=single` 的单文件表。Provider 选择基于 `data_type=table + organization`：whole table 走 `builtin:scope-table`，single 文件表走 `builtin:file-table`。新扫描结果不再使用 `item_type=lake_table`。
+
 ## 匹配输入
 
 插件匹配只基于标准字段：

@@ -18,24 +18,24 @@
 
 ## 当前问题
 
-### 1. 识别和能力混在一起
+### 1. 识别和能力曾经混在一起
 
-现在既有：
+改造前同时存在：
 
 - `DetectFormat`
 - `FormatType`
 - `common/format/capability`
-- `common/format/interface.go` 里的旧 parser 接口
+- 旧 parser 接口
 
-这会导致“这个格式长什么样”和“这个格式能提供什么能力”混在一起。
+这会导致“这个格式长什么样”和“这个格式能提供什么能力”混在一起。当前旧 parser 接口已经删除，后续继续以 capability registry 和 provider registry 为事实源。
 
-### 2. parser 接口还在直接绑定 engine
+### 2. parser 接口曾经直接绑定 engine
 
-例如：
+已删除的历史接口包括：
 
-- `DBTableParser` 直接收 `*gorm.DB` 和 `enginePlugin`
-- `DocCollectionParser` 直接收 `client interface{}`
-- `FileTableParser` 直接吃 `io.Reader`
+- 数据库表 parser：直接收 `*gorm.DB` 和 `enginePlugin`。
+- 文档集合 parser：直接收 `client interface{}`。
+- 文件表 parser：直接吃 `io.Reader` 并通过旧 registry 暴露。
 
 这些接口更像历史过渡产物，不像稳定的格式能力边界。
 
@@ -43,15 +43,15 @@
 
 从上层模型看，`geo` 更适合落成 `json + spatial`，而不是单独再维持一套独立顶层格式口径。
 
-### 4. 旧 registry 是 parser registry，不是 capability registry
+### 4. 旧 registry 曾经是 parser registry，不是 capability registry
 
-当前 `common/format/registry.go` 还是按 parser 类型注册：
+已删除的旧 registry 曾经按 parser 类型注册：
 
 - file table parser
 - db table parser
 - doc collection parser
 
-这和后续的 `FormatCapability` / `FormatProvider` 方向不一致。
+这和 `FormatCapability` / `FormatProvider` 方向不一致，因此已经删除。
 
 ## 目标形态
 
@@ -79,6 +79,7 @@
 
 - `common/format.FormatGeoJSON` 不再存在。
 - `.geojson` 扩展名和 `application/geo+json` MIME 统一识别为 `FormatJSON`。
+- 旧 `common/format/geojson` 包已删除，JSON 表格 provider 统一放到 `common/format/json`。
 - `common/format/capability` 中只保留 `json` 格式，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
 - Meta 对 `.geojson` 资源的落库语义调整为 `item.format=json`、`item.data_type=table`、`capabilities.spatial`。
 - 普通 `.json` 仍默认为 `item.data_type=document`。
@@ -87,14 +88,60 @@
 
 同时已经补上 `common/format` 的第一版 provider 基础入口：
 
-- 新增 `Provider` / `TableProvider` / `ProviderRegistry`。
+- 新增 `Provider` / `TableProvider` / `ComponentTableProvider` / `ScopeTableProvider` / `ProviderRegistry`。
 - 内置 CSV、Excel、JSON 空间扩展、Shapefile、Parquet 直接注册为 `TableProvider`。
-- Manager 文件表预览已从直接调用 `GetFileTableParser` 调整为调用 `GetTableProvider`。
+- Manager 文件表预览已调整为调用 `GetTableProvider`。
 - Manager 启动显式导入 `common/format/builtin`，确保内置格式 provider 注册稳定。
 - 新增 `builtin:file-table` 预览插件声明，避免文件表 provider 只存在于代码工厂而没有插件声明。
-- `FileTableParser` 接口、`RegisterFileTableParser`、`GetFileTableParser` 等旧文件表注册 API 已删除。
+- 旧文件表注册 API 已删除。
 
-这不是最终接口，只是先把文件表主路径切到 provider。下一步应继续把 Shapefile 多组件读取、Parquet scope 读取和 Transfer batch 读写迁移到同一套 provider 语义。
+这不是最终接口，只是先把表格格式的主路径切到 provider。Shapefile 多组件读取和 Parquet scope 读取已经先迁到同一套 provider 语义；Transfer batch 读写后续单独处理。
+
+`common/resource` 也已经补上最小读取抽象，并用 Manager Shapefile 预览验证了多组件链路：
+
+```text
+engine ContentReadableProvider
+  -> common/resource.ResourceReader
+  -> common/resource.ComponentReader
+  -> format.ComponentTableProvider
+  -> Manager preview DTO
+```
+
+Shapefile 的组件物化已经从 Manager 下沉到 format provider，Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`。
+
+Parquet lake table 预览也已经验证 scope 链路：
+
+```text
+engine CatalogProvider + ContentReadableProvider
+  -> common/resource.ResourceReader
+  -> format.ScopeTableProvider
+  -> Manager preview DTO
+```
+
+`common/format/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `ResourceReader` 提供。
+
+Meta 的 lake table schema 提取也已经改为通过 `format.GetTableProvider(format.FormatParquet)` 调用 Parquet provider，不再直接 new Parquet parser。
+
+Manager object content 中的 GeoJSON / Parquet 内容预览也已经改为通过 `TableProvider` 提取表语义，Manager 只保留 preview content DTO 组装。
+
+Manager lake table 预览已经按 engine 类型选择 `ResourceReader`：
+
+- 对象存储 lake table 使用 `objectStorageResourceReader`。
+- 文件系统 lake table 使用 `fileSystemResourceReader`。
+
+Manager 使用 `builtin:scope-table` 路由目录型表格资源。它是 scope 表预览 provider 名称，不是 item type。
+
+当前 Manager 已先区分单文件 `PhysicalPath` 和目录型 `ScopePath`：
+
+- `item.organization=single` 时，`storage.physical_path` 进入 `PhysicalPath`。
+- `item.organization=whole` 时，`storage.physical_path` 进入 `ScopePath`。
+
+Manager provider 选择也已经改为看标准 attributes：
+
+- `item.data_type=table` 且 `item.organization=whole` 时，走 `builtin:scope-table`。
+- `item.data_type=table` 且 `item.organization=single` / 文件表格式时，走 `builtin:file-table`。
+
+新扫描结果不再产出 `item_type=lake_table`，湖表只是 `item_type=table + item.format=parquet/orc/avro + item.organization=single/whole` 的组合语义。
 
 ### 第一阶段：能力声明收口
 
@@ -108,24 +155,24 @@
 
 ### 第二阶段：旧 parser 接口退出主路径
 
-把 `common/format/interface.go` 里的接口逐步降级为适配器语义：
+旧 parser 主接口已经删除：
 
 - `DBTableParser`
 - `FileTableParser`
 - `DocCollectionParser`
 
-它们不能继续作为平台主抽象。  
-最终应被新的 provider 接口替代，并删除旧接口、旧注册入口和旧调用路径。
+它们不再作为平台主抽象存在，也不再提供注册或获取入口。
 
-当前代码已经完成第一处主路径替换：
+当前代码已经完成主路径替换：
 
 ```text
 Manager FileTablePreviewProvider
-  旧：format.GetFileTableParser(format)
-  新：format.GetTableProvider(format)
+  -> format.GetTableProvider(format)
 ```
 
 旧文件表注册入口已经删除。各格式包内部仍保留 `ParseTableInfo` / `ReadPreview` 这类实现方法，但它们不再通过旧 registry 暴露给上层，而是由 `TableProvider` 统一注册和消费。
+
+同时，旧 `TypeMapping` 兼容 facade 和无人调用的 `common/format/db` parser 包也已删除。类型映射统一走 `TypeMapper` 注册表。
 
 ### 第三阶段：检测逻辑收敛
 
@@ -156,18 +203,16 @@ Manager FileTablePreviewProvider
 
 ## 关键改造点
 
-### 1. `common/format/registry.go`
+### 1. provider registry 与 capability registry
 
-当前 registry 还是 parser registry。  
-后续应向 capability registry + provider registry 过渡。
+parser registry 已删除。当前保留两类事实源：
 
-### 2. `common/format/interface.go`
+- capability registry：描述格式事实和能力。
+- provider registry：注册格式 provider 实现。
 
-这些接口不应继续成为平台主接口。
+后续改造应继续围绕这两类 registry 进行，不再引入 parser registry。
 
-它们要么迁入 provider 层作为内部实现，要么直接删除。
-
-### 3. `common/format/detection.go`
+### 2. `common/format/detection.go`
 
 保留识别工具，但识别结果要尽量轻。
 
@@ -184,13 +229,13 @@ Manager FileTablePreviewProvider
 
 是否为空间数据不由 `FormatType` 判断，而由解析结果、Meta attributes 或 `SpatialProvider` 判断。
 
-### 4. `common/format/parquet/lake_table.go`
+### 3. `common/format/parquet/lake_table.go`
 
-这一类代码说明 format 层已经开始背负组织方式和读取策略。
+这一类代码说明 format 层曾经开始背负组织方式和读取策略。
 
-后续应把它从“隐式业务逻辑”收回到明确 provider 或 adapter。
+当前已经先删除 Parquet 直接调用 engine provider 的预览 helper，并新增 `ScopeTableProvider` 处理 scope 表读取。后续如果继续保留 `lake_table.go`，它只能作为轻量格式扩展名工具；不应再长出 engine、preview 或 item 归并逻辑。
 
-### 5. `common/format/shapefile/*`
+### 4. `common/format/shapefile/*`
 
 Shapefile 是典型的多组件格式，适合验证：
 
@@ -199,6 +244,8 @@ Shapefile 是典型的多组件格式，适合验证：
 - manifest / 主资源 / 组件角色
 
 它适合作为后续 provider 化的样板。
+
+当前 Shapefile 已经作为 `ComponentTableProvider` 样板落地：组件集合由上层根据 layout 或 Meta attributes 提供，组件物化与解析由 format provider 内部完成。
 
 ## 与上层的关系
 
@@ -217,12 +264,10 @@ Shapefile 是典型的多组件格式，适合验证：
 
 ## 暂不做
 
-- 暂不在本轮一次性删除所有旧 parser，但最终必须删除旧 parser 主接口。
-- 暂不在本轮重命名全部 format 包，但最终需要删除不符合新模型的旧目录和旧 API。
 - 暂不把 Transfer 中的空间编码枚举 `geojson` 误删；那里表达的是几何编码格式，不是 ADDP 顶层 `FormatType`。
 - 暂不把 Manager 当前前端 preview kind 的 `geojson` 误删；它表达的是展示内容类型，后续要改成由 `data_type + capabilities.spatial` 组装。
-- 暂不在这里定义最终 Go 接口
-- 暂不直接改上层 Manager / Transfer 调用
+- 暂不处理 Transfer 读写链路；Transfer 单独开一轮。
+- `builtin:scope-table` 是 Manager 内部 provider 名称，保留它不代表保留 `lake_table` item type。
 
 ## 结论
 

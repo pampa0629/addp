@@ -61,17 +61,6 @@ func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) 
 	}
 }
 
-// ToCommonFromByte 从字节类型转换（兼容旧代码）
-func (m *TypeMapper) ToCommonFromByte(dbfType byte) format.FieldType {
-	return m.ToCommon(string(dbfType))
-}
-
-// FromCommonToDBF 将通用类型转换为DBF字节类型（兼容旧代码）
-func (m *TypeMapper) FromCommonToDBF(commonType format.FieldType) (dbfType byte, size uint8, precision uint8) {
-	typeStr, sizeInt, precisionInt := m.FromCommon(commonType)
-	return typeStr[0], uint8(sizeInt), uint8(precisionInt)
-}
-
 // init 自动注册Shapefile类型映射器
 func init() {
 	format.RegisterTypeMapper(&TypeMapper{})

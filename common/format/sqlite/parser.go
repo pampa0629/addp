@@ -105,7 +105,7 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 }
 
 func init() {
-	// TODO: SQLite parser 需要实现 TableProvider 所需的 DescribeTable、SampleTable 能力后注册
+	// SQLite 当前作为容器分析能力使用，暂不注册为 TableProvider。
 	// parser := NewParser(nil)
 	// _ = format.RegisterTableProvider(format.NewTableProvider(format.FormatSQLite, parser.ParseTableInfo, parser.ReadPreview))
 }

@@ -2,8 +2,10 @@ package format
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +48,16 @@ func TestListTableProviderFormatsSorted(t *testing.T) {
 	want := []FormatType{"alpha", "zeta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTableProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestNewTableProviderHandlesMissingImplementation(t *testing.T) {
+	provider := NewTableProvider(FormatType("empty"), nil, nil)
+
+	if _, err := provider.DescribeTable(context.Background(), strings.NewReader(""), nil); err == nil {
+		t.Fatalf("DescribeTable() error = nil, want error")
+	}
+	if _, err := provider.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("SampleTable() error = %v, want implementation error", err)
 	}
 }

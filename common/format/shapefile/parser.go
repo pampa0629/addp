@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
 )
@@ -28,36 +29,66 @@ func NewParser(opts *format.ParseOptions) *Parser {
 
 // ParseTableInfo 从 Shapefile 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
 		opts = options
-		p.options = opts // 更新 options 以供内部方法使用
 	}
-
-	// Shapefile 需要文件路径，将 input 保存到临时文件
 	tempDir, cleanup, err := p.saveToTempFiles(input)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+	return p.parseTableInfoFromPath(filepath.Join(tempDir, "data.shp"), opts)
+}
 
-	// 打开 shapefile
-	shpPath := filepath.Join(tempDir, "data.shp")
+func (p *Parser) DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *format.ParseOptions) (*format.TableInfo, error) {
+	_, basePath, cleanup, err := materializeComponents(ctx, components)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	opts := p.options
+	if options != nil {
+		opts = options
+	}
+	if opts.SpatialRefSys == "" {
+		if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
+			opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
+		}
+	}
+	return p.parseTableInfoFromPath(basePath+".shp", opts)
+}
+
+// ReadPreview 读取 Shapefile 数据预览
+func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	tempDir, cleanup, err := p.saveToTempFiles(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	return p.readPreviewFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit)
+}
+
+func (p *Parser) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	_, basePath, cleanup, err := materializeComponents(ctx, components)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	return p.readPreviewFromPath(ctx, basePath+".shp", offset, limit)
+}
+
+func (p *Parser) parseTableInfoFromPath(shpPath string, opts *format.ParseOptions) (*format.TableInfo, error) {
 	reader, err := Open(shpPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)
 	}
 	defer reader.Close()
 
-	// 获取 schema 信息
 	shpSchema := reader.GetSchema()
 	geometryField := p.getGeometryFieldName()
-
-	// 构建 FieldInfo 列表（几何字段 + 属性字段）
 	fields := make([]format.FieldInfo, 0, len(shpSchema)+1)
-
-	// 添加几何字段
 	fields = append(fields, format.FieldInfo{
 		Name:         geometryField,
 		Type:         format.FieldTypeGeometry,
@@ -66,8 +97,6 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
 	})
-
-	// 添加属性字段
 	for _, field := range shpSchema {
 		fields = append(fields, format.FieldInfo{
 			Name:         field.Name,
@@ -79,114 +108,79 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 		})
 	}
 
-	// 统计记录数
 	recordCount := int64(0)
 	for reader.Next() {
 		recordCount++
 	}
 
-	// 构建 SpatialInfo 扩展
-	// 重新打开 reader 来获取第一个 shape 以确定几何类型
 	reader2, err := Open(shpPath)
-	if err == nil {
-		defer reader2.Close()
-		var geomType string
-		if reader2.Next() {
-			_, shape := reader2.Shape()
-			// 使用 shape 的类型来确定几何类型
-			geomType = fmt.Sprintf("%T", shape) // 简化处理
-			// 标准化类型名称
-			if strings.Contains(geomType, "Point") {
-				geomType = "Point"
-			} else if strings.Contains(geomType, "Polygon") {
-				geomType = "Polygon"
-			} else if strings.Contains(geomType, "PolyLine") {
-				geomType = "LineString"
-			} else {
-				geomType = "Geometry"
-			}
-		} else {
-			geomType = "Geometry"
-		}
-
-		spatialInfo := &format.SpatialInfo{
-			GeometryColumn: geometryField,
-			GeometryType:   geomType,
-			SRID:           0, // 未明确识别前不假定为 WGS84
-			Dimension:      2, // Shapefile 默认 2D
-		}
-
-		// 如果在 options 中指定了空间参考系统，解析 SRID
-		if opts.SpatialRefSys != "" {
-			if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
-				spatialInfo.SRID = srid
-			}
-		}
-
-		// 构建 ShapefileInfo 扩展
-		shapefileInfo := &format.ShapefileInfo{
-			Encoding:   opts.Encoding,
-			ShapeType:  geomType,
-			HasPRJ:     false, // TODO: 检测 .prj 文件
-			HasCPG:     false, // TODO: 检测 .cpg 文件
-			DBFVersion: 0,     // TODO: 从 DBF 读取版本号
-		}
-
-		// 构建 TableInfo
-		tableInfo := &format.TableInfo{
-			Name:       "shapefile_data", // Shapefile 没有表名，使用默认值
+	if err != nil {
+		return &format.TableInfo{
+			Name:       "shapefile_data",
 			RowCount:   &recordCount,
 			Fields:     fields,
-			PrimaryKey: []string{}, // Shapefile 没有主键
-			Extensions: []format.ExtensionInfo{spatialInfo, shapefileInfo},
-		}
+			PrimaryKey: []string{},
+			Extensions: []format.ExtensionInfo{},
+		}, nil
+	}
+	defer reader2.Close()
 
-		return tableInfo, nil
+	geomType := determineShapefileGeometryType(reader2.GeometryType)
+	if geomType == "Geometry" && reader2.Next() {
+		_, shape := reader2.Shape()
+		geomType = determineShapeGeometryType(shape)
 	}
 
-	// 如果无法重新打开文件，返回不带扩展信息的 TableInfo
-	tableInfo := &format.TableInfo{
+	spatialInfo := &format.SpatialInfo{
+		GeometryColumn: geometryField,
+		GeometryType:   geomType,
+		SRID:           0,
+		Dimension:      2,
+	}
+	if opts != nil && opts.SpatialRefSys != "" {
+		if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
+			spatialInfo.SRID = srid
+		}
+	}
+
+	shapefileInfo := &format.ShapefileInfo{
+		Encoding:   "",
+		ShapeType:  geomType,
+		HasPRJ:     fileExists(strings.TrimSuffix(shpPath, filepath.Ext(shpPath)) + ".prj"),
+		HasCPG:     fileExists(strings.TrimSuffix(shpPath, filepath.Ext(shpPath)) + ".cpg"),
+		DBFVersion: 0,
+	}
+	if opts != nil {
+		shapefileInfo.Encoding = opts.Encoding
+	}
+
+	return &format.TableInfo{
 		Name:       "shapefile_data",
 		RowCount:   &recordCount,
 		Fields:     fields,
 		PrimaryKey: []string{},
-		Extensions: []format.ExtensionInfo{},
-	}
-
-	return tableInfo, nil
+		Extensions: []format.ExtensionInfo{spatialInfo, shapefileInfo},
+	}, nil
 }
 
-// ReadPreview 读取 Shapefile 数据预览
-func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	tempDir, cleanup, err := p.saveToTempFiles(input)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	shpPath := filepath.Join(tempDir, "data.shp")
+func (p *Parser) readPreviewFromPath(ctx context.Context, shpPath string, offset, limit int64) ([]map[string]interface{}, error) {
 	reader, err := Open(shpPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)
 	}
 	defer reader.Close()
 
-	// 获取字段信息
 	fields := reader.Fields()
 	geometryField := p.getGeometryFieldName()
-
-	// 跳过到 offset
 	currentRecord := int64(0)
 	for currentRecord < offset && reader.Next() {
 		currentRecord++
 	}
 
-	// 读取数据
 	maxRows := limit
 	if limit < 0 {
-		maxRows = 1<<31 - 1 // shapefile 最大记录数
+		maxRows = 1<<31 - 1
 	}
-
 	records := make([]map[string]interface{}, 0)
 	readCount := int64(0)
 	recordIndex := int(offset)
@@ -199,11 +193,7 @@ func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit
 		}
 
 		_, shape := reader.Shape()
-
-		// 构建记录
 		record := make(map[string]interface{}, len(fields)+1)
-
-		// 添加属性字段
 		for i, field := range fields {
 			fieldName := TrimDBFFieldName(field.Name)
 			rawValue := strings.TrimSpace(reader.ReadAttribute(recordIndex, i))
@@ -213,8 +203,6 @@ func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit
 				record[fieldName] = ParseDBFAttribute(field.Fieldtype, rawValue)
 			}
 		}
-
-		// 添加几何字段（转换为 WKT）
 		if shape != nil {
 			wkt, err := ShapeToWKT(shape)
 			if err == nil {
@@ -225,13 +213,62 @@ func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit
 		} else {
 			record[geometryField] = nil
 		}
-
 		records = append(records, record)
 		readCount++
 		recordIndex++
 	}
-
 	return records, nil
+}
+
+func materializeComponents(ctx context.Context, components resource.ComponentReader) (tempDir string, basePath string, cleanup func(), err error) {
+	tempDir, err = os.MkdirTemp("", "shapefile-components-*")
+	if err != nil {
+		return "", "", nil, err
+	}
+	cleanup = func() {
+		os.RemoveAll(tempDir)
+	}
+
+	var mainLocalPath string
+	for _, component := range components.Components() {
+		localPath := filepath.Join(tempDir, filepath.Base(component.Path))
+		if err := materializeComponent(ctx, components, component, localPath); err != nil {
+			if component.Required {
+				cleanup()
+				return "", "", nil, fmt.Errorf("failed to read required component %s: %w", component.Path, err)
+			}
+			continue
+		}
+		if component.ComponentRole == "main" {
+			mainLocalPath = localPath
+		}
+	}
+	if mainLocalPath == "" {
+		cleanup()
+		return "", "", nil, fmt.Errorf("main component missing")
+	}
+	return tempDir, strings.TrimSuffix(mainLocalPath, filepath.Ext(mainLocalPath)), cleanup, nil
+}
+
+func materializeComponent(ctx context.Context, components resource.ComponentReader, component resource.ComponentRef, destPath string) error {
+	src, err := components.OpenComponent(ctx, component)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	_, err = io.Copy(dst, src)
+	return err
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // mapShapefileTypeToFieldType 将 Shapefile 字段类型映射到 FieldType
@@ -339,11 +376,22 @@ func determineShapefileGeometryType(shapeType shp.ShapeType) string {
 	}
 }
 
+func determineShapeGeometryType(shape shp.Shape) string {
+	switch shape.(type) {
+	case *shp.Point, *shp.PointZ, *shp.PointM:
+		return "Point"
+	case *shp.PolyLine, *shp.PolyLineZ, *shp.PolyLineM:
+		return "LineString"
+	case *shp.Polygon, *shp.PolygonZ, *shp.PolygonM:
+		return "Polygon"
+	case *shp.MultiPoint, *shp.MultiPointZ, *shp.MultiPointM:
+		return "MultiPoint"
+	default:
+		return "Geometry"
+	}
+}
+
 func init() {
 	parser := NewParser(nil)
-	_ = format.RegisterTableProvider(format.NewTableProvider(
-		format.FormatShapefile,
-		parser.ParseTableInfo,
-		parser.ReadPreview,
-	))
+	_ = format.RegisterTableProvider(newTableProvider(parser))
 }
