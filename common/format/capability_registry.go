@@ -10,8 +10,11 @@ const (
 )
 
 const (
-	FormatDataTypeTabular  = formatcap.DataTypeTabular
+	FormatDataTypeTable    = formatcap.DataTypeTable
 	FormatDataTypeDocument = formatcap.DataTypeDocument
+	FormatDataTypeMedia    = formatcap.DataTypeMedia
+	FormatDataTypeContainer = formatcap.DataTypeContainer
+	FormatDataTypeGraph    = formatcap.DataTypeGraph
 	FormatDataTypeFile     = formatcap.DataTypeFile
 )
 
@@ -22,12 +25,30 @@ const (
 	EngineFamilyDocument = formatcap.EngineFamilyDocument
 )
 
+const (
+	FormatLayoutSingle = formatcap.LayoutSingle
+	FormatLayoutMulti  = formatcap.LayoutMulti
+	FormatLayoutWhole  = formatcap.LayoutWhole
+)
+
+const (
+	FormatProviderTable     = formatcap.ProviderTable
+	FormatProviderDocument  = formatcap.ProviderDocument
+	FormatProviderMedia     = formatcap.ProviderMedia
+	FormatProviderContainer = formatcap.ProviderContainer
+	FormatProviderGraph     = formatcap.ProviderGraph
+	FormatProviderSpatial   = formatcap.ProviderSpatial
+)
+
 // FormatCapability 声明一个格式在 ADDP 中可被哪些平台能力消费。
 type FormatCapability struct {
 	Format         FormatType
 	I18nKey        string
 	Extensions     []string
 	DataType       string
+	Layouts        []string
+	ProviderHints  []string
+	Spatial        bool
 	TransferRead   bool
 	TransferWrite  bool
 	Preview        bool
@@ -66,6 +87,9 @@ func toFormatCap(capability FormatCapability) formatcap.Capability {
 		I18nKey:        capability.I18nKey,
 		Extensions:     capability.Extensions,
 		DataType:       capability.DataType,
+		Layouts:        capability.Layouts,
+		ProviderHints:  capability.ProviderHints,
+		Spatial:        capability.Spatial,
 		TransferRead:   capability.TransferRead,
 		TransferWrite:  capability.TransferWrite,
 		Preview:        capability.Preview,
@@ -80,6 +104,9 @@ func fromFormatCap(capability formatcap.Capability) FormatCapability {
 		I18nKey:        capability.I18nKey,
 		Extensions:     capability.Extensions,
 		DataType:       capability.DataType,
+		Layouts:        capability.Layouts,
+		ProviderHints:  capability.ProviderHints,
+		Spatial:        capability.Spatial,
 		TransferRead:   capability.TransferRead,
 		TransferWrite:  capability.TransferWrite,
 		Preview:        capability.Preview,

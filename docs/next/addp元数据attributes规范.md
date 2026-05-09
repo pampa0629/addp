@@ -67,7 +67,7 @@ attributes 分区统一采用以下概念：
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
 | `type_info` | 数据库 metadata、parser、采样器、extractor、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
-| `format_info` | parser、extractor、plugin、Meta item normalizer | CSV 分隔符、Shapefile 组件、GeoJSON 类型、SQLite 版本等具体格式信息 |
+| `format_info` | parser、extractor、plugin、Meta item normalizer | CSV 分隔符、Shapefile 组件、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `capabilities` | parser、extractor、plugin、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
 ## 写入规则
@@ -105,7 +105,7 @@ attributes 分区统一采用以下概念：
 
 - `format_info.csv`
 - `format_info.shapefile`
-- `format_info.geojson`
+- `format_info.json`
 - `format_info.sqlite`
 - `format_info.com.vendor.plugin_name`
 

@@ -192,7 +192,7 @@ Parquet 本身不需要被称为“湖表”。一个 Parquet 文件可以是 `s
 - 数据库表。
 - CSV / TSV。
 - records 型 JSON。
-- GeoJSON FeatureCollection。
+- 带空间结构的 JSON FeatureCollection。
 - Shapefile。
 - Parquet / ORC / Avro。
 - Iceberg 等表格式目录。
@@ -201,7 +201,7 @@ CSV 和 JSON 虽然文本属性强，但只要平台把它们作为行列数据�
 
 JSON 需要结构识别：
 
-- records array、JSON Lines、GeoJSON FeatureCollection 可归为 `table`。
+- records array、JSON Lines、带空间结构的 JSON FeatureCollection 可归为 `table`。
 - 任意 JSON 对象、配置文件、嵌套文档可归为 `document` 或 `container`，取决于平台消费方式。
 
 ### media
@@ -251,7 +251,7 @@ JSON 需要结构识别：
 文件格式回答 item 的编码方式，例如：
 
 - `csv`、`tsv`
-- `json`、`geojson`
+- `json`
 - `parquet`、`orc`、`avro`
 - `shapefile`
 - `sqlite`、`geopackage`
@@ -267,7 +267,7 @@ JSON 需要结构识别：
 |---|---|
 | `csv` | delimiter、encoding、has_header、quote_char |
 | `shapefile` | base_name、component_extensions、has_prj、shape_type、dbf_version |
-| `geojson` | geojson_type、feature_count、has_bbox、crs |
+| `json` | json_type、record_count、has_bbox、crs |
 | `sqlite` | sqlite_version、table_count、tables |
 | `zip` | compression_method、entry_count、encrypted |
 
@@ -286,12 +286,12 @@ JSON 需要结构识别：
 1. table 上的空间字段，本身应该在 table info 的 field info 中。
 2. 哪个字段是空间字段，属于 spatial。
 3. SRID、extent、geometry type、空间维度、空间索引等属于 spatial。
-4. Shapefile、GeoJSON、GeoPackage 等具体格式仍应保留自己的 format info，和通用 spatial 独立。
+4. Shapefile、JSON、GeoPackage 等具体格式仍应保留自己的 format info，和通用 spatial 独立。
 
 示例：
 
 - Shapefile = `data_type=table` + `organization=multi` + `format=shapefile` + `spatial`。
-- GeoJSON = `data_type=table` + `organization=single` + `format=geojson` + `spatial`。
+- 带空间结构的 JSON = `data_type=table` + `organization=single` + `format=json` + `spatial`。
 - PostGIS 表 = `data_type=table` + `organization=single` + `spatial`。
 - GeoTIFF = `data_type=media` + `format=tiff` + `spatial`。
 

@@ -26,17 +26,17 @@ Manager 不得按扩展名二次猜测分隔符；必须使用 Meta 标准识别
 
 Excel 的内部 sheet 是内部子 item，应先在 attributes 中表达。是否按 sheet 展开为独立 meta item 属于后续规范事项，未形成规范前不得改变 Manager / Transfer 路由语义。
 
-## GeoJSON
+## JSON + 空间结构
 
 | 维度 | 取值 |
 |---|---|
 | `data_type` | `table` |
-| `format` | `geojson` |
+| `format` | `json` |
 | `organization` | `single` |
 
-GeoJSON FeatureCollection 是空间矢量表。`FeatureCollection.features[].properties` 用于推断属性字段，`Feature.geometry` 用于补充平台统一几何字段。字段、行数进入 `type_info.table`，空间能力进入 `capabilities.spatial`，GeoJSON 私有信息进入 `format_info.geojson`。
+JSON 的某些结构可以表达空间矢量表。`FeatureCollection.features[].properties` 用于推断属性字段，`Feature.geometry` 用于补充平台统一几何字段。字段、行数进入 `type_info.table`，空间能力进入 `capabilities.spatial`，JSON 私有信息进入 `format_info.json`。
 
-`.json` 不能直接等同于 `geojson`，必须验证 GeoJSON 结构。records array、JSON Lines 可识别为 `data_type=table`、`format=json`；任意 JSON 对象、配置文件、嵌套文档应按平台消费方式识别为 `document` 或 `container`。
+`.json` 不能直接等同于空间格式，必须验证 JSON 结构。records array、JSON Lines 可识别为 `data_type=table`、`format=json`；任意 JSON 对象、配置文件、嵌套文档应按平台消费方式识别为 `document` 或 `container`。只有带空间结构的 JSON 才额外写入 `capabilities.spatial`。
 
 ## Shapefile
 

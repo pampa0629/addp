@@ -13,15 +13,17 @@ const (
 	FormatTable     Format = "table"
 	FormatDocument  Format = "document"
 	FormatCSV       Format = "csv"
-	FormatGeoJSON   Format = "geojson"
 	FormatJSON      Format = "json"
 	FormatParquet   Format = "parquet"
 	FormatShapefile Format = "shapefile"
 )
 
 const (
-	DataTypeTabular  = "tabular"
+	DataTypeTable    = "table"
 	DataTypeDocument = "document"
+	DataTypeMedia    = "media"
+	DataTypeContainer = "container"
+	DataTypeGraph    = "graph"
 	DataTypeFile     = "file"
 )
 
@@ -30,6 +32,21 @@ const (
 	EngineFamilyObject   = "object"
 	EngineFamilyFile     = "file"
 	EngineFamilyDocument = "document"
+)
+
+const (
+	LayoutSingle = "single"
+	LayoutMulti  = "multi"
+	LayoutWhole  = "whole"
+)
+
+const (
+	ProviderTable     = "table"
+	ProviderDocument  = "document"
+	ProviderMedia     = "media"
+	ProviderContainer = "container"
+	ProviderGraph     = "graph"
+	ProviderSpatial   = "spatial"
 )
 
 // Capability 声明一个格式在 ADDP 中可被哪些平台能力消费。
@@ -41,6 +58,9 @@ type Capability struct {
 	I18nKey        string
 	Extensions     []string
 	DataType       string
+	Layouts        []string
+	ProviderHints  []string
+	Spatial        bool
 	TransferRead   bool
 	TransferWrite  bool
 	Preview        bool
@@ -65,7 +85,9 @@ func init() {
 	mustRegister(Capability{
 		Format:         FormatTable,
 		I18nKey:        "format.table",
-		DataType:       DataTypeTabular,
+		DataType:       DataTypeTable,
+		Layouts:        []string{LayoutWhole},
+		ProviderHints:  []string{ProviderTable},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -75,6 +97,8 @@ func init() {
 		Format:         FormatDocument,
 		I18nKey:        "format.document",
 		DataType:       DataTypeDocument,
+		Layouts:        []string{LayoutWhole},
+		ProviderHints:  []string{ProviderDocument},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -84,18 +108,9 @@ func init() {
 		Format:         FormatCSV,
 		I18nKey:        "format.csv",
 		Extensions:     []string{".csv"},
-		DataType:       DataTypeTabular,
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          true,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
-	})
-	mustRegister(Capability{
-		Format:         FormatGeoJSON,
-		I18nKey:        "format.geojson",
-		Extensions:     []string{".geojson", ".json"},
-		DataType:       DataTypeTabular,
+		DataType:       DataTypeTable,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderTable},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -105,8 +120,10 @@ func init() {
 	mustRegister(Capability{
 		Format:         FormatJSON,
 		I18nKey:        "format.json",
-		Extensions:     []string{".json"},
+		Extensions:     []string{".json", ".geojson"},
 		DataType:       DataTypeDocument,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderDocument, ProviderTable, ProviderSpatial},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -117,7 +134,9 @@ func init() {
 		Format:         FormatParquet,
 		I18nKey:        "format.parquet",
 		Extensions:     []string{".parquet"},
-		DataType:       DataTypeTabular,
+		DataType:       DataTypeTable,
+		Layouts:        []string{LayoutSingle, LayoutWhole},
+		ProviderHints:  []string{ProviderTable},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -128,7 +147,10 @@ func init() {
 		Format:         FormatShapefile,
 		I18nKey:        "format.shapefile",
 		Extensions:     []string{".shp", ".shx", ".dbf", ".prj"},
-		DataType:       DataTypeTabular,
+		DataType:       DataTypeTable,
+		Layouts:        []string{LayoutMulti},
+		ProviderHints:  []string{ProviderTable, ProviderSpatial},
+		Spatial:        true,
 		TransferRead:   true,
 		TransferWrite:  true,
 		Preview:        true,
@@ -155,6 +177,8 @@ func (r *Registry) Register(capability Capability) error {
 	capability.I18nKey = strings.TrimSpace(capability.I18nKey)
 	capability.DataType = strings.TrimSpace(capability.DataType)
 	capability.Extensions = normalizedStrings(capability.Extensions, true)
+	capability.Layouts = normalizedStrings(capability.Layouts, false)
+	capability.ProviderHints = normalizedStrings(capability.ProviderHints, false)
 	capability.EngineFamilies = normalizedStrings(capability.EngineFamilies, false)
 
 	r.mu.Lock()
@@ -224,6 +248,8 @@ func (r *Registry) ListTransferFormatsForEngineFamily(engineFamily string) []str
 
 func clone(capability Capability) Capability {
 	capability.Extensions = append([]string(nil), capability.Extensions...)
+	capability.Layouts = append([]string(nil), capability.Layouts...)
+	capability.ProviderHints = append([]string(nil), capability.ProviderHints...)
 	capability.EngineFamilies = append([]string(nil), capability.EngineFamilies...)
 	return capability
 }

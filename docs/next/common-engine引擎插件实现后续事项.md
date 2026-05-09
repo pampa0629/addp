@@ -28,10 +28,10 @@
 - capabilities validator 已覆盖插件注册、CatalogModel 一致性、Store / Query / Workflow / Script 能力声明与 Provider 实现一致性。
 - System 后端已生成 `capabilities_view`，引擎详情页已改为能力摘要、能力卡片、目录链路、扩展区和“查看 JSON”树形视图。
 - Format Registry 第一阶段已落地，`transfer.supported_formats` 已从各引擎能力 builder 手写清单改为按引擎家族派生。
-- Manager 对象存储预览主路径已 Provider 化：`object_preview.go`、`preview_provider_file.go` 和视频流读取不再自行构造 MinIO/S3 client，统一通过 `CatalogProvider` / `ItemMetadataProvider` / `ContentReadableProvider` / `RangeReadableProvider` 读取。
-- Manager 私有 `EngineConnector` 已删除；数据库连接池不再由 Manager 重复维护，统一通过 `dbbridge.GetOrCreatePool()` / `common/engine/plugin` pool factory。
-- Manager Feature / GeoJSON / MVT 相关路径已明确为 PostgreSQL/PostGIS 专用 adapter，不作为通用空间能力冒充；连接池、PostGIS 支持判断、标识符引用和主要 SQL builder 已集中到 `common/spatial/postgis.go`。
-- MVT 准备阶段仍保留创建/刷新物化视图、空间索引和 `ANALYZE` 的执行面语义；这部分不是只读 Catalog/Metadata Provider，不应塞进 engine plugin。
+- 上层模块硬编码收口 P0-P3 已完成第一阶段：
+  - Manager 对象/文件预览、数据库预览、Feature/GeoJSON/MVT、Service 查询执行已分别收口到 Provider、`dbbridge`、`common/spatial`、`common/sqldialect` 等 common helper。
+  - Develop Notebook 数据源注入已改为 `common/runtimeconn` 派生连接描述；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
+  - 引擎展示分类/图标已优先从 capabilities / catalog model 派生，`engine_type` 仅作兜底。
 
 ---
 
@@ -39,86 +39,18 @@
 
 ### 1. 上层模块残留引擎类型硬编码收口
 
-目标：除 Transfer 执行面外，上层模块访问用户注册的数据引擎时应优先消费 `common/engine` Provider 能力，不再直接按 `engine_type` 选择底层 driver / client / catalog 访问方式。
+第一阶段已完成。完成范围只保留清点，避免在 next 文档中堆积已结束任务：
 
-排查时间：2026-05-08。
+- Manager 对象/文件读取主路径已 Provider 化，私有 `EngineConnector` 已删除。
+- Manager PostgreSQL/PostGIS 专用空间路径已集中到 `common/spatial`；通用 SQL 预览/查询拼装已集中到 `common/sqldialect`。
+- Develop Notebook 连接注入已集中到 `common/runtimeconn`；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
+- 展示用途的引擎分类和图标已优先从 capabilities / catalog model 派生。
 
-当前结论：
+仍需保留的边界：
 
-- Meta 扫描主路径、Manager 新版 `database-table` / `filesystem` / `lake-table` / `graph` preview provider、Graph 查询主路径整体已使用 `CatalogProvider`、`ItemMetadataProvider`、`ContentReadableProvider`、`QueryRuntimeProvider`、`GraphQueryProvider` 或 `dbbridge`。
-- 下列位置仍存在需要推进的硬编码或绕过点：
-  - `manager/backend/internal/service/object_preview.go`
-    - 状态：已完成。对象目录、元数据、内容读取已改为通过 Provider；`preview_provider_file.go` 也同步改为 Provider 读取，避免文件表预览保留对象存储直连旁路。
-  - `manager/backend/internal/service/engine_connector.go`
-    - 状态：已删除。相关构造链路已从 `PreviewResolver` 和 router 中移除。
-  - `manager/backend/internal/api/feature_handler.go`、`manager/backend/internal/api/geojson_handler.go`、`common/spatial/query.go`、`manager/backend/internal/mvt/preparation_service.go`、`manager/backend/internal/mvt/tile_generator.go`
-    - 状态：已完成第一阶段收口。当前结论是这些接口属于 PostgreSQL/PostGIS 专用预览/渲染能力，已集中到 `common/spatial/postgis.go`；连接池优先复用 `dbbridge` / plugin pool，不再自行 `sql.Open("postgres"/"pgx")` 或 `gorm.Open(postgres.Open(...))`。
-  - `manager/backend/internal/service/preview_provider_database.go`
-    - 现状：执行已走 `SQLQueryRuntimeProvider`，但分页 SQL、COUNT SQL、标识符引用和 PostGIS 渲染仍按 `engine_type` 分支。
-    - 方向：短期可抽到 common SQL dialect helper；长期评估由 `SQLQueryRuntimeProvider` 或专门的 SQL preview composer 提供方言能力，避免 Manager 复制方言判断。
-  - `service/backend/internal/service/query_executor_service.go`
-    - 现状：连接池已走 `dbbridge.GetOrCreatePool()`，但 `quoteIdentifier()` 和 PostgreSQL 空间字段处理仍按 `engine_type` 判断。
-    - 方向：复用同一个 SQL dialect / spatial adapter，不在 Service 模块独立维护方言。
-  - `develop/backend/internal/service/notebook_execution_service.go`
-    - 状态：已完成。Notebook 数据源注入已改为通过 `common/runtimeconn` 从插件能力、`connection_info` 和可选 `DSNProvider` 派生运行时连接描述，不再在 Develop 模块内手写各引擎连接信息。
-  - `common/duckdb/engine.go`、`develop/backend/internal/service/duckdb_service.go`
-    - 状态：已完成第一阶段集中。DuckDB 挂载差异仍集中在 `common/duckdb` 适配层，Develop 模块只通过 `duckdb.IsLakeTableEngine()` / `duckdb.IsRelationalMountEngine()` 判断是否纳入联邦查询 sources。
-
-推进顺序建议：
-
-- [x] P0：替换 `manager/backend/internal/service/object_preview.go` 中的 MinIO/S3 直连，统一走 object/file Store Provider。
-- [x] P0：删除或改造 `manager/backend/internal/service/engine_connector.go`，统一使用 `dbbridge.GetOrCreatePool()`。
-- [x] P1：整理 Manager 空间预览、Feature、GeoJSON、MVT 的 PostgreSQL/PostGIS 专用路径，形成集中 spatial adapter；连接池不再自行打开。
-- [x] P1：抽取 SQL dialect helper，先供 Manager preview 和 Service query executor 复用。
-- [x] P2：为 Notebook 数据源注入设计插件派生连接描述，替代模块内手写连接信息。
-- [x] P2：为 DuckDB 联邦挂载设计窄接口或集中适配层，避免新增引擎时继续修改多处 switch。
-- [x] P3：清理仅用于展示分类、图标、前端过滤的硬编码清单，逐步改为 capabilities / catalog model 派生；这类不阻塞核心 Provider 收口。
-
-验证建议：
-
-```bash
-go test ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge
-go test ./manager/backend/internal/service ./manager/backend/internal/api ./manager/backend/internal/mvt
-go test ./service/backend/internal/service ./service/backend/internal/service/data
-go test ./develop/backend/internal/service ./common/duckdb
-git diff --check
-```
-
-接力记录（2026-05-08）：
-
-- 已完成并验证 P0 / 第一个 P1。主要改动文件：
-  - `manager/backend/internal/service/object_preview.go`
-  - `manager/backend/internal/service/preview_provider_file.go`
-  - `manager/backend/internal/service/metadata_service.go`
-  - `manager/backend/internal/service/preview_resolver.go`
-  - `manager/backend/internal/api/router.go`
-  - `common/spatial/postgis.go`
-  - `common/spatial/query.go`
-  - `manager/backend/internal/api/feature_handler.go`
-  - `manager/backend/internal/api/geojson_handler.go`
-  - `manager/backend/internal/mvt/preparation_service.go`
-  - `manager/backend/internal/mvt/tile_generator.go`
-  - `manager/backend/internal/mvt/quick_view_service.go`
-- 已删除 `manager/backend/internal/service/engine_connector.go`。
-- 已执行验证：
-  - `go test ./manager/backend/internal/service ./manager/backend/internal/api ./manager/backend/internal/mvt`
-  - `go test ./service/backend/internal/service ./service/backend/internal/service/data`
-  - `go test ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge ./common/spatial`
-  - `git diff --check`
-- 已完成“P1：抽取 SQL dialect helper”。新增 `common/sqldialect` 普通 helper 包，覆盖标识符引用、qualified table、COUNT、LIMIT/OFFSET、sample SQL 和 PostGIS 预览表达式；`manager/backend/internal/service/preview_provider_database.go`、`service/backend/internal/service/query_executor_service.go`、`common/engine/plugin` 与 `common/dbbridge` 已复用该 helper。
-- 边界保持不变：SQL dialect helper 暂不进入 engine plugin Provider 接口；长期若要成为 Provider，需要先补充 SQL preview composer / dialect 能力边界文档。
-- 已执行验证：
-  - `go test ./common/sqldialect ./common/engine/plugin ./common/dbbridge ./manager/backend/internal/service ./service/backend/internal/service`
-- 已完成 P2 / P3 第一阶段：
-  - 新增 `common/runtimeconn` 普通 helper，用于 Notebook 等运行时从插件能力、`connection_info` 和可选 `DSNProvider` 派生连接描述；Develop Notebook 注入已接入。
-  - `common/duckdb` 新增 `MountKindForEngine()`、`IsLakeTableEngine()`、`IsRelationalMountEngine()`，Develop DuckDB sources 不再自行维护挂载类型 switch。
-  - `common/resource` 引擎根图标改为优先从 `capabilities.engine_family` / compute 能力派生，Manager 降级树复用该 common 逻辑。
-  - `common-frontend/basic` 新增 `engineDisplay` 展示 helper，`ResourceTree`、`DataSourceCascader` 和 System 引擎页的展示标签/图标改为优先从 capabilities / catalog model 派生，engine_type 仅作为兜底。
-- P3 边界：Transfer 执行面、表单创建入口和明确业务模式选择仍允许保留必要的类型选项；后续若要完全移除，需要先让对应模块 API 输出能力派生的可选项。
-- 已执行验证：
-  - `go test ./common/runtimeconn ./common/duckdb ./common/resource ./common/engine/plugin ./common/engine/plugins/... ./common/dbbridge ./manager/backend/internal/service ./develop/backend/internal/service`
-  - `cd system/frontend && npm run build`
-  - `git diff --check`
+- Transfer 执行面、表单创建入口和明确业务模式选择可以保留必要类型选项；若要继续收口，需要先让对应模块 API 输出能力派生的可选项。
+- DuckDB `ATTACH` / `httpfs` 差异属于 DuckDB 适配层真实差异，暂不进入通用 DSN 或 engine plugin Provider。
+- `common/sqldialect` 和 `common/runtimeconn` 目前都是普通 helper；若未来上升为 Provider，先补 SQL preview composer / runtime export 能力边界文档。
 
 ### 2. 能力边界状态继续精细化
 

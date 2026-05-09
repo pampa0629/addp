@@ -20,7 +20,7 @@ func TestListFormatCapabilitiesDelegatesToCapabilityRegistry(t *testing.T) {
 
 func TestListTransferFormatsForEngineFamilyDelegate(t *testing.T) {
 	got := ListTransferFormatsForEngineFamily(EngineFamilyObject)
-	want := []string{"csv", "geojson", "json", "parquet", "shapefile"}
+	want := []string{"csv", "json", "parquet", "shapefile"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTransferFormatsForEngineFamily(%q) = %#v, want %#v", EngineFamilyObject, got, want)
 	}

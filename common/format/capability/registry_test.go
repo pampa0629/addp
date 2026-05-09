@@ -32,12 +32,12 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "object",
 			engineFamily: EngineFamilyObject,
-			want:         []string{"csv", "geojson", "json", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "parquet", "shapefile"},
 		},
 		{
 			name:         "file",
 			engineFamily: EngineFamilyFile,
-			want:         []string{"csv", "geojson", "json", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "parquet", "shapefile"},
 		},
 		{
 			name:         "document",
@@ -53,6 +53,22 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 				t.Fatalf("ListTransferFormatsForEngineFamily(%q) = %#v, want %#v", tt.engineFamily, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
+	capability, ok := Get(FormatJSON)
+	if !ok {
+		t.Fatal("expected json capability")
+	}
+	if capability.DataType != DataTypeDocument {
+		t.Fatalf("json DataType = %q, want %q", capability.DataType, DataTypeDocument)
+	}
+	if !containsString(capability.ProviderHints, ProviderSpatial) {
+		t.Fatalf("json ProviderHints = %#v, want spatial hint", capability.ProviderHints)
+	}
+	if !containsString(capability.Extensions, ".geojson") {
+		t.Fatalf("json Extensions = %#v, want .geojson", capability.Extensions)
 	}
 }
 
