@@ -23,11 +23,12 @@ const (
 	FormatTSV   FormatType = "tsv"
 
 	// 文档格式
-	FormatPDF  FormatType = "pdf"
-	FormatDOCX FormatType = "docx"
-	FormatPPTX FormatType = "pptx"
-	FormatWPS  FormatType = "wps"
-	FormatText FormatType = "text"
+	FormatPDF      FormatType = "pdf"
+	FormatDOCX     FormatType = "docx"
+	FormatPPTX     FormatType = "pptx"
+	FormatWPS      FormatType = "wps"
+	FormatText     FormatType = "text"
+	FormatMarkdown FormatType = "markdown"
 
 	// 图像格式
 	FormatImage FormatType = "image" // 通用图像
@@ -119,6 +120,8 @@ func extToFormat(ext string) FormatType {
 		return FormatWPS
 	case ".txt":
 		return FormatText
+	case ".md", ".markdown":
+		return FormatMarkdown
 
 	// 图像
 	case ".jpg", ".jpeg":
@@ -266,6 +269,8 @@ func MIMEToFormat(mimeType string) FormatType {
 		return FormatPPTX
 	case "text/plain":
 		return FormatText
+	case "text/markdown", "text/x-markdown":
+		return FormatMarkdown
 
 	// 图像
 	case "image/jpeg":
@@ -342,6 +347,8 @@ func FormatToMIME(format FormatType) string {
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	case FormatText:
 		return "text/plain"
+	case FormatMarkdown:
+		return "text/markdown"
 
 	// 图像
 	case FormatJPEG:
@@ -407,7 +414,7 @@ func IsGeospatialFormat(format FormatType) bool {
 // IsDocumentFormat 判断是否为文档格式
 func IsDocumentFormat(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText:
+	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText, FormatMarkdown:
 		return true
 	default:
 		return false

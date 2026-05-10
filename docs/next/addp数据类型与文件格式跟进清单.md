@@ -28,6 +28,7 @@
   - 资源读取抽象与 Format Provider 调用链已合并进：`docs/spec/addp资源读取抽象规范.md`。
   - 内置格式规范已按统一模板整理：识别与组织、attributes 写入、消费要求、格式约束。
   - 数据格式扩展指南已简化为五步最小流程：判断组织方式、判断 data type / format、实现格式能力、定义 attributes、补充文档和验证。
+  - Manager 预览、`common/format`、text / markdown / binary 兜底和第三方格式插件化推进已新增：`docs/next/addp格式预览与插件化扩展推进.md`。
   - Provider 消费者调研已新增：`docs/plan/addp格式与数据类型Provider消费者调研.md`。
   - Transfer 相关内容已整合为三份 plan 文档：`docs/plan/transfer现状与Provider化改造调研.md`、`docs/plan/transfer与FormatProvider整合方案.md`、`docs/plan/transferProvider化改造步骤与清理清单.md`。
   - Service / Develop 旧 `lake_table` 链路清理说明已新增：`docs/plan/service-develop旧lake_table链路清理说明.md`。
@@ -64,6 +65,8 @@
 - 第三方插件扩展声明 manifest
 - Manager preview 插件 manifest
 - Registry 能力发现视图
+- text / markdown 内置格式和 unknown / binary 兜底预览口径
+- Manager content handler 与 format capability 的统一派生机制
 - Iceberg 等整体数据集按 `whole` 验证 Exclusive 和 claims
 - Manager 空间预览依赖字段和缺失降级策略
 - 旧数据删除后重新扫描

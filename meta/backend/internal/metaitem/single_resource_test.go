@@ -3,8 +3,8 @@ package metaitem
 import (
 	"testing"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestInferSingleResourceUsesCanonicalFormatForFamily(t *testing.T) {
@@ -38,6 +38,24 @@ func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
 	}
 	if item.DataType != dataitem.DataTypeContainer {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)
+	}
+	if item.ItemType != "file" {
+		t.Fatalf("ItemType = %q, want file", item.ItemType)
+	}
+}
+
+func TestInferSingleResourceDetectsMarkdownAsDocument(t *testing.T) {
+	item := InferSingleResource(SingleResourceInput{
+		Name: "README.md",
+		Path: "bucket/docs/README.md",
+		Size: 42,
+	})
+
+	if item.Format != string(format.FormatMarkdown) {
+		t.Fatalf("Format = %q, want %q", item.Format, format.FormatMarkdown)
+	}
+	if item.DataType != dataitem.DataTypeDocument {
+		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
 	}
 	if item.ItemType != "file" {
 		t.Fatalf("ItemType = %q, want file", item.ItemType)

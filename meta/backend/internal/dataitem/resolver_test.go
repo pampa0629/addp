@@ -35,6 +35,13 @@ func TestInferFormatUsesMIMEBeforeFilenameFallback(t *testing.T) {
 	}
 }
 
+func TestInferFormatDetectsMarkdownViaCommonFormat(t *testing.T) {
+	got := InferFormat("README.md", "", "")
+	if got != string(format.FormatMarkdown) {
+		t.Fatalf("InferFormat() = %q, want %q", got, format.FormatMarkdown)
+	}
+}
+
 func TestInferDataTypeCanonicalizesCommonAliases(t *testing.T) {
 	tests := []struct {
 		formatName string
@@ -44,6 +51,7 @@ func TestInferDataTypeCanonicalizesCommonAliases(t *testing.T) {
 		{formatName: "xlsx", want: DataTypeContainer},
 		{formatName: "gpkg", want: DataTypeContainer},
 		{formatName: "geojson", want: DataTypeDocument},
+		{formatName: string(format.FormatMarkdown), want: DataTypeDocument},
 		{formatName: "orc", want: DataTypeTable},
 	}
 

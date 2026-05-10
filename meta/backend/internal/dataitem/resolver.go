@@ -24,6 +24,11 @@ func InferFormat(fileName, contentType, explicitFormat string) string {
 // InferDataType 从规范化格式和 MIME 类型推断主数据类型。
 func InferDataType(formatName, contentType string) DataType {
 	normalizedFormat := canonicalFormat(formatName)
+	if capability, ok := format.GetFormatCapability(format.FormatType(normalizedFormat)); ok {
+		if dataType := dataTypeFromFormatCapability(capability.DataType); dataType != "" {
+			return dataType
+		}
+	}
 	switch format.FormatType(normalizedFormat) {
 	case format.FormatCSV, format.FormatExcel, format.FormatTSV,
 		format.FormatShapefile, format.FormatGeoPackage,
@@ -65,6 +70,25 @@ func InferDataType(formatName, contentType string) DataType {
 		return DataTypeDocument
 	default:
 		return DataTypeUnknown
+	}
+}
+
+func dataTypeFromFormatCapability(dataType string) DataType {
+	switch DataType(strings.ToLower(strings.TrimSpace(dataType))) {
+	case DataTypeTable:
+		return DataTypeTable
+	case DataTypeDocument:
+		return DataTypeDocument
+	case DataTypeMedia:
+		return DataTypeMedia
+	case DataTypeContainer:
+		return DataTypeContainer
+	case DataTypeGraph:
+		return DataTypeGraph
+	case DataTypeUnknown:
+		return DataTypeUnknown
+	default:
+		return ""
 	}
 }
 

@@ -32,17 +32,17 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "object",
 			engineFamily: EngineFamilyObject,
-			want:         []string{"csv", "json", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "markdown", "parquet", "shapefile"},
 		},
 		{
 			name:         "file",
 			engineFamily: EngineFamilyFile,
-			want:         []string{"csv", "json", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "markdown", "parquet", "shapefile"},
 		},
 		{
 			name:         "document",
 			engineFamily: EngineFamilyDocument,
-			want:         []string{"document", "json"},
+			want:         []string{"document", "json", "markdown"},
 		},
 	}
 
@@ -53,6 +53,25 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 				t.Fatalf("ListTransferFormatsForEngineFamily(%q) = %#v, want %#v", tt.engineFamily, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMarkdownCapabilityIsDocumentPreviewOnly(t *testing.T) {
+	capability, ok := Get(FormatMarkdown)
+	if !ok {
+		t.Fatal("expected markdown capability")
+	}
+	if capability.DataType != DataTypeDocument {
+		t.Fatalf("markdown DataType = %q, want %q", capability.DataType, DataTypeDocument)
+	}
+	if !containsString(capability.ProviderHints, ProviderDocument) {
+		t.Fatalf("markdown ProviderHints = %#v, want document hint", capability.ProviderHints)
+	}
+	if !capability.Preview {
+		t.Fatal("markdown should support preview")
+	}
+	if capability.Parse {
+		t.Fatal("markdown should not claim stable parse capability yet")
 	}
 }
 

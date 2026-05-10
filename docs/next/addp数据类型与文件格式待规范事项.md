@@ -10,6 +10,7 @@
 - [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
 - [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md)
 - [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)
+- [ADDP 格式预览与插件化扩展推进](addp格式预览与插件化扩展推进.md)
 
 当前阶段不保留旧 attributes、旧枚举和旧平铺字段兼容。旧数据可删除后重新 meta 扫描；与新规范矛盾的数据和代码应尽早暴露并修正。
 
@@ -94,6 +95,8 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 ## 六、Manager 内容预览插件能力描述
 
 该事项先单独形成构想文档：[Manager 内容预览插件能力构想](../plan/addpManager内容预览插件能力构想.md)。
+
+2026-05-10 补充：Manager 预览、`common/format`、text / markdown / binary 兜底和第三方格式扩展的阶段性推进思路已整理到 [ADDP 格式预览与插件化扩展推进](addp格式预览与插件化扩展推进.md)。
 
 待讨论重点：
 

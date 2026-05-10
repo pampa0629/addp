@@ -239,6 +239,15 @@ JSON 需要结构识别：
 - 配置文件或嵌套 JSON 文档。
 - 文档型数据库记录。
 
+`document` 只说明用户如何理解和消费该 item，不等于后端已经能完整解析正文。文档型格式的能力可以分阶段存在：
+
+- 只识别格式和基础元信息。
+- 提供文本片段或全文提取。
+- 提供预览材料，例如 Markdown / 纯文本 / HTML / raw binary / URL。
+- 由前端专用 renderer 基于 raw binary 或 URL 展示。
+
+例如 WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw binary 预览材料、由前端 WPS renderer 展示；不能因为预览材料是二进制，就把 WPS 降级为 `unknown` 或改成 `format=binary`。
+
 ### media
 
 `media` 是以视觉、音频或视频预览为主的 data item。

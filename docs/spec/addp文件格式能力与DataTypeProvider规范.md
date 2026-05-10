@@ -46,6 +46,7 @@ Meta 负责把 format capability、扫描上下文和已认领资源编排成最
 | Layout | 格式自身如何组织资源 | single / multi / whole、主资源、组件规则、manifest 规则 | Meta |
 | Parse / Extract | 能提取什么结构事实 | table / document / media / container / spatial facts | Meta、Manager、Transfer |
 | Sample / Extract | 能否提供样本或中间提取结果 | 行样本、文本片段、缩略图素材、容器树 | Manager、Meta、Transfer |
+| Preview material | 能否提供上层可包装的预览材料 | HTML、Markdown、纯文本、缩略图、raw bytes 引用 | Manager |
 | Transfer | 能否参与批量读写和组件提交 | batch read / write、component read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
 
@@ -121,6 +122,42 @@ Meta 负责把 format capability、扫描上下文和已认领资源编排成最
 
 Manager preview DTO 由 Manager 组装，不应进入 `common/format`。
 
+### Preview material
+
+预览材料能力负责回答“上层要预览这个 item 时，格式层可以提供什么材料”。它不是 Manager preview DTO，也不要求格式层自己连接 engine 或读取资源。
+
+预览材料至少应区分以下形态：
+
+| 形态 | 含义 | 示例 |
+|---|---|---|
+| `text` | 已可直接展示的纯文本 | TXT、日志片段 |
+| `markdown` | Markdown 文本，由前端渲染 | Markdown 文件 |
+| `html` | 已转换的 HTML 片段 | 后端转换后的文档片段 |
+| `json` | 可格式化展示的 JSON 值 | 配置 JSON、文档 JSON |
+| `image` | 缩略图或图片数据 | 图片、PDF 页缩略图 |
+| `raw_binary` | 原始二进制内容或可访问引用，由前端专用 renderer 处理 | WPS、DOCX、PPTX、PDF |
+| `url` | 受控访问 URL | 大文件、视频、可流式媒体 |
+
+预览材料能力必须和格式身份分开。比如 WPS 仍是 `format=wps`、`data_type=document`，即使当前 preview material 是 `raw_binary`；不能因为预览材料是二进制就把 WPS 表达为 `format=binary`。
+
+合理链路是：
+
+```text
+Manager / Transfer / Meta 构造 ResourceReader 或 io.Reader
+  -> data type provider 或 preview material provider 消费输入
+  -> 返回格式无关的预览材料描述
+  -> Manager 组装 preview DTO 并执行大小限制、base64 或 URL 策略
+  -> 前端 renderer 展示
+```
+
+不合理链路是：
+
+```text
+format provider 根据 engine id 自己读取文件
+format provider 返回 Manager 专用 DTO
+Manager 根据扩展名猜哪个前端组件能打开
+```
+
 ### Transfer
 
 Transfer 能力负责批量读写、组件读写和提交边界。
@@ -149,6 +186,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `document` | `document` | `whole` | document | 否 | 是 | 是 / 是 | 引擎原生文档逻辑格式 |
 | `csv` | `table` | `single` | table | 是 | 是 | 是 / 是 | 单文件表 |
 | `json` | `document` | `single` | document、table、spatial | 是 | 是 | 是 / 是 | JSON 可按内容识别为文档、表或空间表 |
+| `markdown` | `document` | `single` | document | 否 | 是 | 是 / 是 | Markdown 文本文档；当前声明预览材料能力，不声明稳定后端解析 |
 | `parquet` | `table` | `single`、`whole` | table | 是 | 是 | 是 / 是 | 单文件表和 scope 表 |
 | `shapefile` | `table` | `multi` | table、spatial | 是 | 是 | 是 / 是 | 多组件空间表 |
 
@@ -163,6 +201,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `csv` | 已实现 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` provider 待补 |
 | `excel` | 已实现 | 无 | 无 | 无 | 无 | 当前可作为表格 provider 读取；Meta 规范上外层仍按 container item 表达 |
 | `json` | 已实现 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
+| `markdown` | 无 | 无 | 无 | 无 | 无 | 已有格式识别和 capability；预览走文本 / Markdown preview material，后续补 DocumentProvider |
 | `parquet` | 已实现 | 无 | 已实现 | 无 | 无 | 支持单文件和 scope 表读取 |
 | `shapefile` | 已实现 | 已实现 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
 | `sqlite` | 未注册 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 当前作为容器分析能力使用，暂不注册为 TableProvider |
@@ -221,8 +260,11 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 页码或范围上下文。
 - 提取状态。
 - 可选的原始内容引用。
+- 可选的预览材料描述，例如 `text`、`markdown`、`html`、`raw_binary` 或 `url`。
 
 它不负责 Manager 的最终展示 DTO。
+
+`DocumentProvider` 不要求所有文档格式都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类当前由前端 renderer 处理更合适的格式，可以先只声明 raw preview material 能力；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
 
 ### MediaProvider
 
@@ -234,6 +276,7 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 缩略图或封面素材。
 - 可访问内容引用。
 - 可选的编码 / 解码辅助信息。
+- 可选的预览材料描述，例如缩略图、raw binary 或可流式 URL。
 
 它只返回已经确认的事实和可用素材，不硬凑完整预览对象。
 

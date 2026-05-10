@@ -30,6 +30,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatCSV,
 		},
 		{
+			name:     "Markdown by extension",
+			filename: "README.md",
+			peek:     nil,
+			want:     FormatMarkdown,
+		},
+		{
 			name:     "PDF with validation",
 			filename: "document.pdf",
 			peek:     []byte("%PDF-1.4"),
@@ -86,6 +92,8 @@ func TestMIMEToFormat(t *testing.T) {
 		{"application/vnd.geo+json", FormatJSON},
 		{"text/csv", FormatCSV},
 		{"application/pdf", FormatPDF},
+		{"text/markdown", FormatMarkdown},
+		{"text/x-markdown", FormatMarkdown},
 		{"image/jpeg", FormatJPEG},
 		{"image/png", FormatPNG},
 		{"application/json", FormatJSON},
@@ -113,6 +121,7 @@ func TestFormatToMIME(t *testing.T) {
 	}{
 		{FormatCSV, "text/csv"},
 		{FormatPDF, "application/pdf"},
+		{FormatMarkdown, "text/markdown"},
 		{FormatJPEG, "image/jpeg"},
 		{FormatSQLite, "application/x-sqlite3"},
 		{FormatShapefile, "application/x-shapefile"},
@@ -161,6 +170,7 @@ func TestIsDocumentFormat(t *testing.T) {
 		{FormatDOCX, true},
 		{FormatPPTX, true},
 		{FormatText, true},
+		{FormatMarkdown, true},
 		{FormatCSV, false},
 		{FormatImage, false},
 	}

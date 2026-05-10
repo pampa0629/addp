@@ -14,6 +14,7 @@ const (
 	FormatDocument  Format = "document"
 	FormatCSV       Format = "csv"
 	FormatJSON      Format = "json"
+	FormatMarkdown  Format = "markdown"
 	FormatParquet   Format = "parquet"
 	FormatShapefile Format = "shapefile"
 )
@@ -128,6 +129,19 @@ func init() {
 		TransferWrite:  true,
 		Preview:        true,
 		Parse:          true,
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
+	})
+	mustRegister(Capability{
+		Format:         FormatMarkdown,
+		I18nKey:        "format.markdown",
+		Extensions:     []string{".md", ".markdown"},
+		DataType:       DataTypeDocument,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderDocument},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Preview:        true,
+		Parse:          false,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	})
 	mustRegister(Capability{
