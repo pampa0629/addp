@@ -17,9 +17,10 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonPlugin "github.com/addp/common/engine/plugin"
 	commonLogger "github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
-	commonStorage "github.com/addp/common/storage"
+	commonResource "github.com/addp/common/resource"
 	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"
@@ -62,10 +63,10 @@ func main() {
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
 
 	// 初始化 MinIO 客户端
-	minioClient, err := commonStorage.NewMinIOClient(commonStorage.MinIOConfig{
-		Endpoint:  cfg.MinioEndpoint,
-		AccessKey: cfg.MinioAccessKey,
-		SecretKey: cfg.MinioSecretKey,
+	materialStore, err := commonResource.NewObjectStoreReaderFromConnectionInfo(commonPlugin.ConnectionInfo{
+		"endpoint":   cfg.MinioEndpoint,
+		"access_key": cfg.MinioAccessKey,
+		"secret_key": cfg.MinioSecretKey,
 	})
 	if err != nil {
 		logger.Error("MinIO 客户端初始化失败", "error", err)
@@ -79,7 +80,7 @@ func main() {
 	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, minioClient, cfg.CopilotServiceURL)
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialStore, cfg.CopilotServiceURL)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 
 	// 初始化 Model 导入服务（如果配置了 MODEL_URL）

@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
-	commonStorage "github.com/addp/common/storage"
+	commonResource "github.com/addp/common/resource"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
+	"github.com/google/uuid"
 )
 
 const (
@@ -33,7 +33,7 @@ type BuildService struct {
 	graphRepo         *repository.KnowledgeGraphRepository
 	taskExecutionRepo *commonRepo.TaskExecutionRepository
 	neo4jSvc          *Neo4jService
-	minioClient       *commonStorage.MinIOClient
+	materialStore     *commonResource.ObjectStoreReader
 	copilotURL        string
 	httpClient        *http.Client
 
@@ -49,7 +49,7 @@ func NewBuildService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	taskExecutionRepo *commonRepo.TaskExecutionRepository,
 	neo4jSvc *Neo4jService,
-	minioClient *commonStorage.MinIOClient,
+	materialStore *commonResource.ObjectStoreReader,
 	copilotURL string,
 ) *BuildService {
 	return &BuildService{
@@ -59,7 +59,7 @@ func NewBuildService(
 		graphRepo:         graphRepo,
 		taskExecutionRepo: taskExecutionRepo,
 		neo4jSvc:          neo4jSvc,
-		minioClient:       minioClient,
+		materialStore:     materialStore,
 		copilotURL:        copilotURL,
 		httpClient:        &http.Client{Timeout: 120 * time.Second},
 		cancels:           make(map[string]context.CancelFunc),
@@ -102,7 +102,7 @@ func (s *BuildService) ListMaterials(taskID, tenantID uint) ([]models.BuildMater
 // UploadMaterial 上传材料到 MinIO，创建数据库记录
 func (s *BuildService) UploadMaterial(taskID, tenantID, graphID uint, fileName string, reader io.Reader, fileSize int64) (*models.BuildMaterial, error) {
 	key := fmt.Sprintf("%s%d/%d/%d/%s", buildMaterialsDir, tenantID, graphID, taskID, fileName)
-	if err := s.minioClient.UploadFile(context.Background(), minioBucket, key, reader, "text/plain"); err != nil {
+	if err := s.materialStore.Put(context.Background(), commonResource.NewResourceRef(minioBucket+"/"+key, commonResource.ResourceRoleMain), reader, "text/plain", fileSize); err != nil {
 		return nil, fmt.Errorf("上传文件失败: %w", err)
 	}
 	mat := &models.BuildMaterial{
@@ -340,10 +340,10 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 
 	rw := int64(autoWritten)
 	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-		"status":           commonModels.ExecutionStatusSuccess,
-		"progress":         100,
-		"completed_at":     now,
-		"records_written":  rw,
+		"status":          commonModels.ExecutionStatusSuccess,
+		"progress":        100,
+		"completed_at":    now,
+		"records_written": rw,
 		"metadata": commonModels.JSONMap{
 			"auto_written":    autoWritten,
 			"pending_review":  pendingReview,
@@ -361,8 +361,8 @@ func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, ten
 
 	if executionID != "" {
 		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-			"status":       commonModels.ExecutionStatusFailed,
-			"completed_at": now,
+			"status":        commonModels.ExecutionStatusFailed,
+			"completed_at":  now,
 			"error_details": commonModels.JSONMap{"message": msg},
 		})
 	}
@@ -379,7 +379,7 @@ func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID
 // 返回：autoWritten, pendingReview, error
 func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]*models.SpatialLayerConfig, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
 	// 从 MinIO 读取文件内容
-	text, err := s.minioClient.GetTextContent(ctx, minioBucket, mat.FilePath)
+	text, err := s.materialStore.ReadText(ctx, commonResource.NewResourceRef(minioBucket+"/"+mat.FilePath, commonResource.ResourceRoleMain))
 	if err != nil {
 		return 0, 0, fmt.Errorf("读取文件失败: %w", err)
 	}
@@ -707,15 +707,15 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 // ============ Copilot 调用 ============
 
 type copilotExtractRequest struct {
-	Text                string          `json:"text"`
-	DocContext          string          `json:"doc_context"`
+	Text                string             `json:"text"`
+	DocContext          string             `json:"doc_context"`
 	Ontology            *ontologySchemaDTO `json:"ontology"`
-	GraphID             uint            `json:"graph_id"`
-	ConfidenceThreshold float64         `json:"confidence_threshold"`
+	GraphID             uint               `json:"graph_id"`
+	ConfidenceThreshold float64            `json:"confidence_threshold"`
 }
 
 type copilotExtractResponse struct {
-	Entities []extractedEntity   `json:"entities"`
+	Entities  []extractedEntity   `json:"entities"`
 	Relations []extractedRelation `json:"relations"`
 }
 

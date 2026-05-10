@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/codecs/excel"
 	commonSQLite "github.com/addp/common/format/codecs/sqlite"

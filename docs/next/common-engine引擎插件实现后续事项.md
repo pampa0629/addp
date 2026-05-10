@@ -30,7 +30,7 @@
 - Format Registry 第一阶段已落地，`transfer.supported_formats` 已从各引擎能力 builder 手写清单改为按引擎家族派生。
 - 上层模块硬编码收口 P0-P3 已完成第一阶段：
   - Manager 对象/文件预览、数据库预览、Feature/GeoJSON/MVT、Service 查询执行已分别收口到 Provider、`dbbridge`、`common/spatial`、`common/sqldialect` 等 common helper。
-  - Develop Notebook 数据源注入已改为 `common/runtimeconn` 派生连接描述；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
+  - Develop Notebook 数据源注入已改为 Develop 内部 runtimeconn 适配层派生连接描述；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
   - 引擎展示分类/图标已优先从 capabilities / catalog model 派生，`engine_type` 仅作兜底。
 
 ---
@@ -43,14 +43,14 @@
 
 - Manager 对象/文件读取主路径已 Provider 化，私有 `EngineConnector` 已删除。
 - Manager PostgreSQL/PostGIS 专用空间路径已集中到 `common/spatial`；通用 SQL 预览/查询拼装已集中到 `common/sqldialect`。
-- Develop Notebook 连接注入已集中到 `common/runtimeconn`；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
+- Develop Notebook 连接注入已集中到 Develop 内部 runtimeconn 适配层；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
 - 展示用途的引擎分类和图标已优先从 capabilities / catalog model 派生。
 
 仍需保留的边界：
 
 - Transfer 执行面、表单创建入口和明确业务模式选择可以保留必要类型选项；若要继续收口，需要先让对应模块 API 输出能力派生的可选项。
 - DuckDB `ATTACH` / `httpfs` 差异属于 DuckDB 适配层真实差异，暂不进入通用 DSN 或 engine plugin Provider。
-- `common/sqldialect` 和 `common/runtimeconn` 目前都是普通 helper；若未来上升为 Provider，先补 SQL preview composer / runtime export 能力边界文档。
+- `common/sqldialect` 目前是普通 helper；Notebook runtimeconn 属于 Develop 内部适配层。若未来上升为 Provider，先补 SQL preview composer / runtime export 能力边界文档。
 
 ### 2. 能力边界状态继续精细化
 

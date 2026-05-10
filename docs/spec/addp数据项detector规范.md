@@ -2,6 +2,22 @@
 
 本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
 
+本文是 Meta 扫描调度、组织方式识别、claims / exclusive 合并、`component_files` 决策和 `FormatRule` 声明的唯一规范来源。其他文档如需引用这部分内容，只保留链接和一句话摘要，不重复展开。
+
+## 本文边界
+
+本文只定义 data item 识别和资源认领规则：
+
+| 本文负责 | 不在本文定义 |
+|---|---|
+| 扫描范围如何解析为 `0..N` 个 data item | `attributes` 的完整 JSON schema |
+| `organization`、主资源、组件资源和 whole scope 如何确定 | format provider / data type provider 的接口形态 |
+| `claims`、`exclusive` 如何合并 | ResourceReader / ComponentReader 的具体接口 |
+| `meta_item.name/full_name/item_type` 的来源规则 | Manager preview DTO 或 Transfer plan |
+| `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser / extractor 字段细节 |
+
+attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，provider 边界见 [ADDP 文件格式能力与 Data Type Provider 规范](addp文件格式能力与DataTypeProvider规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+
 ## 核心结论
 
 detector 不能等同于目录 detector，也不能按单一格式局部修补。detector 是从资源候选集合中识别 `0..N` 个 data item 的统一入口。
@@ -46,6 +62,25 @@ type DetectionResult struct {
 - `Items`：本轮识别出的 data item。
 - `Claims`：detector 已认领的源资源路径。已认领资源不再作为普通资源重复落 item。
 - `Exclusive`：当前扫描范围整体已被一个 item 认领。仅 `organization=whole` 等明确场景允许使用；该范围内其他资源不得再生成独立 item。
+
+## item 身份规则
+
+detector 必须先确定 data item 边界，再提取类型信息、格式信息和横切能力。`meta_item` 表字段是 item 身份事实源，不得由 parser / extractor 任意覆盖。
+
+| 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 | 说明 |
+|---|---|---|---|
+| `organization=single` 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | CSV、PDF、图片、SQLite、Excel 等 |
+| `organization=single` 引擎原生资源 | 引擎原生名称 | 引擎内唯一逻辑全名 | PostgreSQL table、MongoDB collection 等 |
+| `organization=multi` | 主资源名，保留扩展名 | 主资源完整路径 | Shapefile 使用 `.shp` 作为主资源 |
+| `organization=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB 场景目录等 |
+
+规则：
+
+1. 主资源或 whole scope 根范围最终写入 `meta_item.full_name`。
+2. attributes 不再定义通用 `entry_path`。
+3. `component_files` 只表达 multi 或需要记录关键组件的 whole item 的组件资源，不替代 `full_name`。
+4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
+5. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
 
 ## 递归观察资源
 
@@ -111,6 +146,19 @@ type FormatRule struct {
 `ContainerRule` 只描述容器型数据的内部枚举、默认入口和内部子 item 表达方式，不改变 `organization`。一个容器文件自身仍应按 `single` 组织方式生成外层 data item。
 
 统一入口只负责提供候选资源、执行优先级、合并结果和处理 claimed resources。一套文件到底需要哪些后缀、主文件是哪一个、可选组件有哪些，必须由格式实现层声明。主文件或 whole scope 根范围最终应写入 `meta_item.full_name`，不得再写入通用 `attributes.item.entry_path`。
+
+## claims 与 exclusive 规则
+
+`Claims` 表达 detector 已经认领的源资源，扫描入口必须用它避免重复落 item。
+
+| 场景 | Claims | Exclusive |
+|---|---|---|
+| `single` | 入口资源 | 通常为 `false` |
+| `multi` | 主资源 + 已匹配组件资源 | 必须为 `false`，不得独占目录或 prefix |
+| `whole` | whole scope 根范围和规范要求的关键资源 | 强匹配时可为 `true` |
+| 容器内部对象 | 默认不进入外部扫描 claims | 不影响外层扫描范围 |
+
+`exclusive=true` 只允许用于明确的 whole scope 场景。弱匹配、仅扩展名匹配、范围内存在未认领异类资源等情况不得直接独占扫描范围；相关待确认事项记录在 [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md)。
 
 ## Shapefile 校准用例
 

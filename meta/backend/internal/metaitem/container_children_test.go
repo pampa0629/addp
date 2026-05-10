@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"

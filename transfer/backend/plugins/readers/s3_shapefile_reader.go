@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/storage"
+	commonPlugin "github.com/addp/common/engine/plugin"
+	commonResource "github.com/addp/common/resource"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 	"github.com/google/uuid"
@@ -35,7 +36,6 @@ func (r *S3ShapefileReader) Open(ctx context.Context, config pipeline.ConnectorC
 	secretKey := utils.GetStringConfig(config, "secret_key", "")
 	bucket := utils.GetStringConfig(config, "bucket", "")
 	prefix := utils.GetStringConfig(config, "prefix", "")
-	region := utils.GetStringConfig(config, "region", "us-east-1")
 	batchSize := utils.GetIntConfig(config, "batch_size", 1000)
 	geometryField := utils.GetStringConfig(config, "geometry_field", "geom")
 
@@ -46,29 +46,33 @@ func (r *S3ShapefileReader) Open(ctx context.Context, config pipeline.ConnectorC
 		return fmt.Errorf("prefix is required")
 	}
 
-	// 创建 MinIO 客户端
-	minioClient, err := storage.NewMinIOClient(storage.MinIOConfig{
-		Endpoint:  endpoint,
-		AccessKey: accessKey,
-		SecretKey: secretKey,
-		Region:    region,
-	})
+	// 创建对象存储资源读取器
+	connInfo := commonPlugin.ConnectionInfo{
+		"endpoint":   endpoint,
+		"access_key": accessKey,
+		"secret_key": secretKey,
+	}
+	if _, ok := config.Config["use_ssl"]; ok {
+		connInfo["use_ssl"] = utils.GetBoolConfig(config, "use_ssl", false)
+	}
+	objectReader, err := commonResource.NewObjectStoreReaderFromConnectionInfo(connInfo)
 	if err != nil {
-		return fmt.Errorf("failed to create MinIO client: %w", err)
+		return fmt.Errorf("failed to create object store resource reader: %w", err)
 	}
 
 	// 创建临时目录
 	r.localDir = filepath.Join(os.TempDir(), fmt.Sprintf("shapefile_%s", uuid.New().String()))
 
 	// 下载所有文件
-	downloadResult, err := minioClient.DownloadFiles(ctx, bucket, prefix, r.localDir)
+	scope := commonResource.NewResourceRef(bucket+"/"+prefix, commonResource.ResourceRoleScope)
+	downloadResult, err := commonResource.MaterializeResourceScope(ctx, objectReader, scope, r.localDir)
 	if err != nil {
-		return fmt.Errorf("failed to download files from MinIO: %w", err)
+		return fmt.Errorf("failed to materialize object store resources: %w", err)
 	}
 
 	// 查找 .shp 文件
 	var shpFile string
-	for _, localPath := range downloadResult.DownloadedFiles {
+	for _, localPath := range downloadResult.Files {
 		if strings.HasSuffix(strings.ToLower(localPath), ".shp") {
 			shpFile = localPath
 			break

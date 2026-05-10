@@ -74,7 +74,7 @@ attributes 分区统一采用以下概念：
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
 2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `organization`。
-3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策和 `item` 分区落库构造属于 Meta 模块职责；跨模块需要 item 信息时通过 Meta Client 消费已入库结果。
+3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
 4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
 5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
 6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。

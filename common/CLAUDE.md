@@ -15,10 +15,10 @@ common/
 ├── format/         # 文件格式、类型信息、格式信息、parser / analyzer
 ├── models/         # 通用模型、能力声明、统一执行记录
 ├── repository/     # 通用仓储，含 task_execution_repository
-├── resource/       # 资源定位符和资源树
+├── resource/       # 资源定位符、资源树、资源读取和对象存储 ResourceReader 适配
 ├── scheduler/      # 统一 Cron 调度
-├── spatial/        # CRS、MVT、WKB、空间转换
-├── sqlbuilder/     # SQL 构建工具
+├── spatial/        # CRS、MVT、WKB、空间转换、PostGIS 空间 SQL 表达式
+├── sqldialect/     # 跨 SQL 引擎的标识符引用、分页、基础 SELECT/COUNT
 ├── duckdb/         # DuckDB 联邦查询能力
 └── utils/          # 加密、脱敏、端口、时区等工具
 ```
@@ -29,6 +29,7 @@ common/
 - `common/jsonmap` 只提供通用 JSON map 读写 helper，不承载 `meta_item.attributes` 规范语义。
 - `common/format` 只提供通用格式、type info / format info、parser / analyzer 能力；Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块。
 - API 响应优先复用 `common/api`，执行记录优先复用 `common/models.TaskExecution` 和 `common/repository.TaskExecutionRepository`。
+- `common/sqldialect` 只承载跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。
 
@@ -45,5 +46,4 @@ cd common && go test ./...
 - `common/scheduler/README.md`
 - `common/format/README.md`
 - `common/spatial/README.md`
-- `common/sqlbuilder/README.md`
 - `docs/concepts/addp共享模块介绍.md`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mime"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ func ParseClientConfig(connInfo plugin.ConnectionInfo, defaultSSL bool, normaliz
 		SecretKey: plugin.GetString(connInfo, "secret_key"),
 		UseSSL:    defaultSSL,
 	}
+	cfg.Endpoint, cfg.UseSSL = ParseEndpoint(cfg.Endpoint, cfg.UseSSL)
 	if _, ok := connInfo["use_ssl"]; ok {
 		cfg.UseSSL = plugin.GetBool(connInfo, "use_ssl")
 	}
@@ -37,6 +39,34 @@ func ParseClientConfig(connInfo plugin.ConnectionInfo, defaultSSL bool, normaliz
 		return ClientConfig{}, fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
 	}
 	return cfg, nil
+}
+
+func ParseEndpoint(endpoint string, defaultSSL bool) (string, bool) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "", defaultSSL
+	}
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" {
+		return strings.TrimPrefix(endpoint, "//"), defaultSSL
+	}
+
+	useSSL := defaultSSL
+	switch parsed.Scheme {
+	case "http":
+		useSSL = false
+	case "https":
+		useSSL = true
+	default:
+		return strings.TrimPrefix(endpoint, "//"), defaultSSL
+	}
+
+	host := parsed.Host
+	if host == "" {
+		host = strings.TrimPrefix(parsed.Path, "//")
+	}
+	return strings.Trim(host, "/"), useSSL
 }
 
 func NormalizeEndpoint(endpoint string) string {

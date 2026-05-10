@@ -4,7 +4,6 @@ go 1.24.2
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
-	github.com/aws/aws-sdk-go v1.45.0
 	github.com/beltran/gohive v1.8.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3

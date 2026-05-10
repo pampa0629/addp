@@ -12,7 +12,7 @@ func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
 	return FormatRule{}, false
 }
 
-// BuiltinSingleResourceRules 返回 common/dataitem 内置的 single resource 和容器格式声明。
+// BuiltinSingleResourceRules 返回 Meta 内置的 single resource 和容器格式声明。
 func BuiltinSingleResourceRules() []FormatRule {
 	return []FormatRule{
 		singleResourceRule("csv", DataTypeTable, "table", []string{".csv"}),
@@ -55,7 +55,7 @@ func containerResourceRule(format string, family DataType, itemType string, exts
 	}
 }
 
-// ValidateFormatRule 校验格式声明是否符合组合形态的条件约束。
+// ValidateFormatRule 校验格式声明是否符合组织方式的条件约束。
 func ValidateFormatRule(rule FormatRule) error {
 	if rule.Format == "" {
 		return fmt.Errorf("format rule requires Format")

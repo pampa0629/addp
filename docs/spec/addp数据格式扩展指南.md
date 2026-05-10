@@ -1,177 +1,97 @@
 # ADDP 数据格式扩展指南
 
-本文是 ADDP 数据类型、组织方式、文件格式和横切能力扩展的入口规范。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文是新增或修改数据格式时的最小工作流。概念边界见 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)，跨模块职责见 [ADDP 数据类型与格式模块边界规范](addp数据类型与格式模块边界规范.md)。
 
-## 术语统一
+## 适用范围
 
-spec 层统一采用以下术语，不保留旧术语兼容写入：
+当需要让 ADDP 支持一种新的文件格式、容器格式、多组件格式、whole scope 数据集或引擎原生数据表示时，按本文执行。
 
-| 术语 | 字段 / 取值 | 说明 |
+新增格式不等于新增数据类型。绝大多数格式应落到既有 `data_type`：
+
+- `table`
+- `document`
+- `media`
+- `container`
+- `graph`
+- `unknown`
+
+只有既有数据类型无法表达用户理解方式、预览方式、处理方式和治理方式时，才修订概念文档并新增 `data_type`。
+
+## 最小流程
+
+### 1. 判断组织方式
+
+先回答“哪些资源组成一个 data item”：
+
+| 组织方式 | 适用场景 | 例子 |
 |---|---|---|
-| 组织方式 | `attributes.item.organization` | 资源如何归并成 data item |
-| single | `organization=single` | 一个引擎资源对应一个 data item，不等同于“单文件” |
-| multi | `organization=multi` | 多个明确组件资源共同构成一个 data item |
-| whole | `organization=whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item |
-| 数据类型 | `attributes.item.data_type` | 用户如何理解和处理 data item |
-| 文件格式 | `attributes.item.format` | data item 的编码方式或格式族 |
-| 类型信息 | `attributes.type_info` | 某个数据类型的通用元数据 |
-| 格式信息 | `attributes.format_info` | 某个具体格式才有的描述 |
-| 横切能力 | `attributes.capabilities` | spatial、temporal、statistics、extraction 等跨类型能力 |
+| `single` | 一个引擎资源对应一个 item | CSV、PDF、图片、SQLite 文件、数据库表 |
+| `multi` | 多个明确组件资源共同构成一个 item | Shapefile、主文件 + 索引文件 |
+| `whole` | 整个目录、prefix、schema 或扫描范围构成一个 item | Iceberg 表目录、OSGB 场景目录 |
 
-`meta_item.item_type` 是表字段事实源，不等同于 `attributes.item.data_type`。平台语义应以 data item、organization、data_type、format、type_info、format_info、capabilities 的组合表达。
+容器不是组织方式。Excel、SQLite、GeoPackage、ZIP 等外层通常仍是 `organization=single`，内部对象先进入 `type_info.container.children`。
 
-旧字段和旧枚举不做兼容读取或兼容写入。发现仍依赖旧字段的数据和代码，应直接暴露问题并通过重新 meta 扫描或代码修正解决。
+组织方式、主资源、组件、claims / exclusive 和 `meta_item.full_name` 的规则写入 [ADDP 数据项 detector 规范](addp数据项detector规范.md)。
 
-## 相关规范
+### 2. 判断数据类型和格式
 
-本主题拆分为以下文档：
+再回答“用户如何理解这个 item”和“它用什么格式编码”：
 
-| 文档 | 内容 |
+| 判断项 | 写入位置 | 说明 |
+|---|---|---|
+| 数据类型 | `attributes.item.data_type` | `table`、`document`、`media`、`container`、`graph`、`unknown` |
+| 文件格式 | `attributes.item.format` | `csv`、`json`、`parquet`、`shapefile`、`pdf` 等 |
+| 类型信息 | `attributes.type_info.<data_type>` | 字段、行数、页数、宽高、children、图结构等 |
+| 格式信息 | `attributes.format_info.<format>` | 版本、编码、组件摘要、manifest、格式私有字段 |
+| 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、partitioning 等 |
+
+空间、时间、分区、索引、提取、语义等能力优先作为横切能力，不新增数据类型。
+
+### 3. 实现格式能力
+
+根据格式形态实现最小能力：
+
+| 格式形态 | 必需工作 |
 |---|---|
-| [ADDP 数据项 detector 规范](addp数据项detector规范.md) | `ResolveItems`、组织方式、claims、exclusive、`FormatRule` |
-| [ADDP 格式与数据类型总体模型](../concepts/addp格式与数据类型总体模型.md) | engine、format、data type、attributes、provider 的整体概念分层 |
-| [ADDP Format Capability 与 Data Type Provider 接口规范](addp格式Capability与DataTypeProvider接口规范.md) | format capability、format layout 描述、data type provider、Transfer 组合模型的接口规范 |
-| [ADDP 文件格式能力接口规范](addp文件格式能力接口规范.md) | 文件格式实现哪些接口才具备识别、解析、预览、提取、写出、转换等平台能力 |
-| [ADDP 资源读取抽象与 Format Provider 调用链方案](../plan/addp资源读取抽象与FormatProvider调用链方案.md) | format provider 读取实际数据时的 ResourceReader / ComponentReader 边界和调用链 |
-| [ADDP 资源读取抽象规范](addp资源读取抽象规范.md) | 平台级 ResourceRef / ResourceReader / ComponentReader / NativeCursor 的最小边界 |
-| [ADDP 格式与数据类型 Provider 消费者调研](../plan/addp格式与数据类型Provider消费者调研.md) | 从 Meta、Manager、Transfer 等真实消费点反推 format capability 与 data type provider 设计 |
-| [ADDP 元数据 attributes 规范](addp元数据attributes规范.md) | `attributes.storage/item/type_info/format_info/capabilities` 分区、唯一事实源、扩展命名空间 |
-| [ADDP 内置数据格式规范](addp内置数据格式规范.md) | CSV/TSV、Excel、JSON 空间结构、Shapefile、Parquet/ORC/Avro、SQLite/GeoPackage、图片、PDF 的落地规则 |
-| [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md) | 尚未定稿、需要讨论后才能开发的事项 |
+| `single + table` | 格式识别、`FormatRule`、parser、`TableProvider` |
+| `multi + table` | `FormatRule`、组件规则、`ComponentTableProvider` |
+| `whole + table` | whole scope 规则、scope 读取、`ScopeTableProvider` |
+| `document` | 格式识别、metadata / text extractor，后续需要时实现 `DocumentProvider` |
+| `media` | 格式识别、metadata extractor，后续需要时实现 `MediaProvider` |
+| `container` | 外层 item 规则、children 枚举、后续需要时实现 `ContainerProvider` |
+| `graph` | 图结构描述、样本或查询归一，后续需要时实现 `GraphProvider` |
 
-## 基本原则
+provider 和 capability 规则见 [ADDP 文件格式能力与 Data Type Provider 规范](addp文件格式能力与DataTypeProvider规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
-实现层必须从 `meta` 扫描入口出发，而不是从单个文件格式出发：
+### 4. 定义 attributes 写入
 
-```text
-资源树扫描
-  -> 组织方式推断
-  -> meta item 归并
-  -> 数据类型判断
-  -> 文件格式识别
-  -> 类型信息、格式信息和横切能力提取
-  -> attributes 归一化
-  -> manager / transfer / asset / search 消费标准 data item
-```
+按 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md) 明确字段归属：
 
-必须遵守：
+- 平台核心字段由 Meta normalizer 裁决。
+- 格式私有字段进入 `format_info.<format>`。
+- 跨格式能力进入 `capabilities.<capability>`。
+- 第三方私有扩展必须进入合规命名空间。
+- 同一事实只保留一个规范写入点。
 
-1. 存储引擎只提供资源位置、catalog 和基础存储属性。
-2. 组织方式优先于文件格式识别。
-3. `meta` 是 data item 识别和落库的权威来源。
-4. `manager`、`transfer` 等消费已入库 meta item，不重新推断资源归并关系。
-5. `attributes` 采用“受控核心 + 开放能力”。
-6. 新增格式、变更组织方式或新增横切能力时，先修订对应规范，再开发。
+### 5. 补充文档和验证
 
-## 扫描主流程
+已经定稿的内置格式补入 [ADDP 内置数据格式规范](addp内置数据格式规范.md)。尚未形成共识的事项只记录到 [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md)。
 
-1. `meta` 从存储引擎获取资源树候选集合。
-2. 通过 Meta 内部 detector / resolver 推断组织方式。
-3. 归并并落库稳定 `meta_item`。
-4. 在 data item 层判断 `data_type` 和主 `format`。
-5. 调用 parser / extractor 提取 `type_info`、`format_info` 和 `capabilities`。
-6. 通过 normalizer 写入标准 attributes 分区。
+最低验证项：
 
-## meta item 身份规则
+1. Meta 是否生成正确数量的 item。
+2. `meta_item.name/full_name/item_type/node_id` 是否符合 detector 规范。
+3. `attributes.item/type_info/format_info/capabilities` 是否无重复事实源。
+4. multi / whole 场景是否避免重复落库。
+5. Manager 是否只消费已入库 item。
+6. Transfer 是否不重复推断字段类型和组织方式。
 
-组织方式确认后，`meta` 先生成稳定 data item，再提取类型信息、格式信息和横切能力。`meta_item` 表字段语义不得被 detector 任意改变。
+## 快速判断示例
 
-| 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 |
-|---|---|---|
-| `organization=single` | 入口资源名，文件资源保留扩展名 | 入口资源完整路径或引擎原生全名 |
-| `organization=multi` | 入口资源名，文件资源保留扩展名 | 入口资源完整路径 |
-| `organization=whole` | 根目录、prefix、schema 名，或规范定义的数据集名 | 整体范围的完整路径或引擎原生范围名 |
-| 引擎原生 item | 引擎原生名称 | schema.table / database.collection 等原生全名 |
-
-容器文件不产生独立的组织方式。SQLite、GeoPackage、Excel、ZIP 等外层 data item 通常是 `organization=single`、`data_type=container`；内部 table、sheet、layer、文件先在 `type_info.container.children` 或格式规范声明的位置表达。只有当需要独立授权、检索、血缘、传输或生命周期管理时，才讨论是否升格为独立 meta item。
-
-除非经过规范确认并得到批准，不得改变 `meta_item.name`、`meta_item.full_name`、`meta_item.item_type` 等既有表字段语义。
-
-## 模块职责
-
-### meta
-
-`meta` 负责资源树扫描、组织方式推断、data item 归并、数据类型判断、格式识别、元数据提取、fingerprint 维护和 attributes normalizer。
-
-Meta 内部维护 data item detector registry 和扫描 resolver。新增或修改 detector 时，应接入 Meta 的扫描流程；不得在 common 包中通过 `init()` 自动注册 Meta item 识别逻辑。
-
-### common 层数据类型概念
-
-`data_type` 等跨模块稳定概念可以保留在 common 层，供 Meta、Manager、Transfer 等模块共享。它们只表达平台通用语义，不负责资源树扫描、detector registry、claims / exclusive 合并或 `meta_item.full_name` 决策。
-
-### common/format
-
-`common/format` 负责格式识别、类型信息、格式信息、字段类型映射、parser / extractor。它不直接决定 meta item 如何归并，也不绕过 normalizer 写最终 attributes。
-
-### common/jsonmap
-
-`common/jsonmap` 是 decoded JSON map 的通用读写 helper，用于读取嵌套 section、字符串、数字、时间等基础值。它不承载 attributes 规范语义，不能作为 `meta_item.attributes` 的业务模型或 normalizer。
-
-### manager
-
-`manager` 只消费 meta 已入库 item。预览路由基于 `item_type` 表字段、`meta_item.full_name`，以及 `attributes.item.organization`、`attributes.item.data_type`、`attributes.item.format`、`attributes.item.component_files`、`attributes.storage.physical_path` 等标准属性，不按后缀或 provider 优先级重新猜测 item。
-
-### transfer
-
-`transfer` 应消费标准化后的 meta item 和 attributes，不重复判断组织方式，不重复推断字段类型。Transfer 后续事项单独记录在 [Transfer 数据类型与文件格式后续事项](../next/transfer数据类型与文件格式后续事项.md)。
-
-## 新增格式步骤
-
-### 新增 single 组织方式格式
-
-1. 明确 `organization=single`、`data_type`、`format`。
-2. 增加 `FormatRule` 或内置 single 规则。
-3. 实现格式识别和 parser / extractor。
-4. 定义 `type_info`、`format_info` 和可选 `capabilities`。
-5. 接入 meta 扫描、attributes normalizer 和 manager 预览。
-
-### 新增 multi 组织方式格式
-
-1. 定义组件规则、入口资源、必需组件、可选组件和 claimed resources。
-2. 实现 `ScopeItemDetector`，支持一个扫描范围产出多个 item。
-3. 明确是否允许递归组件，默认不得跨目录或跨 prefix 猜测。
-4. 实现 parser / extractor。
-5. 接入 manager / transfer，使用 `meta_item.full_name` 定位主资源，使用 `component_files` 读取组件资源。
-
-### 新增 container 数据类型格式
-
-1. 定义容器文件自身 item 语义，通常为 `organization=single`、`data_type=container`。
-2. 定义容器内部对象如何写入 `type_info.container.children`；未形成规范前不得展开为独立 meta item。
-3. 实现容器识别和内部元数据枚举。
-4. 定义容器级 `type_info`、`format_info` 和内部对象关系。
-
-### 新增 whole 组织方式数据集
-
-1. 定义整体范围强匹配规则、可忽略辅助文件和独占条件。
-2. 由扫描入口提供递归观察资源。
-3. detector 返回 claimed resources 和 `Exclusive=true`。
-4. 将数据集格式私有信息写入 `format_info`，将分区、索引等横切能力写入 `capabilities`。
-
-## 验证要求
-
-新增或修改能力后，至少验证：
-
-1. `meta` 是否正确归并 item。
-2. `meta_item.name/full_name/node_id/item_type` 是否符合规范。
-3. `attributes.storage/item/type_info/format_info/capabilities` 是否完整且无重复事实源。
-4. claimed resources 是否避免重复落库。
-5. 未认领资源是否继续被识别。
-6. manager 树位置和预览入口是否正确。
-7. fingerprint 是否稳定。
-8. normalizer 是否保护平台核心字段。
-9. 私有字段是否进入合规命名空间。
-
-## 禁止事项
-
-- 不要先按单个文件格式生成 item，再事后合并。
-- 不要把目录、prefix、schema 当作天然 data item；只有明确 detector 或引擎原生边界声明时才可形成 item。
-- 不要把容器当作组织方式。
-- 不要把空间、时间、统计、提取等横切能力放进数据类型。
-- 不要把 Parquet 直接称为湖表；Parquet 是 table 类型的一种文件格式，Iceberg 等表格式目录才可按规范形成 `whole` item。
-- 不要默认空间字段名一定是 `geom`。
-- 不要让 manager 重复实现 meta 的组织方式识别规则。
-- 不要让 manager 预览未扫描、未入库的资源。
-- 不要让 provider 通过优先级抢路由决定 item 类型或文件格式。
-- 不要让 transfer 重复推断字段类型。
-- 不要让 parser / extractor / 第三方插件直接覆盖平台核心 attributes。
-- 不要把格式私有属性写入 attributes 顶层或长期写入未命名空间字段。
+| 新格式 | 组织方式 | 数据类型 | 需要实现 |
+|---|---|---|---|
+| 新单文件表格格式 | `single` | `table` | `FormatRule`、parser、`TableProvider`、attributes 映射 |
+| 新多文件空间表格式 | `multi` | `table` | 组件规则、`ComponentTableProvider`、`capabilities.spatial` |
+| 新目录型表格式 | `whole` | `table` | whole scope detector、scope reader、`ScopeTableProvider`、partitioning 能力 |
+| 新压缩包格式 | `single` | `container` | 外层容器 item、children 枚举、必要的解包读取能力 |
+| 新文档格式 | `single` | `document` | metadata / text extractor，必要时补 `DocumentProvider` |

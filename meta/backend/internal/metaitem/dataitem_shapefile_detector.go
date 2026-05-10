@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	formatShapefile "github.com/addp/common/format/codecs/shapefile"

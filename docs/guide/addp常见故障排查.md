@@ -994,32 +994,13 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
 - ✅ **System 模块** - 无动态 SQL 构建
 - ✅ **Labs 模块** - 已正确处理
 
-### 长期解决方案：统一 SQL 构建工具
+### 长期解决方案：统一 SQL 能力边界
 
-为防止未来出现类似问题，创建了统一的 SQL 构建工具库：
+为防止未来出现类似问题，SQL 拼装能力按职责收口：
 
-**位置**：[common/sqlbuilder/](../common/sqlbuilder/)
-
-**核心功能**：
-```go
-import "github.com/addp/common/sqlbuilder"
-
-// 1. 引用标识符
-column := sqlbuilder.QuoteIdentifier("SmID")  // "SmID"
-
-// 2. 完整表名
-table := sqlbuilder.QualifiedTableName("public", "MyTable")  // "public"."MyTable"
-
-// 3. 几何转换
-geom := sqlbuilder.GeometryTransform("SmGeometry", 3857)  // ST_Transform("SmGeometry", 3857)
-
-// 4. 完整 SQL 语句
-sql := sqlbuilder.CreateIndexSQL("idx_geom", "public", "MyTable", 
-    []string{"SmGeometry"}, "GIST", true)
-// CREATE INDEX CONCURRENTLY "idx_geom" ON "public"."MyTable" USING GIST ("SmGeometry")
-```
-
-**文档**：[common/sqlbuilder/README.md](../common/sqlbuilder/README.md)
+- 跨 SQL 引擎的标识符引用、命名空间表名拼接、基础 SELECT / COUNT / 分页，统一使用 `common/sqldialect`。
+- PostGIS 空间表达式、MVT、物化视图、GIST 索引等空间能力，统一使用 `common/spatial`。
+- 不再保留独立的 PostgreSQL 倾向 SQL 构建包，避免与 `sqldialect` / `spatial` 职责重叠。
 
 ### 验证步骤
 
@@ -1067,17 +1048,18 @@ query := fmt.Sprintf("SELECT %s FROM %s.%s", col, schema, table)
 query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, col, schema, table)
 ```
 
-#### 2. 使用 sqlbuilder 工具
+#### 2. 使用 sqldialect / spatial 工具
 
 ```go
-// ✅ 更好：使用统一工具
-import "github.com/addp/common/sqlbuilder"
+// ✅ 通用表查询：使用跨引擎方言工具
+import "github.com/addp/common/sqldialect"
 
-query := sqlbuilder.SelectSQL(
-    []string{col},
+dialect := sqldialect.ForEngine(engineType)
+query := dialect.SelectTableSQL(
+    dialect.QuoteIdentifier(col),
     schema,
     table,
-    nil, "", 0, 0,
+    "", "", 0, 0,
 )
 ```
 
@@ -1087,13 +1069,9 @@ query := sqlbuilder.SelectSQL(
 // ❌ 错误
 whereClause := fmt.Sprintf("WHERE %s > 100", col)
 
-// ✅ 正确
-whereClause := fmt.Sprintf(`WHERE "%s" > 100`, col)
-
-// ✅ 更好：使用工具
-whereClause := sqlbuilder.WhereClause([]string{
-    fmt.Sprintf(`"%s" > 100`, col),
-})
+// ✅ 正确：按引擎方言引用标识符
+dialect := sqldialect.ForEngine(engineType)
+whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 ```
 
 ### 影响范围
@@ -1109,7 +1087,8 @@ whereClause := sqlbuilder.WhereClause([]string{
 ### 相关文档
 
 - [字段名大小写梳理计划](./字段名的大小写梳理.md) - 完整的排查和修复计划
-- [SQL Builder 使用文档](../common/sqlbuilder/README.md) - 统一 SQL 构建工具
+- [common/sqldialect](../common/sqldialect/) - 跨 SQL 引擎基础方言工具
+- [common/spatial](../common/spatial/) - PostGIS 空间 SQL 表达式和空间能力
 - [PostgreSQL 标识符文档](https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS)
 
 ### 修复日期
@@ -1118,13 +1097,12 @@ whereClause := sqlbuilder.WhereClause([]string{
 - **修复版本：** v0.0.24+
 - **影响范围：** Manager MVT、Service OGC
 - **根本原因：** 动态 SQL 构建未使用双引号包裹标识符
-- **长期方案：** 创建统一的 sqlbuilder 工具库
+- **长期方案：** 按职责收口到 `common/sqldialect` 和 `common/spatial`
 
 ### 经验教训
 
 1. **Transfer 模块的最佳实践值得借鉴**：已实现统一的 `quoteIdentifier()` 方法
 2. **Meta 模块的正确性**：元数据扫描和空间元数据处理完全正确
-3. **工具化是关键**：创建统一工具库可以防止未来重复出现类似问题
+3. **边界清晰是关键**：通用 SQL 方言与 PostGIS 空间表达式分包收口，可以防止未来重复出现类似问题
 4. **测试覆盖很重要**：需要针对混合大小写字段的测试用例
 5. **文档化经验**：及时记录问题和解决方案，避免重复踩坑
-

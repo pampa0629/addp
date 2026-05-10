@@ -110,38 +110,3 @@ func limitOffsetClause(limit, offset int) string {
 	}
 	return sb.String()
 }
-
-func IsPostGISSpatialType(dataType string) bool {
-	dataTypeLower := strings.ToLower(strings.TrimSpace(dataType))
-	return dataTypeLower == "geometry" ||
-		dataTypeLower == "geography" ||
-		strings.HasPrefix(dataTypeLower, "geometry(") ||
-		strings.HasPrefix(dataTypeLower, "geography(") ||
-		dataTypeLower == "user-defined"
-}
-
-func IsPostGISGeographyType(dataType string) bool {
-	dataTypeLower := strings.ToLower(strings.TrimSpace(dataType))
-	return dataTypeLower == "geography" || strings.HasPrefix(dataTypeLower, "geography(")
-}
-
-func PostGISWKTExpression(columnName, dataType string) string {
-	quotedColumn := ForEngine("postgresql").QuoteIdentifier(columnName)
-	if IsPostGISGeographyType(dataType) {
-		return fmt.Sprintf("ST_AsText(%s::geometry)", quotedColumn)
-	}
-	return fmt.Sprintf("ST_AsText(%s)", quotedColumn)
-}
-
-func PostGISRenderGeoJSONExpression(columnName, dataType string) string {
-	quotedColumn := ForEngine("postgresql").QuoteIdentifier(columnName)
-	if IsPostGISGeographyType(dataType) {
-		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(%s::geometry) END", quotedColumn, quotedColumn)
-	}
-	return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform(%s, 4326)) END", quotedColumn, quotedColumn)
-}
-
-func PostGISGeoJSONSelectExpression(columnName string) string {
-	quotedColumn := ForEngine("postgresql").QuoteIdentifier(columnName)
-	return fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quotedColumn, quotedColumn)
-}

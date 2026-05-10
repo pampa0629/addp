@@ -58,18 +58,3 @@ func TestPaginateQuerySQL(t *testing.T) {
 		t.Fatalf("PaginateQuerySQL() = %q, want %q", got, want)
 	}
 }
-
-func TestPostGISExpressions(t *testing.T) {
-	t.Parallel()
-
-	wkt := PostGISWKTExpression(`geo"col`, "geography")
-	if wkt != `ST_AsText("geo""col"::geometry)` {
-		t.Fatalf("PostGISWKTExpression() = %q", wkt)
-	}
-
-	render := PostGISRenderGeoJSONExpression("geom", "geometry")
-	want := `CASE WHEN "geom" IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform("geom", 4326)) END`
-	if render != want {
-		t.Fatalf("PostGISRenderGeoJSONExpression() = %q, want %q", render, want)
-	}
-}

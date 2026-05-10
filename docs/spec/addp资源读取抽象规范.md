@@ -4,6 +4,8 @@
 
 本文定义平台级资源读取抽象的最小边界。它服务于 Meta、Manager、Transfer 对 format provider 的统一调用，不属于 `common/format`，也不直接沉到 `common/engine/plugin`。
 
+核心结论：format provider 不通过 `engine id` 自己构造读取器。编排层先根据 engine capability 构造读取抽象，再把读取抽象交给 format provider 和 data type provider。
+
 ## 目标
 
 统一回答三件事：
@@ -13,6 +15,17 @@
 3. 多组件资源怎么被组合读取。
 
 同时，这层抽象要支持一个关键收口：上层看到的是同一种 data type 能力，例如 `table`，而不是被迫区分文件表、湖表、原生数据库表。
+
+推荐调用方向：
+
+```text
+Meta / Manager / Transfer 编排层
+  -> 根据 engine capability 构造读取抽象
+  -> 将读取抽象交给 format provider
+  -> format provider 解码 / 提取 / 编码
+  -> data type provider 归一为平台语义
+  -> Manager / Transfer 继续组装各自结果
+```
 
 ## 放置位置
 
@@ -113,28 +126,17 @@
 - 按组件角色或组件引用打开内容。
 - 确保主资源和组件资源使用同一套稳定引用。
 
-当前已用 Manager Shapefile 文件表预览做第一条样板链路：
+典型链路：
 
 ```text
-Manager 编排层
-  -> objectStorageResourceReader
-  -> StaticComponentReader
-  -> format.ComponentTableProvider
-  -> Manager preview DTO
+Meta / Manager / Transfer 编排层
+  -> ComponentReader
+  -> format provider
+  -> data type provider
+  -> 上层结果组装
 ```
 
-这条链路已经完成第一版收口：Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`，Shapefile 组件物化和解析由 format provider 内部完成。
-
-当前也已经用 Manager lake table 预览验证了 scope 表链路：
-
-```text
-Manager 编排层
-  -> fileSystemResourceReader
-  -> format.ScopeTableProvider
-  -> Manager preview DTO
-```
-
-Parquet scope provider 只通过 `ResourceReader.List` 找到 scope 内的 Parquet 资源，再通过 `ResourceReader.Open` 读取内容，不直接依赖 engine plugin。
+例如 Shapefile 预览时，Manager 只负责根据已入库 `meta_item.full_name` 和 `attributes.item.component_files` 构造 `ComponentReader`；组件物化和格式解析由 format provider 完成。
 
 ### NativeCursor
 
@@ -162,7 +164,7 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 上层统一调用 `TableProvider` 获取 schema、样本、分页、空间字段等平台语义。
 
-`filetable` / `laketable` 可以作为过渡期内部路由名或历史 item_type，但不应成为长期 preview provider 的对外抽象。
+`filetable` / `laketable` 是历史残留名，迁移后应彻底删除，不应再作为 preview provider 的对外抽象，也不应继续进入新规范。
 
 ## 创建方与消费方
 
@@ -171,6 +173,21 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 `ResourceReader / ComponentReader / NativeCursor` 由 Meta、Manager、Transfer 的编排层根据 engine capability 适配创建。
 
 它们不由 format provider 自己构造，也不直接由 engine provider 暴露给上层业务。
+
+当前 engine 层已有可作为底座的能力：
+
+| 能力 | 当前接口 | 作用 |
+|---|---|---|
+| catalog | `CatalogProvider` | 列举和解析资源路径 |
+| metadata | `ItemMetadataProvider` | 获取引擎原生资源元数据 |
+| stream read | `ContentReadableProvider` | 打开完整内容流 |
+| range read | `RangeReadableProvider` | 打开范围内容流 |
+| stream write | `ContentWritableProvider` | 写入完整内容流 |
+| range write | `RangeWritableProvider` | 写入范围内容 |
+| batch read | `BatchReadableProvider` | 读取引擎原生批次 |
+| batch write | `BatchWritableProvider` | 写入引擎原生批次 |
+
+这些能力可以支撑第一版编排层适配，但它们不是 format provider 的直接输入契约。
 
 ### 消费方
 
@@ -197,7 +214,7 @@ Meta 已确认 component_files
   -> data type provider
 ```
 
-当前 Shapefile 样板暂时由 Manager 根据 format layout 构造同 basename 组件集合。后续 Meta 已确认的 `component_files` 应成为优先来源，Manager 不再按扩展名猜组件。
+multi 读取必须优先使用 Meta 已确认的 `component_files`。Manager 和 Transfer 不得按扩展名重新枚举 sibling 后猜组件。
 
 ### whole
 
@@ -208,11 +225,7 @@ Meta 已确认 whole scope
   -> data type provider
 ```
 
-当前 Parquet lake table 预览已经先落成 `ResourceReader + scope list -> ScopeTableProvider`，用于验证 scope 表的最小读取边界。
-
-Manager 侧已经按 engine 类型适配 lake table reader：对象存储走 `objectStorageResourceReader`，文件系统走 `fileSystemResourceReader`。后续要把目录型 lake table 的 scope path、bucket、physical path 固化到 Meta attributes，之后再删除 Manager 中 `filetable` / `laketable` 两套路由名。
-
-当前 Manager 请求层已经区分 `PhysicalPath` 与 `ScopePath`：单文件表使用 `PhysicalPath`，whole/scope 表使用 `ScopePath`。对象存储 reader 会接受 `bucket/prefix` 或 `prefix` 两种 scope path 输入，并在内部归一化，避免重复拼接 bucket。
+whole 读取必须从 Meta 已确认的 whole scope 根范围出发。scope path、bucket、physical path 等定位事实应来自 `meta_item.full_name` 和标准 attributes；Manager 和 Transfer 不得临时按目录拼装 whole item。
 
 ### engine-native
 
@@ -240,10 +253,21 @@ Manager 的预览需求会反向影响这层抽象的最小形状：
 4. data type provider 决定怎么变成平台语义。
 5. Manager 决定最终 preview DTO。
 
-## 不做什么
+如果 format provider 直接接 `engine id` 并内部构造读取器，会导致：
 
-- 不在这里把接口一次性扩成最终形态。
-- 不把 `engine id` 作为 format provider 的直接输入契约。
-- 不把 preview DTO 放进资源读取抽象。
-- 不把读取抽象放进 `common/format`。
-- 不把这层直接并入 `common/engine/plugin`。
+- format 层反向依赖 engine registry、凭据、连接池和权限。
+- 同一个格式难以复用于 S3、MinIO、NFS、本地文件系统等不同 engine。
+- Manager、Meta、Transfer 难以显式校验 engine capability 与 format capability 是否匹配。
+- format provider 膨胀成半个 connector。
+
+高层 facade 可以为了调用便利接收 `engine id`，但它不应被定义为 format provider 本身。
+
+## 设计约束
+
+资源读取抽象只负责资源定位和读取，不负责格式语义和上层展示：
+
+1. 不把接口一次性扩成最终形态，先保持 Meta、Manager、Transfer 可共同消费的最小边界。
+2. 不把 `engine id` 作为 format provider 的直接输入契约。
+3. 不把 preview DTO 放进资源读取抽象。
+4. 不把读取抽象放进 `common/format`。
+5. 不把这层直接并入 `common/engine/plugin`。

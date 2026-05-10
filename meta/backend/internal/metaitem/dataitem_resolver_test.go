@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 )
 

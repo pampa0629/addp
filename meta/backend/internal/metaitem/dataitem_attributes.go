@@ -1,6 +1,6 @@
 package metaitem
 
-import "github.com/addp/common/dataitem"
+import "github.com/addp/meta/internal/dataitem"
 
 // BuildAttributes 将 Meta 扫描得到的 item 语义合并为可落库 attributes。
 func BuildAttributes(item *DetectedItem) map[string]interface{} {

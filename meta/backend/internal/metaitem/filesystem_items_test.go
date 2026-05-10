@@ -3,7 +3,7 @@ package metaitem
 import (
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/models"
 )
 

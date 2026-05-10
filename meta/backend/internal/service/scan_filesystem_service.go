@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonParquet "github.com/addp/common/format/codecs/parquet"

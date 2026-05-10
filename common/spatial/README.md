@@ -1,6 +1,15 @@
 # common/spatial
 
-`common/spatial` 负责空间预览场景下的坐标转换 facade。
+`common/spatial` 负责空间预览场景下的坐标转换 facade，并承载 PostGIS 空间 SQL 表达式、MVT、WKB 等空间数据通用能力。
+
+PostGIS 相关工具包括：
+
+- 引擎类型判断和连接池获取
+- 标识符引用和 PostGIS 表名拼接
+- WKT / GeoJSON / 渲染用 GeoJSON 表达式
+- MVT、GeoJSON 分页、范围、SRID、物化视图和 GIST 索引 SQL 构造
+
+跨引擎 SQL 方言差异属于 `common/sqldialect`；PostGIS 这类空间扩展能力属于本包。
 
 当前 executor 优先级：
 

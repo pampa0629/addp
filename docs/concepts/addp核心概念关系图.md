@@ -68,11 +68,22 @@ mindmap
       元数据扫描流程
     数据类型与格式
       数据类型
-        关系型/文档型/空间型/文件型
-      数据格式
-        表格/空间/媒体/文档
-      FieldType 统一类型
-      TypeMapper 类型映射
+      table/document/media/container/graph/unknown
+      文件格式
+        csv/json/parquet/shapefile/sqlite/geopackage/pdf/image
+      capability 分层
+        engine capability
+        format capability
+        item capabilities
+      provider 体系
+        TableProvider
+        ComponentTableProvider
+        ScopeTableProvider
+        DocumentProvider
+        MediaProvider
+        ContainerProvider
+        GraphProvider
+        SpatialProvider
     数据开发
       开发方式（capabilities.compute）
         Query → 查询工作台
@@ -131,7 +142,7 @@ mindmap
 
 ---
 
-### 2. [引擎体系](concepts/addp引擎体系图.md)
+### 2. [引擎体系](addp引擎体系图.md)
 
 **引擎系统架构、分类体系和能力声明机制**
 
@@ -141,11 +152,11 @@ mindmap
 - 结构化能力声明 (`engine.capabilities/v1`)
 - 引擎插件系统
 
-📄 **[阅读完整文档 →](concepts/addp引擎体系图.md)**
+📄 **[阅读完整文档 →](addp引擎体系图.md)**
 
 ---
 
-### 3. [账号与权限](concepts/addp账号与权限体系图.md)
+### 3. [账号与权限](addp账号与权限体系图.md)
 
 **用户类型、租户隔离机制和权限控制模型**
 
@@ -154,11 +165,11 @@ mindmap
 - RBAC 权限模型 (基于角色的访问控制)
 - JWT 认证流程
 
-📄 **[阅读完整文档 →](concepts/addp账号与权限体系图.md)**
+📄 **[阅读完整文档 →](addp账号与权限体系图.md)**
 
 ---
 
-### 4. [元数据体系](concepts/addp元数据体系图.md)
+### 4. [元数据体系](addp元数据体系图.md)
 
 **元数据管理体系,包括层次结构、Provider 体系和统一数据结构**
 
@@ -168,24 +179,24 @@ mindmap
 - ExtensionInfo 扩展机制
 - 元数据扫描流程
 
-📄 **[阅读完整文档 →](concepts/addp元数据体系图.md)**
+📄 **[阅读完整文档 →](addp元数据体系图.md)**
 
 ---
 
 ### 5. [数据类型与格式](addp数据类型与格式体系图.md)
 
-**数据类型分类、数据格式支持和类型映射机制**
+**数据类型、文件格式、能力分层和 provider 体系**
 
-- 数据类型分类 (关系型、文档型、空间型、文件型)
-- 数据格式体系 (空间数据格式、表格数据格式、媒体数据格式)
-- FieldType 统一类型系统
-- TypeMapper 类型映射
+- 数据类型分类 (table、document、media、container、graph、unknown)
+- 文件格式体系 (csv、json、parquet、shapefile、sqlite/geopackage、pdf、图片等)
+- capability 分层 (engine capability、format capability、item capabilities)
+- provider 体系与跨模块边界 (TableProvider、ComponentTableProvider、ScopeTableProvider、DocumentProvider、MediaProvider、ContainerProvider、GraphProvider、SpatialProvider)
 
 📄 **[阅读完整文档 →](addp数据类型与格式体系图.md)**
 
 ---
 
-### 6. [数据开发](concepts/addp数据开发体系图.md)
+### 6. [数据开发](addp数据开发体系图.md)
 
 **三种数据开发方式及其与引擎能力的关系**
 
@@ -195,11 +206,11 @@ mindmap
 - Notebook 开发 - Jupyter Notebook 交互式开发
 - capabilities.compute 与开发界面映射
 
-📄 **[阅读完整文档 →](concepts/addp数据开发体系图.md)**
+📄 **[阅读完整文档 →](addp数据开发体系图.md)**
 
 ---
 
-### 7. [任务编排](concepts/addp任务编排体系图.md)
+### 7. [任务编排](addp任务编排体系图.md)
 
 **任务库机制、任务编排流与算子工作流的区别、以及跨模块编排能力**
 
@@ -209,11 +220,11 @@ mindmap
 - 依赖管理与参数模板化
 - 调度方式 (Cron 定时调度、手动触发)
 
-📄 **[阅读完整文档 →](concepts/addp任务编排体系图.md)**
+📄 **[阅读完整文档 →](addp任务编排体系图.md)**
 
 ---
 
-### 8. [监控与执行](concepts/addp监控与执行体系图.md)
+### 8. [监控与执行](addp监控与执行体系图.md)
 
 **统一执行监控架构和跨模块任务追踪机制**
 
@@ -222,11 +233,11 @@ mindmap
 - 跨模块监控集成
 - 各模块任务类型
 
-📄 **[阅读完整文档 →](concepts/addp监控与执行体系图.md)**
+📄 **[阅读完整文档 →](addp监控与执行体系图.md)**
 
 ---
 
-### 9. [数据服务](concepts/addp数据服务体系图.md)
+### 9. [数据服务](addp数据服务体系图.md)
 
 **数据服务发布机制,包括 OGC 标准服务和查询服务 API**
 
@@ -236,11 +247,11 @@ mindmap
 - 瓦片服务
 - 服务注册
 
-📄 **[阅读完整文档 →](concepts/addp数据服务体系图.md)**
+📄 **[阅读完整文档 →](addp数据服务体系图.md)**
 
 ---
 
-### 10. [基础设施隔离](concepts/addp基础设施隔离图.md)
+### 10. [基础设施隔离](addp基础设施隔离图.md)
 
 **基础设施架构,包括系统基础设施与业务数据库的隔离**
 
@@ -248,7 +259,7 @@ mindmap
 - 系统基础设施 vs 业务数据库 (ADDP 元数据 vs 用户业务数据)
 - 资源隔离机制 (PostgreSQL Schema、MinIO Bucket、Redis Key、Asynq Queue、Meilisearch Index)
 
-📄 **[阅读完整文档 →](concepts/addp基础设施隔离图.md)**
+📄 **[阅读完整文档 →](addp基础设施隔离图.md)**
 
 ---
 
@@ -275,28 +286,28 @@ mindmap
 ### 架构与模块
 
 - **[ADDP 模块架构图](addp模块架构图.md)** - 模块总览、分层架构、共享模块、计算引擎
-- **[引擎体系图](concepts/addp引擎体系图.md)** - 引擎插件架构、分类体系、能力声明
-- **[基础设施隔离图](concepts/addp基础设施隔离图.md)** - 系统与业务分离、资源隔离机制
+- **[引擎体系图](addp引擎体系图.md)** - 引擎插件架构、分类体系、能力声明
+- **[基础设施隔离图](addp基础设施隔离图.md)** - 系统与业务分离、资源隔离机制
 
 ### 用户与权限
 
-- **[账号与权限体系图](concepts/addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、JWT 认证
+- **[账号与权限体系图](addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、JWT 认证
 - **[登录认证原理说明](addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
 
 ### 数据管理
 
-- **[元数据体系图](concepts/addp元数据体系图.md)** - 元数据层次、Parser 体系、TableInfo 统一结构
-- **[数据类型与格式体系图](addp数据类型与格式体系图.md)** - 数据类型、数据格式、FieldType 统一类型
+- **[元数据体系图](addp元数据体系图.md)** - 元数据层次、Parser 体系、TableInfo 统一结构
+- **[数据类型与格式体系图](addp数据类型与格式体系图.md)** - 数据类型、文件格式、能力分层、provider 体系
 
 ### 数据开发与编排
 
-- **[数据开发体系图](concepts/addp数据开发体系图.md)** - 查询开发、算子工作流、Notebook 开发
-- **[任务编排体系图](concepts/addp任务编排体系图.md)** - 任务库、编排流、DAG 依赖、调度方式
+- **[数据开发体系图](addp数据开发体系图.md)** - 查询开发、算子工作流、Notebook 开发
+- **[任务编排体系图](addp任务编排体系图.md)** - 任务库、编排流、DAG 依赖、调度方式
 
 ### 监控与服务
 
-- **[监控与执行体系图](concepts/addp监控与执行体系图.md)** - 统一执行监控、状态流转、跨模块监控
-- **[数据服务体系图](concepts/addp数据服务体系图.md)** - OGC 标准服务、查询服务 API
+- **[监控与执行体系图](addp监控与执行体系图.md)** - 统一执行监控、状态流转、跨模块监控
+- **[数据服务体系图](addp数据服务体系图.md)** - OGC 标准服务、查询服务 API
 
 ---
 

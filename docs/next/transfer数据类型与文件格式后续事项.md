@@ -12,8 +12,6 @@
 
 ## 相关基础文档
 
-- [ADDP 格式与数据类型总体模型](../concepts/addp格式与数据类型总体模型.md)
-- [ADDP Format Capability 与 Data Type Provider 接口规范](../spec/addp格式Capability与DataTypeProvider接口规范.md)
 - [ADDP 资源读取抽象规范](../spec/addp资源读取抽象规范.md)
 - [common/format 收口与 Provider 化改造方案](../plan/common-format收口与Provider化改造方案.md)
 - [ADDP 格式与数据类型 Provider 消费者调研](../plan/addp格式与数据类型Provider消费者调研.md)

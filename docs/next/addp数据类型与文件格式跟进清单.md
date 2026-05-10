@@ -15,15 +15,19 @@
   - 代码侧不保留旧数据兼容。
 - 架构共识：
   - `common/jsonmap` 只做 decoded JSON map 读写。
-  - `data_type` 与 `format` 保留在 common 层。
+  - `format` 保留在 common 层；`data_type`、`organization` 和 detector 规则结构收口到 Meta 内部。
   - Meta item 的识别、claims、exclusive、`component_files`、`meta_item.full_name` 和 attributes 落库构造属于 Meta。
-  - `common/dataitem` 仅保留跨模块纯概念和格式 / data_type 推断。
+  - 不保留 `common/dataitem`；当前 item 组织方式枚举、规则结构和格式 / data_type 推断均属于 Meta 内部实现。
 - 已完成结论：
-  - 格式与数据类型总体模型已新增：`docs/concepts/addp格式与数据类型总体模型.md`。
-  - Format Capability 与 Data Type Provider 接口草案已新增：`docs/spec/addp格式Capability与DataTypeProvider接口规范.md`。
-  - 文件格式能力接口规范已新增：`docs/spec/addp文件格式能力接口规范.md`。
-  - 资源读取抽象与 Format Provider 调用链方案已新增：`docs/plan/addp资源读取抽象与FormatProvider调用链方案.md`。
-  - 资源读取抽象规范已新增：`docs/spec/addp资源读取抽象规范.md`。
+  - 数据类型与格式概念总纲已收口到：`docs/concepts/addp数据类型与格式体系图.md`。
+  - 数据类型与格式文档体系已按唯一事实源收口：概念边界、detector、attributes、format / data type provider、resource、内置格式、扩展指南分别维护。
+  - 数据类型与格式模块边界已独立成文：`docs/spec/addp数据类型与格式模块边界规范.md`。
+  - 概念文档已补充数据类型、典型格式和当前 ADDP 支持状态目录。
+  - 文件格式能力与 Data Type Provider 规范已整理：`docs/spec/addp文件格式能力与DataTypeProvider规范.md`。
+  - 文件格式能力与 Data Type Provider 规范已补充当前 FormatCapability 与 provider / extractor 实现矩阵。
+  - 资源读取抽象与 Format Provider 调用链已合并进：`docs/spec/addp资源读取抽象规范.md`。
+  - 内置格式规范已按统一模板整理：识别与组织、attributes 写入、消费要求、格式约束。
+  - 数据格式扩展指南已简化为五步最小流程：判断组织方式、判断 data type / format、实现格式能力、定义 attributes、补充文档和验证。
   - Provider 消费者调研已新增：`docs/plan/addp格式与数据类型Provider消费者调研.md`。
   - Transfer 相关内容已整合为三份 plan 文档：`docs/plan/transfer现状与Provider化改造调研.md`、`docs/plan/transfer与FormatProvider整合方案.md`、`docs/plan/transferProvider化改造步骤与清理清单.md`。
   - Service / Develop 旧 `lake_table` 链路清理说明已新增：`docs/plan/service-develop旧lake_table链路清理说明.md`。
@@ -33,7 +37,7 @@
   - `format.ExtractInput` 已移除 `EngineID`，文件增强元数据提取器不再携带 engine 上下文。
   - `common/format/builtin` 已纳入 SpatiaLite type mapper 默认注册。
   - Meta 内部 `dataitem_lake_table_detector.go` 已改名为 `dataitem_table_file_detector.go`，内部符号统一为 table file / scope table 语义；扫描结果仍是 `item_type=table + format=parquet/orc/avro + organization=single/whole`。
-  - `common/dataitem` Meta 语义已出清。
+  - `common/dataitem` 已下沉为 `meta/backend/internal/dataitem`。
   - `Scanner*`、`format.Scanner`、`ObjectInfoParser`、`format.ObjectInfo` 已出清。
   - 对象存储基础信息进入 `storage`，图片/PDF 提取信息进入 `type_info.media` / `type_info.document`，提取状态进入 `capabilities.extraction`。
   - TableInfo canonical model 已统一到 `plugin.TableInfo` / `format.FieldInfo`。
@@ -53,7 +57,7 @@
   - `go test ./common/format/... ./common/resource ./meta/backend/internal/metaitem ./meta/backend/internal/service ./meta/backend/internal/extractor ./meta/backend/internal/objectstore ./meta/backend/internal/scanchange ./meta/backend/internal/metapath ./manager/backend/internal/service` 通过。
   - `go test ./meta/backend/internal/extractor ./meta/backend/internal/service ./meta/backend/internal/metaitem ./meta/backend/internal/objectstore ./meta/backend/internal/scanchange ./meta/backend/internal/metapath` 通过。
   - `go test ./manager/backend/internal/service` 通过。
-  - 历史全量验证记录：`go test ./common/jsonmap ./common/dataitem ./common/format ./common/spatial ./common/engine/plugin ./common/engine/plugins/postgresql ./common/engine/plugins/mysql ./common/engine/plugins/clickhouse ./common/engine/plugins/doris ./common/engine/plugins/spark_sql ./common/engine/plugins/minio ./common/engine/plugins/s3 ./common/engine/plugins/mongodb ./common/engine/plugins/neo4j ./common/resource ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service ./transfer/backend/internal/api ./transfer/backend/internal/service` 通过。
+  - 历史全量验证记录：`go test ./common/jsonmap ./common/format ./common/spatial ./common/engine/plugin ./common/engine/plugins/postgresql ./common/engine/plugins/mysql ./common/engine/plugins/clickhouse ./common/engine/plugins/doris ./common/engine/plugins/spark_sql ./common/engine/plugins/minio ./common/engine/plugins/s3 ./common/engine/plugins/mongodb ./common/engine/plugins/neo4j ./common/resource ./meta/backend/internal/dataitem ./meta/backend/internal/enginecap ./meta/backend/internal/extractor ./meta/backend/internal/metaattr ./meta/backend/internal/metacatalog ./meta/backend/internal/metacleanup ./meta/backend/internal/metaitem ./meta/backend/internal/metapath ./meta/backend/internal/metatext ./meta/backend/internal/metaquery ./meta/backend/internal/objectstore ./meta/backend/internal/repository ./meta/backend/internal/scanchange ./meta/backend/internal/scanstats ./meta/backend/internal/scantask ./meta/backend/internal/service ./manager/backend/internal/service ./transfer/backend/internal/api ./transfer/backend/internal/service` 通过。
 
 ## 仍待确认
 
@@ -63,9 +67,8 @@
 - Iceberg 等整体数据集按 `whole` 验证 Exclusive 和 claims
 - Manager 空间预览依赖字段和缺失降级策略
 - 旧数据删除后重新扫描
-- Manager 使用 `meta_item.full_name` 和 `item.component_files`
+- Manager 全链路验证使用 `meta_item.full_name` 和 `item.component_files`
 - Service / Develop 删除旧 `lake_table` 查询链路，改为 `table + format + organization`
 - Transfer 不重复推断字段类型和空间能力
-- ResourceReader / ComponentReader 是否在真实调用链稳定后沉淀到 `common/engine/plugin`
 - ResourceReader / ComponentReader / NativeCursor 的最终 Go 接口形态
 - CSV、JSON 空间结构、Shapefile、Excel、SQLite、GeoPackage、图片、PDF 端到端验证

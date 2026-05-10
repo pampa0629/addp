@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/duckdb"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
@@ -418,7 +419,7 @@ func (s *QueryExecutorService) replaceGeometryColumn(selectFields, geomColumn, e
 
 	// 替换几何列为 ST_AsGeoJSON
 	quotedGeomColumn := dialect.QuoteIdentifier(geomColumn)
-	replacement := sqldialect.PostGISGeoJSONSelectExpression(geomColumn)
+	replacement := spatial.PostGISGeoJSONSelectExpression(geomColumn)
 
 	// 简单替换（实际应该更智能地解析 SQL）
 	selectFields = strings.ReplaceAll(selectFields, quotedGeomColumn, replacement)
@@ -561,7 +562,7 @@ func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
 
 		// 如果是几何列，使用 ST_AsGeoJSON 转换
 		if col.ColumnName == geomColumn {
-			fieldList[i] = sqldialect.PostGISGeoJSONSelectExpression(col.ColumnName)
+			fieldList[i] = spatial.PostGISGeoJSONSelectExpression(col.ColumnName)
 		} else {
 			fieldList[i] = quotedCol
 		}

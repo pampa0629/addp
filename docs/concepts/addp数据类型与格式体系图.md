@@ -22,6 +22,23 @@ engine -> node -> data item
 
 **engine 管连接，node 管资源树，data item 管平台语义；组织方式管资源如何成为 item，数据类型管用户如何理解 item，文件格式管编码，横切能力管跨类型附加能力。**
 
+## 文档分工
+
+本文件只定义概念边界，不定义扫描流程、落库结构或 provider 接口。数据类型与格式主题按以下事实源维护：
+
+| 问题 | 唯一事实源 |
+|---|---|
+| engine、node、data item、organization、data type、format、capability 的概念边界 | 本文 |
+| 哪些资源组成一个 data item、主资源是什么、claims / exclusive 如何合并 | [ADDP 数据项 detector 规范](../spec/addp数据项detector规范.md) |
+| `meta_item.attributes` 如何分区、哪些字段写入哪里 | [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md) |
+| format capability、format provider、data type provider 的职责和接口边界 | [ADDP 文件格式能力与 Data Type Provider 规范](../spec/addp文件格式能力与DataTypeProvider规范.md) |
+| ResourceRef、ResourceReader、ComponentReader、NativeCursor 的读取边界 | [ADDP 资源读取抽象规范](../spec/addp资源读取抽象规范.md) |
+| 数据类型与格式相关的跨模块职责边界 | [ADDP 数据类型与格式模块边界规范](../spec/addp数据类型与格式模块边界规范.md) |
+| 首批内置格式的确定性落地规则 | [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md) |
+| 新增或修改格式时的操作步骤和验证清单 | [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md) |
+
+其他文档引用上述主题时，只保留摘要和链接，不重复定义规则。
+
 ## 总览
 
 ```mermaid
@@ -108,7 +125,7 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 |---|---|---|
 | `single` | 一对一，一个引擎资源就是一个 data item | 数据库 table、CSV 文件、SQLite 文件、PDF、图片 |
 | `multi` | 多对一，多个资源共同组成一个 data item | Shapefile 多文件、一组表共同构成一个业务 item |
-| `whole` | 全部对一，整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB 场景目录、完整数据集目录 |
+| `whole` | 全部对一，整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB 场景目录、影像镶嵌数据集目录 |
 
 ### single
 
@@ -148,40 +165,47 @@ SQLite、ZIP、RAR 等虽然内部包含子 item 或子资源，但它们作为�
 
 Parquet 本身不需要被称为“湖表”。一个 Parquet 文件可以是 `single + table + format=parquet`；一组同类 Parquet 文件可以是 `multi + table + format=parquet`；未来 Iceberg 支持后，可以是 `whole + table + format=iceberg`。数据类型仍然是 `table`。
 
-### 取消容器组织方式
-
-容器不是组织方式。容器描述的是 data item 的数据类型或类型特征。
-
-例如：
-
-- SQLite 文件：`organization=single`，`data_type=container`，`format=sqlite`。
-- GeoPackage 文件：`organization=single`，`data_type=container`，`format=geopackage`。
-- ZIP 文件：`organization=single`，`data_type=container`，`format=zip`。
-
-容器内部的表、sheet、layer、文件是内部子 item，应先在 attributes 中表达。
-
-### 暂不保留 mixed_collection
-
-`mixed_collection` 暂不作为基础组织方式。
-
-如果只认领部分资源，就是 `multi`；如果整个范围都归并为一个 item，就是 `whole`。未来确实出现无法表达的复杂组织方式，再单独讨论。
-
 ## 数据类型
 
 数据类型回答：**这个 data item 在用户观感和处理方式上是什么。**
 
-数据类型是对一类类似数据的抽象。它们通常具备相似的数据特征、预览方式、处理手段和治理方式。
+数据类型是对一类类似 data item 的抽象。它们通常具备相似的数据特征、预览方式、处理手段和治理方式。
 
 建议第一版数据类型：
 
 | 数据类型 | 含义 | 典型处理方式 |
 |---|---|---|
-| `table` | 表格型数据，有字段、行列或可推断字段 | 字段预览、表格查询、导入导出、统计分析 |
-| `document` | 文档型数据，面向阅读、解析和全文提取 | 文档预览、文本提取、全文索引、摘要 |
-| `media` | 媒体型数据，包括图片、视频、音频 | 缩略图、播放、转码、媒体元信息 |
-| `container` | 容器型数据，内部包含子 item 或资源 | 内部目录、sheet/table/layer 枚举、解包或选择子对象 |
-| `graph` | 图数据，节点、边、关系结构 | 图谱预览、关系查询、图算法 |
+| `table` | 有字段、行列或可推断字段的结构化数据 | 字段预览、表格查询、导入导出、统计分析 |
+| `document` | 以阅读、解析和全文提取为主的数据 | 文档预览、文本提取、全文索引、摘要 |
+| `media` | 图片、视频、音频等可感知媒体内容 | 缩略图、播放、转码、媒体元信息 |
+| `container` | 内部包含子 item 或资源的数据 | 内部对象枚举、解包、选择子对象 |
+| `graph` | 节点、边、关系结构的数据 | 图谱预览、关系查询、图算法 |
 | `unknown` | 暂未识别 | 基础文件预览或下载 |
+
+## 数据类型与格式目录
+
+本节只给出概念层的格式归类和 ADDP 当前支持状态。具体落地规则见 [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md)，provider 实现矩阵见 [ADDP 文件格式能力与 Data Type Provider 规范](../spec/addp文件格式能力与DataTypeProvider规范.md)。
+
+支持状态说明：
+
+- 已支持：当前 ADDP 已有识别、扫描或提取链路，可进入标准 meta item / attributes。
+- 部分支持：已有枚举、识别、解析或提取能力的一部分，但尚未形成完整 provider / preview / transfer 链路。
+- 规划：概念上属于该数据类型，但当前不作为稳定能力声明。
+
+| 数据类型 | 典型格式 / 来源 | 当前 ADDP 支持状态 |
+|---|---|---|
+| `table` | 数据库表、CSV、TSV、records JSON、JSON Lines、FeatureCollection、Shapefile、Parquet、ORC、Avro、Iceberg | 已支持数据库表、CSV、TSV、records / 空间 JSON、Shapefile、单 Parquet；ORC / Avro 有 single 规则声明但 provider 能力待补；Iceberg 属于 whole 规划 |
+| `document` | PDF、TXT、Markdown、DOCX、PPTX、WPS、任意对象 JSON、文档型数据库记录 | 已支持 PDF 元数据 / 提取状态和文档型 JSON 识别；TXT / DOCX / PPTX / WPS 有格式枚举或识别但稳定提取能力待补 |
+| `media` | JPEG、PNG、GIF、TIFF / GeoTIFF、视频、音频 | 已支持 JPEG / PNG / GIF / TIFF 图片识别和图片元数据提取，GeoTIFF 可写入可确定空间信息；视频 / 音频有格式枚举但稳定元数据 provider 待补 |
+| `container` | Excel、SQLite、GeoPackage、ZIP、RAR、TAR | 已支持 Excel、SQLite、GeoPackage 外层容器和 children 枚举；压缩包类容器为规划能力 |
+| `graph` | Neo4j label / relationship、RDF、GraphML、GEXF、图结构 JSON | 已支持引擎原生图 schema 写入 `type_info.graph`；文件型图格式为规划能力 |
+| `unknown` | 无法识别或暂未接入格式 | 已支持作为兜底类型 |
+
+注意：
+
+- `format` 是编码或格式族，不等于 `data_type`。例如 GeoJSON 类结构仍表达为 `format=json` + `capabilities.spatial`。
+- 数据库表、文档集合、图 label / relationship 等引擎原生 item 可以没有文件格式；它们仍按 `data_type` 进入平台语义。
+- 一个格式是否“可识别”、是否“有 FormatCapability 声明”、是否“实现了 provider”是三层不同能力，不能混用。
 
 ### table
 
@@ -204,15 +228,28 @@ JSON 需要结构识别：
 - records array、JSON Lines、带空间结构的 JSON FeatureCollection 可归为 `table`。
 - 任意 JSON 对象、配置文件、嵌套文档可归为 `document` 或 `container`，取决于平台消费方式。
 
+### document
+
+`document` 是以阅读、正文提取和片段检索为主的 data item。
+
+典型来源：
+
+- PDF。
+- Word / RTF / Markdown / 纯文本。
+- 配置文件或嵌套 JSON 文档。
+- 文档型数据库记录。
+
 ### media
 
-`media` 合并图片、视频、音频。
+`media` 是以视觉、音频或视频预览为主的 data item。
 
-理由：
+典型来源：
 
-- 用户感知都是媒体内容。
-- 处理链路相近：预览、缩略图、播放、转码、编码信息。
-- 差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达。
+- 图片。
+- 视频。
+- 音频。
+
+差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达。
 
 ### container
 
@@ -327,6 +364,29 @@ JSON 需要结构识别：
 - `ContainerInfo` 属于 `data_type=container` 的类型信息。
 - 原 `ObjectInfo` 应拆散并融入 storage info，不作为数据类型模型。
 
+## capability 与 provider
+
+平台需要区分三层能力：
+
+| 层次 | 含义 | 示例 |
+|---|---|---|
+| engine capability | 引擎插件声明自己能提供什么访问能力 | catalog、content read、range read、batch read、batch write、graph query |
+| format capability | 格式插件声明自己能识别、解析、提取或写出什么 | identification、layout、extract、sample、batch read/write、component commit |
+| item capabilities | `meta_item.attributes.capabilities` 中的扫描事实 | spatial、temporal、statistics、extraction、partitioning、indexing |
+
+`format capability` 与 `engine capability` 使用同一术语风格，都是插件对平台的能力声明。`item capabilities` 是扫描后的 item 事实结果，不能反向冒充插件能力声明。
+
+上层消费者应尽量面向 data type provider，而不是直接面向具体 engine type 或 format type：
+
+- `TableProvider`：表结构、样本、分页、批量读写、空间列等表语义。
+- `DocumentProvider`：文档元数据、文本片段、页数、语言等文档语义。
+- `MediaProvider`：媒体元数据、缩略图素材、EXIF 等媒体语义。
+- `ContainerProvider`：内部对象枚举、默认入口、子对象摘要等容器语义。
+- `GraphProvider`：节点、边、schema、图样本等图语义。
+- `SpatialProvider`：作为横切 provider，补充 geometry、SRID、extent 等空间语义。
+
+新增 format 时，如果能落到既有 data type，上层消费者原则上不应感知新格式；新增 data type 时，上层消费者必须显式增加对应 provider、展示和转换能力。
+
 ## attributes 概念分层
 
 基于上述概念，data item attributes 应表达：
@@ -369,17 +429,8 @@ JSON 需要结构识别：
 - “湖表”不是基础概念；Parquet、Iceberg 等都是 `table` 类型在不同组织方式和格式下的实现。
 - `ObjectInfo` 不作为概念层模型，存储侧对象信息归入 storage info。
 - 一个事实只有一个规范来源和一个规范存储点。
+- 上层模块应通过 data type provider 消费能力，避免直接依赖具体 engine type 或 format type。
 
-## 模块边界
+## 后续阅读
 
-数据类型与格式体系同时涉及通用概念和 Meta 扫描职责，必须按职责拆分：
-
-| 层级 | 职责 |
-|---|---|
-| `common/jsonmap` | decoded JSON map 的通用读写 helper，不承载 attributes 规范语义，也不作为 `meta_item.attributes` 的业务模型。 |
-| common 层数据类型概念 | `data_type` 等跨模块稳定枚举和基础类型定义。它们可以被 Meta、Manager、Transfer 等共同引用，但不决定资源如何归并成 meta item。 |
-| `common/format` | 文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer。它提供可复用解析能力，不直接落库 attributes。 |
-| `meta` | 资源树扫描、data item 识别、组织方式决策、claims / exclusive、`component_files`、`meta_item.full_name` 决策、attributes normalizer 和落库。 |
-| 其他业务模块 | 通过 Meta Client 消费已入库的 meta item 与标准 attributes，不重复实现资源组织方式识别。 |
-
-因此，构成 meta item 的资源组织方式和识别流程不属于 common 通用能力；common 可以提供稳定枚举、格式 parser 和 JSON map 工具，但不能替代 Meta 对 item 边界和 attributes 落库结构的裁决。
+本文只定义概念边界。实现层职责边界见 [ADDP 数据类型与格式模块边界规范](../spec/addp数据类型与格式模块边界规范.md)；新增格式的最小流程见 [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)；首批格式的落地规则见 [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md)。

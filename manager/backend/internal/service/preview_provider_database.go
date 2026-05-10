@@ -8,6 +8,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -203,11 +204,11 @@ func renderGeometryColumnName(column string) string {
 }
 
 func databasePreviewWKTExpr(col plugin.ColumnInfo) string {
-	return sqldialect.PostGISWKTExpression(col.ColumnName, col.DataType)
+	return spatial.PostGISWKTExpression(col.ColumnName, col.DataType)
 }
 
 func databasePreviewRenderExpr(col plugin.ColumnInfo) string {
-	return sqldialect.PostGISRenderGeoJSONExpression(col.ColumnName, col.DataType)
+	return spatial.PostGISRenderGeoJSONExpression(col.ColumnName, col.DataType)
 }
 
 func buildDatabaseRenderGeometryColumns(geometryColumns []string, rows []map[string]interface{}) map[string]string {
@@ -265,7 +266,7 @@ func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, 
 
 // isSpatialType 判断是否为空间类型
 func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
-	return sqldialect.IsPostGISSpatialType(dataType)
+	return spatial.IsPostGISSpatialType(dataType)
 }
 
 func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
