@@ -12,7 +12,7 @@ Manager 并不是所有格式都像 WPS 一样预览。
 
 当前主要存在两类链路：
 
-| 链路 | 典型格式 | 后端处理 | 是否走 `common/format/codecs` |
+| 链路 | 典型格式 | 后端处理 | 是否走 `common/format/plugins` |
 |---|---|---|---|
 | 表格语义预览 | CSV、Excel、JSON records / GeoJSON、Parquet、Shapefile | Manager 构造资源读取器，再调用 `format.TableProvider` / `ComponentTableProvider` / `ScopeTableProvider` 得到字段与样本行 | 是 |
 | 对象内容预览 | PDF、DOCX、WPS、PPTX、图片、Markdown、普通文本、未知对象 | Manager 通过 engine 的内容读取能力拿到对象流，再由 `ObjectContentRegistry` 选择内容 handler，组装 `ObjectPreviewContent` | 大多不走；部分 handler 内部复用 format provider |
@@ -20,10 +20,10 @@ Manager 并不是所有格式都像 WPS 一样预览。
 例外情况：
 
 - GeoJSON 内容预览会在 content handler 内复用 `format.GetTableProvider(format.FormatJSON)` 提取空间和字段摘要。
-- Excel / SQLite / Parquet 的对象内容预览在 Manager 内部有专门 handler，部分复用 `common/format/codecs` 的解析能力或同类工具。
+- Excel / SQLite / Parquet 的对象内容预览在 Manager 内部有专门 handler，部分复用 `common/format/plugins` 的解析能力或同类工具。
 - DOCX / WPS / PPTX 当前主要是读取原始二进制并 base64 返回，由前端插件展示。
 
-因此，`common/format/codecs` 少并不等于 Manager 不能预览；但这也暴露出职责分裂：格式识别、内容读取、预览展示、provider 能力分散在多个位置。
+因此，`common/format/plugins` 少并不等于 Manager 不能预览；但这也暴露出职责分裂：格式识别、内容读取、预览展示、provider 能力分散在多个位置。
 
 ### 2. Manager 中存在过多格式硬编码
 
@@ -124,7 +124,7 @@ Manager preview: 实际能按 markdown / text 展示
 
 这与平台“Meta 是事实源，Manager 消费已入库 item”的原则冲突。
 
-Markdown 不应因为没有复杂 codec 就是 unknown。它至少应被视为：
+Markdown 不应因为没有复杂 plugin 实现就是 unknown。它至少应被视为：
 
 - `organization=single`
 - `data_type=document`
@@ -291,7 +291,7 @@ Manager 不应：
 新增格式时，目标是只在少数明确位置做针对性补充：
 
 - 在 `common/format` 中声明 `FormatType`、descriptor、识别规则和 capability。
-- 需要解析结构时，在 `common/format/codecs/<format>/` 实现对应 data type provider。
+- 需要解析结构时，在 `common/format/plugins/<format>/` 实现对应 data type provider。
 - 需要 Meta 组织方式特例时，只在 Meta 的组织 / 组件规则层补充特例。
 - Manager、Transfer、Search 等上层模块优先消费标准 provider / capability / preview material，不再维护格式扩展名清单。
 
@@ -401,22 +401,22 @@ Markdown 的修复原则：
 已落地代码记录：
 
 - `common/format/provider.go`：新增 `DocumentInfo`、`DocumentProvider`、文档 provider 注册表和查询入口。
-- `common/format/codecs/text/provider.go`：新增 text / markdown 最小 DocumentProvider，消费调用方传入的 `io.Reader`，返回 UTF-8 文本片段，不读取 engine、不返回 Manager DTO。
+- `common/format/plugins/text/provider.go`：新增 text / markdown 最小 DocumentProvider，消费调用方传入的 `io.Reader`，返回 UTF-8 文本片段，不读取 engine、不返回 Manager DTO。
 - `common/format/builtin/init.go`：内置注册入口纳入 text / markdown DocumentProvider。
 - `common/format/provider.go`：新增 `MediaInfo`、`MediaProvider`、媒体 provider 注册表和查询入口。
-- `common/format/codecs/image/parser.go`：复用图片 metadata extractor 能力，实现 image / jpeg / png / gif / tiff 最小 MediaProvider。
-- `common/format/codecs/image/provider_test.go`：验证 PNG MediaProvider 可返回宽高、MIME 和格式信息。
+- `common/format/plugins/image/parser.go`：复用图片 metadata extractor 能力，实现 image / jpeg / png / gif / tiff 最小 MediaProvider。
+- `common/format/plugins/image/provider_test.go`：验证 PNG MediaProvider 可返回宽高、MIME 和格式信息。
 
 ### 阶段五：内部格式扩展规范化
 
-目标：新增格式时，开发者只需要在 `common/format` 按规范补充 descriptor、provider 和必要 codec，上层模块通过标准能力自动消费。
+目标：新增格式时，开发者只需要在 `common/format` 按规范补充 descriptor、provider 和必要 plugin，上层模块通过标准能力自动消费。
 
 状态：进行中，已完成 descriptor manifest 加载、注册基础能力和一批现有预览型格式的 descriptor 收拢；外部进程插件不在当前范围。
 
 任务：
 
 1. 已完成第一步：支持 descriptor manifest JSON 文件 / 目录加载，并通过 `RegisterFormatDescriptor` 同步注册到 descriptor registry 与 capability registry。
-2. 已完成第一步：把“新增内部格式”的代码位置和最小实现清单固化到本文，覆盖 descriptor、detection、provider、codec、Meta 特例、Manager preview material。
+2. 已完成第一步：把“新增内部格式”的代码位置和最小实现清单固化到本文，覆盖 descriptor、detection、provider、plugin、Meta 特例、Manager preview material。
 3. 部分完成：为典型内部格式补模板或示例，已覆盖 `text` / `markdown` / `parquet` / `shapefile` 的落地参照；后续可补 `pdf` / `image` / `excel` / `sqlite`。
 4. 未完成：Manager 和 Transfer 只消费标准 data type provider 结果，逐步删除格式清单重复维护。
 5. 暂不推进：外部进程插件、command 型 provider、远程 provider。
@@ -433,7 +433,7 @@ Markdown 的修复原则：
 1. 在 `common/format/detection.go` 声明或复用 `FormatType` 常量。
 2. 在 `common/format/registry/descriptor.go` 增加 descriptor，至少声明 `format`、`data_type`、`layouts`、`identification.extensions/mime_types`、`preview.kind`、`preview.preview_materials`、`preview.frontend_renderer`。
 3. 只有确实已有批量读写或稳定导入导出能力时，才声明 `transfer_read/write`，不要把“能预览”误写成 transfer 能力。
-4. 如需结构解析，在 `common/format/codecs/<format>/` 实现对应 provider，例如 `TableProvider`、`DocumentProvider`。provider 消费 `io.Reader` / `ResourceReader`，不接 engine id，不返回 Manager DTO。
+4. 如需结构解析，在 `common/format/plugins/<format>/` 实现对应 provider，例如 `TableProvider`、`DocumentProvider`。provider 消费 `io.Reader` / `ResourceReader`，不接 engine id，不返回 Manager DTO。
 5. 如果格式是多文件、whole scope、容器或有特殊 item 组织方式，只在 Meta 规则层补组织特例；普通 single resource 格式由 capability 派生。
 6. Manager 预览优先消费 `format`、`preview_material`、`frontend_renderer` 和标准 provider 结果，不新增扩展名 / MIME 硬编码清单。
 

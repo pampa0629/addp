@@ -49,8 +49,8 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 	return p.convertToTableInfo(analysis, opts)
 }
 
-// ReadPreview 读取 Excel 数据预览
-func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+// SampleTable 读取 Excel 表格样本。
+func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -277,6 +277,6 @@ func init() {
 	_ = format.RegisterTableProvider(format.NewTableProvider(
 		format.FormatExcel,
 		parser.ParseTableInfo,
-		parser.ReadPreview,
+		parser.SampleTable,
 	))
 }

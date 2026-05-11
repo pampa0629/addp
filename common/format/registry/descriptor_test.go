@@ -34,12 +34,21 @@ func TestCapabilityViewFromDescriptor(t *testing.T) {
 	if view.DataType != DataTypeDocument {
 		t.Fatalf("DataType = %q, want %q", view.DataType, DataTypeDocument)
 	}
-	if view.Preview.FrontendRenderer != "markdown" {
-		t.Fatalf("FrontendRenderer = %q, want markdown", view.Preview.FrontendRenderer)
+	if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderDocumentText) {
+		t.Fatalf("ContentReaders = %#v, want document_text", view.ContentReaders)
 	}
 	if !view.Transfer.Read || !view.Transfer.Write {
 		t.Fatalf("Transfer = %#v, want read/write", view.Transfer)
 	}
+}
+
+func containsStringForDescriptorTest(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRegisterDescriptorRecordsFormatConflictAndHonorsPriority(t *testing.T) {

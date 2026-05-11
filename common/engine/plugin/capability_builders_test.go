@@ -19,17 +19,17 @@ func TestCapabilityBuildersUseFormatRegistry(t *testing.T) {
 		{
 			name: "object",
 			caps: NewObjectCapabilities("minio"),
-			want: []string{"csv", "json", "parquet", "shapefile"},
+			want: []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
 		},
 		{
 			name: "file",
 			caps: NewFileCapabilities("nfs"),
-			want: []string{"csv", "json", "parquet", "shapefile"},
+			want: []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
 		},
 		{
 			name: "document",
 			caps: NewDocumentCapabilities("mongodb"),
-			want: []string{"document", "json"},
+			want: []string{"document", "json", "markdown", "text"},
 		},
 	}
 

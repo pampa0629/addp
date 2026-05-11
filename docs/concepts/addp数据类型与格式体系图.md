@@ -189,7 +189,7 @@ Parquet 本身不需要被称为“湖表”。一个 Parquet 文件可以是 `s
 支持状态说明：
 
 - 已支持：当前 ADDP 已有识别、扫描或提取链路，可进入标准 meta item / attributes。
-- 部分支持：已有枚举、识别、解析或提取能力的一部分，但尚未形成完整 provider / preview / transfer 链路。
+- 部分支持：已有枚举、识别、解析或提取能力的一部分，但尚未形成完整 info provider / content reader / transfer 链路。
 - 规划：概念上属于该数据类型，但当前不作为稳定能力声明。
 
 | 数据类型 | 典型格式 / 来源 | 当前 ADDP 支持状态 |
@@ -243,10 +243,10 @@ JSON 需要结构识别：
 
 - 只识别格式和基础元信息。
 - 提供文本片段或全文提取。
-- 提供预览材料，例如 Markdown / 纯文本 / HTML / raw binary / URL。
-- 由前端专用 renderer 基于 raw binary 或 URL 展示。
+- 提供内容读取能力，例如 document text、raw content 或 range content。
+- Manager / Frontend 可基于内容读取能力选择合适展示方式。
 
-例如 WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw binary 预览材料、由前端 WPS renderer 展示；不能因为预览材料是二进制，就把 WPS 降级为 `unknown` 或改成 `format=binary`。
+例如 WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw content / range content；不能因为内容读取方式是二进制，就把 WPS 降级为 `unknown` 或改成 `format=binary`。
 
 ### media
 
@@ -277,6 +277,8 @@ JSON 需要结构识别：
 
 类型信息是某个数据类型天然应该具备的通用元数据。
 
+类型信息是 data item 元数据的一部分：每个 data type 只有一类通用 info，例如 `table info`、`document info`、`media info`、`container info`。格式实现只负责在已确定的 `data_type + format` 下提取这类 info；Meta 负责把它写入 `meta_item.attributes.type_info`。
+
 | 数据类型 | 类型信息示例 |
 |---|---|
 | `table` | 字段列表、字段类型、主键、索引、行数、采样信息 |
@@ -291,6 +293,8 @@ JSON 需要结构识别：
 - 媒体型数据有 `media info`。
 - 文档型数据有 `document info`。
 - 容器型数据有 `container info`。
+
+类型信息不等于内容数据。`table info` 描述字段、行数、主键、空间字段等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容获取能力，应通过独立 provider 表达。
 
 ## 文件格式与格式信息
 
@@ -387,14 +391,21 @@ JSON 需要结构识别：
 
 上层消费者应尽量面向 data type provider，而不是直接面向具体 engine type 或 format type：
 
-- `TableProvider`：表结构、样本、分页、批量读写、空间列等表语义。
-- `DocumentProvider`：文档元数据、文本片段、页数、语言等文档语义。
-- `MediaProvider`：媒体元数据、缩略图素材、EXIF 等媒体语义。
-- `ContainerProvider`：内部对象枚举、默认入口、子对象摘要等容器语义。
-- `GraphProvider`：节点、边、schema、图样本等图语义。
+- `TableInfoProvider`：表结构、字段、行数、空间列等 table info。
+- `TableSampleReader`：表格样本、分页样本等内容数据。
+- `DocumentInfoProvider`：标题、页数、语言、提取状态等 document info。
+- `DocumentTextReader` / `RawContentReader` / `RangeContentReader`：文本片段、原始内容或范围读取。
+- `MediaInfoProvider`：媒体类型、宽高、编码、时长等 media info。
+- `MediaThumbnailReader` / `RawContentReader` / `RangeContentReader`：缩略图、原始内容或范围读取。
+- `ContainerInfoProvider`：内部子对象、默认入口、子资源数量等 container info。
+- `ContainerEntryReader`：内部对象读取、子对象样本等内容数据。
+- `GraphInfoProvider`：节点 / 边类型、属性结构、统计等 graph info。
+- `GraphSampleProvider`：节点、边、子图样本等内容数据。
 - `SpatialProvider`：作为横切 provider，补充 geometry、SRID、extent 等空间语义。
 
 新增 format 时，如果能落到既有 data type，上层消费者原则上不应感知新格式；新增 data type 时，上层消费者必须显式增加对应 provider、展示和转换能力。
+
+当前代码中的 `TableProvider` 是兼容期组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。新实现应按 info provider 与 content reader 分开设计；旧实现可在不破坏调用方的前提下逐步拆分。
 
 ## attributes 概念分层
 

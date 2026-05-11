@@ -16,7 +16,7 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 	normalized := models.JSONMap{}
 	normalized["schema_version"] = 1
 
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "capabilities"} {
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
 		normalized[section] = Section(attrs, section)
 	}
 	return normalized

@@ -105,6 +105,51 @@ func TestFileTablePreviewProviderPreviewStreamableReturnsTableModeAndFirstPage(t
 	}
 }
 
+func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
+	t.Parallel()
+
+	provider := &FileTablePreviewProvider{}
+	tableProvider := &recordingTableProvider{}
+	req := &PreviewRequest{
+		Page:     2,
+		PageSize: 2,
+		Table:    "manager/test.csv",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": int64(5),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewStreamable(
+		context.Background(),
+		staticResourceReader{content: []byte("mock")},
+		"manager",
+		"manager/test.csv",
+		format.FormatCSV,
+		tableProvider,
+		nil,
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewStreamable() error = %v", err)
+	}
+	if tableProvider.describeCalls != 0 {
+		t.Fatalf("DescribeTable calls = %d, want 0", tableProvider.describeCalls)
+	}
+	if preview.Total != 5 {
+		t.Fatalf("Total = %d, want 5", preview.Total)
+	}
+	if tableProvider.sampleOffset != 2 {
+		t.Fatalf("sample offset = %d, want second page offset 2", tableProvider.sampleOffset)
+	}
+}
+
 func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +200,8 @@ func (r staticResourceReader) List(context.Context, resource.ResourceRef) ([]res
 }
 
 type recordingTableProvider struct {
-	sampleOffset int64
+	sampleOffset  int64
+	describeCalls int
 }
 
 func (p *recordingTableProvider) Format() format.FormatType {
@@ -167,6 +213,7 @@ func (p *recordingTableProvider) Capabilities() format.FormatCapability {
 }
 
 func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableInfo, error) {
+	p.describeCalls++
 	rowCount := int64(1)
 	return &format.TableInfo{
 		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},

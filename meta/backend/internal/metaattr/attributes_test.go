@@ -29,6 +29,7 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		"item":           {},
 		"type_info":      {},
 		"format_info":    {},
+		"content_index":  {},
 		"capabilities":   {},
 	}
 	for key := range normalized {

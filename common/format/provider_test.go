@@ -18,6 +18,56 @@ func providerTestSample(context.Context, io.Reader, int64, int64, *ParseOptions)
 	return []map[string]interface{}{{"id": 1}}, nil
 }
 
+type providerTestPlugin struct {
+	TableProvider
+}
+
+func (p providerTestPlugin) Descriptor() FormatDescriptor {
+	return FormatDescriptor{
+		ID:       "provider-test-plugin",
+		Format:   p.Format(),
+		DataType: FormatDataTypeTable,
+		Layouts:  []string{FormatLayoutSingle},
+	}
+}
+
+func (p providerTestPlugin) DescribeFormat(context.Context, io.Reader, *ParseOptions) (map[string]interface{}, error) {
+	return map[string]interface{}{"kind": "test"}, nil
+}
+
+func TestRegisterFormatPlugin(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("plugin_test")
+	plugin := providerTestPlugin{
+		TableProvider: NewTableProvider(formatType, providerTestDescribe, providerTestSample),
+	}
+
+	if err := registry.RegisterFormatPlugin(plugin); err != nil {
+		t.Fatalf("RegisterFormatPlugin() error = %v", err)
+	}
+	if got, err := registry.GetFormatPlugin(formatType); err != nil || got.Format() != formatType {
+		t.Fatalf("GetFormatPlugin() = %#v, %v; want plugin_test", got, err)
+	}
+	if descriptor, ok := GetFormatDescriptor(formatType); !ok || descriptor.ID != "provider-test-plugin" {
+		t.Fatalf("GetFormatDescriptor() = %#v, %v; want provider-test-plugin", descriptor, ok)
+	}
+	if capability, ok := GetFormatCapability(formatType); !ok || capability.DataType != FormatDataTypeTable {
+		t.Fatalf("GetFormatCapability() = %#v, %v; want table capability", capability, ok)
+	}
+	if _, err := registry.GetFormatInfoProvider(formatType); err != nil {
+		t.Fatalf("GetFormatInfoProvider() error = %v", err)
+	}
+	if _, err := registry.GetTableProvider(formatType); err != nil {
+		t.Fatalf("GetTableProvider() error = %v", err)
+	}
+	if _, err := registry.GetTableInfoProvider(formatType); err != nil {
+		t.Fatalf("GetTableInfoProvider() error = %v", err)
+	}
+	if _, err := registry.GetTableSampleProvider(formatType); err != nil {
+		t.Fatalf("GetTableSampleProvider() error = %v", err)
+	}
+}
+
 func TestRegisterTableProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	provider := NewTableProvider(FormatType("provider_test"), providerTestDescribe, providerTestSample)
@@ -32,6 +82,76 @@ func TestRegisterTableProvider(t *testing.T) {
 	}
 	if got.Format() != FormatType("provider_test") {
 		t.Fatalf("provider format = %q, want provider_test", got.Format())
+	}
+
+	infoProvider, err := registry.GetTableInfoProvider(FormatType("provider_test"))
+	if err != nil {
+		t.Fatalf("GetTableInfoProvider() error = %v", err)
+	}
+	if infoProvider.Format() != FormatType("provider_test") {
+		t.Fatalf("table info provider format = %q, want provider_test", infoProvider.Format())
+	}
+
+	sampleProvider, err := registry.GetTableSampleProvider(FormatType("provider_test"))
+	if err != nil {
+		t.Fatalf("GetTableSampleProvider() error = %v", err)
+	}
+	if sampleProvider.Format() != FormatType("provider_test") {
+		t.Fatalf("table sample provider format = %q, want provider_test", sampleProvider.Format())
+	}
+}
+
+func TestRegisterFormatInfoProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	provider := NewFormatInfoProvider(
+		FormatType("format_info_test"),
+		func(context.Context, io.Reader, *ParseOptions) (map[string]interface{}, error) {
+			return map[string]interface{}{"delimiter": ","}, nil
+		},
+	)
+
+	if err := registry.RegisterFormatInfoProvider(provider); err != nil {
+		t.Fatalf("RegisterFormatInfoProvider() error = %v", err)
+	}
+
+	got, err := registry.GetFormatInfoProvider(FormatType("format_info_test"))
+	if err != nil {
+		t.Fatalf("GetFormatInfoProvider() error = %v", err)
+	}
+	if got.Format() != FormatType("format_info_test") {
+		t.Fatalf("format info provider format = %q, want format_info_test", got.Format())
+	}
+}
+
+func TestRegisterTableInfoProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	provider := NewTableProvider(FormatType("table_info_only"), providerTestDescribe, nil)
+
+	if err := registry.RegisterTableInfoProvider(provider); err != nil {
+		t.Fatalf("RegisterTableInfoProvider() error = %v", err)
+	}
+
+	if _, err := registry.GetTableInfoProvider(FormatType("table_info_only")); err != nil {
+		t.Fatalf("GetTableInfoProvider() error = %v", err)
+	}
+	if _, err := registry.GetTableSampleProvider(FormatType("table_info_only")); err == nil {
+		t.Fatalf("GetTableSampleProvider() error = nil, want missing provider")
+	}
+}
+
+func TestRegisterTableSampleProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	provider := NewTableProvider(FormatType("table_sample_only"), nil, providerTestSample)
+
+	if err := registry.RegisterTableSampleProvider(provider); err != nil {
+		t.Fatalf("RegisterTableSampleProvider() error = %v", err)
+	}
+
+	if _, err := registry.GetTableSampleProvider(FormatType("table_sample_only")); err != nil {
+		t.Fatalf("GetTableSampleProvider() error = %v", err)
+	}
+	if _, err := registry.GetTableInfoProvider(FormatType("table_sample_only")); err == nil {
+		t.Fatalf("GetTableInfoProvider() error = nil, want missing provider")
 	}
 }
 
@@ -51,6 +171,54 @@ func TestListTableProviderFormatsSorted(t *testing.T) {
 	}
 }
 
+func TestListFormatInfoProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterFormatInfoProvider(NewFormatInfoProvider(FormatType("zeta"), nil)); err != nil {
+		t.Fatalf("RegisterFormatInfoProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterFormatInfoProvider(NewFormatInfoProvider(FormatType("alpha"), nil)); err != nil {
+		t.Fatalf("RegisterFormatInfoProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListFormatInfoProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListFormatInfoProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListTableInfoProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterTableInfoProvider(NewTableProvider(FormatType("zeta"), providerTestDescribe, nil)); err != nil {
+		t.Fatalf("RegisterTableInfoProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterTableInfoProvider(NewTableProvider(FormatType("alpha"), providerTestDescribe, nil)); err != nil {
+		t.Fatalf("RegisterTableInfoProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListTableInfoProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListTableInfoProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListTableSampleProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterTableSampleProvider(NewTableProvider(FormatType("zeta"), nil, providerTestSample)); err != nil {
+		t.Fatalf("RegisterTableSampleProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterTableSampleProvider(NewTableProvider(FormatType("alpha"), nil, providerTestSample)); err != nil {
+		t.Fatalf("RegisterTableSampleProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListTableSampleProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListTableSampleProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
 func TestNewTableProviderHandlesMissingImplementation(t *testing.T) {
 	provider := NewTableProvider(FormatType("empty"), nil, nil)
 
@@ -67,7 +235,7 @@ func TestRegisterDocumentProvider(t *testing.T) {
 	provider := NewDocumentProvider(
 		FormatType("doc_test"),
 		func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error) {
-			return &DocumentInfo{Format: FormatType("doc_test"), TextPreview: "hello"}, nil
+			return &DocumentInfo{Format: FormatType("doc_test"), Encoding: "utf-8"}, nil
 		},
 		func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error) {
 			return "hello", false, nil
@@ -111,8 +279,8 @@ func TestNewDocumentProviderHandlesMissingImplementation(t *testing.T) {
 	if _, err := provider.DescribeDocument(context.Background(), strings.NewReader(""), nil); err == nil {
 		t.Fatalf("DescribeDocument() error = nil, want error")
 	}
-	if _, _, err := provider.ExtractText(context.Background(), strings.NewReader(""), 1, nil); err == nil || errors.Is(err, io.EOF) {
-		t.Fatalf("ExtractText() error = %v, want implementation error", err)
+	if _, _, err := provider.ReadDocumentText(context.Background(), strings.NewReader(""), 1, nil); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("ReadDocumentText() error = %v, want implementation error", err)
 	}
 }
 

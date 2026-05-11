@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
@@ -89,17 +92,23 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
-	// 获取对象流
-	object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	tableInfo, err := p.tableInfoFromAttributes(req.Attributes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get object: %w", err)
+		return nil, err
 	}
-	defer object.Close()
+	if tableInfo == nil {
+		// 获取对象流
+		object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get object: %w", err)
+		}
+		defer object.Close()
 
-	// 解析 TableInfo（获取列信息和总行数）
-	tableInfo, err := provider.DescribeTable(ctx, object, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse table info: %w", err)
+		// 解析 TableInfo（获取列信息和总行数）
+		tableInfo, err = provider.DescribeTable(ctx, object, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse table info: %w", err)
+		}
 	}
 
 	// 提取列名
@@ -125,15 +134,14 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 	offset := (page - 1) * pageSize
 
-	// 重新获取对象流（用于读取数据）
-	object, err = resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	object, sampleOpts, err := p.openSampleReader(ctx, resourceReader, fullPath, tableInfo, opts, req, offset, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
 	defer object.Close()
 
 	// 读取分页数据
-	rows, err := provider.SampleTable(ctx, object, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleTable(ctx, object, int64(offset), int64(pageSize), sampleOpts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
@@ -169,6 +177,218 @@ func (p *FileTablePreviewProvider) previewStreamable(
 			},
 		},
 	}, nil
+}
+
+func (p *FileTablePreviewProvider) tableInfoFromAttributes(attrs map[string]interface{}) (*format.TableInfo, error) {
+	tableAttrs := commonJSON.Section(attrs, "type_info.table")
+	if len(tableAttrs) == 0 {
+		return nil, nil
+	}
+	fields := fieldsFromAttribute(tableAttrs["fields"])
+	rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"])
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	info := &format.TableInfo{
+		Name:       "table",
+		Fields:     fields,
+		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+	}
+	if rowCount > 0 {
+		info.RowCount = &rowCount
+	}
+	return info, nil
+}
+
+func (p *FileTablePreviewProvider) openSampleReader(
+	ctx context.Context,
+	resourceReader resource.ResourceReader,
+	fullPath string,
+	tableInfo *format.TableInfo,
+	opts *format.ParseOptions,
+	req *PreviewRequest,
+	offset int,
+	pageSize int,
+) (io.ReadCloser, *format.ParseOptions, error) {
+	if reader, sampleOpts, ok := p.openIndexedRangeReader(ctx, tableInfo, opts, req, offset, pageSize); ok {
+		return reader, sampleOpts, nil
+	}
+	reader, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	return reader, opts, err
+}
+
+func (p *FileTablePreviewProvider) openIndexedRangeReader(
+	ctx context.Context,
+	tableInfo *format.TableInfo,
+	opts *format.ParseOptions,
+	req *PreviewRequest,
+	offset int,
+	pageSize int,
+) (io.ReadCloser, *format.ParseOptions, bool) {
+	if req == nil || req.Engine == nil || tableInfo == nil {
+		return nil, nil, false
+	}
+	index := tableContentIndexFromAttributes(req.Attributes)
+	if !usableTableContentIndex(index) {
+		return nil, nil, false
+	}
+	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), int64Attribute(req.Attributes, "total_size"))
+	if length <= 0 {
+		return nil, nil, false
+	}
+	pl, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil, nil, false
+	}
+	rangeReader, ok := pl.(plugin.RangeReadableProvider)
+	if !ok {
+		return nil, nil, false
+	}
+	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
+	bucket := commonJSON.String(req.Attributes, "storage", "bucket")
+	if bucket == "" {
+		resolved, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
+		if err != nil {
+			return nil, nil, false
+		}
+		bucket = resolved
+	}
+	objectPath := objectKeyFromPreviewRequest(req, bucket)
+	reader, err := rangeReader.OpenRange(ctx, connInfo, objectStorageObjectCatalogPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
+		Offset: anchor.ByteOffset,
+		Length: length,
+	})
+	if err != nil {
+		return nil, nil, false
+	}
+	baseOpts := format.DefaultParseOptions()
+	if opts != nil {
+		copied := *opts
+		baseOpts = &copied
+	}
+	sampleOpts := *baseOpts
+	sampleOpts.TableSample = &format.TableSampleOptions{
+		Fields:            tableInfo.Fields,
+		InputStartsAtRow:  anchor.Row,
+		InputIsPositioned: true,
+	}
+	return reader, &sampleOpts, true
+}
+
+func usableTableContentIndex(index *format.ContentIndex) bool {
+	return index != nil &&
+		index.Kind == format.ContentIndexKindSparseRow &&
+		index.Unit == format.ContentIndexUnitRow &&
+		index.OffsetUnit == format.ContentIndexOffsetByte &&
+		len(index.Anchors) > 0
+}
+
+func rangeForTableWindow(index *format.ContentIndex, offset, limit, totalSize int64) (format.ContentIndexAnchor, int64) {
+	anchors := append([]format.ContentIndexAnchor(nil), index.Anchors...)
+	sort.Slice(anchors, func(i, j int) bool {
+		return anchors[i].Row < anchors[j].Row
+	})
+	anchor := anchors[0]
+	for _, candidate := range anchors {
+		if candidate.Row <= offset {
+			anchor = candidate
+			continue
+		}
+		break
+	}
+	endRow := offset + limit
+	endByte := totalSize
+	for _, candidate := range anchors {
+		if candidate.Row >= endRow && candidate.ByteOffset > anchor.ByteOffset {
+			endByte = candidate.ByteOffset
+			break
+		}
+	}
+	if endByte <= anchor.ByteOffset {
+		return anchor, 0
+	}
+	return anchor, endByte - anchor.ByteOffset
+}
+
+func tableContentIndexFromAttributes(attrs map[string]interface{}) *format.ContentIndex {
+	indexAttrs := commonJSON.Section(attrs, "content_index.table")
+	if len(indexAttrs) == 0 {
+		return nil
+	}
+	index := &format.ContentIndex{
+		Kind:        commonJSON.InterfaceString(indexAttrs["kind"]),
+		DataType:    commonJSON.InterfaceString(indexAttrs["data_type"]),
+		Format:      commonJSON.InterfaceString(indexAttrs["format"]),
+		Unit:        commonJSON.InterfaceString(indexAttrs["unit"]),
+		OffsetUnit:  commonJSON.InterfaceString(indexAttrs["offset_unit"]),
+		Step:        commonJSON.InterfaceInt64(indexAttrs["step"]),
+		RowCount:    commonJSON.InterfaceInt64(indexAttrs["row_count"]),
+		HeaderBytes: commonJSON.InterfaceInt64(indexAttrs["header_bytes"]),
+		Source:      rawMapAttribute(indexAttrs["source"]),
+		Anchors:     contentIndexAnchorsFromAttribute(indexAttrs["anchors"]),
+	}
+	return index
+}
+
+func contentIndexAnchorsFromAttribute(value interface{}) []format.ContentIndexAnchor {
+	items := interfaceSlice(value)
+	anchors := make([]format.ContentIndexAnchor, 0, len(items))
+	for _, item := range items {
+		attrs := rawMapAttribute(item)
+		if len(attrs) == 0 {
+			continue
+		}
+		anchors = append(anchors, format.ContentIndexAnchor{
+			Row:        commonJSON.InterfaceInt64(attrs["row"]),
+			ByteOffset: commonJSON.InterfaceInt64(attrs["byte_offset"]),
+		})
+	}
+	return anchors
+}
+
+func fieldsFromAttribute(value interface{}) []format.FieldInfo {
+	items := interfaceSlice(value)
+	fields := make([]format.FieldInfo, 0, len(items))
+	for _, item := range items {
+		attrs := rawMapAttribute(item)
+		name := commonJSON.InterfaceString(attrs["name"])
+		if name == "" {
+			continue
+		}
+		fields = append(fields, format.FieldInfo{
+			Name:         name,
+			Type:         format.FieldType(commonJSON.InterfaceString(attrs["type"])),
+			OriginalType: commonJSON.InterfaceString(attrs["original_type"]),
+			Nullable:     commonJSON.InterfaceBool(attrs["nullable"]),
+		})
+	}
+	return fields
+}
+
+func interfaceSlice(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func rawMapAttribute(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed
+	case models.JSONMap:
+		return map[string]interface{}(typed)
+	default:
+		return nil
+	}
 }
 
 // previewShapefile 处理 Shapefile 格式（需要下载所有组件文件）

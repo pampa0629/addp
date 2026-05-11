@@ -32,8 +32,8 @@
   - Provider 消费者调研已新增：`docs/plan/addp格式与数据类型Provider消费者调研.md`。
   - Transfer 相关内容已整合为三份 plan 文档：`docs/plan/transfer现状与Provider化改造调研.md`、`docs/plan/transfer与FormatProvider整合方案.md`、`docs/plan/transferProvider化改造步骤与清理清单.md`。
   - Service / Develop 旧 `lake_table` 链路清理说明已新增：`docs/plan/service-develop旧lake_table链路清理说明.md`。
-  - `common/format/scanner.go` 已拆分并归并到 `metadata.go`；`common/format/codecs/parquet/lake_table.go` 已改为 `table_file.go`，去掉 common 层 lake table 命名。
-  - 具体内置格式实现已统一移动到 `common/format/codecs/*`，避免根目录堆放具体格式目录，也避免 `common/format/formats` 这种重复命名。
+  - `common/format/scanner.go` 已拆分并归并到 `metadata.go`；`common/format/plugins/parquet/lake_table.go` 已改为 `table_file.go`，去掉 common 层 lake table 命名。
+  - 具体内置格式实现已统一移动到 `common/format/plugins/*`，避免根目录堆放具体格式目录，也避免 `common/format/formats` 这种重复命名。
   - `common/format/README.md` 与 `common/format/mappers/README.md` 已按当前 Provider / capability / resource 边界重写，删除旧 scanner、旧 parser registry 和旧文档链接口径。
   - `format.ExtractInput` 已移除 `EngineID`，文件增强元数据提取器不再携带 engine 上下文。
   - `common/format/builtin` 已纳入 SpatiaLite type mapper 默认注册。

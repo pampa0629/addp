@@ -62,6 +62,18 @@ const (
 	ProviderSpatial   = "spatial"
 )
 
+const (
+	ContentReaderTableSample          = "table_sample"
+	ContentReaderComponentTableSample = "component_table_sample"
+	ContentReaderScopeTableSample     = "scope_table_sample"
+	ContentReaderDocumentText         = "document_text"
+	ContentReaderRawContent           = "raw_content"
+	ContentReaderRangeContent         = "range_content"
+	ContentReaderMediaThumbnail       = "media_thumbnail"
+	ContentReaderContainerEntry       = "container_entry"
+	ContentReaderGraphSample          = "graph_sample"
+)
+
 type Identification struct {
 	Extensions        []string `json:"extensions,omitempty"`
 	MimeTypes         []string `json:"mime_types,omitempty"`
@@ -69,20 +81,16 @@ type Identification struct {
 }
 
 type ProviderDescriptor struct {
-	Table           bool `json:"table,omitempty"`
-	ComponentTable  bool `json:"component_table,omitempty"`
-	ScopeTable      bool `json:"scope_table,omitempty"`
-	Document        bool `json:"document,omitempty"`
-	Media           bool `json:"media,omitempty"`
-	Container       bool `json:"container,omitempty"`
-	PreviewMaterial bool `json:"preview_material,omitempty"`
-	Metadata        bool `json:"metadata,omitempty"`
-}
-
-type PreviewDescriptor struct {
-	Kind             string   `json:"kind,omitempty"`
-	PreviewMaterials []string `json:"preview_materials,omitempty"`
-	FrontendRenderer string   `json:"frontend_renderer,omitempty"`
+	FormatInfo     bool `json:"format_info,omitempty"`
+	TableInfo      bool `json:"table_info,omitempty"`
+	TableSample    bool `json:"table_sample,omitempty"`
+	Table          bool `json:"table,omitempty"`
+	ComponentTable bool `json:"component_table,omitempty"`
+	ScopeTable     bool `json:"scope_table,omitempty"`
+	DocumentInfo   bool `json:"document_info,omitempty"`
+	MediaInfo      bool `json:"media_info,omitempty"`
+	ContainerInfo  bool `json:"container_info,omitempty"`
+	Metadata       bool `json:"metadata,omitempty"` // legacy: FileMetadataExtractor 兼容状态
 }
 
 type Descriptor struct {
@@ -96,7 +104,7 @@ type Descriptor struct {
 	ProviderHints  []string           `json:"provider_hints,omitempty"`
 	Identification Identification     `json:"identification,omitempty"`
 	Providers      ProviderDescriptor `json:"providers,omitempty"`
-	Preview        PreviewDescriptor  `json:"preview,omitempty"`
+	ContentReaders []string           `json:"content_readers,omitempty"`
 	TransferRead   bool               `json:"transfer_read,omitempty"`
 	TransferWrite  bool               `json:"transfer_write,omitempty"`
 	Parse          bool               `json:"parse,omitempty"`
@@ -131,13 +139,11 @@ var builtinDescriptors = []Descriptor{
 		Layouts:       []string{LayoutWhole},
 		ProviderHints: []string{ProviderTable},
 		Providers: ProviderDescriptor{
-			Table: true,
+			TableInfo:   true,
+			TableSample: true,
+			Table:       true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "table",
-			PreviewMaterials: []string{"table"},
-			FrontendRenderer: "table",
-		},
+		ContentReaders: []string{ContentReaderTableSample},
 		TransferRead:   true,
 		TransferWrite:  true,
 		EngineFamilies: []string{EngineFamilyTabular},
@@ -150,13 +156,9 @@ var builtinDescriptors = []Descriptor{
 		Layouts:       []string{LayoutWhole},
 		ProviderHints: []string{ProviderDocument},
 		Providers: ProviderDescriptor{
-			Document: true,
+			DocumentInfo: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "text",
-			PreviewMaterials: []string{"text", "markdown", "html", "raw_binary", "url"},
-			FrontendRenderer: "text",
-		},
+		ContentReaders: []string{ContentReaderDocumentText, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		EngineFamilies: []string{EngineFamilyDocument},
@@ -173,13 +175,12 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"text/csv"},
 		},
 		Providers: ProviderDescriptor{
-			Table: true,
+			FormatInfo:  true,
+			TableInfo:   true,
+			TableSample: true,
+			Table:       true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "table",
-			PreviewMaterials: []string{"table", "text"},
-			FrontendRenderer: "table",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
@@ -197,13 +198,9 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
 		Providers: ProviderDescriptor{
-			PreviewMaterial: true,
+			DocumentInfo: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "docx",
-			PreviewMaterials: []string{"raw_binary", "html", "text"},
-			FrontendRenderer: "docx",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},
 	{
@@ -222,14 +219,12 @@ var builtinDescriptors = []Descriptor{
 			},
 		},
 		Providers: ProviderDescriptor{
-			Container:       true,
-			PreviewMaterial: true,
+			ContainerInfo: true,
+			TableInfo:     true,
+			TableSample:   true,
+			Table:         true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "excel",
-			PreviewMaterials: []string{"table"},
-			FrontendRenderer: "excel",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -244,14 +239,12 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/json", "application/geo+json", "application/vnd.geo+json"},
 		},
 		Providers: ProviderDescriptor{
-			Table:           true,
-			PreviewMaterial: true,
+			DocumentInfo: true,
+			TableInfo:    true,
+			TableSample:  true,
+			Table:        true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "json",
-			PreviewMaterials: []string{"json", "geojson", "text"},
-			FrontendRenderer: "json",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
@@ -269,13 +262,9 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"text/markdown", "text/x-markdown"},
 		},
 		Providers: ProviderDescriptor{
-			PreviewMaterial: true,
+			DocumentInfo: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "markdown",
-			PreviewMaterials: []string{"markdown", "text"},
-			FrontendRenderer: "markdown",
-		},
+		ContentReaders: []string{ContentReaderDocumentText, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
@@ -292,14 +281,10 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/pdf"},
 		},
 		Providers: ProviderDescriptor{
-			Metadata:        true,
-			PreviewMaterial: true,
+			DocumentInfo: true,
+			Metadata:     true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "pdf",
-			PreviewMaterials: []string{"raw_binary", "image", "text"},
-			FrontendRenderer: "pdf",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},
 	{
@@ -314,13 +299,9 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 		},
 		Providers: ProviderDescriptor{
-			PreviewMaterial: true,
+			DocumentInfo: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "pptx",
-			PreviewMaterials: []string{"raw_binary", "html", "image"},
-			FrontendRenderer: "pptx",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},
 	{
@@ -335,14 +316,12 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"},
 		},
 		Providers: ProviderDescriptor{
-			Table:      true,
-			ScopeTable: true,
+			TableInfo:   true,
+			TableSample: true,
+			Table:       true,
+			ScopeTable:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "table",
-			PreviewMaterials: []string{"table"},
-			FrontendRenderer: "table",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderScopeTableSample, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
@@ -356,15 +335,10 @@ var builtinDescriptors = []Descriptor{
 		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{ProviderMedia},
 		Providers: ProviderDescriptor{
-			Media:           true,
-			Metadata:        true,
-			PreviewMaterial: true,
+			MediaInfo: true,
+			Metadata:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "image",
-			PreviewMaterials: []string{"image", "raw_binary", "url"},
-			FrontendRenderer: "image",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -379,15 +353,10 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"image/jpeg"},
 		},
 		Providers: ProviderDescriptor{
-			Media:           true,
-			Metadata:        true,
-			PreviewMaterial: true,
+			MediaInfo: true,
+			Metadata:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "image",
-			PreviewMaterials: []string{"image", "raw_binary", "url"},
-			FrontendRenderer: "image",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -402,15 +371,10 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"image/png"},
 		},
 		Providers: ProviderDescriptor{
-			Media:           true,
-			Metadata:        true,
-			PreviewMaterial: true,
+			MediaInfo: true,
+			Metadata:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "image",
-			PreviewMaterials: []string{"image", "raw_binary", "url"},
-			FrontendRenderer: "image",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -425,15 +389,10 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"image/gif"},
 		},
 		Providers: ProviderDescriptor{
-			Media:           true,
-			Metadata:        true,
-			PreviewMaterial: true,
+			MediaInfo: true,
+			Metadata:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "image",
-			PreviewMaterials: []string{"image", "raw_binary", "url"},
-			FrontendRenderer: "image",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -448,15 +407,10 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"image/tiff"},
 		},
 		Providers: ProviderDescriptor{
-			Media:           true,
-			Metadata:        true,
-			PreviewMaterial: true,
+			MediaInfo: true,
+			Metadata:  true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "image",
-			PreviewMaterials: []string{"image", "raw_binary", "url"},
-			FrontendRenderer: "image",
-		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -471,14 +425,13 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/x-shapefile", "application/x-esri-shapefile"},
 		},
 		Providers: ProviderDescriptor{
+			FormatInfo:     true,
+			TableInfo:      true,
+			TableSample:    true,
 			Table:          true,
 			ComponentTable: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "shapefile",
-			PreviewMaterials: []string{"geojson", "table"},
-			FrontendRenderer: "map",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderComponentTableSample, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
@@ -497,14 +450,12 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"},
 		},
 		Providers: ProviderDescriptor{
-			Container:       true,
-			PreviewMaterial: true,
+			ContainerInfo: true,
+			TableInfo:     true,
+			TableSample:   true,
+			Table:         true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "sqlite",
-			PreviewMaterials: []string{"table"},
-			FrontendRenderer: "sqlite",
-		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -519,13 +470,9 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"text/plain"},
 		},
 		Providers: ProviderDescriptor{
-			PreviewMaterial: true,
+			DocumentInfo: true,
 		},
-		Preview: PreviewDescriptor{
-			Kind:             "text",
-			PreviewMaterials: []string{"text"},
-			FrontendRenderer: "text",
-		},
+		ContentReaders: []string{ContentReaderDocumentText, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
@@ -541,14 +488,8 @@ var builtinDescriptors = []Descriptor{
 			Extensions: []string{".wps"},
 			MimeTypes:  []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"},
 		},
-		Providers: ProviderDescriptor{
-			PreviewMaterial: true,
-		},
-		Preview: PreviewDescriptor{
-			Kind:             "wps",
-			PreviewMaterials: []string{"raw_binary", "html", "text"},
-			FrontendRenderer: "wps",
-		},
+		Providers:      ProviderDescriptor{},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},
 }
@@ -663,13 +604,11 @@ func normalizeDescriptor(descriptor Descriptor) Descriptor {
 	descriptor.DataType = strings.TrimSpace(descriptor.DataType)
 	descriptor.Layouts = normalizedStrings(descriptor.Layouts, false)
 	descriptor.ProviderHints = normalizedStrings(descriptor.ProviderHints, false)
+	descriptor.ContentReaders = normalizedStrings(descriptor.ContentReaders, false)
 	descriptor.EngineFamilies = normalizedStrings(descriptor.EngineFamilies, false)
 	descriptor.Identification.Extensions = normalizedStrings(descriptor.Identification.Extensions, true)
 	descriptor.Identification.MimeTypes = normalizedStrings(descriptor.Identification.MimeTypes, false)
 	descriptor.Identification.ContentSignatures = normalizedStrings(descriptor.Identification.ContentSignatures, false)
-	descriptor.Preview.PreviewMaterials = normalizedStrings(descriptor.Preview.PreviewMaterials, false)
-	descriptor.Preview.Kind = strings.ToLower(strings.TrimSpace(descriptor.Preview.Kind))
-	descriptor.Preview.FrontendRenderer = strings.ToLower(strings.TrimSpace(descriptor.Preview.FrontendRenderer))
 	return descriptor
 }
 
@@ -735,10 +674,10 @@ func containsString(values []string, target string) bool {
 func cloneDescriptor(descriptor Descriptor) Descriptor {
 	descriptor.Layouts = append([]string(nil), descriptor.Layouts...)
 	descriptor.ProviderHints = append([]string(nil), descriptor.ProviderHints...)
+	descriptor.ContentReaders = append([]string(nil), descriptor.ContentReaders...)
 	descriptor.EngineFamilies = append([]string(nil), descriptor.EngineFamilies...)
 	descriptor.Identification.Extensions = append([]string(nil), descriptor.Identification.Extensions...)
 	descriptor.Identification.MimeTypes = append([]string(nil), descriptor.Identification.MimeTypes...)
 	descriptor.Identification.ContentSignatures = append([]string(nil), descriptor.Identification.ContentSignatures...)
-	descriptor.Preview.PreviewMaterials = append([]string(nil), descriptor.Preview.PreviewMaterials...)
 	return descriptor
 }

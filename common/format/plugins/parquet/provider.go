@@ -31,7 +31,7 @@ func (p tableProvider) DescribeTable(ctx context.Context, input io.Reader, optio
 }
 
 func (p tableProvider) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	return p.parser.ReadPreview(ctx, input, offset, limit, options)
+	return p.parser.SampleTable(ctx, input, offset, limit, options)
 }
 
 func (p tableProvider) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {

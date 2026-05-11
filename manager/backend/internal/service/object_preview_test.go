@@ -175,6 +175,23 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 	}
 }
 
+func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, "../../plugins/content")
+
+	for _, req := range []ObjectContentRequest{
+		{Format: "csv"},
+		{Extension: ".csv"},
+		{ContentType: "text/csv"},
+		{ContentType: "text/csv; charset=utf-8"},
+	} {
+		req := req
+		if handler := registry.Resolve(&req); handler != nil {
+			t.Fatalf("CSV object content request resolved to %q, want nil", handler.Name())
+		}
+	}
+}
+
 func TestObjectContentMatcherShapefileAliases(t *testing.T) {
 	t.Parallel()
 	matcher := newObjectContentMatcher(

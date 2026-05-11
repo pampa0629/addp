@@ -6,7 +6,19 @@ type FormatIdentification = formatregistry.Identification
 
 type FormatProviderDescriptor = formatregistry.ProviderDescriptor
 
-type FormatPreviewDescriptor = formatregistry.PreviewDescriptor
+type FormatContentReader = string
+
+const (
+	ContentReaderTableSample          FormatContentReader = formatregistry.ContentReaderTableSample
+	ContentReaderComponentTableSample FormatContentReader = formatregistry.ContentReaderComponentTableSample
+	ContentReaderScopeTableSample     FormatContentReader = formatregistry.ContentReaderScopeTableSample
+	ContentReaderDocumentText         FormatContentReader = formatregistry.ContentReaderDocumentText
+	ContentReaderRawContent           FormatContentReader = formatregistry.ContentReaderRawContent
+	ContentReaderRangeContent         FormatContentReader = formatregistry.ContentReaderRangeContent
+	ContentReaderMediaThumbnail       FormatContentReader = formatregistry.ContentReaderMediaThumbnail
+	ContentReaderContainerEntry       FormatContentReader = formatregistry.ContentReaderContainerEntry
+	ContentReaderGraphSample          FormatContentReader = formatregistry.ContentReaderGraphSample
+)
 
 type FormatDescriptor struct {
 	ID             string                   `json:"id"`
@@ -19,7 +31,7 @@ type FormatDescriptor struct {
 	ProviderHints  []string                 `json:"provider_hints,omitempty"`
 	Identification FormatIdentification     `json:"identification,omitempty"`
 	Providers      FormatProviderDescriptor `json:"providers,omitempty"`
-	Preview        FormatPreviewDescriptor  `json:"preview,omitempty"`
+	ContentReaders []string                 `json:"content_readers,omitempty"`
 	TransferRead   bool                     `json:"transfer_read,omitempty"`
 	TransferWrite  bool                     `json:"transfer_write,omitempty"`
 	Parse          bool                     `json:"parse,omitempty"`
@@ -60,10 +72,10 @@ func FormatCapabilityFromDescriptor(descriptor FormatDescriptor) FormatCapabilit
 		DataType:       descriptor.DataType,
 		Layouts:        append([]string(nil), descriptor.Layouts...),
 		ProviderHints:  append([]string(nil), descriptor.ProviderHints...),
+		ContentReaders: append([]string(nil), descriptor.ContentReaders...),
 		Spatial:        descriptor.Spatial,
 		TransferRead:   descriptor.TransferRead,
 		TransferWrite:  descriptor.TransferWrite,
-		Preview:        descriptor.Preview.Kind != "" || len(descriptor.Preview.PreviewMaterials) > 0 || descriptor.Preview.FrontendRenderer != "",
 		Parse:          descriptor.Parse,
 		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
 	}
@@ -81,7 +93,7 @@ func toRegistryDescriptor(descriptor FormatDescriptor) formatregistry.Descriptor
 		ProviderHints:  descriptor.ProviderHints,
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
-		Preview:        descriptor.Preview,
+		ContentReaders: descriptor.ContentReaders,
 		TransferRead:   descriptor.TransferRead,
 		TransferWrite:  descriptor.TransferWrite,
 		Parse:          descriptor.Parse,
@@ -102,7 +114,7 @@ func fromRegistryDescriptor(descriptor formatregistry.Descriptor) FormatDescript
 		ProviderHints:  descriptor.ProviderHints,
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
-		Preview:        descriptor.Preview,
+		ContentReaders: descriptor.ContentReaders,
 		TransferRead:   descriptor.TransferRead,
 		TransferWrite:  descriptor.TransferWrite,
 		Parse:          descriptor.Parse,

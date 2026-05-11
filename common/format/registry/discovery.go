@@ -7,7 +7,7 @@ type CapabilityView struct {
 	Layouts        []string           `json:"layouts,omitempty"`
 	Identification Identification     `json:"identification,omitempty"`
 	Providers      ProviderDescriptor `json:"providers,omitempty"`
-	Preview        PreviewDescriptor  `json:"preview,omitempty"`
+	ContentReaders []string           `json:"content_readers,omitempty"`
 	Transfer       TransferDescriptor `json:"transfer,omitempty"`
 	Parse          bool               `json:"parse,omitempty"`
 	Spatial        bool               `json:"spatial,omitempty"`
@@ -44,7 +44,7 @@ func CapabilityViewFromDescriptor(descriptor Descriptor) CapabilityView {
 		Layouts:        append([]string(nil), descriptor.Layouts...),
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
-		Preview:        descriptor.Preview,
+		ContentReaders: append([]string(nil), descriptor.ContentReaders...),
 		Transfer: TransferDescriptor{
 			Read:  descriptor.TransferRead,
 			Write: descriptor.TransferWrite,

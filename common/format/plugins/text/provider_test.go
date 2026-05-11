@@ -8,17 +8,17 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestTextProviderExtractText(t *testing.T) {
+func TestTextProviderReadDocumentText(t *testing.T) {
 	provider := NewProvider(format.FormatText)
-	got, truncated, err := provider.ExtractText(context.Background(), strings.NewReader("hello world"), 5, nil)
+	got, truncated, err := provider.ReadDocumentText(context.Background(), strings.NewReader("hello world"), 5, nil)
 	if err != nil {
-		t.Fatalf("ExtractText() error = %v", err)
+		t.Fatalf("ReadDocumentText() error = %v", err)
 	}
 	if got != "hello" {
-		t.Fatalf("ExtractText() = %q, want hello", got)
+		t.Fatalf("ReadDocumentText() = %q, want hello", got)
 	}
 	if !truncated {
-		t.Fatal("ExtractText() truncated = false, want true")
+		t.Fatal("ReadDocumentText() truncated = false, want true")
 	}
 }
 
@@ -34,18 +34,18 @@ func TestTextProviderDescribeDocument(t *testing.T) {
 	if info.Encoding != "utf-8" {
 		t.Fatalf("Encoding = %q, want utf-8", info.Encoding)
 	}
-	if info.TextPreview == "" {
-		t.Fatal("TextPreview should not be empty")
+	if info.Title != "" {
+		t.Fatalf("Title = %q, want empty", info.Title)
 	}
 }
 
 func TestTextProviderRemovesBOM(t *testing.T) {
 	provider := NewProvider(format.FormatText)
-	got, _, err := provider.ExtractText(context.Background(), strings.NewReader("\ufeffhello"), 20, nil)
+	got, _, err := provider.ReadDocumentText(context.Background(), strings.NewReader("\ufeffhello"), 20, nil)
 	if err != nil {
-		t.Fatalf("ExtractText() error = %v", err)
+		t.Fatalf("ReadDocumentText() error = %v", err)
 	}
 	if got != "hello" {
-		t.Fatalf("ExtractText() = %q, want hello", got)
+		t.Fatalf("ReadDocumentText() = %q, want hello", got)
 	}
 }

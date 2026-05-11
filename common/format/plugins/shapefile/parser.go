@@ -60,14 +60,14 @@ func (p *Parser) DescribeTableComponents(ctx context.Context, components resourc
 	return p.parseTableInfoFromPath(basePath+".shp", opts)
 }
 
-// ReadPreview 读取 Shapefile 数据预览
-func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+// SampleTable 读取 Shapefile 表格样本。
+func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	tempDir, cleanup, err := p.saveToTempFiles(input)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	return p.readPreviewFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit)
+	return p.sampleTableFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit)
 }
 
 func (p *Parser) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -76,7 +76,7 @@ func (p *Parser) SampleTableComponents(ctx context.Context, components resource.
 		return nil, err
 	}
 	defer cleanup()
-	return p.readPreviewFromPath(ctx, basePath+".shp", offset, limit)
+	return p.sampleTableFromPath(ctx, basePath+".shp", offset, limit)
 }
 
 func (p *Parser) parseTableInfoFromPath(shpPath string, opts *format.ParseOptions) (*format.TableInfo, error) {
@@ -163,7 +163,7 @@ func (p *Parser) parseTableInfoFromPath(shpPath string, opts *format.ParseOption
 	}, nil
 }
 
-func (p *Parser) readPreviewFromPath(ctx context.Context, shpPath string, offset, limit int64) ([]map[string]interface{}, error) {
+func (p *Parser) sampleTableFromPath(ctx context.Context, shpPath string, offset, limit int64) ([]map[string]interface{}, error) {
 	reader, err := Open(shpPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)

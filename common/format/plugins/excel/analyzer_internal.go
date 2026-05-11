@@ -19,7 +19,7 @@ const (
 	defaultTypeDetectLimit = 100
 )
 
-// Options 控制 Excel 预览与分析的行为
+// Options 控制 Excel 样本与结构分析的行为
 type Options struct {
 	SheetLimit      int
 	RowLimit        int
@@ -46,7 +46,7 @@ type WorkbookAnalysis struct {
 	Summary      map[string]interface{}
 }
 
-// SheetSummary 单个工作表的预览信息
+// SheetSummary 单个工作表的样本和结构摘要
 type SheetSummary struct {
 	Name          string                   `json:"name"`
 	Index         int                      `json:"index"`
@@ -59,7 +59,7 @@ type SheetSummary struct {
 	RowsTruncated bool                     `json:"rows_truncated"`
 }
 
-// Analyze 对 workbook 进行分析并返回预览信息
+// Analyze 对 workbook 进行分析并返回样本和结构摘要
 func Analyze(ctx context.Context, workbook *excelize.File, opts *Options) (*WorkbookAnalysis, error) {
 	if workbook == nil {
 		return nil, fmt.Errorf("excel analyzer: workbook is nil")

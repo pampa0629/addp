@@ -3,6 +3,8 @@ package capability
 import (
 	"reflect"
 	"testing"
+
+	formatregistry "github.com/addp/common/format/registry"
 )
 
 func TestListSorted(t *testing.T) {
@@ -56,7 +58,7 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 	}
 }
 
-func TestMarkdownCapabilityIsDocumentPreviewOnly(t *testing.T) {
+func TestMarkdownCapabilityIsDocumentTextFormat(t *testing.T) {
 	capability, ok := Get(FormatMarkdown)
 	if !ok {
 		t.Fatal("expected markdown capability")
@@ -67,15 +69,15 @@ func TestMarkdownCapabilityIsDocumentPreviewOnly(t *testing.T) {
 	if !containsString(capability.ProviderHints, ProviderDocument) {
 		t.Fatalf("markdown ProviderHints = %#v, want document hint", capability.ProviderHints)
 	}
-	if !capability.Preview {
-		t.Fatal("markdown should support preview")
+	if !containsString(capability.ContentReaders, formatregistry.ContentReaderDocumentText) {
+		t.Fatalf("markdown ContentReaders = %#v, want document_text", capability.ContentReaders)
 	}
 	if capability.Parse {
 		t.Fatal("markdown should not claim stable parse capability yet")
 	}
 }
 
-func TestTextCapabilityIsDocumentPreviewOnly(t *testing.T) {
+func TestTextCapabilityIsDocumentTextFormat(t *testing.T) {
 	capability, ok := Get(FormatText)
 	if !ok {
 		t.Fatal("expected text capability")
@@ -86,8 +88,8 @@ func TestTextCapabilityIsDocumentPreviewOnly(t *testing.T) {
 	if !containsString(capability.ProviderHints, ProviderDocument) {
 		t.Fatalf("text ProviderHints = %#v, want document hint", capability.ProviderHints)
 	}
-	if !capability.Preview {
-		t.Fatal("text should support preview")
+	if !containsString(capability.ContentReaders, formatregistry.ContentReaderDocumentText) {
+		t.Fatalf("text ContentReaders = %#v, want document_text", capability.ContentReaders)
 	}
 	if capability.Parse {
 		t.Fatal("text should not claim stable parse capability yet")
@@ -108,6 +110,9 @@ func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
 	if !containsString(capability.Extensions, ".geojson") {
 		t.Fatalf("json Extensions = %#v, want .geojson", capability.Extensions)
 	}
+	if !containsString(capability.ContentReaders, formatregistry.ContentReaderTableSample) {
+		t.Fatalf("json ContentReaders = %#v, want table_sample", capability.ContentReaders)
+	}
 }
 
 func TestGetReturnsClone(t *testing.T) {
@@ -116,6 +121,7 @@ func TestGetReturnsClone(t *testing.T) {
 		t.Fatal("expected csv capability")
 	}
 	capability.Extensions[0] = ".changed"
+	capability.ContentReaders[0] = "changed"
 
 	got, ok := Get(FormatCSV)
 	if !ok {
@@ -123,5 +129,8 @@ func TestGetReturnsClone(t *testing.T) {
 	}
 	if got.Extensions[0] == ".changed" {
 		t.Fatal("format capability registry returned mutable internal slices")
+	}
+	if got.ContentReaders[0] == "changed" {
+		t.Fatal("format capability registry returned mutable content reader slices")
 	}
 }

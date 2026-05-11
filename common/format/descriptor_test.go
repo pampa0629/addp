@@ -22,21 +22,20 @@ func TestListFormatDescriptorsIncludesBuiltinTextAndMarkdown(t *testing.T) {
 	}
 }
 
-func TestDescriptorsIncludePreviewOnlyBuiltinFormats(t *testing.T) {
+func TestDescriptorsDeclareContentReadersForManagerHandledFormats(t *testing.T) {
 	tests := []struct {
 		formatType FormatType
 		dataType   string
-		renderer   string
-		material   string
+		reader     string
 	}{
-		{FormatPDF, FormatDataTypeDocument, "pdf", "raw_binary"},
-		{FormatDOCX, FormatDataTypeDocument, "docx", "raw_binary"},
-		{FormatPPTX, FormatDataTypeDocument, "pptx", "raw_binary"},
-		{FormatWPS, FormatDataTypeDocument, "wps", "raw_binary"},
-		{FormatJPEG, FormatDataTypeMedia, "image", "image"},
-		{FormatPNG, FormatDataTypeMedia, "image", "image"},
-		{FormatExcel, FormatDataTypeContainer, "excel", "table"},
-		{FormatSQLite, FormatDataTypeContainer, "sqlite", "table"},
+		{FormatPDF, FormatDataTypeDocument, string(ContentReaderRawContent)},
+		{FormatDOCX, FormatDataTypeDocument, string(ContentReaderRawContent)},
+		{FormatPPTX, FormatDataTypeDocument, string(ContentReaderRawContent)},
+		{FormatWPS, FormatDataTypeDocument, string(ContentReaderRawContent)},
+		{FormatJPEG, FormatDataTypeMedia, string(ContentReaderRawContent)},
+		{FormatPNG, FormatDataTypeMedia, string(ContentReaderRawContent)},
+		{FormatExcel, FormatDataTypeContainer, string(ContentReaderTableSample)},
+		{FormatSQLite, FormatDataTypeContainer, string(ContentReaderTableSample)},
 	}
 
 	for _, tt := range tests {
@@ -48,11 +47,8 @@ func TestDescriptorsIncludePreviewOnlyBuiltinFormats(t *testing.T) {
 			if descriptor.DataType != tt.dataType {
 				t.Fatalf("data type = %q, want %q", descriptor.DataType, tt.dataType)
 			}
-			if descriptor.Preview.FrontendRenderer != tt.renderer {
-				t.Fatalf("renderer = %q, want %q", descriptor.Preview.FrontendRenderer, tt.renderer)
-			}
-			if !containsStringForTest(descriptor.Preview.PreviewMaterials, tt.material) {
-				t.Fatalf("preview materials = %#v, want %q", descriptor.Preview.PreviewMaterials, tt.material)
+			if !containsStringForTest(descriptor.ContentReaders, tt.reader) {
+				t.Fatalf("content readers = %#v, want %q", descriptor.ContentReaders, tt.reader)
 			}
 			if descriptor.TransferRead || descriptor.TransferWrite {
 				t.Fatalf("%s should not claim transfer capability yet: read=%v write=%v", tt.formatType, descriptor.TransferRead, descriptor.TransferWrite)
@@ -81,11 +77,31 @@ func TestFormatCapabilityFromDescriptorReturnsDetachedSlices(t *testing.T) {
 	capability.Extensions[0] = ".changed"
 	capability.Layouts[0] = "changed"
 	capability.ProviderHints[0] = "changed"
+	capability.ContentReaders[0] = "changed"
 	capability.EngineFamilies[0] = "changed"
 
 	next := FormatCapabilityFromDescriptor(descriptor)
-	if next.Extensions[0] == ".changed" || next.Layouts[0] == "changed" || next.ProviderHints[0] == "changed" || next.EngineFamilies[0] == "changed" {
+	if next.Extensions[0] == ".changed" || next.Layouts[0] == "changed" || next.ProviderHints[0] == "changed" || next.ContentReaders[0] == "changed" || next.EngineFamilies[0] == "changed" {
 		t.Fatal("FormatCapabilityFromDescriptor returned mutable descriptor slices")
+	}
+}
+
+func TestGetFormatDescriptorReturnsDetachedContentReaders(t *testing.T) {
+	descriptor, ok := GetFormatDescriptor(FormatCSV)
+	if !ok {
+		t.Fatal("csv descriptor not found")
+	}
+	if len(descriptor.ContentReaders) == 0 {
+		t.Fatal("csv descriptor should declare content readers")
+	}
+	descriptor.ContentReaders[0] = "changed"
+
+	next, ok := GetFormatDescriptor(FormatCSV)
+	if !ok {
+		t.Fatal("csv descriptor not found on second read")
+	}
+	if next.ContentReaders[0] == "changed" {
+		t.Fatal("GetFormatDescriptor returned mutable content readers")
 	}
 }
 
@@ -117,11 +133,7 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 		Identification: FormatIdentification{
 			Extensions: []string{".ptd"},
 		},
-		Preview: FormatPreviewDescriptor{
-			Kind:             "text",
-			PreviewMaterials: []string{"text"},
-			FrontendRenderer: "text",
-		},
+		ContentReaders: []string{string(ContentReaderDocumentText)},
 	})
 	if err != nil {
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
@@ -145,6 +157,9 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 	if !sameStrings(capability.Extensions, []string{".ptd"}) {
 		t.Fatalf("capability extensions = %#v, want .ptd", capability.Extensions)
 	}
+	if !sameStrings(capability.ContentReaders, []string{string(ContentReaderDocumentText)}) {
+		t.Fatalf("capability content readers = %#v, want document_text", capability.ContentReaders)
+	}
 }
 
 func assertCapabilityEqual(t *testing.T, formatType FormatType, left, right FormatCapability) {
@@ -165,6 +180,9 @@ func assertCapabilityEqual(t *testing.T, formatType FormatType, left, right Form
 	if !sameStrings(left.ProviderHints, right.ProviderHints) {
 		t.Fatalf("%s provider hints = %#v, capability = %#v", formatType, left.ProviderHints, right.ProviderHints)
 	}
+	if !sameStrings(left.ContentReaders, right.ContentReaders) {
+		t.Fatalf("%s content readers = %#v, capability = %#v", formatType, left.ContentReaders, right.ContentReaders)
+	}
 	if !sameStrings(left.Extensions, right.Extensions) {
 		t.Fatalf("%s extensions = %#v, capability = %#v", formatType, left.Extensions, right.Extensions)
 	}
@@ -176,9 +194,6 @@ func assertCapabilityEqual(t *testing.T, formatType FormatType, left, right Form
 	}
 	if left.TransferWrite != right.TransferWrite {
 		t.Fatalf("%s transfer write = %v, capability = %v", formatType, left.TransferWrite, right.TransferWrite)
-	}
-	if left.Preview != right.Preview {
-		t.Fatalf("%s preview = %v, capability = %v", formatType, left.Preview, right.Preview)
 	}
 	if left.Parse != right.Parse {
 		t.Fatalf("%s parse = %v, capability = %v", formatType, left.Parse, right.Parse)

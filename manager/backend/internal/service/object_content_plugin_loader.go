@@ -320,12 +320,6 @@ func descriptorMatcherDefaults(formatType commonformat.FormatType) ([]string, []
 		return []string{string(formatType)}, nil, nil
 	}
 	formats := []string{string(descriptor.Format)}
-	if descriptor.Preview.Kind != "" && descriptor.Preview.Kind != string(descriptor.Format) {
-		formats = append(formats, descriptor.Preview.Kind)
-	}
-	if descriptor.Preview.FrontendRenderer != "" && descriptor.Preview.FrontendRenderer != string(descriptor.Format) {
-		formats = append(formats, descriptor.Preview.FrontendRenderer)
-	}
 	return formats, descriptor.Identification.Extensions, descriptor.Identification.MimeTypes
 }
 

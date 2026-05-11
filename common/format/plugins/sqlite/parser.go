@@ -107,5 +107,5 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 func init() {
 	// SQLite 当前作为容器分析能力使用，暂不注册为 TableProvider。
 	// parser := NewParser(nil)
-	// _ = format.RegisterTableProvider(format.NewTableProvider(format.FormatSQLite, parser.ParseTableInfo, parser.ReadPreview))
+	// _ = format.RegisterTableProvider(format.NewTableProvider(format.FormatSQLite, parser.ParseTableInfo, parser.SampleTable))
 }

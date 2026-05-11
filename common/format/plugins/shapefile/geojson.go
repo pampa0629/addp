@@ -62,7 +62,7 @@ func ShapeToGeoJSON(shape shp.Shape) (map[string]interface{}, error) {
 		}
 		return geoJSONFromPolygonParts(alias.Parts, alias.Points), nil
 	case *shp.MultiPatch:
-		return nil, fmt.Errorf("MultiPatch geometry is not supported for preview")
+		return nil, fmt.Errorf("MultiPatch geometry is not supported for GeoJSON conversion")
 	case *shp.Null:
 		return map[string]interface{}{"type": "GeometryCollection", "geometries": []interface{}{}}, nil
 	default:

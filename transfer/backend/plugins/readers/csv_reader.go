@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/addp/common/format"
-	csvParser "github.com/addp/common/format/codecs/csv"
+	csvParser "github.com/addp/common/format/plugins/csv"
 	"github.com/addp/transfer/pkg/pipeline"
 )
 
 // CSVReader reads data from CSV files
-// Refactored to use shared common/format/codecs/csv parser
+// Refactored to use shared common/format/plugins/csv parser
 type CSVReader struct {
 	parser    *csvParser.Parser
 	file      *os.File

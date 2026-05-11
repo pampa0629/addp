@@ -14,8 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/codecs/excel"
-	"github.com/addp/common/format/codecs/sqlite"
+	"github.com/addp/common/format/plugins/excel"
+	"github.com/addp/common/format/plugins/sqlite"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	_ "github.com/mattn/go-sqlite3"
@@ -92,12 +92,29 @@ func (r *ObjectContentRegistry) Resolve(req *ObjectContentRequest) ObjectContent
 	if r == nil || req == nil {
 		return nil
 	}
+	if isCSVObjectContentRequest(req) {
+		return nil
+	}
 	for _, handler := range r.handlers {
 		if handler.Matches(req) {
 			return handler
 		}
 	}
 	return nil
+}
+
+func isCSVObjectContentRequest(req *ObjectContentRequest) bool {
+	if req == nil {
+		return false
+	}
+	formatName := strings.ToLower(strings.TrimSpace(req.Format))
+	extension := strings.ToLower(strings.TrimSpace(req.Extension))
+	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
+	return formatName == "csv" ||
+		extension == ".csv" ||
+		contentType == "text/csv" ||
+		strings.Contains(contentType, "text/csv;") ||
+		strings.Contains(contentType, "comma-separated")
 }
 
 // ------------ 辅助函数 ------------
@@ -228,9 +245,6 @@ func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
 
 func defaultFrontendRenderer(kind string) string {
 	kind = strings.ToLower(strings.TrimSpace(kind))
-	if descriptor, ok := format.GetFormatDescriptor(format.FormatType(kind)); ok && descriptor.Preview.FrontendRenderer != "" {
-		return descriptor.Preview.FrontendRenderer
-	}
 	switch kind {
 	case models.ObjectPreviewKindPDF:
 		return models.ObjectPreviewKindPDF

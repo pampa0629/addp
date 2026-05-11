@@ -6,11 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/codecs/parquet"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -537,13 +536,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		// 文件表属性（itemType 和 itemName 已在上方确定）
-		if itemPlan.DataItem != nil &&
-			itemPlan.DataItem.DataType == dataitem.DataTypeTable &&
-			commonParquet.IsTableFileType(itemPlan.DataItem.Format) {
-			// physical_path 保留原始路径（含扩展名），供 ReadFile 使用
-			physicalPath := meta.Bucket + "/" + meta.Path
-			metaattr.SetStorage(enhancedAttrs, "physical_path", physicalPath)
+		if tableAttrs, err := s.enrichObjectStorageTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem); err != nil {
+			s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
+		} else if tableAttrs != nil {
+			metaitem.MergeAttributeMaps(enhancedAttrs, tableAttrs)
 		}
 		metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
 		if itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
@@ -653,6 +649,40 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 		scanstats.EnsureNodeAggregate(stats, node)
 	}
 	return parentNode, nil
+}
+
+func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
+	ctx context.Context,
+	readableProvider plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	meta format.ObjectMetadata,
+	item *metaitem.DetectedItem,
+) (models.JSONMap, error) {
+	if readableProvider == nil || item == nil {
+		return nil, nil
+	}
+	if item.DataType != dataitem.DataTypeTable || item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
+		return nil, nil
+	}
+	physicalPath := meta.Bucket + "/" + meta.Path
+	info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, nil
+	}
+	attrs := metaattr.JSONMap(info.Attributes)
+	metaattr.SetStorage(attrs, "bucket", meta.Bucket)
+	dir, name := commonModels.SplitObjectPath(meta.Path)
+	metaattr.SetStorage(attrs, "path", dir)
+	metaattr.SetStorage(attrs, "name", name)
+	metaattr.SetStorage(attrs, "physical_path", physicalPath)
+	if meta.LastModified != nil {
+		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
+	}
+	return attrs, nil
 }
 
 // ============================================================================

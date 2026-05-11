@@ -67,7 +67,7 @@ const (
 // Capability 声明一个格式在 ADDP 中可被哪些平台能力消费。
 //
 // 它不是文件探测规则，也不等同于 Provider 注册表；Provider 只说明代码里是否有实现，
-// Capability 则用于能力声明、Transfer、Preview 等模块统一理解格式的产品语义。
+// Capability 则用于能力声明、Transfer 等模块统一理解格式的产品语义。
 type Capability struct {
 	Format         Format
 	I18nKey        string
@@ -75,10 +75,10 @@ type Capability struct {
 	DataType       string
 	Layouts        []string
 	ProviderHints  []string
+	ContentReaders []string
 	Spatial        bool
 	TransferRead   bool
 	TransferWrite  bool
-	Preview        bool
 	Parse          bool
 	EngineFamilies []string
 }
@@ -110,10 +110,10 @@ func CapabilityFromDescriptor(descriptor formatregistry.Descriptor) Capability {
 		DataType:       descriptor.DataType,
 		Layouts:        append([]string(nil), descriptor.Layouts...),
 		ProviderHints:  append([]string(nil), descriptor.ProviderHints...),
+		ContentReaders: append([]string(nil), descriptor.ContentReaders...),
 		Spatial:        descriptor.Spatial,
 		TransferRead:   descriptor.TransferRead,
 		TransferWrite:  descriptor.TransferWrite,
-		Preview:        descriptor.Preview.Kind != "" || len(descriptor.Preview.PreviewMaterials) > 0 || descriptor.Preview.FrontendRenderer != "",
 		Parse:          descriptor.Parse,
 		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
 	}
@@ -139,6 +139,7 @@ func (r *Registry) Register(capability Capability) error {
 	capability.Extensions = normalizedStrings(capability.Extensions, true)
 	capability.Layouts = normalizedStrings(capability.Layouts, false)
 	capability.ProviderHints = normalizedStrings(capability.ProviderHints, false)
+	capability.ContentReaders = normalizedStrings(capability.ContentReaders, false)
 	capability.EngineFamilies = normalizedStrings(capability.EngineFamilies, false)
 
 	r.mu.Lock()
@@ -210,6 +211,7 @@ func clone(capability Capability) Capability {
 	capability.Extensions = append([]string(nil), capability.Extensions...)
 	capability.Layouts = append([]string(nil), capability.Layouts...)
 	capability.ProviderHints = append([]string(nil), capability.ProviderHints...)
+	capability.ContentReaders = append([]string(nil), capability.ContentReaders...)
 	capability.EngineFamilies = append([]string(nil), capability.EngineFamilies...)
 	return capability
 }

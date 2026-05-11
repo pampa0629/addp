@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonParquet "github.com/addp/common/format/codecs/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
@@ -233,7 +233,7 @@ func (s *FileSystemScanService) scanDirectory(
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
 			} else {
 				totalItems++
-				if detected.DataType == dataitem.DataTypeTable && commonParquet.IsTableFileType(detected.Format) && len(fields) > 0 {
+				if detected.DataType == dataitem.DataTypeTable && len(fields) > 0 {
 					s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(fields))
 				}
 			}
@@ -316,7 +316,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && commonParquet.IsTableFileType(detected.Format) {
+	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && hasTableProvider(detected.Format) {
 		info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
@@ -358,6 +358,14 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 		}
 	}
 	return attrs, detected.Fields, nil
+}
+
+func hasTableProvider(formatName string) bool {
+	if strings.TrimSpace(formatName) == "" {
+		return false
+	}
+	_, err := format.GetTableProvider(format.FormatType(strings.ToLower(strings.TrimSpace(formatName))))
+	return err == nil
 }
 
 func (s *FileSystemScanService) resolveFileSystemDirectoryItems(

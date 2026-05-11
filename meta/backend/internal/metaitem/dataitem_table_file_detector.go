@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/codecs/parquet"
+	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/parquet"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 // tableFileFormats 支持的表格文件格式
@@ -285,7 +286,7 @@ func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	return fieldsData
 }
 
-func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableInfo) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -299,10 +300,26 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		},
 	}
 	if len(fieldsData) > 0 {
+		tableAttrs := map[string]interface{}{
+			"fields": fieldsData,
+		}
+		if tableInfo != nil && tableInfo.RowCount != nil {
+			tableAttrs["row_count"] = *tableInfo.RowCount
+		}
 		attrs["type_info"] = map[string]interface{}{
-			"table": map[string]interface{}{
-				"fields": fieldsData,
-			},
+			"table": tableAttrs,
+		}
+	}
+	if tableInfo != nil {
+		if indexInfo := tableInfo.GetContentIndexInfo(); indexInfo != nil && indexInfo.Table != nil {
+			if indexInfo.Table.Source == nil {
+				indexInfo.Table.Source = map[string]interface{}{
+					"size_bytes": totalSize,
+				}
+			}
+			attrs["content_index"] = map[string]interface{}{
+				"table": indexInfo.Table,
+			}
 		}
 	}
 	return attrs
@@ -325,7 +342,7 @@ func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEn
 		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil),
 	}
 }
 
@@ -351,7 +368,7 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileParquetCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
 	}
@@ -373,7 +390,7 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo),
 	}, nil
 }
 
@@ -405,8 +422,7 @@ func extractTableFileWholeScopeInfo(
 	return detector.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
-// ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）
-// 目前只有 .parquet 支持 Schema 解析，.orc/.avro 返回基础信息
+// ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）。
 func ExtractTableFileSingleFileInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
@@ -416,38 +432,38 @@ func ExtractTableFileSingleFileInfo(
 	fileSize int64,
 ) (*CompositeItemInfo, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	format := ext[1:] // 去掉点号，如 "parquet"
+	formatName := ext[1:] // 去掉点号，如 "parquet"
 
-	// 非 parquet 格式暂不解析 Schema
-	if ext != ".parquet" {
+	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
+	if providerErr != nil {
 		return &CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
-			Format:         format,
+			Format:         formatName,
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     tableFileAttributes(format, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil),
 		}, nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileParquetCatalogPath(engineID, filePath), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read parquet file %s: %w", filePath, err)
+		return nil, fmt.Errorf("failed to read table file %s: %w", filePath, err)
 	}
 	defer rc.Close()
 
-	tableInfo, err := describeParquetTable(ctx, rc)
+	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
-			Format:         "parquet",
+			Format:         formatName,
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     tableFileAttributes("parquet", "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil),
 		}, nil
 	}
 
@@ -465,11 +481,11 @@ func ExtractTableFileSingleFileInfo(
 		Fields:         tableInfo.Fields,
 		Organization:   dataitem.OrganizationSingle,
 		DataType:       dataitem.DataTypeTable,
-		Format:         "parquet",
+		Format:         formatName,
 		EntryPath:      filePath,
 		ComponentFiles: []string{filePath},
 		SizeBytes:      &fileSize,
-		Attributes:     tableFileAttributes("parquet", "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize),
+		Attributes:     tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo),
 	}, nil
 }
 
@@ -515,7 +531,7 @@ func filePaths(files []plugin.FileEntry) []string {
 	return paths
 }
 
-func tableFileParquetCatalogPath(engineID uint, path string) plugin.CatalogPath {
+func tableFileCatalogPath(engineID uint, path string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,

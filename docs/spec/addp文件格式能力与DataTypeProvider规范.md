@@ -9,9 +9,9 @@
 | 本文负责 | 不在本文定义 |
 |---|---|
 | format capability 表达格式实现能做什么 | data item 如何归并和 claims 如何合并 |
-| format provider 如何识别、解析、提取、采样、读写 | `meta_item.name/full_name/item_type` 来源规则 |
-| data type provider 如何把结果归一为 table / document / media / container / graph 语义 | `meta_item.attributes` 的完整 schema |
-| Manager preview 与 Transfer 对 provider 的消费边界 | ResourceReader / ComponentReader 的具体接口 |
+| FormatPlugin 如何声明格式身份、能力和布局 | `meta_item.name/full_name/item_type` 来源规则 |
+| info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
+| content reader 如何提供内容数据 | ResourceReader / ComponentReader 的具体接口 |
 
 item 归并见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
@@ -24,8 +24,12 @@ item 归并见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)�
 - 这个资源像什么格式。
 - 这个格式如何组织资源。
 - 这个格式能提取什么结构事实。
-- 这个格式能否提供样本、提取结果、写出、转换、批量读写。
+- 这个格式能否通过 content reader 提供样本、文本、原始内容、批量读写。
 - 解码结果如何归一为平台 data type 语义。
+
+其中 `xxx info` 是对应 data type 的元数据，例如 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`。`xxx info provider` 只负责提取这类元数据；样本、文本片段、缩略图、raw content、range content 等内容数据必须通过独立 content reader 表达。
+
+`common/format` 不定义任何展示概念。展示策略、前端渲染器选择和 Manager 返回给前端的 DTO 均属于 Manager / Frontend 边界。
 
 `common/format` 不回答 item 归并问题：
 
@@ -44,13 +48,30 @@ Meta 负责把 format capability、扫描上下文和已认领资源编排成最
 |---|---|---|---|
 | Identification | 如何识别格式 | 扩展名、MIME、magic bytes、内容签名 | Meta、Registry |
 | Layout | 格式自身如何组织资源 | single / multi / whole、主资源、组件规则、manifest 规则 | Meta |
-| Parse / Extract | 能提取什么结构事实 | table / document / media / container / spatial facts | Meta、Manager、Transfer |
-| Sample / Extract | 能否提供样本或中间提取结果 | 行样本、文本片段、缩略图素材、容器树 | Manager、Meta、Transfer |
-| Preview material | 能否提供上层可包装的预览材料 | HTML、Markdown、纯文本、缩略图、raw bytes 引用 | Manager |
+| Info / Facts | 能提取什么 data type info 和横切事实 | table / document / media / container info、spatial facts | Meta、Manager、Transfer |
+| Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、缩略图、容器树、raw content、range content | Manager、Transfer |
 | Transfer | 能否参与批量读写和组件提交 | batch read / write、component read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
 
-当前代码中 `FormatCapability` 是能力声明；`TableProvider`、metadata extractor、type mapper 等是具体实现注册。能力声明可以先于 provider 完整实现存在，因此文档必须区分“声明支持”和“已有 provider 实现”。
+当前代码中 `FormatCapability` 是能力声明；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、type mapper 等是具体实现能力。能力声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+
+### Format Identity 与 Format Detection
+
+`format identity` 定义“平台支持的这个格式是谁”，通常由 `FormatDescriptor` 表达；当该格式已有代码实现时，由 `FormatPlugin` 作为格式包主入口承载。它包含稳定格式 ID、默认 data type、布局、info provider、content reader、transfer 和横切能力声明。
+
+`format detection` 是“给定一个资源，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或组件上下文，输出指向某个 format identity 的识别结果。
+
+二者边界如下：
+
+| 维度 | Format Identity | Format Detection |
+|---|---|---|
+| 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前资源看起来是什么格式 |
+| 性质 | 静态注册事实 | 动态识别过程 |
+| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、组件上下文 |
+| 输出 | format descriptor / capability | detection result，指向某个 format |
+| 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
+
+Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta item detector 根据 format layout 和资源上下文决定。
 
 ### Identification
 
@@ -91,9 +112,9 @@ Meta 负责把 format capability、扫描上下文和已认领资源编排成最
 
 这一组能力只服务 Meta 调度，不直接等于 item 结果。
 
-### Parse / Extract
+### Info / Facts
 
-解析和提取能力负责把原始资源转成平台能理解的结构事实。
+Info / facts 能力负责把原始资源转成平台能理解的类型信息和横切事实。
 
 常见产出：
 
@@ -106,93 +127,40 @@ Meta 负责把 format capability、扫描上下文和已认领资源编排成最
 - `capabilities.extraction`
 - `capabilities.statistics`
 
-表格解析能力应说明字段名、原始字段类型、行数、主键、索引和采样是否可得。文档提取能力应说明标题、作者、页数、语言、文本片段和摘要是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式、缩略图和 EXIF 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。
+表格解析能力应说明字段名、原始字段类型、行数、主键和索引等 info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式和 EXIF 等 info 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。
 
-### Sample / Extract
+注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、展示材料不是 info，不能为了上层展示方便塞进 `table info`、`document info` 或 `media info`。
 
-样本 / 提取能力负责提供上层可继续组装的数据，不直接负责 Manager preview，也不等于最终 attributes。
+### Content Reader
+
+content reader 负责提供上层可继续组装的数据，不直接负责展示协议，也不等于最终 attributes。
 
 常见结果包括：
 
 - table rows sample
 - document text fragment
-- media thumbnail material
+- media thumbnail
 - container children sample
 - graph sample
+- raw content / range content
 
-Manager preview DTO 由 Manager 组装，不应进入 `common/format`。
-
-### Preview material
-
-预览材料能力负责回答“上层要预览这个 item 时，格式层可以提供什么材料”。它不是 Manager preview DTO，也不要求格式层自己连接 engine 或读取资源。
-
-预览材料至少应区分以下形态：
-
-| 形态 | 含义 | 示例 |
-|---|---|---|
-| `text` | 已可直接展示的纯文本 | TXT、日志片段 |
-| `markdown` | Markdown 文本，由前端渲染 | Markdown 文件 |
-| `html` | 已转换的 HTML 片段 | 后端转换后的文档片段 |
-| `json` | 可格式化展示的 JSON 值 | 配置 JSON、文档 JSON |
-| `image` | 缩略图或图片数据 | 图片、PDF 页缩略图 |
-| `raw_binary` | 原始二进制内容或可访问引用，由前端专用 renderer 处理 | WPS、DOCX、PPTX、PDF |
-| `url` | 受控访问 URL | 大文件、视频、可流式媒体 |
-
-预览材料能力必须和格式身份分开。比如 WPS 仍是 `format=wps`、`data_type=document`，即使当前 preview material 是 `raw_binary`；不能因为预览材料是二进制就把 WPS 表达为 `format=binary`。
-
-### Manager ObjectPreviewContent 协议字段
-
-Manager 对象内容预览 DTO 使用三个稳定字段表达展示协议：
-
-| 字段 | 含义 | 说明 |
-|---|---|---|
-| `kind` | 内容展示语义 | 兼容既有前端插件选择逻辑，不等同于 `format` |
-| `preview_material` | 预览材料形态 | 表达 Manager 返回给前端的材料类型 |
-| `frontend_renderer` | 推荐前端 renderer | 前端应优先按该字段选择组件，再回退到 `kind`、扩展名或 Content-Type |
-
-当前稳定 `kind` 值：
-
-| kind | 含义 |
-|---|---|
-| `pdf` / `docx` / `wps` / `pptx` | 前端文档 renderer 可处理的文档内容 |
-| `image` | 图片内容 |
-| `json` / `geojson` | JSON 或空间 JSON 展示内容 |
-| `excel` / `sqlite` / `table` / `shapefile` | 表格、容器或空间表预览内容 |
-| `text` / `markdown` | 文本型预览内容 |
-| `unsupported` | 未知或不支持对象的安全兜底展示 |
-
-当前稳定 `preview_material` 值：
-
-| preview_material | 含义 |
-|---|---|
-| `text` | 纯文本 |
-| `markdown` | Markdown 文本 |
-| `html` | HTML 片段 |
-| `json` | JSON 值 |
-| `geojson` | GeoJSON 值 |
-| `image` | 图片数据或缩略图 |
-| `raw_binary` | 原始二进制内容或引用，需要专用 renderer |
-| `table` | 表格样本或表格结构材料 |
-| `url` | 受控访问 URL |
-
-未知二进制对象必须保持 `format=unknown`，Manager 预览返回 `kind=unsupported`，并可用 `preview_material=raw_binary` 表达材料类型；不得引入 `format=binary` 作为普通兜底。
+Manager 展示 DTO 由 Manager 组装，不应进入 `common/format`。`common/format` 只声明和实现 reader 能力，例如 `table_sample`、`document_text`、`raw_content`、`range_content`。是否使用这些 reader 做展示、下载、索引或传输，由上层模块决定。
 
 合理链路是：
 
 ```text
 Manager / Transfer / Meta 构造 ResourceReader 或 io.Reader
-  -> data type provider 或 preview material provider 消费输入
-  -> 返回格式无关的预览材料描述
-  -> Manager 组装 preview DTO 并执行大小限制、base64 或 URL 策略
-  -> 前端 renderer 展示
+  -> data type info provider 或 content reader 消费输入
+  -> 返回 type_info / format_info / 内容数据
+  -> Manager / Transfer / Meta 各自按模块边界继续组装
 ```
 
 不合理链路是：
 
 ```text
 format provider 根据 engine id 自己读取文件
-format provider 返回 Manager 专用 DTO
-Manager 根据扩展名猜哪个前端组件能打开
+format provider 返回 Manager 专用 DTO 或前端渲染器建议
+common/format 使用展示材料或前端渲染器参与展示决策
 ```
 
 ### Transfer
@@ -217,25 +185,25 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 
 当前 `common/format/capability` 已声明：
 
-| 格式 | 默认 `data_type` | layouts | provider hints | parse | preview | transfer read/write | 说明 |
+| 格式 | 默认 `data_type` | layouts | provider hints | content readers | parse | transfer read/write | 说明 |
 |---|---|---|---|---|---|---|---|
-| `table` | `table` | `whole` | table | 否 | 是 | 是 / 是 | 引擎原生表格逻辑格式 |
-| `document` | `document` | `whole` | document | 否 | 是 | 是 / 是 | 引擎原生文档逻辑格式 |
-| `csv` | `table` | `single` | table | 是 | 是 | 是 / 是 | 单文件表 |
-| `docx` | `document` | `single` | document | 否 | 是 | 否 / 否 | Word 文档；当前主要声明 raw preview material |
-| `excel` | `container` | `single` | container、table | 否 | 是 | 否 / 否 | Excel 工作簿；当前按容器 / 表预览材料表达 |
-| `image` / `jpeg` / `png` / `gif` / `tiff` | `media` | `single` | media | 否 | 是 | 否 / 否 | 图片格式；已有最小 MediaProvider，`image` 是逻辑聚合格式，具体文件格式由子格式识别 |
-| `json` | `document` | `single` | document、table、spatial | 是 | 是 | 是 / 是 | JSON 可按内容识别为文档、表或空间表 |
-| `markdown` | `document` | `single` | document | 否 | 是 | 是 / 是 | Markdown 文本文档；已有最小 DocumentProvider，可提取 UTF-8 文本片段 |
-| `parquet` | `table` | `single`、`whole` | table | 是 | 是 | 是 / 是 | 单文件表和 scope 表 |
-| `pdf` | `document` | `single` | document | 否 | 是 | 否 / 否 | PDF 文档；已有元数据 / 文本提取状态，DocumentProvider 待补 |
-| `pptx` | `document` | `single` | document | 否 | 是 | 否 / 否 | 演示文档；当前主要声明 raw preview material |
-| `shapefile` | `table` | `multi` | table、spatial | 是 | 是 | 是 / 是 | 多组件空间表 |
-| `sqlite` | `container` | `single` | container、table | 否 | 是 | 否 / 否 | SQLite 容器；当前按容器 / 表预览材料表达 |
-| `text` | `document` | `single` | document | 否 | 是 | 是 / 是 | 纯文本文档；已有最小 DocumentProvider，可提取 UTF-8 文本片段 |
-| `wps` | `document` | `single` | document | 否 | 是 | 否 / 否 | WPS 文档；当前主要声明 raw preview material，由前端 renderer 处理 |
+| `table` | `table` | `whole` | table | table_sample | 否 | 是 / 是 | 引擎原生表格逻辑格式 |
+| `document` | `document` | `whole` | document | document_text、raw_content | 否 | 是 / 是 | 引擎原生文档逻辑格式 |
+| `csv` | `table` | `single` | table | table_sample、raw_content | 是 | 是 / 是 | 单文件表 |
+| `docx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | Word 文档；当前后端只声明原始内容读取能力 |
+| `excel` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | Excel 工作簿；当前按容器 / 表格内容读取能力表达 |
+| `image` / `jpeg` / `png` / `gif` / `tiff` | `media` | `single` | media | raw_content、range_content | 否 | 否 / 否 | 图片格式；已有最小 MediaInfoProvider，`image` 是逻辑聚合格式，具体文件格式由子格式识别 |
+| `json` | `document` | `single` | document、table、spatial | table_sample、raw_content | 是 | 是 / 是 | JSON 可按内容识别为文档、表或空间表 |
+| `markdown` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | Markdown 文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
+| `parquet` | `table` | `single`、`whole` | table | table_sample、scope_table_sample、raw_content | 是 | 是 / 是 | 单文件表和 scope 表 |
+| `pdf` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | PDF 文档；旧元数据提取待迁移到 DocumentInfoProvider |
+| `pptx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | 演示文档；当前后端只声明原始内容读取能力 |
+| `shapefile` | `table` | `multi` | table、spatial | table_sample、component_table_sample、raw_content | 是 | 是 / 是 | 多组件空间表 |
+| `sqlite` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | SQLite 容器；当前按容器 / 表格内容读取能力表达 |
+| `text` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | 纯文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
+| `wps` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | WPS 文档；后端不解析正文，由上层按内容读取能力处理 |
 
-注意：此矩阵只表示 capability registry 当前声明，不表示所有格式都已有完整 parser、writer、preview 和 transfer 端到端实现。
+注意：此矩阵只表示 capability registry 当前声明，不表示所有格式都已有完整 parser、writer、content reader 和 transfer 端到端实现。
 
 ### 能力发现视图
 
@@ -243,58 +211,75 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 
 | 字段 | 含义 |
 |---|---|
-| `providers` | descriptor / capability 的声明能力，表示该格式在规范上属于哪些 provider 家族或预览材料家族 |
-| `implementations` | 当前进程内已经注册的实际实现状态，表示 `TableProvider`、`DocumentProvider`、`MediaProvider`、`FileMetadataExtractor` 等是否已经可调用 |
+| `providers` | descriptor / capability 的声明能力，表示该格式在规范上属于哪些 info provider 家族 |
+| `content_readers` | descriptor / capability 的内容读取能力声明，表示该格式当前可提供哪些内容数据读取方式 |
+| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider` 等是否已经可调用；其中 `metadata_extractor` 是 legacy 兼容状态字段 |
 
-上层模块做格式路由时，应优先依据 `format`、`data_type`、`preview`、`providers` 判断语义，再根据 `implementations` 决定能否直接调用后端 provider。不能把 `providers.document=true` 理解为一定已经有 `DocumentProvider`；例如 DOCX / WPS 当前声明为文档格式和 raw preview material，但后端正文解析实现尚未稳定，Manager 仍可把原始材料交给前端 renderer 预览。
+上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / WPS 当前声明为文档格式和 raw/range content reader，但后端正文解析实现尚未稳定。
 
 新增或调整内置格式后，应检查能力发现视图：
 
 1. `providers` 是否表达规范上的目标能力。
 2. `implementations` 是否只反映当前已注册的 Go 实现。
-3. 对预览型格式，`preview.kind`、`preview.preview_materials`、`preview.frontend_renderer` 是否足以让 Manager 和前端在没有额外硬编码的情况下选择预览链路。
-4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；兜底只属于 Manager preview 协议。
+3. `content_readers` 是否只描述内容读取方式，不包含前端渲染器或展示策略。
+4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；兜底展示只属于 Manager / Frontend 协议。
 
-### Provider / Extractor 实现
+### Provider 实现
 
 当前内置注册状态：
 
-| 格式 | TableProvider | DocumentProvider | ComponentTableProvider | ScopeTableProvider | Metadata / File Extractor | TypeMapper | 说明 |
-|---|---|---|---|---|---|---|---|
-| `csv` | 已实现 | 无 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` provider 待补 |
-| `excel` | 已实现 | 无 | 无 | 无 | 无 | 无 | 当前可作为表格 provider 读取；Meta 规范上外层仍按 container item 表达 |
-| `json` | 已实现 | 无 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
-| `markdown` | 无 | 已实现最小能力 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取；预览仍可走 Markdown preview material |
-| `parquet` | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 支持单文件和 scope 表读取 |
-| `shapefile` | 已实现 | 无 | 已实现 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
-| `text` | 无 | 已实现最小能力 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
-| `sqlite` | 未注册 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 当前作为容器分析能力使用，暂不注册为 TableProvider |
-| `geopackage` | 未注册 | 无 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
-| `image` / `jpeg` / `png` / `gif` / `tiff` | 无 | 无 | 无 | 无 | 已实现 | 无 | 图片元数据提取；MediaProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts |
-| `pdf` | 无 | 无 | 无 | 无 | 已实现 | 无 | PDF 元数据和文本提取状态；DocumentProvider 待补 |
+| 格式 | FormatInfoProvider | TableInfoProvider | TableSampleReader | 兼容期 TableProvider | DocumentInfoProvider | DocumentTextReader | ComponentTableProvider | ScopeTableProvider | MediaInfoProvider | Legacy FileMetadataExtractor | TypeMapper | 说明 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `csv` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` reader 待补 |
+| `excel` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 可提取工作簿中的表格 info 和样本；Meta 规范上外层仍按 container item 表达 |
+| `json` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
+| `markdown` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
+| `parquet` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 已实现 | 无 | 无 | 无 | 支持单文件和 scope 表读取 |
+| `shapefile` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
+| `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
+| `sqlite` | 未注册 | 未注册 | 未注册 | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | capability 声明 container/table 目标能力，当前作为容器分析能力使用，暂不注册为 TableProvider |
+| `geopackage` | 未注册 | 未注册 | 未注册 | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
+| `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
+| `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
 
-当前 provider 家族已包含 `TableProvider`、最小 `DocumentProvider` 和最小 `MediaProvider`；`ContainerProvider`、`GraphProvider` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+当前 provider / reader 家族已包含 `TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerProvider`、`GraphProvider` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+
+### FileMetadataExtractor 兼容说明
+
+`FileMetadataExtractor` 是早期按 MIME 类型提取增强元数据的旁路机制，当前仍被 Meta 的对象存储扫描和按需提取链路使用。它的问题是返回 `ExtractedMetadata.BasicInfo / SchemaInfo / ContentData / CustomAttrs`，同时混合了 storage info、type info、format info、capabilities 和内容数据，和 `xxx info provider` / content reader 的主线存在概念冲突。
+
+新的格式能力不应继续新增 `FileMetadataExtractor` 实现。已有 image / PDF 相关逻辑应逐步迁移：
+
+1. 可确定的 data type 元数据进入对应 `MediaInfoProvider` / `DocumentInfoProvider`。
+2. 文本片段、缩略图、raw content、range content 等进入 content reader。
+3. Meta 只负责编排 provider 结果并写入标准 attributes 分区。
+4. 旧 `FileMetadataExtractor` 仅作为兼容入口保留到 Meta 调用方完成迁移。
 
 ## Data Type Provider
 
 `data type provider` 是上层消费者的主入口，目标是让上层不直接感知具体 `engine type` 或 `format type`。
 
-建议围绕这些家族收口：
+建议围绕两类 provider 收口：
 
-- `TableProvider`
-- `DocumentProvider`
-- `MediaProvider`
-- `ContainerProvider`
-- `GraphProvider`
-- `SpatialProvider` 作为横切 provider
+| 类别 | 职责 | 示例 |
+|---|---|---|
+| info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` |
+| content reader | 提供按 data type 组织后的内容数据，供 Manager / Transfer 消费 | `TableSampleReader`、`DocumentTextReader`、`RawContentReader`、`RangeContentReader`、`MediaThumbnailReader` |
 
 Provider 只回答对应 data type 的平台语义，不回答格式识别，也不回答 item 归并。
 
-### TableProvider
+### Table Info / Sample Provider
 
-`TableProvider` 是最先需要稳定的 data type provider，因为它同时覆盖 Manager 表预览、Transfer 批量读写和 Meta 表结构提取。
+表格型 provider 是最先需要稳定的 data type provider，因为它同时覆盖 Meta 表结构提取、Manager 内容查看和 Transfer 批量读写。
 
-它至少要覆盖：
+第一版拆成两条主能力：
+
+- `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源。
+- `TableSampleReader`：返回分页或采样样本，是 Manager 表格探查和 Transfer 探查的主来源。
+
+二者可以由同一个格式实现同时提供，也可以分别提供。当前代码中的 `TableProvider` 是兼容期组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。
+
+后续完整表格能力至少要覆盖：
 
 - 表结构和字段元数据。
 - 分页或采样读取。
@@ -302,47 +287,41 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 空间列、SRID、extent 等空间信息。
 - 批量读取和批量写入边界。
 
-第一版能力可按四类组织：
+能力可按四类组织：
 
 - `Describe`：返回表结构与字段元数据。
 - `Sample`：返回分页或采样样本。
 - `ReadBatch`：返回批量读取所需的结构或数据。
 - `WriteBatch`：接受批量写入所需的结构或数据。
 
-这些名称是能力分组，不要求直接成为最终 Go 方法名。只读来源可以只实现 `Describe` / `Sample`；只用于预览的实现不必实现 `WriteBatch`。
+这些名称是能力分组，不要求直接成为最终 Go 方法名。只读来源可以只实现 `Describe` / `Sample`；只用于内容查看的实现不必实现 `WriteBatch`。
 
-`SpatialProvider` 不是另一个表类型，而是横切 provider。表预览没有空间细节时仍应可用，只是空间信息更少。
+`SpatialProvider` 不是另一个表类型，而是横切 provider。表格内容查看没有空间细节时仍应可用，只是空间信息更少。
 
-### DocumentProvider
+### DocumentInfoProvider / DocumentTextReader
 
-`DocumentProvider` 面向 PDF、Word、Markdown、纯文本、富文本集合、文档型数据库记录等文档型 data item。
+`DocumentInfoProvider` 和 `DocumentTextReader` 面向 PDF、Word、Markdown、纯文本、富文本集合、文档型数据库记录等文档型 data item。
 
-它提供：
+`DocumentInfoProvider` 提供：
 
 - 文档元信息。
-- 正文片段。
 - 页码或范围上下文。
 - 提取状态。
-- 可选的原始内容引用。
-- 可选的预览材料描述，例如 `text`、`markdown`、`html`、`raw_binary` 或 `url`。
 
-它不负责 Manager 的最终展示 DTO。
+`DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终展示 DTO。
 
-`DocumentProvider` 不要求所有文档格式都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类当前由前端 renderer 处理更合适的格式，可以先只声明 raw preview material 能力；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
+文档格式不要求都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类后端不适合解析的格式，可以先只声明 raw content / range content reader；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
 
-### MediaProvider
+### MediaInfoProvider
 
-`MediaProvider` 面向图片、音频、视频等媒体型 data item。
+`MediaInfoProvider` 面向图片、音频、视频等媒体型 data item。
 
 它提供：
 
 - 媒体元信息。
-- 缩略图或封面素材。
-- 可访问内容引用。
 - 可选的编码 / 解码辅助信息。
-- 可选的预览材料描述，例如缩略图、raw binary 或可流式 URL。
 
-它只返回已经确认的事实和可用素材，不硬凑完整预览对象。
+缩略图、raw content、range content 或可流式 URL 应由对应 content reader / engine 能力表达。`MediaInfoProvider` 只返回已经确认的事实，不硬凑完整展示对象。
 
 ### ContainerProvider
 
@@ -355,7 +334,7 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 内部对象定位。
 - 容器统计信息。
 
-它不负责把内部对象解释成最终 table / document / media 预览；那部分交给对应 data type provider 继续处理。
+它不负责把内部对象解释成最终 table / document / media 展示数据；那部分交给对应 data type provider 继续处理。
 
 ### GraphProvider
 
@@ -395,17 +374,17 @@ format provider 不应通过 `engine id` 自己构造读取器。
 
 这样可以把连接、凭据、权限、重试、审计和对象枚举留在 engine 层，把编码 / 解码留在 format 层。
 
-## Manager Preview 边界
+## Manager 展示边界
 
-`TablePreview`、`DocumentPreview`、`MediaPreview` 这类对象属于 Manager 展示 DTO，不宜放在 format 层作为通用返回值。
+Manager 面向前端的展示 DTO 属于 Manager 边界，不宜放在 format 层作为通用返回值。
 
 合理分工是：
 
 - format provider 提供格式原生可解析的结构事实或记录样本。
 - data type provider 把不同来源整理成 table / document / media / container 的平台语义。
-- Manager service 再组装成当前前端需要的 preview DTO。
+- Manager service 再组装成当前前端需要的展示 DTO。
 
-如果 Manager preview 需要新增字段，应向 data type provider 或底层 format / engine provider 提需求，不能把 Manager DTO 反向下沉为 format 层通用模型。
+如果 Manager 展示 DTO 需要新增字段，应向 data type provider、content reader 或底层 format / engine provider 提需求，不能把 Manager DTO 反向下沉为 format 层通用模型。
 
 ## Transfer 边界
 
@@ -444,5 +423,5 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 2. format provider 不决定最终 `organization`、claims、exclusive 和 `meta_item.full_name`。
 3. provider 输入保持轻量，只接已确认定位、必要属性片段和调用参数。
 4. format provider 不按 `engine_id` 反向构造 engine reader。
-5. Manager preview DTO 不进入 format 层。
+5. Manager 展示 DTO 不进入 format 层。
 6. GeoJSON 类结构表达为 `format=json` + `capabilities.spatial`，不作为独立顶层格式。

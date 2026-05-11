@@ -56,80 +56,9 @@ src/
 
 ### 无需修改核心代码,即可添加新文件类型支持!
 
-#### 示例: 添加 CSV 预览
+#### 示例: 添加自定义文本预览
 
-**步骤1**: 创建插件文件 `public/plugins/my-csv-preview.js`（可参考仓库内置的 `public/plugins/csv-preview.js` 示例）
-
-```javascript
-window.DataExplorerPlugins = window.DataExplorerPlugins || []
-
-const register = (plugin) => {
-  if (typeof window.registerDataExplorerPlugin === 'function') {
-    window.registerDataExplorerPlugin(plugin)
-  } else {
-    window.DataExplorerPlugins.push(plugin)
-  }
-}
-
-register({
-  name: 'csv-preview',
-  component: {
-    props: ['data'],
-    computed: {
-      rows() {
-        const text = this.data?.object?.content?.text || ''
-        return parseCSV(text)
-      },
-      columns() {
-        const [header] = (this.data?.object?.content?.text || '').split('\n')
-        return header ? header.split(',').map(item => item.trim()) : []
-      }
-    },
-    render() {
-      const { h, resolveComponent } = window.Vue || {}
-      if (typeof h !== 'function' || typeof resolveComponent !== 'function') return null
-      const ElTable = resolveComponent('ElTable')
-      const ElTableColumn = resolveComponent('ElTableColumn')
-
-      return h('div', { class: 'csv-preview' }, [
-        ElTable
-          ? h(
-              ElTable,
-              { data: this.rows, border: true, stripe: true },
-              {
-                default: () =>
-                  this.columns.map(col =>
-                    h(ElTableColumn, {
-                      key: col,
-                      prop: col,
-                      label: col,
-                      'show-overflow-tooltip': true
-                    })
-                  )
-              }
-            )
-          : h('pre', null, (this.data?.object?.content?.text || '').trim())
-      ])
-    }
-  },
-  canHandle: (data) => data.object?.path?.toLowerCase().endsWith('.csv'),
-  priority: 50
-})
-```
-
-**步骤2**: 在 `index.html` 引入
-
-```html
-<script src="/plugins/my-csv-preview.js"></script>
-```
-
-> 提示：默认的 `/plugins/manifest.json` 已列出所有内置插件脚本，若需要额外脚本，可将自定义文件追加到该清单中或直接在 `index.html` 中引用。
-
-**完成!** 系统会自动识别并使用你的插件!
-
-查看完整示例: [csv-preview.js](public/plugins/csv-preview.js)
-
----
+可以在 `public/plugins/` 中创建自己的预览插件，并通过 `/plugins/manifest.json` 追加脚本路径。内置插件可参考 `public/plugins/text-preview.js`、`public/plugins/table-preview.js` 等。
 
 ## 🎯 核心改进
 
@@ -252,7 +181,7 @@ import('@/plugins/previews').then(m => {
 })
 
 // 2. 测试 canHandle 函数
-const testData = { object: { path: 'test.csv' } }
+const testData = { object: { path: 'test.txt' } }
 const plugin = window.DataExplorerPlugins[0]
 console.log('能否处理:', plugin.canHandle(testData))
 
@@ -280,7 +209,7 @@ console.log('能否处理:', plugin.canHandle(testData))
    - 修改 `formatters.js`,改变日期格式
 
 4. **创建一个自定义插件** (1小时)
-   - 参考 [csv-preview.js](public/plugins/csv-preview.js)
+   - 参考 `public/plugins/text-preview.js` 或 `public/plugins/table-preview.js`
    - 创建自己的插件
    - 测试效果
 

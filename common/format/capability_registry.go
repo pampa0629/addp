@@ -48,10 +48,10 @@ type FormatCapability struct {
 	DataType       string
 	Layouts        []string
 	ProviderHints  []string
+	ContentReaders []string
 	Spatial        bool
 	TransferRead   bool
 	TransferWrite  bool
-	Preview        bool
 	Parse          bool
 	EngineFamilies []string
 }
@@ -89,10 +89,10 @@ func toFormatCap(capability FormatCapability) formatcap.Capability {
 		DataType:       capability.DataType,
 		Layouts:        capability.Layouts,
 		ProviderHints:  capability.ProviderHints,
+		ContentReaders: capability.ContentReaders,
 		Spatial:        capability.Spatial,
 		TransferRead:   capability.TransferRead,
 		TransferWrite:  capability.TransferWrite,
-		Preview:        capability.Preview,
 		Parse:          capability.Parse,
 		EngineFamilies: capability.EngineFamilies,
 	}
@@ -106,10 +106,10 @@ func fromFormatCap(capability formatcap.Capability) FormatCapability {
 		DataType:       capability.DataType,
 		Layouts:        capability.Layouts,
 		ProviderHints:  capability.ProviderHints,
+		ContentReaders: capability.ContentReaders,
 		Spatial:        capability.Spatial,
 		TransferRead:   capability.TransferRead,
 		TransferWrite:  capability.TransferWrite,
-		Preview:        capability.Preview,
 		Parse:          capability.Parse,
 		EngineFamilies: capability.EngineFamilies,
 	}

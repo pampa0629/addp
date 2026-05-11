@@ -43,12 +43,19 @@ func MergeDataItemAttributes(attrs map[string]interface{}, item *DetectedItem) {
 	if attrs == nil || item == nil {
 		return
 	}
-	for k, v := range BuildAttributes(item) {
+	MergeAttributeMaps(attrs, BuildAttributes(item))
+}
+
+func MergeAttributeMaps(attrs map[string]interface{}, additions map[string]interface{}) {
+	if attrs == nil {
+		return
+	}
+	for k, v := range additions {
 		if isLegacyFlatStorageKey(k) {
 			continue
 		}
 		switch k {
-		case "storage", "item", "type_info", "format_info", "capabilities":
+		case "storage", "item", "type_info", "format_info", "content_index", "capabilities":
 			attrs[k] = mergeAttributeSection(attrs[k], v)
 		default:
 			attrs[k] = v

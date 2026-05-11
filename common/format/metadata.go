@@ -44,7 +44,7 @@ type ExtractInput struct {
 type ExtractedMetadata struct {
 	BasicInfo   BasicMetadata
 	SchemaInfo  *SchemaMetadata
-	PreviewData interface{}
+	ContentData interface{}
 	CustomAttrs map[string]interface{}
 }
 

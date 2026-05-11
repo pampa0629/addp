@@ -257,7 +257,6 @@ const guessExtensionFromMime = (mime) => {
     'application/vnd.ms-excel': 'xls',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
     'application/vnd.sqlite3': 'sqlite',
-    'text/csv': 'csv',
     'text/plain': 'txt',
     'image/jpeg': 'jpg',
     'image/png': 'png',
@@ -282,8 +281,6 @@ const guessExtensionFromKind = (kind) => {
       return 'json'
     case 'geojson':
       return 'geojson'
-    case 'csv':
-      return 'csv'
     case 'text':
       return 'txt'
     case 'sqlite':
@@ -328,8 +325,6 @@ const guessMimeFromKind = (kind, fallbackMime = '') => {
       return 'application/json'
     case 'geojson':
       return 'application/geo+json'
-    case 'csv':
-      return 'text/csv'
     case 'text':
       return 'text/plain'
     case 'sqlite':
@@ -643,9 +638,6 @@ const downloadInfo = computed(() => {
     } else if (kind === 'geojson') {
       mime = 'application/geo+json;charset=utf-8'
       extension = '.geojson'
-    } else if (kind === 'csv') {
-      mime = 'text/csv;charset=utf-8'
-      extension = '.csv'
     }
     return {
       available: true,

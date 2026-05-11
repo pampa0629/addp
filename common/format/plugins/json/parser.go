@@ -129,8 +129,8 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 	return tableInfo, nil
 }
 
-// ReadPreview 读取 JSON 空间表预览数据。
-func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+// SampleTable 读取 JSON 空间表样本数据。
+func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	iter, err := newIterator(input)
 	if err != nil {
 		return nil, err
@@ -699,7 +699,7 @@ func init() {
 	_ = format.RegisterTableProvider(format.NewTableProvider(
 		format.FormatJSON,
 		parser.ParseTableInfo,
-		parser.ReadPreview,
+		parser.SampleTable,
 	))
 }
 

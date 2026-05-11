@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	commonShapefile "github.com/addp/common/format/codecs/shapefile"
+	commonShapefile "github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 	"github.com/jonas-p/go-shp"

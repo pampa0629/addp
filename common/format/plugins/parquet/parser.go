@@ -1,5 +1,5 @@
 // Package parquet 提供 Parquet 文件格式的解析能力
-// 支持 Schema 推断和数据预览
+// 支持 Schema 推断和样本数据读取
 // 使用纯 Go 实现（github.com/parquet-go/parquet-go），无 CGO 依赖
 package parquet
 
@@ -46,8 +46,8 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 	}, nil
 }
 
-// ReadPreview 读取 Parquet 文件的预览数据
-func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+// SampleTable 读取 Parquet 表格样本。
+func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)

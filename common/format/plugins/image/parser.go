@@ -95,7 +95,6 @@ func (p *Parser) Capabilities() format.FormatCapability {
 		DataType:      format.FormatDataTypeMedia,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderMedia},
-		Preview:       true,
 	}
 }
 
@@ -111,14 +110,13 @@ func (p *Parser) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		return nil, err
 	}
 	info := &format.MediaInfo{
-		Format:      p.Format(),
-		MediaType:   "image",
-		MIMEType:    imageMIMEType(formatName),
-		Width:       cfg.Width,
-		Height:      cfg.Height,
-		Encoding:    formatName,
-		ColorSpace:  inferColorModel(cfg),
-		PreviewKind: "image",
+		Format:     p.Format(),
+		MediaType:  "image",
+		MIMEType:   imageMIMEType(formatName),
+		Width:      cfg.Width,
+		Height:     cfg.Height,
+		Encoding:   formatName,
+		ColorSpace: inferColorModel(cfg),
 	}
 	if len(data) > 0 {
 		info.SpatialAttrs = extractGeoTIFFSpatial(data, cfg.Width, cfg.Height)

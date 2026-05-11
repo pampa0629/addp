@@ -7,22 +7,22 @@ import (
 	_ "github.com/addp/common/format/mappers/spatialite"
 
 	// 导入内置 TableProvider，触发 init() 自动注册
-	_ "github.com/addp/common/format/codecs/csv"
-	_ "github.com/addp/common/format/codecs/excel"
-	_ "github.com/addp/common/format/codecs/json"
-	_ "github.com/addp/common/format/codecs/parquet"
-	_ "github.com/addp/common/format/codecs/shapefile"
+	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/excel"
+	_ "github.com/addp/common/format/plugins/json"
+	_ "github.com/addp/common/format/plugins/parquet"
+	_ "github.com/addp/common/format/plugins/shapefile"
 	// SQLite 目前还没有 table provider，暂不导入
-	// _ "github.com/addp/common/format/codecs/sqlite"
+	// _ "github.com/addp/common/format/plugins/sqlite"
 
-	// 导入内置 DocumentProvider，触发 init() 自动注册
-	_ "github.com/addp/common/format/codecs/text"
+	// 导入内置文档 info provider / text reader，触发 init() 自动注册
+	_ "github.com/addp/common/format/plugins/text"
 
 	// 导入内置 FileMetadataExtractor，触发 init() 自动注册
-	_ "github.com/addp/common/format/codecs/image"
-	_ "github.com/addp/common/format/codecs/pdf"
+	_ "github.com/addp/common/format/plugins/image"
+	_ "github.com/addp/common/format/plugins/pdf"
 )
 
-// 此包仅用于自动注册所有内置 TypeMapper、TableProvider、DocumentProvider 和 FileMetadataExtractor。
+// 此包仅用于自动注册所有内置 TypeMapper、格式 provider / reader 和 FileMetadataExtractor。
 // 使用时导入即可：
 //   import _ "github.com/addp/common/format/builtin"

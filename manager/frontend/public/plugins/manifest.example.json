@@ -11,7 +11,6 @@
     "/plugins/wps-preview.js",
     "/plugins/pptx-preview.js",
     "/plugins/markdown-preview.js",
-    "/plugins/text-preview.js",
-    "/plugins/csv-preview.js"
+    "/plugins/text-preview.js"
   ]
 }

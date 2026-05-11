@@ -1,6 +1,6 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`sqlite-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`、`csv-preview.js`)，方便第三方直接阅读与扩展。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`sqlite-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
@@ -20,8 +20,7 @@
     "/plugins/pdf-preview.js",
     "/plugins/docx-preview.js",
     "/plugins/pptx-preview.js",
-    "/plugins/text-preview.js",
-    "/plugins/csv-preview.js"
+    "/plugins/text-preview.js"
   ]
 }
 ```
@@ -53,102 +52,7 @@ const { TablePreview, TextPreview } = window.DataExplorerPluginComponents
 
 如果需要自定义清单路径，可在运行时设置 `window.__DATA_EXPLORER_PLUGIN_MANIFEST__`，或在构建阶段配置环境变量 `VITE_DATA_EXPLORER_PLUGIN_MANIFEST`。
 
-### 示例 1: CSV 文件预览
-
-项目已内置 `csv-preview.js`，源码可直接参考。自行创建时可使用以下模式：
-
-```javascript
-window.DataExplorerPlugins = window.DataExplorerPlugins || []
-
-const register = (plugin) => {
-  if (typeof window.registerDataExplorerPlugin === 'function') {
-    window.registerDataExplorerPlugin(plugin)
-  } else {
-    window.DataExplorerPlugins.push(plugin)
-  }
-}
-
-register({
-  name: 'csv-preview',
-  component: {
-    name: 'CsvPreview',
-    props: ['data'],
-    data() {
-      return {
-        columns: [],
-        rows: []
-      }
-    },
-    watch: {
-      data: {
-        immediate: true,
-        handler(newData) {
-          const text = newData?.object?.content?.text || ''
-          if (!text.trim()) {
-            this.columns = []
-            this.rows = []
-            return
-          }
-
-          const lines = text.trim().split('\n')
-          this.columns = lines[0].split(',').map(c => c.trim())
-          this.rows = lines.slice(1).map(line => {
-            const values = line.split(',')
-            const record = {}
-            this.columns.forEach((col, index) => {
-              record[col] = values[index]?.trim() || ''
-            })
-            return record
-          })
-        }
-      }
-    },
-    render() {
-      const { h, resolveComponent } = window.Vue || {}
-      if (typeof h !== 'function' || typeof resolveComponent !== 'function') {
-        return null
-      }
-
-      const ElTable = resolveComponent('ElTable')
-      const ElTableColumn = resolveComponent('ElTableColumn')
-
-      return h('div', { class: 'csv-preview' }, [
-        ElTable
-          ? h(
-              ElTable,
-              { data: this.rows, height: 400, border: true, stripe: true },
-              {
-                default: () =>
-                  this.columns.map(col =>
-                    h(ElTableColumn, {
-                      key: col,
-                      prop: col,
-                      label: col,
-                      'show-overflow-tooltip': true
-                    })
-                  )
-              }
-            )
-          : h('pre', null, (this.data?.object?.content?.text || '').trim())
-      ])
-    }
-  },
-  canHandle: (data) => {
-    const path = data.object?.path || ''
-    const type = data.object?.content_type || ''
-    return path.toLowerCase().endsWith('.csv') || type.includes('csv')
-  },
-  priority: 50
-})
-```
-
-在 `index.html` 中引入:
-
-```html
-<script src="/plugins/csv-preview.js"></script>
-```
-
-### 示例 2: Markdown 预览
+### 示例 1: Markdown 预览
 
 ```javascript
 window.DataExplorerPlugins = window.DataExplorerPlugins || []
@@ -279,7 +183,7 @@ canHandle: (data) => {
   //   object: {
   //     node_type: 'object' | 'directory' | 'bucket',
   //     path: '/path/to/file',
-  //     content_type: 'text/csv',
+  //     content_type: 'text/plain',
   //     content: {
   //       kind: 'text' | 'json' | 'image' | 'geojson',
   //       text: '...',
@@ -358,8 +262,8 @@ import('@/plugins/previews').then(m => {
 const testData = {
   mode: 'object',
   object: {
-    path: 'test.csv',
-    content_type: 'text/csv'
+    path: 'test.txt',
+    content_type: 'text/plain'
   }
 }
 
@@ -391,8 +295,7 @@ manager/frontend/
 │       ├── docx-preview.js          # DOCX 预览
 │       ├── wps-preview.js           # WPS 预览
 │       ├── pptx-preview.js          # PPTX 预览
-│       ├── text-preview.js          # 文本兜底
-│       └── csv-preview.js           # CSV 预览示例
+│       └── text-preview.js          # 文本兜底
 └── index.html
     # 添加 <script src="/plugins/xxx.js"></script>
 ```

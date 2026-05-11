@@ -13,6 +13,7 @@
   "item": {},
   "type_info": {},
   "format_info": {},
+  "content_index": {},
   "capabilities": {}
 }
 ```
@@ -24,6 +25,7 @@
 - `item`
 - `type_info`
 - `format_info`
+- `content_index`
 - `capabilities`
 
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
@@ -38,6 +40,7 @@ attributes 分区统一采用以下概念：
 | `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、file_count、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile components、sqlite version |
+| `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 `schema` 不作为通用分区名。表格型数据的字段、主键、索引、行数应进入 `type_info.table`。
@@ -56,6 +59,7 @@ attributes 分区统一采用以下概念：
 | data item 核心语义 | `attributes.item` | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
 | 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
+| 内容访问索引 | `attributes.content_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
@@ -68,6 +72,7 @@ attributes 分区统一采用以下概念：
 | `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
 | `type_info` | 数据库 metadata、parser、采样器、extractor、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
 | `format_info` | parser、extractor、plugin、Meta item normalizer | CSV 分隔符、Shapefile 组件、JSON 结构类型、SQLite 版本等具体格式信息 |
+| `content_index` | parser、plugin、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | parser、extractor、plugin、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
 ## 写入规则
@@ -83,6 +88,49 @@ attributes 分区统一采用以下概念：
 9. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
 10. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
 11. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
+12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。
+
+## content_index 结构约定
+
+`content_index` 按数据类型分区。当前标准化 `table` 的稀疏行索引：
+
+```json
+{
+  "content_index": {
+    "table": {
+      "kind": "sparse_row_index",
+      "data_type": "table",
+      "format": "csv",
+      "unit": "row",
+      "offset_unit": "byte",
+      "step": 5000,
+      "row_count": 73090,
+      "header_bytes": 27,
+      "source": {
+        "size_bytes": 83886080,
+        "etag": "..."
+      },
+      "anchors": [
+        { "row": 0, "byte_offset": 27 },
+        { "row": 5000, "byte_offset": 570122 }
+      ]
+    }
+  }
+}
+```
+
+字段规则：
+
+| 字段 | 规则 |
+|---|---|
+| `kind` | 索引类型。表格稀疏行索引固定为 `sparse_row_index`。 |
+| `unit` | 逻辑定位单位。表格采样固定为 `row`。 |
+| `offset_unit` | 物理读取偏移单位。对象存储 range reader 使用 `byte`。 |
+| `anchors` | 稀疏锚点。`row` 为数据行号，从 0 开始；`byte_offset` 为该行起始字节偏移。 |
+| `header_bytes` | 表头结束后的字节偏移；对 CSV 等有表头格式，通常也是 row 0 的 byte offset。 |
+| `source` | 索引绑定的源对象事实。能获取 size、etag、last_modified_at、fingerprint 时应写入。 |
+
+`content_index` 只描述如何更快定位内容窗口，不描述字段、行数等类型事实。字段和总行数仍写入 `type_info.table.fields` 与 `type_info.table.row_count`。
 
 ## type_info 结构约定
 

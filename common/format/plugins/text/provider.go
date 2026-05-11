@@ -9,7 +9,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-const defaultTextPreviewLimit int64 = 16 * 1024
+const defaultTextReadLimit int64 = 16 * 1024
 
 type Provider struct {
 	formatType format.FormatType
@@ -33,30 +33,19 @@ func (p Provider) Capabilities() format.FormatCapability {
 		DataType:      format.FormatDataTypeDocument,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
-		Preview:       true,
 	}
 }
 
 func (p Provider) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
-	limit := defaultTextPreviewLimit
-	if options != nil && options.MaxRows > 0 {
-		limit = options.MaxRows
-	}
-	text, truncated, err := p.ExtractText(ctx, input, limit, options)
-	if err != nil {
-		return nil, err
-	}
 	return &format.DocumentInfo{
-		Format:      p.formatType,
-		Encoding:    "utf-8",
-		TextPreview: text,
-		Truncated:   truncated,
+		Format:   p.formatType,
+		Encoding: "utf-8",
 	}, nil
 }
 
-func (p Provider) ExtractText(ctx context.Context, input io.Reader, limit int64, _ *format.ParseOptions) (string, bool, error) {
+func (p Provider) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, _ *format.ParseOptions) (string, bool, error) {
 	if limit <= 0 {
-		limit = defaultTextPreviewLimit
+		limit = defaultTextReadLimit
 	}
 	if err := ctx.Err(); err != nil {
 		return "", false, err
