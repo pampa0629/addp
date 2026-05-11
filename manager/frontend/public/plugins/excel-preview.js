@@ -22,7 +22,19 @@
     'application/vnd.ms-excel.sheet.macroenabled.12'
   ]
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   const canHandle = (data = {}) => {
+    if (frontendRenderer(data) === 'excel') {
+      return true
+    }
     const object = data.object || {}
     const content = object.content || {}
     const path = String(object.path || '').toLowerCase()

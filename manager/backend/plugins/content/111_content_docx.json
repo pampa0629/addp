@@ -3,12 +3,6 @@
   "type": "builtin",
   "builtin": "docx",
   "priority": 75,
-  "match": {
-    "extensions": [".docx"],
-    "content_types": [
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
-    ]
-  },
+  "match": {},
   "max_bytes": 104857600
 }

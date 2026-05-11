@@ -50,6 +50,12 @@ func TestInferContentType(t *testing.T) {
 			expect:      "application/octet-stream",
 		},
 		{
+			name:        "markdown_extension_generic_type",
+			objectPath:  "bucket/docs/README.md",
+			contentType: "application/octet-stream",
+			expect:      "text/markdown",
+		},
+		{
 			name:        "binary_octet_stream_treated_as_generic",
 			objectPath:  "bucket/slides/demo.pptx",
 			contentType: "binary/octet-stream",
@@ -98,6 +104,74 @@ func TestObjectContentMatcherWPS(t *testing.T) {
 	}
 	if !matcher.matches(req) {
 		t.Fatalf("expected matcher to accept WPS content type")
+	}
+}
+
+func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
+	t.Parallel()
+	wps, err := builtinContentFactories["wps"](ObjectContentPluginConfig{Name: "wps"})
+	if err != nil {
+		t.Fatalf("build wps handler: %v", err)
+	}
+	if !wps.Matches(&ObjectContentRequest{Extension: ".wps", ContentType: "application/kswps"}) {
+		t.Fatalf("expected WPS handler to match descriptor MIME")
+	}
+
+	excel, err := builtinContentFactories["excel"](ObjectContentPluginConfig{Name: "excel"})
+	if err != nil {
+		t.Fatalf("build excel handler: %v", err)
+	}
+	if !excel.Matches(&ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"}) {
+		t.Fatalf("expected Excel handler to match descriptor extension and MIME")
+	}
+}
+
+func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, "../../plugins/content")
+
+	tests := []struct {
+		name string
+		req  ObjectContentRequest
+		want string
+	}{
+		{
+			name: "wps",
+			req:  ObjectContentRequest{Extension: ".wps", ContentType: "application/kswps"},
+			want: "builtin:content-wps",
+		},
+		{
+			name: "markdown",
+			req:  ObjectContentRequest{Extension: ".md", ContentType: "text/markdown"},
+			want: "builtin:content-markdown",
+		},
+		{
+			name: "excel",
+			req:  ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"},
+			want: "builtin:content-excel",
+		},
+		{
+			name: "image",
+			req:  ObjectContentRequest{Extension: ".png", ContentType: "image/png"},
+			want: "builtin:content-image",
+		},
+		{
+			name: "parquet",
+			req:  ObjectContentRequest{Extension: ".parquet", ContentType: "application/vnd.apache.parquet"},
+			want: "builtin:content-parquet",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			handler := registry.Resolve(&tt.req)
+			if handler == nil {
+				t.Fatalf("expected handler %s, got nil", tt.want)
+			}
+			if handler.Name() != tt.want {
+				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
+			}
+		})
 	}
 }
 
@@ -161,6 +235,148 @@ func TestObjectContentMatcherIgnoresUnknownFormat(t *testing.T) {
 	}
 	if !matcher.matches(req) {
 		t.Fatalf("expected matcher to fall back to extension and content type when format is unknown")
+	}
+}
+
+func TestTextContentHandlerUsesExplicitTextMatcher(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["text"](ObjectContentPluginConfig{Name: "text"})
+	if err != nil {
+		t.Fatalf("build text handler: %v", err)
+	}
+
+	if !handler.Matches(&ObjectContentRequest{Format: "text", Extension: ".bin", ContentType: "application/octet-stream"}) {
+		t.Fatalf("expected text handler to match explicit text format")
+	}
+	if !handler.Matches(&ObjectContentRequest{Extension: ".bin", ContentType: "text/plain"}) {
+		t.Fatalf("expected text handler to match text content type")
+	}
+	if handler.Matches(&ObjectContentRequest{Format: "unknown", Extension: ".bin", ContentType: "application/octet-stream"}) {
+		t.Fatalf("text handler must not be the catch-all fallback for unknown binary files")
+	}
+}
+
+func TestUnsupportedContentHandlerProbesText(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["unsupported"](ObjectContentPluginConfig{Name: "unsupported"})
+	if err != nil {
+		t.Fatalf("build unsupported handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "README", Size: 12},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte("hello\nworld\n"), false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle text fallback: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "text" {
+		t.Fatalf("expected text fallback for UTF-8 content, got %q", content.Kind)
+	}
+	if content.PreviewMaterial != "text" {
+		t.Fatalf("PreviewMaterial = %q, want text", content.PreviewMaterial)
+	}
+	if content.Text != "hello\nworld\n" {
+		t.Fatalf("unexpected text content: %q", content.Text)
+	}
+}
+
+func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["unsupported"](ObjectContentPluginConfig{Name: "unsupported"})
+	if err != nil {
+		t.Fatalf("build unsupported handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "blob.bin", Extension: ".bin", ContentType: "application/octet-stream", Size: 4},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte{0x00, 0x01, 0x02, 0x03}, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle binary fallback: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "unsupported" {
+		t.Fatalf("expected unsupported fallback, got %q", content.Kind)
+	}
+	if content.PreviewMaterial != "raw_binary" {
+		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
+	}
+	if content.Text == "" {
+		t.Fatalf("expected unsupported preview message")
+	}
+}
+
+func TestBinaryBase64HandlerDeclaresRawBinaryMaterialAndRenderer(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["wps"](ObjectContentPluginConfig{Name: "wps"})
+	if err != nil {
+		t.Fatalf("build wps handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "demo.wps", Format: "wps", Size: 4},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte{0x50, 0x4b, 0x03, 0x04}, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle wps content: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "wps" {
+		t.Fatalf("Kind = %q, want wps", content.Kind)
+	}
+	if content.PreviewMaterial != "raw_binary" {
+		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
+	}
+	if content.FrontendRenderer != "wps" {
+		t.Fatalf("FrontendRenderer = %q, want wps", content.FrontendRenderer)
+	}
+	if content.Encoding != "base64" || content.Data == "" {
+		t.Fatalf("expected base64 data, encoding=%q data=%q", content.Encoding, content.Data)
+	}
+}
+
+func TestMarkdownHandlerDeclaresMarkdownMaterialAndRenderer(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["markdown"](ObjectContentPluginConfig{Name: "markdown"})
+	if err != nil {
+		t.Fatalf("build markdown handler: %v", err)
+	}
+
+	content, _, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "README.md", Format: "markdown", Size: 8},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte("# Title\n"), false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle markdown content: %v", err)
+	}
+	if content.Kind != "markdown" {
+		t.Fatalf("Kind = %q, want markdown", content.Kind)
+	}
+	if content.PreviewMaterial != "markdown" {
+		t.Fatalf("PreviewMaterial = %q, want markdown", content.PreviewMaterial)
+	}
+	if content.FrontendRenderer != "markdown" {
+		t.Fatalf("FrontendRenderer = %q, want markdown", content.FrontendRenderer)
 	}
 }
 

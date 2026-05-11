@@ -403,6 +403,16 @@
     canHandle: (data = {}) => {
       const object = data.object || {}
       const content = object.content || {}
+      const renderer = (
+        content.frontend_renderer ||
+        content.frontendRenderer ||
+        content.metadata?.frontend_renderer ||
+        content.metadata?.frontendRenderer ||
+        ''
+      ).toString().toLowerCase()
+      if (renderer === 'sqlite') {
+        return true
+      }
       const kind = (content.kind || '').toLowerCase()
       if (kind === 'sqlite') {
         return true

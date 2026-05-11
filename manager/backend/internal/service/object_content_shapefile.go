@@ -28,18 +28,18 @@ type shapefileContentHandler struct {
 
 func (h *shapefileContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	// Shapefile 预览依赖多文件协同处理，普通 Handle 无法工作，这里给出提示
-	return &models.ObjectPreviewContent{
-		Kind: "shapefile",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind: models.ObjectPreviewKindShapefile,
 		Text: "Shapefile 预览需要完整的 .shp/.shx/.dbf 文件组合，当前处理器未启用流式模式。",
-	}, false, nil
+	}), false, nil
 }
 
 func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req *ObjectContentRequest, baseStreamer ObjectStreamProvider, siblingProvider ObjectSiblingStreamProvider) (*models.ObjectPreviewContent, bool, error) {
 	// 大文件保护：超过阈值时跳过全量下载，仅返回元数据提示
 	if req.Size > maxShapefilePreviewBytes {
 		sizeMB := float64(req.Size) / (1024 * 1024)
-		return &models.ObjectPreviewContent{
-			Kind: "shapefile",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindShapefile,
 			Text: fmt.Sprintf("Shapefile 文件较大（%.1f MB），已跳过全量下载。如需预览请下载后在本地查看。", sizeMB),
 			Metadata: map[string]interface{}{
 				"size_bytes":  req.Size,
@@ -47,7 +47,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 				"skipped":     true,
 				"skip_reason": "file_too_large",
 			},
-		}, false, nil
+		}), false, nil
 	}
 
 	tmpDir, err := os.MkdirTemp("", "shapefile-preview-*")
@@ -60,7 +60,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	rawExt := filepath.Ext(req.Name)
 	baseName := strings.TrimSuffix(req.Name, rawExt)
 	if baseName == "" {
-		baseName = "shapefile"
+		baseName = models.ObjectPreviewKindShapefile
 	}
 
 	shpPath := filepath.Join(tmpDir, baseName+".shp")
@@ -84,13 +84,13 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 
 	if len(missing) > 0 {
-		return &models.ObjectPreviewContent{
-			Kind: "shapefile",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindShapefile,
 			Text: fmt.Sprintf("Shapefile 缺少必要的配套文件: %s。请确认 .shp/.shx/.dbf 均已上传。", strings.Join(missing, ", ")),
 			Metadata: map[string]interface{}{
 				"missing_parts": missing,
 			},
-		}, false, nil
+		}), false, nil
 	}
 
 	prjText, _ := downloadSiblingText(fullPath, ".prj", siblingProvider)
@@ -205,13 +205,13 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 
 	content := &models.ObjectPreviewContent{
-		Kind:      "shapefile",
+		Kind:      models.ObjectPreviewKindShapefile,
 		GeoJSON:   geojson,
 		Metadata:  metadata,
 		Truncated: truncated,
 	}
 
-	return content, truncated, nil
+	return decoratePreviewContent(content), truncated, nil
 }
 
 func toGeoJSONMap(value interface{}) map[string]interface{} {

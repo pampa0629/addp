@@ -3,9 +3,6 @@
   "type": "builtin",
   "builtin": "json",
   "priority": 60,
-  "match": {
-    "extensions": [".json"],
-    "content_types": ["application/json"]
-  },
+  "match": {},
   "max_bytes": 524288
 }

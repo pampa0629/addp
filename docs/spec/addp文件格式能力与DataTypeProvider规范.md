@@ -140,6 +140,43 @@ Manager preview DTO 由 Manager 组装，不应进入 `common/format`。
 
 预览材料能力必须和格式身份分开。比如 WPS 仍是 `format=wps`、`data_type=document`，即使当前 preview material 是 `raw_binary`；不能因为预览材料是二进制就把 WPS 表达为 `format=binary`。
 
+### Manager ObjectPreviewContent 协议字段
+
+Manager 对象内容预览 DTO 使用三个稳定字段表达展示协议：
+
+| 字段 | 含义 | 说明 |
+|---|---|---|
+| `kind` | 内容展示语义 | 兼容既有前端插件选择逻辑，不等同于 `format` |
+| `preview_material` | 预览材料形态 | 表达 Manager 返回给前端的材料类型 |
+| `frontend_renderer` | 推荐前端 renderer | 前端应优先按该字段选择组件，再回退到 `kind`、扩展名或 Content-Type |
+
+当前稳定 `kind` 值：
+
+| kind | 含义 |
+|---|---|
+| `pdf` / `docx` / `wps` / `pptx` | 前端文档 renderer 可处理的文档内容 |
+| `image` | 图片内容 |
+| `json` / `geojson` | JSON 或空间 JSON 展示内容 |
+| `excel` / `sqlite` / `table` / `shapefile` | 表格、容器或空间表预览内容 |
+| `text` / `markdown` | 文本型预览内容 |
+| `unsupported` | 未知或不支持对象的安全兜底展示 |
+
+当前稳定 `preview_material` 值：
+
+| preview_material | 含义 |
+|---|---|
+| `text` | 纯文本 |
+| `markdown` | Markdown 文本 |
+| `html` | HTML 片段 |
+| `json` | JSON 值 |
+| `geojson` | GeoJSON 值 |
+| `image` | 图片数据或缩略图 |
+| `raw_binary` | 原始二进制内容或引用，需要专用 renderer |
+| `table` | 表格样本或表格结构材料 |
+| `url` | 受控访问 URL |
+
+未知二进制对象必须保持 `format=unknown`，Manager 预览返回 `kind=unsupported`，并可用 `preview_material=raw_binary` 表达材料类型；不得引入 `format=binary` 作为普通兜底。
+
 合理链路是：
 
 ```text
@@ -185,31 +222,58 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `table` | `table` | `whole` | table | 否 | 是 | 是 / 是 | 引擎原生表格逻辑格式 |
 | `document` | `document` | `whole` | document | 否 | 是 | 是 / 是 | 引擎原生文档逻辑格式 |
 | `csv` | `table` | `single` | table | 是 | 是 | 是 / 是 | 单文件表 |
+| `docx` | `document` | `single` | document | 否 | 是 | 否 / 否 | Word 文档；当前主要声明 raw preview material |
+| `excel` | `container` | `single` | container、table | 否 | 是 | 否 / 否 | Excel 工作簿；当前按容器 / 表预览材料表达 |
+| `image` / `jpeg` / `png` / `gif` / `tiff` | `media` | `single` | media | 否 | 是 | 否 / 否 | 图片格式；已有最小 MediaProvider，`image` 是逻辑聚合格式，具体文件格式由子格式识别 |
 | `json` | `document` | `single` | document、table、spatial | 是 | 是 | 是 / 是 | JSON 可按内容识别为文档、表或空间表 |
-| `markdown` | `document` | `single` | document | 否 | 是 | 是 / 是 | Markdown 文本文档；当前声明预览材料能力，不声明稳定后端解析 |
+| `markdown` | `document` | `single` | document | 否 | 是 | 是 / 是 | Markdown 文本文档；已有最小 DocumentProvider，可提取 UTF-8 文本片段 |
 | `parquet` | `table` | `single`、`whole` | table | 是 | 是 | 是 / 是 | 单文件表和 scope 表 |
+| `pdf` | `document` | `single` | document | 否 | 是 | 否 / 否 | PDF 文档；已有元数据 / 文本提取状态，DocumentProvider 待补 |
+| `pptx` | `document` | `single` | document | 否 | 是 | 否 / 否 | 演示文档；当前主要声明 raw preview material |
 | `shapefile` | `table` | `multi` | table、spatial | 是 | 是 | 是 / 是 | 多组件空间表 |
+| `sqlite` | `container` | `single` | container、table | 否 | 是 | 否 / 否 | SQLite 容器；当前按容器 / 表预览材料表达 |
+| `text` | `document` | `single` | document | 否 | 是 | 是 / 是 | 纯文本文档；已有最小 DocumentProvider，可提取 UTF-8 文本片段 |
+| `wps` | `document` | `single` | document | 否 | 是 | 否 / 否 | WPS 文档；当前主要声明 raw preview material，由前端 renderer 处理 |
 
 注意：此矩阵只表示 capability registry 当前声明，不表示所有格式都已有完整 parser、writer、preview 和 transfer 端到端实现。
+
+### 能力发现视图
+
+`common/format.ListFormatCapabilityViews()` 是上层模块查询格式能力的稳定入口。视图中需要明确区分两层含义：
+
+| 字段 | 含义 |
+|---|---|
+| `providers` | descriptor / capability 的声明能力，表示该格式在规范上属于哪些 provider 家族或预览材料家族 |
+| `implementations` | 当前进程内已经注册的实际实现状态，表示 `TableProvider`、`DocumentProvider`、`MediaProvider`、`FileMetadataExtractor` 等是否已经可调用 |
+
+上层模块做格式路由时，应优先依据 `format`、`data_type`、`preview`、`providers` 判断语义，再根据 `implementations` 决定能否直接调用后端 provider。不能把 `providers.document=true` 理解为一定已经有 `DocumentProvider`；例如 DOCX / WPS 当前声明为文档格式和 raw preview material，但后端正文解析实现尚未稳定，Manager 仍可把原始材料交给前端 renderer 预览。
+
+新增或调整内置格式后，应检查能力发现视图：
+
+1. `providers` 是否表达规范上的目标能力。
+2. `implementations` 是否只反映当前已注册的 Go 实现。
+3. 对预览型格式，`preview.kind`、`preview.preview_materials`、`preview.frontend_renderer` 是否足以让 Manager 和前端在没有额外硬编码的情况下选择预览链路。
+4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；兜底只属于 Manager preview 协议。
 
 ### Provider / Extractor 实现
 
 当前内置注册状态：
 
-| 格式 | TableProvider | ComponentTableProvider | ScopeTableProvider | Metadata / File Extractor | TypeMapper | 说明 |
-|---|---|---|---|---|---|---|
-| `csv` | 已实现 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` provider 待补 |
-| `excel` | 已实现 | 无 | 无 | 无 | 无 | 当前可作为表格 provider 读取；Meta 规范上外层仍按 container item 表达 |
-| `json` | 已实现 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
-| `markdown` | 无 | 无 | 无 | 无 | 无 | 已有格式识别和 capability；预览走文本 / Markdown preview material，后续补 DocumentProvider |
-| `parquet` | 已实现 | 无 | 已实现 | 无 | 无 | 支持单文件和 scope 表读取 |
-| `shapefile` | 已实现 | 已实现 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
-| `sqlite` | 未注册 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 当前作为容器分析能力使用，暂不注册为 TableProvider |
-| `geopackage` | 未注册 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
-| `image` / `jpeg` / `png` / `gif` / `tiff` | 无 | 无 | 无 | 已实现 | 无 | 图片元数据提取；GeoTIFF 可补 spatial facts |
-| `pdf` | 无 | 无 | 无 | 已实现 | 无 | PDF 元数据和文本提取状态 |
+| 格式 | TableProvider | DocumentProvider | ComponentTableProvider | ScopeTableProvider | Metadata / File Extractor | TypeMapper | 说明 |
+|---|---|---|---|---|---|---|---|
+| `csv` | 已实现 | 无 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` provider 待补 |
+| `excel` | 已实现 | 无 | 无 | 无 | 无 | 无 | 当前可作为表格 provider 读取；Meta 规范上外层仍按 container item 表达 |
+| `json` | 已实现 | 无 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
+| `markdown` | 无 | 已实现最小能力 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取；预览仍可走 Markdown preview material |
+| `parquet` | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 支持单文件和 scope 表读取 |
+| `shapefile` | 已实现 | 无 | 已实现 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
+| `text` | 无 | 已实现最小能力 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
+| `sqlite` | 未注册 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 当前作为容器分析能力使用，暂不注册为 TableProvider |
+| `geopackage` | 未注册 | 无 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
+| `image` / `jpeg` / `png` / `gif` / `tiff` | 无 | 无 | 无 | 无 | 已实现 | 无 | 图片元数据提取；MediaProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts |
+| `pdf` | 无 | 无 | 无 | 无 | 已实现 | 无 | PDF 元数据和文本提取状态；DocumentProvider 待补 |
 
-当前 provider 家族以 `TableProvider` 为主；`DocumentProvider`、`MediaProvider`、`ContainerProvider`、`GraphProvider` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+当前 provider 家族已包含 `TableProvider`、最小 `DocumentProvider` 和最小 `MediaProvider`；`ContainerProvider`、`GraphProvider` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
 
 ## Data Type Provider
 

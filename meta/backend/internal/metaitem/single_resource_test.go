@@ -62,6 +62,24 @@ func TestInferSingleResourceDetectsMarkdownAsDocument(t *testing.T) {
 	}
 }
 
+func TestInferSingleResourceDetectsTextAsDocument(t *testing.T) {
+	item := InferSingleResource(SingleResourceInput{
+		Name: "notes.txt",
+		Path: "bucket/docs/notes.txt",
+		Size: 42,
+	})
+
+	if item.Format != string(format.FormatText) {
+		t.Fatalf("Format = %q, want %q", item.Format, format.FormatText)
+	}
+	if item.DataType != dataitem.DataTypeDocument {
+		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
+	}
+	if item.ItemType != "file" {
+		t.Fatalf("ItemType = %q, want file", item.ItemType)
+	}
+}
+
 func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
 	item := InferSingleResource(SingleResourceInput{Name: "roads.geojson", Path: "roads.geojson"})
 	if item.Format != string(format.FormatJSON) {

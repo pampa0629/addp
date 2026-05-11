@@ -15,10 +15,22 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'image',
     component,
     canHandle: (data = {}) => {
+      if (frontendRenderer(data) === 'image') {
+        return true
+      }
       const object = data.object || {}
       const content = object.content || {}
       const kind = (content.kind || '').toLowerCase()

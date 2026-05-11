@@ -32,17 +32,17 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "object",
 			engineFamily: EngineFamilyObject,
-			want:         []string{"csv", "json", "markdown", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
 		},
 		{
 			name:         "file",
 			engineFamily: EngineFamilyFile,
-			want:         []string{"csv", "json", "markdown", "parquet", "shapefile"},
+			want:         []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
 		},
 		{
 			name:         "document",
 			engineFamily: EngineFamilyDocument,
-			want:         []string{"document", "json", "markdown"},
+			want:         []string{"document", "json", "markdown", "text"},
 		},
 	}
 
@@ -72,6 +72,25 @@ func TestMarkdownCapabilityIsDocumentPreviewOnly(t *testing.T) {
 	}
 	if capability.Parse {
 		t.Fatal("markdown should not claim stable parse capability yet")
+	}
+}
+
+func TestTextCapabilityIsDocumentPreviewOnly(t *testing.T) {
+	capability, ok := Get(FormatText)
+	if !ok {
+		t.Fatal("expected text capability")
+	}
+	if capability.DataType != DataTypeDocument {
+		t.Fatalf("text DataType = %q, want %q", capability.DataType, DataTypeDocument)
+	}
+	if !containsString(capability.ProviderHints, ProviderDocument) {
+		t.Fatalf("text ProviderHints = %#v, want document hint", capability.ProviderHints)
+	}
+	if !capability.Preview {
+		t.Fatal("text should support preview")
+	}
+	if capability.Parse {
+		t.Fatal("text should not claim stable parse capability yet")
 	}
 }
 

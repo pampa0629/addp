@@ -25,10 +25,22 @@
     return lower.endsWith('.md') || lower.endsWith('.markdown')
   }
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'markdown',
     component,
     canHandle: (data = {}) => {
+      if (frontendRenderer(data) === 'markdown') {
+        return true
+      }
       const object = data.object || {}
       if (matchesExtension(object.path)) {
         return true

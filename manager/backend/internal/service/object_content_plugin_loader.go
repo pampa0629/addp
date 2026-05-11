@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	commonformat "github.com/addp/common/format"
 	"github.com/addp/common/logger"
+	"github.com/addp/manager/internal/models"
 )
 
 type ObjectContentPluginConfig struct {
@@ -53,99 +55,104 @@ func (c *ObjectContentPluginConfig) maxBytesOr(defaultValue int64) int64 {
 type objectContentBuiltinFactory func(ObjectContentPluginConfig) (ObjectContentHandler, error)
 
 var builtinContentFactories = map[string]objectContentBuiltinFactory{
-	"pdf": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindPDF: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &binaryBase64Handler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(80),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"pdf"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pdf"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/pdf"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatPDF, nil, nil),
 			},
 			maxBytes:    cfg.maxBytesOr(maxPDFPreviewBytes),
-			contentKind: "pdf",
+			contentKind: models.ObjectPreviewKindPDF,
 			emptyTip:    "PDF 文件内容为空或无法读取",
 		}
 		return handler, nil
 	},
-	"docx": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindDOCX: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &binaryBase64Handler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(75),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"docx"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".docx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "wordprocessingml"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatDOCX, nil, []string{"wordprocessingml"}),
 			},
 			maxBytes:    cfg.maxBytesOr(maxDOCXPreviewBytes),
-			contentKind: "docx",
+			contentKind: models.ObjectPreviewKindDOCX,
 			emptyTip:    "DOCX 文件内容为空或无法读取",
 		}
 		return handler, nil
 	},
-	"wps": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindWPS: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &binaryBase64Handler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"wps"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".wps"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatWPS, nil, nil),
 			},
 			maxBytes:    cfg.maxBytesOr(maxWPSPreviewBytes),
-			contentKind: "wps",
+			contentKind: models.ObjectPreviewKindWPS,
 			emptyTip:    "WPS 文件内容为空或无法读取",
 		}
 		return handler, nil
 	},
-	"pptx": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindPPTX: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &binaryBase64Handler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"pptx"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".pptx"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentationml"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatPPTX, nil, []string{"presentationml"}),
 			},
 			maxBytes:    cfg.maxBytesOr(maxPPTXPreviewBytes),
-			contentKind: "pptx",
+			contentKind: models.ObjectPreviewKindPPTX,
 			emptyTip:    "PPTX 文件内容为空或无法读取",
 		}
 		return handler, nil
 	},
-	"image": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindImage: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &imageContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(70),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"image", "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "svg", "heic"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"image/", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/bmp", "image/webp", "image/tiff", "image/svg+xml", "image/heic"})),
+				matcher: descriptorObjectContentMatcher(
+					cfg.Match,
+					commonformat.FormatImage,
+					[]commonformat.FormatType{commonformat.FormatJPEG, commonformat.FormatPNG, commonformat.FormatGIF, commonformat.FormatTIFF},
+					[]string{"image/", "image/jpg", "image/bmp", "image/webp", "image/svg+xml", "image/heic"},
+				),
 			},
 			maxBytes: cfg.maxBytesOr(maxImagePreviewBytes),
 		}
 		return handler, nil
 	},
-	"json": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindJSON: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &jsonContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(60),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"json"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".json"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/json"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatJSON, nil, nil),
 			},
 			maxBytes: cfg.maxBytesOr(maxJSONPreviewBytes),
-			kind:     "json",
+			kind:     models.ObjectPreviewKindJSON,
 		}
 		return handler, nil
 	},
-	"geojson": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindGeoJSON: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &jsonContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(65),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"geojson"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".geojson"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/geo+json", "geojson", "geo+json"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatJSON, nil, []string{models.ObjectPreviewKindGeoJSON, "geo+json"}),
 			},
 			maxBytes: cfg.maxBytesOr(maxGeoJSONPreview),
-			kind:     "geojson",
+			kind:     models.ObjectPreviewKindGeoJSON,
 		}
 		return handler, nil
 	},
-	"excel": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindExcel: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &excelContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(62),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"excel", "xlsx", "xls"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".xlsx", ".xlsm", ".xls"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroEnabled.12"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatExcel, nil, []string{"xlsx", "xls"}),
 			},
 			maxBytes:    cfg.maxBytesOr(maxExcelPreviewBytes),
 			sheetLimit:  defaultExcelSheetLimit,
@@ -157,13 +164,13 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		handler.columnLimit = metadataInt(cfg.Metadata, "column_limit", handler.columnLimit)
 		return handler, nil
 	},
-	"shapefile": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindShapefile: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &shapefileContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(66),
 				matcher: newObjectContentMatcher(
-					normalizeFormatsOrDefault(cfg.Match.Formats, []string{"shapefile", "shp"}),
+					normalizeFormatsOrDefault(cfg.Match.Formats, []string{models.ObjectPreviewKindShapefile, "shp"}),
 					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}),
 					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, defaultShapefileContentTypes()),
 				),
@@ -173,12 +180,12 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		handler.maxFeatures = metadataInt(cfg.Metadata, "max_features", handler.maxFeatures)
 		return handler, nil
 	},
-	"sqlite": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindSQLite: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &sqliteContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(58),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"sqlite"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".sqlite", ".db", ".sqlite3"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/x-sqlite3", "application/sqlite", "application/octet-stream"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, nil, []string{"application/octet-stream"}),
 			},
 			maxBytes:   cfg.maxBytesOr(maxSQLitePreviewBytes),
 			tableLimit: defaultSQLiteTableLimit,
@@ -188,27 +195,33 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
 		return handler, nil
 	},
-	"text": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindText: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		formats, _, contentTypes := descriptorMatcherDefaults(commonformat.FormatText)
+		contentTypes = append(contentTypes, "text/")
 		handler := &textContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(0),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"text"}), normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
+				matcher: newObjectContentMatcher(
+					normalizeFormatsOrDefault(cfg.Match.Formats, formats),
+					normalizeExtensions(cfg.Match.Extensions),
+					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, contentTypes),
+				),
 			},
 			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
-			kind:     "text",
+			kind:     models.ObjectPreviewKindText,
 		}
 		return handler, nil
 	},
-	"markdown": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+	models.ObjectPreviewKindMarkdown: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &textContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(55),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"markdown"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".md", ".markdown"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"text/markdown", "text/x-markdown", "text/plain"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatMarkdown, nil, []string{"text/plain"}),
 			},
 			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
-			kind:     "markdown",
+			kind:     models.ObjectPreviewKindMarkdown,
 		}
 		return handler, nil
 	},
@@ -217,12 +230,23 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(63),
-				matcher:  newObjectContentMatcher(normalizeFormatsOrDefault(cfg.Match.Formats, []string{"parquet"}), normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".parquet"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"})),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatParquet, nil, nil),
 			},
 			maxBytes: cfg.maxBytesOr(maxParquetPreviewBytes),
 			rowLimit: defaultParquetRowLimit,
 		}
 		handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
+		return handler, nil
+	},
+	models.ObjectPreviewKindUnsupported: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &unsupportedContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(-100),
+				matcher:  newObjectContentMatcher(normalizeFormats(cfg.Match.Formats), normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
+			},
+			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
+		}
 		return handler, nil
 	},
 }
@@ -272,6 +296,37 @@ func defaultShapefileContentTypes() []string {
 		"binary/octet-stream",
 		"shp",
 	}
+}
+
+func descriptorObjectContentMatcher(match ObjectContentMatcherConfig, formatType commonformat.FormatType, extraFormats []commonformat.FormatType, extraContentTypes []string) objectContentMatcher {
+	formats, extensions, contentTypes := descriptorMatcherDefaults(formatType)
+	for _, extraFormat := range extraFormats {
+		extraFormatName, extraExtensions, extraMIMETypes := descriptorMatcherDefaults(extraFormat)
+		formats = append(formats, extraFormatName...)
+		extensions = append(extensions, extraExtensions...)
+		contentTypes = append(contentTypes, extraMIMETypes...)
+	}
+	contentTypes = append(contentTypes, extraContentTypes...)
+	return newObjectContentMatcher(
+		normalizeFormatsOrDefault(match.Formats, formats),
+		normalizeExtensionsOrDefault(match.Extensions, extensions),
+		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
+	)
+}
+
+func descriptorMatcherDefaults(formatType commonformat.FormatType) ([]string, []string, []string) {
+	descriptor, ok := commonformat.GetFormatDescriptor(formatType)
+	if !ok {
+		return []string{string(formatType)}, nil, nil
+	}
+	formats := []string{string(descriptor.Format)}
+	if descriptor.Preview.Kind != "" && descriptor.Preview.Kind != string(descriptor.Format) {
+		formats = append(formats, descriptor.Preview.Kind)
+	}
+	if descriptor.Preview.FrontendRenderer != "" && descriptor.Preview.FrontendRenderer != string(descriptor.Format) {
+		formats = append(formats, descriptor.Preview.FrontendRenderer)
+	}
+	return formats, descriptor.Identification.Extensions, descriptor.Identification.MimeTypes
 }
 
 func normalizeExtensionsOrDefault(values, fallback []string) []string {

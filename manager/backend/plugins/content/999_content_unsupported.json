@@ -1,0 +1,8 @@
+{
+  "name": "builtin:content-unsupported",
+  "type": "builtin",
+  "builtin": "unsupported",
+  "priority": -100,
+  "match": {},
+  "max_bytes": 262144
+}

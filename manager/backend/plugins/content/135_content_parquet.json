@@ -3,10 +3,7 @@
   "type": "builtin",
   "builtin": "parquet",
   "priority": 63,
-  "match": {
-    "extensions": [".parquet"],
-    "content_types": ["application/parquet", "application/x-parquet", "application/vnd.apache.parquet"]
-  },
+  "match": {},
   "max_bytes": 209715200,
   "metadata": {
     "row_limit": 50

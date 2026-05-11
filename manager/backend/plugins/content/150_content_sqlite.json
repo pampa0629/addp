@@ -4,14 +4,7 @@
   "builtin": "sqlite",
   "priority": 58,
   "max_bytes": 1073741824,
-  "match": {
-    "extensions": [".sqlite", ".sqlite3", ".db"],
-    "content_types": [
-      "application/x-sqlite3",
-      "application/sqlite",
-      "application/octet-stream"
-    ]
-  },
+  "match": {},
   "metadata": {
     "table_limit": 10,
     "row_limit": 50,

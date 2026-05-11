@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/codecs/excel"
@@ -126,6 +127,140 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 	return metadata
 }
 
+func setPreviewMaterial(content *models.ObjectPreviewContent, material string) {
+	if content == nil || material == "" {
+		return
+	}
+	content.PreviewMaterial = material
+	if content.Metadata == nil {
+		content.Metadata = map[string]interface{}{}
+	}
+	if _, exists := content.Metadata["preview_material"]; !exists {
+		content.Metadata["preview_material"] = material
+	}
+}
+
+func setFrontendRenderer(content *models.ObjectPreviewContent, renderer string) {
+	if content == nil || renderer == "" {
+		return
+	}
+	content.FrontendRenderer = renderer
+	if content.Metadata == nil {
+		content.Metadata = map[string]interface{}{}
+	}
+	if _, exists := content.Metadata["frontend_renderer"]; !exists {
+		content.Metadata["frontend_renderer"] = renderer
+	}
+}
+
+func decoratePreviewContent(content *models.ObjectPreviewContent) *models.ObjectPreviewContent {
+	if content == nil {
+		return nil
+	}
+	if content.PreviewMaterial == "" {
+		content.PreviewMaterial = metadataString(content.Metadata, "preview_material")
+	}
+	if content.FrontendRenderer == "" {
+		content.FrontendRenderer = metadataString(content.Metadata, "frontend_renderer")
+	}
+	if content.PreviewMaterial == "" {
+		content.PreviewMaterial = defaultPreviewMaterial(content)
+	}
+	if content.FrontendRenderer == "" {
+		content.FrontendRenderer = defaultFrontendRenderer(content.Kind)
+	}
+	if content.Metadata == nil {
+		content.Metadata = map[string]interface{}{}
+	}
+	if content.PreviewMaterial != "" {
+		if _, exists := content.Metadata["preview_material"]; !exists {
+			content.Metadata["preview_material"] = content.PreviewMaterial
+		}
+	}
+	if content.FrontendRenderer != "" {
+		if _, exists := content.Metadata["frontend_renderer"]; !exists {
+			content.Metadata["frontend_renderer"] = content.FrontendRenderer
+		}
+	}
+	return content
+}
+
+func metadataString(metadata map[string]interface{}, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	if str, ok := value.(string); ok {
+		return strings.TrimSpace(str)
+	}
+	return ""
+}
+
+func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
+	if content == nil {
+		return ""
+	}
+	if content.Encoding == "base64" && content.Data != "" {
+		return models.PreviewMaterialRawBinary
+	}
+	if content.ImageData != "" {
+		return models.PreviewMaterialImage
+	}
+	if content.GeoJSON != nil {
+		return models.PreviewMaterialGeoJSON
+	}
+	if content.JSON != nil {
+		return models.PreviewMaterialJSON
+	}
+	if content.Text != "" {
+		switch strings.ToLower(strings.TrimSpace(content.Kind)) {
+		case models.ObjectPreviewKindMarkdown:
+			return models.PreviewMaterialMarkdown
+		default:
+			return models.PreviewMaterialText
+		}
+	}
+	return ""
+}
+
+func defaultFrontendRenderer(kind string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if descriptor, ok := format.GetFormatDescriptor(format.FormatType(kind)); ok && descriptor.Preview.FrontendRenderer != "" {
+		return descriptor.Preview.FrontendRenderer
+	}
+	switch kind {
+	case models.ObjectPreviewKindPDF:
+		return models.ObjectPreviewKindPDF
+	case models.ObjectPreviewKindDOCX:
+		return models.ObjectPreviewKindDOCX
+	case models.ObjectPreviewKindWPS:
+		return models.ObjectPreviewKindWPS
+	case models.ObjectPreviewKindPPTX:
+		return models.ObjectPreviewKindPPTX
+	case models.ObjectPreviewKindImage:
+		return models.ObjectPreviewKindImage
+	case models.ObjectPreviewKindJSON:
+		return models.ObjectPreviewKindJSON
+	case models.ObjectPreviewKindGeoJSON, models.ObjectPreviewKindShapefile:
+		return "map"
+	case models.ObjectPreviewKindExcel:
+		return models.ObjectPreviewKindExcel
+	case models.ObjectPreviewKindSQLite:
+		return models.ObjectPreviewKindSQLite
+	case models.ObjectPreviewKindMarkdown:
+		return models.ObjectPreviewKindMarkdown
+	case models.ObjectPreviewKindTable:
+		return models.ObjectPreviewKindTable
+	case models.ObjectPreviewKindText, models.ObjectPreviewKindUnsupported:
+		return models.ObjectPreviewKindText
+	default:
+		return ""
+	}
+}
+
 func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int64) string {
 	sizeInMB := float64(req.Size) / (1024 * 1024)
 	limitInMB := float64(limit) / (1024 * 1024)
@@ -135,17 +270,18 @@ func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int
 
 func contentKindLabel(kind string) string {
 	labels := map[string]string{
-		"pdf":      "PDF",
-		"docx":     "DOCX",
-		"wps":      "WPS",
-		"pptx":     "PPTX",
-		"image":    "图片",
-		"json":     "JSON",
-		"geojson":  "GeoJSON",
-		"excel":    "Excel",
-		"sqlite":   "SQLite",
-		"text":     "文本",
-		"markdown": "Markdown",
+		models.ObjectPreviewKindPDF:         "PDF",
+		models.ObjectPreviewKindDOCX:        "DOCX",
+		models.ObjectPreviewKindWPS:         "WPS",
+		models.ObjectPreviewKindPPTX:        "PPTX",
+		models.ObjectPreviewKindImage:       "图片",
+		models.ObjectPreviewKindJSON:        "JSON",
+		models.ObjectPreviewKindGeoJSON:     "GeoJSON",
+		models.ObjectPreviewKindExcel:       "Excel",
+		models.ObjectPreviewKindSQLite:      "SQLite",
+		models.ObjectPreviewKindText:        "文本",
+		models.ObjectPreviewKindMarkdown:    "Markdown",
+		models.ObjectPreviewKindUnsupported: "暂不支持的格式",
 	}
 	if label, ok := labels[kind]; ok {
 		return label
@@ -231,6 +367,9 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 		}
 	}
 	if ctMatched && ctLower == "" {
+		if len(m.contentTypes) > 0 && len(m.extensions) == 0 {
+			return false
+		}
 		return extMatched
 	}
 	if !ctMatched {
@@ -297,32 +436,32 @@ func (h *binaryBase64Handler) Handle(ctx context.Context, req *ObjectContentRequ
 	metadata := buildPreviewMetadata(req, limit)
 	if truncated {
 		message := buildLimitExceededMessage(h.contentKind, req, limit)
-		return &models.ObjectPreviewContent{
+		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:      h.contentKind,
 			Text:      message,
 			Truncated: true,
 			Metadata:  metadata,
-		}, true, nil
+		}), true, nil
 	}
 	if len(data) == 0 {
 		message := h.emptyTip
 		if message == "" {
 			message = fmt.Sprintf("%s 文件内容为空或无法读取", contentKindLabel(h.contentKind))
 		}
-		return &models.ObjectPreviewContent{
+		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:     h.contentKind,
 			Text:     message,
 			Metadata: metadata,
-		}, false, nil
+		}), false, nil
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
-	return &models.ObjectPreviewContent{
+	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:     h.contentKind,
 		Data:     encoded,
 		Encoding: "base64",
 		Metadata: metadata,
-	}, false, nil
+	}), false, nil
 }
 
 type imageContentHandler struct {
@@ -338,32 +477,32 @@ func (h *imageContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 
 	metadata := buildPreviewMetadata(req, h.maxBytes)
 	if truncated {
-		message := buildLimitExceededMessage("image", req, h.maxBytes)
-		return &models.ObjectPreviewContent{
-			Kind:      "image",
+		message := buildLimitExceededMessage(models.ObjectPreviewKindImage, req, h.maxBytes)
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:      models.ObjectPreviewKindImage,
 			Text:      message,
 			Truncated: true,
 			Metadata:  metadata,
-		}, true, nil
+		}), true, nil
 	}
 
 	if len(data) == 0 {
-		return &models.ObjectPreviewContent{
-			Kind:     "image",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:     models.ObjectPreviewKindImage,
 			Text:     "图片内容为空或无法读取",
 			Metadata: metadata,
-		}, false, nil
+		}), false, nil
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 	content := &models.ObjectPreviewContent{
-		Kind:      "image",
+		Kind:      models.ObjectPreviewKindImage,
 		ImageData: encoded,
 		Encoding:  "base64",
 		Metadata:  metadata,
 	}
 
-	return content, false, nil
+	return decoratePreviewContent(content), false, nil
 }
 
 type jsonContentHandler struct {
@@ -387,28 +526,28 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	clean := removeUTF8BOM(data)
 	var parsed interface{}
 	if err := json.Unmarshal(clean, &parsed); err != nil {
-		return &models.ObjectPreviewContent{
-			Kind:      "text",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:      models.ObjectPreviewKindText,
 			Text:      string(data),
 			Truncated: truncated,
-		}, truncated, nil
+		}), truncated, nil
 	}
-	if h.kind == "geojson" {
+	if h.kind == models.ObjectPreviewKindGeoJSON {
 		if preview, err := buildGeoJSONPreview(ctx, clean, parsed); err == nil {
 			preview.Truncated = truncated
-			return preview, truncated, nil
+			return decoratePreviewContent(preview), truncated, nil
 		}
-		return &models.ObjectPreviewContent{
-			Kind:    "geojson",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:    models.ObjectPreviewKindGeoJSON,
 			Text:    string(clean),
 			GeoJSON: parsed,
-		}, truncated, nil
+		}), truncated, nil
 	}
-	return &models.ObjectPreviewContent{
-		Kind: "json",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind: models.ObjectPreviewKindJSON,
 		Text: string(clean),
 		JSON: parsed,
-	}, truncated, nil
+	}), truncated, nil
 }
 
 func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, error) {
@@ -472,12 +611,12 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 		metadata["sample_records"] = sampleRecords
 	}
 
-	return &models.ObjectPreviewContent{
-		Kind:     "geojson",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:     models.ObjectPreviewKindGeoJSON,
 		Text:     string(data),
 		GeoJSON:  parsed,
 		Metadata: metadata,
-	}, nil
+	}), nil
 }
 
 func buildExcelPreviewFromAnalysis(analysis *excel.WorkbookAnalysis) map[string]interface{} {
@@ -559,26 +698,26 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	}
 
 	if len(data) == 0 {
-		return &models.ObjectPreviewContent{
-			Kind: "excel",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindExcel,
 			Text: "Excel 文件为空或无法读取",
-		}, truncated, nil
+		}), truncated, nil
 	}
 
 	if truncated {
-		return &models.ObjectPreviewContent{
-			Kind:      "excel",
-			Text:      buildLimitExceededMessage("excel", req, h.maxBytes),
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:      models.ObjectPreviewKindExcel,
+			Text:      buildLimitExceededMessage(models.ObjectPreviewKindExcel, req, h.maxBytes),
 			Truncated: true,
-		}, true, nil
+		}), true, nil
 	}
 
 	workbook, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
-		return &models.ObjectPreviewContent{
-			Kind: "excel",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindExcel,
 			Text: fmt.Sprintf("解析 Excel 失败: %v", err),
-		}, false, nil
+		}), false, nil
 	}
 	defer workbook.Close()
 
@@ -591,10 +730,10 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	}
 	analysis, err := excel.Analyze(ctx, workbook, &options)
 	if err != nil {
-		return &models.ObjectPreviewContent{
-			Kind: "excel",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindExcel,
 			Text: fmt.Sprintf("解析 Excel 失败: %v", err),
-		}, false, nil
+		}), false, nil
 	}
 
 	preview := buildExcelPreviewFromAnalysis(analysis)
@@ -611,12 +750,12 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		metadata["name"] = req.Name
 	}
 
-	return &models.ObjectPreviewContent{
-		Kind:      "excel",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:      models.ObjectPreviewKindExcel,
 		JSON:      preview,
 		Metadata:  metadata,
 		Truncated: previewTruncated,
-	}, truncated || previewTruncated, nil
+	}), truncated || previewTruncated, nil
 }
 
 func (h *excelContentHandler) effectiveSheetLimit(total int) int {
@@ -654,13 +793,88 @@ func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	}
 	kind := h.kind
 	if kind == "" {
-		kind = "text"
+		kind = models.ObjectPreviewKindText
 	}
-	return &models.ObjectPreviewContent{
+	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:      kind,
 		Text:      string(data),
 		Truncated: truncated,
-	}, truncated, nil
+	}), truncated, nil
+}
+
+type unsupportedContentHandler struct {
+	baseContentHandler
+	maxBytes int64
+}
+
+func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	data, truncated, err := fetcher(h.maxBytes)
+	if err != nil {
+		return nil, false, err
+	}
+
+	metadata := buildPreviewMetadata(req, h.maxBytes)
+	metadata["preview_material"] = "raw_binary"
+	metadata["probe_truncated"] = truncated
+
+	if len(data) == 0 {
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:     models.ObjectPreviewKindUnsupported,
+			Text:     "文件内容为空或无法读取",
+			Metadata: metadata,
+		}), false, nil
+	}
+
+	if isLikelyTextContent(data) {
+		metadata["preview_material"] = models.ObjectPreviewKindText
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:      models.ObjectPreviewKindText,
+			Text:      string(removeUTF8BOM(data)),
+			Truncated: truncated,
+			Metadata:  metadata,
+		}), truncated, nil
+	}
+
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:     models.ObjectPreviewKindUnsupported,
+		Text:     "暂不支持该文件类型的在线预览，请下载后查看。",
+		Metadata: metadata,
+	}), false, nil
+}
+
+func isLikelyTextContent(data []byte) bool {
+	data = removeUTF8BOM(data)
+	if len(data) == 0 {
+		return true
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return false
+	}
+	if !utf8.Valid(data) {
+		return false
+	}
+
+	controlCount := 0
+	runeCount := 0
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 {
+			return false
+		}
+		runeCount++
+		if r < 0x20 {
+			switch r {
+			case '\t', '\n', '\r', '\f':
+			default:
+				controlCount++
+			}
+		}
+		data = data[size:]
+	}
+	if runeCount == 0 {
+		return true
+	}
+	return controlCount*100 <= runeCount
 }
 
 type sqliteContentHandler struct {
@@ -701,10 +915,10 @@ func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectCont
 	}
 
 	if written == 0 {
-		return &models.ObjectPreviewContent{
-			Kind: "sqlite",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindSQLite,
 			Text: "SQLite 文件为空或无法读取",
-		}, false, nil
+		}), false, nil
 	}
 
 	if err := tmpFile.Close(); err != nil {
@@ -727,18 +941,18 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 	}
 
 	if truncated {
-		return &models.ObjectPreviewContent{
-			Kind:      "sqlite",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:      models.ObjectPreviewKindSQLite,
 			Text:      fmt.Sprintf("SQLite 文件超过 %d MB 预览限制，建议下载查看。如需预览大文件，请联系管理员。", h.maxBytes/(1024*1024)),
 			Truncated: true,
-		}, true, nil
+		}), true, nil
 	}
 
 	if len(data) == 0 {
-		return &models.ObjectPreviewContent{
-			Kind: "sqlite",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindSQLite,
 			Text: "SQLite 文件为空或无法读取",
-		}, false, nil
+		}), false, nil
 	}
 
 	// 写入临时文件
@@ -799,13 +1013,13 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	truncated := len(analysis.Metadata.Tables) < analysis.Metadata.TableCount || hasAnyTruncatedTable(analysis.Metadata.Tables)
 
 	content := &models.ObjectPreviewContent{
-		Kind:      "sqlite",
+		Kind:      models.ObjectPreviewKindSQLite,
 		JSON:      preview,
 		Metadata:  metadata,
 		Truncated: truncated,
 	}
 
-	return content, truncated, nil
+	return decoratePreviewContent(content), truncated, nil
 }
 
 func buildSQLiteMetadataMap(meta sqlite.Metadata, req *ObjectContentRequest) map[string]interface{} {
@@ -919,7 +1133,7 @@ func (h *commandContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		return nil, false, fmt.Errorf("content plugin %s returned invalid JSON: %w", h.Name(), err)
 	}
 
-	return &preview, preview.Truncated || truncated, nil
+	return decoratePreviewContent(&preview), preview.Truncated || truncated, nil
 }
 
 func execCommandContext(ctx context.Context, command string, args ...string) *exec.Cmd {
@@ -974,10 +1188,10 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 		return nil, false, fmt.Errorf("写入 Parquet 临时文件失败: %w", err)
 	}
 	if written == 0 {
-		return &models.ObjectPreviewContent{
-			Kind: "table",
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindTable,
 			Text: "Parquet 文件为空或无法读取",
-		}, false, nil
+		}), false, nil
 	}
 	if err := tmpFile.Close(); err != nil {
 		return nil, false, fmt.Errorf("关闭 Parquet 临时文件失败: %w", err)
@@ -1042,8 +1256,8 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	metadata["row_count"] = totalRows
 	metadata["column_count"] = len(columns)
 
-	return &models.ObjectPreviewContent{
-		Kind: "table",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind: models.ObjectPreviewKindTable,
 		JSON: map[string]interface{}{
 			"columns":    columns,
 			"rows":       rows,
@@ -1051,7 +1265,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 		},
 		Metadata:  metadata,
 		Truncated: truncated,
-	}, truncated, nil
+	}), truncated, nil
 }
 
 // Handle 回退实现（不推荐，Parquet 需要随机访问）
@@ -1061,7 +1275,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		return nil, false, err
 	}
 	if len(data) == 0 {
-		return &models.ObjectPreviewContent{Kind: "table", Text: "Parquet 文件为空或无法读取"}, false, nil
+		return decoratePreviewContent(&models.ObjectPreviewContent{Kind: models.ObjectPreviewKindTable, Text: "Parquet 文件为空或无法读取"}), false, nil
 	}
 
 	opts := format.DefaultParseOptions()
@@ -1098,8 +1312,8 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		totalRows = *tableInfo.RowCount
 	}
 
-	return &models.ObjectPreviewContent{
-		Kind: "table",
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind: models.ObjectPreviewKindTable,
 		JSON: map[string]interface{}{
 			"columns":    columns,
 			"rows":       rows,
@@ -1107,5 +1321,5 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		},
 		Metadata:  buildPreviewMetadata(req, h.maxBytes),
 		Truncated: int64(len(rows)) < totalRows,
-	}, int64(len(rows)) < totalRows, nil
+	}), int64(len(rows)) < totalRows, nil
 }

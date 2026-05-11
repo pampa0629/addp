@@ -21,10 +21,22 @@
     return lower.includes('ms-works') || lower.includes('wps')
   }
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'wps',
     component,
     canHandle: (data = {}) => {
+      if (frontendRenderer(data) === 'wps') {
+        return true
+      }
       const object = data.object || {}
       const path = (object.path || '').toLowerCase()
       if (path.endsWith('.wps')) {

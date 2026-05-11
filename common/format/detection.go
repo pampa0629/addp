@@ -88,6 +88,11 @@ func DetectFormat(filename string, peek []byte) FormatType {
 
 // extToFormat 根据文件扩展名返回格式类型
 func extToFormat(ext string) FormatType {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	if formatType := descriptorFormatByExtension(ext); formatType != FormatUnknown {
+		return formatType
+	}
+
 	switch ext {
 	// 地理空间
 	case ".shp":
@@ -238,6 +243,9 @@ func MIMEToFormat(mimeType string) FormatType {
 	if idx := strings.Index(mimeType, ";"); idx > 0 {
 		mimeType = strings.TrimSpace(mimeType[:idx])
 	}
+	if formatType := descriptorFormatByMIME(mimeType); formatType != FormatUnknown {
+		return formatType
+	}
 
 	switch mimeType {
 	// 地理空间
@@ -267,6 +275,8 @@ func MIMEToFormat(mimeType string) FormatType {
 		return FormatDOCX
 	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
 		return FormatPPTX
+	case "application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps":
+		return FormatWPS
 	case "text/plain":
 		return FormatText
 	case "text/markdown", "text/x-markdown":
@@ -319,6 +329,10 @@ func MIMEToFormat(mimeType string) FormatType {
 
 // FormatToMIME 将格式类型转换为主要MIME类型
 func FormatToMIME(format FormatType) string {
+	if descriptor, ok := GetFormatDescriptor(format); ok && len(descriptor.Identification.MimeTypes) > 0 {
+		return descriptor.Identification.MimeTypes[0]
+	}
+
 	switch format {
 	// 地理空间
 	case FormatGeoPackage:
@@ -345,6 +359,8 @@ func FormatToMIME(format FormatType) string {
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	case FormatPPTX:
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case FormatWPS:
+		return "application/vnd.ms-works"
 	case FormatText:
 		return "text/plain"
 	case FormatMarkdown:
@@ -387,6 +403,34 @@ func FormatToMIME(format FormatType) string {
 	}
 }
 
+func descriptorFormatByExtension(ext string) FormatType {
+	if ext == "" {
+		return FormatUnknown
+	}
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, candidate := range descriptor.Identification.Extensions {
+			if strings.EqualFold(candidate, ext) {
+				return descriptor.Format
+			}
+		}
+	}
+	return FormatUnknown
+}
+
+func descriptorFormatByMIME(mimeType string) FormatType {
+	if mimeType == "" {
+		return FormatUnknown
+	}
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, candidate := range descriptor.Identification.MimeTypes {
+			if strings.EqualFold(candidate, mimeType) {
+				return descriptor.Format
+			}
+		}
+	}
+	return FormatUnknown
+}
+
 // GuessContentType 结合文件名和内容猜测MIME类型
 // 这是对 mime.TypeByExtension 的增强版本
 func GuessContentType(filename string, peek []byte) string {
@@ -403,6 +447,9 @@ func GuessContentType(filename string, peek []byte) string {
 
 // IsGeospatialFormat 判断是否为地理空间格式
 func IsGeospatialFormat(format FormatType) bool {
+	if capability, ok := GetFormatCapability(format); ok {
+		return capability.Spatial
+	}
 	switch format {
 	case FormatShapefile, FormatGeoPackage, FormatKML, FormatKMZ:
 		return true
@@ -413,6 +460,9 @@ func IsGeospatialFormat(format FormatType) bool {
 
 // IsDocumentFormat 判断是否为文档格式
 func IsDocumentFormat(format FormatType) bool {
+	if capability, ok := GetFormatCapability(format); ok {
+		return capability.DataType == FormatDataTypeDocument
+	}
 	switch format {
 	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText, FormatMarkdown:
 		return true
@@ -423,6 +473,9 @@ func IsDocumentFormat(format FormatType) bool {
 
 // IsImageFormat 判断是否为图像格式
 func IsImageFormat(format FormatType) bool {
+	if capability, ok := GetFormatCapability(format); ok {
+		return capability.DataType == FormatDataTypeMedia
+	}
 	switch format {
 	case FormatImage, FormatJPEG, FormatPNG, FormatGIF, FormatTIFF:
 		return true
@@ -433,6 +486,11 @@ func IsImageFormat(format FormatType) bool {
 
 // IsTableFormat 判断是否为表格格式
 func IsTableFormat(format FormatType) bool {
+	if capability, ok := GetFormatCapability(format); ok {
+		if capability.DataType == FormatDataTypeTable {
+			return true
+		}
+	}
 	switch format {
 	case FormatCSV, FormatExcel, FormatTSV:
 		return true

@@ -3,14 +3,7 @@
   "type": "builtin",
   "builtin": "excel",
   "priority": 62,
-  "match": {
-    "extensions": [".xlsx", ".xlsm", ".xls"],
-    "content_types": [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel",
-      "application/vnd.ms-excel.sheet.macroEnabled.12"
-    ]
-  },
+  "match": {},
   "max_bytes": 15728640,
   "metadata": {
     "sheet_limit": 10,

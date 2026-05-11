@@ -92,6 +92,8 @@ func TestMIMEToFormat(t *testing.T) {
 		{"application/vnd.geo+json", FormatJSON},
 		{"text/csv", FormatCSV},
 		{"application/pdf", FormatPDF},
+		{"application/vnd.ms-works", FormatWPS},
+		{"application/wps-office.doc", FormatWPS},
 		{"text/markdown", FormatMarkdown},
 		{"text/x-markdown", FormatMarkdown},
 		{"image/jpeg", FormatJPEG},
@@ -121,6 +123,7 @@ func TestFormatToMIME(t *testing.T) {
 	}{
 		{FormatCSV, "text/csv"},
 		{FormatPDF, "application/pdf"},
+		{FormatWPS, "application/vnd.ms-works"},
 		{FormatMarkdown, "text/markdown"},
 		{FormatJPEG, "image/jpeg"},
 		{FormatSQLite, "application/x-sqlite3"},
@@ -133,6 +136,68 @@ func TestFormatToMIME(t *testing.T) {
 			got := FormatToMIME(tt.format)
 			if got != tt.want {
 				t.Errorf("FormatToMIME(%v) = %q, want %q", tt.format, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectionUsesFormatDescriptors(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		mimeType string
+		want     FormatType
+	}{
+		{
+			name:     "text extension",
+			filename: "notes.txt",
+			want:     FormatText,
+		},
+		{
+			name:     "markdown extension",
+			filename: "README.markdown",
+			want:     FormatMarkdown,
+		},
+		{
+			name:     "markdown mime",
+			mimeType: "text/x-markdown",
+			want:     FormatMarkdown,
+		},
+		{
+			name:     "parquet mime",
+			mimeType: "application/vnd.apache.parquet",
+			want:     FormatParquet,
+		},
+		{
+			name:     "wps mime from descriptor",
+			mimeType: "application/kswps",
+			want:     FormatWPS,
+		},
+		{
+			name:     "excel macro extension from descriptor",
+			filename: "book.xlsm",
+			want:     FormatExcel,
+		},
+		{
+			name:     "sqlite mime from descriptor",
+			mimeType: "application/vnd.sqlite3",
+			want:     FormatSQLite,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.filename != "" {
+				got := DetectFormat(tt.filename, nil)
+				if got != tt.want {
+					t.Fatalf("DetectFormat(%q) = %s, want %s", tt.filename, got, tt.want)
+				}
+			}
+			if tt.mimeType != "" {
+				got := MIMEToFormat(tt.mimeType)
+				if got != tt.want {
+					t.Fatalf("MIMEToFormat(%q) = %s, want %s", tt.mimeType, got, tt.want)
+				}
 			}
 		})
 	}
@@ -254,6 +319,18 @@ func TestGuessContentType(t *testing.T) {
 			filename: "document.pdf",
 			peek:     []byte("%PDF-1.4"),
 			want:     "application/pdf",
+		},
+		{
+			name:     "WPS file",
+			filename: "document.wps",
+			peek:     nil,
+			want:     "application/vnd.ms-works",
+		},
+		{
+			name:     "Markdown file",
+			filename: "README.md",
+			peek:     nil,
+			want:     "text/markdown",
 		},
 	}
 

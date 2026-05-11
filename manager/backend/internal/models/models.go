@@ -175,16 +175,47 @@ type ObjectPreviewChild struct {
 }
 
 type ObjectPreviewContent struct {
-	Kind      string                 `json:"kind"`
-	Text      string                 `json:"text,omitempty"`
-	JSON      interface{}            `json:"json,omitempty"`
-	GeoJSON   interface{}            `json:"geojson,omitempty"`
-	ImageData string                 `json:"image_data,omitempty"`
-	Data      string                 `json:"data,omitempty"` // Generic data field (used for PDF base64)
-	Encoding  string                 `json:"encoding,omitempty"`
-	Truncated bool                   `json:"truncated,omitempty"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Kind             string                 `json:"kind"`
+	PreviewMaterial  string                 `json:"preview_material,omitempty"`
+	FrontendRenderer string                 `json:"frontend_renderer,omitempty"`
+	Text             string                 `json:"text,omitempty"`
+	JSON             interface{}            `json:"json,omitempty"`
+	GeoJSON          interface{}            `json:"geojson,omitempty"`
+	ImageData        string                 `json:"image_data,omitempty"`
+	Data             string                 `json:"data,omitempty"` // Generic data field (used for PDF base64)
+	Encoding         string                 `json:"encoding,omitempty"`
+	Truncated        bool                   `json:"truncated,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
+
+const (
+	ObjectPreviewKindPDF         = "pdf"
+	ObjectPreviewKindDOCX        = "docx"
+	ObjectPreviewKindWPS         = "wps"
+	ObjectPreviewKindPPTX        = "pptx"
+	ObjectPreviewKindImage       = "image"
+	ObjectPreviewKindJSON        = "json"
+	ObjectPreviewKindGeoJSON     = "geojson"
+	ObjectPreviewKindExcel       = "excel"
+	ObjectPreviewKindSQLite      = "sqlite"
+	ObjectPreviewKindText        = "text"
+	ObjectPreviewKindMarkdown    = "markdown"
+	ObjectPreviewKindTable       = "table"
+	ObjectPreviewKindShapefile   = "shapefile"
+	ObjectPreviewKindUnsupported = "unsupported"
+)
+
+const (
+	PreviewMaterialText      = "text"
+	PreviewMaterialMarkdown  = "markdown"
+	PreviewMaterialHTML      = "html"
+	PreviewMaterialJSON      = "json"
+	PreviewMaterialGeoJSON   = "geojson"
+	PreviewMaterialImage     = "image"
+	PreviewMaterialRawBinary = "raw_binary"
+	PreviewMaterialTable     = "table"
+	PreviewMaterialURL       = "url"
+)
 
 // MetaScanTask 描述 Meta 服务中的扫描任务
 type MetaScanTask struct {

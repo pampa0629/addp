@@ -15,10 +15,22 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'table',
     component,
     canHandle: (data = {}) => {
+      if (frontendRenderer(data) === 'table') {
+        return true
+      }
       const mode = (data.mode || '').toLowerCase()
       const object = data.object || {}
       const attrs = object.attributes || {}

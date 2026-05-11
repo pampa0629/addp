@@ -3,6 +3,9 @@
   "type": "builtin",
   "builtin": "text",
   "priority": 0,
-  "match": {},
+  "match": {
+    "formats": ["text"],
+    "content_types": ["text/"]
+  },
   "max_bytes": 262144
 }

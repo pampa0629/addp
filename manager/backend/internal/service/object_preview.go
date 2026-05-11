@@ -16,6 +16,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -884,47 +885,8 @@ func inferContentType(objectPath, contentType string) string {
 		return contentType
 	}
 
-	switch strings.ToLower(filepath.Ext(objectPath)) {
-	case ".pdf":
-		return "application/pdf"
-	case ".docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".wps":
-		return "application/vnd.ms-works"
-	case ".pptx":
-		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".json":
-		return "application/json"
-	case ".geojson":
-		return "application/geo+json"
-	case ".shp":
-		return "application/x-esri-shapefile"
-	case ".txt", ".log":
-		return "text/plain"
-	case ".mp4":
-		return "video/mp4"
-	case ".mov":
-		return "video/quicktime"
-	case ".avi":
-		return "video/x-msvideo"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".webm":
-		return "video/webm"
-	case ".flv":
-		return "video/x-flv"
-	case ".wmv":
-		return "video/x-ms-wmv"
-	case ".m4v":
-		return "video/x-m4v"
+	if guessed := format.GuessContentType(objectPath, nil); guessed != "" && !isGenericContentType(guessed) {
+		return guessed
 	}
 
 	if contentType != "" {

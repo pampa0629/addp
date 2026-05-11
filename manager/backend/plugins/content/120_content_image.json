@@ -3,9 +3,6 @@
   "type": "builtin",
   "builtin": "image",
   "priority": 70,
-  "match": {
-    "extensions": [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic"],
-    "content_types": ["image/", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/bmp", "image/webp", "image/tiff", "image/svg+xml", "image/heic"]
-  },
+  "match": {},
   "max_bytes": 10485760
 }

@@ -2,7 +2,7 @@
 
 更新时间：2026-05-10
 
-本文记录 Manager 预览、`common/format`、纯文本 / 二进制兜底和第三方格式扩展的当前问题与推进思路。本文是 next 阶段工程推进文档，不替代正式规范；形成共识后，应分别回写到数据格式扩展指南、文件格式能力与 Data Type Provider 规范、内置数据格式规范和 Manager 内容预览插件规范。
+本文记录 Manager 预览、`common/format`、纯文本 / 未知对象安全兜底和第三方格式扩展的当前问题与推进思路。本文是 next 阶段工程推进文档，不替代正式规范；形成共识后，应分别回写到数据格式扩展指南、文件格式能力与 Data Type Provider 规范、内置数据格式规范和 Manager 内容预览插件规范。
 
 ## 一、当前问题
 
@@ -138,17 +138,17 @@ Markdown 不应因为没有复杂 codec 就是 unknown。它至少应被视为�
 
 它们可以没有复杂 parser，但仍应有明确 FormatCapability 和最小 DocumentProvider / extractor。
 
-## 二、纯文本与二进制兜底的判断
+## 二、纯文本与未知对象兜底的判断
 
 ### 结论
 
-应补齐纯文本和二进制兜底，但二者角色不同。
+应补齐纯文本格式和未知对象安全兜底，但二者角色不同。
 
 | 能力 | 建议表达 | 是否是 format | 说明 |
 |---|---|---|---|
 | 纯文本 | `data_type=document` + `format=text` | 是 | 可识别、可预览、可全文提取、可作为文档处理 |
 | Markdown | `data_type=document` + `format=markdown` | 是 | 是文本型文档格式，不应落为 unknown |
-| 二进制兜底 | `data_type=unknown` + `format=unknown`，preview kind 可为 `binary` | 暂不建议作为正式 format | 更像未知内容的安全展示策略，不是具体编码格式 |
+| 未知 / 不支持对象兜底 | `data_type=unknown` + `format=unknown`，preview kind 为 `unsupported`，preview material 可标记为 `raw_binary` | 不是 format | 更像未知内容的安全展示策略，不是具体编码格式 |
 
 ### 为什么需要 text / markdown format
 
@@ -172,8 +172,9 @@ Markdown 不应因为没有复杂 codec 就是 unknown。它至少应被视为�
 建议：
 
 - 识别失败仍保持 `format=unknown`、`data_type=unknown`。
-- Manager 或未来 `ContentProvider` 提供最后兜底的 `kind=binary`。
-- 二进制预览只展示基础元信息、下载提示和有限 hex / magic bytes，不把内容当文本。
+- Manager 或未来 `ContentProvider` 提供最后兜底的 `kind=unsupported`。
+- 兜底预览可用 `preview_material=raw_binary` 表达“已读取的是原始二进制材料”，但不能把它提升为 `format=binary`。
+- 不支持对象只展示基础元信息、下载提示和有限 hex / magic bytes，不把内容当文本。
 - 若未来确有治理需求，再讨论 `format=binary` 是否进入正式内置格式。
 
 ## 三、目标架构
@@ -283,16 +284,18 @@ Manager 不应：
 - 自行枚举 Shapefile sibling 组件。
 - 把未知二进制当文本展示。
 
-### 6. 第三方插件形态优先采用进程外协议
+### 6. 格式扩展先限定为 common/format 内部规范化扩展
 
-Go 原生 plugin 对平台、构建和部署约束较多。建议第三方格式扩展优先支持：
+当前阶段的“格式扩展”不指外部进程插件，也不指 Manager 前端预览插件，而是指在 ADDP 代码库内按 `common/format` 的规范补齐一种格式的能力。
 
-- manifest 声明能力。
-- command / gRPC / HTTP 进程外 provider。
-- 输入为标准资源引用、已确认 attributes、调用参数。
-- 输出为标准 data type provider 结果或 preview material。
+新增格式时，目标是只在少数明确位置做针对性补充：
 
-内置格式继续可以用 Go 静态注册，第三方扩展走同一 descriptor 和能力发现视图。
+- 在 `common/format` 中声明 `FormatType`、descriptor、识别规则和 capability。
+- 需要解析结构时，在 `common/format/codecs/<format>/` 实现对应 data type provider。
+- 需要 Meta 组织方式特例时，只在 Meta 的组织 / 组件规则层补充特例。
+- Manager、Transfer、Search 等上层模块优先消费标准 provider / capability / preview material，不再维护格式扩展名清单。
+
+进程外插件、远程 provider、命令型扩展等能力暂不进入当前推进范围。等 ADDP 内部格式体系稳定后，再单独讨论外部插件协议。
 
 ## 四、分阶段推进
 
@@ -300,75 +303,147 @@ Go 原生 plugin 对平台、构建和部署约束较多。建议第三方格式
 
 目标：消除“能预览但 Meta unknown”的明显不一致。
 
+状态：已完成第一轮落地。
+
 任务：
 
-1. 在概念和内置格式规范中补 `text`、`markdown`、`unknown/binary preview` 口径。
-2. `common/format` 补 `FormatMarkdown`，并为 `text`、`markdown` 注册 FormatCapability。
-3. 检测规则支持 `.txt`、`.md`、`.markdown`、`text/plain`、`text/markdown`。
-4. Meta 扫描将文本型文件写为 `data_type=document`，未知二进制保持 `unknown`。
-5. Manager 的最后兜底从“文本全匹配”改为“文本探测通过才按文本，否则按 binary 兜底”。
+1. 已完成：在概念和规范中补 `text`、`markdown`、unknown / unsupported preview 口径。
+2. 已完成：`common/format` 补 `FormatMarkdown`，并为 `text`、`markdown` 注册 FormatCapability。
+3. 已完成：检测规则支持 `.txt`、`.md`、`.markdown`、`text/plain`、`text/markdown`；并补齐 WPS MIME 映射。
+4. 已完成：Meta 扫描将文本型文件写为 `data_type=document`；未知二进制保持 `unknown`。
+5. 已完成：Manager 的最后兜底从“文本全匹配”改为“文本探测通过才按文本，否则返回 `kind=unsupported`，并在 metadata 中标记 `preview_material=raw_binary`”。
+
+已落地代码记录：
+
+- `common/format/detection.go`：声明 `FormatText` / `FormatMarkdown` 识别规则和 WPS MIME 映射。
+- `common/format/capability/registry.go`：注册 `text`、`markdown` 的 document + single capability。
+- `meta/backend/internal/dataitem/rule.go`：single resource 默认规则从 `FormatCapability` 派生，Meta 显式规则只保留特例。
+- `manager/backend/internal/service/object_content_plugin.go`：新增 `unsupported` 兜底处理器，二进制不作为 format；未知 UTF-8 文本仍可安全按 text 预览。
+- `manager/backend/plugins/content/190_content_text.json`：移除空匹配，避免 text handler 变成所有未知对象的兜底。
+- `manager/backend/plugins/content/999_content_unsupported.json`：新增最终预览兜底，返回 `kind=unsupported`。
 
 Markdown 的修复原则：
 
 - `.md` / `.markdown` / `text/markdown` 是格式识别知识，必须放在 `common/format`，不能在 Meta detector 中硬编码。
+- `.txt` / `text/plain` 同样由 `common/format` 的 `text` capability 声明，Meta 不单独维护文本格式清单。
 - Meta 可以有通用转换逻辑：根据 `format.GetFormatCapability(format).DataType` 推断 `data_type`，根据 `DataType` 派生默认 `item_type`。
 - Meta 只保留 item 归并、组织方式、组件认领和内容结构判断，例如 Shapefile multi、whole scope、GeoJSON 内容结构。
 - 第一阶段允许 Meta 保留旧 switch 作为 fallback，但新增格式必须优先通过 `FormatCapability` 生效。
+- 第二阶段将 Meta 的 single resource 规则调整为“Meta 显式特例 + `FormatCapability` 派生默认规则”：普通 single 格式由 capability 推导 `data_type` 和默认 `item_type`，Meta 显式规则只表达组织方式、组件、whole scope、容器 children、内容结构判断或历史补充。
 
 ### 阶段二：Manager 内容插件与 format capability 对齐
 
 目标：减少 Manager 插件配置和 format 识别规则重复。
 
+状态：进行中，已完成协议显性化、内置 handler descriptor 默认匹配和内置 JSON 配置收薄的第一步。
+
 任务：
 
-1. 让 Manager content plugin 匹配优先使用 Meta `format`，只有 `format=unknown` 时才允许扩展名 / MIME 回退。
-2. 为内置 content handler 输出统一 preview material schema，至少区分 `text`、`html`、`markdown`、`json`、`image`、`raw_binary`、`url`。
-3. 将 `ObjectPreviewContent.kind` 的稳定值整理成枚举或文档。
-4. 为 WPS / DOCX 明确声明 `preview_material=raw_binary` 和 `frontend_renderer=wps|docx`，不再把二进制预览能力误称为二进制格式。
-5. 前端 plugin manifest 不再重复猜格式，优先匹配后端返回的 `kind`、`frontend_renderer` 和 Meta attributes。
+1. 已完成第一步：Manager MIME 推断已改为复用 `common/format.GuessContentType`；content plugin matcher 已避免泛型 MIME 误命中仅声明 content type 的 handler；PDF、DOCX、WPS、PPTX、Image、JSON、Excel、SQLite、Markdown、Parquet 等内置插件的 JSON 匹配配置已收薄，默认从 descriptor 派生。
+2. 部分完成：`ObjectPreviewContent` 已新增 `preview_material` 和 `frontend_renderer` 字段；内置 handler 已开始输出 `text`、`markdown`、`json`、`geojson`、`image`、`raw_binary`、`table` 等材料类型。
+3. 部分完成：后端内置 `ObjectPreviewContent.kind` 已常量化，`kind` / `preview_material` 稳定取值已回写到正式规范；默认 `frontend_renderer` 已优先从 descriptor 派生，`preview_material` 仍按实际返回材料判断。
+4. 已完成第一步：WPS / DOCX / PPTX / PDF 这类 base64 原始内容预览已声明 `preview_material=raw_binary`，并输出对应 `frontend_renderer`。
+5. 部分完成：前端内置预览插件已优先匹配后端返回的 `frontend_renderer`，再回退到旧的 `kind`、扩展名、Content-Type 判断；后续仍需将 public plugin manifest 化，减少脚本内重复猜格式。
+
+已落地代码记录：
+
+- `manager/backend/internal/models/models.go`：`ObjectPreviewContent` 新增 `preview_material`、`frontend_renderer`。
+- `manager/backend/internal/service/object_content_plugin.go`：内置 handler 统一补齐 preview material 与 renderer；命令型插件返回值也会被补齐默认字段。
+- `manager/backend/internal/models/models.go`：内置 preview kind 与 preview material 已抽成后端常量。
+- `docs/spec/addp文件格式能力与DataTypeProvider规范.md`：已记录 `ObjectPreviewContent.kind`、`preview_material`、`frontend_renderer` 的协议字段和稳定取值。
+- `manager/backend/internal/service/object_preview.go`：`inferContentType` 改为复用 `common/format.GuessContentType`，减少 Manager 自维护扩展名 / MIME switch。
+- `manager/backend/internal/service/object_content_plugin_loader.go`：PDF、DOCX、WPS、PPTX、Image、JSON、Excel、SQLite、Markdown、Parquet 等内置 content handler 的默认 format / extension / MIME 匹配开始从 `common/format` descriptor 派生，保留 Shapefile、GeoJSON 和 Text 的必要特例。
+- `manager/backend/plugins/content/*.json`：内置 PDF、DOCX、WPS、PPTX、Image、JSON、Excel、SQLite、Markdown、Parquet 等 content plugin 配置已移除重复扩展名 / MIME 清单，只保留 Shapefile 和 Text 的必要特例。
+- `manager/backend/internal/service/object_preview_test.go`：新增真实 content plugin 配置加载测试，验证收薄后的 JSON 仍能通过 descriptor 默认匹配命中内置 handler。
+- `manager/frontend/public/plugins/*-preview.js`：PDF、DOCX、WPS、PPTX、Image、JSON、GeoJSON、Excel、SQLite、Markdown、Table、Shapefile 等内置前端预览插件开始优先消费 `frontend_renderer`，保留旧判断作为过渡兜底。
 
 ### 阶段三：FormatDescriptor / 能力发现视图
 
 目标：新增格式时由一个 descriptor 派生多层注册信息。
 
+状态：进行中，已完成 registry 共同事实源、capability 派生、detection 消费、能力发现视图、实现状态展示和冲突诊断第一步。
+
 任务：
 
-1. 定义 `FormatDescriptor` Go 结构和 JSON manifest 子集。
-2. 内置格式先用 descriptor 注册 detection 和 capability。
-3. 能力发现视图输出 format、provider、preview、transfer 状态。
-4. 冲突诊断记录插件 ID、版本、优先级和被覆盖规则。
+1. 已完成第一步：定义 `FormatDescriptor` Go 结构和 JSON manifest 子集，内置 descriptor 覆盖当前 capability registry 已声明的核心格式。
+2. 部分完成：`common/format` 的扩展名、MIME 识别、`FormatToMIME` 和格式类别 helper 已优先读取 descriptor / capability，再回退旧 switch；Excel / TSV 等历史表格预览口径仍保留过渡兜底。
+3. 已完成第一步：新增独立 `common/format/registry` 子包作为 descriptor 共同事实源，避免 `capability` 子包反向 import 父包形成 import cycle。
+4. 已完成第一步：内置 `common/format/capability` 已由 `registry.Descriptor` 派生初始化，减少 capability 与 descriptor 双清单漂移。
+5. 已完成：能力发现视图已可输出 format、provider、preview、transfer 状态，并通过 `implementations` 区分 descriptor 声明能力与当前进程已注册的 provider / extractor 实现。
+6. 已完成第一步：冲突诊断已记录 descriptor 注册中的 format、extension、MIME 冲突，包含插件 ID、版本、优先级和是否覆盖。
+7. 未完成：Meta 插件版本记录和 Manager public plugin manifest 自动派生。
+
+已落地代码记录：
+
+- `common/format/registry/descriptor.go`：新增独立 format registry 共同事实源，负责 descriptor 注册、覆盖优先级和冲突诊断。
+- `common/format/registry/discovery.go`：新增 descriptor 声明视图，输出 format、provider、preview、transfer 状态。
+- `common/format/descriptor.go` / `common/format/discovery.go`：保留顶层 facade API，避免上层直接依赖 registry 子包；`discovery.go` 在 facade 层补充 `implementations`，展示当前进程实际注册的 TableProvider、DocumentProvider、MediaProvider 和 MetadataExtractor。
+- `common/format/capability/registry.go`：内置 capability 从 `registry.Descriptor` 派生初始化。
+- `common/format/detection.go`：扩展名、MIME、主 MIME 输出和格式类别 helper 优先消费 descriptor / capability，旧 switch 保留为过渡兜底。
+- `common/format/descriptor_test.go`：验证 descriptor 覆盖 `text`、`markdown`，并与当前 capability registry 的核心字段保持一致。
+- `common/format/detection_test.go`：验证 `text`、`markdown`、`parquet` 等识别路径已通过 descriptor 生效。
+- `common/format/discovery_test.go`：验证能力发现视图能区分声明 provider 与实际 provider / extractor 注册状态。
 
 ### 阶段四：Provider 家族补齐
 
 目标：把 Manager 中的文档、媒体、容器解析能力逐步下沉为格式层 provider。
 
+状态：进行中，已完成 `DocumentProvider` 最小接口与 text / markdown 内置实现；已完成 `MediaProvider` 最小接口与 image / jpeg / png / gif / tiff 内置实现。
+
 任务：
 
-1. 稳定 `DocumentProvider` 最小接口，先覆盖 text、markdown、pdf。
-2. 稳定 `MediaProvider` 最小接口，先覆盖 image。
+1. 部分完成：稳定 `DocumentProvider` 最小接口，已覆盖 text、markdown 的 UTF-8 文本片段提取；PDF DocumentProvider 待补。
+2. 已完成第一步：稳定 `MediaProvider` 最小接口，已覆盖 image / jpeg / png / gif / tiff 的宽高、编码、MIME 和 GeoTIFF 空间属性提取。
 3. 稳定 `ContainerProvider` 最小接口，先覆盖 excel、sqlite。
 4. 定义 preview material 横切结果模型，使 WPS 这类“前端解析型文档”可以只实现 raw material 能力。
 5. Manager content handler 改为薄适配层：读取资源、调用 provider 或 preview material provider、包装 DTO。
 
-### 阶段五：第三方格式插件
+已落地代码记录：
 
-目标：第三方新增格式不需要修改 Manager、Meta、Transfer 多处硬编码。
+- `common/format/provider.go`：新增 `DocumentInfo`、`DocumentProvider`、文档 provider 注册表和查询入口。
+- `common/format/codecs/text/provider.go`：新增 text / markdown 最小 DocumentProvider，消费调用方传入的 `io.Reader`，返回 UTF-8 文本片段，不读取 engine、不返回 Manager DTO。
+- `common/format/builtin/init.go`：内置注册入口纳入 text / markdown DocumentProvider。
+- `common/format/provider.go`：新增 `MediaInfo`、`MediaProvider`、媒体 provider 注册表和查询入口。
+- `common/format/codecs/image/parser.go`：复用图片 metadata extractor 能力，实现 image / jpeg / png / gif / tiff 最小 MediaProvider。
+- `common/format/codecs/image/provider_test.go`：验证 PNG MediaProvider 可返回宽高、MIME 和格式信息。
+
+### 阶段五：内部格式扩展规范化
+
+目标：新增格式时，开发者只需要在 `common/format` 按规范补充 descriptor、provider 和必要 codec，上层模块通过标准能力自动消费。
+
+状态：进行中，已完成 descriptor manifest 加载、注册基础能力和一批现有预览型格式的 descriptor 收拢；外部进程插件不在当前范围。
 
 任务：
 
-1. 支持第三方 manifest 加载。
-2. 支持 command 型 detector / extractor / provider。
-3. 标准化输入输出 schema。
-4. Meta 扫描记录使用的插件能力版本。
-5. Manager 和 Transfer 只消费标准 data type provider 结果。
+1. 已完成第一步：支持 descriptor manifest JSON 文件 / 目录加载，并通过 `RegisterFormatDescriptor` 同步注册到 descriptor registry 与 capability registry。
+2. 已完成第一步：把“新增内部格式”的代码位置和最小实现清单固化到本文，覆盖 descriptor、detection、provider、codec、Meta 特例、Manager preview material。
+3. 部分完成：为典型内部格式补模板或示例，已覆盖 `text` / `markdown` / `parquet` / `shapefile` 的落地参照；后续可补 `pdf` / `image` / `excel` / `sqlite`。
+4. 未完成：Manager 和 Transfer 只消费标准 data type provider 结果，逐步删除格式清单重复维护。
+5. 暂不推进：外部进程插件、command 型 provider、远程 provider。
+
+已落地代码记录：
+
+- `common/format/manifest.go`：新增 `FormatPluginManifest`、单文件 manifest 加载 / 注册和目录批量注册入口。
+- `common/format/manifest_test.go`：验证 manifest 注册后 capability、MIME detection 都能看到新格式。
+- `common/format/registry/descriptor.go`：收拢 PDF、DOCX、PPTX、WPS、image、JPEG、PNG、GIF、TIFF、Excel、SQLite 等已有格式身份、MIME、preview material 和 frontend renderer 声明。除已有 transfer 语义明确的格式外，这些预览型格式暂不声明 transfer read/write。
+- `meta/backend/internal/dataitem/rule.go`：从 capability 派生 single resource 规则时要求有 entry，避免 `image` 这类逻辑聚合格式被误作为可扫描文件格式。
+
+内部新增格式最小清单：
+
+1. 在 `common/format/detection.go` 声明或复用 `FormatType` 常量。
+2. 在 `common/format/registry/descriptor.go` 增加 descriptor，至少声明 `format`、`data_type`、`layouts`、`identification.extensions/mime_types`、`preview.kind`、`preview.preview_materials`、`preview.frontend_renderer`。
+3. 只有确实已有批量读写或稳定导入导出能力时，才声明 `transfer_read/write`，不要把“能预览”误写成 transfer 能力。
+4. 如需结构解析，在 `common/format/codecs/<format>/` 实现对应 provider，例如 `TableProvider`、`DocumentProvider`。provider 消费 `io.Reader` / `ResourceReader`，不接 engine id，不返回 Manager DTO。
+5. 如果格式是多文件、whole scope、容器或有特殊 item 组织方式，只在 Meta 规则层补组织特例；普通 single resource 格式由 capability 派生。
+6. Manager 预览优先消费 `format`、`preview_material`、`frontend_renderer` 和标准 provider 结果，不新增扩展名 / MIME 硬编码清单。
 
 ## 五、近期建议先做的决策
 
 1. 确认 `markdown` 是否进入正式内置格式。当前倾向：进入。
-2. 确认 `binary` 是否暂不进入正式 format。当前倾向：暂不进入，只作为 unknown 的兜底预览 kind。
+2. 确认 `binary` 是否暂不进入正式 format。当前结论：暂不进入；未知二进制对象保持 `format=unknown`，Manager 预览返回 `kind=unsupported`，仅用 `preview_material=raw_binary` 表达材料类型。
 3. 确认是否新增 `ContentProvider` / `PreviewMaterialProvider` 名称。当前倾向：先在文档中使用“preview material provider”描述能力，代码命名等接口稳定后再定。
 4. 确认 Manager 文本兜底是否必须经过文本探测。当前倾向：必须，避免未知二进制乱码展示。
-5. 确认第三方插件第一阶段采用进程外协议。当前倾向：是。
+5. 确认外部进程插件是否进入当前阶段。当前结论：暂不进入；先把 ADDP 内部 `common/format` 扩展路径做顺。
 
 ## 六、关联文档
 

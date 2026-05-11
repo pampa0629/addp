@@ -15,10 +15,34 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
+  const previewMaterial = (data = {}) =>
+    (
+      data.object?.content?.preview_material ||
+      data.object?.content?.previewMaterial ||
+      data.object?.content?.metadata?.preview_material ||
+      data.object?.content?.metadata?.previewMaterial ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'geojson',
     component,
-    canHandle: (data = {}) => (data.object?.content?.kind || '').toLowerCase() === 'geojson',
+    canHandle: (data = {}) => {
+      const kind = (data.object?.content?.kind || '').toLowerCase()
+      if (kind === 'geojson') {
+        return true
+      }
+      return frontendRenderer(data) === 'map' && previewMaterial(data) === 'geojson'
+    },
     priority: 80
   })
 

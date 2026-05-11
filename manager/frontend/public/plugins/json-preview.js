@@ -15,10 +15,24 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'json',
     component,
-    canHandle: (data = {}) => (data.object?.content?.kind || '').toLowerCase() === 'json',
+    canHandle: (data = {}) => {
+      if (frontendRenderer(data) === 'json') {
+        return true
+      }
+      return (data.object?.content?.kind || '').toLowerCase() === 'json'
+    },
     priority: 60
   })
 

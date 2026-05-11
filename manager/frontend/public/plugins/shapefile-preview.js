@@ -15,10 +15,22 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'shapefile',
     component,
     canHandle: (data = {}) => {
+      if (frontendRenderer(data) !== '' && frontendRenderer(data) !== 'map') {
+        return false
+      }
       const kind = (data.object?.content?.kind || '').toLowerCase()
       if (kind !== 'shapefile') {
         return false

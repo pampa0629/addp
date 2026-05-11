@@ -5,49 +5,63 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	formatregistry "github.com/addp/common/format/registry"
 )
 
 type Format string
 
 const (
-	FormatTable     Format = "table"
-	FormatDocument  Format = "document"
-	FormatCSV       Format = "csv"
-	FormatJSON      Format = "json"
-	FormatMarkdown  Format = "markdown"
-	FormatParquet   Format = "parquet"
-	FormatShapefile Format = "shapefile"
+	FormatTable     Format = Format(formatregistry.FormatTable)
+	FormatDocument  Format = Format(formatregistry.FormatDocument)
+	FormatCSV       Format = Format(formatregistry.FormatCSV)
+	FormatDOCX      Format = Format(formatregistry.FormatDOCX)
+	FormatExcel     Format = Format(formatregistry.FormatExcel)
+	FormatGIF       Format = Format(formatregistry.FormatGIF)
+	FormatImage     Format = Format(formatregistry.FormatImage)
+	FormatJPEG      Format = Format(formatregistry.FormatJPEG)
+	FormatJSON      Format = Format(formatregistry.FormatJSON)
+	FormatMarkdown  Format = Format(formatregistry.FormatMarkdown)
+	FormatParquet   Format = Format(formatregistry.FormatParquet)
+	FormatPDF       Format = Format(formatregistry.FormatPDF)
+	FormatPNG       Format = Format(formatregistry.FormatPNG)
+	FormatPPTX      Format = Format(formatregistry.FormatPPTX)
+	FormatShapefile Format = Format(formatregistry.FormatShapefile)
+	FormatSQLite    Format = Format(formatregistry.FormatSQLite)
+	FormatText      Format = Format(formatregistry.FormatText)
+	FormatTIFF      Format = Format(formatregistry.FormatTIFF)
+	FormatWPS       Format = Format(formatregistry.FormatWPS)
 )
 
 const (
-	DataTypeTable     = "table"
-	DataTypeDocument  = "document"
-	DataTypeMedia     = "media"
-	DataTypeContainer = "container"
-	DataTypeGraph     = "graph"
-	DataTypeFile      = "file"
+	DataTypeTable     = formatregistry.DataTypeTable
+	DataTypeDocument  = formatregistry.DataTypeDocument
+	DataTypeMedia     = formatregistry.DataTypeMedia
+	DataTypeContainer = formatregistry.DataTypeContainer
+	DataTypeGraph     = formatregistry.DataTypeGraph
+	DataTypeFile      = formatregistry.DataTypeFile
 )
 
 const (
-	EngineFamilyTabular  = "tabular"
-	EngineFamilyObject   = "object"
-	EngineFamilyFile     = "file"
-	EngineFamilyDocument = "document"
+	EngineFamilyTabular  = formatregistry.EngineFamilyTabular
+	EngineFamilyObject   = formatregistry.EngineFamilyObject
+	EngineFamilyFile     = formatregistry.EngineFamilyFile
+	EngineFamilyDocument = formatregistry.EngineFamilyDocument
 )
 
 const (
-	LayoutSingle = "single"
-	LayoutMulti  = "multi"
-	LayoutWhole  = "whole"
+	LayoutSingle = formatregistry.LayoutSingle
+	LayoutMulti  = formatregistry.LayoutMulti
+	LayoutWhole  = formatregistry.LayoutWhole
 )
 
 const (
-	ProviderTable     = "table"
-	ProviderDocument  = "document"
-	ProviderMedia     = "media"
-	ProviderContainer = "container"
-	ProviderGraph     = "graph"
-	ProviderSpatial   = "spatial"
+	ProviderTable     = formatregistry.ProviderTable
+	ProviderDocument  = formatregistry.ProviderDocument
+	ProviderMedia     = formatregistry.ProviderMedia
+	ProviderContainer = formatregistry.ProviderContainer
+	ProviderGraph     = formatregistry.ProviderGraph
+	ProviderSpatial   = formatregistry.ProviderSpatial
 )
 
 // Capability 声明一个格式在 ADDP 中可被哪些平台能力消费。
@@ -83,94 +97,26 @@ func newRegistry() *Registry {
 }
 
 func init() {
-	mustRegister(Capability{
-		Format:         FormatTable,
-		I18nKey:        "format.table",
-		DataType:       DataTypeTable,
-		Layouts:        []string{LayoutWhole},
-		ProviderHints:  []string{ProviderTable},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		EngineFamilies: []string{EngineFamilyTabular},
-	})
-	mustRegister(Capability{
-		Format:         FormatDocument,
-		I18nKey:        "format.document",
-		DataType:       DataTypeDocument,
-		Layouts:        []string{LayoutWhole},
-		ProviderHints:  []string{ProviderDocument},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		EngineFamilies: []string{EngineFamilyDocument},
-	})
-	mustRegister(Capability{
-		Format:         FormatCSV,
-		I18nKey:        "format.csv",
-		Extensions:     []string{".csv"},
-		DataType:       DataTypeTable,
-		Layouts:        []string{LayoutSingle},
-		ProviderHints:  []string{ProviderTable},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          true,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
-	})
-	mustRegister(Capability{
-		Format:         FormatJSON,
-		I18nKey:        "format.json",
-		Extensions:     []string{".json", ".geojson"},
-		DataType:       DataTypeDocument,
-		Layouts:        []string{LayoutSingle},
-		ProviderHints:  []string{ProviderDocument, ProviderTable, ProviderSpatial},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          true,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
-	})
-	mustRegister(Capability{
-		Format:         FormatMarkdown,
-		I18nKey:        "format.markdown",
-		Extensions:     []string{".md", ".markdown"},
-		DataType:       DataTypeDocument,
-		Layouts:        []string{LayoutSingle},
-		ProviderHints:  []string{ProviderDocument},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          false,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
-	})
-	mustRegister(Capability{
-		Format:         FormatParquet,
-		I18nKey:        "format.parquet",
-		Extensions:     []string{".parquet"},
-		DataType:       DataTypeTable,
-		Layouts:        []string{LayoutSingle, LayoutWhole},
-		ProviderHints:  []string{ProviderTable},
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          true,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
-	})
-	mustRegister(Capability{
-		Format:         FormatShapefile,
-		I18nKey:        "format.shapefile",
-		Extensions:     []string{".shp", ".shx", ".dbf", ".prj"},
-		DataType:       DataTypeTable,
-		Layouts:        []string{LayoutMulti},
-		ProviderHints:  []string{ProviderTable, ProviderSpatial},
-		Spatial:        true,
-		TransferRead:   true,
-		TransferWrite:  true,
-		Preview:        true,
-		Parse:          true,
-		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
-	})
+	for _, descriptor := range formatregistry.ListDescriptors() {
+		mustRegister(CapabilityFromDescriptor(descriptor))
+	}
+}
+
+func CapabilityFromDescriptor(descriptor formatregistry.Descriptor) Capability {
+	return Capability{
+		Format:         Format(descriptor.Format),
+		I18nKey:        descriptor.I18nKey,
+		Extensions:     append([]string(nil), descriptor.Identification.Extensions...),
+		DataType:       descriptor.DataType,
+		Layouts:        append([]string(nil), descriptor.Layouts...),
+		ProviderHints:  append([]string(nil), descriptor.ProviderHints...),
+		Spatial:        descriptor.Spatial,
+		TransferRead:   descriptor.TransferRead,
+		TransferWrite:  descriptor.TransferWrite,
+		Preview:        descriptor.Preview.Kind != "" || len(descriptor.Preview.PreviewMaterials) > 0 || descriptor.Preview.FrontendRenderer != "",
+		Parse:          descriptor.Parse,
+		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
+	}
 }
 
 func mustRegister(capability Capability) {

@@ -33,8 +33,10 @@
 | 文件 | 职责 |
 | --- | --- |
 | `detection.go` | `FormatType`、扩展名/MIME/magic bytes 检测 |
+| `descriptor.go` / `discovery.go` | 顶层 format descriptor 和能力发现 facade |
 | `capability_registry.go` | 顶层 format capability facade |
 | `capability/registry.go` | capability 注册表实现 |
+| `registry/` | format descriptor 共同事实源、能力发现视图和冲突诊断 |
 | `provider.go` | Provider 基础接口和 table provider 注册表 |
 | `table_info.go` | `TableInfo`、`FieldInfo` 等 data type 语义模型 |
 | `schema.go` | 轻量 schema 与字段类型模型 |
@@ -90,6 +92,8 @@ func GuessContentType(filename string, peek []byte) string
 
 `FormatCapability` 用于声明格式在平台中的可消费能力，术语与 engine capability 对齐。
 
+内置 capability 当前由 `common/format/registry` 中的 `FormatDescriptor` 派生，避免 detection、capability、preview 和 transfer 元信息分散维护。`common/format` 顶层 API 保持 facade 形态，调用方通常不需要直接依赖 `registry` 子包。
+
 ```go
 type FormatCapability struct {
     Format         FormatType
@@ -130,6 +134,48 @@ type FormatCapability struct {
 capability, ok := format.GetFormatCapability(format.FormatParquet)
 capabilities := format.ListFormatCapabilities()
 formats := format.ListTransferFormatsForEngineFamily(format.EngineFamilyObject)
+```
+
+## Descriptor 与能力发现
+
+`FormatDescriptor` 是格式能力的共同事实源，覆盖识别、默认 data type、layout、provider hints、preview material 和 transfer 能力。它不替代具体 provider 注册表，但用于派生 capability、检测规则和运行时能力发现视图。
+
+```go
+descriptor, ok := format.GetFormatDescriptor(format.FormatMarkdown)
+views := format.ListFormatCapabilityViews()
+diagnostics := format.ListFormatConflictDiagnostics()
+```
+
+当前能力发现视图是运行时只读视图，用于展示 format、provider、preview、transfer 状态。冲突诊断会记录 descriptor 注册中的 format、extension、MIME 冲突；后续第三方 manifest 加载时将复用同一机制。
+
+第三方格式可以先通过 descriptor manifest 注册识别和 capability 声明：
+
+```go
+descriptor, err := format.RegisterFormatPluginManifest("/path/to/plugin.json")
+descriptors, err := format.RegisterFormatPluginManifestsFromDir("/path/to/plugins")
+```
+
+manifest 当前最小结构：
+
+```json
+{
+  "descriptor": {
+    "id": "plugin-markdown-like",
+    "version": "v1",
+    "format": "markdown_like",
+    "data_type": "document",
+    "layouts": ["single"],
+    "identification": {
+      "extensions": [".mdl"],
+      "mime_types": ["text/x-markdown-like"]
+    },
+    "preview": {
+      "kind": "markdown",
+      "preview_materials": ["markdown"],
+      "frontend_renderer": "markdown"
+    }
+  }
+}
 ```
 
 ## Table Provider
@@ -195,6 +241,72 @@ rows, err := provider.SampleTable(ctx, input, 0, 50, nil)
 - engine 鉴权、连接池、对象列举、内容打开、重试和审计都在上层或 engine/resource 层完成。
 - Manager 负责把 `TableInfo + rows` 组装为预览 DTO。
 - Transfer 后续通过 planner 组合 engine capability、format capability 和 data type provider。
+
+## Document Provider
+
+`DocumentProvider` 是文档 data type 的格式层入口。它消费调用方传入的 `io.Reader`，返回文档信息或文本片段，不直接读取 engine，也不返回 Manager preview DTO。
+
+```go
+type DocumentProvider interface {
+    Provider
+    DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error)
+    ExtractText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error)
+}
+```
+
+当前内置最小实现：
+
+- `text`
+- `markdown`
+
+调用示例：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+
+provider, err := format.GetDocumentProvider(format.FormatMarkdown)
+if err != nil {
+    return err
+}
+
+text, truncated, err := provider.ExtractText(ctx, input, 16*1024, nil)
+```
+
+WPS、DOCX、PPTX 这类当前由前端 renderer 更适合处理的格式，不应因为预览材料是 `raw_binary` 就降级为二进制格式；后续如需全文索引、摘要或服务端转换，再补对应 DocumentProvider。
+
+## Media Provider
+
+`MediaProvider` 是媒体 data type 的格式层入口。它消费调用方传入的 `io.Reader`，返回媒体元信息，不直接读取 engine，也不返回 Manager preview DTO。
+
+```go
+type MediaProvider interface {
+    Provider
+    DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaInfo, error)
+}
+```
+
+当前内置最小实现：
+
+- `image`
+- `jpeg`
+- `png`
+- `gif`
+- `tiff`
+
+调用示例：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+
+provider, err := format.GetMediaProvider(format.FormatPNG)
+if err != nil {
+    return err
+}
+
+info, err := provider.DescribeMedia(ctx, input, nil)
+```
+
+图片 MediaProvider 目前返回宽高、编码、MIME、颜色空间和可选 GeoTIFF 空间属性。缩略图、视频、音频等能力后续再扩展。
 
 ## TableInfo
 
