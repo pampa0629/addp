@@ -11,31 +11,49 @@ import (
 	"github.com/addp/common/format"
 )
 
-// Plugin 实现 CSV 格式
+// Plugin 实现分隔文本表格格式。
 type Plugin struct {
-	options *format.ParseOptions
+	formatType format.FormatType
+	options    *format.ParseOptions
 }
 
 // NewPlugin 创建 CSV 格式 plugin
 func NewPlugin(opts *format.ParseOptions) *Plugin {
+	return newPlugin(format.FormatCSV, opts)
+}
+
+// NewTSVPlugin 创建 TSV 格式 plugin。
+func NewTSVPlugin(opts *format.ParseOptions) *Plugin {
+	return newPlugin(format.FormatTSV, opts)
+}
+
+func newPlugin(formatType format.FormatType, opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Plugin{options: opts}
+	copied := *opts
+	switch formatType {
+	case format.FormatTSV:
+		copied.Delimiter = '\t'
+	default:
+		copied.Delimiter = ','
+		formatType = format.FormatCSV
+	}
+	return &Plugin{formatType: formatType, options: &copied}
 }
 
 func (p *Plugin) Format() format.FormatType {
-	return format.FormatCSV
+	return p.formatType
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatCSV)
+	descriptor, ok := format.GetFormatDescriptor(p.formatType)
 	if ok {
 		return descriptor
 	}
 	return format.FormatDescriptor{
-		ID:             "builtin-csv",
-		Format:         format.FormatCSV,
+		ID:             "builtin-" + string(p.formatType),
+		Format:         p.formatType,
 		DataType:       format.FormatDataTypeTable,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderTable},
@@ -44,12 +62,12 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 }
 
 func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(format.FormatCSV)
+	capability, ok := format.GetFormatCapability(p.formatType)
 	if ok {
 		return capability
 	}
 	return format.FormatCapability{
-		Format:        format.FormatCSV,
+		Format:        p.formatType,
 		DataType:      format.FormatDataTypeTable,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderTable},
@@ -59,15 +77,40 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
+func (p *Plugin) effectiveOptions(options *format.ParseOptions) *format.ParseOptions {
+	if p == nil || p.options == nil {
+		if options != nil {
+			return options
+		}
+		return format.DefaultParseOptions()
+	}
+	copied := *p.options
+	if options == nil {
+		return &copied
+	}
+	copied.Encoding = options.Encoding
+	copied.SkipRows = options.SkipRows
+	copied.MaxRows = options.MaxRows
+	copied.SampleSize = options.SampleSize
+	copied.ExtraParams = options.ExtraParams
+	copied.ContentIndexStep = options.ContentIndexStep
+	copied.HasHeader = options.HasHeader
+	copied.SpatialRefSys = options.SpatialRefSys
+	copied.SheetName = options.SheetName
+	copied.SheetIndex = options.SheetIndex
+	copied.TableSample = options.TableSample
+	if options.Delimiter != 0 {
+		copied.Delimiter = options.Delimiter
+	}
+	return &copied
+}
+
 // DescribeFormat 返回 CSV 格式私有元数据，写入 attributes.format_info.csv。
 func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	opts := p.options
-	if options != nil {
-		opts = options
-	}
+	opts := p.effectiveOptions(options)
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)
 	headers, err := reader.Read()
@@ -87,11 +130,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 
 // DescribeTable 从 CSV 文件中提取 table 类型信息。
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	// 使用传入的 options，如果为 nil 则使用默认的
-	opts := p.options
-	if options != nil {
-		opts = options
-	}
+	opts := p.effectiveOptions(options)
 
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)
@@ -178,11 +217,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 // SampleTable 读取 CSV 表格样本。
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	// 使用传入的 options，如果为 nil 则使用默认的
-	opts := p.options
-	if options != nil {
-		opts = options
-	}
+	opts := p.effectiveOptions(options)
 
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)
@@ -295,7 +330,7 @@ func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64)
 	return &format.ContentIndex{
 		Kind:        format.ContentIndexKindSparseRow,
 		DataType:    format.ContentIndexDataTypeTable,
-		Format:      string(format.FormatCSV),
+		Format:      string(p.formatType),
 		Unit:        format.ContentIndexUnitRow,
 		OffsetUnit:  format.ContentIndexOffsetByte,
 		Step:        step,
@@ -481,6 +516,6 @@ func (p *Plugin) isDate(s string) bool {
 }
 
 func init() {
-	plugin := NewPlugin(nil)
-	_ = format.RegisterFormatPlugin(plugin)
+	_ = format.RegisterFormatPlugin(NewPlugin(nil))
+	_ = format.RegisterFormatPlugin(NewTSVPlugin(nil))
 }

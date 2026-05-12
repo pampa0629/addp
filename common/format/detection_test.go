@@ -30,6 +30,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatCSV,
 		},
 		{
+			name:     "ORC by extension",
+			filename: "data.orc",
+			peek:     nil,
+			want:     FormatORC,
+		},
+		{
 			name:     "Markdown by extension",
 			filename: "README.md",
 			peek:     nil,
@@ -100,6 +106,7 @@ func TestMIMEToFormat(t *testing.T) {
 		{"image/png", FormatPNG},
 		{"application/json", FormatJSON},
 		{"application/x-sqlite3", FormatSQLite},
+		{"application/vnd.apache.orc", FormatORC},
 		{"video/mp4", FormatVideo},
 		{"audio/mpeg", FormatAudio},
 		{"unknown/type", FormatUnknown},
@@ -127,6 +134,7 @@ func TestFormatToMIME(t *testing.T) {
 		{FormatMarkdown, "text/markdown"},
 		{FormatJPEG, "image/jpeg"},
 		{FormatSQLite, "application/x-sqlite3"},
+		{FormatORC, "application/orc"},
 		{FormatShapefile, "application/x-shapefile"},
 		{FormatUnknown, "application/octet-stream"},
 	}

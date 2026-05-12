@@ -4,11 +4,12 @@
 
 本文只记录“数据类型、文件格式、组织方式、横切能力、attributes 治理”中尚未形成正式规范、需要先讨论确认的事项。已确认或正在整理的 next 阶段文档包括：
 
-- [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)
-- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
-- [ADDP 数据项 detector 规范](../spec/addp数据项detector规范.md)
+- [ADDP 数据项体系图](../concepts/addp数据项体系图.md)
+- [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)
+- [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md)
+- [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
 - [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
-- [ADDP 内置数据格式规范](../spec/addp内置数据格式规范.md)
+- [ADDP 内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md)
 - [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)
 - [ADDP 格式预览与插件化扩展推进](addp格式预览与插件化扩展推进.md)
 
@@ -122,7 +123,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 i
 
 引擎原生 item 不要求 `component_files`。`meta_item.full_name` 已是引擎内唯一逻辑标识和定位事实源，不再定义通用 `entry_path`。
 
-## 八、TableInfo / ObjectInfo / Scanner* 模型收口
+## 八、表格信息与旧扫描模型收口
 
 该事项移入 [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)，作为实现阶段的模型收口任务推进。
 

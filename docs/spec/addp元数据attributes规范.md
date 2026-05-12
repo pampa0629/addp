@@ -1,6 +1,6 @@
 # ADDP 元数据 attributes 规范
 
-本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 和 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md) 为准。
 
 ## 目标结构
 
@@ -79,7 +79,7 @@ attributes 分区统一采用以下概念：
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
 2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `organization`。
-3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
+3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
 4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
 5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
 6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
@@ -143,7 +143,7 @@ attributes 分区统一采用以下概念：
 | `media` | `type_info.media` | kind、width、height、duration、codec、sample_rate、color_mode |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
 | `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
-| `unknown` | `type_info.unknown` | detection_reason、fallback_preview |
+| `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段级空间类型、原始字段类型、nullable 等属于 table field info；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`。
 
@@ -168,7 +168,7 @@ attributes 分区统一采用以下概念：
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
 | `statistics` | 统计和采样 | sample_size、null_count、min、max、profiled_at |
-| `extraction` | 内容提取 | metadata_extracted、extractor_available、plain_text_preview、summary、index_ref |
+| `extraction` | 内容提取 | metadata_extracted、extractor_available、text_excerpt、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
 | `partitioning` | 分区能力 | partition_columns、partition_count、partition_sample |
 | `indexing` | 索引能力 | spatial_indexes、fulltext_indexes、vector_indexes |
@@ -230,5 +230,5 @@ attributes 分区统一采用以下概念：
 
 - 平台级行为只依赖 `storage`、`item`、`type_info`、`format_info` 和平台标准 `capabilities`。
 - 私有格式信息默认只用于展示、诊断或插件自身能力。
-- 预览路由不得依赖任意 custom key。
+- Manager 内容路由不得依赖任意 custom key。
 - 搜索索引可以选择性索引私有格式信息和横切能力，但应记录来源和字段命名空间。

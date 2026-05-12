@@ -1,472 +1,228 @@
 # ADDP 元数据体系图
 
-本文档展示 ADDP 平台的元数据管理体系，包括层次结构和扫描流程。引擎目录和元数据能力统一来自 `CatalogProvider` 与 `ItemMetadataProvider`，接口规范见 [../spec/addp引擎插件接口规范.md](../spec/addp引擎插件接口规范.md)。
+本文从概念层说明 ADDP 的元数据体系如何把引擎资源转换为平台数据项，并写入 `meta_item` 与 `attributes`。数据项、数据类型、格式和读取能力的详细边界分别见：
 
----
+- [ADDP 数据项体系图](addp数据项体系图.md)
+- [ADDP 数据类型和格式体系图](addp数据类型和格式体系图.md)
+- [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
+- [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
+- [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
 
-## 目录
+## 核心结论
 
-1. [元数据概念](#元数据概念)
-2. [元数据层次结构](#元数据层次结构)
-3. [Parser 体系架构](#parser-体系架构)
-4. [TableInfo 统一数据结构](#tableinfo-统一数据结构)
-5. [ExtensionInfo 扩展机制](#extensioninfo-扩展机制)
-6. [元数据扫描流程](#元数据扫描流程)
+Meta 模块的职责是：**从 engine 资源树中识别 data item，裁决 item 身份，编排格式和数据类型能力，生成标准 attributes，并落库。**
 
----
+Meta 不负责：
 
-## 元数据概念
+- Manager 面向前端的 DTO。
+- Transfer 执行计划。
+- FormatPlugin 内部解析细节。
+- Frontend 展示策略。
 
-**元数据 (Metadata)** 是描述数据的数据,包括:
-- **数据库元数据**: 库名、表名、字段名、数据类型
-- **文件元数据**: 文件名、大小、格式、路径
-- **空间元数据**: 坐标系、边界框、要素数量
-- **统计元数据**: 记录数、字段分布、空值率
+元数据主链路是：
 
-**ADDP 元数据管理的核心抽象**:
-- **数据节点 (Node)**: 数据的层次结构节点(数据库、Schema、Bucket 等)
-- **数据项 (Item)**: 可查询的数据单元(表、集合、文件等)
-
----
-
-## 元数据层次结构
-
-ADDP 将不同类型存储引擎的层次结构统一抽象为**数据节点**和**数据项**。真实层级由插件的 Catalog Model 声明。
-
-### 2.1 关系型数据库层次结构
-
-```mermaid
-graph TB
-    RDB[关系型数据库<br/>PostgreSQL/MySQL/Doris/ClickHouse<br/>Engine]
-    RDB --> RDBNODE1[Database<br/>数据库 - Node]
-    RDBNODE1 --> RDBNODE2[Schema<br/>模式 - Node]
-    RDBNODE2 --> RDBITEM[Table<br/>表 - Item]
-    RDBITEM --> RDBCOL[Column<br/>字段 - Metadata]
-
-    classDef engine fill:#fff9c4,stroke:#f57f17
-    classDef node fill:#e1f5ff,stroke:#01579b
-    classDef item fill:#e8f5e9,stroke:#1b5e20
-    classDef metadata fill:#f3e5f5,stroke:#4a148c
-
-    class RDB engine
-    class RDBNODE1,RDBNODE2 node
-    class RDBITEM item
-    class RDBCOL metadata
+```text
+engine catalog / metadata
+  -> Meta scanner
+  -> Meta detector
+  -> FormatPlugin / info provider / content reader 提供候选事实
+  -> Meta normalizer
+  -> meta_node / meta_item / attributes
+  -> search / asset / manager / transfer 消费
 ```
 
-### 2.2 NoSQL 数据库层次结构
+## 总览
 
 ```mermaid
-graph TB
-    NoSQL[NoSQL数据库<br/>MongoDB<br/>Engine]
-    NoSQL --> NoSQLNODE1[Database<br/>数据库 - Node]
-    NoSQLNODE1 --> NoSQLITEM[Collection<br/>集合 - Item]
-    NoSQLITEM --> NoSQLFIELD[Field<br/>字段 - Metadata]
+graph LR
+    Engine[Engine Plugin] --> Catalog[CatalogProvider]
+    Engine --> Metadata[ItemMetadataProvider]
+    Engine --> Read[Content / Range / Batch Read]
 
-    classDef engine fill:#fff9c4,stroke:#f57f17
-    classDef node fill:#e1f5ff,stroke:#01579b
-    classDef item fill:#e8f5e9,stroke:#1b5e20
-    classDef metadata fill:#f3e5f5,stroke:#4a148c
+    Catalog --> Scanner[Meta Scanner]
+    Metadata --> Scanner
+    Read --> Scanner
 
-    class NoSQL engine
-    class NoSQLNODE1 node
-    class NoSQLITEM item
-    class NoSQLFIELD metadata
+    Scanner --> Detector[Meta Detector]
+    Detector --> Item[Detected Data Item]
+
+    Item --> Format[FormatPlugin]
+    Format --> Info[Info Provider]
+    Format --> Reader[Content Reader]
+
+    Info --> Normalizer[Meta Normalizer]
+    Detector --> Normalizer
+    Reader --> Normalizer
+
+    Normalizer --> NodeTable[meta_node]
+    Normalizer --> ItemTable[meta_item]
+    Normalizer --> Attrs[meta_item.attributes]
+
+    Attrs --> Search[Search / Asset]
+    ItemTable --> Manager[Manager]
+    ItemTable --> Transfer[Transfer]
 ```
 
-### 2.3 对象存储层次结构
+## 元数据核心对象
 
-```mermaid
-graph TB
-    OBJ[对象存储<br/>MinIO/S3<br/>Engine]
-    OBJ --> OBJNODE1[Bucket<br/>存储桶 - Node]
-    OBJNODE1 --> OBJNODE2[Folder<br/>文件夹 - Node]
-    OBJNODE2 --> OBJITEM[Object<br/>对象 - Item]
-    OBJITEM --> OBJMETA[Metadata<br/>文件元数据]
+| 对象 | 含义 | 事实源 |
+|---|---|---|
+| engine | 数据来自哪个引擎，以及如何连接和读取 | system engine 配置、engine plugin |
+| node | 引擎资源树节点，例如 schema、bucket、prefix、目录 | `meta_node` |
+| data item | 平台管理的核心数据对象 | `meta_item` |
+| attributes | data item 的结构化扩展事实 | `meta_item.attributes` |
 
-    classDef engine fill:#fff9c4,stroke:#f57f17
-    classDef node fill:#e1f5ff,stroke:#01579b
-    classDef item fill:#e8f5e9,stroke:#1b5e20
-    classDef metadata fill:#f3e5f5,stroke:#4a148c
+`node` 用于组织资源树，不等于 data item。`data item` 才是预览、检索、授权、传输、资产治理的核心对象。
 
-    class OBJ engine
-    class OBJNODE1,OBJNODE2 node
-    class OBJITEM item
-    class OBJMETA metadata
+## 资源层次
+
+不同引擎的层次不同，但 Meta 统一落到 node 和 data item。
+
+| 引擎类型 | 典型 node | 典型 data item |
+|---|---|---|
+| PostgreSQL / MySQL | database、schema | table、view |
+| MongoDB | database | collection |
+| Neo4j | database | label、relationship |
+| MinIO / S3 | bucket、prefix | object、multi file item、whole scope item |
+| NFS / 本地文件系统 | root、dir | file、multi file item、whole scope item |
+
+文件、对象、表、集合、label 是否成为 data item，由 Meta detector 根据引擎原生边界和格式规则裁决。
+
+## Meta Scanner
+
+Meta Scanner 负责调度扫描，不直接定义格式语义。
+
+它主要做：
+
+1. 调用 engine capability 获取资源树和基础元信息。
+2. 把扫描范围交给 Meta detector。
+3. 根据 detector 结果构造必要的读取抽象。
+4. 调用 FormatPlugin、info provider 或 content reader 获取候选事实。
+5. 调用 normalizer 生成 `meta_item` 和标准 attributes。
+6. 写入数据库，并触发搜索或资产侧消费。
+
+Scanner 不应：
+
+- 按 Manager 需求拼前端 DTO。
+- 在不同引擎里重复写同一格式的解析逻辑。
+- 绕过 detector 自行拼装 multi / whole item。
+
+## Meta Detector
+
+Meta Detector 是 data item 识别的唯一入口。
+
+它回答：
+
+- 当前扫描范围能生成几个 data item。
+- 每个 data item 的组织方式是什么。
+- 主资源或 whole scope 根范围是什么。
+- 组件资源有哪些。
+- 哪些资源已被 claims 认领。
+- 当前范围是否 exclusive。
+
+Detector 可以使用 FormatPlugin 的布局声明和格式探测结果，但最终 data item 边界由 Meta 裁决。详细规则见 [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)。
+
+## FormatPlugin 与 provider / reader
+
+Meta 可以调用 `common/format` 的能力，但必须保持职责边界：
+
+| 能力 | Meta 如何使用 | 写入位置 |
+|---|---|---|
+| FormatPlugin descriptor / capability | 判断格式身份、默认 data type、布局和可用能力 | `attributes.item` 的候选来源 |
+| FormatInfoProvider | 获取格式私有元信息 | `attributes.format_info.<format>` |
+| TableInfoProvider | 获取表字段、行数、主键等类型信息 | `attributes.type_info.table` |
+| DocumentInfoProvider | 获取文档标题、页数、语言、提取状态等 | `attributes.type_info.document` |
+| MediaInfoProvider | 获取媒体宽高、编码、时长等 | `attributes.type_info.media` |
+| Content reader | 获取内容片段、样本或读取索引需要的事实 | 通常不直接落内容；必要索引写入 `content_index` |
+
+内容样本、原始内容、Manager 前端 DTO 不属于元数据属性，不能塞进 `type_info` 或 `format_info`。
+
+## Attributes 分区
+
+Meta normalizer 是 attributes 标准分区的最终裁决点。
+
+```json
+{
+  "schema_version": 1,
+  "storage": {},
+  "item": {},
+  "type_info": {},
+  "format_info": {},
+  "content_index": {},
+  "capabilities": {}
+}
 ```
 
-### 层次结构对照表
+| 分区 | 写入内容 |
+|---|---|
+| `storage` | 引擎侧存储属性，例如 path、bucket、size、etag、last_modified_at |
+| `item` | organization、data_type、format、component_files、scope_exclusive |
+| `type_info` | data type 通用元数据，例如 table fields、document page_count、media width |
+| `format_info` | 文件格式私有信息，例如 csv delimiter、shapefile components |
+| `content_index` | 内容读取索引，例如 table sparse row index |
+| `capabilities` | spatial、temporal、statistics、extraction 等横切事实 |
 
-| 存储类型 | 层级1 (Engine) | 层级2 (Node) | 层级3 (Node) | 层级4 (Item) | 层级5 (Metadata) |
-|---------|---------------|-------------|-------------|------------|-----------------|
-| **PostgreSQL** | PostgreSQL | Schema | - | Table/View | Column |
-| **MySQL/Doris/ClickHouse** | 引擎 | Database | - | Table/View | Column |
-| **MongoDB** | MongoDB | Database | - | Collection | Field |
-| **Neo4j** | Neo4j | Database | - | Label/Relationship | Property |
-| **对象存储** | MinIO/S3 | Bucket | Prefix | Object | Object Metadata |
-| **NFS** | NFS Engine | Root (`""`) | Dir | File | File Metadata |
+`meta_item` 表字段是 item 身份事实源，不重复写入 attributes。
 
-**抽象规则**:
-- **Node**: 层次结构的容器,用于组织数据(Database、Schema、Bucket、Folder、Root、Dir)
-- **Item**: 可描述、预览或读取的数据单元，是元数据扫描的目标（Table、Collection、Label、Relationship、Object、File）
-- **Metadata**: Item 的详细描述信息(Column、Field、File Metadata)
-
-**文件系统 vs 对象存储的 Node 类型区别**:
-- 对象存储使用 `bucket` / `prefix`（prefix 是虚拟目录，对象键的前缀）
-- 文件系统使用 `root` / `dir`（真实目录树，root 来自引擎配置不进入路径）
-
----
-
-## Provider / Extractor 体系架构
-
-ADDP 当前将格式侧表格能力收口到 `TableProvider`。`TableProvider` 是上层消费文件表、组件表、scope 表语义的主入口；数据库表和文档集合属于 engine-native 数据，由 engine capability 或后续 data type provider 提供平台语义。文件元数据增强仍由 `FileMetadataExtractor` 负责。
-
-```mermaid
-classDiagram
-    class TableProvider {
-        <<interface>>
-        +DescribeTable(input) TableInfo
-        +SampleTable(input, offset, limit) Rows
-    }
-
-    class ComponentTableProvider {
-        <<interface>>
-        +DescribeTableComponents(components) TableInfo
-        +SampleTableComponents(components, offset, limit) Rows
-    }
-
-    class ScopeTableProvider {
-        <<interface>>
-        +DescribeTableScope(reader, scope) TableInfo
-        +SampleTableScope(reader, scope, offset, limit) Rows
-    }
-
-    class FileMetadataExtractor {
-        <<interface>>
-        +Extract(input) ExtractedMetadata
-    }
-
-    class CSVProvider {
-        实现: TableProvider
-        支持: CSV 文件
-    }
-
-    class ShapefileProvider {
-        实现: ComponentTableProvider
-        支持: Shapefile 多组件文件
-    }
-
-    class JSONSpatialProvider {
-        实现: TableProvider
-        支持: JSON 空间扩展结构
-    }
-
-    class ExcelProvider {
-        实现: TableProvider
-        支持: Excel 文件
-    }
-
-    class ParquetProvider {
-        实现: ScopeTableProvider
-        支持: Parquet 单文件和目录表
-    }
-
-    class ImageExtractor {
-        实现: FileMetadataExtractor
-        支持: JPG, PNG, TIFF
-    }
-
-    class PDFExtractor {
-        实现: FileMetadataExtractor
-        支持: PDF 文档
-    }
-
-    TableProvider <|.. CSVProvider
-    TableProvider <|.. JSONSpatialProvider
-    TableProvider <|.. ExcelProvider
-    TableProvider <|.. ComponentTableProvider
-    TableProvider <|.. ScopeTableProvider
-    ComponentTableProvider <|.. ShapefileProvider
-    ScopeTableProvider <|.. ParquetProvider
-
-    FileMetadataExtractor <|.. ImageExtractor
-    FileMetadataExtractor <|.. PDFExtractor
-```
-
-### Provider / Extractor 类型说明
-
-**1. TableProvider (表数据类型 Provider)**:
-- **用途**: 从外部提供的资源流或组件读取抽象中提取表格语义。
-- **支持格式**: CSV、Shapefile、JSON 空间扩展、Excel、Parquet。
-- **核心方法**:
-  - `DescribeTable()`: 提取表结构(字段定义、行数、扩展信息)。
-  - `SampleTable()`: 读取采样或分页数据。
-- **使用场景**: Manager 文件表预览，以及后续 Meta / Transfer 对文件表能力的统一消费。
-- **边界**: 不接 engine id，不构造读取器，不决定 item 归并，不返回 Manager 专用 DTO。
-
-**2. ComponentTableProvider (多组件表 Provider)**:
-- **用途**: 从一组已确认组件中提取表格语义。
-- **典型格式**: Shapefile。
-- **边界**: 组件集合由 Meta 或上层编排提供，format provider 只负责组件解码。
-
-**3. ScopeTableProvider (范围表 Provider)**:
-- **用途**: 从目录、prefix 或 manifest scope 中提取表格语义。
-- **典型格式**: Parquet 目录表。
-- **边界**: 范围列举和内容打开由 `common/resource.ResourceReader` 提供。
-
-**4. FileMetadataExtractor (文件元数据提取器)**:
-- **用途**: 从文件内容提取媒体、文档、文本等增强元数据。
-- **支持类型**: 图片 (JPEG、PNG、TIFF)、视频 (MP4、AVI)、文档 (PDF)。
-- **核心方法**:
-  - `Extract()`: 提取 `ExtractedMetadata`。
-- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据，并按 attributes 规范写入 `storage`、`type_info.media`、`type_info.document`、`capabilities.extraction`。
-
----
-
-## TableInfo 统一数据结构
-
-无论是关系型表、文件表还是文档集合,都统一返回 `TableInfo` 结构:
-
-```mermaid
-classDiagram
-    class TableInfo {
-        +Name string
-        +RowCount *int64
-        +Fields []FieldInfo
-        +PrimaryKey []string
-        +Extensions []ExtensionInfo
-    }
-
-    class FieldInfo {
-        +Name string
-        +Type FieldType
-        +Nullable bool
-        +DefaultValue *string
-        +Comment string
-        +OccurrenceRate *float64
-    }
-
-    class FieldType {
-        <<enumeration>>
-        string
-        int
-        bigint
-        float
-        decimal
-        bool
-        date
-        time
-        timestamp
-        bytes
-        geometry
-        point
-        linestring
-        polygon
-        json
-        array
-        uuid
-        mixed
-    }
-
-    class ExtensionInfo {
-        <<interface>>
-        +Type() string
-    }
-
-    TableInfo "1" --> "*" FieldInfo
-    TableInfo "1" --> "*" ExtensionInfo
-    FieldInfo --> FieldType
-
-    class SpatialInfo {
-        +BoundingBox [4]float64
-        +CoordinateSystem string
-        +FeatureCount int
-    }
-
-    class CSVInfo {
-        +Delimiter string
-        +Encoding string
-        +HasHeader bool
-    }
-
-    class DocCollectionInfo {
-        +SampleSize int
-        +SchemaType string
-        +Indexes []IndexInfo
-    }
-
-    ExtensionInfo <|.. SpatialInfo
-    ExtensionInfo <|.. CSVInfo
-    ExtensionInfo <|.. DocCollectionInfo
-```
-
-### TableInfo 字段说明
-
-| 字段 | 类型 | 说明 | 示例 |
-|------|------|------|------|
-| `Name` | string | 表名/集合名/文件名 | `"users"`, `"cities.geojson"` |
-| `RowCount` | *int64 | 记录数/文档数(可选) | `1000000` |
-| `Fields` | []FieldInfo | 字段列表 | `[{Name: "id", Type: "int"}, ...]` |
-| `PrimaryKey` | []string | 主键字段(MongoDB 为 `["_id"]`) | `["id"]`, `["_id"]` |
-| `Extensions` | []ExtensionInfo | 扩展信息(根据数据源类型不同) | `[SpatialInfo, CSVInfo, ...]` |
-
-### FieldInfo 字段说明
-
-| 字段 | 类型 | 说明 | 适用场景 |
-|------|------|------|---------|
-| `Name` | string | 字段名 | 所有数据源 |
-| `Type` | FieldType | 统一字段类型 | 所有数据源 |
-| `Nullable` | bool | 是否可为空 | 关系型数据库、文件 |
-| `DefaultValue` | *string | 默认值(可选) | 关系型数据库 |
-| `Comment` | string | 字段注释 | 关系型数据库 |
-| `OccurrenceRate` | *float64 | 字段出现率(可选,0.0-1.0) | MongoDB (灵活 Schema) |
-
-**OccurrenceRate 说明**:
-- MongoDB 等 NoSQL 数据库支持灵活 Schema,不同文档可能有不同字段
-- `OccurrenceRate` 表示字段在采样文档中的出现率
-- 示例: `OccurrenceRate = 0.95` 表示 95% 的文档包含该字段
-
----
-
-## ExtensionInfo 扩展机制
-
-ADDP 通过 `ExtensionInfo` 接口为不同数据源提供特定的扩展信息:
-
-```mermaid
-graph TB
-    ExtensionInfo[ExtensionInfo 接口]
-
-    ExtensionInfo --> Spatial[SpatialInfo<br/>空间信息]
-    ExtensionInfo --> CSV[CSVInfo<br/>CSV信息]
-    ExtensionInfo --> Shapefile[ShapefileInfo<br/>Shapefile信息]
-    ExtensionInfo --> Excel[ExcelInfo<br/>Excel信息]
-    ExtensionInfo --> Image[ImageInfo<br/>图片信息]
-    ExtensionInfo --> Video[VideoInfo<br/>视频信息]
-    ExtensionInfo --> PDF[PDFInfo<br/>PDF信息]
-    ExtensionInfo --> Doc[DocCollectionInfo<br/>文档集合信息]
-
-    Spatial --> SpatialEx[BoundingBox: 边界框<br/>CoordinateSystem: 坐标系<br/>FeatureCount: 要素数]
-
-    CSV --> CSVEx[Delimiter: 分隔符<br/>Encoding: 字符编码<br/>HasHeader: 是否有表头]
-
-    Doc --> DocEx[SampleSize: 采样大小<br/>SchemaType: Schema类型<br/>Indexes: 索引列表]
-
-    Image --> ImageEx[Width: 宽度<br/>Height: 高度<br/>Format: 格式<br/>EXIF: EXIF信息]
-
-    classDef interface fill:#fff9c4,stroke:#f57f17
-    classDef extension fill:#e1f5ff,stroke:#01579b
-    classDef detail fill:#e8f5e9,stroke:#1b5e20
-
-    class ExtensionInfo interface
-    class Spatial,CSV,Shapefile,Excel,Image,Video,PDF,Doc extension
-    class SpatialEx,CSVEx,DocEx,ImageEx detail
-```
-
-### ExtensionInfo 类型说明
-
-| ExtensionInfo 类型 | 适用数据源 | 主要字段 |
-|-------------------|-----------|---------|
-| **SpatialInfo** | Shapefile、JSON 空间扩展、PostGIS 表 | 边界框、坐标系、要素数 |
-| **CSVInfo** | CSV 文件 | 分隔符、字符编码、是否有表头 |
-| **ShapefileInfo** | Shapefile 文件 | .shp、.shx、.dbf、.prj 文件路径 |
-| **ExcelInfo** | Excel 文件 | 工作表列表、活动工作表 |
-| **ImageInfo** | 图片文件 (JPEG、PNG、TIFF) | 宽度、高度、格式、EXIF 信息 |
-| **VideoInfo** | 视频文件 (MP4、AVI) | 时长、分辨率、编码格式 |
-| **PDFInfo** | PDF 文件 | 页数、作者、创建时间 |
-| **DocCollectionInfo** | MongoDB Collection | 采样信息、Schema 类型、索引 |
-
----
-
-## 元数据扫描流程
-
-ADDP 根据引擎类型自动选择合适的扫描方式:
+## 扫描流程
 
 ```mermaid
 sequenceDiagram
-    participant Meta as Meta 模块
-    participant Plugin as 引擎插件
-    participant Parser as Parser
-    participant Storage as 存储系统
-    participant DB as PostgreSQL<br/>(metadata schema)
-    participant Search as Meilisearch
+    participant Meta as Meta Scanner
+    participant Engine as Engine Plugin
+    participant Detector as Meta Detector
+    participant Format as FormatPlugin
+    participant Normalizer as Meta Normalizer
+    participant DB as PostgreSQL
+    participant Search as Search / Asset
 
-    Meta->>Plugin: 1. 选择插件<br/>(根据引擎类型和 capabilities)
-    Meta->>Plugin: 2. CatalogProvider.ListChildren(root)
-    Plugin->>Storage: 3. 查询真实目录
-    Storage-->>Plugin: 4. 返回 Node 列表
-    Plugin-->>Meta: 5. 返回 Node 列表
-
-    loop 遍历每个 Item (表/集合/文件)
-        Meta->>Plugin: 6. CatalogProvider.ListChildren(node)
-        Plugin->>Storage: 7. 查询子节点和 Item 列表
-        Storage-->>Plugin: 8. 返回 Item 列表
-        Plugin-->>Meta: 9. 返回 Item 列表
-
-        Meta->>Plugin: 10. ItemMetadataProvider.DescribeItem()
-        Plugin->>Storage: 11. 提取字段/统计/空间/原生元数据
-        Storage-->>Plugin: 12. 返回原始元数据
-        Plugin-->>Meta: 13. 返回统一 ItemMetadata
-        Meta->>Parser: 14. 必要时选择 Parser<br/>(文件内容解析/嵌入)
-
-        Meta->>DB: 15. 保存元数据<br/>(metadata.meta_node 和 metadata.meta_item 表)
-        Meta->>Search: 16. 索引到 Meilisearch<br/>(assets 统一索引)
-    end
-
-    Meta-->>Meta: 17. 扫描完成
+    Meta->>Engine: CatalogProvider.ListChildren(scope)
+    Engine-->>Meta: nodes / resource candidates
+    Meta->>Engine: ItemMetadataProvider / read capability
+    Engine-->>Meta: storage facts / content readers
+    Meta->>Detector: ResolveItems(scope, candidates)
+    Detector-->>Meta: detected items / claims / exclusive
+    Meta->>Format: descriptor / info provider / content reader
+    Format-->>Meta: type info / format info / capability facts
+    Meta->>Normalizer: normalize item + facts
+    Normalizer-->>Meta: meta_node / meta_item / attributes
+    Meta->>DB: upsert metadata
+    Meta->>Search: index standard facts
 ```
 
-### 扫描流程说明
+## 基础扫描与深度扫描
 
-**步骤 1-5**: 获取数据节点(Node)
-- Meta 模块根据引擎类型和 `engine.capabilities/v1` 选择对应插件
-- 调用 `CatalogProvider.ListChildren(root)`
-- 获取层次结构的容器节点(Database、Schema、Bucket、Prefix、Directory 等)
+| 扫描类型 | 目标 | 典型内容 |
+|---|---|---|
+| 基础扫描 | 快速发现资源树和 data item | node、item 身份、storage、item 分区、轻量格式判断 |
+| 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、media info、document info、spatial、statistics、content_index |
 
-**步骤 6-9**: 获取数据项(Item)
-- 遍历每个 Node，继续调用 `CatalogProvider.ListChildren(node)`
-- 获取统一数据项列表(Table、Collection、Object、File 等)
+基础扫描和深度扫描都必须遵守同一套 data item 与 attributes 规范。深度扫描只是补充事实，不改变 item 身份规则。
 
-**步骤 10-14**: 解析元数据
-- Meta 模块通过 `ItemMetadataProvider.DescribeItem()` 获取详细元数据
-- 插件返回统一的 ItemMetadata，包含字段、统计、索引、约束、空间信息和原生属性
-- 文件内容解析、文档嵌入等增强流程再按数据类型选择 Parser
+## 消费边界
 
-**步骤 15-16**: 存储和索引
-- 将 Node 数据保存到 PostgreSQL `metadata.meta_node` 表
-- 将 Item 元数据保存到 PostgreSQL `metadata.meta_item` 表
-- 索引到 Meilisearch `assets` 索引（统一资产索引,包含 table 和 object 类型）,支持全文搜索
+| 模块 | 消费方式 | 不应做的事 |
+|---|---|---|
+| Manager | 读取已入库 data item 和 attributes，构造内容读取和前端 DTO | 重新探测 item、重新猜组件 |
+| Transfer | 基于 data item、engine capability、resource 抽象和 format 能力规划读写 | 重复推断字段类型、绕过 provider 硬编码格式 |
+| Asset / Search | 索引标准 attributes 和必要私有命名空间 | 自行解析文件格式 |
+| Frontend | 展示后端 DTO | 直接访问 engine 或裁决 data item 边界 |
 
-### 扫描深度
+## 设计约束
 
-**基础扫描 (Basic Scan)**:
-- 获取基本结构信息(schema/库名、表名、字段名、bucket、对象路径)
-- **增量扫描策略**：如果资源未变化(修改时间、大小无变化),则跳过更新
-- **保留已有深度元数据**：不会覆盖已存在的深度扫描元数据
-- 快速扫描,资源占用少
-- 适合大量数据源的初步扫描和定期检查
-
-**深度扫描 (Deep Scan)**:
-- **强制全量扫描**：扫描所有资源(即使未变化也重新扫描) （todo：这个处理逻辑待改进）
-- **提取详细元数据**：
-  - 关系型数据库：记录数、大小、字段类型、空间字段信息
-  - 对象存储：文件内容类型、编码、分辨率、空间数据的边界框和坐标系
-- **生成搜索索引**：将元数据同步到 Meilisearch
-- **资源清理**：检测并软删除已删除的资源
-- 耗时较长,资源占用大
-- 适合重要数据源的详细分析和首次扫描
-
----
+1. Meta 是 data item 识别和 attributes normalizer 的所有者。
+2. FormatPlugin 只提供格式身份、能力和解析实现，不裁决最终 item。
+3. Info provider 提供元数据，content reader 提供内容数据，二者不能混用。
+4. FileMetadataExtractor 属于旧兼容机制，不再作为新格式扩展主线。
+5. `ExtensionInfo` 不再作为 attributes 扩展主线；格式私有事实进入 `format_info`，横切事实进入 `capabilities`。
+6. Manager / Transfer / Asset / Search 只能消费已入库 data item，不复刻 Meta detector。
 
 ## 相关文档
 
 - [返回核心概念关系图](addp核心概念关系图.md)
-- [ADDP 数据类型与格式体系图](addp数据类型与格式体系图.md)
-- [ADDP 数据格式扩展指南](../spec/addp数据格式扩展指南.md)
-- [ADDP 数据类型与格式模块边界规范](../spec/addp数据类型与格式模块边界规范.md)
+- [ADDP 数据项体系图](addp数据项体系图.md)
+- [ADDP 数据类型和格式体系图](addp数据类型和格式体系图.md)
+- [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
+- [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
+- [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
 - [Meta 模块详情](../../meta/CLAUDE.md)
-
----
-
-**文档版本**: v1.0
-**创建日期**: 2026-02-16
-**作者**: ADDP 开发团队

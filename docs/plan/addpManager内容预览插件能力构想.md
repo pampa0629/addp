@@ -7,7 +7,7 @@
 ## 目标
 
 Manager 内容预览插件应消费 meta 已识别的标准 data item，不重新判断组织方式，不按扩展名抢路由，不自行枚举 sibling 组件。
-插件本身不直接承担格式解析职责；它依赖资源读取抽象、format provider 和 data type provider 提供的结果，再组装最终 preview。
+插件本身不直接承担格式解析职责；它依赖资源读取抽象、FormatPlugin、info provider 和 content reader 提供的结果，再组装最终 preview。
 
 ## 表预览统一口径
 

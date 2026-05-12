@@ -10,7 +10,7 @@
 
 ## 保留结论
 
-Transfer 的问题不只是 engine plugin 接口迁移，而是任务配置、engine capability、resource 抽象、format provider、data type provider 和 pipeline 执行层之间的边界需要重新整理。
+Transfer 的问题不只是 engine plugin 接口迁移，而是任务配置、engine capability、resource 抽象、FormatPlugin、info provider、content reader 和 pipeline 执行层之间的边界需要重新整理。
 
 后续不再单独维护“engine plugin 迁移中的 Transfer 后续事项”，统一以 Transfer Provider 化文档为准。
 

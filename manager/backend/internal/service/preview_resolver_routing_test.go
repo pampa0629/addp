@@ -44,6 +44,28 @@ func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {
 	}
 }
 
+func TestResolveProviderByMetaDoesNotRouteWholeTableWithoutScopeProvider(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type":    "table",
+				"format":       "orc",
+				"organization": "whole",
+			},
+		}},
+		ItemType: "table",
+	}
+	if _, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "dataset"}); err == nil {
+		t.Fatal("expected no provider when format has no scope table implementation")
+	}
+}
+
 func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
@@ -61,6 +83,33 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 		ItemType: "object",
 	}
 	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "roads.geojson"})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:file-table" {
+		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	}
+}
+
+func TestResolveProviderByMetaUsesFileTableForFileSystemTableFormat(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:filesystem"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "nfs"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type":    "table",
+				"format":       "csv",
+				"organization": "single",
+			},
+		}},
+		ItemType: "file",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "nfs"}, Table: "gis-data/sample.csv"})
 	if err != nil {
 		t.Fatalf("resolveProviderByMeta() error = %v", err)
 	}

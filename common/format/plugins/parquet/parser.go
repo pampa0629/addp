@@ -11,22 +11,61 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	parquetgo "github.com/parquet-go/parquet-go"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
 )
 
-// Parser 实现 Parquet 格式的解析器
-type Parser struct{}
+// Plugin 实现 Parquet 格式 plugin。
+type Plugin struct{}
+
+func NewPlugin() *Plugin {
+	return &Plugin{}
+}
 
 func init() {
-	parser := &Parser{}
-	if err := format.RegisterTableProvider(newTableProvider(parser)); err != nil {
-		panic(fmt.Sprintf("failed to register parquet table provider: %v", err))
+	if err := format.RegisterFormatPlugin(NewPlugin()); err != nil {
+		panic(fmt.Sprintf("failed to register parquet format plugin: %v", err))
 	}
 }
 
-// ParseTableInfo 从 Parquet 文件中提取 TableInfo（Schema + 行数）
-func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) Format() format.FormatType {
+	return format.FormatParquet
+}
+
+func (p *Plugin) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatParquet)
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:             "builtin-parquet",
+		Format:         format.FormatParquet,
+		DataType:       format.FormatDataTypeTable,
+		Layouts:        []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		ProviderHints:  []string{format.FormatProviderTable},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderScopeTableSample), string(format.ContentReaderRawContent)},
+	}
+}
+
+func (p *Plugin) Capabilities() format.FormatCapability {
+	capability, ok := format.GetFormatCapability(format.FormatParquet)
+	if ok {
+		return capability
+	}
+	return format.FormatCapability{
+		Format:        format.FormatParquet,
+		DataType:      format.FormatDataTypeTable,
+		Layouts:       []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		ProviderHints: []string{format.FormatProviderTable},
+		TransferRead:  true,
+		TransferWrite: true,
+		Parse:         true,
+	}
+}
+
+// DescribeTable 从 Parquet 文件中提取 TableInfo（Schema + 行数）
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -47,7 +86,7 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 }
 
 // SampleTable 读取 Parquet 表格样本。
-func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -66,46 +105,58 @@ func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	}
 
 	result := make([]map[string]interface{}, 0, limit)
-	rowsRead := int64(0)
-	rowsSkipped := int64(0)
+	remainingOffset := offset
+	if remainingOffset < 0 {
+		remainingOffset = 0
+	}
 
 	for _, rg := range file.RowGroups() {
 		if int64(len(result)) >= limit {
 			break
 		}
+		if remainingOffset >= rg.NumRows() {
+			remainingOffset -= rg.NumRows()
+			continue
+		}
 
 		rows := rg.Rows()
 		defer rows.Close()
 
-		// 跳过 offset 行
-		if rowsSkipped < offset {
-			remaining := offset - rowsSkipped
-			if err := rows.SeekToRow(remaining); err != nil {
-				// SeekToRow 失败时手动跳过
-				buf := make([]parquetgo.Row, 1)
-				for rowsSkipped < offset {
-					n, readErr := rows.ReadRows(buf)
-					if readErr == io.EOF || n == 0 {
-						break
-					}
-					if readErr != nil {
-						return nil, fmt.Errorf("failed to skip rows: %w", readErr)
-					}
-					rowsSkipped++
+		// 跳过当前 row group 内的局部 offset。
+		if remainingOffset > 0 {
+			buf := make([]parquetgo.Row, 1)
+			skipped := int64(0)
+			for skipped < remainingOffset {
+				n, readErr := rows.ReadRows(buf)
+				if n > 0 {
+					skipped += int64(n)
 				}
-			} else {
-				rowsSkipped = offset
+				if readErr == io.EOF {
+					break
+				}
+				if readErr != nil {
+					return nil, fmt.Errorf("failed to skip rows: %w", readErr)
+				}
+				if n == 0 {
+					break
+				}
 			}
+			remainingOffset = 0
 		}
 
 		buf := make([]parquetgo.Row, 1)
 		for int64(len(result)) < limit {
 			n, readErr := rows.ReadRows(buf)
-			if readErr == io.EOF || n == 0 {
-				break
-			}
 			if readErr != nil {
-				return result, fmt.Errorf("failed to read row: %w", readErr)
+				if readErr != io.EOF {
+					return result, fmt.Errorf("failed to read row: %w", readErr)
+				}
+				if n == 0 {
+					break
+				}
+			}
+			if n == 0 {
+				break
 			}
 
 			row := make(map[string]interface{}, len(buf[0]))
@@ -115,11 +166,31 @@ func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit
 				}
 			}
 			result = append(result, row)
-			rowsRead++
+			if readErr == io.EOF {
+				break
+			}
 		}
 	}
 
 	return result, nil
+}
+
+func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {
+	input, err := openFirstParquet(ctx, reader, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer input.Close()
+	return p.DescribeTable(ctx, input, options)
+}
+
+func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	input, err := openFirstParquet(ctx, reader, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer input.Close()
+	return p.SampleTable(ctx, input, offset, limit, options)
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型

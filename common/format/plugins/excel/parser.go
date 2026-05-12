@@ -22,6 +22,43 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts}
 }
 
+func (p *Parser) Format() format.FormatType {
+	return format.FormatExcel
+}
+
+func (p *Parser) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatExcel)
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:             "builtin-excel",
+		Format:         format.FormatExcel,
+		DataType:       format.FormatDataTypeContainer,
+		Layouts:        []string{format.FormatLayoutSingle},
+		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+	}
+}
+
+func (p *Parser) Capabilities() format.FormatCapability {
+	capability, ok := format.GetFormatCapability(format.FormatExcel)
+	if ok {
+		return capability
+	}
+	return format.FormatCapability{
+		Format:        format.FormatExcel,
+		DataType:      format.FormatDataTypeContainer,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
+		Parse:         true,
+	}
+}
+
+func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+	return p.ParseTableInfo(ctx, input, options)
+}
+
 // ParseTableInfo 从 Excel 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
@@ -273,10 +310,5 @@ func trimValue(s string) interface{} {
 }
 
 func init() {
-	parser := NewParser(nil)
-	_ = format.RegisterTableProvider(format.NewTableProvider(
-		format.FormatExcel,
-		parser.ParseTableInfo,
-		parser.SampleTable,
-	))
+	_ = format.RegisterFormatPlugin(NewParser(nil))
 }

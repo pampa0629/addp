@@ -22,6 +22,7 @@ const (
 	FormatJPEG      Format = Format(formatregistry.FormatJPEG)
 	FormatJSON      Format = Format(formatregistry.FormatJSON)
 	FormatMarkdown  Format = Format(formatregistry.FormatMarkdown)
+	FormatORC       Format = Format(formatregistry.FormatORC)
 	FormatParquet   Format = Format(formatregistry.FormatParquet)
 	FormatPDF       Format = Format(formatregistry.FormatPDF)
 	FormatPNG       Format = Format(formatregistry.FormatPNG)
@@ -30,7 +31,9 @@ const (
 	FormatSQLite    Format = Format(formatregistry.FormatSQLite)
 	FormatText      Format = Format(formatregistry.FormatText)
 	FormatTIFF      Format = Format(formatregistry.FormatTIFF)
+	FormatTSV       Format = Format(formatregistry.FormatTSV)
 	FormatWPS       Format = Format(formatregistry.FormatWPS)
+	FormatAvro      Format = Format(formatregistry.FormatAvro)
 )
 
 const (

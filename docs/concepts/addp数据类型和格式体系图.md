@@ -1,0 +1,266 @@
+# ADDP 数据类型和格式体系图
+
+本文从概念层说明 ADDP 的数据类型、文件格式、格式插件和横切能力。数据项、资源链条和模块职责边界见 [ADDP 数据项体系图](addp数据项体系图.md)。
+
+## 核心结论
+
+数据类型比文件格式更高层：
+
+- `data type` 回答“这个 data item 在用户观感和平台处理上是什么”。
+- `format` 回答“这个 data item 或资源使用什么格式编码”。
+
+二者是多对多语义中的常见一对多落点：
+
+- 一个数据类型可以由多种格式承载，例如 `table` 可以来自 CSV、TSV、Parquet、Shapefile、数据库表、JSON FeatureCollection。
+- 一个格式也可能根据内容结构落到不同数据类型，例如 JSON 可以是 table、document 或 container。
+- 数据库表、文档集合、图 label / relationship 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
+
+## 数据类型
+
+数据类型是对一类 data item 的高层抽象。它们通常具备相似的数据特征、内容读取方式、处理手段和治理方式。
+
+第一版基础数据类型如下：
+
+| 数据类型 | 含义 | 典型处理方式 |
+|---|---|---|
+| `table` | 有字段、行列或可推断字段的结构化数据 | 字段信息、表格样本、批量读写、统计分析 |
+| `document` | 以阅读、解析和全文提取为主的数据 | 文档信息、文本片段、全文索引、摘要 |
+| `media` | 图片、视频、音频等可感知媒体内容 | 媒体信息、原始内容、缩略图、播放、转码 |
+| `container` | 内部包含子对象或子资源的数据 | 内部对象枚举、默认入口、子对象读取 |
+| `graph` | 节点、边、关系结构的数据 | 图结构信息、关系查询、子图样本 |
+| `unknown` | 暂未识别或暂不接入的数据 | 基础存储信息、原始内容或下载 |
+
+### table
+
+`table` 是所有表格型 data item 的通用数据类型。
+
+典型来源：
+
+- 数据库表。
+- CSV / TSV。
+- records 型 JSON 或 JSON Lines。
+- JSON FeatureCollection。
+- Shapefile。
+- Parquet / ORC / Avro。
+- Iceberg 等目录型表格式。
+
+CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
+
+### document
+
+`document` 是以阅读、正文提取和片段检索为主的 data item。
+
+典型来源：
+
+- PDF。
+- Word / WPS / RTF / Markdown / 纯文本。
+- 配置文件或嵌套 JSON 文档。
+- 文档型数据库记录。
+
+`document` 只说明用户如何理解和消费该 item，不等于后端已经能完整解析正文。WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw content 或 range content。
+
+### media
+
+`media` 是以视觉、音频或视频消费为主的 data item。
+
+典型来源：
+
+- JPEG / PNG / GIF / TIFF / GeoTIFF。
+- 视频。
+- 音频。
+
+图片、视频、音频之间的差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达，不新增基础数据类型。
+
+### container
+
+`container` 表示 item 内部包含子对象或子资源。
+
+典型来源：
+
+- Excel。
+- SQLite。
+- GeoPackage。
+- ZIP / RAR / TAR。
+
+容器是数据类型，不是组织方式。大多数容器文件外层仍是 `organization=single`，内部对象默认写入 `type_info.container.children`。
+
+### graph
+
+`graph` 表示节点、边和关系结构数据。
+
+典型来源：
+
+- Neo4j label / relationship。
+- RDF。
+- GraphML / GEXF。
+- 图结构 JSON。
+
+图结构既可以来自引擎原生查询，也可以来自文件格式。引擎原生图数据通常不经过文件格式解码。
+
+### unknown
+
+`unknown` 用于暂未识别或暂不接入的数据。
+
+`unknown` 不是失败状态，而是平台对资源保持可管理、可检索、可下载的兜底语义。后续探测能力增强后，可以重新扫描并升级为更具体的数据类型。
+
+## 文件格式
+
+文件格式回答 item 或资源的编码方式，例如：
+
+- `csv`、`tsv`
+- `json`
+- `parquet`、`orc`、`avro`
+- `shapefile`
+- `sqlite`、`geopackage`
+- `excel`
+- `zip`、`rar`
+- `pdf`、`wps`
+- `jpeg`、`png`、`tiff`
+
+文件格式不等于数据类型，也不等于组织方式：
+
+- Shapefile = `data_type=table` + `organization=multi` + `format=shapefile` + `spatial`。
+- GeoJSON = `data_type=table` + `organization=single` + `format=json` + `spatial`。
+- GeoTIFF = `data_type=media` + `organization=single` + `format=tiff` + `spatial`。
+- Excel = `data_type=container` + `organization=single` + `format=excel`。
+- Iceberg = `data_type=table` + `organization=whole` + `format=iceberg`。
+
+## 类型信息与格式信息
+
+`xxx info` 是对应数据类型的通用元数据。例如：
+
+| 数据类型 | 类型信息示例 |
+|---|---|
+| `table` | 字段列表、字段类型、主键、索引、行数 |
+| `document` | 标题、作者、页数、语言、提取状态 |
+| `media` | kind、宽高、时长、编码、颜色模式 |
+| `container` | 内部子对象、默认入口、子对象数量 |
+| `graph` | label、relationship、属性结构、节点数、边数 |
+
+每个 data type 只有一类通用 info。格式实现只负责在已确定的 `data_type + format` 下提取这类 info；Meta 负责把它写入 `meta_item.attributes.type_info`。
+
+格式信息是某个具体文件格式才有的描述：
+
+| 文件格式 | 格式信息示例 |
+|---|---|
+| `csv` | delimiter、encoding、has_header、quote_char |
+| `shapefile` | base_name、component_extensions、has_prj、shape_type、dbf_version |
+| `json` | json_type、record_count、has_bbox、crs |
+| `sqlite` | sqlite_version、table_count、tables |
+| `zip` | compression_method、entry_count、encrypted |
+
+类型信息不等于内容数据。`table info` 描述字段、行数、主键、空间字段等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容读取能力。
+
+## FormatPlugin
+
+`FormatPlugin` 是一个文件格式在 `common/format` 中的主入口。它承载格式身份、能力声明和具体实现。
+
+FormatPlugin 可以声明或提供：
+
+- 格式身份：稳定格式 ID、名称、默认数据类型。
+- 格式探测：扩展名、MIME、magic bytes、内容签名。
+- 布局能力：single / multi / whole、主资源、组件规则、manifest 规则。
+- info provider：数据类型信息和格式信息。
+- content reader：样本、文本片段、缩略图、原始内容、范围内容。
+- 横切能力事实：spatial、temporal、statistics、extraction 等候选事实。
+- transfer 相关能力：批量读写、组件写入、提交边界。
+
+FormatPlugin 不负责：
+
+- 构造 engine reader。
+- 接收 `engine_id` 后反向访问存储。
+- 最终决定 data item 边界。
+- 直接写 `meta_item.attributes`。
+- 返回 Manager 或 Frontend 专用展示协议。
+
+## Format Identity 与 Format Detection
+
+`format identity` 定义“平台支持的这个格式是谁”。它是静态注册事实，通常由 `FormatDescriptor` 或 `FormatPlugin` 表达。
+
+`format detection` 是“给定一个资源，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或组件上下文，输出指向某个 format identity 的识别结果。
+
+| 维度 | Format Identity | Format Detection |
+|---|---|---|
+| 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前资源看起来是什么格式 |
+| 性质 | 静态注册事实 | 动态识别过程 |
+| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、组件上下文 |
+| 输出 | format descriptor / capability | detection result，指向某个 format |
+| 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
+
+Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta detector 根据 format layout 和资源上下文决定。
+
+## Provider 与 Reader 矩阵
+
+`provider` 用于信息获取，`reader` 用于内容读取。二者不应混用。
+
+| 数据类型 | info provider | content reader |
+|---|---|---|
+| `table` | `TableInfoProvider` | `TableSampleReader`、批量行读取 |
+| `document` | `DocumentInfoProvider` | `DocumentTextReader`、`RawContentReader`、`RangeContentReader` |
+| `media` | `MediaInfoProvider` | `MediaThumbnailReader`、`RawContentReader`、`RangeContentReader` |
+| `container` | `ContainerInfoProvider` | `ContainerEntryReader`、内部对象读取 |
+| `graph` | `GraphInfoProvider` | `GraphSampleReader`、图查询读取 |
+| 横切能力 | `SpatialInfoProvider` 等 | 视具体能力定义，不替代 data type reader |
+
+当前代码中的 `TableProvider` 是兼容期组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。新实现应按 info provider 与 content reader 分开设计。
+
+## 横切能力
+
+横切能力是不属于单一数据类型、也不属于单一文件格式，但会影响平台处理能力的附加语义。
+
+| 横切能力 | 含义 |
+|---|---|
+| `spatial` | 空间字段、CRS、extent、geometry type、空间索引 |
+| `temporal` | 时间字段、时间范围、时间粒度 |
+| `statistics` | 采样统计、空值率、min/max、质量画像 |
+| `extraction` | OCR、文本提取、摘要、提取状态 |
+| `semantic` | embedding、语义索引、向量表示 |
+| `partitioning` | 分区字段、分区范围、分区样例 |
+| `indexing` | 空间索引、全文索引、向量索引等能力描述 |
+
+`spatial` 是典型横切能力：
+
+- PostGIS 表 = `data_type=table` + `spatial`。
+- Shapefile = `data_type=table` + `format=shapefile` + `spatial`。
+- GeoTIFF = `data_type=media` + `format=tiff` + `spatial`。
+
+空间能力不应新增为 data type，也不应塞进某个格式私有字段。
+
+## attributes 分层
+
+基于上述概念，data item attributes 应表达：
+
+```json
+{
+  "storage": {},
+  "item": {
+    "organization": "single|multi|whole",
+    "data_type": "table|document|media|container|graph|unknown",
+    "format": "..."
+  },
+  "type_info": {},
+  "format_info": {},
+  "content_index": {},
+  "capabilities": {}
+}
+```
+
+| 分区 | 回答的问题 | 示例 |
+|---|---|---|
+| `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、scope_exclusive |
+| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
+| `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile components、SQLite version |
+| `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
+| `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
+
+`meta_item` 表字段仍是 item 身份和归属的事实源。attributes 不重复保存 `id`、`tenant_id`、`engine_id`、`node_id`、`name`、`full_name`、`fingerprint` 等表字段。
+
+## 后续阅读
+
+- [ADDP 术语表](addp术语表.md)
+- [ADDP 数据项体系图](addp数据项体系图.md)
+- [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
+- [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
+- [ADDP 内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md)
+- [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md)

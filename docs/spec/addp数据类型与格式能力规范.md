@@ -1,8 +1,8 @@
-# ADDP 文件格式能力与 Data Type Provider 规范
+# ADDP 数据类型与格式能力规范
 
-本文定义 `common/format` 中的 format capability、format provider 与 data type provider 边界。它只约束格式和数据类型能力，不定义 Meta 的 item 归并实现。
+本文定义 `common/format` 中的 FormatPlugin、format capability、info provider 与 content reader 边界。它只约束格式和数据类型能力，不定义 Meta 的 item 归并实现。
 
-概念边界见 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)，资源读取边界见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，资源链条和模块边界见 [ADDP 数据项体系图](../concepts/addp数据项体系图.md)，资源读取边界见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
 ## 本文边界
 
@@ -13,7 +13,7 @@
 | info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
 | content reader 如何提供内容数据 | ResourceReader / ComponentReader 的具体接口 |
 
-item 归并见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
+item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
 ## 核心原则
 
@@ -29,7 +29,7 @@ item 归并见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)�
 
 其中 `xxx info` 是对应 data type 的元数据，例如 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`。`xxx info provider` 只负责提取这类元数据；样本、文本片段、缩略图、raw content、range content 等内容数据必须通过独立 content reader 表达。
 
-`common/format` 不定义任何展示概念。展示策略、前端渲染器选择和 Manager 返回给前端的 DTO 均属于 Manager / Frontend 边界。
+`common/format` 不定义任何展示概念。页面展示策略、前端渲染器选择和 Manager 返回给前端的 DTO 均属于 Manager / Frontend 边界。
 
 `common/format` 不回答 item 归并问题：
 
@@ -39,6 +39,97 @@ item 归并见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)�
 - 不直接写最终 `meta_item.attributes`。
 
 Meta 负责把 format capability、扫描上下文和已认领资源编排成最终 data item。
+
+## FormatPlugin 抽象接口
+
+FormatPlugin 是一个文件格式在 `common/format` 中的主入口。新增格式时，应优先实现 FormatPlugin，并按需同时实现对应的 info provider 和 content reader。
+
+当前抽象接口位于 `common/format/provider.go`，概念形态如下：
+
+```go
+type FormatPlugin interface {
+    Format() FormatType
+    Descriptor() FormatDescriptor
+    Capabilities() FormatCapability
+}
+```
+
+| 方法 | 负责 | 不负责 |
+|---|---|---|
+| `Format()` | 返回稳定格式 ID，例如 `csv`、`parquet`、`shapefile` | 不根据输入资源动态猜格式 |
+| `Descriptor()` | 返回格式身份、默认数据类型、布局、识别规则、provider / reader 声明 | 不表达某个 data item 的扫描结果 |
+| `Capabilities()` | 返回当前实现实际具备的格式能力 | 不写入 `meta_item.attributes.capabilities` |
+
+FormatPlugin 是静态格式身份和实现入口，不是 detector：
+
+- 它可以声明“CSV 是 `format=csv`，默认 `data_type=table`，支持 `single`，有 `table_sample` reader”。
+- 它不能决定“当前某个文件最终是不是一个 data item”。
+- 它不能决定 Shapefile 组件如何归并成最终 item；只能声明组件布局能力，最终归并由 Meta detector 裁决。
+- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`ResourceReader` 或 `ComponentReader`。
+
+### FormatDescriptor
+
+`FormatDescriptor` 是 FormatPlugin 的静态身份说明。新增格式至少要说明：
+
+| 字段 | 必填性 | 说明 |
+|---|---|---|
+| `ID` | 必填 | 稳定 plugin / descriptor ID，例如 `builtin-csv` |
+| `Format` | 必填 | 稳定 format ID，例如 `csv` |
+| `DataType` | 必填 | 默认数据类型，例如 `table`、`document` |
+| `Layouts` | 必填 | 支持的组织方式，例如 `single`、`multi`、`whole` |
+| `Identification` | 文件格式通常必填 | 扩展名、MIME、内容签名等识别依据 |
+| `Providers` | 按能力填写 | 声明有哪些 info provider |
+| `ContentReaders` | 按能力填写 | 声明有哪些 content reader |
+| `ProviderHints` | 建议填写 | 上层快速判断 provider 家族 |
+| `TransferRead/Write` | 按能力填写 | 是否参与 Transfer 读写 |
+| `Parse` | 按能力填写 | 是否有后端解析能力 |
+| `Spatial` | 按能力填写 | 是否能产生 spatial 横切事实 |
+
+`Descriptor()` 描述“这个格式理论和规范上声明了什么能力”；实际 Go 进程里是否已经注册了对应实现，由 provider / reader registry 决定。能力发现视图必须同时呈现声明能力和实现状态，不能把二者混为一谈。
+
+### 注册方式
+
+格式实现注册有两层：
+
+| 注册层 | 入口 | 作用 |
+|---|---|---|
+| 格式身份声明 | `RegisterFormatDescriptor` 或 `FormatPlugin.Descriptor()` | 让平台知道这个 format 是谁、默认 data type 是什么、如何识别、声明哪些能力 |
+| 代码实现注册 | `RegisterFormatPlugin` 或具体 `Register*Provider` / `Register*Reader` | 让当前进程能调用对应 Go 实现 |
+
+推荐做法：
+
+```go
+func init() {
+    if err := format.RegisterFormatPlugin(NewPlugin()); err != nil {
+        panic(err)
+    }
+}
+```
+
+`RegisterFormatPlugin` 会根据 plugin 实现的接口自动注册：
+
+| plugin 同时实现 | 自动注册为 |
+|---|---|
+| `FormatInfoProvider` | format info provider |
+| `TableInfoProvider` | table info provider |
+| `TableSampleReader` | table sample reader |
+| `TableProvider` | 兼容期组合 table provider，同时注册 info 和 sample |
+| `DocumentInfoProvider` | document info provider |
+| `DocumentTextReader` | document text reader |
+| `DocumentProvider` | 兼容期组合 document provider，同时注册 info 和 text reader |
+| `MediaInfoProvider` | media info provider |
+
+也可以只注册单一能力，例如 `RegisterTableInfoProvider` 或 `RegisterDocumentTextReader`。这种方式适合临时迁移旧实现；新增格式优先使用 `RegisterFormatPlugin`，让格式身份和实现入口在同一个子目录内闭合。
+
+### 子目录封装要求
+
+新增文件格式应放在 `common/format/plugins/<format>/`，原则上一个子目录完成：
+
+- `plugin.go`：实现 `FormatPlugin`，按需实现 info provider / content reader。
+- `parser.go` 或其他内部文件：放格式解析细节。
+- `*_test.go`：验证 descriptor、provider / reader 和关键样本读取。
+
+上层模块不应 import 具体格式子目录调用内部 parser；只通过 `common/format` 的 registry 和接口获取能力。
 
 ## FormatCapabilities
 
@@ -129,7 +220,7 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 
 表格解析能力应说明字段名、原始字段类型、行数、主键和索引等 info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式和 EXIF 等 info 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。
 
-注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、展示材料不是 info，不能为了上层展示方便塞进 `table info`、`document info` 或 `media info`。
+注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。
 
 ### Content Reader
 
@@ -144,7 +235,7 @@ content reader 负责提供上层可继续组装的数据，不直接负责展�
 - graph sample
 - raw content / range content
 
-Manager 展示 DTO 由 Manager 组装，不应进入 `common/format`。`common/format` 只声明和实现 reader 能力，例如 `table_sample`、`document_text`、`raw_content`、`range_content`。是否使用这些 reader 做展示、下载、索引或传输，由上层模块决定。
+Manager 面向前端的 DTO 由 Manager 组装，不应进入 `common/format`。`common/format` 只声明和实现 reader 能力，例如 `table_sample`、`document_text`、`raw_content`、`range_content`。是否使用这些 reader 做页面展示、下载、索引或传输，由上层模块决定。
 
 合理链路是：
 
@@ -158,9 +249,9 @@ Manager / Transfer / Meta 构造 ResourceReader 或 io.Reader
 不合理链路是：
 
 ```text
-format provider 根据 engine id 自己读取文件
-format provider 返回 Manager 专用 DTO 或前端渲染器建议
-common/format 使用展示材料或前端渲染器参与展示决策
+FormatPlugin 根据 engine id 自己读取文件
+FormatPlugin 返回 Manager 专用 DTO 或前端渲染器建议
+common/format 使用前端渲染器参与展示决策
 ```
 
 ### Transfer
@@ -242,7 +333,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
 | `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
 
-当前 provider / reader 家族已包含 `TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerProvider`、`GraphProvider` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+当前 provider / reader 家族已包含 `TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerInfoProvider` / `ContainerEntryReader`、`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
 
 ### FileMetadataExtractor 兼容说明
 
@@ -255,9 +346,9 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 3. Meta 只负责编排 provider 结果并写入标准 attributes 分区。
 4. 旧 `FileMetadataExtractor` 仅作为兼容入口保留到 Meta 调用方完成迁移。
 
-## Data Type Provider
+## Info Provider 与 Content Reader
 
-`data type provider` 是上层消费者的主入口，目标是让上层不直接感知具体 `engine type` 或 `format type`。
+info provider 和 content reader 是上层消费者面向数据类型能力的主入口，目标是让上层不直接感知具体 `engine type` 或 `format type`。
 
 建议围绕两类 provider 收口：
 
@@ -266,11 +357,11 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` |
 | content reader | 提供按 data type 组织后的内容数据，供 Manager / Transfer 消费 | `TableSampleReader`、`DocumentTextReader`、`RawContentReader`、`RangeContentReader`、`MediaThumbnailReader` |
 
-Provider 只回答对应 data type 的平台语义，不回答格式识别，也不回答 item 归并。
+info provider 只回答对应 data type 的元数据语义，content reader 只回答对应 data type 或格式的内容读取能力。二者都不回答格式识别，也不回答 item 归并。
 
 ### Table Info / Sample Provider
 
-表格型 provider 是最先需要稳定的 data type provider，因为它同时覆盖 Meta 表结构提取、Manager 内容查看和 Transfer 批量读写。
+表格型 info provider 和 content reader 是最先需要稳定的数据类型能力，因为它同时覆盖 Meta 表结构提取、Manager 内容查看和 Transfer 批量读写。
 
 第一版拆成两条主能力：
 
@@ -308,7 +399,7 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 页码或范围上下文。
 - 提取状态。
 
-`DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终展示 DTO。
+`DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终前端 DTO。
 
 文档格式不要求都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类后端不适合解析的格式，可以先只声明 raw content / range content reader；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
 
@@ -323,9 +414,9 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 
 缩略图、raw content、range content 或可流式 URL 应由对应 content reader / engine 能力表达。`MediaInfoProvider` 只返回已经确认的事实，不硬凑完整展示对象。
 
-### ContainerProvider
+### ContainerInfoProvider / ContainerEntryReader
 
-`ContainerProvider` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档集合等容器型 data item。
+`ContainerInfoProvider` 和 `ContainerEntryReader` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档集合等容器型 data item。
 
 它提供：
 
@@ -334,11 +425,11 @@ Provider 只回答对应 data type 的平台语义，不回答格式识别，也
 - 内部对象定位。
 - 容器统计信息。
 
-它不负责把内部对象解释成最终 table / document / media 展示数据；那部分交给对应 data type provider 继续处理。
+它不负责把内部对象解释成最终 table / document / media 内容数据；那部分交给对应 info provider 或 content reader 继续处理。
 
-### GraphProvider
+### GraphInfoProvider / GraphSampleReader
 
-`GraphProvider` 面向图数据库查询结果、图结构抽样、节点-关系模型等图型 data item。
+`GraphInfoProvider` 和 `GraphSampleReader` 面向图数据库查询结果、图结构抽样、节点-关系模型等图型 data item。
 
 它提供：
 
@@ -363,28 +454,28 @@ provider 不应重新判断 organization，不应重新枚举 sibling，不应�
 
 ## 读取入口边界
 
-format provider 不应通过 `engine id` 自己构造读取器。
+FormatPlugin、info provider、content reader 不应通过 `engine id` 自己构造读取器。
 
 推荐方式是：
 
 1. Meta、Manager 或 Transfer 根据 engine capability 构造读取抽象。
-2. format provider 接收读取抽象和格式参数。
-3. format provider 输出结构事实、样本或 DataBatch。
-4. data type provider 归一为平台语义。
+2. FormatPlugin、info provider 或 content reader 接收读取抽象和格式参数。
+3. FormatPlugin 输出结构事实、样本或 DataBatch。
+4. info provider 或 content reader 归一为平台语义或内容数据。
 
 这样可以把连接、凭据、权限、重试、审计和对象枚举留在 engine 层，把编码 / 解码留在 format 层。
 
-## Manager 展示边界
+## Manager 结果组装边界
 
-Manager 面向前端的展示 DTO 属于 Manager 边界，不宜放在 format 层作为通用返回值。
+Manager 面向前端的 DTO 属于 Manager 边界，不宜放在 format 层作为通用返回值。
 
 合理分工是：
 
-- format provider 提供格式原生可解析的结构事实或记录样本。
-- data type provider 把不同来源整理成 table / document / media / container 的平台语义。
-- Manager service 再组装成当前前端需要的展示 DTO。
+- FormatPlugin 提供格式原生可解析的结构事实或记录样本。
+- info provider 和 content reader 把不同来源整理成 table / document / media / container 的平台语义或内容数据。
+- Manager service 再组装成当前前端需要的 DTO。
 
-如果 Manager 展示 DTO 需要新增字段，应向 data type provider、content reader 或底层 format / engine provider 提需求，不能把 Manager DTO 反向下沉为 format 层通用模型。
+如果 Manager DTO 需要新增字段，应向 info provider、content reader 或底层 format / engine provider 提需求，不能把 Manager DTO 反向下沉为 format 层通用模型。
 
 ## Transfer 边界
 
@@ -394,17 +485,17 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 |---|---|
 | engine capability | 数据在哪里，如何连接，如何列举，如何读写原生资源 |
 | format capability | 数据如何编码 / 解码，如何组织组件，如何提交 |
-| data type provider | 以什么平台语义组织 schema、样本、batch、children |
+| info provider / content reader | 以什么平台语义组织 schema、样本、batch、children |
 
 典型读取链路：
 
 1. engine 打开资源或列举对象，形成读取抽象。
 2. format 基于读取抽象解码为平台批次或中间结构。
-3. data type provider 补充 schema、样本、空间信息或容器结构。
+3. info provider / content reader 补充 schema、样本、空间信息或容器结构。
 
 典型写入链路：
 
-1. data type provider 提供待写入的结构语义。
+1. info provider / content reader 提供待写入的结构语义或内容数据。
 2. format 把批次编码成目标格式。
 3. engine 负责对象写入、目录提交或原生表写入。
 
@@ -420,8 +511,8 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 ## 设计约束
 
 1. 不在 `common/format` 放 item resolver。
-2. format provider 不决定最终 `organization`、claims、exclusive 和 `meta_item.full_name`。
+2. FormatPlugin 不决定最终 `organization`、claims、exclusive 和 `meta_item.full_name`。
 3. provider 输入保持轻量，只接已确认定位、必要属性片段和调用参数。
-4. format provider 不按 `engine_id` 反向构造 engine reader。
-5. Manager 展示 DTO 不进入 format 层。
+4. FormatPlugin、info provider、content reader 不按 `engine_id` 反向构造 engine reader。
+5. Manager 面向前端的 DTO 不进入 format 层。
 6. GeoJSON 类结构表达为 `format=json` + `capabilities.spatial`，不作为独立顶层格式。

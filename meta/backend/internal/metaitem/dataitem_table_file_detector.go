@@ -5,21 +5,14 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/plugins/csv"
-	_ "github.com/addp/common/format/plugins/parquet"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/meta/internal/dataitem"
 )
-
-// tableFileFormats 支持的表格文件格式
-var tableFileFormats = map[string]bool{
-	".parquet": true,
-	".orc":     true,
-	".avro":    true,
-}
 
 var tableFileAuxiliaryFileNames = map[string]bool{
 	"_success":         true,
@@ -27,42 +20,104 @@ var tableFileAuxiliaryFileNames = map[string]bool{
 	"_common_metadata": true,
 }
 
-var tableFileItemRules = []dataitem.FormatRule{
-	{
-		Format:       "parquet",
-		DataType:     dataitem.DataTypeTable,
-		ItemType:     "table",
-		Organization: dataitem.OrganizationSingle,
-		Priority:     40,
-		Entry: dataitem.EntryRule{
-			Extensions: []string{".parquet", ".orc", ".avro"},
+// TableFileDetector 表格文件检测器。
+// 检测条件：目录树内存在 common/format 声明为 whole scope table 的数据文件，
+// 且参与候选的文件全部为表格数据文件或常见辅助文件。
+type tableFileItemDetector struct{}
+
+func tableFileItemRules() []dataitem.FormatRule {
+	formats := tableFileFormatsByExtension()
+	extensions := make([]string, 0, len(formats))
+	for ext := range formats {
+		extensions = append(extensions, ext)
+	}
+	sort.Strings(extensions)
+	formatName := preferredTableFileFormat(formats)
+	return []dataitem.FormatRule{
+		{
+			Format:       formatName,
+			DataType:     dataitem.DataTypeTable,
+			ItemType:     "table",
+			Organization: dataitem.OrganizationSingle,
+			Priority:     40,
+			Entry: dataitem.EntryRule{
+				Extensions: extensions,
+			},
 		},
-	},
-	{
-		Format:       "parquet",
-		DataType:     dataitem.DataTypeTable,
-		ItemType:     "table",
-		Organization: dataitem.OrganizationWhole,
-		Priority:     80,
-		WholeScope: &dataitem.WholeScopeRule{
-			AllowRecursive:       true,
-			IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
-			RequiresStrongMatch:  true,
-			ExclusiveOnStrongHit: true,
+		{
+			Format:       formatName,
+			DataType:     dataitem.DataTypeTable,
+			ItemType:     "table",
+			Organization: dataitem.OrganizationWhole,
+			Priority:     80,
+			WholeScope: &dataitem.WholeScopeRule{
+				AllowRecursive:       true,
+				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
+				RequiresStrongMatch:  true,
+				ExclusiveOnStrongHit: true,
+			},
 		},
-	},
+	}
 }
 
-// TableFileDetector 表格文件检测器。
-// 检测条件：目录树内存在 .parquet/.orc/.avro 文件，且参与候选的文件全部为表格数据文件或常见辅助文件。
-type tableFileItemDetector struct{}
+func tableFileFormatsByExtension() map[string]string {
+	formats := map[string]string{}
+	for _, capability := range format.ListFormatCapabilities() {
+		if capability.DataType != format.FormatDataTypeTable {
+			continue
+		}
+		if !containsLayout(capability.Layouts, format.FormatLayoutWhole) {
+			continue
+		}
+		for _, ext := range capability.Extensions {
+			normalized := strings.ToLower(strings.TrimSpace(ext))
+			if normalized == "" {
+				continue
+			}
+			if !strings.HasPrefix(normalized, ".") {
+				normalized = "." + normalized
+			}
+			formats[normalized] = string(capability.Format)
+		}
+	}
+	return formats
+}
+
+func preferredTableFileFormat(formats map[string]string) string {
+	if formatName := formats[".parquet"]; formatName != "" {
+		return formatName
+	}
+	values := make([]string, 0, len(formats))
+	seen := map[string]bool{}
+	for _, formatName := range formats {
+		if seen[formatName] {
+			continue
+		}
+		seen[formatName] = true
+		values = append(values, formatName)
+	}
+	sort.Strings(values)
+	if len(values) == 0 {
+		return string(format.FormatParquet)
+	}
+	return values[0]
+}
+
+func containsLayout(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
 
 func (d *tableFileItemDetector) Priority() int {
 	return 80
 }
 
 func (d *tableFileItemDetector) Rules() []dataitem.FormatRule {
-	return tableFileItemRules
+	return tableFileItemRules()
 }
 
 func (d *tableFileItemDetector) ItemType() string {
@@ -117,11 +172,12 @@ func (d *tableFileItemDetector) ResolveItems(
 }
 
 func (d *tableFileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+	formats := tableFileFormatsByExtension()
 	tableFileCount := 0
 	auxiliaryFileCount := 0
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if !tableFileFormats[ext] {
+		if formats[ext] == "" {
 			if isTableFileAuxiliaryFile(f.Name) {
 				auxiliaryFileCount++
 				continue
@@ -153,10 +209,11 @@ func hasPartitionLikeSubdir(subdirs []plugin.DirEntry) bool {
 }
 
 func hasPartLikeTableFiles(files []plugin.FileEntry) bool {
+	formats := tableFileFormatsByExtension()
 	tableFileCount := 0
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Name))
-		if !tableFileFormats[ext] {
+		if formats[ext] == "" {
 			continue
 		}
 		tableFileCount++
@@ -169,10 +226,11 @@ func hasPartLikeTableFiles(files []plugin.FileEntry) bool {
 }
 
 func tableFiles(files []plugin.FileEntry) []plugin.FileEntry {
+	formats := tableFileFormatsByExtension()
 	filtered := make([]plugin.FileEntry, 0, len(files))
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if tableFileFormats[ext] {
+		if formats[ext] != "" {
 			filtered = append(filtered, f)
 		}
 	}
@@ -208,17 +266,15 @@ func directTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEnt
 	return filtered
 }
 
-func firstReadableParquetFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
+func firstReadableTableFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
 	candidates := directTableFiles(files, dirPath)
 	for i := range candidates {
-		ext := strings.ToLower(filepath.Ext(candidates[i].Name))
-		if ext == ".parquet" {
+		if hasTableProvider(fileFormatName(candidates[i].Name)) {
 			return &candidates[i]
 		}
 	}
 	for i := range files {
-		ext := strings.ToLower(filepath.Ext(files[i].Name))
-		if ext == ".parquet" {
+		if hasTableProvider(fileFormatName(files[i].Name)) {
 			return &files[i]
 		}
 	}
@@ -251,13 +307,14 @@ func tableFileOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, 
 }
 
 func validateTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
+	formats := tableFileFormatsByExtension()
 	filtered := tableFiles(files)
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no table file files in directory: %s", dirPath)
 	}
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-		if tableFileFormats[ext] || isTableFileAuxiliaryFile(f.Name) {
+		if formats[ext] != "" || isTableFileAuxiliaryFile(f.Name) {
 			continue
 		}
 		return nil, fmt.Errorf("directory contains files outside supported scope table formats: %s", dirPath)
@@ -360,23 +417,23 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		return nil, err
 	}
 
-	firstParquet := firstReadableParquetFile(files, dirPath)
-	if firstParquet == nil {
+	firstReadableFile := firstReadableTableFile(files, dirPath)
+	if firstReadableFile == nil {
 		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 	if contentReader == nil {
 		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstParquet.Path), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstReadableFile.Path), plugin.ReadOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read parquet file %s: %w", firstParquet.Path, err)
+		return nil, fmt.Errorf("failed to read table file %s: %w", firstReadableFile.Path, err)
 	}
 	defer rc.Close()
 
-	tableInfo, err := describeParquetTable(ctx, rc)
+	tableInfo, err := describeTableFile(ctx, fileFormatName(firstReadableFile.Name), rc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parquet schema from %s: %w", firstParquet.Path, err)
+		return nil, fmt.Errorf("failed to parse table schema from %s: %w", firstReadableFile.Path, err)
 	}
 
 	totalSize := tableFileSize(files)
@@ -431,8 +488,7 @@ func ExtractTableFileSingleFileInfo(
 	filePath string,
 	fileSize int64,
 ) (*CompositeItemInfo, error) {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	formatName := ext[1:] // 去掉点号，如 "parquet"
+	formatName := fileFormatName(filePath)
 
 	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
 	if providerErr != nil {
@@ -493,21 +549,17 @@ func ExtractTableFileSingleFileInfo(
 func detectFormat(files []plugin.FileEntry) string {
 	counts := map[string]int{}
 	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		switch ext {
-		case ".parquet":
-			counts["parquet"]++
-		case ".orc":
-			counts["orc"]++
-		case ".avro":
-			counts["avro"]++
+		formatName := fileFormatName(f.Name)
+		if formatName == "" || formatName == string(format.FormatUnknown) {
+			continue
 		}
+		counts[formatName]++
 	}
 	// 返回数量最多的格式
-	best := "parquet"
+	best := preferredTableFileFormat(tableFileFormatsByExtension())
 	bestCount := 0
 	for fmt, cnt := range counts {
-		if cnt > bestCount {
+		if cnt > bestCount || (cnt == bestCount && fmt < best) {
 			best = fmt
 			bestCount = cnt
 		}
@@ -515,8 +567,27 @@ func detectFormat(files []plugin.FileEntry) string {
 	return best
 }
 
-func describeParquetTable(ctx context.Context, rc io.Reader) (*format.TableInfo, error) {
-	provider, err := format.GetTableProvider(format.FormatParquet)
+func fileFormatName(fileName string) string {
+	formatType := format.DetectFormat(fileName, nil)
+	if formatType == format.FormatUnknown {
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileName)), ".")
+		if ext != "" {
+			return ext
+		}
+	}
+	return string(formatType)
+}
+
+func hasTableProvider(formatName string) bool {
+	if strings.TrimSpace(formatName) == "" {
+		return false
+	}
+	_, err := format.GetTableProvider(format.FormatType(strings.ToLower(strings.TrimSpace(formatName))))
+	return err == nil
+}
+
+func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*format.TableInfo, error) {
+	provider, err := format.GetTableProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil, err
 	}

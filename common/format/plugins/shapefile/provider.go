@@ -12,12 +12,28 @@ type tableProvider struct {
 	parser *Parser
 }
 
-func newTableProvider(parser *Parser) format.TableProvider {
+func newTableProvider(parser *Parser) tableProvider {
 	return tableProvider{parser: parser}
 }
 
 func (p tableProvider) Format() format.FormatType {
 	return format.FormatShapefile
+}
+
+func (p tableProvider) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatShapefile)
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:             "builtin-shapefile",
+		Format:         format.FormatShapefile,
+		DataType:       format.FormatDataTypeTable,
+		Layouts:        []string{format.FormatLayoutMulti},
+		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderComponentTableSample), string(format.ContentReaderRawContent)},
+		Spatial:        true,
+	}
 }
 
 func (p tableProvider) Capabilities() format.FormatCapability {

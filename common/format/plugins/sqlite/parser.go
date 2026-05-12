@@ -1,9 +1,12 @@
 package sqlite
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/addp/common/format"
 	_ "github.com/mattn/go-sqlite3"
@@ -20,6 +23,236 @@ func NewParser(opts *format.ParseOptions) *Parser {
 		opts = format.DefaultParseOptions()
 	}
 	return &Parser{options: opts}
+}
+
+func (p *Parser) Format() format.FormatType {
+	return format.FormatSQLite
+}
+
+func (p *Parser) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatSQLite)
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:             "builtin-sqlite",
+		Format:         format.FormatSQLite,
+		DataType:       format.FormatDataTypeContainer,
+		Layouts:        []string{format.FormatLayoutSingle},
+		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+	}
+}
+
+func (p *Parser) Capabilities() format.FormatCapability {
+	capability, ok := format.GetFormatCapability(format.FormatSQLite)
+	if ok {
+		return capability
+	}
+	return format.FormatCapability{
+		Format:        format.FormatSQLite,
+		DataType:      format.FormatDataTypeContainer,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
+		Parse:         true,
+	}
+}
+
+func (p *Parser) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+	db, cleanup, err := p.openDatabase(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	result, err := Analyze(ctx, db, p.analysisOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"version":     result.Metadata.Version,
+		"page_size":   result.Metadata.PageSize,
+		"page_count":  result.Metadata.PageCount,
+		"table_count": result.Metadata.TableCount,
+		"view_count":  result.Metadata.ViewCount,
+		"index_count": result.Metadata.IndexCount,
+	}, nil
+}
+
+func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+	db, cleanup, err := p.openDatabase(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	result, err := Analyze(ctx, db, p.analysisOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	table := firstSQLiteTable(result)
+	if table == nil {
+		return &format.TableInfo{Name: "sqlite_data", Fields: []format.FieldInfo{}, PrimaryKey: []string{}}, nil
+	}
+	return sqliteTableInfoToFormatTable(*table), nil
+}
+
+func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	db, cleanup, err := p.openDatabase(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	tableName := tableNameFromOptions(options)
+	if tableName == "" {
+		result, err := Analyze(ctx, db, p.analysisOptions(options))
+		if err != nil {
+			return nil, err
+		}
+		table := firstSQLiteTable(result)
+		if table == nil {
+			return []map[string]interface{}{}, nil
+		}
+		tableName = table.Name
+	}
+	return sampleSQLiteTableWindow(ctx, db, tableName, offset, limit)
+}
+
+func (p *Parser) openDatabase(input io.Reader) (*sql.DB, func(), error) {
+	tempPath, cleanupFile, err := p.saveToTempFile(input)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := sql.Open("sqlite3", tempPath)
+	if err != nil {
+		cleanupFile()
+		return nil, nil, fmt.Errorf("failed to open sqlite database: %w", err)
+	}
+	cleanup := func() {
+		_ = db.Close()
+		cleanupFile()
+	}
+	return db, cleanup, nil
+}
+
+func (p *Parser) analysisOptions(options *format.ParseOptions) *Options {
+	result := DefaultOptions()
+	if options == nil {
+		options = p.options
+	}
+	if options == nil {
+		return &result
+	}
+	if options.SampleSize > 0 {
+		result.SampleRowLimit = options.SampleSize
+	}
+	if options.ExtraParams != nil {
+		if v, ok := options.ExtraParams["table_limit"].(int); ok && v > 0 {
+			result.TableLimit = v
+		}
+		if v, ok := options.ExtraParams["row_limit"].(int); ok && v >= 0 {
+			result.SampleRowLimit = v
+		}
+		if v, ok := options.ExtraParams["include_views"].(bool); ok {
+			result.IncludeViews = v
+		}
+	}
+	return &result
+}
+
+func firstSQLiteTable(result *AnalysisResult) *TableInfo {
+	if result == nil {
+		return nil
+	}
+	for i := range result.Metadata.Tables {
+		if strings.EqualFold(result.Metadata.Tables[i].Type, "table") {
+			return &result.Metadata.Tables[i]
+		}
+	}
+	if len(result.Metadata.Tables) == 0 {
+		return nil
+	}
+	return &result.Metadata.Tables[0]
+}
+
+func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
+	fields := make([]format.FieldInfo, 0, len(table.Columns))
+	primaryKey := make([]string, 0)
+	for _, column := range table.Columns {
+		fields = append(fields, format.FieldInfo{
+			Name:         column.Name,
+			Type:         mapSQLiteTypeToFieldType(column.Type),
+			OriginalType: column.Type,
+			Nullable:     !column.NotNull,
+			IsPrimaryKey: column.PrimaryKey,
+		})
+		if column.PrimaryKey {
+			primaryKey = append(primaryKey, column.Name)
+		}
+	}
+	return &format.TableInfo{
+		Name:       table.Name,
+		RowCount:   table.RowCount,
+		Fields:     fields,
+		PrimaryKey: primaryKey,
+	}
+}
+
+func tableNameFromOptions(options *format.ParseOptions) string {
+	if options == nil || options.ExtraParams == nil {
+		return ""
+	}
+	if v, ok := options.ExtraParams["table"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	if v, ok := options.ExtraParams["table_name"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func sampleSQLiteTableWindow(ctx context.Context, db *sql.DB, table string, offset, limit int64) ([]map[string]interface{}, error) {
+	if limit < 0 {
+		limit = defaultSampleRowLimit
+	}
+	if limit == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d OFFSET %d", escapeIdentifier(table), limit, offset)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRows(rows)
+}
+
+func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+		if err := rows.Scan(valuePtrs...); err != nil {
+			continue
+		}
+		row := make(map[string]interface{}, len(columns))
+		for i, column := range columns {
+			row[column] = normalizeSQLValue(values[i])
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 // mapSQLiteTypeToFieldType 将 SQLite 类型映射到 FieldType
@@ -105,7 +338,5 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 }
 
 func init() {
-	// SQLite 当前作为容器分析能力使用，暂不注册为 TableProvider。
-	// parser := NewParser(nil)
-	// _ = format.RegisterTableProvider(format.NewTableProvider(format.FormatSQLite, parser.ParseTableInfo, parser.SampleTable))
+	_ = format.RegisterFormatPlugin(NewParser(nil))
 }

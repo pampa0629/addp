@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -49,13 +50,14 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	offset := int64((page - 1) * pageSize)
 	limit := int64(pageSize)
 
-	provider, err := format.GetTableProvider(format.FormatParquet)
+	formatType := resolveScopeTableFormat(req)
+	provider, err := format.GetTableProvider(formatType)
 	if err != nil {
-		return nil, fmt.Errorf("no table provider for parquet: %w", err)
+		return nil, fmt.Errorf("no table provider for %s: %w", formatType, err)
 	}
 	tableProvider, ok := provider.(format.ScopeTableProvider)
 	if !ok {
-		return nil, fmt.Errorf("parquet provider does not implement scope table provider")
+		return nil, fmt.Errorf("%s provider does not implement scope table provider", formatType)
 	}
 
 	var tableInfo *format.TableInfo
@@ -141,4 +143,17 @@ func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentR
 		return newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
 	}
 	return newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
+}
+
+func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {
+	if req == nil {
+		return format.FormatUnknown
+	}
+	if formatName := strings.TrimSpace(stringAttribute(req.Attributes, "format")); formatName != "" {
+		return normalizeFileTableFormat(formatName)
+	}
+	if req.PhysicalPath != "" {
+		return format.DetectFormat(req.PhysicalPath, nil)
+	}
+	return format.FormatUnknown
 }

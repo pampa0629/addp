@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -172,6 +173,12 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestObjectContentTableFormatUsesExplicitFormat(t *testing.T) {
+	if got := objectContentTableFormat(&ObjectContentRequest{Format: "orc", Extension: ".bin", ContentType: "application/octet-stream"}); got != format.FormatORC {
+		t.Fatalf("objectContentTableFormat() = %q, want %q", got, format.FormatORC)
 	}
 }
 

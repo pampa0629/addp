@@ -20,6 +20,7 @@ const (
 	FormatJPEG      Format = "jpeg"
 	FormatJSON      Format = "json"
 	FormatMarkdown  Format = "markdown"
+	FormatORC       Format = "orc"
 	FormatParquet   Format = "parquet"
 	FormatPDF       Format = "pdf"
 	FormatPNG       Format = "png"
@@ -28,7 +29,9 @@ const (
 	FormatSQLite    Format = "sqlite"
 	FormatText      Format = "text"
 	FormatTIFF      Format = "tiff"
+	FormatTSV       Format = "tsv"
 	FormatWPS       Format = "wps"
+	FormatAvro      Format = "avro"
 )
 
 const (
@@ -187,6 +190,29 @@ var builtinDescriptors = []Descriptor{
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
+		ID:            "builtin-tsv",
+		Format:        FormatTSV,
+		I18nKey:       "format.tsv",
+		DataType:      DataTypeTable,
+		Layouts:       []string{LayoutSingle},
+		ProviderHints: []string{ProviderTable},
+		Identification: Identification{
+			Extensions: []string{".tsv"},
+			MimeTypes:  []string{"text/tab-separated-values"},
+		},
+		Providers: ProviderDescriptor{
+			FormatInfo:  true,
+			TableInfo:   true,
+			TableSample: true,
+			Table:       true,
+		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	},
+	{
 		ID:            "builtin-docx",
 		Format:        FormatDOCX,
 		I18nKey:       "format.docx",
@@ -325,6 +351,38 @@ var builtinDescriptors = []Descriptor{
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	},
+	{
+		ID:            "builtin-orc",
+		Format:        FormatORC,
+		I18nKey:       "format.orc",
+		DataType:      DataTypeTable,
+		Layouts:       []string{LayoutSingle, LayoutWhole},
+		ProviderHints: []string{ProviderTable},
+		Identification: Identification{
+			Extensions: []string{".orc"},
+			MimeTypes:  []string{"application/orc", "application/vnd.apache.orc"},
+		},
+		ContentReaders: []string{ContentReaderRawContent},
+		TransferRead:   true,
+		TransferWrite:  true,
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	},
+	{
+		ID:            "builtin-avro",
+		Format:        FormatAvro,
+		I18nKey:       "format.avro",
+		DataType:      DataTypeTable,
+		Layouts:       []string{LayoutSingle, LayoutWhole},
+		ProviderHints: []string{ProviderTable},
+		Identification: Identification{
+			Extensions: []string{".avro"},
+			MimeTypes:  []string{"application/avro", "application/x-avro-binary"},
+		},
+		ContentReaders: []string{ContentReaderRawContent},
+		TransferRead:   true,
+		TransferWrite:  true,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{

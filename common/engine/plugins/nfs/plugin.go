@@ -14,6 +14,18 @@ import (
 // NFSPlugin NFS 文件系统存储引擎插件
 type NFSPlugin struct{}
 
+type limitedReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *limitedReadCloser) Close() error {
+	if r == nil || r.closer == nil {
+		return nil
+	}
+	return r.closer.Close()
+}
+
 func init() {
 	plugin.Register(&NFSPlugin{})
 }
@@ -69,6 +81,16 @@ func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.Connection
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	return p.readFile(ctx, connInfo, path.StringPath())
+}
+
+func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	if opts.Offset < 0 {
+		return nil, fmt.Errorf("range read offset cannot be negative")
+	}
+	if opts.Length <= 0 {
+		return nil, fmt.Errorf("range read requires positive length")
+	}
+	return p.readFileRange(ctx, connInfo, path.StringPath(), opts)
 }
 
 func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
@@ -178,6 +200,26 @@ func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo
 		return nil, fmt.Errorf("failed to open NFS file %s: %w", filePath, err)
 	}
 	return rc, nil
+}
+
+func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.ConnectionInfo, path string, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	rc, err := p.readFile(ctx, connInfo, path)
+	if err != nil {
+		return nil, err
+	}
+	seeker, ok := rc.(io.Seeker)
+	if !ok {
+		_ = rc.Close()
+		return nil, fmt.Errorf("NFS file reader does not support seek")
+	}
+	if _, err := seeker.Seek(opts.Offset, io.SeekStart); err != nil {
+		_ = rc.Close()
+		return nil, fmt.Errorf("failed to seek NFS file %s to offset %d: %w", normalizePath(path), opts.Offset, err)
+	}
+	return &limitedReadCloser{
+		Reader: io.LimitReader(rc, opts.Length),
+		closer: rc,
+	}, nil
 }
 
 // getFileMetadata 获取文件元数据

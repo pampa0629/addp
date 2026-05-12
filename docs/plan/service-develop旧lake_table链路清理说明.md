@@ -91,7 +91,7 @@ ADDP 的数据类型与格式模型已经收口为：
 问题：
 
 - 这里有一半已经按新模型走，一半仍是旧命名。
-- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.entry_path`、`item.organization` 和 format provider / resource reader。
+- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.organization`、`meta_item.full_name` 和 ResourceReader / FormatPlugin / content reader。
 
 ## 目标模型
 

@@ -1,14 +1,16 @@
-# Transfer 与 Format Provider 整合方案
+# Transfer 与格式能力整合方案
 
 更新时间：2026-05-09
 
-本文定义 Transfer 后续如何组合 engine capability、`common/resource`、`common/format` provider 和 data type provider。它是目标设计文档，不描述具体迁移进度。
+本文定义 Transfer 后续如何组合 engine capability、`common/resource`、FormatPlugin、info provider 和 content reader。它是目标设计文档，不描述具体迁移进度。
+
+> 注：本文早期使用过旧的 provider 统称。后续阅读时统一按正式规范理解为 FormatPlugin、info provider 和 content reader。
 
 ## 核心原则
 
 1. Transfer 是批量读写和任务编排层，不是格式实现层。
-2. Format provider 不接 `engine_id`，也不自己构造 engine reader。
-3. Transfer 外部先基于 engine capability 组装资源读取 / 写入抽象，再交给 format provider。
+2. FormatPlugin、info provider、content reader 不接 `engine_id`，也不自己构造 engine reader。
+3. Transfer 外部先基于 engine capability 组装资源读取 / 写入抽象，再交给格式与数据类型能力实现。
 4. 上层任务面向 `data_type`，新增 format 时尽量不改 Transfer 主流程。
 5. 性能策略由 planner 根据 capability 自动选择，不再作为用户必须理解的 connector type。
 
@@ -22,7 +24,7 @@ TransferTask
   -> SourceEndpoint
       -> EngineProvider / ResourceReader / NativeCursor
       -> FormatProvider(optional)
-      -> DataTypeProvider
+      -> info provider / content reader
   -> pipeline.Reader
   -> Transform[]
 ```
@@ -33,7 +35,7 @@ TransferTask
 Transform[]
   -> pipeline.Writer
   -> TargetEndpoint
-      -> DataTypeProvider
+      -> info provider / content reader
       -> FormatProvider(optional)
       -> ResourceWriter / EngineProvider / NativeBatchWriter
   -> CommitPolicy
@@ -164,8 +166,8 @@ TransferPlan
 
 - 已选定的 engine provider。
 - 已构造的 `ResourceReader` / `ResourceWriter` / `NativeCursor`。
-- 已选定的 format provider。
-- 已确认的 data type provider。
+- 已选定的 FormatPlugin。
+- 已确认的 info provider / content reader。
 - 已确认的 schema 和 spatial facts。
 - 已确认的并行 / checkpoint / commit 限制。
 
@@ -203,7 +205,7 @@ engine capability
   -> TransferDataBatchAdapter
 ```
 
-这类读取通常不经过 format provider。
+这类读取通常不经过 FormatPlugin。
 
 ## 写入能力组合
 
@@ -312,7 +314,7 @@ checkpoint 不能只靠一个整数 offset 长期支撑所有场景。
 Transfer 应从以下来源获得空间事实：
 
 1. Meta attributes 中的 `capabilities.spatial`。
-2. source schema / data type provider。
+2. source schema / info provider / content reader。
 3. 用户在高级配置中明确覆盖。
 
 Transfer 不应默认：
@@ -352,13 +354,13 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 
 | 模块 | 目标 | 输出 |
 |---|---|---|
-| Manager | 展示样本和结构 | preview DTO |
+| Manager | 展示样本和结构 | 面向前端的 DTO |
 | Transfer | 稳定批量读写 | DataBatch / commit result |
 
 因此：
 
-- format provider 不返回 Manager preview DTO。
-- Transfer 不复用 Manager preview DTO 做批量读取。
+- FormatPlugin、info provider、content reader 不返回 Manager 面向前端的 DTO。
+- Transfer 不复用 Manager 面向前端的 DTO 做批量读取。
 - 二者可以共享 `ResourceReader`、`ComponentReader`、`TableProvider.Describe/Sample`。
 - Transfer 需要额外的 `ReadBatch/WriteBatch/CommitPolicy`。
 
@@ -414,4 +416,3 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 7. PostgreSQL -> Shapefile 组件集合。
 
 完成这些后，再处理 GeoPackage、SQLite、Excel、document / media / graph 等非主线场景。
-

@@ -99,6 +99,40 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.TableSampleReader = plugin
 }
 
+func TestTSVPlugin_DescribeAndSampleTable(t *testing.T) {
+	tsvData := "name\tage\nAlice\t25\nBob\t30\n"
+	plugin := NewTSVPlugin(nil)
+
+	tableInfo, err := plugin.DescribeTable(context.Background(), strings.NewReader(tsvData), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if plugin.Format() != format.FormatTSV {
+		t.Fatalf("Format = %q, want tsv", plugin.Format())
+	}
+	if len(tableInfo.Fields) != 2 || tableInfo.Fields[0].Name != "name" || tableInfo.Fields[1].Name != "age" {
+		t.Fatalf("fields = %#v", tableInfo.Fields)
+	}
+
+	records, err := plugin.SampleTable(context.Background(), strings.NewReader(tsvData), 1, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(records) != 1 || records[0]["name"] != "Bob" {
+		t.Fatalf("records = %#v, want Bob", records)
+	}
+}
+
+func TestTSVPluginRegisteredAsTableProvider(t *testing.T) {
+	provider, err := format.GetTableProvider(format.FormatTSV)
+	if err != nil {
+		t.Fatalf("GetTableProvider(tsv) failed: %v", err)
+	}
+	if provider.Format() != format.FormatTSV {
+		t.Fatalf("provider format = %q, want tsv", provider.Format())
+	}
+}
+
 func TestCSVPlugin_DescribeTableCountsRecords(t *testing.T) {
 	csvData := `id,name
 1,Test

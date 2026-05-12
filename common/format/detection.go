@@ -46,6 +46,7 @@ const (
 	FormatJSON    FormatType = "json"
 	FormatXML     FormatType = "xml"
 	FormatParquet FormatType = "parquet"
+	FormatORC     FormatType = "orc"
 	FormatAvro    FormatType = "avro"
 
 	// 多媒体格式
@@ -149,6 +150,8 @@ func extToFormat(ext string) FormatType {
 		return FormatXML
 	case ".parquet":
 		return FormatParquet
+	case ".orc":
+		return FormatORC
 	case ".avro":
 		return FormatAvro
 
@@ -301,8 +304,10 @@ func MIMEToFormat(mimeType string) FormatType {
 		return FormatJSON
 	case "application/xml", "text/xml":
 		return FormatXML
-	case "application/x-parquet":
+	case "application/x-parquet", "application/parquet", "application/vnd.apache.parquet":
 		return FormatParquet
+	case "application/orc", "application/vnd.apache.orc":
+		return FormatORC
 	case "application/avro":
 		return FormatAvro
 
@@ -389,6 +394,8 @@ func FormatToMIME(format FormatType) string {
 		return "application/xml"
 	case FormatParquet:
 		return "application/x-parquet"
+	case FormatORC:
+		return "application/vnd.apache.orc"
 	case FormatAvro:
 		return "application/avro"
 

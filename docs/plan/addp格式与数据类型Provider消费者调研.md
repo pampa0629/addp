@@ -1,10 +1,10 @@
-# ADDP 格式与数据类型 Provider 消费者调研
+# ADDP 格式与数据类型能力消费者调研
 
 更新时间：2026-05-09
 
-本文记录当前代码中 `meta`、`manager`、`transfer` 等模块对格式、数据类型、引擎能力的真实消费方式，用于后续反推统一的 format capability / data type provider 体系。
+本文记录当前代码中 `meta`、`manager`、`transfer` 等模块对格式、数据类型、引擎能力的真实消费方式，用于后续反推统一的 format capability、info provider 和 content reader 体系。
 
-本文只做现状盘点与原则归纳，不定义最终 Go 接口。
+本文只做现状盘点与原则归纳，不定义最终 Go 接口。正式术语以 [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) 为准：格式主入口是 FormatPlugin；元数据能力称为 info provider；内容读取能力称为 content reader。
 
 ## 调研目的
 
@@ -83,7 +83,7 @@ Manager 现在主要依赖两类信号：
 
 当前问题是，Manager 仍然保留了不少按 `engine.EngineType`、`format`、`item_type` 的分支。
 
-本轮只关注预览相关路径。与预览无关的 engine type 分支，例如空间服务生成 MVT、特定查询执行、非预览下载或服务发布，可先不纳入本轮 format provider 清理。
+本轮只关注预览相关路径。与预览无关的 engine type 分支，例如空间服务生成 MVT、特定查询执行、非预览下载或服务发布，可先不纳入本轮格式能力清理。
 
 Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 
@@ -131,7 +131,7 @@ Parquet/ORC/Avro 这类表格文件或目录型表格 scope 不应作为独立 i
 | container preview | item locator、内部路径 | children、默认入口、内部对象样本入口 | Manager 组装 DTO；底层只提供容器结构 |
 | graph preview | item locator、采样参数 | nodes / relationships 或表格化采样 | Manager 组装 DTO；底层只提供图采样结果 |
 
-文件格式相关数据由 format provider 提取；engine-native 数据由 engine provider 提取；Manager 最终通过 data type provider 或 service facade 组装 preview DTO，而不是让 format provider 直接返回 Manager 专用结构。
+文件格式相关数据由 FormatPlugin、info provider 或 content reader 提取；engine-native 数据由 engine provider 提取；Manager 最终通过 service facade 组装面向前端的 DTO，而不是让 `common/format` 直接返回 Manager 专用结构。
 
 ### 3. Transfer 侧
 
@@ -145,7 +145,7 @@ Transfer 当前仍存在较多按格式和引擎类型分支的实现：
 
 现阶段很多读写器仍以 `shapefile`、`geojson`、`parquet`、`sqlite`、`geopackage` 这样的历史具体格式名命名和注册。
 
-这说明 Transfer 还没有完全切到“只消费 data type provider”的层次。
+这说明 Transfer 还没有完全切到“只消费标准 info provider / content reader”的层次。
 
 这里需要区分两个含义：
 
@@ -237,8 +237,8 @@ target:
 | StorageWriteProvider | 写对象流、提交组件资源、生成最终路径 | engine provider |
 | NativeTableReadProvider | 从引擎原生表读取 DataBatch | engine provider |
 | NativeTableWriteProvider | 向引擎原生表写入 DataBatch | engine provider |
-| FormatBatchReader | 从外部提供的一个或多个资源流解码 DataBatch | format provider |
-| FormatBatchWriter | 将 DataBatch 编码为一个或多个资源流 | format provider |
+| FormatBatchReader | 从外部提供的一个或多个资源流解码 DataBatch | FormatPlugin / content reader |
+| FormatBatchWriter | 将 DataBatch 编码为一个或多个资源流 | FormatPlugin / writer |
 | TransferPlanner | 根据 source/target 的 engine + format + data_type 组合 provider | transfer 编排层 |
 
 `pipeline.Reader` / `pipeline.Writer` 可以保留为运行期执行接口，但创建它们的方式应从“按 connector type 工厂”逐步演进为“由 TransferPlanner 组合 provider”。
@@ -262,21 +262,21 @@ target:
    - 作为原生表的 `TableProvider` 适配器保留即可，不必独立定义一套表预览语义。
 
 5. `manager/backend/internal/service/preview_provider_doc_collection.go`
-   - 收敛为 `DocumentProvider` 的一种实现。
+   - 收敛为 `DocumentInfoProvider` / `DocumentTextReader` 或 Manager 内容适配层。
 
 6. `manager/backend/internal/service/object_content_plugin.go`
    - 这里面大量 image/pdf/json/excel/sqlite/parquet/shapefile 的处理，本质是格式内容提取。
-   - 后续应尽量下沉到 format provider 或 data type provider 的中间层。
+   - 后续应尽量下沉到 FormatPlugin、info provider 或 content reader 的中间层。
 
 7. `manager/backend/internal/service/object_preview.go`
-   - 保留 preview DTO 组装。
+   - 保留 Manager 面向前端的 DTO 组装。
    - 不再继续承担格式识别和内容提取的核心逻辑。
 
 #### Transfer 侧
 
 1. `transfer/backend/internal/service/execution_engine_service.go`
    - `inferConnectorType()` 和 `resourceToConnectorConfig()` 是历史入口。
-   - 后续主路径应改成 `TransferPlan`，由 engine capability + format capability + data type provider 组合出来。
+   - 后续主路径应改成 `TransferPlan`，由 engine capability + format capability + info provider / content reader 组合出来。
    - 新路径稳定后应删除旧入口，而不是长期兼容。
 
 2. `transfer/backend/pkg/pipeline/registry.go`
@@ -342,11 +342,11 @@ TransferPlan
   SourceEndpoint
     EngineProvider
     FormatProvider(optional)
-    DataTypeProvider
+    InfoProvider / ContentReader
   TargetEndpoint
     EngineProvider
     FormatProvider(optional)
-    DataTypeProvider
+    InfoProvider / ContentReader
   BatchPipeline
     Schema
     Transforms
@@ -358,7 +358,7 @@ TransferPlan
 1. Transfer 从任务配置或 Meta item 得到 source / target 的 engine、format、data_type。
 2. Transfer 查询 engine capability，确认能否读取或写入对应资源。
 3. Transfer 查询 format capability，确认是否支持基于外部读取抽象的 batch read / batch write / component read / component write。
-4. Transfer 根据 data type provider 补齐 schema、children、spatial 等平台语义。
+4. Transfer 根据 info provider / content reader 补齐 schema、children、spatial 等平台语义。
 5. Planner 组合成运行期 `Reader` / `Writer`。
 6. Pipeline 只处理 `DataBatch`，不关心底层是 PostgreSQL、S3、CSV 还是 Parquet。
 
@@ -416,7 +416,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
 
 这是可接受的过渡状态，但最终应该收敛成：
 
-- data type provider
+- info provider / content reader
 - format capability
 - 平台统一读写能力
 
@@ -434,7 +434,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
    - 格式声明自己能提供什么。
    - item 的 `attributes.capabilities` 是扫描结果，不是插件声明。
 
-3. **统一通过 data type provider 面向消费者**
+3. **统一通过 info provider / content reader 面向消费者**
    - `table`
    - `document`
    - `media`
@@ -448,7 +448,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
    - 上层只关心：这个 item 是什么 data type，能调用哪个 provider
 
 5. **新增 data type 必然影响上层**
-   - 如果只是新增 format，只要它能落到既有 data type provider，上层不需要改
+   - 如果只是新增 format，只要它能落到既有 info provider / content reader，上层不需要改
    - 如果新增 data type，上层必须新增相应 provider 和展示/转换能力
 
 ## 当前消费到的能力类型
@@ -474,9 +474,9 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
 这份调研的结论会直接约束后续接口设计：
 
 1. 先收 `common/format`，把底层能力声明和旧 parser 边界先整理清楚。
-2. 再定义 `format capability` 和 `data type provider` 的术语边界。
-3. 再定义每个 data type 的 provider 需要什么方法。
-4. 再决定哪些 format 需要实现哪些 provider。
+2. 再定义 `format capability`、info provider 和 content reader 的术语边界。
+3. 再定义每个 data type 的 provider / reader 需要什么方法。
+4. 再决定哪些 format 需要实现哪些 provider / reader。
 5. 最后再改上层 Manager / Transfer 的调用方式。
 
 ## 暂不做的事

@@ -34,12 +34,12 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "object",
 			engineFamily: EngineFamilyObject,
-			want:         []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
+			want:         []string{"avro", "csv", "json", "markdown", "orc", "parquet", "shapefile", "text", "tsv"},
 		},
 		{
 			name:         "file",
 			engineFamily: EngineFamilyFile,
-			want:         []string{"csv", "json", "markdown", "parquet", "shapefile", "text"},
+			want:         []string{"avro", "csv", "json", "markdown", "orc", "parquet", "shapefile", "text", "tsv"},
 		},
 		{
 			name:         "document",

@@ -16,7 +16,7 @@ Transfer 当前已经有可用的批处理执行骨架，但 reader / writer 的
 4. Transfer 配置中仍把 engine、format、data type、spatial encoding 混在一个 `connector_type` 或 `output_format` 里。
 5. 批量读写的性能优化能力已经存在雏形，但没有进入统一 planner 与 capability 模型。
 
-因此，Transfer 后续不应继续新增具体格式 connector，而应先引入 `TransferPlan`：由 Transfer 编排层组合 engine capability、resource reader/writer、format provider 和 data type provider，再生成运行期 `pipeline.Reader` / `pipeline.Writer`。
+因此，Transfer 后续不应继续新增具体格式 connector，而应先引入 `TransferPlan`：由 Transfer 编排层组合 engine capability、resource reader/writer、FormatPlugin、info provider 和 content reader，再生成运行期 `pipeline.Reader` / `pipeline.Writer`。
 
 ## 当前核心抽象
 
@@ -27,7 +27,7 @@ Transfer 当前已经有可用的批处理执行骨架，但 reader / writer 的
 | `Reader` | 批量读取、schema、seek、mode | 保留为运行期读取接口 |
 | `Writer` | 批量写入、flush、close | 保留为运行期写入接口 |
 | `DataBatch` | 行数据、schema、offset、分区、序列号 | 保留为 Transfer 内部批次模型，后续与 common table batch 对齐 |
-| `Schema` / `Field` | 字段、类型、空间字段属性 | 后续从 Meta attributes / data type provider 生成 |
+| `Schema` / `Field` | 字段、类型、空间字段属性 | 后续从 Meta attributes / info provider 生成 |
 | `Transform` | 对 `DataBatch` 做字段映射、过滤、空间转换 | 继续作为 Transfer 自身能力 |
 
 这层接口的问题不大，问题主要在“谁来创建 reader / writer”。
@@ -58,7 +58,7 @@ ConnectorConfig.Type -> ReaderFactory / WriterFactory
 | `parquet` | Parquet 读写 | 当前实现绑定 S3 / MinIO 配置 |
 | `shapefile` | Shapefile 读写 | 多组件格式，应走 component reader / writer |
 | `s3_shapefile` | S3 上的 Shapefile 读取 | 典型的 engine + format 组合被做成单独 connector |
-| `geopackage` | GeoPackage 读写 | container / table 语义需要和 format provider 对齐 |
+| `geopackage` | GeoPackage 读写 | container / table 语义需要和 FormatPlugin / provider / reader 对齐 |
 | `geojson` | JSON 空间结构读写 | 顶层 format 应是 `json + spatial` |
 | `spatialite` / `sqlite` | SQLite/SpatiaLite 表读取 | 更像 container/native table 混合，需要拆清 |
 | `spatialite_parallel` | SpatiaLite 并行读取 | 应成为 source read strategy，不是独立格式 |
@@ -81,7 +81,7 @@ ConnectorConfig.Type -> ReaderFactory / WriterFactory
 
 ```text
 S3 engine provider -> ResourceReader/List/Open
-CSV/JSON format provider -> ReadBatch
+CSV/JSON FormatPlugin / content reader -> ReadBatch
 Transfer adapter -> pipeline.Reader
 ```
 
@@ -232,7 +232,7 @@ Transfer 不应该拥有：
 - engine native 访问细节。
 - 文件格式编解码主实现。
 - item 归并规则。
-- Manager preview DTO。
+- Manager 面向前端的 DTO。
 - Meta detector 规则。
 
 ## 当前待确认问题
@@ -242,4 +242,3 @@ Transfer 不应该拥有：
 3. `Writer.Flush()` 与 format commit / engine commit 的边界如何拆。
 4. 多组件写出时，format writer 产物应该落本地临时目录，还是通过 resource writer 提供的 staging sink。
 5. 并行写出时，单文件格式、目录型格式和原生表的提交策略应如何统一表达。
-

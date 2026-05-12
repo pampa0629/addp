@@ -364,7 +364,8 @@ func hasTableProvider(formatName string) bool {
 	if strings.TrimSpace(formatName) == "" {
 		return false
 	}
-	_, err := format.GetTableProvider(format.FormatType(strings.ToLower(strings.TrimSpace(formatName))))
+	normalized := dataitem.InferFormat("", "", formatName)
+	_, err := format.GetTableProvider(format.FormatType(normalized))
 	return err == nil
 }
 

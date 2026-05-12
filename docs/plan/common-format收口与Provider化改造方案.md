@@ -104,10 +104,10 @@ engine ContentReadableProvider
   -> common/resource.ResourceReader
   -> common/resource.ComponentReader
   -> format.ComponentTableProvider
-  -> Manager preview DTO
+  -> Manager 面向前端的 DTO
 ```
 
-Shapefile 的组件物化已经从 Manager 下沉到 format provider，Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`。
+Shapefile 的组件物化已经从 Manager 下沉到 FormatPlugin / table content reader，Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`。
 
 Parquet lake table 预览也已经验证 scope 链路：
 
@@ -115,7 +115,7 @@ Parquet lake table 预览也已经验证 scope 链路：
 engine CatalogProvider + ContentReadableProvider
   -> common/resource.ResourceReader
   -> format.ScopeTableProvider
-  -> Manager preview DTO
+  -> Manager 面向前端的 DTO
 ```
 
 `common/format/plugins/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `ResourceReader` 提供。
@@ -260,7 +260,7 @@ Shapefile 是典型的多组件格式，适合验证：
 
 它适合作为后续 provider 化的样板。
 
-当前 Shapefile 已经作为 `ComponentTableProvider` 样板落地：组件集合由上层根据 layout 或 Meta attributes 提供，组件物化与解析由 format provider 内部完成。
+当前 Shapefile 已经作为 `ComponentTableProvider` 样板落地：组件集合由上层根据 layout 或 Meta attributes 提供，组件物化与解析由 FormatPlugin / table content reader 内部完成。
 
 ## 与上层的关系
 

@@ -62,9 +62,9 @@ mindmap
       数据层次结构
         数据节点 Node
         数据项 Item
-      Parser 体系
-      TableInfo 统一结构
-      ExtensionInfo 扩展
+      Meta Detector
+      Attributes 分区
+      FormatPlugin 编排
       元数据扫描流程
     数据类型与格式
       数据类型
@@ -75,15 +75,15 @@ mindmap
         engine capability
         format capability
         item capabilities
-      provider 体系
-        TableProvider
-        ComponentTableProvider
-        ScopeTableProvider
-        DocumentProvider
-        MediaProvider
-        ContainerProvider
-        GraphProvider
-        SpatialProvider
+      provider / reader 体系
+        TableInfoProvider
+        TableSampleReader
+        DocumentInfoProvider
+        DocumentTextReader
+        MediaInfoProvider
+        ContainerEntryReader
+        GraphSampleReader
+        Spatial 横切能力
     数据开发
       开发方式（capabilities.compute）
         Query → 查询工作台
@@ -171,28 +171,28 @@ mindmap
 
 ### 4. [元数据体系](addp元数据体系图.md)
 
-**元数据管理体系,包括层次结构、Provider 体系和统一数据结构**
+**元数据管理体系，包括资源层次、数据项识别、attributes normalizer 和扫描流程**
 
-- 元数据层次结构 (数据节点 Node、数据项 Item)
-- Provider / Extractor 体系架构 (TableProvider、ComponentTableProvider、ScopeTableProvider、FileMetadataExtractor)
-- TableInfo 统一数据结构
-- ExtensionInfo 扩展机制
+- 元数据层次结构 (engine、node、data item)
+- Meta Detector 识别 data item 边界
+- Meta Normalizer 生成标准 attributes
+- FormatPlugin、info provider、content reader 的编排边界
 - 元数据扫描流程
 
 📄 **[阅读完整文档 →](addp元数据体系图.md)**
 
 ---
 
-### 5. [数据类型与格式](addp数据类型与格式体系图.md)
+### 5. [数据类型和格式](addp数据类型和格式体系图.md)
 
-**数据类型、文件格式、能力分层和 provider 体系**
+**数据类型、文件格式、FormatPlugin 和 provider / reader 体系**
 
 - 数据类型分类 (table、document、media、container、graph、unknown)
 - 文件格式体系 (csv、json、parquet、shapefile、sqlite/geopackage、pdf、图片等)
 - capability 分层 (engine capability、format capability、item capabilities)
-- provider 体系与跨模块边界 (TableProvider、ComponentTableProvider、ScopeTableProvider、DocumentProvider、MediaProvider、ContainerProvider、GraphProvider、SpatialProvider)
+- provider / reader 矩阵与跨模块边界 (TableInfoProvider、TableSampleReader、DocumentInfoProvider、DocumentTextReader、MediaInfoProvider 等)
 
-📄 **[阅读完整文档 →](addp数据类型与格式体系图.md)**
+📄 **[阅读完整文档 →](addp数据类型和格式体系图.md)**
 
 ---
 
@@ -296,8 +296,9 @@ mindmap
 
 ### 数据管理
 
-- **[元数据体系图](addp元数据体系图.md)** - 元数据层次、Parser 体系、TableInfo 统一结构
-- **[数据类型与格式体系图](addp数据类型与格式体系图.md)** - 数据类型、文件格式、能力分层、provider 体系
+- **[元数据体系图](addp元数据体系图.md)** - 元数据层次、扫描流程、attributes 结构
+- **[数据项体系图](addp数据项体系图.md)** - engine、node、data item 链条和模块职责边界
+- **[数据类型和格式体系图](addp数据类型和格式体系图.md)** - 数据类型、文件格式、能力分层、provider / reader 体系
 
 ### 数据开发与编排
 

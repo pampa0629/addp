@@ -19,15 +19,16 @@
   - Meta item 的识别、claims、exclusive、`component_files`、`meta_item.full_name` 和 attributes 落库构造属于 Meta。
   - 不保留 `common/dataitem`；当前 item 组织方式枚举、规则结构和格式 / data_type 推断均属于 Meta 内部实现。
 - 已完成结论：
-  - 数据类型与格式概念总纲已收口到：`docs/concepts/addp数据类型与格式体系图.md`。
-  - 数据类型与格式文档体系已按唯一事实源收口：概念边界、detector、attributes、format / data type provider、resource、内置格式、扩展指南分别维护。
-  - 数据类型与格式模块边界已独立成文：`docs/spec/addp数据类型与格式模块边界规范.md`。
+  - 数据项概念总纲已收口到：`docs/concepts/addp数据项体系图.md`。
+  - 数据类型与格式概念总纲已收口到：`docs/concepts/addp数据类型和格式体系图.md`。
+  - 数据类型与格式文档体系已按唯一事实源收口：概念边界、探测器、attributes、format / provider / reader、resource、内置规则、扩展指南分别维护。
+  - 数据项相关模块职责边界已迁移到 `docs/concepts/addp数据项体系图.md`，不再保留独立边界规范。
   - 概念文档已补充数据类型、典型格式和当前 ADDP 支持状态目录。
-  - 文件格式能力与 Data Type Provider 规范已整理：`docs/spec/addp文件格式能力与DataTypeProvider规范.md`。
-  - 文件格式能力与 Data Type Provider 规范已补充当前 FormatCapability 与 provider / extractor 实现矩阵。
+  - 数据类型与格式能力规范已整理：`docs/spec/addp数据类型与格式能力规范.md`。
+  - 数据类型与格式能力规范已补充当前 FormatCapability 与 provider / reader / extractor 实现矩阵。
   - 资源读取抽象与 Format Provider 调用链已合并进：`docs/spec/addp资源读取抽象规范.md`。
   - 内置格式规范已按统一模板整理：识别与组织、attributes 写入、消费要求、格式约束。
-  - 数据格式扩展指南已简化为五步最小流程：判断组织方式、判断 data type / format、实现格式能力、定义 attributes、补充文档和验证。
+  - 数据类型与文件格式扩展指南已简化为五步最小流程：判断组织方式、判断 data type / format、实现格式能力、定义 attributes、补充文档和验证。
   - Manager 预览、`common/format`、text / markdown / binary 兜底和第三方格式插件化推进已新增：`docs/next/addp格式预览与插件化扩展推进.md`。
   - Provider 消费者调研已新增：`docs/plan/addp格式与数据类型Provider消费者调研.md`。
   - Transfer 相关内容已整合为三份 plan 文档：`docs/plan/transfer现状与Provider化改造调研.md`、`docs/plan/transfer与FormatProvider整合方案.md`、`docs/plan/transferProvider化改造步骤与清理清单.md`。
@@ -39,7 +40,7 @@
   - `common/format/builtin` 已纳入 SpatiaLite type mapper 默认注册。
   - Meta 内部 `dataitem_lake_table_detector.go` 已改名为 `dataitem_table_file_detector.go`，内部符号统一为 table file / scope table 语义；扫描结果仍是 `item_type=table + format=parquet/orc/avro + organization=single/whole`。
   - `common/dataitem` 已下沉为 `meta/backend/internal/dataitem`。
-  - `Scanner*`、`format.Scanner`、`ObjectInfoParser`、`format.ObjectInfo` 已出清。
+  - 旧 scanner / object info 相关实现已出清。
   - 对象存储基础信息进入 `storage`，图片/PDF 提取信息进入 `type_info.media` / `type_info.document`，提取状态进入 `capabilities.extraction`。
   - TableInfo canonical model 已统一到 `plugin.TableInfo` / `format.FieldInfo`。
   - Excel / SQLite / GeoPackage 容器内部枚举已接入 single 容器扫描路径。

@@ -12,8 +12,7 @@ import (
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/shapefile"
-	// SQLite 目前还没有 table provider，暂不导入
-	// _ "github.com/addp/common/format/plugins/sqlite"
+	_ "github.com/addp/common/format/plugins/sqlite"
 
 	// 导入内置文档 info provider / text reader，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/text"

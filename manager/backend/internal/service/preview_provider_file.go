@@ -19,6 +19,12 @@ import (
 // 自动支持所有实现了 format.TableProvider 的文件格式（CSV、Excel、Shapefile、JSON 空间扩展、Parquet 等）
 type FileTablePreviewProvider struct{}
 
+type tablePreviewResourceContext struct {
+	reader resource.ResourceReader
+	bucket string
+	path   string
+}
+
 func NewFileTablePreviewProvider() PreviewProvider {
 	return &FileTablePreviewProvider{}
 }
@@ -27,34 +33,28 @@ func (p *FileTablePreviewProvider) Name() string {
 	return "builtin:file-table"
 }
 
-func objectStorageReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo, string, plugin.ContentReadableProvider, plugin.CatalogProvider, error) {
+func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo, plugin.ContentReadableProvider, plugin.CatalogProvider, error) {
 	if req == nil || req.Engine == nil {
-		return nil, "", nil, nil, fmt.Errorf("engine is required")
+		return nil, nil, nil, fmt.Errorf("engine is required")
 	}
 	pl, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
-		return nil, "", nil, nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+		return nil, nil, nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 	contentReader, ok := pl.(plugin.ContentReadableProvider)
 	if !ok {
-		return nil, "", nil, nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
+		return nil, nil, nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
 	}
 	catalogProvider, _ := pl.(plugin.CatalogProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-	return connInfo, bucket, contentReader, catalogProvider, nil
+	return connInfo, contentReader, catalogProvider, nil
 }
 
 func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	connInfo, bucket, contentReader, catalogProvider, err := objectStorageReaderContextForPreview(req)
+	resourceCtx, err := p.resourceContextForPreview(req)
 	if err != nil {
 		return nil, err
 	}
-
-	fullPath := objectKeyFromPreviewRequest(req, bucket)
 
 	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
 	formatType := p.resolveFormat(req)
@@ -67,19 +67,40 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	// 构建解析选项
 	opts := p.buildParseOptions(formatType)
-	resourceReader := newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket)
 
-	// Shapefile 是多组件格式，交给组件型 table provider 消费 ComponentReader。
-	if formatType == format.FormatShapefile {
-		componentProvider, ok := provider.(format.ComponentTableProvider)
-		if !ok {
-			return nil, fmt.Errorf("format %s does not implement component table provider", formatType)
-		}
-		return p.previewShapefile(ctx, shapefileComponentReader(resourceReader, fullPath), bucket, componentProvider, opts, req)
+	if componentProvider, ok := provider.(format.ComponentTableProvider); ok {
+		return p.previewComponents(ctx, shapefileComponentReader(resourceCtx.reader, resourceCtx.path), resourceCtx.bucket, formatType, componentProvider, opts, req)
 	}
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, resourceReader, bucket, fullPath, formatType, provider, opts, req)
+	return p.previewStreamable(ctx, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType, provider, opts, req)
+}
+
+func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest) (*tablePreviewResourceContext, error) {
+	connInfo, contentReader, catalogProvider, err := contentReaderContextForPreview(req)
+	if err != nil {
+		return nil, err
+	}
+	if isObjectStorageType(req.Engine.EngineType) {
+		bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
+		if err != nil {
+			return nil, err
+		}
+		return &tablePreviewResourceContext{
+			reader: newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket),
+			bucket: bucket,
+			path:   objectKeyFromPreviewRequest(req, bucket),
+		}, nil
+	}
+	if isFileSystemType(req.Engine.EngineType) {
+		path := fileSystemPathFromPreviewRequest(req)
+		return &tablePreviewResourceContext{
+			reader: newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
+			bucket: req.Schema,
+			path:   path,
+		}, nil
+	}
+	return nil, fmt.Errorf("engine %s does not provide file content table preview", req.Engine.EngineType)
 }
 
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
@@ -245,6 +266,16 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		return nil, nil, false
 	}
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
+	if isFileSystemType(req.Engine.EngineType) {
+		reader, err := rangeReader.OpenRange(ctx, connInfo, fileSystemCatalogPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
+			Offset: anchor.ByteOffset,
+			Length: length,
+		})
+		if err != nil {
+			return nil, nil, false
+		}
+		return reader, positionedTableSampleOptions(opts, tableInfo, anchor.Row), true
+	}
 	bucket := commonJSON.String(req.Attributes, "storage", "bucket")
 	if bucket == "" {
 		resolved, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
@@ -261,6 +292,10 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	if err != nil {
 		return nil, nil, false
 	}
+	return reader, positionedTableSampleOptions(opts, tableInfo, anchor.Row), true
+}
+
+func positionedTableSampleOptions(opts *format.ParseOptions, tableInfo *format.TableInfo, row int64) *format.ParseOptions {
 	baseOpts := format.DefaultParseOptions()
 	if opts != nil {
 		copied := *opts
@@ -269,10 +304,10 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	sampleOpts := *baseOpts
 	sampleOpts.TableSample = &format.TableSampleOptions{
 		Fields:            tableInfo.Fields,
-		InputStartsAtRow:  anchor.Row,
+		InputStartsAtRow:  row,
 		InputIsPositioned: true,
 	}
-	return reader, &sampleOpts, true
+	return &sampleOpts
 }
 
 func usableTableContentIndex(index *format.ContentIndex) bool {
@@ -391,11 +426,12 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 	}
 }
 
-// previewShapefile 处理 Shapefile 格式（需要下载所有组件文件）
-func (p *FileTablePreviewProvider) previewShapefile(
+// previewComponents 处理多组件表格格式。
+func (p *FileTablePreviewProvider) previewComponents(
 	ctx context.Context,
 	components resource.ComponentReader,
 	bucket string,
+	formatType format.FormatType,
 	provider format.ComponentTableProvider,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
@@ -403,7 +439,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	// 解析 TableInfo
 	tableInfo, err := provider.DescribeTableComponents(ctx, components, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse shapefile info: %w", err)
+		return nil, fmt.Errorf("failed to parse %s component table info: %w", formatType, err)
 	}
 
 	// 提取列名
@@ -432,7 +468,7 @@ func (p *FileTablePreviewProvider) previewShapefile(
 	// 读取分页数据
 	rows, err := provider.SampleTableComponents(ctx, components, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
-		return nil, fmt.Errorf("failed to read shapefile data: %w", err)
+		return nil, fmt.Errorf("failed to read %s component table data: %w", formatType, err)
 	}
 
 	// 检测几何列
@@ -455,9 +491,9 @@ func (p *FileTablePreviewProvider) previewShapefile(
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        req.Table,
-			ContentType: "application/x-esri-shapefile",
+			ContentType: p.getContentType(formatType),
 			Content: &models.ObjectPreviewContent{
-				Kind: "shapefile",
+				Kind: string(formatType),
 			},
 		},
 	}, nil
@@ -465,19 +501,10 @@ func (p *FileTablePreviewProvider) previewShapefile(
 
 // buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。
 func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType) *format.ParseOptions {
-	opts := &format.ParseOptions{
+	return &format.ParseOptions{
 		HasHeader:  true,
 		SampleSize: 100,
 	}
-
-	switch formatType {
-	case format.FormatTSV:
-		opts.Delimiter = '\t'
-	case format.FormatCSV:
-		opts.Delimiter = ','
-	}
-
-	return opts
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {
@@ -525,14 +552,14 @@ func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {
 	return strings.Trim(fullPath, "/")
 }
 
-func itemEntryPath(req *PreviewRequest, fallback string) string {
+func fileSystemPathFromPreviewRequest(req *PreviewRequest) string {
 	if req == nil {
-		return fallback
+		return ""
 	}
 	if req.PhysicalPath != "" {
-		return req.PhysicalPath
+		return strings.Trim(req.PhysicalPath, "/")
 	}
-	return fallback
+	return strings.Trim(nfsPhysicalPath(req.Schema, req.Table), "/")
 }
 
 // detectGeometryColumns 检测几何列
@@ -548,18 +575,9 @@ func (p *FileTablePreviewProvider) detectGeometryColumns(tableInfo *format.Table
 
 // getContentType 根据格式类型返回 MIME 类型
 func (p *FileTablePreviewProvider) getContentType(formatType format.FormatType) string {
-	switch formatType {
-	case format.FormatCSV:
-		return "text/csv"
-	case format.FormatTSV:
-		return "text/tab-separated-values"
-	case format.FormatExcel:
-		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	case format.FormatJSON:
-		return "application/json"
-	case format.FormatShapefile:
-		return "application/x-esri-shapefile"
-	default:
+	contentType := format.FormatToMIME(formatType)
+	if contentType == "" {
 		return "application/octet-stream"
 	}
+	return contentType
 }

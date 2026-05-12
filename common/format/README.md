@@ -2,7 +2,7 @@
 
 `common/format` 是 ADDP 后端共享的格式基础包，负责格式身份、格式识别、格式能力声明、轻量 schema、类型映射、info provider 和 content reader 注册。
 
-它只表达“格式自身能提供什么”，不负责 Meta item 归并、不负责 Manager 展示 DTO、不直接连接 engine，也不承担 Transfer 任务编排。
+它只表达“格式自身能提供什么”，不负责 Meta item 归并、不负责 Manager 面向前端的 DTO、不直接连接 engine，也不承担 Transfer 任务编排。
 
 ## 职责边界
 
@@ -19,12 +19,12 @@
 
 - 不决定一个资源是不是一个 Meta item，也不做多文件归并。
 - 不接收 engine id，不读取 engine 配置，不创建 engine 连接。
-- 不定义展示协议，不返回 Manager 面向前端的展示 DTO，不推荐前端渲染器。
+- 不定义展示协议，不返回 Manager 面向前端的 DTO，不推荐前端渲染器。
 - 不决定 Transfer 任务计划、提交边界、批量并发策略。
 - 不把 `.geojson` 当作独立顶层格式；它是 `FormatJSON` 的空间结构能力。
 - `ExtractInput` 等 provider 输入不携带 `EngineID`，调用方需要的引擎上下文应留在编排层。
 
-上层模块应先基于 engine capability 或本地文件系统能力构造 `common/resource` 读取抽象，再把 `io.Reader`、`ComponentReader` 或 `ResourceReader + scope` 交给 format provider。
+上层模块应先基于 engine capability 或本地文件系统能力构造 `common/resource` 读取抽象，再把 `io.Reader`、`ComponentReader` 或 `ResourceReader + scope` 交给 FormatPlugin、info provider 或 content reader。
 
 ## 目录结构
 
@@ -42,7 +42,7 @@
 | `schema.go` | 轻量 schema 与字段类型模型 |
 | `type_mapper.go` | 类型映射注册表 |
 | `metadata.go` | 对象基础元数据、文件增强元数据提取器注册表 |
-| `extension_info.go` | data type 扩展信息接口与常见扩展信息 |
+| `extension_info.go` | legacy 扩展信息结构；新 attributes 扩展不以它为主线 |
 
 具体格式 plugin：
 
@@ -254,12 +254,12 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 - `SampleTable` 的 `input` 默认表示资源起点。调用方也可以传入从某个 record boundary 开始的局部流，但必须通过 `ParseOptions.TableSample` 提供 `InputStartsAtRow`、`Fields` 等上下文，让格式 plugin 在内部完成剩余行跳过和解析。
 - `content_index` 是上层 attributes 中的通用访问索引，可用于帮助 engine range reader 打开局部流；`common/format` 只定义索引结构和 reader 选项，不直接调用 engine。
 - engine 鉴权、连接池、对象列举、内容打开、重试和审计都在上层或 engine/resource 层完成。
-- Manager 可按自身协议把 `TableInfo + rows` 组装为展示 DTO；该协议不属于 `common/format`。
-- Transfer 后续通过 planner 组合 engine capability、format capability 和 data type provider。
+- Manager 可按自身协议把 `TableInfo + rows` 组装为面向前端的 DTO；该协议不属于 `common/format`。
+- Transfer 后续通过 planner 组合 engine capability、format capability、info provider 和 content reader。
 
 ## Document Info Provider / Text Reader
 
-文档 data type 的格式层入口拆成 `DocumentInfoProvider` 和 `DocumentTextReader`：前者返回文档元信息，后者返回文本片段。兼容期 `DocumentProvider` 只是二者的组合接口。它们消费调用方传入的 `io.Reader`，不直接读取 engine，也不返回 Manager 展示 DTO。
+文档 data type 的格式层入口拆成 `DocumentInfoProvider` 和 `DocumentTextReader`：前者返回文档元信息，后者返回文本片段。兼容期 `DocumentProvider` 只是二者的组合接口。它们消费调用方传入的 `io.Reader`，不直接读取 engine，也不返回 Manager 面向前端的 DTO。
 
 ```go
 type DocumentInfoProvider interface {
@@ -295,7 +295,7 @@ WPS、DOCX、PPTX 这类后端不适合解析的格式，不应因为只能提�
 
 ## Media Info Provider
 
-`MediaInfoProvider` 是媒体 data type 的格式层入口。它消费调用方传入的 `io.Reader`，返回媒体元信息，不直接读取 engine，也不返回 Manager 展示 DTO。
+`MediaInfoProvider` 是媒体 data type 的格式层入口。它消费调用方传入的 `io.Reader`，返回媒体元信息，不直接读取 engine，也不返回 Manager 面向前端的 DTO。
 
 ```go
 type MediaInfoProvider interface {
@@ -340,11 +340,11 @@ type TableInfo struct {
     UpdatedAt  *time.Time
     Fields     []FieldInfo
     PrimaryKey []string
-    Extensions []ExtensionInfo
+    Extensions []ExtensionInfo // legacy，新的 attributes 分区不以 ExtensionInfo 为主线
 }
 ```
 
-扩展信息用于承载格式或 data type 的附加语义，例如：
+`Extensions` 是兼容期结构。新的 attributes 写入不以 `ExtensionInfo` 为主线；格式私有事实进入 `format_info.<format>`，横切事实进入 `capabilities.<capability>`。旧结构中常见扩展包括：
 
 - `SpatialInfo`：空间字段、几何类型、坐标系、范围等。
 - `CSVInfo`：分隔符、编码、是否有表头等。
@@ -406,15 +406,15 @@ type FileMetadataExtractor interface {
 
 ## 新增格式的推荐步骤
 
-1. 在 `detection.go` 增加或确认 `FormatType`、扩展名、MIME 和 magic bytes 规则。
-2. 在 descriptor / capability 中声明 data type、layout、provider hints、content readers 和 transfer/parse 能力。
-3. 在 `common/format/plugins/<format>/` 新增 `plugin.go`，公开主类型命名为 `Plugin`，构造函数命名为 `NewPlugin`。
-4. `Plugin` 必须实现 `FormatPlugin`；如果格式可提供表语义，再按需实现 `TableInfoProvider`、`TableSampleReader`，兼容期可同时实现 `TableProvider`。
-5. 在格式包 `init()` 中调用一次 `format.RegisterFormatPlugin(NewPlugin(nil))`。注册函数会自动挂接 plugin 已实现的 provider / reader。
-6. 在 `builtin/init.go` 空白导入该格式包，触发 plugin 注册。
-7. 如果涉及原生类型映射，实现并注册 `TypeMapper`。
-8. 为检测、capability、plugin/provider 和边界情况补测试。
-9. 如果新增 data type 或 provider 形态，先更新 `docs/next` 中的规范草案，再落代码。
+正式实施清单见 `docs/spec/addp数据类型与文件格式扩展指南.md`。代码侧最小步骤是：
+
+1. 在 `common/format/plugins/<format>/` 新增 `plugin.go`，公开主类型命名为 `Plugin`，构造函数命名为 `NewPlugin`。
+2. `Plugin` 必须实现 `FormatPlugin`。
+3. 按需实现 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider` 等能力。
+4. 在格式包 `init()` 中调用一次 `format.RegisterFormatPlugin(NewPlugin(...))`。注册函数会自动挂接 plugin 已实现的 provider / reader。
+5. 如果格式是内置稳定能力，在 `registry/descriptor.go` 确认 descriptor；如果只是第三方或实验插件，可通过 `RegisterFormatDescriptor` / manifest 注入。
+6. 在 `builtin/init.go` 空白导入该格式包，触发内置 plugin 注册。
+7. 为 descriptor、capability view、provider / reader 和边界情况补测试。
 
 ## 测试
 
@@ -432,8 +432,7 @@ go test ./manager/backend/internal/service
 
 ## 相关文档
 
-- `docs/next/common-format收口与Provider化改造方案.md`
-- `docs/next/addp格式Capability与DataTypeProvider接口草案.md`
-- `docs/next/addp资源读取抽象规范.md`
+- `docs/spec/addp数据类型与格式能力规范.md`
+- `docs/spec/addp数据类型与文件格式扩展指南.md`
+- `docs/spec/addp资源读取抽象规范.md`
 - Manager 内容展示边界文档由 Manager 模块维护，不能反向约束 `common/format`。
-- `docs/next/transfer与FormatProvider整合方案.md`

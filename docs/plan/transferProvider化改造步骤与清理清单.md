@@ -12,7 +12,7 @@ Transfer 最终应做到：
 任务配置 / Meta item
   -> TransferPlanner
   -> engine capability + resource abstraction
-  -> format provider + data type provider
+  -> FormatPlugin + info provider / content reader
   -> pipeline.Reader / pipeline.Writer
   -> 执行、提交、指标、日志
 ```
@@ -96,7 +96,7 @@ transfer/backend/internal/resourceadapter/
 
 ## 阶段 3：table batch provider 对齐
 
-目标：让 table 型传输主路径基于 data type provider，而不是格式 connector。
+目标：让 table 型传输主路径基于 info provider / content reader，而不是格式 connector。
 
 优先场景：
 
@@ -174,7 +174,7 @@ transfer/backend/internal/resourceadapter/
 | `spatialite_parallel` connector | 删除，改为 read strategy |
 | `geojson` connector | 删除，改为 `format=json + spatial.encoding=geojson` |
 | `parquet` 中的 S3 访问逻辑 | 删除，改为 ResourceReader + Parquet provider |
-| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 ResourceReader + format provider |
+| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 ResourceReader + FormatPlugin / content reader |
 | `S3Writer` 的 CSV/JSON/Shapefile/Parquet 分支 | 删除，改为 format writer + resource writer |
 | `NFSWriter` 中的格式分支 | 删除，改为 resource writer |
 | `inferConnectorType()` | 删除 |
@@ -262,8 +262,8 @@ bash scripts/swagger/check-route-coverage.sh transfer
 1. 先做 `TransferPlan` 文档到代码的最小结构，不改变执行行为。
 2. 把 `ExecutionEngineService` 中的配置推断迁入 planner。
 3. 用 planner 输出继续驱动旧 registry，确认行为不变。
-4. 为 CSV 单文件读写接入 resource + format provider adapter。
-5. 为 Parquet scope 读接入 resource + format provider adapter。
+4. 为 CSV 单文件读写接入 resource + FormatPlugin / content reader adapter。
+5. 为 Parquet scope 读接入 resource + FormatPlugin / content reader adapter。
 6. 为 Shapefile multi 读写接入 component reader / writer。
 7. 把 PostgreSQL COPY 改成 native write strategy。
 8. 删除被新路径覆盖的旧 connector。
@@ -279,4 +279,3 @@ bash scripts/swagger/check-route-coverage.sh transfer
 - 跨任务增量同步语义。
 
 这些能力不否定目标模型，但不应阻塞 table 批量读写主路径收口。
-

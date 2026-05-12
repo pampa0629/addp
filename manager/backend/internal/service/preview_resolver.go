@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
@@ -469,10 +470,11 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 
 	switch dataType {
 	case "table":
-		if organization == "whole" {
+		if organization == "whole" && hasScopeTableProvider(formatName) {
 			return []string{"builtin:scope-table"}
 		}
-		if legacyReq != nil && isFileTableFormat(formatName) && isObjectStorageType(legacyReq.Engine.EngineType) {
+		if legacyReq != nil && isFileTableFormat(formatName) &&
+			(isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
 			return []string{"builtin:file-table"}
 		}
 		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
@@ -522,12 +524,25 @@ func isNodePreview(req *PreviewResolverRequest, legacyReq *PreviewRequest) bool 
 }
 
 func isFileTableFormat(formatName string) bool {
-	switch strings.ToLower(strings.TrimSpace(formatName)) {
-	case "csv", "tsv", "excel", "xlsx", "xls", "json", "shapefile", "parquet", "avro", "sqlite", "geopackage":
-		return true
-	default:
+	formatType := normalizeFileTableFormat(formatName)
+	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
+	_, err := format.GetTableProvider(formatType)
+	return err == nil
+}
+
+func hasScopeTableProvider(formatName string) bool {
+	formatType := normalizeFileTableFormat(formatName)
+	if formatType == "" || formatType == format.FormatUnknown {
+		return false
+	}
+	provider, err := format.GetTableProvider(formatType)
+	if err != nil {
+		return false
+	}
+	_, ok := provider.(format.ScopeTableProvider)
+	return ok
 }
 
 // convertToNewResult 将旧的 TablePreview 转换为新的 PreviewResult

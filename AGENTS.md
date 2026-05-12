@@ -60,7 +60,7 @@ ADDP 处于积极开发阶段，当前更重视概念统一、规范遵从、架
 | 引擎体系、插件接口、Provider 边界 | `docs/concepts/addp引擎体系图.md`、`docs/spec/addp引擎插件接口规范.md` |
 | 引擎能力声明、capabilities | `docs/spec/addp引擎能力声明规范.md` |
 | 新增存储引擎/数据库 | `docs/spec/addp数据引擎扩展指南.md`、`docs/spec/addp引擎插件接口规范.md`、`docs/spec/addp引擎能力声明规范.md` |
-| 新增数据类型/数据格式 | `docs/spec/addp数据格式扩展指南.md` |
+| 新增数据类型/数据格式 | `docs/spec/addp数据类型与文件格式扩展指南.md` |
 | 核心概念与全局视图 | `docs/concepts/addp核心概念关系图.md` |
 | 模块划分与系统结构 | `docs/concepts/addp模块架构图.md` |
 | 部署与开发启动 | `docs/guide/addp部署和开发步骤.md` |

@@ -15,17 +15,17 @@ import (
 
 const defaultGeometryField = "geometry"
 
-// Parser 提供 JSON 表格语义解析能力。
+// Plugin 提供 JSON 表格语义解析能力。
 //
 // 当前实现支持 GeoJSON FeatureCollection 这种 JSON 空间表结构。
-type Parser struct {
+type Plugin struct {
 	options       *format.ParseOptions
 	geometryField string
 }
 
-// NewParser 创建 JSON 表格语义解析器。
+// NewPlugin 创建 JSON 格式 plugin。
 // geometry_field 可以通过 ParseOptions.ExtraParams["geometry_field"] 重写
-func NewParser(opts *format.ParseOptions) *Parser {
+func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
@@ -35,14 +35,49 @@ func NewParser(opts *format.ParseOptions) *Parser {
 			geometryField = v
 		}
 	}
-	return &Parser{
+	return &Plugin{
 		options:       opts,
 		geometryField: geometryField,
 	}
 }
 
-// ParseTableInfo 从 JSON 空间表结构中提取 TableInfo。
-func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) Format() format.FormatType {
+	return format.FormatJSON
+}
+
+func (p *Plugin) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatJSON)
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:             "builtin-json",
+		Format:         format.FormatJSON,
+		DataType:       format.FormatDataTypeDocument,
+		Layouts:        []string{format.FormatLayoutSingle},
+		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+	}
+}
+
+func (p *Plugin) Capabilities() format.FormatCapability {
+	capability, ok := format.GetFormatCapability(format.FormatJSON)
+	if ok {
+		return capability
+	}
+	return format.FormatCapability{
+		Format:        format.FormatJSON,
+		DataType:      format.FormatDataTypeDocument,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
+		TransferRead:  true,
+		TransferWrite: true,
+		Parse:         true,
+	}
+}
+
+// DescribeTable 从 JSON 空间表结构中提取 TableInfo。
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -130,7 +165,7 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 }
 
 // SampleTable 读取 JSON 空间表样本数据。
-func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	iter, err := newIterator(input)
 	if err != nil {
 		return nil, err
@@ -695,12 +730,7 @@ func contextErr(ctx context.Context) error {
 }
 
 func init() {
-	parser := NewParser(nil)
-	_ = format.RegisterTableProvider(format.NewTableProvider(
-		format.FormatJSON,
-		parser.ParseTableInfo,
-		parser.SampleTable,
-	))
+	_ = format.RegisterFormatPlugin(NewPlugin(nil))
 }
 
 // Iterator 为外部提供流式读取能力

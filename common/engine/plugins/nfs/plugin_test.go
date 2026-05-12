@@ -36,3 +36,18 @@ func TestNFSRootCatalogNodeIsDot(t *testing.T) {
 		t.Fatalf("expected file catalog root term %q, got %q", plugin.CatalogTermRoot, got)
 	}
 }
+
+func TestNFSCapabilitiesDeclareRangeRead(t *testing.T) {
+	p := &NFSPlugin{}
+
+	if _, ok := interface{}(p).(plugin.RangeReadableProvider); !ok {
+		t.Fatal("NFSPlugin should implement RangeReadableProvider")
+	}
+	caps := p.Capabilities()
+	if caps.Storage == nil || caps.Storage.Store == nil || !caps.Storage.Store.RangeRead {
+		t.Fatalf("NFS range_read capability = %#v, want true", caps.Storage)
+	}
+	if err := plugin.ValidatePluginCapabilities(p); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+}

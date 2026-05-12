@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/resource"
+	"github.com/addp/manager/internal/models"
 )
 
 func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
@@ -59,11 +63,92 @@ func TestFileTablePreviewProviderResolveFormatDoesNotFallbackToFilename(t *testi
 func TestFileTablePreviewProviderBuildParseOptionsUsesResolvedFormat(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 
-	if got := provider.buildParseOptions(format.FormatTSV).Delimiter; got != '\t' {
-		t.Fatalf("TSV delimiter = %q, want tab", got)
+	if got := provider.buildParseOptions(format.FormatTSV).Delimiter; got != 0 {
+		t.Fatalf("delimiter = %q, want zero value so format plugin owns delimiter semantics", got)
 	}
-	if got := provider.buildParseOptions(format.FormatCSV).Delimiter; got != ',' {
-		t.Fatalf("CSV delimiter = %q, want comma", got)
+}
+
+func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		Schema:       "gis-data",
+		Table:        "sample.csv",
+		PhysicalPath: "/gis-data/sample.csv",
+	}
+
+	resourceCtx, err := provider.resourceContextForPreview(req)
+	if err != nil {
+		t.Fatalf("resourceContextForPreview() error = %v", err)
+	}
+	if _, ok := resourceCtx.reader.(*fileSystemResourceReader); !ok {
+		t.Fatalf("reader = %T, want *fileSystemResourceReader", resourceCtx.reader)
+	}
+	if resourceCtx.path != "gis-data/sample.csv" {
+		t.Fatalf("path = %q, want gis-data/sample.csv", resourceCtx.path)
+	}
+
+	rc, err := resourceCtx.reader.Open(context.Background(), resource.NewResourceRef(resourceCtx.path, resource.ResourceRoleMain))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	rc.Close()
+	if got := enginePlugin.openedPath.StringPath(); got != "gis-data/sample.csv" {
+		t.Fatalf("opened path = %q, want gis-data/sample.csv", got)
+	}
+}
+
+func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) {
+	t.Parallel()
+
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Page:     1,
+		PageSize: 1,
+		Table:    "manager/test.tsv",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": int64(2),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
+						map[string]interface{}{"name": "age", "type": string(format.FieldTypeInt), "nullable": true},
+					},
+				},
+			},
+		},
+	}
+	tableProvider, err := format.GetTableProvider(format.FormatTSV)
+	if err != nil {
+		t.Fatalf("GetTableProvider(tsv) failed: %v", err)
+	}
+
+	preview, err := provider.previewStreamable(
+		context.Background(),
+		staticResourceReader{content: []byte("name\tage\nAlice\t25\nBob\t30\n")},
+		"manager",
+		"manager/test.tsv",
+		format.FormatTSV,
+		tableProvider,
+		provider.buildParseOptions(format.FormatTSV),
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewStreamable() error = %v", err)
+	}
+	if preview.Rows[0]["name"] != "Alice" {
+		t.Fatalf("rows = %#v, want Alice", preview.Rows)
 	}
 }
 
@@ -161,16 +246,17 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 		Table:    "gis/roads.shp",
 	}
 
-	preview, err := provider.previewShapefile(
+	preview, err := provider.previewComponents(
 		context.Background(),
 		emptyComponentReader{},
 		"bucket",
+		format.FormatShapefile,
 		componentProvider,
 		nil,
 		req,
 	)
 	if err != nil {
-		t.Fatalf("previewShapefile() error = %v", err)
+		t.Fatalf("previewComponents() error = %v", err)
 	}
 	if preview.Mode != PreviewModeTable {
 		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
@@ -266,3 +352,31 @@ var _ format.TableProvider = (*recordingTableProvider)(nil)
 var _ format.ComponentTableProvider = (*recordingComponentTableProvider)(nil)
 var _ resource.ResourceReader = staticResourceReader{}
 var _ resource.ComponentReader = emptyComponentReader{}
+
+type recordingContentPlugin struct {
+	engineType string
+	openedPath plugin.CatalogPath
+}
+
+func (p *recordingContentPlugin) Type() string         { return p.engineType }
+func (p *recordingContentPlugin) DisplayName() string  { return p.engineType }
+func (p *recordingContentPlugin) EngineOrigin() string { return "general" }
+func (p *recordingContentPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingContentPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingContentPlugin) DefaultPort() int          { return 0 }
+func (p *recordingContentPlugin) RequiredFields() []string  { return nil }
+func (p *recordingContentPlugin) SensitiveFields() []string { return nil }
+func (p *recordingContentPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	p.openedPath = path
+	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
+}

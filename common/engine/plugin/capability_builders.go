@@ -174,9 +174,10 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 			},
 			Store: &StoreCapability{
 				StreamRead:  true,
+				RangeRead:   true,
 				StreamWrite: true,
 			},
-			Semantics: []string{"root", "directory", "file", "stream_read", "stream_write"},
+			Semantics: []string{"root", "directory", "file", "stream_read", "range_read", "stream_write"},
 		},
 		Transfer: &TransferCapabilities{
 			Read:  true,

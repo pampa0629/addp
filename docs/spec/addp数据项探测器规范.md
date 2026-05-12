@@ -1,6 +1,6 @@
-# ADDP 数据项 detector 规范
+# ADDP 数据项探测器规范
 
-本文定义 ADDP 数据项 detector 的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md) 为准。
+本文定义 ADDP 数据项探测器的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 术语表](../concepts/addp术语表.md) 和 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 为准。
 
 本文是 Meta 扫描调度、组织方式识别、claims / exclusive 合并、`component_files` 决策和 `FormatRule` 声明的唯一规范来源。其他文档如需引用这部分内容，只保留链接和一句话摘要，不重复展开。
 
@@ -11,12 +11,12 @@
 | 本文负责 | 不在本文定义 |
 |---|---|
 | 扫描范围如何解析为 `0..N` 个 data item | `attributes` 的完整 JSON schema |
-| `organization`、主资源、组件资源和 whole scope 如何确定 | format provider / data type provider 的接口形态 |
+| `organization`、主资源、组件资源和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
 | `claims`、`exclusive` 如何合并 | ResourceReader / ComponentReader 的具体接口 |
-| `meta_item.name/full_name/item_type` 的来源规则 | Manager preview DTO 或 Transfer plan |
+| `meta_item.name/full_name/item_type` 的来源规则 | Manager 面向前端的 DTO 或 Transfer plan |
 | `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser / extractor 字段细节 |
 
-attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，provider 边界见 [ADDP 文件格式能力与 Data Type Provider 规范](addp文件格式能力与DataTypeProvider规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
 ## 核心结论
 
@@ -186,4 +186,4 @@ type FormatRule struct {
 5. `raw.csv` 生成 `data_type=table`、`organization=single` item。
 6. 两个 Shapefile item 的 `full_name` 分别来自入口文件全路径。
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
-8. Shapefile 预览使用 `meta_item.full_name` 和 `item.component_files`，不得重新枚举 sibling 后猜测。
+8. Shapefile 内容读取使用 `meta_item.full_name` 和 `item.component_files`，不得重新枚举 sibling 后猜测。

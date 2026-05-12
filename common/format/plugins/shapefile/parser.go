@@ -393,5 +393,5 @@ func determineShapeGeometryType(shape shp.Shape) string {
 
 func init() {
 	parser := NewParser(nil)
-	_ = format.RegisterTableProvider(newTableProvider(parser))
+	_ = format.RegisterFormatPlugin(newTableProvider(parser))
 }

@@ -1,6 +1,6 @@
-# ADDP 内置数据格式规范
+# ADDP 内置数据类型与文件格式规范
 
-本文定义 ADDP 首批内置格式的确定性落地规则。概念边界见 [ADDP 数据类型与格式体系图](../concepts/addp数据类型与格式体系图.md)，item 识别规则见 [ADDP 数据项 detector 规范](addp数据项detector规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
+本文定义 ADDP 首批内置数据类型与文件格式的确定性落地规则。概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
 本文只记录已经形成规范共识的格式。尚未定稿的格式、插件 manifest、whole scope explain / confidence 等问题记录在 [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md)。
 
@@ -92,7 +92,7 @@ Manager 和 Transfer 必须使用 Meta 已入库的 `format`、`type_info.table`
 
 ### 消费要求
 
-Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入某个 sheet 的表格预览时，应由容器 provider 定位内部对象，再交给 table provider 归一为表语义。
+Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入某个 sheet 的表格内容读取时，应由容器读取能力定位内部对象，再交给 `TableInfoProvider` / `TableSampleReader` 归一为表语义。
 
 ### 格式约束
 
@@ -119,7 +119,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 |---|---|
 | `item` | `organization`、`data_type`、`format` |
 | `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数、采样信息 |
-| `type_info.document` | 文档型 JSON 的标题、摘要、语言、预览片段等可选信息 |
+| `type_info.document` | 文档型 JSON 的标题、摘要、语言、文本片段等可选信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
 | `format_info.json` | `json_type`、结构特征、编码、对象层级摘要等格式私有信息 |
 | `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
@@ -230,7 +230,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。组件匹配规则�
 
 ### 消费要求
 
-Manager 预览必须使用 `meta_item.full_name` 作为主文件路径，并使用 `attributes.item.component_files` 读取组件文件。Transfer 写出 Shapefile 时必须明确组件提交边界，不能只写 `.shp`。
+Manager 内容读取必须使用 `meta_item.full_name` 作为主文件路径，并使用 `attributes.item.component_files` 读取组件文件。Transfer 写出 Shapefile 时必须明确组件提交边界，不能只写 `.shp`。
 
 ### 格式约束
 
@@ -267,7 +267,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 消费要求
 
-上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 resource 抽象和 table provider 收口，不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
+上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 resource 抽象和 `TableInfoProvider` / `TableSampleReader` 收口，不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
 
 ### 格式约束
 
@@ -298,7 +298,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 消费要求
 
-Manager 展示容器 children 时消费 `type_info.container`；进入内部表或 layer 预览时，由 container provider 定位内部对象，再交给 table / spatial provider。
+Manager 展示容器 children 时消费 `type_info.container`；进入内部表或 layer 预览时，由容器读取能力定位内部对象，再交给 table info / sample reader 和 spatial 横切能力处理。
 
 ### 格式约束
 
@@ -354,11 +354,11 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 | `item` | `organization`、`data_type`、`format` |
 | `type_info.document` | 页数、标题、作者、语言、加密状态、摘要等文档元信息 |
 | `format_info.pdf` | PDF 版本、producer、字体、页面结构等格式私有信息 |
-| `capabilities.extraction` | 文本提取状态、OCR 状态、预览片段、摘要、外部索引引用 |
+| `capabilities.extraction` | 文本提取状态、OCR 状态、文本片段、摘要、外部索引引用 |
 
 ### 消费要求
 
-Manager 文档预览消费 `type_info.document` 和 `capabilities.extraction`。全文索引或大文本内容应通过外部索引引用或提取任务管理，不直接塞入 attributes。
+Manager 文档内容读取消费 `type_info.document` 和 `capabilities.extraction`。全文索引或大文本内容应通过外部索引引用或提取任务管理，不直接塞入 attributes。
 
 ### 格式约束
 

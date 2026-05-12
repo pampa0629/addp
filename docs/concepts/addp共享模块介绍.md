@@ -38,7 +38,7 @@ connInfo := engine.ConnectionInfo
 - 所有模块使用相同的 SystemClient 实现
 - Engine 模型在所有服务中是规范的
 - `connection_info` 是所有引擎连接信息的统一事实源；DSN 不是所有引擎的通用抽象
-- 通用数据类型、格式能力、provider 和资源读取抽象可以放入 common,但 Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块；详细边界见 [数据类型与格式模块边界规范](../spec/addp数据类型与格式模块边界规范.md)
+- 通用数据类型、格式能力、provider / reader 和资源读取抽象可以放入 common，但 data item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块；详细边界见 [数据项体系图](addp数据项体系图.md)
 - common 的破坏性更改会影响所有模块 - 彻底测试
 
 **另请参阅**: [docs/COMMON_MODULE.md](docs/COMMON_MODULE.md)

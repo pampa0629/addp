@@ -26,14 +26,15 @@
 
 - [概念文档](concepts/)
 - [规范文档](spec/)
-- [数据类型与格式体系图](concepts/addp数据类型与格式体系图.md)
-- [数据格式扩展指南](spec/addp数据格式扩展指南.md)
-- [数据项 detector 规范](spec/addp数据项detector规范.md)
+- [术语表](concepts/addp术语表.md)
+- [数据项体系图](concepts/addp数据项体系图.md)
+- [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
+- [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
+- [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
-- [文件格式能力与 Data Type Provider 规范](spec/addp文件格式能力与DataTypeProvider规范.md)
+- [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)
 - [资源读取抽象规范](spec/addp资源读取抽象规范.md)
-- [数据类型与格式模块边界规范](spec/addp数据类型与格式模块边界规范.md)
-- [内置数据格式规范](spec/addp内置数据格式规范.md)
+- [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
 - [规划文档](plan/)
@@ -44,11 +45,12 @@
 
 处理数据类型、组织方式、文件格式、attributes、provider 或资源读取抽象时，建议按以下顺序阅读：
 
-1. [数据类型与格式体系图](concepts/addp数据类型与格式体系图.md)：先确认概念边界。
-2. [数据格式扩展指南](spec/addp数据格式扩展指南.md)：确认变更流程和应修改的事实源。
-3. [数据项 detector 规范](spec/addp数据项detector规范.md)：确认 item 识别、主资源、组件和 claims 规则。
-4. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 attributes 分区和字段归属。
-5. [文件格式能力与 Data Type Provider 规范](spec/addp文件格式能力与DataTypeProvider规范.md)：确认 format / data type provider 边界。
-6. [资源读取抽象规范](spec/addp资源读取抽象规范.md)：确认读取抽象和调用链。
-7. [数据类型与格式模块边界规范](spec/addp数据类型与格式模块边界规范.md)：确认跨模块职责边界。
-8. [内置数据格式规范](spec/addp内置数据格式规范.md)：对照首批内置格式的落地规则。
+1. [术语表](concepts/addp术语表.md)：先统一 data item、data type、format、detector 等术语。
+2. [数据项体系图](concepts/addp数据项体系图.md)：确认 engine、node、data item 链条和模块职责边界。
+3. [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)：确认数据类型、文件格式、FormatPlugin、provider / reader 矩阵。
+4. [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)：确认 FormatPlugin、info provider、content reader 和注册方式。
+5. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 item 识别、主资源、组件和 claims 规则。
+6. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 attributes 分区和字段归属。
+7. [资源读取抽象规范](spec/addp资源读取抽象规范.md)：确认读取抽象和调用链。
+8. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：对照首批内置格式的落地规则。
+9. [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)：按实现清单落地新 data type / format。
