@@ -93,6 +93,12 @@
                     <el-icon v-else-if="data.type === 'table'">
                       <Grid />
                     </el-icon>
+                    <el-icon v-else-if="data.type === 'label'">
+                      <Collection />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'relationship'">
+                      <Connection />
+                    </el-icon>
                     <el-icon v-else-if="data.type === 'object'">
                       <Document />
                     </el-icon>
@@ -156,6 +162,7 @@ import {
   Folder,
   FolderOpened,
   Collection,
+  Connection,
   Document,
   Files,
   Grid,

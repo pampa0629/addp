@@ -768,7 +768,10 @@
       "Bash(docker tag *)",
       "Bash(grep -i mysql_root_password .env)",
       "Bash(grep -i mysql .env)",
-      "Bash(cat business/.env)"
+      "Bash(cat business/.env)",
+      "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-test cmd/server/main.go)",
+      "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-test ./cmd/server)",
+      "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-worker-test ./cmd/worker)"
     ],
     "deny": [],
     "ask": [],

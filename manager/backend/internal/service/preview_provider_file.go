@@ -72,6 +72,8 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return p.previewComponents(ctx, shapefileComponentReader(resourceCtx.reader, resourceCtx.path), resourceCtx.bucket, formatType, componentProvider, opts, req)
 	}
 
+	p.ensureContentIndex(ctx, req, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType)
+
 	// 其他格式：流式处理
 	return p.previewStreamable(ctx, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType, provider, opts, req)
 }
@@ -236,6 +238,53 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	}
 	reader, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
 	return reader, opts, err
+}
+
+func (p *FileTablePreviewProvider) ensureContentIndex(
+	ctx context.Context,
+	req *PreviewRequest,
+	resourceReader resource.ResourceReader,
+	bucket string,
+	fullPath string,
+	formatType format.FormatType,
+) {
+	if req == nil || req.Engine == nil || resourceReader == nil || tableContentIndexFromAttributes(req.Attributes) != nil {
+		return
+	}
+	if !format.SupportsContentIndex(formatType) {
+		return
+	}
+	token := getTokenFromContext(ctx)
+	if token == "" {
+		return
+	}
+	object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	if err != nil {
+		return
+	}
+	defer object.Close()
+
+	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
+	metaClient := NewMetaClient(metaURL, token)
+	attrs, err := metaClient.BuildObjectContentIndex(&ExtractObjectMetadataRequest{
+		EngineID:   req.Engine.ID,
+		ObjectKey:  contentIndexObjectKey(req, bucket, fullPath),
+		ObjectData: object,
+	})
+	if err != nil || len(attrs) == 0 {
+		return
+	}
+	req.Attributes = attrs
+}
+
+func contentIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
+	if req != nil && req.Engine != nil && isObjectStorageType(req.Engine.EngineType) {
+		if strings.HasPrefix(fullPath, bucket+"/") {
+			return fullPath
+		}
+		return bucket + "/" + strings.TrimPrefix(fullPath, "/")
+	}
+	return fullPath
 }
 
 func (p *FileTablePreviewProvider) openIndexedRangeReader(

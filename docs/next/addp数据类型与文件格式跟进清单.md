@@ -4,6 +4,8 @@
 
 本文记录数据类型与文件格式方向的当前状态和非 Transfer 后续工作。Transfer 相关事项暂不在本文维护。
 
+具体格式的逐项完善情况维护在 [common/format 格式完善矩阵](common-format格式完善矩阵.md)。该矩阵按“格式 × 完善标准”跟踪抽象入口、注册、provider、reader、Meta / Manager 硬编码消除、前端渲染、代码归拢和使用体验核实。
+
 ## 当前正式文档
 
 | 文档 | 作用 |
@@ -48,17 +50,17 @@
 1. `common/format/provider.go` 已有 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider` 等接口和注册表。
 2. `RegisterFormatPlugin` 会自动挂接 plugin 实现的 info provider 和 content reader。
 3. `common/format/registry/descriptor.go` 已有内置 descriptor、provider hints、content readers 和冲突诊断。
-4. CSV / TSV、JSON、Parquet 等已开始按 FormatPlugin 入口组织。
-5. Shapefile 仍有独立 provider 文件，但已处于 `common/format/plugins/shapefile/` 子目录内，后续可继续对齐 FormatPlugin 主入口。
+4. 分隔文本表格（CSV / TSV）、JSON、Parquet 等已开始按 FormatPlugin 入口组织；CSV / TSV 后续按同一格式族的不同 delimiter profile 收敛口径。
+5. Shapefile 已处于 `common/format/plugins/shapefile/` 子目录内，并已通过 `RegisterFormatPlugin` 注册 component table 能力；后续重点是端到端体验核实和 Manager 硬编码收敛。
 6. `FileMetadataExtractor` 仍作为 legacy 兼容入口存在，不再作为新增格式主线。
 
 ## 非 Transfer 后续优先级
 
-1. 补齐 Shapefile 的 FormatPlugin 入口，使其和 CSV / JSON / Parquet 一样可通过 `RegisterFormatPlugin` 完成身份与实现注册。
+1. 按 [common/format 格式完善矩阵](common-format格式完善矩阵.md) 逐个格式推进，优先处理“待补齐”和“待核实”列。
 2. 梳理 image / PDF / Office / WPS 的 descriptor、info provider、content reader 状态，区分“后端可解析”和“仅 raw / range content”。
-3. 将 Manager 中仍独立维护的格式清单逐步改为消费 format descriptor 和 provider / reader 能力。
+3. 将 Manager 中仍独立维护的格式清单逐步改为消费 format descriptor、data item attributes 和 provider / reader 能力。
 4. 校验 Meta 是否通过通用链路消费新增 `single` 格式，避免每个格式都补 Meta 特例。
-5. 为 CSV / TSV、JSON、Parquet、Shapefile、text / markdown、image、PDF 做端到端重扫样例。
+5. 为分隔文本表格（CSV / TSV）、JSON、Parquet、Shapefile、text / markdown、image、PDF 做端到端重扫样例，并把核实结果回填到矩阵。
 6. 继续收敛旧 `FileMetadataExtractor` 到 `DocumentInfoProvider`、`MediaInfoProvider` 或 content reader。
 7. 为 `content_index.table` 的 CSV 稀疏行索引补失效规则和更多格式适配判断。
 
@@ -66,10 +68,10 @@
 
 待讨论事项统一维护在 [ADDP 数据类型与文件格式待规范事项](addp数据类型与文件格式待规范事项.md)，当前重点是：
 
-1. whole scope 的诊断信息。
-2. 对象存储跨层组件归并。
-3. 容器内部对象升格条件。
-4. 第三方格式 manifest。
-5. 能力发现视图。
-6. Manager 内容读取插件边界。
-7. content_index 扩展。
+1. 容器内部对象升格条件。
+2. 第三方格式 manifest。
+3. 能力发现视图。
+4. Manager 内容读取插件边界。
+5. content_index 扩展。
+
+具体格式推进不放入待讨论事项，统一回到 [common/format 格式完善矩阵](common-format格式完善矩阵.md) 维护。

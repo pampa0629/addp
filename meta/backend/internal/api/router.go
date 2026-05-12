@@ -80,6 +80,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 元数据相关
 		api.GET("/metadata/object", handler.GetObjectMetadata)
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
+		api.POST("/metadata/content-index", handler.BuildObjectContentIndex)
 		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
 		api.GET("/engines/:engine_id/items/fields", handler.GetItemFieldsByName)
 		api.GET("/engines/:engine_id/items/spatial", handler.GetItemSpatialMetadataByName)

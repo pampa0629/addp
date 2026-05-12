@@ -97,6 +97,9 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.FormatInfoProvider = plugin
 	var _ format.TableInfoProvider = plugin
 	var _ format.TableSampleReader = plugin
+	if !format.SupportsContentIndex(plugin.Format()) {
+		t.Fatalf("SupportsContentIndex(%q) = false, want true", plugin.Format())
+	}
 }
 
 func TestTSVPlugin_DescribeAndSampleTable(t *testing.T) {

@@ -239,6 +239,103 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	return metadata, nil
 }
 
+func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
+	tenantID, engineID uint,
+	objectKey string,
+	objectReader io.Reader,
+) (models.JSONMap, error) {
+	item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
+	if err != nil {
+		return nil, err
+	}
+	formatName := commonJSON.String(item.Attributes, "item", "format")
+	if strings.TrimSpace(formatName) == "" {
+		return nil, fmt.Errorf("item format is empty: %s", objectKey)
+	}
+	formatType := format.FormatType(strings.ToLower(strings.TrimSpace(formatName)))
+	if !format.SupportsContentIndex(formatType) {
+		return nil, fmt.Errorf("format %s does not support content index", formatType)
+	}
+	provider, err := format.GetTableInfoProvider(formatType)
+	if err != nil {
+		return nil, fmt.Errorf("format %s cannot build content index: %w", formatType, err)
+	}
+
+	tableInfo, err := provider.DescribeTable(context.Background(), objectReader, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build content index for %s: %w", objectKey, err)
+	}
+	indexInfo := tableInfo.GetContentIndexInfo()
+	if indexInfo == nil || indexInfo.Table == nil {
+		return nil, fmt.Errorf("format %s did not return content index", formatType)
+	}
+	index := indexInfo.Table
+	if index.Source == nil {
+		index.Source = map[string]interface{}{}
+	}
+	if item.SizeBytes != nil {
+		index.Source["size_bytes"] = *item.SizeBytes
+	}
+	if item.DataUpdatedAt != nil {
+		index.Source["last_modified_at"] = item.DataUpdatedAt
+	}
+	if etag := commonJSON.String(item.Attributes, "storage", "etag"); etag != "" {
+		index.Source["etag"] = etag
+	}
+
+	enhancedAttrs := cloneJSONMap(item.Attributes)
+	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", contentIndexAttributes(index))
+	if len(tableInfo.Fields) > 0 {
+		tableAttrs := map[string]interface{}{
+			"fields": metaattr.FieldAttributesFromFormat(tableInfo.Fields),
+		}
+		if tableInfo.RowCount != nil {
+			tableAttrs["row_count"] = *tableInfo.RowCount
+		}
+		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", tableAttrs)
+	}
+	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
+
+	if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
+		return nil, err
+	}
+	return enhancedAttrs, nil
+}
+
+func cloneJSONMap(attrs models.JSONMap) models.JSONMap {
+	cloned := make(models.JSONMap, len(attrs))
+	for key, value := range attrs {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func contentIndexAttributes(index *format.ContentIndex) map[string]interface{} {
+	return map[string]interface{}{
+		"kind":         index.Kind,
+		"data_type":    index.DataType,
+		"format":       index.Format,
+		"unit":         index.Unit,
+		"offset_unit":  index.OffsetUnit,
+		"step":         index.Step,
+		"row_count":    index.RowCount,
+		"header_bytes": index.HeaderBytes,
+		"source":       index.Source,
+		"anchors":      indexAnchorsAttributes(index.Anchors),
+	}
+}
+
+func indexAnchorsAttributes(anchors []format.ContentIndexAnchor) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(anchors))
+	for _, anchor := range anchors {
+		result = append(result, map[string]interface{}{
+			"row":         anchor.Row,
+			"byte_offset": anchor.ByteOffset,
+		})
+	}
+	return result
+}
+
 func setExtractionAttribute(attrs models.JSONMap, key string, value interface{}) {
 	if attrs == nil || key == "" || value == nil {
 		return

@@ -57,6 +57,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		DataType:       format.FormatDataTypeTable,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderTable},
+		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
 	}
 }

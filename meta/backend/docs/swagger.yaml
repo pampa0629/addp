@@ -574,6 +574,50 @@ paths:
       summary: 按路径查询数据项 | Query item by path
       tags:
       - Meta Query
+  /metadata/content-index:
+    post:
+      consumes:
+      - application/octet-stream
+      description: 按需读取请求体内容并建立对象内容索引 | Build object content index from request body
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 对象路径 | Object key
+        in: query
+        name: object_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 对象 attributes | Object attributes
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 建立对象内容索引 | Build object content index
+      tags:
+      - Meta
   /metadata/extract:
     post:
       consumes:

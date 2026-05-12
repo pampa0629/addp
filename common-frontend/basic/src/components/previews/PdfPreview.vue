@@ -191,6 +191,19 @@ const pageCache = new Map()
 
 const pdfUrl = ref(null)
 
+// 判断是否为取消/销毁类错误(切换文件或卸载时,旧任务会抛出此类错误,不应展示给用户)
+const isCancellationError = (err) => {
+  if (!err) return false
+  const name = err.name || ''
+  const message = err.message || ''
+  if (name === 'RenderingCancelledException') return true
+  if (message.includes('Worker was destroyed')) return true
+  if (message.includes('Worker was terminated')) return true
+  if (message.includes('Rendering cancelled')) return true
+  if (message.includes('destroyed')) return true
+  return false
+}
+
 const fileName = computed(() => {
   return props.data?.object?.path?.split('/').pop() || 'document.pdf'
 })
@@ -369,13 +382,19 @@ const loadPDF = async (token) => {
 
     console.log(`✅ PDF 加载成功: ${totalPages.value} 页 (流式加载模式)`)
   } catch (err) {
+    // 切换文件或组件卸载会主动销毁 worker/loadingTask,此时抛出的错误不是真实失败,应静默忽略
+    if (token !== currentLoadToken || isCancellationError(err)) {
+      pdfDocument = null
+      return
+    }
+
     console.error('加载 PDF 失败', err)
     error.value = 'PDF 加载失败'
-    errorDetail.value = err.message || '未知错误'
+    errorDetail.value = err?.message || '未知错误'
     pdfDocument = null
 
     // 如果是跨域问题或其他加载问题,自动切换到 fallback
-    if (err.name === 'MissingPDFException' || err.message.includes('CORS')) {
+    if (err?.name === 'MissingPDFException' || (err?.message || '').includes('CORS')) {
       fallbackToIframe()
     }
   } finally {
@@ -450,8 +469,11 @@ const renderPage = async (pageNum, token = currentLoadToken) => {
 
     console.log(`✅ 渲染完成: 第 ${pageNum} 页 (${scale.value}x)`)
   } catch (err) {
+    if (token !== currentLoadToken || isCancellationError(err)) {
+      return
+    }
     console.error('渲染 PDF 页面失败', err)
-    ElMessage.error('渲染失败: ' + err.message)
+    ElMessage.error('渲染失败: ' + (err?.message || '未知错误'))
   }
 }
 
@@ -523,7 +545,7 @@ const fallbackToIframe = () => {
   ElMessage.info('已切换到浏览器原生预览模式')
 }
 
-const initLoad = () => {
+const initLoad = async () => {
   currentLoadToken++
 
   if (!props.data || !props.data.object) {
@@ -536,7 +558,7 @@ const initLoad = () => {
   resetState()
   revokeObjectUrl()
   cancelLoadingTask()
-  destroyPdfDocument()
+  await destroyPdfDocument()
   if (isTruncated.value) {
     pdfUrl.value = null
     return

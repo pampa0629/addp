@@ -600,6 +600,52 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	c.JSON(http.StatusOK, metadata)
 }
 
+// BuildObjectContentIndex 按需建立对象内容索引
+// @Summary 建立对象内容索引 | Build object content index
+// @Description 按需读取请求体内容并建立对象内容索引 | Build object content index from request body
+// @Tags Meta
+// @Accept octet-stream
+// @Produce json
+// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param object_key query string true "对象路径 | Object key"
+// @Success 200 {object} map[string]interface{} "对象 attributes | Object attributes"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /metadata/content-index [post]
+// @Security BearerAuth
+func (h *Handler) BuildObjectContentIndex(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+
+	engineIDStr := c.Query("engine_id")
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+
+	objectKey := c.Query("object_key")
+	if objectKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
+		return
+	}
+
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
+		return
+	}
+
+	attrs, err := h.scanService.BuildObjectContentIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
+	_ = c.Request.Body.Close()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"attributes": attrs}})
+}
+
 func extractBearerToken(c *gin.Context) (string, bool) {
 	token := c.GetHeader("Authorization")
 	if token == "" {

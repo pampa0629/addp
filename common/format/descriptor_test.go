@@ -162,6 +162,18 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 	}
 }
 
+func TestSupportsContentIndexUsesDescriptorProviderCapability(t *testing.T) {
+	if !SupportsContentIndex(FormatCSV) {
+		t.Fatalf("SupportsContentIndex(csv) = false, want true")
+	}
+	if !SupportsContentIndex(FormatTSV) {
+		t.Fatalf("SupportsContentIndex(tsv) = false, want true")
+	}
+	if SupportsContentIndex(FormatParquet) {
+		t.Fatalf("SupportsContentIndex(parquet) = true, want false")
+	}
+}
+
 func assertCapabilityEqual(t *testing.T, formatType FormatType, left, right FormatCapability) {
 	t.Helper()
 

@@ -48,6 +48,7 @@ func (s *FileSystemScanService) ScanPaths(
 	resource *commonModels.Engine,
 	tenantID uint,
 	paths []string,
+	scanDepth string,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
 	p, err := plugin.Get(resource.EngineType)
@@ -123,7 +124,7 @@ func (s *FileSystemScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm)
+		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm, strings.EqualFold(scanDepth, "deep"))
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -153,6 +154,7 @@ func (s *FileSystemScanService) scanDirectory(
 	parentNode *models.MetaNode,
 	isBucketRoot bool,
 	itemTerm string,
+	includeContentIndex bool,
 ) (int, error) {
 	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
@@ -222,7 +224,7 @@ func (s *FileSystemScanService) scanDirectory(
 			continue
 		}
 		detected := metaitem.InferSingleResourceItem(file)
-		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
+		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, includeContentIndex); err == nil {
 			itemName := file.Name
 			fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
@@ -255,7 +257,7 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm)
+		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, includeContentIndex)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
@@ -314,12 +316,13 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	resource *commonModels.Engine,
 	file plugin.FileEntry,
 	detected *metaitem.DetectedItem,
+	includeContentIndex bool,
 ) (models.JSONMap, []format.FieldInfo, error) {
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
 	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && hasTableProvider(detected.Format) {
-		info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size)
+		info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size, includeContentIndex)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil

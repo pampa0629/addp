@@ -336,7 +336,7 @@ func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	return fieldsData
 }
 
-func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableInfo) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableInfo, includeContentIndex bool) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -361,7 +361,7 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		}
 	}
 	if tableInfo != nil {
-		if indexInfo := tableInfo.GetContentIndexInfo(); indexInfo != nil && indexInfo.Table != nil {
+		if indexInfo := tableInfo.GetContentIndexInfo(); includeContentIndex && indexInfo != nil && indexInfo.Table != nil {
 			if indexInfo.Table.Source == nil {
 				indexInfo.Table.Source = map[string]interface{}{
 					"size_bytes": totalSize,
@@ -392,7 +392,7 @@ func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEn
 		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil, false),
 	}
 }
 
@@ -440,7 +440,7 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
-		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo),
+		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo, false),
 	}, nil
 }
 
@@ -480,6 +480,7 @@ func ExtractTableFileSingleFileInfo(
 	engineID uint,
 	filePath string,
 	fileSize int64,
+	includeContentIndex bool,
 ) (*CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 
@@ -492,7 +493,7 @@ func ExtractTableFileSingleFileInfo(
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil),
+			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
@@ -512,7 +513,7 @@ func ExtractTableFileSingleFileInfo(
 			EntryPath:      filePath,
 			ComponentFiles: []string{filePath},
 			SizeBytes:      &fileSize,
-			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil),
+			Attributes:     tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
@@ -534,7 +535,7 @@ func ExtractTableFileSingleFileInfo(
 		EntryPath:      filePath,
 		ComponentFiles: []string{filePath},
 		SizeBytes:      &fileSize,
-		Attributes:     tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo),
+		Attributes:     tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
 	}, nil
 }
 

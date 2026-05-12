@@ -539,7 +539,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		if tableAttrs, err := s.enrichObjectStorageTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem); err != nil {
+		if tableAttrs, err := s.enrichObjectStorageTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, strings.EqualFold(scanDepth, "deep")); err != nil {
 			s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
 		} else if tableAttrs != nil {
 			metaitem.MergeAttributeMaps(enhancedAttrs, tableAttrs)
@@ -662,6 +662,7 @@ func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
 	engineID uint,
 	meta format.ObjectMetadata,
 	item *metaitem.DetectedItem,
+	includeContentIndex bool,
 ) (models.JSONMap, error) {
 	if readableProvider == nil || item == nil {
 		return nil, nil
@@ -670,7 +671,7 @@ func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
 		return nil, nil
 	}
 	physicalPath := meta.Bucket + "/" + meta.Path
-	info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes)
+	info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes, includeContentIndex)
 	if err != nil {
 		return nil, err
 	}

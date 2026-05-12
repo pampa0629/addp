@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/geojson"
+	geojson "github.com/addp/common/format/plugins/json"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 )
@@ -75,12 +75,12 @@ func (r *GeoJSONReader) Open(ctx context.Context, _ pipeline.ConnectorConfig) er
 		parseOpts.ExtraParams = make(map[string]interface{})
 	}
 	parseOpts.ExtraParams["geometry_field"] = r.geometryField
-	parser := geojson.NewParser(parseOpts)
+	plugin := geojson.NewPlugin(parseOpts)
 
 	if err := r.resetReader(); err != nil {
 		return err
 	}
-	tableInfo, err := parser.ParseTableInfo(ctx, r.file, parseOpts)
+	tableInfo, err := plugin.DescribeTable(ctx, r.file, parseOpts)
 	if err != nil {
 		return fmt.Errorf("failed to parse geojson schema: %w", err)
 	}

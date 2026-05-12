@@ -15,7 +15,7 @@ import (
 // CSVReader reads data from CSV files
 // Refactored to use shared common/format/plugins/csv parser
 type CSVReader struct {
-	parser    *csvParser.Parser
+	parser    *csvParser.Plugin
 	file      *os.File
 	filePath  string
 	schema    *pipeline.Schema
@@ -91,10 +91,10 @@ func (r *CSVReader) Open(ctx context.Context, config pipeline.ConnectorConfig) e
 	r.file = file
 
 	// Create parser
-	r.parser = csvParser.NewParser(opts)
+	r.parser = csvParser.NewPlugin(opts)
 
 	// Parse schema using the shared CSV parser
-	tableInfo, err := r.parser.ParseTableInfo(ctx, r.file, opts)
+	tableInfo, err := r.parser.DescribeTable(ctx, r.file, opts)
 	if err != nil {
 		r.file.Close()
 		return fmt.Errorf("failed to parse CSV schema: %w", err)
@@ -119,7 +119,7 @@ func (r *CSVReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
 	}
 
 	// Read a batch using the shared CSV parser
-	records, err := r.parser.ReadPreview(ctx, r.file, r.rowOffset, int64(r.batchSize), r.opts)
+	records, err := r.parser.SampleTable(ctx, r.file, r.rowOffset, int64(r.batchSize), r.opts)
 	if err != nil {
 		if err == io.EOF && len(records) == 0 {
 			return nil, io.EOF
@@ -197,7 +197,7 @@ func (r *CSVReader) SeekTo(offset int64) error {
 	r.file = file
 
 	// Create new parser with same options
-	r.parser = csvParser.NewParser(r.opts)
+	r.parser = csvParser.NewPlugin(r.opts)
 
 	// Skip to offset (including header if present)
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func (r *CSVReader) SeekTo(offset int64) error {
 		skipCount++ // Skip header row
 	}
 
-	_, err = r.parser.ReadPreview(ctx, r.file, 0, skipCount, r.opts)
+	_, err = r.parser.SampleTable(ctx, r.file, 0, skipCount, r.opts)
 	if err != nil && err != io.EOF {
 		return fmt.Errorf("failed to seek to offset %d: %w", offset, err)
 	}

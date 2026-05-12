@@ -460,7 +460,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 
 		s.log.Info("文件系统资源扫描开始", cloneLogFields(startFields, "root_count", len(paths), "roots", paths)...)
 
-		totalRoots, totalItems, err := s.fsScanService.ScanPaths(resource, tenantID, paths, nil)
+		totalRoots, totalItems, err := s.fsScanService.ScanPaths(resource, tenantID, paths, "deep", nil)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("filesystem scan failed: %w", err)
 		}
@@ -821,7 +821,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 
 // scanFileSystemResourceWithReporter 扫描文件系统资源。
 func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
-	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, reporter)
+	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -862,6 +862,11 @@ func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey strin
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
 func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*format.ExtractedMetadata, error) {
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
+}
+
+// BuildObjectContentIndexOnDemand 按需建立对象内容索引。
+func (s *ScanService) BuildObjectContentIndexOnDemand(tenantID, engineID uint, objectKey string, objectReader io.Reader) (models.JSONMap, error) {
+	return s.metadataExtractor.BuildObjectContentIndexOnDemand(tenantID, engineID, objectKey, objectReader)
 }
 
 // ============================================================================

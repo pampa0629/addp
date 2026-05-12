@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	commonJSON "github.com/addp/common/jsonmap"
@@ -49,7 +50,7 @@ type ExtractObjectMetadataResponse struct {
 // ExtractObjectMetadata 调用Meta模块提取对象元数据
 func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/api/meta/metadata/extract?engine_id=%d&object_key=%s",
-		c.baseURL, req.EngineID, req.ObjectKey)
+		c.baseURL, req.EngineID, url.QueryEscape(req.ObjectKey))
 
 	httpReq, err := http.NewRequest("POST", url, req.ObjectData)
 	if err != nil {
@@ -86,10 +87,44 @@ func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (m
 	return merged, nil
 }
 
+func (c *MetaClient) BuildObjectContentIndex(req *ExtractObjectMetadataRequest) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("%s/api/meta/metadata/content-index?engine_id=%d&object_key=%s",
+		c.baseURL, req.EngineID, url.QueryEscape(req.ObjectKey))
+
+	httpReq, err := http.NewRequest("POST", endpoint, req.ObjectData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	httpReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Meta API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Meta API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data struct {
+			Attributes map[string]interface{} `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result.Data.Attributes, nil
+}
+
 // GetObjectMetadata 获取已存储的对象元数据
 func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/api/meta/metadata/object?engine_id=%d&object_key=%s",
-		c.baseURL, engineID, objectKey)
+		c.baseURL, engineID, url.QueryEscape(objectKey))
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {

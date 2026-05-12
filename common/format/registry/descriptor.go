@@ -90,6 +90,7 @@ type ProviderDescriptor struct {
 	Table          bool `json:"table,omitempty"`
 	ComponentTable bool `json:"component_table,omitempty"`
 	ScopeTable     bool `json:"scope_table,omitempty"`
+	ContentIndex   bool `json:"content_index,omitempty"`
 	DocumentInfo   bool `json:"document_info,omitempty"`
 	MediaInfo      bool `json:"media_info,omitempty"`
 	ContainerInfo  bool `json:"container_info,omitempty"`
@@ -178,10 +179,11 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"text/csv"},
 		},
 		Providers: ProviderDescriptor{
-			FormatInfo:  true,
-			TableInfo:   true,
-			TableSample: true,
-			Table:       true,
+			FormatInfo:   true,
+			TableInfo:    true,
+			TableSample:  true,
+			Table:        true,
+			ContentIndex: true,
 		},
 		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		TransferRead:   true,
@@ -201,10 +203,11 @@ var builtinDescriptors = []Descriptor{
 			MimeTypes:  []string{"text/tab-separated-values"},
 		},
 		Providers: ProviderDescriptor{
-			FormatInfo:  true,
-			TableInfo:   true,
-			TableSample: true,
-			Table:       true,
+			FormatInfo:   true,
+			TableInfo:    true,
+			TableSample:  true,
+			Table:        true,
+			ContentIndex: true,
 		},
 		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		TransferRead:   true,

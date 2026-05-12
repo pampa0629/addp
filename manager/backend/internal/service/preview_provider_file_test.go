@@ -380,3 +380,14 @@ func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.Connect
 	p.openedPath = path
 	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
 }
+
+func TestContentIndexObjectKeyIncludesBucketForObjectStorage(t *testing.T) {
+	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}}
+
+	if got := contentIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {
+		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
+	}
+	if got := contentIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
+		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
+	}
+}

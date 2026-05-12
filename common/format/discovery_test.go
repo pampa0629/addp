@@ -85,6 +85,16 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 	}
 }
 
+func TestFormatCapabilityViewReportsContentIndexProviderCapability(t *testing.T) {
+	view, ok := GetFormatCapabilityView(FormatCSV)
+	if !ok {
+		t.Fatal("expected csv capability view")
+	}
+	if !view.Providers.ContentIndex {
+		t.Fatalf("providers = %#v, want content_index", view.Providers)
+	}
+}
+
 func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	formatType := FormatType("discovery_implemented_document")
 	mimeType := "application/x-discovery-implemented-document"
