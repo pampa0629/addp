@@ -235,6 +235,61 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 	}
 }
 
+func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T) {
+	t.Parallel()
+
+	provider := &FileTablePreviewProvider{}
+	tableProvider := &recordingTableProvider{}
+	req := &PreviewRequest{
+		Page:     1,
+		PageSize: 2,
+		Table:    "manager/roads.json",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": int64(1),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "geometry", "type": string(format.FieldTypeGeometry), "nullable": false},
+						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
+					},
+				},
+			},
+			"capabilities": map[string]interface{}{
+				"spatial": map[string]interface{}{
+					"primary_geometry_column": "geometry",
+					"geometry_columns": []interface{}{
+						map[string]interface{}{"name": "geometry", "geometry_type": "Point", "srid": int64(4326)},
+					},
+					"extent": []interface{}{1.0, 2.0, 3.0, 4.0},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewStreamable(
+		context.Background(),
+		staticResourceReader{content: []byte("mock")},
+		"manager",
+		"manager/roads.json",
+		format.FormatJSON,
+		tableProvider,
+		nil,
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewStreamable() error = %v", err)
+	}
+	if tableProvider.describeCalls != 0 {
+		t.Fatalf("DescribeTable calls = %d, want 0", tableProvider.describeCalls)
+	}
+	if preview.SRID != 4326 {
+		t.Fatalf("SRID = %d, want 4326", preview.SRID)
+	}
+	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geometry" {
+		t.Fatalf("GeometryColumns = %#v", preview.GeometryColumns)
+	}
+}
+
 func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t *testing.T) {
 	t.Parallel()
 

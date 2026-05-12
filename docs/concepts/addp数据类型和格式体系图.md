@@ -38,13 +38,17 @@
 
 - 数据库表。
 - CSV / TSV。
-- records 型 JSON 或 JSON Lines。
+- 严格记录集合型 JSON，例如顶层对象数组。
 - JSON FeatureCollection。
 - Shapefile。
 - Parquet / ORC / Avro。
 - Iceberg 等目录型表格式。
 
 CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
+
+JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前明确支持两类 JSON table：顶层对象数组和 GeoJSON `FeatureCollection.features`。`{"data":[...]}`、`{"rows":[...]}`、NDJSON 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
+
+JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJSON geometry 结构，或字段值可被严格解析为 WKB / EWKB 几何时，才写入 `capabilities.spatial`。后端只表达 `table + spatial` 这样的横切能力组合，不新增“空间表”数据类型；Manager 前端可以据此选择“表格 + 空间”的渲染方式。
 
 ### document
 
@@ -120,7 +124,7 @@ CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据�
 文件格式不等于数据类型，也不等于组织方式：
 
 - Shapefile = `data_type=table` + `organization=multi` + `format=shapefile` + `spatial`。
-- GeoJSON = `data_type=table` + `organization=single` + `format=json` + `spatial`。
+- GeoJSON = `data_type=table` + `organization=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `spatial`。
 - GeoTIFF = `data_type=media` + `organization=single` + `format=tiff` + `spatial`。
 - Excel = `data_type=container` + `organization=single` + `format=excel`。
 - Iceberg = `data_type=table` + `organization=whole` + `format=iceberg`。
@@ -145,7 +149,7 @@ CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据�
 |---|---|
 | `csv` | delimiter、encoding、has_header、quote_char |
 | `shapefile` | base_name、component_extensions、has_prj、shape_type、dbf_version |
-| `json` | json_type、record_count、has_bbox、crs |
+| `json` | structure、feature_count、properties、geometry_types、bbox、crs |
 | `sqlite` | sqlite_version、table_count、tables |
 | `zip` | compression_method、entry_count、encrypted |
 

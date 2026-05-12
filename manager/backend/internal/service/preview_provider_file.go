@@ -220,7 +220,53 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(attrs map[string]inte
 	if rowCount > 0 {
 		info.RowCount = &rowCount
 	}
+	if spatialInfo := spatialInfoFromAttributes(attrs); spatialInfo != nil {
+		info.Extensions = append(info.Extensions, spatialInfo)
+	}
 	return info, nil
+}
+
+func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo {
+	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
+	if len(spatialAttrs) == 0 {
+		return nil
+	}
+	geometryColumn := commonJSON.InterfaceString(spatialAttrs["primary_geometry_column"])
+	geometryType := ""
+	srid := 0
+	for _, item := range interfaceSlice(spatialAttrs["geometry_columns"]) {
+		column := rawMapAttribute(item)
+		if len(column) == 0 {
+			continue
+		}
+		name := commonJSON.InterfaceString(column["name"])
+		if geometryColumn == "" || name == geometryColumn {
+			if geometryColumn == "" {
+				geometryColumn = name
+			}
+			geometryType = commonJSON.InterfaceString(column["geometry_type"])
+			srid = int(commonJSON.InterfaceInt64(column["srid"]))
+			break
+		}
+	}
+	if geometryColumn == "" {
+		return nil
+	}
+	spatialInfo := &format.SpatialInfo{
+		GeometryColumn:  geometryColumn,
+		GeometryType:    geometryType,
+		SRID:            srid,
+		HasSpatialIndex: commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"]),
+		IndexName:       commonJSON.InterfaceString(spatialAttrs["index_name"]),
+		Dimension:       int(commonJSON.InterfaceInt64(spatialAttrs["dimension"])),
+	}
+	if spatialInfo.Dimension == 0 {
+		spatialInfo.Dimension = 2
+	}
+	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
+		spatialInfo.BoundingBox = &[4]float64{extent[0], extent[1], extent[2], extent[3]}
+	}
+	return spatialInfo
 }
 
 func (p *FileTablePreviewProvider) openSampleReader(

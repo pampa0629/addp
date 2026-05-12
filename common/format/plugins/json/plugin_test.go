@@ -1,7 +1,10 @@
 package jsonformat
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -153,6 +156,9 @@ func TestJSONPluginObjectArrayDetectsVerifiedWKBGeometry(t *testing.T) {
 	if spatial.GeometryColumn != "SmGeometry" || spatial.GeometryType != "Point" {
 		t.Fatalf("spatial = %#v", spatial)
 	}
+	if spatial.SRID != 0 {
+		t.Fatalf("plain WKB should not imply SRID, got %d", spatial.SRID)
+	}
 	if field := info.GetField("SmGeometry"); field == nil || field.Type != format.FieldTypeGeometry {
 		t.Fatalf("geometry field = %#v", field)
 	}
@@ -165,6 +171,109 @@ func TestJSONPluginObjectArrayDetectsVerifiedWKBGeometry(t *testing.T) {
 	coords, _ := geom["coordinates"].([]interface{})
 	if !ok || geom["type"] != "Point" || geom["wkb"] == "" || len(coords) != 2 {
 		t.Fatalf("geometry row value = %#v", rows[0]["SmGeometry"])
+	}
+}
+
+func TestJSONPluginGeoJSONComputesBoundingBoxWithoutFileBBox(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"LineString","coordinates":[[3,4],[-1,7],[5,-2]]},"properties":{"name":"A"}},
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[8,6]},"properties":{"name":"B"}}
+		]
+	}`
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	spatial := info.GetSpatialInfo()
+	if spatial == nil || spatial.BoundingBox == nil {
+		t.Fatalf("spatial bbox missing: %#v", spatial)
+	}
+	if got, want := *spatial.BoundingBox, [4]float64{-1, -2, 8, 7}; got != want {
+		t.Fatalf("bbox = %#v, want %#v", got, want)
+	}
+	if spatial.SRID != 4326 {
+		t.Fatalf("GeoJSON SRID = %d, want 4326", spatial.SRID)
+	}
+
+	formatInfo, err := plugin.DescribeFormat(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeFormat failed: %v", err)
+	}
+	if got, want := formatInfo["bbox"], [4]float64{-1, -2, 8, 7}; got != want {
+		t.Fatalf("format bbox = %#v, want %#v", got, want)
+	}
+}
+
+func TestJSONPluginObjectArrayDetectsEWKBSRID(t *testing.T) {
+	data := `[{"id":1,"geom":"` + ewkbPointHex(4326, 1, 2) + `"}]`
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	spatial := info.GetSpatialInfo()
+	if spatial == nil {
+		t.Fatalf("spatial extension missing")
+	}
+	if spatial.GeometryColumn != "geom" || spatial.GeometryType != "Point" || spatial.SRID != 4326 {
+		t.Fatalf("spatial = %#v", spatial)
+	}
+
+	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	geom, ok := rows[0]["geom"].(map[string]interface{})
+	if !ok || geom["srid"] != int64(4326) {
+		t.Fatalf("geometry row value = %#v", rows[0]["geom"])
+	}
+}
+
+func TestJSONPluginObjectArrayDetectsMultiPolygonWKB(t *testing.T) {
+	data := `[{"id":1,"geom":"` + wkbMultiPolygonHex() + `"}]`
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	spatial := info.GetSpatialInfo()
+	if spatial == nil || spatial.GeometryType != "MultiPolygon" {
+		t.Fatalf("spatial = %#v", spatial)
+	}
+
+	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	geom, ok := rows[0]["geom"].(map[string]interface{})
+	if !ok || geom["type"] != "MultiPolygon" {
+		t.Fatalf("geometry row value = %#v", rows[0]["geom"])
+	}
+	coords, ok := geom["coordinates"].([]interface{})
+	if !ok || len(coords) != 1 {
+		t.Fatalf("multipolygon coordinates = %#v", geom["coordinates"])
+	}
+}
+
+func TestJSONPluginDoesNotTreatArbitraryHexAsGeometry(t *testing.T) {
+	data := `[{"id":1,"payload":"0102030405060708090A"}]`
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if spatial := info.GetSpatialInfo(); spatial != nil {
+		t.Fatalf("spatial extension should be absent: %#v", spatial)
+	}
+	if field := info.GetField("payload"); field == nil || field.Type != format.FieldTypeString {
+		t.Fatalf("payload field = %#v", field)
 	}
 }
 
@@ -196,6 +305,72 @@ func TestJSONPluginDescribeTableBuildsSparseRowIndex(t *testing.T) {
 	}
 }
 
+func TestJSONPluginSampleGeoJSONFromPositionedReader(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}},
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"name":"B"}},
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[5,6]},"properties":{"name":"C"}}
+		]
+	}`
+	plugin := NewPlugin(nil)
+	opts := format.DefaultParseOptions()
+	opts.ContentIndexStep = 1
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), opts)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	index := info.GetContentIndexInfo().Table
+	start := index.Anchors[1].ByteOffset
+	positioned := format.DefaultParseOptions()
+	positioned.TableSample = &format.TableSampleOptions{
+		Fields:            info.Fields,
+		InputStartsAtRow:  index.Anchors[1].Row,
+		InputIsPositioned: true,
+	}
+
+	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data[start:]), 2, 1, positioned)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "C" {
+		t.Fatalf("rows = %#v, want C", rows)
+	}
+	if _, ok := rows[0]["properties"]; ok {
+		t.Fatalf("positioned row should be flattened properties, got %#v", rows[0])
+	}
+	if geom, ok := rows[0]["geometry"].(map[string]interface{}); !ok || geom["type"] != "Point" {
+		t.Fatalf("positioned row geometry = %#v", rows[0]["geometry"])
+	}
+}
+
+func ewkbPointHex(srid uint32, x, y float64) string {
+	var buf bytes.Buffer
+	buf.WriteByte(1)
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(0x20000001))
+	_ = binary.Write(&buf, binary.LittleEndian, srid)
+	_ = binary.Write(&buf, binary.LittleEndian, x)
+	_ = binary.Write(&buf, binary.LittleEndian, y)
+	return strings.ToUpper(hex.EncodeToString(buf.Bytes()))
+}
+
+func wkbMultiPolygonHex() string {
+	var buf bytes.Buffer
+	buf.WriteByte(1)
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(6))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(1))
+	buf.WriteByte(1)
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(3))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(1))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(5))
+	for _, point := range [][2]float64{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}} {
+		_ = binary.Write(&buf, binary.LittleEndian, point[0])
+		_ = binary.Write(&buf, binary.LittleEndian, point[1])
+	}
+	return strings.ToUpper(hex.EncodeToString(buf.Bytes()))
+}
 func TestJSONPluginSampleTableFromPositionedReader(t *testing.T) {
 	data := `[
 		{"id":1,"name":"A"},
