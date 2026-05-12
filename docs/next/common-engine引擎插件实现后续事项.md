@@ -27,7 +27,7 @@
 - MongoDB / Neo4j 已改用能力 builder，MongoDB 查询语言已统一为 `mql`。
 - capabilities validator 已覆盖插件注册、CatalogModel 一致性、Store / Query / Workflow / Script 能力声明与 Provider 实现一致性。
 - System 后端已生成 `capabilities_view`，引擎详情页已改为能力摘要、能力卡片、目录链路、扩展区和“查看 JSON”树形视图。
-- Format Registry 第一阶段已落地，`transfer.supported_formats` 已从各引擎能力 builder 手写清单改为按引擎家族派生。
+- 格式能力第一阶段已从各引擎能力 builder 手写清单中抽离，后续以 `common/format` 的 FormatDescriptor / FormatPlugin 为共同事实源。
 - 上层模块硬编码收口 P0-P3 已完成第一阶段：
   - Manager 对象/文件预览、数据库预览、Feature/GeoJSON/MVT、Service 查询执行已分别收口到 Provider、`dbbridge`、`common/spatial`、`common/sqldialect` 等 common helper。
   - Develop Notebook 数据源注入已改为 Develop 内部 runtimeconn 适配层派生连接描述；DuckDB 联邦挂载判断已集中到 `common/duckdb`。
@@ -50,7 +50,7 @@
 
 - Transfer 执行面、表单创建入口和明确业务模式选择可以保留必要类型选项；若要继续收口，需要先让对应模块 API 输出能力派生的可选项。
 - DuckDB `ATTACH` / `httpfs` 差异属于 DuckDB 适配层真实差异，暂不进入通用 DSN 或 engine plugin Provider。
-- `common/sqldialect` 目前是普通 helper；Notebook runtimeconn 属于 Develop 内部适配层。若未来上升为 Provider，先补 SQL preview composer / runtime export 能力边界文档。
+- `common/sqldialect` 目前是普通 helper；Notebook runtimeconn 属于 Develop 内部适配层。若未来上升为 Provider，先补 SQL 内容查询拼装 / runtime export 能力边界文档。
 
 ### 2. 能力边界状态继续精细化
 
@@ -64,24 +64,24 @@
 后续工作：
 
 - 梳理各引擎家族的理论能力边界，形成后端展示定义，减少散落判断。
-- 对“引擎理论上可做但 ADDP 尚未实现”的 Transfer、Preview、写入等能力，逐步补充 `addp_pending` 展示。
+- 对“引擎理论上可做但 ADDP 尚未实现”的读取、写入和模块扩展能力，逐步补充 `addp_pending` 展示。
 - 不把这些状态强行塞进 `EngineCapabilities` 核心结构，优先作为 `capabilities_view` 派生结果。
 
-### 3. Format Registry 深化
+### 3. 格式能力事实源深化
 
-目标：在第一阶段清单集中管理基础上，把格式能力变成跨模块共同事实源。
+目标：在第一阶段清单集中管理基础上，把格式身份、数据类型、info provider 和 content reader 变成跨模块共同事实源。
 
 当前状态：
 
-- `common/format/capability` 已集中声明格式、扩展名、数据类型、Transfer / Preview / Parse 能力和适用引擎家族。
-- `common/engine/plugin` 的能力 builder 已按引擎家族从 Format Registry 派生 `supported_formats`。
-- 当前保持对外输出不变：表格引擎为 `table`，对象 / 文件引擎为 `csv、geojson、json、parquet、shapefile`，文档引擎为 `document、json`。
+- `common/format` 已引入 FormatPlugin、FormatDescriptor、format identity、info provider 和 content reader。
+- `common/engine/plugin` 的能力 builder 仍保留阶段性格式摘要输出，用于兼容已有能力展示。
+- `common/format` 不定义 Manager 预览概念；Manager 只能基于已入库 data item、标准 attributes、资源读取抽象和 reader 结果组装前端 DTO。
 
 后续工作：
 
-- Manager、Transfer、Meta 逐步消费 Format Registry，减少各模块独立维护格式清单。
-- 将最终支持格式从“引擎家族映射”演进为“引擎访问能力 × Format Registry × Transfer / Preview 实现”的完整推导结果。
-- `transfer.supported_formats` 在迁移完成前阶段性保留；迁移后评估改为纯派生展示或模块能力结果。
+- Manager、Meta 逐步消费 FormatDescriptor / FormatPlugin，减少各模块独立维护格式清单。
+- 将最终可读取内容从“引擎家族映射”演进为“引擎资源读取能力 × data item attributes × content reader 实现”的推导结果。
+- 涉及 Transfer 的格式能力派生暂不在本文展开，后续由 Transfer 相关文档单独接住。
 
 ### 4. SQL metadata 方言继续收敛
 
@@ -108,10 +108,10 @@ go test -tags integration ./common/engine/plugin/integration -run '^TestPluginIn
 git diff --check
 ```
 
-修改 Format Registry 后执行：
+修改格式能力事实源后执行：
 
 ```bash
-go test ./common/format/capability ./common/format ./common/engine/plugin ./common/engine/plugins/...
+go test ./common/format ./common/engine/plugin ./common/engine/plugins/...
 ```
 
 修改 System 能力展示后执行：

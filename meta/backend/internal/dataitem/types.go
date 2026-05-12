@@ -71,7 +71,6 @@ type WholeScopeRule struct {
 type FormatRule struct {
 	Format       string
 	DataType     DataType
-	ItemType     string
 	Organization Organization
 	Priority     int
 

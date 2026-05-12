@@ -3,9 +3,9 @@ package metaitem
 import (
 	"context"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 // CompositeItemInfo 是 Meta detector 提取出的 data item 元信息。
@@ -32,7 +32,6 @@ type DetectionResult struct {
 
 // DetectedItem 是 Meta 识别后的标准化 data item 计划。
 type DetectedItem struct {
-	ItemType       string
 	Organization   dataitem.Organization
 	DataType       dataitem.DataType
 	Format         string
@@ -65,7 +64,6 @@ type CompositeItemDetector interface {
 		connInfo plugin.ConnectionInfo, engineID uint, dirPath string,
 		files []plugin.FileEntry) (*CompositeItemInfo, error)
 	Priority() int
-	ItemType() string
 }
 
 // ScopeItemDetector 从一个扫描范围内识别 0..N 个 Meta data item。

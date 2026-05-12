@@ -3,8 +3,8 @@ package metaitem
 import (
 	"testing"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
@@ -46,7 +46,6 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	item := &DetectedItem{
-		ItemType:     "table",
 		Organization: dataitem.OrganizationWhole,
 		DataType:     dataitem.DataTypeTable,
 		Format:       "parquet",

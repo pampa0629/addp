@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestDetectorDetectsCompleteShapefile(t *testing.T) {

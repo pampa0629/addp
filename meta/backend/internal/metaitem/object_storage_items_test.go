@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestObjectMetasByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t *testing.T) {
@@ -42,35 +42,6 @@ func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
 	}
 	if filtered[0].Path == "datasets/roads/roads.shp" {
 		t.Fatalf("claimed component should be removed: %#v", filtered)
-	}
-}
-
-func TestObjectStorageSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
-	t.Parallel()
-
-	got := ObjectStorageSingleFileItemType(&DetectedItem{
-		ItemType:     "table",
-		Format:       "json",
-		Organization: dataitem.OrganizationSingle,
-	})
-	if got != "table" {
-		t.Fatalf("itemType = %q, want table", got)
-	}
-
-	got = ObjectStorageSingleFileItemType(&DetectedItem{
-		Format:       "pdf",
-		Organization: dataitem.OrganizationSingle,
-	})
-	if got != "file" {
-		t.Fatalf("pdf itemType = %q, want file", got)
-	}
-
-	got = ObjectStorageSingleFileItemType(&DetectedItem{
-		Format:       "parquet",
-		Organization: dataitem.OrganizationSingle,
-	})
-	if got != "table" {
-		t.Fatalf("parquet itemType = %q, want table", got)
 	}
 }
 
@@ -129,9 +100,9 @@ func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		FileType:     "json",
 		SizeBytes:    128,
 		LastModified: &modifiedAt,
-	}, "datasets/roads.geojson")
+	}, "datasets/roads.geojson", "object")
 
-	if plan.ItemType != "table" || plan.ItemName != "roads.geojson" {
+	if plan.ItemType != "object" || plan.ItemName != "roads.geojson" {
 		t.Fatalf("item identity = %#v", plan)
 	}
 	if plan.FullName != "addp/datasets/roads.geojson" || plan.Fingerprint == "" {
@@ -158,7 +129,6 @@ func TestPlanObjectStorageCompositeItemBuildsStandardAttributes(t *testing.T) {
 		Bucket: "addp",
 		Prefix: "datasets/roads",
 		Item: &DetectedItem{
-			ItemType:     "table",
 			DataType:     dataitem.DataTypeTable,
 			Organization: dataitem.OrganizationMulti,
 			EntryPath:    "addp/datasets/roads/roads.shp",
@@ -168,9 +138,12 @@ func TestPlanObjectStorageCompositeItemBuildsStandardAttributes(t *testing.T) {
 				Type: format.FieldTypeInt,
 			}},
 		},
-	})
+	}, "object")
 	if !ok {
 		t.Fatal("composite item plan should be created")
+	}
+	if plan.ItemType != "object" {
+		t.Fatalf("itemType = %q, want object", plan.ItemType)
 	}
 	if plan.ItemName != "roads.shp" || plan.ParentPath != "datasets/roads/" {
 		t.Fatalf("plan identity = %#v", plan)

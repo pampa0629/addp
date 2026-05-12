@@ -39,26 +39,6 @@ func TestFileSystemDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	}
 }
 
-func TestFileSystemSingleFileItemTypeUsesBuiltinRule(t *testing.T) {
-	t.Parallel()
-
-	got := FileSystemSingleFileItemType(&DetectedItem{
-		Format:       "csv",
-		Organization: dataitem.OrganizationSingle,
-	})
-	if got != "table" {
-		t.Fatalf("itemType = %q, want table", got)
-	}
-
-	got = FileSystemSingleFileItemType(&DetectedItem{
-		Format:       "sqlite",
-		Organization: dataitem.OrganizationSingle,
-	})
-	if got != "file" {
-		t.Fatalf("container itemType = %q, want file", got)
-	}
-}
-
 func TestApplyContainerSummaryWritesStandardTypeInfo(t *testing.T) {
 	t.Parallel()
 

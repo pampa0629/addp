@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 var metaItemDetectors = []CompositeItemDetector{
@@ -131,7 +131,6 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 		}
 
 		item := &DetectedItem{
-			ItemType:       detector.ItemType(),
 			Organization:   organization,
 			DataType:       dataType,
 			Format:         info.Format,

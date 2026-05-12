@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 )
@@ -154,21 +154,6 @@ func ObjectStorageCompositeMode(item *DetectedItem) string {
 	}
 }
 
-func ObjectStorageSingleFileItemType(item *DetectedItem) string {
-	if item == nil {
-		return "object"
-	}
-	if item.ItemType != "" {
-		return item.ItemType
-	}
-	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
-		rule.Organization == dataitem.OrganizationSingle &&
-		rule.ItemType != "" {
-		return rule.ItemType
-	}
-	return "object"
-}
-
 type ObjectStorageRelativePathPlan struct {
 	Segments   []string
 	ExactBase  bool
@@ -223,7 +208,7 @@ func PlanObjectStorageRelativePath(trimmedPath, scanPathPrefix string) ObjectSto
 	}
 }
 
-func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trimmedPath string) ObjectStorageSingleItemPlan {
+func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trimmedPath string, itemType string) ObjectStorageSingleItemPlan {
 	objectName := path.Base(strings.Trim(meta.Path, "/"))
 	if objectName == "" {
 		objectName = strings.Trim(trimmedPath, "/")
@@ -234,10 +219,6 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	}
 
 	dataItem := InferObjectStorageDataItem(meta, objectName)
-	itemType := ObjectStorageSingleFileItemType(dataItem)
-	if itemType == "" {
-		itemType = "object"
-	}
 
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	attrs := models.JSONMap{
@@ -270,7 +251,7 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	}
 }
 
-func PlanObjectStorageCompositeItem(engineID uint, composite ObjectStorageCompositeItem) (ObjectStorageCompositeItemPlan, bool) {
+func PlanObjectStorageCompositeItem(engineID uint, composite ObjectStorageCompositeItem, itemType string) (ObjectStorageCompositeItemPlan, bool) {
 	if composite.Item == nil {
 		return ObjectStorageCompositeItemPlan{}, false
 	}
@@ -289,7 +270,7 @@ func PlanObjectStorageCompositeItem(engineID uint, composite ObjectStorageCompos
 	metaattr.SetItem(attrs, "mode", ObjectStorageCompositeMode(composite.Item))
 
 	return ObjectStorageCompositeItemPlan{
-		ItemType:    composite.Item.ItemType,
+		ItemType:    itemType,
 		ItemName:    itemName,
 		ObjectPath:  objectPath,
 		ParentPath:  parentPath,

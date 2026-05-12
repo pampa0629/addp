@@ -51,7 +51,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | item 主键 | `meta_item.id` | 不进入 attributes |
 | 租户、引擎、节点归属 | `tenant_id`、`engine_id`、`node_id` | attributes 不重复表达关系归属 |
-| item 类型表字段 | `meta_item.item_type` | 路由基础列，不写入 attributes；不等同于 `item.data_type` |
+| item 类型表字段 | `meta_item.item_type` | 引擎 catalog / 路径模型的原生叶子类型，路由基础列，不写入 attributes；不等同于 `item.data_type` |
 | 名称和逻辑全名 | `meta_item.name`、`full_name` | 不写入 attributes |
 | fingerprint | `meta_item.fingerprint` | 不写入 attributes |
 | 大小 | `meta_item.size_bytes` + `attributes.storage.total_size` | 表列用于列表和排序，attributes 保存源存储视角 |
@@ -63,6 +63,8 @@ attributes 分区统一采用以下概念：
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
+
+`meta_item.item_type` 必须跟随所属引擎的原生叶子术语：对象存储为 `object`，文件系统为 `file`，关系型数据库为 `table` / `view`，MongoDB 为 `collection`，Neo4j 为 `label` / `relationship`。内容可读成表格、文档、媒体或容器时，只更新 `attributes.item.data_type`、`attributes.item.format`、`type_info`、`format_info` 和 `capabilities`，不得反向改写 `meta_item.item_type`。
 
 ## 分区职责
 

@@ -35,7 +35,7 @@
 2. 旧 `ObjectContentRegistry` 可以作为 Manager 内部 DTO 组装层保留，但不应反向定义 common 能力。
 3. text / markdown / image 已有最小能力，PDF、Office、WPS 等文档格式仍需按 `DocumentInfoProvider` / `DocumentTextReader` 或 raw / range content reader 逐步补齐。
 4. 旧 `FileMetadataExtractor` 仍是兼容入口，应继续向 info provider / content reader 迁移。
-5. Manager 与 Transfer 应共用资源读取抽象和格式能力发现结果，避免各自维护格式清单。
+5. Manager 应继续收口到资源读取抽象和格式能力发现结果，避免维护独立格式清单。
 
 ## 新增格式时的要求
 
@@ -45,7 +45,7 @@
 2. 在 `common/format/plugins/<format>/` 实现 FormatPlugin。
 3. 在 descriptor 中声明 identification、data type、layouts、providers、content readers。
 4. 按需实现 info provider 和 content reader。
-5. 在 Meta detector / normalizer 中补 data item 识别和 attributes 映射。
+5. 确认 Meta 是否已有通用消费链路；只有现有 detector / normalizer 无法表达时才补 Meta。
 6. Manager 只基于已入库 item 和 reader 结果组装前端 DTO。
 
 详细清单见 [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md)。

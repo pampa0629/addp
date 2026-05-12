@@ -24,21 +24,6 @@ func FileSystemDetectedItemName(dirPath string, item *DetectedItem) (name, fullN
 	return inferFileSystemItemName(dirPath)
 }
 
-func FileSystemSingleFileItemType(item *DetectedItem) string {
-	if item == nil {
-		return "file"
-	}
-	if item.ItemType != "" {
-		return item.ItemType
-	}
-	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(item.Format); ok &&
-		rule.Organization == dataitem.OrganizationSingle &&
-		rule.ItemType != "" {
-		return rule.ItemType
-	}
-	return "file"
-}
-
 func ApplyContainerSummary(attrs models.JSONMap, detected *DetectedItem) {
 	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
 		return

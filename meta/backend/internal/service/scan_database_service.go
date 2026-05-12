@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"
@@ -77,6 +77,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement ItemMetadataProvider", resource.EngineType)
 	}
+	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermTable)
 
 	db := s.tryOpenConnectionPool(resource)
 
@@ -91,7 +92,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth)
+	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth, itemTerm)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
@@ -99,7 +100,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 
 	// 6. 完成扫描
 	var totalSize int64
-	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, "table")
+	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, itemTerm)
 	if err != nil {
 		return 0, tables, fields, err
 	}
@@ -127,11 +128,12 @@ func (s *DatabaseScanService) scanTables(
 	schemaNode *models.MetaNode,
 	schemaName string,
 	scanDepth string,
+	itemTerm string,
 ) (int, int, error) {
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
 
 	// 查询已存在的表
-	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, "table")
+	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, itemTerm)
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
@@ -194,7 +196,7 @@ func (s *DatabaseScanService) scanTables(
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
+		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, itemTerm, tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,

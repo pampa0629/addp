@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	formatShapefile "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 var (
@@ -37,7 +37,6 @@ type shapefileItemDetector struct{}
 var shapefileItemRule = dataitem.FormatRule{
 	Format:       "shapefile",
 	DataType:     dataitem.DataTypeTable,
-	ItemType:     "table",
 	Organization: dataitem.OrganizationMulti,
 	Priority:     100,
 	Entry: dataitem.EntryRule{
@@ -59,10 +58,6 @@ func (d *shapefileItemDetector) Rule() dataitem.FormatRule {
 
 func (d *shapefileItemDetector) Priority() int {
 	return shapefileItemRule.Priority
-}
-
-func (d *shapefileItemDetector) ItemType() string {
-	return shapefileItemRule.ItemType
 }
 
 func (d *shapefileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
@@ -89,7 +84,6 @@ func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input Director
 			totalSize = *info.SizeBytes
 		}
 		item := &DetectedItem{
-			ItemType:       d.ItemType(),
 			Organization:   shapefileItemRule.Organization,
 			DataType:       shapefileItemRule.DataType,
 			Format:         info.Format,

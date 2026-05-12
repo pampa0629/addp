@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
@@ -29,7 +29,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
 	first := &testScopeDetector{
 		priority: 20,
 		result: &DetectionResult{
-			Items:  []*DetectedItem{{ItemType: "table", Organization: dataitem.OrganizationMulti, EntryPath: "/shp/roads.shp"}},
+			Items:  []*DetectedItem{{Organization: dataitem.OrganizationMulti, EntryPath: "/shp/roads.shp"}},
 			Claims: ResourceClaimSet{"/shp/roads.shp": true},
 		},
 	}
@@ -74,8 +74,6 @@ func (d *testScopeDetector) ExtractItemInfo(
 }
 
 func (d *testScopeDetector) Priority() int { return d.priority }
-
-func (d *testScopeDetector) ItemType() string { return "test" }
 
 func (d *testScopeDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
 	d.seenFiles = input.Files

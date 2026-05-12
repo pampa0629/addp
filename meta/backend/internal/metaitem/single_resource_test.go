@@ -21,9 +21,6 @@ func TestInferSingleResourceUsesCanonicalFormatForFamily(t *testing.T) {
 	if item.DataType != dataitem.DataTypeContainer {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)
 	}
-	if item.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", item.ItemType)
-	}
 }
 
 func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
@@ -38,9 +35,6 @@ func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
 	}
 	if item.DataType != dataitem.DataTypeContainer {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)
-	}
-	if item.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", item.ItemType)
 	}
 }
 
@@ -57,9 +51,6 @@ func TestInferSingleResourceDetectsMarkdownAsDocument(t *testing.T) {
 	if item.DataType != dataitem.DataTypeDocument {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
 	}
-	if item.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", item.ItemType)
-	}
 }
 
 func TestInferSingleResourceDetectsTextAsDocument(t *testing.T) {
@@ -75,9 +66,6 @@ func TestInferSingleResourceDetectsTextAsDocument(t *testing.T) {
 	if item.DataType != dataitem.DataTypeDocument {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
 	}
-	if item.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", item.ItemType)
-	}
 }
 
 func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
@@ -87,9 +75,6 @@ func TestInferSingleGeoJSONWritesSpatialCapability(t *testing.T) {
 	}
 	if item.DataType != dataitem.DataTypeTable {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeTable)
-	}
-	if item.ItemType != "table" {
-		t.Fatalf("ItemType = %q, want table", item.ItemType)
 	}
 	spatial := item.Attributes["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
 	if spatial["primary_geometry_column"] != "geometry" || spatial["has_spatial_index"] != false {

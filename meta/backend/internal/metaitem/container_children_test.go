@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/xuri/excelize/v2"

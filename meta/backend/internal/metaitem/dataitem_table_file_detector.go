@@ -37,7 +37,6 @@ func tableFileItemRules() []dataitem.FormatRule {
 		{
 			Format:       formatName,
 			DataType:     dataitem.DataTypeTable,
-			ItemType:     "table",
 			Organization: dataitem.OrganizationSingle,
 			Priority:     40,
 			Entry: dataitem.EntryRule{
@@ -47,7 +46,6 @@ func tableFileItemRules() []dataitem.FormatRule {
 		{
 			Format:       formatName,
 			DataType:     dataitem.DataTypeTable,
-			ItemType:     "table",
 			Organization: dataitem.OrganizationWhole,
 			Priority:     80,
 			WholeScope: &dataitem.WholeScopeRule{
@@ -120,10 +118,6 @@ func (d *tableFileItemDetector) Rules() []dataitem.FormatRule {
 	return tableFileItemRules()
 }
 
-func (d *tableFileItemDetector) ItemType() string {
-	return "table"
-}
-
 func (d *tableFileItemDetector) ResolveItems(
 	ctx context.Context,
 	input DirectoryResolveInput,
@@ -149,7 +143,6 @@ func (d *tableFileItemDetector) ResolveItems(
 		totalSize = *info.SizeBytes
 	}
 	item := &DetectedItem{
-		ItemType:       d.ItemType(),
 		Organization:   info.Organization,
 		DataType:       info.DataType,
 		Format:         info.Format,

@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/dataitem"
 )
 
 // SingleResourceInput 是 single 组织方式 item 推断的输入。
@@ -33,18 +33,14 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
 	organization := dataitem.OrganizationSingle
 	dataType := dataitem.InferDataType(formatName, input.ContentType)
-	itemType := "file"
 	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(formatName); ok {
 		organization = rule.Organization
 		dataType = rule.DataType
-		itemType = rule.ItemType
 	}
 	if formatName == string(format.FormatJSON) && isGeoJSONResource(input) {
 		dataType = dataitem.DataTypeTable
-		itemType = "table"
 	}
 	item := &DetectedItem{
-		ItemType:       itemType,
 		Organization:   organization,
 		DataType:       dataType,
 		Format:         formatName,

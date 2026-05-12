@@ -1,162 +1,128 @@
 # ADDP 数据类型与文件格式待规范事项
 
-更新时间：2026-05-06
+更新时间：2026-05-12
 
-本文只记录“数据类型、文件格式、组织方式、横切能力、attributes 治理”中尚未形成正式规范、需要先讨论确认的事项。已确认或正在整理的 next 阶段文档包括：
+本文只记录数据项、数据类型、文件格式、FormatPlugin、attributes 和 Manager 内容读取中尚未进入正式规范的事项。已经定稿的规则不在本文重复，统一查看：
 
 - [ADDP 数据项体系图](../concepts/addp数据项体系图.md)
 - [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)
+- [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
 - [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md)
 - [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
 - [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
 - [ADDP 内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md)
-- [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)
-- [ADDP 格式预览与插件化扩展推进](addp格式预览与插件化扩展推进.md)
 
-当前阶段不保留旧 attributes、旧枚举和旧平铺字段兼容。旧数据可删除后重新 meta 扫描；与新规范矛盾的数据和代码应尽早暴露并修正。
+当前已确认：新增普通文件格式优先只改 `common/format`。只有突破现有 data item 识别或 attributes 映射能力时，才补 Meta detector / normalizer。
 
-## 一、容器内部对象暂不展开为子 item
+## 一、whole scope 的诊断信息
+
+### 背景
+
+`organization=whole` 会把整个目录、prefix、schema 或扫描范围归并为一个 data item，并可能阻止范围内其他资源继续落 item。这个能力风险较高，需要可审计诊断。
+
+### 待确认
+
+1. `explain` 是只进入扫描日志，还是也写入 `format_info.<format>`。
+2. 是否需要正式 `confidence` 字段；如果需要，枚举是否为 `exact`、`strong`、`weak`。
+3. 弱匹配是否只能记录诊断，不允许生成 whole item。
+4. 范围下存在未认领异类资源时，是否一律拒绝 `exclusive=true`。
+5. whole scope 的 claims 是否必须列出全部关键资源，还是允许只列 manifest / 根范围。
+
+### 当前倾向
+
+规则判断以确定性结构为准。`explain` 优先作为诊断和审计信息；`confidence` 只用于冲突处理和防止弱匹配独占扫描范围，不替代格式规则。
+
+## 二、对象存储跨层组件归并
 
 ### 已确认
 
-SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不展开内部子 item。外层容器文件本身生成一条 meta item：
+默认 sibling `multi` 只认领同 prefix 的直接兄弟对象。跨层级分布的 manifest、数据文件、索引文件如果构成一个整体数据集，应按 `organization=whole` 处理，不扩展出新的 `mixed_collection` 组织方式。
+
+### 待确认
+
+1. manifest 引用资源如何表达 claimed resources。
+2. claimed resources 使用完整 object key、catalog path，还是统一资源标识。
+3. 是否允许跨 bucket 引用；默认倾向不允许。
+4. 是否允许跨 sibling prefix 引用；默认必须由具体格式规范显式声明。
+5. 被 whole scope 认领的 object 是否禁止作为普通 object 落库。
+
+## 三、容器内部对象升格条件
+
+### 已确认
+
+SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不自动展开内部子 item。外层容器文件本身生成一条 data item：
 
 - `organization=single`
 - `data_type=container`
 - `format=sqlite|geopackage|excel|zip|...`
 
-内部 table、view、layer、sheet、文件等只写入 `type_info.container.children` 及对应 `format_info.<format>`，不生成独立 `meta_item`。
-
-### 暂不进入开发的事项
-
-以下事项只有在后续明确需要“内部对象独立授权、检索、血缘、传输或生命周期管理”时再讨论：
-
-- 内部子 item 的 `name/full_name/node_id/fingerprint`。
-- 容器 item 与子 item 的关系模型。
-- Manager / Transfer 面向内部子 item 的独立路由。
-- 子 item 的权限、搜索索引和生命周期语义。
-
-## 二、whole scope 的 explain / confidence
-
-### 背景
-
-原 `directory_tree` 统一改为 `organization=whole` 的 whole scope detector。whole scope detector 可以声明 `Exclusive=true`，这会停止继续处理扫描范围下的剩余资源，风险较高，必须具备可审计依据。
+内部 table、view、layer、sheet、entry 等先写入 `type_info.container.children` 及对应 `format_info.<format>`。
 
 ### 待确认
 
-1. `explain` 是否作为 detector 诊断信息写入扫描日志，还是进入 `format_info.<format>`。
-2. `confidence` 是否需要正式字段；如果需要，枚举是否使用 `exact`、`strong`、`weak`。
-3. 弱匹配是否只能记录诊断，不允许生成 whole item。
-4. 范围下存在未认领异类资源时，是否一律拒绝独占。
-5. whole scope 的 `Claims` 是否必须列出全部关键资源，还是允许仅列 manifest / 根范围。
+只有明确需要内部对象独立授权、检索、血缘、传输或生命周期管理时，才讨论子 item 升格。届时需要补：
 
-### 倾向
+1. 内部子 item 的 `name/full_name/node_id/fingerprint` 规则。
+2. 容器 item 与子 item 的关系模型。
+3. Manager 面向内部子 item 的路由方式。
+4. 子 item 的权限、搜索索引和生命周期语义。
 
-规则判断仍以确定性结构为准。`explain` 优先作为诊断和审计信息；`confidence` 只用于冲突处理和防止弱匹配独占扫描范围，不替代格式规则。
+## 四、第三方格式声明机制
 
-## 三、对象存储跨层组件按 whole scope 处理
+FormatDescriptor / FormatPlugin 已经能表达内置格式身份和能力，但第三方扩展还需要更严格的 manifest 规则。
+
+### 待确认
+
+1. manifest 是否允许同时声明 format identity、identification、providers 和 content readers。
+2. 私有 `format_info` 和 `capabilities` 命名空间命名规则，是反向域名还是 plugin ID。
+3. 私有字段是否需要声明类型、来源、是否可展示、是否可索引、是否可诊断。
+4. 私有字段被平台稳定消费时，如何晋升为标准字段。
+5. descriptor 冲突时，优先级、覆盖、诊断记录如何落库或暴露。
+
+## 五、能力发现视图
 
 ### 已确认
 
-对象存储跨层组件认领不再按 sibling `multi` 自行扩展，也不引入独立 `mixed_collection`。当 manifest、数据文件、索引文件跨层级分布并构成一个整体数据集时，统一按 `organization=whole` 的 whole scope 处理。
+能力发现需要区分两类事实：
+
+- descriptor / capability 声明了什么能力。
+- 当前进程实际注册了哪些 Go 实现。
 
 ### 待确认
 
-1. manifest 引用的资源如何表达 claimed resources。
-2. claimed resources 使用完整 object key、catalog path，还是统一资源标识。
-3. 是否允许跨 bucket 引用；默认倾向不允许。
-4. 是否允许跨 sibling prefix 引用；默认必须由格式规范显式声明。
-5. 被 whole scope 认领的 object 是否禁止作为普通 object 落库。
+1. 能力发现结果是否需要由 Meta 落库，还是仅运行时查询。
+2. Manager 是否应从能力发现视图派生内容 handler，而不是维护独立扩展名清单。
+3. 能力发现结果是否需要包含版本、来源、冲突诊断和禁用状态。
+4. 第三方插件加载顺序和冲突处理如何审计。
 
-### 倾向
+## 六、Manager 内容读取插件边界
 
-默认 sibling `multi` 只认领同 prefix 的直接兄弟对象。跨层认领必须由具体格式 detector 显式声明为 whole scope，统一 detector 框架不能自行猜测。
+### 已确认
 
-## 四、mixed_collection 暂不保留
+`common/format` 不定义 preview 概念，不返回 Manager 面向前端的 DTO，不推荐前端渲染器。Manager 可以有自己的内容 DTO 和前端插件体系，但不能反向约束 common。
 
-`mixed_collection` 暂不作为待规范事项保留。当前规则足够表达：
+### 待确认
 
-- 只认领部分资源：使用 `organization=multi`。
-- 整个范围归并为一个 item：使用 `organization=whole`。
-
-未来遇到 `multi` 和 `whole` 都无法表达的真实格式，再重新提出具体问题讨论。
-
-## 五、第三方插件扩展声明机制
-
-该事项先单独形成构想文档：[第三方插件扩展声明构想](../plan/addp第三方插件扩展声明构想.md)。
-
-待讨论重点：
-
-1. 插件 manifest 是否统一声明 `format_info` 和 `capabilities` 命名空间。
-2. 私有命名空间命名规则是否只允许反向域名，还是允许平台插件 ID。
-3. 私有字段是否声明类型、来源、是否可展示、是否可索引、是否可诊断。
-4. 私有字段被平台稳定消费时，如何晋升为标准字段。
-5. 插件输出字段和平台标准字段冲突时，normalizer 如何记录冲突。
-
-## 六、Manager 内容预览插件能力描述
-
-该事项先单独形成构想文档：[Manager 内容预览插件能力构想](../plan/addpManager内容预览插件能力构想.md)。
-
-2026-05-10 补充：Manager 预览、`common/format`、text / markdown / binary 兜底和第三方格式扩展的阶段性推进思路已整理到 [ADDP 格式预览与插件化扩展推进](addp格式预览与插件化扩展推进.md)。
-
-待讨论重点：
-
-1. 内容插件是否必须声明支持的 `data_type`、`format`、`organization`。
+1. Manager 内容插件是否必须基于 `data_type`、`format`、`organization`、`capabilities` 匹配。
 2. `priority` 是否仅允许在同一标准匹配结果内解决冲突。
 3. 内容插件是否允许读取 `format_info` 私有字段用于展示。
-4. 命令型插件是否需要声明输入 payload schema 和输出 content schema。
+4. 命令型内容插件是否需要声明输入 payload schema 和输出 content schema。
 5. multi / whole 内容插件是否统一使用 `meta_item.full_name`、`component_files` 和 whole scope manifest，不允许自行枚举 sibling。
 
-## 七、引擎原生 item 按 single 处理
+## 七、content_index 扩展
 
-### 已确认
+CSV 的表格稀疏行索引已经确认为 `content_index.table` 的一个标准结构。后续还需要确认：
 
-不引入 `engine_native` 组织方式。数据库表、文档集合、图 label / relationship 等引擎原生 item 统一按 `organization=single` 表达。
+1. JSON Lines、Parquet row group、文档页码、媒体关键帧是否进入 `content_index`。
+2. 每类索引的逻辑单位和物理偏移单位如何声明。
+3. 索引失效规则是否统一使用 size、etag、last_modified_at、fingerprint。
+4. content reader 如何声明自己能消费哪类 `content_index`。
 
-### 整理思路
-
-`single` 的含义是“一个引擎资源对应一个 data item”，不是“单文件”。因此：
-
-- PostgreSQL table：`organization=single`、`data_type=table`；无格式私有信息时不写 `format` 和 `format_info`。
-- MongoDB collection：可按平台消费方式识别为 `data_type=table` 或 `document`，`organization=single`。
-- Neo4j label / relationship：可按 `data_type=graph` 或后续图规范定义，`organization=single`。
-
-引擎原生 item 不要求 `component_files`。`meta_item.full_name` 已是引擎内唯一逻辑标识和定位事实源，不再定义通用 `entry_path`。
-
-## 八、表格信息与旧扫描模型收口
-
-该事项移入 [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)，作为实现阶段的模型收口任务推进。
-
-## 九、Registry 与能力发现层收口
-
-该事项先单独形成构想文档：[Registry 与能力发现层构想](../plan/addpRegistry与能力发现层构想.md)。
-
-待讨论重点：
-
-1. 是否需要统一能力发现 API，而不是统一 registry。
-2. engine、dataitem、format、preview 等 registry 的职责边界如何固定。
-3. 能力发现结果是否由 meta 落库，还是仅运行时查询。
-4. 插件加载顺序和冲突处理如何记录。
-5. 第三方插件是否可以同时注册 detector、parser、extractor、preview handler。
-
-## 十、空间扩展标准口径
-
-该事项移入 [ADDP 数据类型与文件格式跟进清单](addp数据类型与文件格式跟进清单.md)，作为 `capabilities.spatial` 最小字段集和跨格式映射任务推进。
-
-## 十一、建议讨论顺序
+## 八、建议讨论顺序
 
 1. whole scope 的 `explain/confidence`。
 2. 对象存储跨层组件 whole scope 认领规则。
-3. 第三方插件扩展声明机制。
-4. Manager 内容预览插件能力描述。
-5. Registry 与能力发现层收口。
-6. 引擎原生 item 的 `format` 口径。
-
-## 十二、当前可继续开展但不阻塞讨论的事项
-
-- 做已支持格式的真实引擎端到端验证。
-- 清理旧 attributes 读取和旧字段写入。
-- 补齐新标准分区的字段映射。
-- 为已有清晰规则的格式补 detector 和 parser 回归测试。
-- 增加 normalizer 回归测试。
-- 清理 Manager 中不符合新规范的历史兜底。
+3. 第三方格式 manifest。
+4. 能力发现视图是否落库。
+5. Manager 内容插件边界。
+6. content_index 扩展规则。

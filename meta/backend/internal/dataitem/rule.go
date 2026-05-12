@@ -20,8 +20,8 @@ func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
 // BuiltinSingleResourceRules 返回 Meta 可识别的 single resource 规则。
 //
 // 规则来源分两类：
-//  1. Meta 显式规则：表达当前仍需要 Meta 明确保留的 item 语义或历史补充。
-//  2. common/format capability：表达普通 single 格式的默认 data_type / item_type。
+//  1. Meta 显式规则：表达当前仍需要 Meta 明确保留的 data item 语义或历史补充。
+//  2. common/format capability：表达普通 single 格式的默认 data_type。
 //
 // 新增普通格式时，应优先在 common/format 声明 capability；Meta 只在组织方式、
 // 组件、whole scope、容器 children 或内容结构判断需要特殊处理时新增显式规则。
@@ -53,20 +53,20 @@ func BuiltinSingleResourceRules() []FormatRule {
 
 func explicitSingleResourceRules() []FormatRule {
 	return []FormatRule{
-		singleResourceRule("csv", DataTypeTable, "table", []string{".csv"}),
-		singleResourceRule("tsv", DataTypeTable, "table", []string{".tsv"}),
-		singleResourceRule("json", DataTypeDocument, "file", []string{".json"}),
-		singleResourceRule("excel", DataTypeContainer, "file", []string{".xls", ".xlsx"}),
-		singleResourceRule("parquet", DataTypeTable, "table", []string{".parquet"}),
-		singleResourceRule("orc", DataTypeTable, "table", []string{".orc"}),
-		singleResourceRule("avro", DataTypeTable, "table", []string{".avro"}),
-		singleResourceRule("pdf", DataTypeDocument, "file", []string{".pdf"}),
-		singleResourceRule("jpeg", DataTypeMedia, "file", []string{".jpg", ".jpeg"}),
-		singleResourceRule("png", DataTypeMedia, "file", []string{".png"}),
-		singleResourceRule("gif", DataTypeMedia, "file", []string{".gif"}),
-		singleResourceRule("tiff", DataTypeMedia, "file", []string{".tif", ".tiff"}),
-		containerResourceRule("sqlite", DataTypeContainer, "file", []string{".sqlite", ".sqlite3", ".db"}),
-		containerResourceRule("geopackage", DataTypeContainer, "file", []string{".gpkg"}),
+		singleResourceRule("csv", DataTypeTable, []string{".csv"}),
+		singleResourceRule("tsv", DataTypeTable, []string{".tsv"}),
+		singleResourceRule("json", DataTypeDocument, []string{".json"}),
+		singleResourceRule("excel", DataTypeContainer, []string{".xls", ".xlsx"}),
+		singleResourceRule("parquet", DataTypeTable, []string{".parquet"}),
+		singleResourceRule("orc", DataTypeTable, []string{".orc"}),
+		singleResourceRule("avro", DataTypeTable, []string{".avro"}),
+		singleResourceRule("pdf", DataTypeDocument, []string{".pdf"}),
+		singleResourceRule("jpeg", DataTypeMedia, []string{".jpg", ".jpeg"}),
+		singleResourceRule("png", DataTypeMedia, []string{".png"}),
+		singleResourceRule("gif", DataTypeMedia, []string{".gif"}),
+		singleResourceRule("tiff", DataTypeMedia, []string{".tif", ".tiff"}),
+		containerResourceRule("sqlite", DataTypeContainer, []string{".sqlite", ".sqlite3", ".db"}),
+		containerResourceRule("geopackage", DataTypeContainer, []string{".gpkg"}),
 	}
 }
 
@@ -85,34 +85,24 @@ func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 	return singleResourceRule(
 		string(capability.Format),
 		dataType,
-		defaultItemTypeForDataType(dataType),
 		capability.Extensions,
 	), true
 }
 
-func defaultItemTypeForDataType(dataType DataType) string {
-	if dataType == DataTypeTable {
-		return "table"
-	}
-	return "file"
-}
-
-func singleResourceRule(format string, family DataType, itemType string, exts []string) FormatRule {
+func singleResourceRule(format string, family DataType, exts []string) FormatRule {
 	return FormatRule{
 		Format:       format,
 		DataType:     family,
-		ItemType:     itemType,
 		Organization: OrganizationSingle,
 		Priority:     10,
 		Entry:        EntryRule{Extensions: exts},
 	}
 }
 
-func containerResourceRule(format string, family DataType, itemType string, exts []string) FormatRule {
+func containerResourceRule(format string, family DataType, exts []string) FormatRule {
 	return FormatRule{
 		Format:       format,
 		DataType:     family,
-		ItemType:     itemType,
 		Organization: OrganizationSingle,
 		Priority:     20,
 		Entry:        EntryRule{Extensions: exts},
@@ -124,9 +114,6 @@ func containerResourceRule(format string, family DataType, itemType string, exts
 func ValidateFormatRule(rule FormatRule) error {
 	if rule.Format == "" {
 		return fmt.Errorf("format rule requires Format")
-	}
-	if rule.ItemType == "" {
-		return fmt.Errorf("format rule %s requires ItemType", rule.Format)
 	}
 	if rule.DataType == "" {
 		return fmt.Errorf("format rule %s requires DataType", rule.Format)

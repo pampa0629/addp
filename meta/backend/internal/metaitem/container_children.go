@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/common/format"
+	spatialiteMapper "github.com/addp/common/format/mappers/spatialite"
 	"github.com/addp/common/format/plugins/excel"
 	commonSQLite "github.com/addp/common/format/plugins/sqlite"
-	spatialiteMapper "github.com/addp/common/format/mappers/spatialite"
+	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"

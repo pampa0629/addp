@@ -43,6 +43,16 @@ type CatalogLevelSpec struct {
 	I18nKey   string   `json:"i18n_key,omitempty"`
 }
 
+// CatalogItemTerm 返回 catalog model 中声明的 item 层术语。
+func CatalogItemTerm(model CatalogModelSpec) string {
+	for _, level := range model.Levels {
+		if level.Item && level.Term != "" {
+			return level.Term
+		}
+	}
+	return ""
+}
+
 type CatalogCapability struct {
 	Supported       bool     `json:"supported"`
 	RealTime        bool     `json:"real_time"`

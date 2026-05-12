@@ -59,6 +59,7 @@ func (s *FileSystemScanService) ScanPaths(
 	if !ok {
 		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
+	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermFile)
 	contentReader, ok := p.(plugin.ContentReadableProvider)
 	if !ok {
 		return 0, 0, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
@@ -122,7 +123,7 @@ func (s *FileSystemScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true)
+		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -151,6 +152,7 @@ func (s *FileSystemScanService) scanDirectory(
 	dirPath string,
 	parentNode *models.MetaNode,
 	isBucketRoot bool,
+	itemTerm string,
 ) (int, error) {
 	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
@@ -181,7 +183,7 @@ func (s *FileSystemScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected) {
+				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm) {
 					totalItems++
 				}
 			}
@@ -204,7 +206,7 @@ func (s *FileSystemScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected) {
+				if s.persistFileSystemDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm) {
 					totalItems++
 				}
 			}
@@ -221,12 +223,11 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 		detected := metaitem.InferSingleResourceItem(file)
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected); err == nil {
-			itemType := metaitem.FileSystemSingleFileItemType(detected)
 			itemName := file.Name
 			fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
 			_, upsertErr := s.repo.UpsertItem(
 				tenantID, resource.ID, parentNode,
-				itemType, itemName, fullName,
+				itemTerm, itemName, fullName,
 				fileAttrs, nil, &file.Size, nil,
 			)
 			if upsertErr != nil {
@@ -254,7 +255,7 @@ func (s *FileSystemScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false)
+		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
@@ -273,6 +274,7 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	parentNode *models.MetaNode,
 	dirPath string,
 	detected *metaitem.DetectedItem,
+	itemTerm string,
 ) bool {
 	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
@@ -282,13 +284,13 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	itemName, fullName := metaitem.FileSystemDetectedItemName(dirPath, detected)
 	_, upsertErr := s.repo.UpsertItem(
 		tenantID, resource.ID, parentNode,
-		detected.ItemType, itemName, fullName,
+		itemTerm, itemName, fullName,
 		attrs, nil, &detected.SizeBytes, nil,
 	)
 	if upsertErr != nil {
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,
-			"item_type", detected.ItemType,
+			"item_type", itemTerm,
 			"full_name", fullName,
 			"error", upsertErr,
 		)
@@ -297,7 +299,7 @@ func (s *FileSystemScanService) persistFileSystemDetectedItem(
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
 		"full_name", fullName,
-		"item_type", detected.ItemType,
+		"item_type", itemTerm,
 		"organization", detected.Organization,
 		"data_type", detected.DataType,
 		"name", itemName,
@@ -328,7 +330,6 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			}
 			sizeBytes := *info.SizeBytes
 			detected = &metaitem.DetectedItem{
-				ItemType:       "table",
 				Organization:   info.Organization,
 				DataType:       info.DataType,
 				Format:         info.Format,

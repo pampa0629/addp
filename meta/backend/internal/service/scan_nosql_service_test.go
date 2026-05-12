@@ -21,22 +21,22 @@ func TestNoSQLItemType(t *testing.T) {
 	}{
 		{
 			name: "document collection",
-			node: plugin.CatalogNode{Kind: plugin.CatalogKindCollection},
+			node: plugin.CatalogNode{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, IsItem: true},
 			want: "collection",
 		},
 		{
 			name: "graph label",
-			node: plugin.CatalogNode{Kind: plugin.CatalogKindLabel},
+			node: plugin.CatalogNode{Term: plugin.CatalogTermLabel, Kind: plugin.CatalogKindLabel, IsItem: true},
 			want: "label",
 		},
 		{
 			name: "graph relationship",
-			node: plugin.CatalogNode{Kind: plugin.CatalogKindRelationship},
+			node: plugin.CatalogNode{Term: plugin.CatalogTermRelationship, Kind: plugin.CatalogKindRelationship, IsItem: true},
 			want: "relationship",
 		},
 		{
-			name: "unsupported kind",
-			node: plugin.CatalogNode{Kind: plugin.CatalogKindNamespace},
+			name: "container is not item",
+			node: plugin.CatalogNode{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, IsContainer: true},
 			want: "",
 		},
 	}

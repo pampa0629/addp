@@ -140,7 +140,9 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 }
 
 func isLakeTableItem(item commonModels.MetaItem) bool {
-	if item.ItemType != "table" {
+	switch item.ItemType {
+	case "object", "file":
+	default:
 		return false
 	}
 	if item.Attributes == nil {
@@ -148,7 +150,7 @@ func isLakeTableItem(item commonModels.MetaItem) bool {
 	}
 	dataType := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "data_type")))
 	formatName := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "format")))
-	if dataType != "" && dataType != "table" {
+	if dataType != "table" {
 		return false
 	}
 	switch formatName {

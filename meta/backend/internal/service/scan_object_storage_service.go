@@ -82,6 +82,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 	if !ok {
 		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
+	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermObject)
 
 	// 确定扫描路径
 	paths := objectPaths
@@ -112,7 +113,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePathsWithCatalog(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter)
+	buckets, objects, err := s.scanObjectStoragePathsWithCatalog(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter, itemTerm)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -132,6 +133,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 	paths []string,
 	scanDepth string,
 	reporter ScanProgressReporter,
+	itemTerm string,
 ) (int, int, error) {
 	s.log.Info("进入 scanObjectStoragePathsWithCatalog",
 		"engine_id", engineID,
@@ -235,7 +237,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 			"fullBucket", fullBucket,
 			"metasCount", len(metas),
 			"scanDepth", scanDepth)
-		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints)
+		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			s.log.Error("对象存储元数据持久化失败",
 				"engine_id", engineID,
@@ -361,6 +363,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	scanDepth string,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
+	itemTerm string,
 ) (int, error) {
 	objects := 0
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
@@ -394,7 +397,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象存储组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
-	compositeCount, err := s.persistObjectStorageCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints)
+	compositeCount, err := s.persistObjectStorageCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
 	if err != nil {
 		return objects, err
 	}
@@ -472,7 +475,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			continue
 		}
 
-		itemPlan := metaitem.PlanObjectStorageSingleItem(engineID, meta, trimmed)
+		itemPlan := metaitem.PlanObjectStorageSingleItem(engineID, meta, trimmed, itemTerm)
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
@@ -589,13 +592,14 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 	includeBucketAggregate bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
+	itemTerm string,
 ) (int, error) {
 	count := 0
 	for _, composite := range items {
 		if composite.Item == nil {
 			continue
 		}
-		itemPlan, ok := metaitem.PlanObjectStorageCompositeItem(engineID, composite)
+		itemPlan, ok := metaitem.PlanObjectStorageCompositeItem(engineID, composite, itemTerm)
 		if !ok {
 			continue
 		}

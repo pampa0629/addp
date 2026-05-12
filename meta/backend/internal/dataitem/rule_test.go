@@ -10,7 +10,6 @@ func TestValidateFormatRuleAcceptsMultiFileRule(t *testing.T) {
 	rule := FormatRule{
 		Format:       "shapefile",
 		DataType:     DataTypeTable,
-		ItemType:     "table",
 		Organization: OrganizationMulti,
 		Entry:        EntryRule{Extensions: []string{".shp"}},
 		Components: &ComponentRule{
@@ -28,7 +27,6 @@ func TestValidateFormatRuleRejectsSingleResourceComponents(t *testing.T) {
 	rule := FormatRule{
 		Format:       "csv",
 		DataType:     DataTypeTable,
-		ItemType:     "table",
 		Organization: OrganizationSingle,
 		Entry:        EntryRule{Extensions: []string{".csv"}},
 		Components:   &ComponentRule{},
@@ -43,7 +41,6 @@ func TestValidateFormatRuleRejectsWholeWithoutRule(t *testing.T) {
 	rule := FormatRule{
 		Format:       "parquet",
 		DataType:     DataTypeTable,
-		ItemType:     "table",
 		Organization: OrganizationWhole,
 	}
 
@@ -75,16 +72,14 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 		}
 		if rule.Format == string(format.FormatMarkdown) &&
 			rule.DataType == DataTypeDocument &&
-			rule.ItemType == "file" &&
 			rule.Organization == OrganizationSingle {
 			seenMarkdown = true
 		}
-		if rule.Format == "parquet" && rule.ItemType == "table" && rule.Organization == OrganizationSingle {
+		if rule.Format == "parquet" && rule.DataType == DataTypeTable && rule.Organization == OrganizationSingle {
 			seenParquet = true
 		}
 		if rule.Format == string(format.FormatText) &&
 			rule.DataType == DataTypeDocument &&
-			rule.ItemType == "file" &&
 			rule.Organization == OrganizationSingle {
 			seenText = true
 		}
@@ -118,9 +113,6 @@ func TestMatchBuiltinSingleResourceRuleDerivesMarkdownFromFormatCapability(t *te
 	if rule.DataType != DataTypeDocument {
 		t.Fatalf("DataType = %q, want document", rule.DataType)
 	}
-	if rule.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", rule.ItemType)
-	}
 }
 
 func TestMatchBuiltinSingleResourceRuleDerivesTextFromFormatCapability(t *testing.T) {
@@ -133,9 +125,6 @@ func TestMatchBuiltinSingleResourceRuleDerivesTextFromFormatCapability(t *testin
 	}
 	if rule.DataType != DataTypeDocument {
 		t.Fatalf("DataType = %q, want document", rule.DataType)
-	}
-	if rule.ItemType != "file" {
-		t.Fatalf("ItemType = %q, want file", rule.ItemType)
 	}
 }
 

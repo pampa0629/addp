@@ -69,9 +69,9 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 | 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 | 说明 |
 |---|---|---|---|
-| `organization=single` 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | CSV、PDF、图片、SQLite、Excel 等 |
+| `organization=single` 对象 / 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | MinIO / S3 中 `item_type=object`；NFS / 本地文件系统中 `item_type=file` |
 | `organization=single` 引擎原生资源 | 引擎原生名称 | 引擎内唯一逻辑全名 | PostgreSQL table、MongoDB collection 等 |
-| `organization=multi` | 主资源名，保留扩展名 | 主资源完整路径 | Shapefile 使用 `.shp` 作为主资源 |
+| `organization=multi` | 主资源名，保留扩展名 | 主资源完整路径 | Shapefile 使用 `.shp` 作为主资源；item_type 仍跟随承载引擎的叶子术语 |
 | `organization=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB 场景目录等 |
 
 规则：
@@ -80,7 +80,8 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 2. attributes 不再定义通用 `entry_path`。
 3. `component_files` 只表达 multi 或需要记录关键组件的 whole item 的组件资源，不替代 `full_name`。
 4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
-5. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
+5. `meta_item.item_type` 跟随引擎 catalog / 路径模型的原生叶子术语，不因 `data_type`、`format` 或 Manager 预览方式改变。
+6. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
 
 ## 递归观察资源
 
@@ -124,7 +125,6 @@ Shapefile 必须归入 sibling multi-resource，不得作为 whole-scope detecto
 type FormatRule struct {
     Format       string
     DataType     DataType
-    ItemType     string
     Organization Organization
     Priority     int
 

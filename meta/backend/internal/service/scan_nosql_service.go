@@ -53,10 +53,11 @@ func (s *NoSQLScanService) ScanDatabase(
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
+	itemTerm := catalogItemTermForPlugin(enginePlugin, plugin.CatalogTermCollection)
 	samplingProvider, _ := enginePlugin.(plugin.DocumentMetadataSamplingProvider)
 
 	// 1. 创建/更新 Database 节点
-	dbNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "database", databaseName, nil, nil)
+	dbNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, namespaceTermForPlugin(enginePlugin), databaseName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create database node: %w", err)
 	}
@@ -76,7 +77,7 @@ func (s *NoSQLScanService) ScanDatabase(
 
 	// 3. 完成扫描
 	var totalSize int64
-	collectionItems, err := s.repo.GetItemsByNodeAndType(tenantID, resource.ID, dbNode.ID, "collection")
+	collectionItems, err := s.repo.GetItemsByNodeAndType(tenantID, resource.ID, dbNode.ID, itemTerm)
 	if err != nil {
 		return 0, totalObjects, totalFields, err
 	}
@@ -255,16 +256,13 @@ func (s *NoSQLScanService) softDeleteLegacyGraphTableItems(tenantID, engineID, d
 }
 
 func noSQLItemType(node plugin.CatalogNode) string {
-	switch node.Kind {
-	case plugin.CatalogKindCollection:
-		return "collection"
-	case plugin.CatalogKindLabel:
-		return "label"
-	case plugin.CatalogKindRelationship:
-		return "relationship"
-	default:
+	if !node.IsItem {
 		return ""
 	}
+	if node.Term != "" {
+		return node.Term
+	}
+	return node.Kind
 }
 
 func countStatKey(itemType string) string {

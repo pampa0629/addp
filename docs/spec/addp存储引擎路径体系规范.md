@@ -42,6 +42,20 @@
 | 根的数量 | 多个（一个引擎多个 bucket） | 一个（一个引擎一个挂载点） | 多个（一个引擎多个 schema/database） | 多个（一个引擎多个 database） |
 | 根是否对用户可见 | 是 | 否 | 是 | 是 |
 
+### item_type 与 data_type 分工
+
+`meta_item.item_type` 表达 data item 在所属引擎 catalog / 路径模型中的原生叶子术语，用于路由、树展示和路径解析；`attributes.item.data_type` 表达平台对内容语义的理解，用于预览、读取、检索和传输能力选择。二者不得混用。
+
+| 引擎类型 | 路径模型叶子 | `meta_item.item_type` | 内容语义示例 |
+|---|---|---|---|
+| MinIO / S3 | object | `object` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
+| NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
+| PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
+| MongoDB | collection | `collection` | 当前按表格型文档集合消费时可为 `data_type=table` |
+| Neo4j | label / relationship | `label` / `relationship` | `data_type=graph` |
+
+因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
+
 ---
 
 ## 二、full_name 规则
@@ -57,7 +71,8 @@ full_name 以 bucket 开头，包含完整的层级路径：
 | bucket 节点 | `addp` |
 | prefix 节点 | `addp/image` |
 | object 数据项 | `addp/image/photo.jpg` |
-| table | `addp/data/orders` |
+
+对象存储的 item 叶子类型固定为 `object`。CSV、Shapefile、Parquet、WPS、PDF、图片等格式只改变 `attributes.item.data_type`、`attributes.item.format` 和 `attributes.item.organization`，不改变 `meta_item.item_type=object`。
 
 ### 文件系统（NFS）
 
@@ -70,7 +85,8 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 | dir 节点（嵌套） | `gis-data/shp` | 多级目录 |
 | file 数据项 | `gis-data/sample.csv` | 目录内的文件 |
 | file 数据项（根目录） | `README.md` | 挂载根下的文件 |
-| table | `gis-data/orders` | 目录识别为表格资源 |
+
+文件系统的 item 叶子类型固定为 `file`。文件内容可以是表格、文档、媒体或容器；这些语义进入 `attributes.item.data_type` 和 `type_info.<data_type>`，不把文件系统中的 `item_type` 改写为 `table`。
 
 **NFS 物理路径转换公式**：`物理路径 = "/" + full_name`
 
@@ -241,7 +257,16 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 2. 创建 root `meta_node`，`full_name = ""`
 3. 递归扫描 `/` 下的所有目录和文件
 4. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`
-5. 文件识别为 table 或 file，创建 `meta_item`，`full_name = 文件相对路径`
+5. 文件创建 `meta_item`（`item_type = file`），`full_name = 文件相对路径`
+6. 文件格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区
+
+### 对象存储扫描流程
+
+1. 通过 `CatalogProvider.ListChildren(root)` 获取 bucket 列表，创建 bucket `meta_node`
+2. 通过 `CatalogProvider.ListChildren(bucket/prefix)` 获取 prefix 和 object
+3. prefix 创建 `meta_node`（`node_type = prefix`），`full_name = bucket + "/" + prefix`
+4. object 创建 `meta_item`（`item_type = object`），`full_name = bucket + "/" + object_key`
+5. object 的格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区
 
 ### 关系型数据库扫描流程
 
@@ -294,6 +319,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 - 对象存储使用 `bucket -> prefix -> object`。
 - 文件系统使用 `root -> directory -> file`。
+- 对象存储中的 `meta_item.item_type` 必须使用 `object`，文件系统中的 `meta_item.item_type` 必须使用 `file`；表格、文档、媒体、容器等内容语义进入 `attributes.item.data_type`。
 - 对象存储和文件系统不得共享 CatalogModel 或 catalog 拼装实现。
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。

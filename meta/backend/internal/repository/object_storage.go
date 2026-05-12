@@ -91,8 +91,8 @@ func (r *ScanRepository) SoftDeleteObjectItemsMissingFingerprints(tenantID, engi
 	}
 
 	var existingItems []models.MetaItem
-	if err := r.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ?",
-		tenantID, engineID, "object").
+	if err := r.db.Where("tenant_id = ? AND engine_id = ? AND item_type IN ?",
+		tenantID, engineID, []string{"object", "table"}).
 		Where("attributes->'storage'->>'bucket' = ?", bucketName).
 		Find(&existingItems).Error; err != nil {
 		return nil, err
