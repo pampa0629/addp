@@ -176,21 +176,132 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 }
 
 func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {
-	input, err := openFirstParquet(ctx, reader, scope)
+	refs, err := listParquetResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
-	defer input.Close()
-	return p.DescribeTable(ctx, input, options)
+	var merged *format.TableInfo
+	totalRows := int64(0)
+	for _, ref := range refs {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+		input, err := reader.Open(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
+		}
+		info, describeErr := p.DescribeTable(ctx, input, options)
+		closeErr := input.Close()
+		if describeErr != nil {
+			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
+		}
+		if merged == nil {
+			merged = &format.TableInfo{
+				Name:       scope.Name,
+				Fields:     append([]format.FieldInfo(nil), info.Fields...),
+				PrimaryKey: append([]string(nil), info.PrimaryKey...),
+			}
+		} else if !sameFieldSchema(merged.Fields, info.Fields) {
+			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
+		}
+		if info.RowCount != nil {
+			totalRows += *info.RowCount
+		}
+	}
+	if merged == nil {
+		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
+	}
+	merged.RowCount = &totalRows
+	return merged, nil
 }
 
 func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	input, err := openFirstParquet(ctx, reader, scope)
+	refs, err := listParquetResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
-	defer input.Close()
-	return p.SampleTable(ctx, input, offset, limit, options)
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows := make([]map[string]interface{}, 0, limit)
+	remainingOffset := offset
+	for _, ref := range refs {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+		if int64(len(rows)) >= limit {
+			break
+		}
+		input, err := reader.Open(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
+		}
+		info, describeErr := p.DescribeTable(ctx, input, options)
+		closeErr := input.Close()
+		if describeErr != nil {
+			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
+		}
+		fileRows := int64(0)
+		if info.RowCount != nil {
+			fileRows = *info.RowCount
+		}
+		if remainingOffset >= fileRows {
+			remainingOffset -= fileRows
+			continue
+		}
+		input, err = reader.Open(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
+		}
+		limitForFile := limit - int64(len(rows))
+		partRows, sampleErr := p.SampleTable(ctx, input, remainingOffset, limitForFile, options)
+		closeErr = input.Close()
+		if sampleErr != nil {
+			return nil, fmt.Errorf("failed to sample parquet file %s: %w", ref.Path, sampleErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
+		}
+		rows = append(rows, partRows...)
+		remainingOffset = 0
+	}
+	return rows, nil
+}
+
+func contextErr(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+func sameFieldSchema(left, right []format.FieldInfo) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].Name != right[i].Name ||
+			left[i].Type != right[i].Type ||
+			left[i].OriginalType != right[i].OriginalType ||
+			left[i].Nullable != right[i].Nullable {
+			return false
+		}
+	}
+	return true
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型

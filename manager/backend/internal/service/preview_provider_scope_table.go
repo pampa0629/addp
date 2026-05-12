@@ -109,6 +109,10 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 
 	// 构建列名和列元数据
 	fields := tableInfo.Fields
+	total := int64(len(rows))
+	if tableInfo.RowCount != nil {
+		total = *tableInfo.RowCount
+	}
 	columns := make([]string, 0, len(fields))
 	columnMeta := make([]models.ColumnMetadata, 0, len(fields))
 	for _, f := range fields {
@@ -127,7 +131,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		Rows:           rows,
 		Page:           page,
 		PageSize:       pageSize,
-		Total:          len(rows),
+		Total:          int(total),
 	}, nil
 }
 

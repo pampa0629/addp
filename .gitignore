@@ -164,3 +164,4 @@ data/yanshi.udbx
 # Neo4j 插件 JAR（体积大，运行时自动下载）
 business/neo4j/plugins/*.jar
 .push-cache
+*.parquet

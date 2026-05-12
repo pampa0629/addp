@@ -3,9 +3,13 @@ package parquet
 import (
 	"bytes"
 	"context"
+	"io"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	parquetgo "github.com/parquet-go/parquet-go"
 )
 
@@ -22,7 +26,7 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 }
 
 func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
-	data := buildTestParquetData(t)
+	data := buildDefaultTestParquetData(t)
 	plugin := NewPlugin()
 
 	info, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data), nil)
@@ -45,14 +49,77 @@ func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
 	}
 }
 
-func buildTestParquetData(t *testing.T) []byte {
+func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryResourceReader{data: map[string][]byte{
+		"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"}),
+		"dataset/part-001.parquet": buildParquetRows(t, testParquetRow{ID: 3, Name: "Carol"}, testParquetRow{ID: 4, Name: "Dan"}),
+	}}
+	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+
+	info, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("DescribeTableScope failed: %v", err)
+	}
+	if info.RowCount == nil || *info.RowCount != 4 {
+		t.Fatalf("row count = %v, want 4", info.RowCount)
+	}
+	if len(info.Fields) != 2 {
+		t.Fatalf("fields = %#v, want 2 fields", info.Fields)
+	}
+
+	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 1, 3, nil)
+	if err != nil {
+		t.Fatalf("SampleTableScope failed: %v", err)
+	}
+	got := rowNames(rows)
+	want := []string{"Bob", "Carol", "Dan"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("rows = %#v, want names %v", rows, want)
+	}
+}
+
+func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryResourceReader{data: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/dt=2026-05-06/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 2, Name: "Bob"}),
+	}}
+	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+
+	info, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("DescribeTableScope failed: %v", err)
+	}
+	if info.RowCount == nil || *info.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.RowCount)
+	}
+}
+
+func TestParquetPluginScopeRejectsIncompatibleSchema(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryResourceReader{data: map[string][]byte{
+		"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/part-001.parquet": buildAlternateParquetData(t),
+	}}
+	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+
+	_, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err == nil {
+		t.Fatal("expected incompatible schema error")
+	}
+}
+
+func buildDefaultTestParquetData(t *testing.T) []byte {
+	t.Helper()
+	return buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"})
+}
+
+func buildParquetRows(t *testing.T, rows ...testParquetRow) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	writer := parquetgo.NewGenericWriter[testParquetRow](&buf)
-	if _, err := writer.Write([]testParquetRow{
-		{ID: 1, Name: "Alice"},
-		{ID: 2, Name: "Bob"},
-	}); err != nil {
+	if _, err := writer.Write(rows); err != nil {
 		t.Fatalf("write parquet rows: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -60,3 +127,75 @@ func buildTestParquetData(t *testing.T) []byte {
 	}
 	return buf.Bytes()
 }
+
+type alternateParquetRow struct {
+	ID    int64  `parquet:"id"`
+	Title string `parquet:"title"`
+}
+
+func buildAlternateParquetData(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[alternateParquetRow](&buf)
+	if _, err := writer.Write([]alternateParquetRow{{ID: 1, Title: "Other"}}); err != nil {
+		t.Fatalf("write alternate parquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close alternate parquet writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func rowNames(rows []map[string]interface{}) []string {
+	names := make([]string, 0, len(rows))
+	for _, row := range rows {
+		names = append(names, row["name"].(string))
+	}
+	return names
+}
+
+type parquetMemoryResourceReader struct {
+	data map[string][]byte
+}
+
+func (r parquetMemoryResourceReader) Open(_ context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+	data, ok := r.data[ref.Path]
+	if !ok {
+		return nil, resource.ErrResourceNotFound
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (r parquetMemoryResourceReader) Stat(_ context.Context, ref resource.ResourceRef) (*resource.ResourceMetadata, error) {
+	_, ok := r.data[ref.Path]
+	return &resource.ResourceMetadata{Ref: ref, Exists: ok}, nil
+}
+
+func (r parquetMemoryResourceReader) List(_ context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+	scopePath := strings.Trim(scope.Path, "/")
+	dirs := map[string]bool{}
+	files := make([]resource.ResourceRef, 0)
+	for path := range r.data {
+		trimmed := strings.Trim(path, "/")
+		if !strings.HasPrefix(trimmed, scopePath+"/") {
+			continue
+		}
+		rest := strings.TrimPrefix(trimmed, scopePath+"/")
+		if strings.Contains(rest, "/") {
+			dir := scopePath + "/" + strings.Split(rest, "/")[0]
+			dirs[dir] = true
+			continue
+		}
+		files = append(files, resource.NewResourceRef(trimmed, resource.ResourceRoleMain))
+	}
+	for dir := range dirs {
+		files = append(files, resource.NewResourceRef(dir, resource.ResourceRoleScope))
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	if len(files) == 0 {
+		return nil, resource.ErrResourceNotFound
+	}
+	return files, nil
+}
+
+var _ resource.ResourceReader = parquetMemoryResourceReader{}
