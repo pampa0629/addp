@@ -15,9 +15,14 @@ import (
 
 const defaultGeometryField = "geometry"
 
-// Plugin 提供 JSON 表格语义解析能力。
+const (
+	StructureDocument          = "document"
+	StructureGeoJSONFeatureSet = "geojson_feature_collection"
+)
+
+// Plugin 提供 JSON 结构解析能力。
 //
-// 当前实现支持 GeoJSON FeatureCollection 这种 JSON 空间表结构。
+// 当前实现支持 GeoJSON FeatureCollection 这种 JSON 记录集合结构。
 type Plugin struct {
 	options       *format.ParseOptions
 	geometryField string
@@ -29,15 +34,9 @@ func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	geometryField := defaultGeometryField
-	if opts.ExtraParams != nil {
-		if v, ok := opts.ExtraParams["geometry_field"].(string); ok && v != "" {
-			geometryField = v
-		}
-	}
 	return &Plugin{
 		options:       opts,
-		geometryField: geometryField,
+		geometryField: geometryFieldFromOptions(opts, defaultGeometryField),
 	}
 }
 
@@ -76,26 +75,68 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-// DescribeTable 从 JSON 空间表结构中提取 TableInfo。
+// DescribeFormat 返回 JSON 的格式私有结构信息，写入 attributes.format_info.json。
+func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+	iter, err := newIterator(input)
+	if err != nil {
+		return map[string]interface{}{
+			"structure": StructureDocument,
+		}, nil
+	}
+
+	builder := newMetadataBuilder()
+	for {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+		feature, err := iter.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		builder.AddFeature(feature)
+	}
+
+	info := builder.Build()
+	info["structure"] = StructureGeoJSONFeatureSet
+	info["has_geometry"] = builder.HasGeometry()
+	if len(iter.meta.BoundingBox) == 4 {
+		info["bbox"] = iter.meta.BoundingBox
+	}
+	if iter.meta.CoordinateSystem != "" {
+		info["crs"] = iter.meta.CoordinateSystem
+	}
+	return info, nil
+}
+
+// DescribeDocument 返回普通 JSON 文档的轻量信息。
+func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	return &format.DocumentInfo{
+		Format:   format.FormatJSON,
+		Encoding: "utf-8",
+	}, nil
+}
+
+// DescribeTable 从 JSON 记录集合结构中提取 TableInfo。
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	// 使用传入的 options，如果为 nil 则使用默认的
+	geometryField := p.geometryField
 	opts := p.options
 	if options != nil {
 		opts = options
-		// 更新 geometry field
-		if opts.ExtraParams != nil {
-			if v, ok := opts.ExtraParams["geometry_field"].(string); ok && v != "" {
-				p.geometryField = v
-			}
-		}
 	}
+	geometryField = geometryFieldFromOptions(opts, geometryField)
 
 	iter, err := newIterator(input)
 	if err != nil {
 		return nil, err
 	}
 
-	builder := newSchemaBuilder(p.geometryField)
+	builder := newSchemaBuilder(geometryField)
 	featureCount := int64(0)
 
 	for {
@@ -130,7 +171,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 	}
 
-	// 构建 SpatialInfo 扩展
+	// 仅在实际记录里发现 geometry 结构时构建 SpatialInfo 扩展。
 	var extensions []format.ExtensionInfo
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
@@ -144,17 +185,25 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 
 		spatialInfo := &format.SpatialInfo{
-			GeometryColumn: p.geometryField,
+			GeometryColumn: geometryField,
 			GeometryType:   geometryType,
 			SRID:           srid,
 			Dimension:      2, // GeoJSON 主要是 2D
+		}
+		if len(iter.meta.BoundingBox) == 4 {
+			spatialInfo.BoundingBox = &[4]float64{
+				iter.meta.BoundingBox[0],
+				iter.meta.BoundingBox[1],
+				iter.meta.BoundingBox[2],
+				iter.meta.BoundingBox[3],
+			}
 		}
 		extensions = append(extensions, spatialInfo)
 	}
 
 	// 构建 TableInfo
 	tableInfo := &format.TableInfo{
-		Name:       "json_features", // JSON 空间表没有稳定表名，使用默认值
+		Name:       "json_features", // JSON 记录集合没有稳定表名，使用默认值
 		RowCount:   &featureCount,
 		Fields:     fields,
 		PrimaryKey: []string{}, // GeoJSON 没有主键
@@ -164,8 +213,13 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	return tableInfo, nil
 }
 
-// SampleTable 读取 JSON 空间表样本数据。
+// SampleTable 读取 JSON 记录集合样本数据。
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	geometryField := p.geometryField
+	if options != nil {
+		geometryField = geometryFieldFromOptions(options, geometryField)
+	}
+
 	iter, err := newIterator(input)
 	if err != nil {
 		return nil, err
@@ -210,7 +264,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 			return nil, err
 		}
 
-		record := feature.ToRecord(p.geometryField)
+		record := feature.ToRecord(geometryField)
 		records = append(records, record)
 		read++
 	}
@@ -242,7 +296,9 @@ func (f *Feature) ToRecord(geometryField string) map[string]interface{} {
 	for k, v := range f.Properties {
 		record[k] = v
 	}
-	record[geometryField] = f.Geometry
+	if f.GeometryType() != "" {
+		record[geometryField] = f.Geometry
+	}
 	return record
 }
 
@@ -514,6 +570,10 @@ func (b *schemaBuilder) GeometryType() string {
 	return "Geometry"
 }
 
+func (b *schemaBuilder) HasGeometry() bool {
+	return len(b.geometryTypes) > 0
+}
+
 func (b *schemaBuilder) Build() *format.Schema {
 	fieldNames := make([]string, 0, len(b.propertySet))
 	for name := range b.propertySet {
@@ -526,11 +586,13 @@ func (b *schemaBuilder) Build() *format.Schema {
 
 	fields := make([]format.Field, 0, len(fieldNames)+1)
 	geometryField := b.geometryField
-	fields = append(fields, format.Field{
-		Name:     geometryField,
-		Type:     format.FieldTypeGeometry,
-		Nullable: false,
-	})
+	if b.HasGeometry() {
+		fields = append(fields, format.Field{
+			Name:     geometryField,
+			Type:     format.FieldTypeGeometry,
+			Nullable: false,
+		})
+	}
 
 	for _, name := range fieldNames {
 		fieldType := b.fieldTypes[name]
@@ -547,7 +609,7 @@ func (b *schemaBuilder) Build() *format.Schema {
 	schema := &format.Schema{
 		Fields: fields,
 	}
-	if len(fields) > 0 {
+	if b.HasGeometry() {
 		schema.GeometryField = &geometryField
 	}
 
@@ -606,6 +668,10 @@ func (b *metadataBuilder) Build() map[string]interface{} {
 		meta["properties"] = props
 	}
 	return meta
+}
+
+func (b *metadataBuilder) HasGeometry() bool {
+	return len(b.geometryTypes) > 0
 }
 
 // ---------- Helpers ----------
@@ -727,6 +793,19 @@ func contextErr(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+func geometryFieldFromOptions(opts *format.ParseOptions, fallback string) string {
+	if fallback == "" {
+		fallback = defaultGeometryField
+	}
+	if opts == nil || opts.ExtraParams == nil {
+		return fallback
+	}
+	if v, ok := opts.ExtraParams["geometry_field"].(string); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	return fallback
 }
 
 func init() {

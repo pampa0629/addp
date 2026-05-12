@@ -140,7 +140,11 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(65),
-				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatJSON, nil, []string{models.ObjectPreviewKindGeoJSON, "geo+json"}),
+				matcher: newObjectContentMatcher(
+					normalizeFormatsOrDefault(cfg.Match.Formats, []string{models.ObjectPreviewKindGeoJSON, "geo+json"}),
+					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".geojson"}),
+					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/geo+json", "application/vnd.geo+json"}),
+				),
 			},
 			maxBytes: cfg.maxBytesOr(maxGeoJSONPreview),
 			kind:     models.ObjectPreviewKindGeoJSON,

@@ -109,12 +109,13 @@ func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
 	}
 	item := plan.Attributes["item"].(map[string]interface{})
-	if item["data_type"] != string(dataitem.DataTypeTable) || item["format"] != "json" {
+	if item["data_type"] != string(dataitem.DataTypeDocument) || item["format"] != "json" {
 		t.Fatalf("item attrs = %#v", item)
 	}
-	spatial := plan.Attributes["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
-	if spatial["primary_geometry_column"] != "geometry" {
-		t.Fatalf("capabilities.spatial = %#v", spatial)
+	if capabilities, ok := plan.Attributes["capabilities"].(map[string]interface{}); ok {
+		if spatial := capabilities["spatial"]; spatial != nil {
+			t.Fatalf("geojson path should not imply spatial capability: %#v", spatial)
+		}
 	}
 	storage := plan.Attributes["storage"].(map[string]interface{})
 	if storage["physical_path"] != "addp/datasets/roads.geojson" || storage["total_size"] != int64(128) {

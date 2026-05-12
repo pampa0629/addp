@@ -361,6 +361,24 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		}
 	}
 	if tableInfo != nil {
+		if spatialInfo := tableInfo.GetSpatialInfo(); spatialInfo != nil {
+			spatialAttrs := map[string]interface{}{
+				"geometry_columns": []map[string]interface{}{{
+					"name":          spatialInfo.GeometryColumn,
+					"geometry_type": spatialInfo.GeometryType,
+					"srid":          spatialInfo.SRID,
+				}},
+				"primary_geometry_column": spatialInfo.GeometryColumn,
+				"has_spatial_index":       spatialInfo.HasSpatialIndex,
+			}
+			if spatialInfo.BoundingBox != nil {
+				bbox := *spatialInfo.BoundingBox
+				spatialAttrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+			}
+			attrs["capabilities"] = map[string]interface{}{
+				"spatial": spatialAttrs,
+			}
+		}
 		if indexInfo := tableInfo.GetContentIndexInfo(); includeContentIndex && indexInfo != nil && indexInfo.Table != nil {
 			if indexInfo.Table.Source == nil {
 				indexInfo.Table.Source = map[string]interface{}{
@@ -527,6 +545,47 @@ func ExtractTableFileSingleFileInfo(
 		})
 	}
 
+	return &CompositeItemInfo{
+		Fields:         tableInfo.Fields,
+		Organization:   dataitem.OrganizationSingle,
+		DataType:       dataitem.DataTypeTable,
+		Format:         formatName,
+		EntryPath:      filePath,
+		ComponentFiles: []string{filePath},
+		SizeBytes:      &fileSize,
+		Attributes:     tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
+	}, nil
+}
+
+// ExtractTableFileSingleFileInfoStrict 仅在格式 provider 成功解析出表结构时返回结果。
+// 适用于 JSON 这类默认是 document、只有特定内容结构才应升级为 table 的格式。
+func ExtractTableFileSingleFileInfoStrict(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	filePath string,
+	fileSize int64,
+	includeContentIndex bool,
+) (*CompositeItemInfo, error) {
+	formatName := fileFormatName(filePath)
+	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
+	if providerErr != nil {
+		return nil, providerErr
+	}
+
+	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read table file %s: %w", filePath, err)
+	}
+	defer rc.Close()
+
+	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
 	return &CompositeItemInfo{
 		Fields:         tableInfo.Fields,
 		Organization:   dataitem.OrganizationSingle,

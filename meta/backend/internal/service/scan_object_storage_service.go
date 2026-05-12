@@ -667,11 +667,18 @@ func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
 	if readableProvider == nil || item == nil {
 		return nil, nil
 	}
-	if item.DataType != dataitem.DataTypeTable || item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
+	if item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
+		return nil, nil
+	}
+	if item.DataType != dataitem.DataTypeTable && item.Format != string(format.FormatJSON) {
 		return nil, nil
 	}
 	physicalPath := meta.Bucket + "/" + meta.Path
-	info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes, includeContentIndex)
+	extract := metaitem.ExtractTableFileSingleFileInfo
+	if item.Format == string(format.FormatJSON) && item.DataType != dataitem.DataTypeTable {
+		extract = metaitem.ExtractTableFileSingleFileInfoStrict
+	}
+	info, err := extract(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes, includeContentIndex)
 	if err != nil {
 		return nil, err
 	}

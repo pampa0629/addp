@@ -2,9 +2,12 @@ package metaitem
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/dataitem"
 )
@@ -162,4 +165,77 @@ func TestTableFileDetectorRejectsSiblingIndependentParquetFiles(t *testing.T) {
 	if d.Detect(context.Background(), files, nil) {
 		t.Fatal("expected independent sibling parquet files to remain single-file items")
 	}
+}
+
+func TestExtractJSONSingleFileInfoStrictRequiresRecordCollection(t *testing.T) {
+	reader := staticContentReader{content: `{"name":"plain"}`}
+
+	_, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "plain.json", 10, false)
+	if err == nil {
+		t.Fatal("expected plain JSON document to be rejected as table")
+	}
+}
+
+func TestExtractJSONSingleFileInfoStrictWritesSpatialOnlyWhenGeometryExists(t *testing.T) {
+	reader := staticContentReader{content: `{
+		"type": "FeatureCollection",
+		"bbox": [1, 2, 3, 4],
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}}
+		]
+	}`}
+
+	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "roads.geojson", 10, false)
+	if err != nil {
+		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+	}
+	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
+		t.Fatalf("info = %#v", info)
+	}
+	spatial := commonJSON.Section(info.Attributes, "capabilities.spatial")
+	if spatial["primary_geometry_column"] != "geometry" {
+		t.Fatalf("spatial = %#v", spatial)
+	}
+	if extent := commonJSON.InterfaceFloat64Slice(spatial["extent"]); len(extent) != 4 || extent[0] != 1 || extent[3] != 4 {
+		t.Fatalf("extent = %#v", spatial["extent"])
+	}
+}
+
+func TestExtractJSONSingleFileInfoStrictDoesNotWriteSpatialWithoutGeometry(t *testing.T) {
+	reader := staticContentReader{content: `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","properties":{"name":"A"}}
+		]
+	}`}
+
+	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "rows.geojson", 10, false)
+	if err != nil {
+		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+	}
+	if spatial := commonJSON.Section(info.Attributes, "capabilities.spatial"); len(spatial) != 0 {
+		t.Fatalf("spatial should be empty: %#v", spatial)
+	}
+}
+
+type staticContentReader struct {
+	content string
+}
+
+func (r staticContentReader) Type() string         { return "static" }
+func (r staticContentReader) DisplayName() string  { return "static" }
+func (r staticContentReader) EngineOrigin() string { return "general" }
+func (r staticContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (r staticContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (r staticContentReader) DefaultPort() int                                   { return 0 }
+func (r staticContentReader) RequiredFields() []string                           { return nil }
+func (r staticContentReader) SensitiveFields() []string                          { return nil }
+func (r staticContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (r staticContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
+func (r staticContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader(r.content)), nil
 }

@@ -525,6 +525,13 @@ type jsonContentHandler struct {
 	kind     string
 }
 
+func (h *jsonContentHandler) Matches(req *ObjectContentRequest) bool {
+	if h.kind == models.ObjectPreviewKindGeoJSON && !looksLikeGeoJSONContentRequest(req) {
+		return false
+	}
+	return h.baseContentHandler.Matches(req)
+}
+
 func removeUTF8BOM(data []byte) []byte {
 	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
 		return data[3:]
@@ -552,9 +559,9 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 			return decoratePreviewContent(preview), truncated, nil
 		}
 		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:    models.ObjectPreviewKindGeoJSON,
-			Text:    string(clean),
-			GeoJSON: parsed,
+			Kind: models.ObjectPreviewKindJSON,
+			Text: string(clean),
+			JSON: parsed,
 		}), truncated, nil
 	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
@@ -562,6 +569,22 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 		Text: string(clean),
 		JSON: parsed,
 	}), truncated, nil
+}
+
+func looksLikeGeoJSONContentRequest(req *ObjectContentRequest) bool {
+	if req == nil {
+		return false
+	}
+	formatName := strings.ToLower(strings.TrimSpace(req.Format))
+	if formatName == models.ObjectPreviewKindGeoJSON || formatName == "geo+json" {
+		return true
+	}
+	extension := strings.ToLower(strings.TrimSpace(req.Extension))
+	if extension == ".geojson" {
+		return true
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(req.ContentType, ";")[0]))
+	return contentType == "application/geo+json" || contentType == "application/vnd.geo+json"
 }
 
 func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, error) {

@@ -9,10 +9,9 @@ import (
 
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	item := InferSingleResource(SingleResourceInput{
-		Name:        "roads.geojson",
-		Path:        "bucket/roads.geojson",
-		Size:        42,
-		ContentType: "application/geo+json",
+		Name: "roads.parquet",
+		Path: "bucket/roads.parquet",
+		Size: 42,
 	})
 
 	attrs := BuildAttributes(item)
@@ -23,25 +22,21 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) {
 		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], dataitem.DataTypeTable)
 	}
-	if itemAttrs["format"] != string(format.FormatJSON) {
-		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatJSON)
+	if itemAttrs["format"] != string(format.FormatParquet) {
+		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatParquet)
 	}
 	if attrs["data_type"] != nil || attrs["format"] != nil {
 		t.Fatalf("flat item fields should not be written: %#v", attrs)
 	}
 
 	storageAttrs := attrs["storage"].(map[string]interface{})
-	if storageAttrs["physical_path"] != "bucket/roads.geojson" {
-		t.Fatalf("storage.physical_path = %v, want bucket/roads.geojson", storageAttrs["physical_path"])
+	if storageAttrs["physical_path"] != "bucket/roads.parquet" {
+		t.Fatalf("storage.physical_path = %v, want bucket/roads.parquet", storageAttrs["physical_path"])
 	}
 	if storageAttrs["total_size"] != int64(42) {
 		t.Fatalf("storage.total_size = %v, want 42", storageAttrs["total_size"])
 	}
 
-	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
-	if spatial["primary_geometry_column"] != "geometry" {
-		t.Fatalf("capabilities.spatial = %#v", spatial)
-	}
 }
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {

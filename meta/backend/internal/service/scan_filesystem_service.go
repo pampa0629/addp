@@ -321,8 +321,13 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.DataType == dataitem.DataTypeTable && detected.Organization == dataitem.OrganizationSingle && hasTableProvider(detected.Format) {
-		info, err := metaitem.ExtractTableFileSingleFileInfo(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size, includeContentIndex)
+	if detected.Organization == dataitem.OrganizationSingle && hasTableProvider(detected.Format) &&
+		(detected.DataType == dataitem.DataTypeTable || detected.Format == string(format.FormatJSON)) {
+		extract := metaitem.ExtractTableFileSingleFileInfo
+		if detected.Format == string(format.FormatJSON) && detected.DataType != dataitem.DataTypeTable {
+			extract = metaitem.ExtractTableFileSingleFileInfoStrict
+		}
+		info, err := extract(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size, includeContentIndex)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
