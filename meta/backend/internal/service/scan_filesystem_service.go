@@ -333,21 +333,7 @@ func (s *FileSystemScanService) enrichSingleFileAttributes(
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
 		}
 		if info != nil {
-			if info.SizeBytes == nil {
-				info.SizeBytes = &file.Size
-			}
-			sizeBytes := *info.SizeBytes
-			detected = &metaitem.DetectedItem{
-				Organization:   info.Organization,
-				DataType:       info.DataType,
-				Format:         info.Format,
-				PhysicalPath:   file.Path,
-				EntryPath:      info.EntryPath,
-				ComponentFiles: info.ComponentFiles,
-				SizeBytes:      sizeBytes,
-				Fields:         info.Fields,
-				Attributes:     info.Attributes,
-			}
+			detected = metaitem.DetectedItemFromCompositeInfo(info, file.Path, file.Size)
 		}
 	}
 	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))

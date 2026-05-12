@@ -39,6 +39,27 @@ func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	return attrs
 }
 
+func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string, fallbackSize int64) *DetectedItem {
+	if info == nil {
+		return nil
+	}
+	sizeBytes := fallbackSize
+	if info.SizeBytes != nil {
+		sizeBytes = *info.SizeBytes
+	}
+	return &DetectedItem{
+		Organization:   info.Organization,
+		DataType:       info.DataType,
+		Format:         info.Format,
+		PhysicalPath:   physicalPath,
+		EntryPath:      info.EntryPath,
+		ComponentFiles: info.ComponentFiles,
+		SizeBytes:      sizeBytes,
+		Fields:         info.Fields,
+		Attributes:     info.Attributes,
+	}
+}
+
 func MergeDataItemAttributes(attrs map[string]interface{}, item *DetectedItem) {
 	if attrs == nil || item == nil {
 		return

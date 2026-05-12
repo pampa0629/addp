@@ -1,7 +1,10 @@
 package jsonformat
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +21,7 @@ const defaultGeometryField = "geometry"
 const (
 	StructureDocument          = "document"
 	StructureGeoJSONFeatureSet = "geojson_feature_collection"
+	StructureObjectArray       = "object_array"
 )
 
 // Plugin 提供 JSON 结构解析能力。
@@ -55,6 +59,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		DataType:       format.FormatDataTypeDocument,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
+		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
 	}
 }
@@ -77,7 +82,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 
 // DescribeFormat 返回 JSON 的格式私有结构信息，写入 attributes.format_info.json。
 func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
-	iter, err := newIterator(input)
+	iter, err := newRecordIterator(input)
 	if err != nil {
 		return map[string]interface{}{
 			"structure": StructureDocument,
@@ -100,7 +105,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}
 
 	info := builder.Build()
-	info["structure"] = StructureGeoJSONFeatureSet
+	info["structure"] = iter.structure
 	info["has_geometry"] = builder.HasGeometry()
 	if len(iter.meta.BoundingBox) == 4 {
 		info["bbox"] = iter.meta.BoundingBox
@@ -131,13 +136,14 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 	geometryField = geometryFieldFromOptions(opts, geometryField)
 
-	iter, err := newIterator(input)
+	iter, err := newRecordIterator(input)
 	if err != nil {
 		return nil, err
 	}
 
 	builder := newSchemaBuilder(geometryField)
 	featureCount := int64(0)
+	index := p.newSparseRowIndex(opts, iter.dataStartOffset)
 
 	for {
 		if err := contextErr(ctx); err != nil {
@@ -154,7 +160,9 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 		builder.AddFeature(feature)
 		featureCount++
+		p.recordSparseRowAnchor(index, featureCount, iter.decoder.InputOffset())
 	}
+	index.RowCount = featureCount
 
 	schema := builder.Build()
 
@@ -175,6 +183,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	var extensions []format.ExtensionInfo
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
+		spatialGeometryField := geometryField
+		if schema.GeometryField != nil && *schema.GeometryField != "" {
+			spatialGeometryField = *schema.GeometryField
+		}
 		srid := 4326 // GeoJSON 默认 WGS84
 		if iter.meta.CoordinateSystem != "" {
 			// 尝试从坐标系统字符串解析 SRID
@@ -185,7 +197,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 
 		spatialInfo := &format.SpatialInfo{
-			GeometryColumn: geometryField,
+			GeometryColumn: spatialGeometryField,
 			GeometryType:   geometryType,
 			SRID:           srid,
 			Dimension:      2, // GeoJSON 主要是 2D
@@ -200,10 +212,13 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 		extensions = append(extensions, spatialInfo)
 	}
+	if len(index.Anchors) > 0 {
+		extensions = append(extensions, &format.ContentIndexInfo{Table: index})
+	}
 
 	// 构建 TableInfo
 	tableInfo := &format.TableInfo{
-		Name:       "json_features", // JSON 记录集合没有稳定表名，使用默认值
+		Name:       "json_records", // JSON 记录集合没有稳定表名，使用默认值
 		RowCount:   &featureCount,
 		Fields:     fields,
 		PrimaryKey: []string{}, // GeoJSON 没有主键
@@ -219,8 +234,11 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	if options != nil {
 		geometryField = geometryFieldFromOptions(options, geometryField)
 	}
+	if options != nil && options.TableSample != nil && options.TableSample.InputIsPositioned {
+		return p.samplePositionedTable(ctx, input, offset, limit, options, geometryField)
+	}
 
-	iter, err := newIterator(input)
+	iter, err := newRecordIterator(input)
 	if err != nil {
 		return nil, err
 	}
@@ -272,11 +290,161 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return records, nil
 }
 
+func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions, geometryField string) ([]map[string]interface{}, error) {
+	if options.TableSample.InputStartsAtRow > offset {
+		return nil, fmt.Errorf("positioned JSON reader starts at row %d after requested offset %d", options.TableSample.InputStartsAtRow, offset)
+	}
+
+	data, err := io.ReadAll(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read positioned JSON sample: %w", err)
+	}
+	iter, err := newRecordIterator(bytes.NewReader(jsonArrayFragment(data)))
+	if err != nil {
+		return nil, err
+	}
+
+	localSkip := offset - options.TableSample.InputStartsAtRow
+	if localSkip < 0 {
+		localSkip = 0
+	}
+	for skipped := int64(0); skipped < localSkip; skipped++ {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+		if _, err := iter.Next(); err != nil {
+			if errors.Is(err, io.EOF) {
+				return []map[string]interface{}{}, nil
+			}
+			return nil, err
+		}
+	}
+
+	maxRows := limit
+	if limit < 0 {
+		maxRows = math.MaxInt64
+	}
+	records := make([]map[string]interface{}, 0)
+	for read := int64(0); read < maxRows; read++ {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+		feature, err := iter.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, feature.ToRecord(geometryField))
+	}
+	return records, nil
+}
+
+func jsonArrayFragment(data []byte) []byte {
+	objects := jsonObjectFragments(data)
+	if len(objects) == 0 {
+		return []byte("[]")
+	}
+	total := 2
+	for _, object := range objects {
+		total += len(object) + 1
+	}
+	out := make([]byte, 0, total)
+	out = append(out, '[')
+	for i, object := range objects {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, object...)
+	}
+	out = append(out, ']')
+	return out
+}
+
+func jsonObjectFragments(data []byte) [][]byte {
+	fragments := make([][]byte, 0)
+	depth := 0
+	start := -1
+	inString := false
+	escaped := false
+	for i, b := range data {
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case b == '\\':
+				escaped = true
+			case b == '"':
+				inString = false
+			}
+			continue
+		}
+		switch b {
+		case '"':
+			if depth > 0 {
+				inString = true
+			}
+		case '{':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		case '}':
+			if depth == 0 {
+				continue
+			}
+			depth--
+			if depth == 0 && start >= 0 {
+				fragments = append(fragments, bytes.TrimSpace(data[start:i+1]))
+				start = -1
+			}
+		}
+	}
+	return fragments
+}
+
+func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *format.ContentIndex {
+	step := int64(5000)
+	if opts != nil && opts.ContentIndexStep > 0 {
+		step = opts.ContentIndexStep
+	}
+	return &format.ContentIndex{
+		Kind:        format.ContentIndexKindSparseRow,
+		DataType:    format.ContentIndexDataTypeTable,
+		Format:      string(format.FormatJSON),
+		Unit:        format.ContentIndexUnitRow,
+		OffsetUnit:  format.ContentIndexOffsetByte,
+		Step:        step,
+		HeaderBytes: headerBytes,
+		Anchors: []format.ContentIndexAnchor{{
+			Row:        0,
+			ByteOffset: headerBytes,
+		}},
+	}
+}
+
+func (p *Plugin) recordSparseRowAnchor(index *format.ContentIndex, nextRow int64, byteOffset int64) {
+	if index == nil || index.Step <= 0 || nextRow <= 0 || nextRow%index.Step != 0 {
+		return
+	}
+	anchors := index.Anchors
+	if len(anchors) > 0 && anchors[len(anchors)-1].Row == nextRow {
+		index.Anchors[len(anchors)-1].ByteOffset = byteOffset
+		return
+	}
+	index.Anchors = append(index.Anchors, format.ContentIndexAnchor{
+		Row:        nextRow,
+		ByteOffset: byteOffset,
+	})
+}
+
 // Feature 表示单条 GeoJSON Feature
 type Feature struct {
-	ID         interface{}
-	Geometry   map[string]interface{}
-	Properties map[string]interface{}
+	ID            interface{}
+	Geometry      map[string]interface{}
+	GeometryField string
+	Properties    map[string]interface{}
 }
 
 // GeometryType 返回几何类型（Point/LineString/Polygon/等）
@@ -297,7 +465,11 @@ func (f *Feature) ToRecord(geometryField string) map[string]interface{} {
 		record[k] = v
 	}
 	if f.GeometryType() != "" {
-		record[geometryField] = f.Geometry
+		field := geometryField
+		if f.GeometryField != "" {
+			field = f.GeometryField
+		}
+		record[field] = f.Geometry
 	}
 	return record
 }
@@ -309,27 +481,40 @@ type Metadata struct {
 }
 
 type iterator struct {
-	decoder      *json.Decoder
-	meta         Metadata
-	geometrySeen bool
+	decoder         *json.Decoder
+	meta            Metadata
+	structure       string
+	dataStartOffset int64
 }
 
-func newIterator(r io.Reader) (*iterator, error) {
+func newRecordIterator(r io.Reader) (*iterator, error) {
 	dec := json.NewDecoder(r)
 	dec.UseNumber()
 
 	token, err := dec.Token()
 	if err != nil {
-		return nil, fmt.Errorf("geojson: failed to read root token: %w", err)
+		return nil, fmt.Errorf("json table: failed to read root token: %w", err)
 	}
 	delim, ok := token.(json.Delim)
-	if !ok || delim != '{' {
-		return nil, fmt.Errorf("geojson: expected object start")
+	if !ok {
+		return nil, fmt.Errorf("json table: expected object or array start")
+	}
+	if delim == '[' {
+		return &iterator{
+			decoder:         dec,
+			meta:            Metadata{},
+			structure:       StructureObjectArray,
+			dataStartOffset: dec.InputOffset(),
+		}, nil
+	}
+	if delim != '{' {
+		return nil, fmt.Errorf("json table: expected object or array start")
 	}
 
 	it := &iterator{
-		decoder: dec,
-		meta:    Metadata{},
+		decoder:   dec,
+		meta:      Metadata{},
+		structure: StructureGeoJSONFeatureSet,
 	}
 
 	var collectionType string
@@ -380,6 +565,7 @@ func newIterator(r io.Reader) (*iterator, error) {
 				return nil, fmt.Errorf("geojson: unsupported type %q", collectionType)
 			}
 
+			it.dataStartOffset = dec.InputOffset()
 			return it, nil
 		default:
 			var skip interface{}
@@ -389,7 +575,7 @@ func newIterator(r io.Reader) (*iterator, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("geojson: features array not found")
+	return nil, fmt.Errorf("json table: features array not found")
 }
 
 // Next 读取下一条 Feature
@@ -401,15 +587,18 @@ func (it *iterator) Next() (*Feature, error) {
 		return nil, io.EOF
 	}
 
-	var raw rawFeature
+	var raw map[string]interface{}
 	if err := it.decoder.Decode(&raw); err != nil {
-		return nil, fmt.Errorf("geojson: failed to decode feature: %w", err)
+		return nil, fmt.Errorf("json table: failed to decode record: %w", err)
 	}
 
-	feature := &Feature{
-		ID:         normalizeValue(raw.ID),
-		Geometry:   normalizeGeometry(raw.Geometry),
-		Properties: normalizeProperties(raw.Properties),
+	if it.structure == StructureObjectArray {
+		return featureFromObjectRecord(raw), nil
+	}
+
+	feature := featureFromGeoJSONFeature(raw)
+	if feature == nil {
+		return nil, fmt.Errorf("geojson: invalid feature record")
 	}
 
 	return feature, nil
@@ -455,6 +644,45 @@ type rawFeature struct {
 	Properties map[string]interface{} `json:"properties"`
 }
 
+func featureFromObjectRecord(raw map[string]interface{}) *Feature {
+	if isGeoJSONFeatureObject(raw) {
+		return featureFromGeoJSONFeature(raw)
+	}
+	props := normalizeProperties(raw)
+	geometryKey, geometry := detectGeometryProperty(props)
+	if geometryKey != "" {
+		delete(props, geometryKey)
+	}
+	return &Feature{
+		Geometry:      geometry,
+		GeometryField: geometryKey,
+		Properties:    props,
+	}
+}
+
+func isGeoJSONFeatureObject(raw map[string]interface{}) bool {
+	typeName, _ := raw["type"].(string)
+	if !strings.EqualFold(strings.TrimSpace(typeName), "Feature") {
+		return false
+	}
+	_, hasProperties := raw["properties"].(map[string]interface{})
+	_, hasGeometry := raw["geometry"].(map[string]interface{})
+	return hasProperties || hasGeometry
+}
+
+func featureFromGeoJSONFeature(raw map[string]interface{}) *Feature {
+	props := map[string]interface{}{}
+	if rawProps, ok := raw["properties"].(map[string]interface{}); ok {
+		props = normalizeProperties(rawProps)
+	}
+	return &Feature{
+		ID:            normalizeValue(raw["id"]),
+		Geometry:      normalizeGeometry(interfaceMap(raw["geometry"])),
+		GeometryField: defaultGeometryField,
+		Properties:    props,
+	}
+}
+
 type rawCRS struct {
 	Type       string                 `json:"type"`
 	Properties map[string]interface{} `json:"properties"`
@@ -490,6 +718,343 @@ func normalizeGeometry(geom map[string]interface{}) map[string]interface{} {
 		out[k] = normalizeValue(v)
 	}
 	return out
+}
+
+func interfaceMap(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed
+	default:
+		return nil
+	}
+}
+
+func detectGeometryProperty(props map[string]interface{}) (string, map[string]interface{}) {
+	for key, value := range props {
+		if geom := geometryValue(value); geom != nil {
+			return key, geom
+		}
+	}
+	return "", nil
+}
+
+func geometryValue(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return normalizeGeoJSONGeometry(typed)
+	case string:
+		if geom, err := decodeWKBGeometry(typed); err == nil {
+			return geom
+		}
+	}
+	return nil
+}
+
+func normalizeGeoJSONGeometry(value map[string]interface{}) map[string]interface{} {
+	if value == nil {
+		return nil
+	}
+	typeName, _ := value["type"].(string)
+	if !isGeoJSONGeometryType(typeName) {
+		return nil
+	}
+	if _, ok := value["coordinates"]; !ok && !strings.EqualFold(typeName, "GeometryCollection") {
+		return nil
+	}
+	return normalizeGeometry(value)
+}
+
+func isGeoJSONGeometryType(typeName string) bool {
+	switch strings.ToLower(strings.TrimSpace(typeName)) {
+	case "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection":
+		return true
+	default:
+		return false
+	}
+}
+
+func wkbGeometryType(value string) string {
+	geom, err := decodeWKBGeometry(value)
+	if err != nil {
+		return ""
+	}
+	typeName, _ := geom["type"].(string)
+	return typeName
+}
+
+func wkbTypeName(typeCode uint32) string {
+	switch typeCode {
+	case 1:
+		return "Point"
+	case 2:
+		return "LineString"
+	case 3:
+		return "Polygon"
+	case 4:
+		return "MultiPoint"
+	case 5:
+		return "MultiLineString"
+	case 6:
+		return "MultiPolygon"
+	case 7:
+		return "GeometryCollection"
+	default:
+		return ""
+	}
+}
+
+type wkbReader struct {
+	data []byte
+	pos  int
+}
+
+type wkbHeader struct {
+	order    binary.ByteOrder
+	typeCode uint32
+	hasSRID  bool
+	srid     uint32
+	hasZ     bool
+	hasM     bool
+}
+
+func decodeWKBGeometry(value string) (map[string]interface{}, error) {
+	hexValue := strings.TrimSpace(value)
+	if len(hexValue) < 10 || len(hexValue)%2 != 0 {
+		return nil, fmt.Errorf("invalid WKB hex length")
+	}
+	data, err := hex.DecodeString(hexValue)
+	if err != nil {
+		return nil, err
+	}
+	reader := &wkbReader{data: data}
+	geom, err := reader.readGeometry()
+	if err != nil {
+		return nil, err
+	}
+	if reader.pos > len(reader.data) {
+		return nil, fmt.Errorf("invalid WKB cursor")
+	}
+	if reader.pos != len(reader.data) {
+		return nil, fmt.Errorf("unexpected trailing WKB data")
+	}
+	geom["wkb"] = hexValue
+	return geom, nil
+}
+
+func (r *wkbReader) readGeometry() (map[string]interface{}, error) {
+	header, err := r.readHeader()
+	if err != nil {
+		return nil, err
+	}
+	typeName := wkbTypeName(header.typeCode)
+	if typeName == "" {
+		return nil, fmt.Errorf("unsupported WKB geometry type %d", header.typeCode)
+	}
+
+	geom := map[string]interface{}{"type": typeName}
+	if header.hasSRID {
+		geom["srid"] = int64(header.srid)
+	}
+
+	switch header.typeCode {
+	case 1:
+		geom["coordinates"] = r.readPosition(header)
+	case 2:
+		coordinates, err := r.readPositionList(header)
+		if err != nil {
+			return nil, err
+		}
+		geom["coordinates"] = coordinates
+	case 3:
+		coordinates, err := r.readPolygon(header)
+		if err != nil {
+			return nil, err
+		}
+		geom["coordinates"] = coordinates
+	case 4, 5, 6:
+		coordinates, err := r.readMultiGeometryCoordinates(header)
+		if err != nil {
+			return nil, err
+		}
+		geom["coordinates"] = coordinates
+	case 7:
+		geometries, err := r.readGeometryCollection(header)
+		if err != nil {
+			return nil, err
+		}
+		geom["geometries"] = geometries
+	}
+	if r.pos > len(r.data) {
+		return nil, fmt.Errorf("short WKB coordinate data")
+	}
+	return geom, nil
+}
+
+func (r *wkbReader) readHeader() (wkbHeader, error) {
+	if r.remaining() < 5 {
+		return wkbHeader{}, fmt.Errorf("short WKB header")
+	}
+	byteOrder := r.data[r.pos]
+	r.pos++
+	var order binary.ByteOrder = binary.BigEndian
+	if byteOrder == 1 {
+		order = binary.LittleEndian
+	} else if byteOrder != 0 {
+		return wkbHeader{}, fmt.Errorf("invalid WKB byte order")
+	}
+	rawType, err := r.readUint32(order)
+	if err != nil {
+		return wkbHeader{}, err
+	}
+	header := wkbHeader{order: order}
+	if rawType&0x80000000 != 0 {
+		header.hasZ = true
+		rawType &^= 0x80000000
+	}
+	if rawType&0x40000000 != 0 {
+		header.hasM = true
+		rawType &^= 0x40000000
+	}
+	if rawType&0x20000000 != 0 {
+		header.hasSRID = true
+		rawType &^= 0x20000000
+		srid, err := r.readUint32(order)
+		if err != nil {
+			return wkbHeader{}, err
+		}
+		header.srid = srid
+	}
+	switch {
+	case rawType >= 3000 && rawType < 4000:
+		header.hasZ = true
+		header.hasM = true
+		rawType -= 3000
+	case rawType >= 2000 && rawType < 3000:
+		header.hasM = true
+		rawType -= 2000
+	case rawType >= 1000 && rawType < 2000:
+		header.hasZ = true
+		rawType -= 1000
+	}
+	header.typeCode = rawType
+	return header, nil
+}
+
+func (r *wkbReader) readMultiGeometryCoordinates(header wkbHeader) (interface{}, error) {
+	count, err := r.readUint32(header.order)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, count)
+	for i := uint32(0); i < count; i++ {
+		geom, err := r.readGeometry()
+		if err != nil {
+			return nil, err
+		}
+		childType, _ := geom["type"].(string)
+		switch header.typeCode {
+		case 4:
+			if childType != "Point" {
+				return nil, fmt.Errorf("invalid MultiPoint child %q", childType)
+			}
+			items = append(items, geom["coordinates"])
+		case 5:
+			if childType != "LineString" {
+				return nil, fmt.Errorf("invalid MultiLineString child %q", childType)
+			}
+			items = append(items, geom["coordinates"])
+		case 6:
+			if childType != "Polygon" {
+				return nil, fmt.Errorf("invalid MultiPolygon child %q", childType)
+			}
+			items = append(items, geom["coordinates"])
+		}
+	}
+	return items, nil
+}
+
+func (r *wkbReader) readGeometryCollection(header wkbHeader) ([]interface{}, error) {
+	count, err := r.readUint32(header.order)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, count)
+	for i := uint32(0); i < count; i++ {
+		geom, err := r.readGeometry()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, geom)
+	}
+	return items, nil
+}
+
+func (r *wkbReader) readPolygon(header wkbHeader) ([]interface{}, error) {
+	count, err := r.readUint32(header.order)
+	if err != nil {
+		return nil, err
+	}
+	rings := make([]interface{}, 0, count)
+	for i := uint32(0); i < count; i++ {
+		ring, err := r.readPositionList(header)
+		if err != nil {
+			return nil, err
+		}
+		rings = append(rings, ring)
+	}
+	return rings, nil
+}
+
+func (r *wkbReader) readPositionList(header wkbHeader) ([]interface{}, error) {
+	count, err := r.readUint32(header.order)
+	if err != nil {
+		return nil, err
+	}
+	positions := make([]interface{}, 0, count)
+	for i := uint32(0); i < count; i++ {
+		positions = append(positions, r.readPosition(header))
+		if r.pos > len(r.data) {
+			return nil, fmt.Errorf("short WKB coordinate data")
+		}
+	}
+	return positions, nil
+}
+
+func (r *wkbReader) readPosition(header wkbHeader) []interface{} {
+	position := []interface{}{r.readFloat64(header.order), r.readFloat64(header.order)}
+	if header.hasZ {
+		position = append(position, r.readFloat64(header.order))
+	}
+	if header.hasM {
+		_ = r.readFloat64(header.order)
+	}
+	return position
+}
+
+func (r *wkbReader) readUint32(order binary.ByteOrder) (uint32, error) {
+	if order == nil {
+		order = binary.LittleEndian
+	}
+	if r.remaining() < 4 {
+		return 0, fmt.Errorf("short WKB uint32")
+	}
+	value := order.Uint32(r.data[r.pos : r.pos+4])
+	r.pos += 4
+	return value, nil
+}
+
+func (r *wkbReader) readFloat64(order binary.ByteOrder) float64 {
+	if r.remaining() < 8 {
+		r.pos = len(r.data) + 1
+		return 0
+	}
+	bits := order.Uint64(r.data[r.pos : r.pos+8])
+	r.pos += 8
+	return math.Float64frombits(bits)
+}
+
+func (r *wkbReader) remaining() int {
+	return len(r.data) - r.pos
 }
 
 func normalizeValue(value interface{}) interface{} {
@@ -549,6 +1114,9 @@ func (b *schemaBuilder) AddFeature(feature *Feature) {
 
 	if gt := feature.GeometryType(); gt != "" {
 		b.geometryTypes[gt] = struct{}{}
+		if feature.GeometryField != "" {
+			b.geometryField = feature.GeometryField
+		}
 	}
 
 	for key, val := range feature.Properties {
@@ -819,7 +1387,7 @@ type Iterator struct {
 
 // NewFeatureIterator 创建新的 Feature 迭代器
 func NewFeatureIterator(r io.Reader) (*Iterator, error) {
-	it, err := newIterator(r)
+	it, err := newRecordIterator(r)
 	if err != nil {
 		return nil, err
 	}
@@ -851,7 +1419,7 @@ type FeatureCollection struct {
 
 // LoadFeatureCollection 读取并返回完整的 FeatureCollection
 func LoadFeatureCollection(r io.Reader) (*FeatureCollection, error) {
-	it, err := newIterator(r)
+	it, err := newRecordIterator(r)
 	if err != nil {
 		return nil, err
 	}

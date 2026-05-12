@@ -176,6 +176,28 @@ func TestExtractJSONSingleFileInfoStrictRequiresRecordCollection(t *testing.T) {
 	}
 }
 
+func TestExtractJSONSingleFileInfoStrictAcceptsObjectArray(t *testing.T) {
+	reader := staticContentReader{content: `[
+		{"id":"1","name":"A","area":"356.16704388138885"},
+		{"id":"2","name":"B","area":"129.1114944814742"}
+	]`}
+
+	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "converted-data.json", 10, false)
+	if err != nil {
+		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+	}
+	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
+		t.Fatalf("info = %#v", info)
+	}
+	table := commonJSON.Section(info.Attributes, "type_info.table")
+	if commonJSON.InterfaceInt64(table["row_count"]) != 2 {
+		t.Fatalf("table attrs = %#v", table)
+	}
+	if spatial := commonJSON.Section(info.Attributes, "capabilities.spatial"); len(spatial) != 0 {
+		t.Fatalf("spatial should be empty: %#v", spatial)
+	}
+}
+
 func TestExtractJSONSingleFileInfoStrictWritesSpatialOnlyWhenGeometryExists(t *testing.T) {
 	reader := staticContentReader{content: `{
 		"type": "FeatureCollection",

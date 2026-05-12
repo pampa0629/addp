@@ -686,6 +686,7 @@ func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
 		return nil, nil
 	}
 	attrs := metaattr.JSONMap(info.Attributes)
+	metaitem.MergeDataItemAttributes(attrs, metaitem.DetectedItemFromCompositeInfo(info, physicalPath, meta.SizeBytes))
 	metaattr.SetStorage(attrs, "bucket", meta.Bucket)
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	metaattr.SetStorage(attrs, "path", dir)

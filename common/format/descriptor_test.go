@@ -169,6 +169,9 @@ func TestSupportsContentIndexUsesDescriptorProviderCapability(t *testing.T) {
 	if !SupportsContentIndex(FormatTSV) {
 		t.Fatalf("SupportsContentIndex(tsv) = false, want true")
 	}
+	if !SupportsContentIndex(FormatJSON) {
+		t.Fatalf("SupportsContentIndex(json) = false, want true")
+	}
 	if SupportsContentIndex(FormatParquet) {
 		t.Fatalf("SupportsContentIndex(parquet) = true, want false")
 	}
