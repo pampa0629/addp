@@ -66,10 +66,10 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	}
 
 	// 构建解析选项
-	opts := p.buildParseOptions(formatType)
+	opts := p.buildParseOptions(formatType, req)
 
 	if componentProvider, ok := provider.(format.ComponentTableProvider); ok {
-		return p.previewComponents(ctx, shapefileComponentReader(resourceCtx.reader, resourceCtx.path), resourceCtx.bucket, formatType, componentProvider, opts, req)
+		return p.previewComponents(ctx, componentReaderForPreview(resourceCtx.reader, resourceCtx.path, formatType, req.Attributes), resourceCtx.bucket, formatType, componentProvider, opts, req)
 	}
 
 	p.ensureContentIndex(ctx, req, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType)
@@ -115,7 +115,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
-	tableInfo, err := p.tableInfoFromAttributes(req.Attributes)
+	tableInfo, err := p.tableInfoFromAttributes(req)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,16 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}, nil
 }
 
-func (p *FileTablePreviewProvider) tableInfoFromAttributes(attrs map[string]interface{}) (*format.TableInfo, error) {
+func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*format.TableInfo, error) {
+	if req != nil && normalizeFileTableFormat(stringAttribute(req.Attributes, "format")) == format.FormatExcel && strings.TrimSpace(req.ChildName) != "" {
+		if tableInfo := p.excelChildTableInfoFromAttributes(req.Attributes, req.ChildName); tableInfo != nil {
+			return tableInfo, nil
+		}
+	}
+	attrs := map[string]interface{}(nil)
+	if req != nil {
+		attrs = req.Attributes
+	}
 	tableAttrs := commonJSON.Section(attrs, "type_info.table")
 	if len(tableAttrs) == 0 {
 		return nil, nil
@@ -224,6 +233,37 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(attrs map[string]inte
 		info.Extensions = append(info.Extensions, spatialInfo)
 	}
 	return info, nil
+}
+
+func (p *FileTablePreviewProvider) excelChildTableInfoFromAttributes(attrs map[string]interface{}, childName string) *format.TableInfo {
+	childName = strings.TrimSpace(childName)
+	if childName == "" {
+		return nil
+	}
+	containerAttrs := commonJSON.Section(attrs, "type_info.container")
+	if len(containerAttrs) == 0 {
+		return nil
+	}
+	for _, item := range interfaceSlice(containerAttrs["children"]) {
+		child := rawMapAttribute(item)
+		if len(child) == 0 || !strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child["name"])), childName) {
+			continue
+		}
+		fields := fieldsFromAttribute(child["fields"])
+		if len(fields) == 0 {
+			return nil
+		}
+		info := &format.TableInfo{
+			Name:       childName,
+			Fields:     fields,
+			PrimaryKey: []string{},
+		}
+		if rowCount := commonJSON.InterfaceInt64(child["row_count"]); rowCount > 0 {
+			info.RowCount = &rowCount
+		}
+		return info
+	}
+	return nil
 }
 
 func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo {
@@ -532,9 +572,15 @@ func (p *FileTablePreviewProvider) previewComponents(
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	// 解析 TableInfo
-	tableInfo, err := provider.DescribeTableComponents(ctx, components, opts)
+	tableInfo, err := p.tableInfoFromAttributes(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s component table info: %w", formatType, err)
+		return nil, err
+	}
+	if tableInfo == nil {
+		tableInfo, err = provider.DescribeTableComponents(ctx, components, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s component table info: %w", formatType, err)
+		}
 	}
 
 	// 提取列名
@@ -595,11 +641,15 @@ func (p *FileTablePreviewProvider) previewComponents(
 }
 
 // buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。
-func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType) *format.ParseOptions {
-	return &format.ParseOptions{
+func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType, req ...*PreviewRequest) *format.ParseOptions {
+	opts := &format.ParseOptions{
 		HasHeader:  true,
 		SampleSize: 100,
 	}
+	if formatType == format.FormatExcel && len(req) > 0 && req[0] != nil {
+		opts.SheetName = strings.TrimSpace(req[0].ChildName)
+	}
+	return opts
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {

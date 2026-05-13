@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -147,9 +148,25 @@ func (p *fileSystemPreviewProvider) previewFile(
 			Extension:   defaultExtension(filePath),
 			ContentType: canonicalContentType,
 			Size:        meta.Size,
+			Attributes:  preview.Object.Attributes,
 		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
+			if strings.EqualFold(contentReq.Format, string(format.FormatExcel)) {
+				if previewJSON := buildExcelPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
+					preview.Object.Content = &models.ObjectPreviewContent{
+						Kind: models.ObjectPreviewKindExcel,
+						JSON: previewJSON,
+						Metadata: map[string]interface{}{
+							"size_bytes": meta.Size,
+							"path":       contentReq.Path,
+							"name":       contentReq.Name,
+							"source":     "meta",
+						},
+					}
+					return preview, nil
+				}
+			}
 			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)

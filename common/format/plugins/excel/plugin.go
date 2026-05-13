@@ -59,6 +59,35 @@ func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	return p.ParseTableInfo(ctx, input, options)
 }
 
+// DescribeContainer 从 Excel 文件中提取 workbook / sheet 容器信息。
+func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+	opts := p.options
+	if options != nil {
+		opts = options
+	}
+
+	workbook, err := excelize.OpenReader(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open excel file: %w", err)
+	}
+	defer workbook.Close()
+
+	analyzeOpts := p.buildAnalyzeOptionsFromParseOptions(opts)
+	if opts == nil || opts.ExtraParams == nil || opts.ExtraParams["sheet_limit"] == nil {
+		analyzeOpts.SheetLimit = defaultSheetLimit
+	}
+	if analyzeOpts.RowLimit <= 0 {
+		analyzeOpts.RowLimit = 20
+	}
+
+	analysis, err := Analyze(ctx, workbook, analyzeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.convertToContainerInfo(analysis), nil
+}
+
 // ParseTableInfo 从 Excel 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
@@ -73,16 +102,34 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 	}
 	defer workbook.Close()
 
-	// 构建分析选项
 	analyzeOpts := p.buildAnalyzeOptionsFromParseOptions(opts)
+	if p.hasExplicitSheetSelection(opts) {
+		sheetName := p.getTargetSheetNameFromOptions(workbook, opts)
+		if sheetName == "" {
+			return &format.TableInfo{
+				Name:       "excel_data",
+				Fields:     []format.FieldInfo{},
+				PrimaryKey: []string{},
+			}, nil
+		}
+		sheetIndex := p.sheetIndex(workbook, sheetName)
+		summary, _, err := analyzeSheet(workbook, sheetName, sheetIndex, *analyzeOpts)
+		if err != nil {
+			return nil, err
+		}
+		analysis := &WorkbookAnalysis{
+			SheetCount:   len(workbook.GetSheetList()),
+			DefaultSheet: sheetName,
+			ActiveSheet:  sheetName,
+			Sheets:       []SheetSummary{summary},
+		}
+		return p.convertToTableInfo(analysis, opts)
+	}
 
-	// 使用内部 Analyze 函数
 	analysis, err := Analyze(ctx, workbook, analyzeOpts)
 	if err != nil {
 		return nil, err
 	}
-
-	// 转换为 TableInfo
 	return p.convertToTableInfo(analysis, opts)
 }
 
@@ -232,6 +279,66 @@ func (p *Parser) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 	return tableInfo, nil
 }
 
+func (p *Parser) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {
+	if analysis == nil {
+		return &format.ContainerInfo{
+			Format:        format.FormatExcel,
+			ResourceCount: 1,
+			Children:      []format.ContainerChildInfo{},
+			FormatInfo:    map[string]interface{}{},
+		}
+	}
+
+	children := make([]format.ContainerChildInfo, 0, len(analysis.Sheets))
+	for _, sheet := range analysis.Sheets {
+		rowCount := int64(sheet.RowCount)
+		columnCount := sheet.ColumnCount
+		hasHeader := sheet.HasHeader
+		children = append(children, format.ContainerChildInfo{
+			Name:        sheet.Name,
+			Kind:        "sheet",
+			DataType:    format.FormatDataTypeTable,
+			RowCount:    &rowCount,
+			ColumnCount: &columnCount,
+			HasHeader:   &hasHeader,
+			Fields:      excelSheetFields(sheet),
+		})
+	}
+
+	return &format.ContainerInfo{
+		Format:        format.FormatExcel,
+		ChildCount:    analysis.SheetCount,
+		DefaultChild:  analysis.DefaultSheet,
+		ResourceCount: 1,
+		Children:      children,
+		FormatInfo: map[string]interface{}{
+			"sheet_count":        analysis.SheetCount,
+			"default_sheet":      analysis.DefaultSheet,
+			"sampled_sheets":     len(children),
+			"children_truncated": analysis.SheetCount > len(children),
+		},
+	}
+}
+
+func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
+	fields := make([]format.FieldInfo, 0, len(sheet.Headers))
+	for i, header := range sheet.Headers {
+		fieldType := format.FieldTypeString
+		originalType := ""
+		if i < len(sheet.ColumnTypes) {
+			originalType = sheet.ColumnTypes[i]
+			fieldType = mapExcelTypeToFieldType(originalType)
+		}
+		fields = append(fields, format.FieldInfo{
+			Name:         header,
+			Type:         fieldType,
+			OriginalType: originalType,
+			Nullable:     true,
+		})
+	}
+	return fields
+}
+
 // buildAnalyzeOptionsFromParseOptions 根据 ParseOptions 构建 Analyze 选项
 func (p *Parser) buildAnalyzeOptionsFromParseOptions(opts *format.ParseOptions) *Options {
 	analyzeOpts := &Options{
@@ -282,6 +389,25 @@ func (p *Parser) getTargetSheetNameFromOptions(workbook *excelize.File, opts *fo
 
 	// 降级到第一个工作表
 	return sheetList[0]
+}
+
+func (p *Parser) hasExplicitSheetSelection(opts *format.ParseOptions) bool {
+	if opts == nil {
+		return false
+	}
+	if opts.SheetName != "" {
+		return true
+	}
+	return opts.SheetIndex > 0
+}
+
+func (p *Parser) sheetIndex(workbook *excelize.File, sheetName string) int {
+	for i, name := range workbook.GetSheetList() {
+		if name == sheetName {
+			return i
+		}
+	}
+	return 0
 }
 
 // mapExcelTypeToFieldType 将 Excel 类型字符串映射到 FieldType

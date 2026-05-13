@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/excel"
 	"github.com/addp/common/format/plugins/sqlite"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	_ "github.com/mattn/go-sqlite3"
@@ -31,6 +32,7 @@ type ObjectContentRequest struct {
 	Extension   string
 	ContentType string
 	Size        int64
+	Attributes  map[string]interface{}
 }
 
 // ObjectContentProvider 用于按需读取对象数据，limit <= 0 表示使用默认限制。
@@ -809,6 +811,67 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		Metadata:  metadata,
 		Truncated: previewTruncated,
 	}), truncated || previewTruncated, nil
+}
+
+func buildExcelPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
+	containerAttrs := commonJSON.Section(attrs, "type_info.container")
+	formatAttrs := commonJSON.Section(attrs, "format_info.excel")
+	if len(containerAttrs) == 0 || len(formatAttrs) == 0 {
+		return nil
+	}
+
+	children := interfaceSlice(containerAttrs["children"])
+	if len(children) == 0 {
+		return nil
+	}
+
+	sheets := make([]map[string]interface{}, 0, len(children))
+	for index, item := range children {
+		child := rawMapAttribute(item)
+		if len(child) == 0 || !strings.EqualFold(commonJSON.InterfaceString(child["kind"]), "sheet") {
+			continue
+		}
+		fields := fieldsFromAttribute(child["fields"])
+		headers := make([]string, 0, len(fields))
+		columnTypes := make([]string, 0, len(fields))
+		for _, field := range fields {
+			headers = append(headers, field.Name)
+			originalType := field.OriginalType
+			if originalType == "" {
+				originalType = string(field.Type)
+			}
+			columnTypes = append(columnTypes, originalType)
+		}
+		sheets = append(sheets, map[string]interface{}{
+			"name":           commonJSON.InterfaceString(child["name"]),
+			"index":          index,
+			"row_count":      commonJSON.InterfaceInt64(child["row_count"]),
+			"column_count":   commonJSON.InterfaceInt64(child["column_count"]),
+			"has_header":     commonJSON.InterfaceBool(child["has_header"]),
+			"headers":        headers,
+			"column_types":   columnTypes,
+			"rows":           []map[string]interface{}{},
+			"rows_truncated": false,
+		})
+	}
+	if len(sheets) == 0 {
+		return nil
+	}
+
+	summary := map[string]interface{}{}
+	for key, value := range formatAttrs {
+		summary[key] = value
+	}
+	if sizeBytes > 0 {
+		summary["size_bytes"] = sizeBytes
+	}
+
+	return map[string]interface{}{
+		"default_sheet": commonJSON.InterfaceString(formatAttrs["default_sheet"]),
+		"active_sheet":  commonJSON.InterfaceString(formatAttrs["default_sheet"]),
+		"sheets":        sheets,
+		"summary":       summary,
+	}
 }
 
 func (h *excelContentHandler) effectiveSheetLimit(total int) int {

@@ -39,9 +39,10 @@
           v-else
           :selected-node="selectedNodeLegacy"
           :preview-data="store.previewData"
-          :loading="store.previewLoading"
+          :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
           @navigate="handleNavigate"
+          @sheet-change="handleSheetChange"
         />
       </div>
     </div>
@@ -183,7 +184,16 @@ const handlePageChange = async (page) => {
   if (!store.selectedLocator) return
 
   try {
-    await store.loadPreview(store.selectedLocator, page)
+    await store.loadPreview(store.selectedLocator, page, store.selectedChildName)
+  } catch (error) {
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+  }
+}
+
+const handleSheetChange = async (sheetName) => {
+  if (!store.selectedLocator || !sheetName) return
+  try {
+    await store.loadPreview(store.selectedLocator, 1, sheetName)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }

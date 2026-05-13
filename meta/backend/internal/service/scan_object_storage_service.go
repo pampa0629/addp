@@ -607,7 +607,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
-		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, composite.Prefix, scanPathPrefix, stats)
+		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
 		if err != nil {
 			return count, err
 		}
@@ -637,7 +637,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
-	prefix string,
+	parentPath string,
 	scanPathPrefix string,
 	stats map[uint]*scanstats.NodeAggregate,
 ) (*models.MetaNode, error) {
@@ -645,7 +645,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	if basePrefixNode != nil {
 		parent = basePrefixNode
 	}
-	parentNode, createdNodes, err := s.repo.EnsureObjectPrefixRelativePath(tenantID, engineID, bucketNode, parent, metaitem.ParentObjectPath(prefix), scanPathPrefix)
+	parentNode, createdNodes, err := s.repo.EnsureObjectPrefixRelativePath(tenantID, engineID, bucketNode, parent, parentPath, scanPathPrefix)
 	if err != nil {
 		return nil, err
 	}

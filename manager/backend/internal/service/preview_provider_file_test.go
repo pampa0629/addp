@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -68,6 +69,15 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesResolvedFormat(t *testing.
 	}
 }
 
+func TestFileTablePreviewProviderBuildParseOptionsUsesExcelChildSheet(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+
+	opts := provider.buildParseOptions(format.FormatExcel, &PreviewRequest{ChildName: " Cities "})
+	if opts.SheetName != "Cities" {
+		t.Fatalf("SheetName = %q, want Cities", opts.SheetName)
+	}
+}
+
 func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -106,6 +116,29 @@ func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.
 	rc.Close()
 	if got := enginePlugin.openedPath.StringPath(); got != "gis-data/sample.csv" {
 		t.Fatalf("opened path = %q, want gis-data/sample.csv", got)
+	}
+}
+
+func TestObjectStorageResourceReaderStripsBucketPrefixFromComponentPath(t *testing.T) {
+	t.Parallel()
+
+	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component"}
+	reader := newObjectStorageResourceReader(enginePlugin, nil, nil, 9, "addp")
+
+	rc, err := reader.Open(context.Background(), resource.NewResourceRef("addp/gis/规划用地.dbf", resource.ResourceRoleComponent))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	rc.Close()
+	if got := enginePlugin.openedPath.StringPath(); got != "addp/gis/规划用地.dbf" {
+		t.Fatalf("opened path = %q, want catalog path with bucket plus object key", got)
+	}
+	if len(enginePlugin.openedPath.Segments) != 3 {
+		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.openedPath.Segments)
+	}
+	objectSegment := enginePlugin.openedPath.Segments[2]
+	if objectSegment.Name != "规划用地.dbf" {
+		t.Fatalf("object segment = %#v, want key without duplicated bucket", objectSegment)
 	}
 }
 
@@ -235,6 +268,63 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 	}
 }
 
+func TestFileTablePreviewProviderUsesExcelChildAttributes(t *testing.T) {
+	t.Parallel()
+
+	provider := &FileTablePreviewProvider{}
+	tableProvider := &recordingTableProvider{}
+	req := &PreviewRequest{
+		Page:      1,
+		PageSize:  2,
+		Table:     "manager/book.xlsx",
+		ChildName: "Cities",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format": "excel",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":       "Cities",
+							"kind":       "sheet",
+							"row_count":  int64(7),
+							"has_header": true,
+							"fields": []interface{}{
+								map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "nullable": true},
+								map[string]interface{}{"name": "population", "type": string(format.FieldTypeInt), "nullable": true},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewStreamable(
+		context.Background(),
+		staticResourceReader{content: []byte("mock")},
+		"manager",
+		"manager/book.xlsx",
+		format.FormatExcel,
+		tableProvider,
+		provider.buildParseOptions(format.FormatExcel, req),
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewStreamable() error = %v", err)
+	}
+	if tableProvider.describeCalls != 0 {
+		t.Fatalf("DescribeTable calls = %d, want 0 when child attributes have table info", tableProvider.describeCalls)
+	}
+	if preview.Total != 7 {
+		t.Fatalf("Total = %d, want 7", preview.Total)
+	}
+	if len(preview.Columns) != 2 || preview.Columns[0] != "city" || preview.Columns[1] != "population" {
+		t.Fatalf("Columns = %#v, want child sheet columns", preview.Columns)
+	}
+}
+
 func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -324,6 +414,101 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 	}
 }
 
+func TestFileTablePreviewProviderPreviewComponentsUsesAttributesTableInfo(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+	componentProvider := &recordingComponentTableProvider{}
+	req := &PreviewRequest{
+		Page:     2,
+		PageSize: 3,
+		Table:    "gis/roads.shp",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": float64(9),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "name", "type": "string", "nullable": true},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewComponents(
+		context.Background(),
+		emptyComponentReader{},
+		"bucket",
+		format.FormatShapefile,
+		componentProvider,
+		nil,
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewComponents() error = %v", err)
+	}
+	if componentProvider.describeCalls != 0 {
+		t.Fatalf("DescribeTableComponents calls = %d, want 0 when attributes have table info", componentProvider.describeCalls)
+	}
+	if componentProvider.sampleOffset != 3 {
+		t.Fatalf("sample offset = %d, want 3", componentProvider.sampleOffset)
+	}
+	if preview.Total != 9 {
+		t.Fatalf("Total = %d, want 9", preview.Total)
+	}
+}
+
+func TestComponentReaderForPreviewUsesMetaComponentFiles(t *testing.T) {
+	reader := componentReaderForPreview(staticResourceReader{}, "bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
+		"item": map[string]interface{}{
+			"component_files": []interface{}{
+				"bucket/roads/roads.dbf",
+				"bucket/roads/roads.prj",
+				"bucket/roads/roads.shp",
+				"bucket/roads/roads.shx",
+			},
+		},
+	})
+
+	components := reader.Components()
+	got := make(map[string]resource.ComponentRef, len(components))
+	for _, component := range components {
+		got[component.ComponentRole] = component
+	}
+
+	for _, role := range []string{"main", "index", "attributes", "projection"} {
+		if _, ok := got[role]; !ok {
+			t.Fatalf("missing component role %q in %#v", role, components)
+		}
+	}
+	if !got["main"].Required || !got["index"].Required || !got["attributes"].Required {
+		t.Fatalf("required flags = main:%v index:%v attributes:%v", got["main"].Required, got["index"].Required, got["attributes"].Required)
+	}
+	if got["projection"].Required {
+		t.Fatalf("projection component should be optional")
+	}
+	if got["main"].Path != "bucket/roads/roads.shp" {
+		t.Fatalf("main path = %q", got["main"].Path)
+	}
+}
+
+func TestComponentReaderForPreviewFallsBackToSameBasenameComponents(t *testing.T) {
+	reader := componentReaderForPreview(staticResourceReader{}, "bucket/roads/roads.shp", format.FormatShapefile, nil)
+	components := reader.Components()
+	required := map[string]bool{}
+	for _, component := range components {
+		if component.Required {
+			required[component.Path] = true
+		}
+	}
+	want := map[string]bool{
+		"bucket/roads/roads.shp": true,
+		"bucket/roads/roads.shx": true,
+		"bucket/roads/roads.dbf": true,
+	}
+	if !reflect.DeepEqual(required, want) {
+		t.Fatalf("required fallback components = %#v, want %#v", required, want)
+	}
+}
+
 type staticResourceReader struct {
 	content []byte
 }
@@ -369,7 +554,8 @@ func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, off
 
 type recordingComponentTableProvider struct {
 	recordingTableProvider
-	sampleOffset int64
+	sampleOffset  int64
+	describeCalls int
 }
 
 func (p *recordingComponentTableProvider) Format() format.FormatType {
@@ -377,6 +563,7 @@ func (p *recordingComponentTableProvider) Format() format.FormatType {
 }
 
 func (p *recordingComponentTableProvider) DescribeTableComponents(context.Context, resource.ComponentReader, *format.ParseOptions) (*format.TableInfo, error) {
+	p.describeCalls++
 	rowCount := int64(1)
 	return &format.TableInfo{
 		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},

@@ -171,6 +171,7 @@
         :loading="loading"
         @page-change="handlePageChange"
         @navigate="handleNavigate"
+        @sheet-change="handleSheetChange"
       />
     </div>
 
@@ -214,7 +215,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate'])
+const emit = defineEmits(['page-change', 'navigate', 'sheet-change'])
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -455,6 +456,12 @@ const previewPluginName = computed(() => activePlugin.value?.name ?? '')
 const previewComponentProps = computed(() => {
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
+  }
+  if (previewPluginName.value === 'excel-preview') {
+    return {
+      activeSheetPreview: store.activeChildPreviewData,
+      activeSheetLoading: store.childPreviewLoading
+    }
   }
   return {}
 })
@@ -1525,6 +1532,10 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
 
 const handlePageChange = (page) => {
   emit('page-change', page)
+}
+
+const handleSheetChange = (sheetName) => {
+  emit('sheet-change', sheetName)
 }
 
 const handleNavigate = (path) => {

@@ -11,13 +11,11 @@ import (
 
 	"github.com/addp/common/format"
 	spatialiteMapper "github.com/addp/common/format/mappers/spatialite"
-	"github.com/addp/common/format/plugins/excel"
 	commonSQLite "github.com/addp/common/format/plugins/sqlite"
 	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/xuri/excelize/v2"
 )
 
 const (
@@ -32,7 +30,7 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	}
 	switch detected.Format {
 	case string(format.FormatExcel):
-		return enrichExcelContainerChildren(ctx, attrs, reader)
+		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatExcel, reader, excelContainerParseOptions())
 	case string(format.FormatSQLite):
 		return enrichSQLiteContainerChildren(ctx, attrs, reader, false)
 	case string(format.FormatGeoPackage):
@@ -42,80 +40,67 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	}
 }
 
-func enrichExcelContainerChildren(ctx context.Context, attrs models.JSONMap, reader io.Reader) error {
-	workbook, err := excelize.OpenReader(reader)
-	if err != nil {
-		return fmt.Errorf("open excel container: %w", err)
+func excelContainerParseOptions() *format.ParseOptions {
+	opts := format.DefaultParseOptions()
+	opts.SampleSize = 20
+	opts.ExtraParams = map[string]interface{}{
+		"sheet_limit": containerChildLimit,
+		"row_limit":   20,
 	}
-	defer workbook.Close()
+	return opts
+}
 
-	opts := excel.DefaultOptions()
-	opts.SheetLimit = containerChildLimit
-	opts.RowLimit = 20
-	analysis, err := excel.Analyze(ctx, workbook, &opts)
+func enrichContainerChildrenFromProvider(
+	ctx context.Context,
+	attrs models.JSONMap,
+	formatType format.FormatType,
+	reader io.Reader,
+	options *format.ParseOptions,
+) error {
+	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
 		return err
 	}
+	info, err := provider.DescribeContainer(ctx, reader, options)
+	if err != nil {
+		return err
+	}
+	if info == nil {
+		return nil
+	}
 
-	children := make([]map[string]interface{}, 0, len(analysis.Sheets))
-	for _, sheet := range analysis.Sheets {
-		children = append(children, map[string]interface{}{
-			"name":         sheet.Name,
-			"kind":         "sheet",
-			"data_type":    string(dataitem.DataTypeTable),
-			"row_count":    sheet.RowCount,
-			"column_count": sheet.ColumnCount,
-			"has_header":   sheet.HasHeader,
-			"fields":       excelSheetFieldAttributes(sheet),
-		})
+	children := make([]map[string]interface{}, 0, len(info.Children))
+	for _, child := range info.Children {
+		attrs := map[string]interface{}{
+			"name":      child.Name,
+			"kind":      child.Kind,
+			"data_type": child.DataType,
+			"fields":    metaattr.FieldAttributesFromFormat(child.Fields),
+		}
+		if child.RowCount != nil {
+			attrs["row_count"] = *child.RowCount
+		}
+		if child.ColumnCount != nil {
+			attrs["column_count"] = *child.ColumnCount
+		}
+		if child.HasHeader != nil {
+			attrs["has_header"] = *child.HasHeader
+		}
+		for key, value := range child.Properties {
+			attrs[key] = value
+		}
+		children = append(children, attrs)
 	}
 	metaattr.UpsertNested(attrs, "type_info", "container", map[string]interface{}{
 		"children":       children,
-		"child_count":    analysis.SheetCount,
-		"default_child":  analysis.DefaultSheet,
-		"resource_count": 1,
+		"child_count":    info.ChildCount,
+		"default_child":  info.DefaultChild,
+		"resource_count": info.ResourceCount,
 	})
-	metaattr.UpsertNested(attrs, "format_info", "excel", map[string]interface{}{
-		"sheet_count":        analysis.SheetCount,
-		"default_sheet":      analysis.DefaultSheet,
-		"sampled_sheets":     len(children),
-		"children_truncated": analysis.SheetCount > len(children),
-	})
+	if len(info.FormatInfo) > 0 {
+		metaattr.UpsertNested(attrs, "format_info", string(formatType), info.FormatInfo)
+	}
 	return nil
-}
-
-func excelSheetFieldAttributes(sheet excel.SheetSummary) []map[string]interface{} {
-	fields := make([]format.FieldInfo, 0, len(sheet.Headers))
-	for i, header := range sheet.Headers {
-		fieldType := format.FieldTypeString
-		originalType := ""
-		if i < len(sheet.ColumnTypes) {
-			originalType = sheet.ColumnTypes[i]
-			fieldType = excelColumnType(originalType)
-		}
-		fields = append(fields, format.FieldInfo{
-			Name:         header,
-			Type:         fieldType,
-			OriginalType: originalType,
-			Nullable:     true,
-		})
-	}
-	return metaattr.FieldAttributesFromFormat(fields)
-}
-
-func excelColumnType(value string) format.FieldType {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "integer":
-		return format.FieldTypeInt
-	case "float":
-		return format.FieldTypeDouble
-	case "boolean":
-		return format.FieldTypeBool
-	case "date":
-		return format.FieldTypeTimestamp
-	default:
-		return format.FieldTypeString
-	}
 }
 
 func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, reader io.Reader, geoPackage bool) error {

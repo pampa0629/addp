@@ -18,7 +18,7 @@ func SameBasenameComponents(mainPath string, specs []ComponentSpec) []ComponentR
 	basePath := strings.TrimSuffix(strings.Trim(mainPath, "/"), filepath.Ext(mainPath))
 	components := make([]ComponentRef, 0, len(specs))
 	for _, spec := range specs {
-		ext := normalizeExtension(spec.Extension)
+		ext := NormalizeExtension(spec.Extension)
 		componentPath := basePath + ext
 		components = append(components, ComponentRef{
 			ResourceRef:   NewResourceRef(componentPath, ResourceRoleComponent),
@@ -29,7 +29,7 @@ func SameBasenameComponents(mainPath string, specs []ComponentSpec) []ComponentR
 	return components
 }
 
-func normalizeExtension(ext string) string {
+func NormalizeExtension(ext string) string {
 	ext = strings.ToLower(strings.TrimSpace(ext))
 	if ext == "" {
 		return ""
@@ -45,5 +45,5 @@ func normalizedComponentRole(role, ext string) string {
 	if role != "" {
 		return role
 	}
-	return strings.TrimPrefix(normalizeExtension(ext), ".")
+	return strings.TrimPrefix(NormalizeExtension(ext), ".")
 }

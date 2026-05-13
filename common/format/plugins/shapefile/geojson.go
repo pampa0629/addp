@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jonas-p/go-shp"
+	"github.com/twpayne/go-geom"
 )
 
 // ShapeToGeoJSON 将 shapefile 几何转换为 GeoJSON 格式
@@ -114,24 +115,48 @@ func geoJSONFromLineParts(parts []int32, points []shp.Point) map[string]interfac
 
 // geoJSONFromPolygonParts 从 shapefile polygon parts 构建 GeoJSON Polygon 或 MultiPolygon
 func geoJSONFromPolygonParts(parts []int32, points []shp.Point) map[string]interface{} {
-	rings := splitGeoJSONParts(points, parts)
-	if len(rings) == 0 {
+	geometry, err := polygonShapeToGeom(parts, points)
+	if err != nil {
 		return map[string]interface{}{"type": "Polygon", "coordinates": [][][]float64{}}
 	}
-	if len(rings) == 1 {
+	return geomToGeoJSON(geometry)
+}
+
+func geomToGeoJSON(geometry geom.T) map[string]interface{} {
+	switch g := geometry.(type) {
+	case *geom.Polygon:
 		return map[string]interface{}{
 			"type":        "Polygon",
-			"coordinates": [][][]float64{pointsToGeoJSONCoordinates(rings[0])},
+			"coordinates": polygonCoordsToGeoJSON(g.Coords()),
 		}
+	case *geom.MultiPolygon:
+		polygons := g.Coords()
+		coords := make([][][][]float64, 0, len(polygons))
+		for _, polygon := range polygons {
+			coords = append(coords, polygonCoordsToGeoJSON(polygon))
+		}
+		return map[string]interface{}{
+			"type":        "MultiPolygon",
+			"coordinates": coords,
+		}
+	default:
+		return map[string]interface{}{"type": "GeometryCollection", "geometries": []interface{}{}}
 	}
-	multi := make([][][][]float64, 0, len(rings))
-	for _, ring := range rings {
-		multi = append(multi, [][][]float64{pointsToGeoJSONCoordinates(ring)})
+}
+
+func polygonCoordsToGeoJSON(coords [][]geom.Coord) [][][]float64 {
+	rings := make([][][]float64, 0, len(coords))
+	for _, ring := range coords {
+		out := make([][]float64, 0, len(ring))
+		for _, coord := range ring {
+			if len(coord) < 2 {
+				continue
+			}
+			out = append(out, []float64{coord[0], coord[1]})
+		}
+		rings = append(rings, out)
 	}
-	return map[string]interface{}{
-		"type":        "MultiPolygon",
-		"coordinates": multi,
-	}
+	return rings
 }
 
 // splitGeoJSONParts 将 shapefile points 按 parts 索引拆分为多个部分

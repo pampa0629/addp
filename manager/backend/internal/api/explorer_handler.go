@@ -143,6 +143,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Success 200 {object} map[string]interface{} "预览数据 | Preview data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
@@ -178,7 +179,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize)
 
 	// 调用 PreviewResolver
-	result, err := h.previewResolver.PreviewFromURI(c.Request.Context(), locatorURI, page, pageSize, tenantID)
+	result, err := h.previewResolver.PreviewFromURI(c.Request.Context(), locatorURI, page, pageSize, c.Query("child_name"), tenantID)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")

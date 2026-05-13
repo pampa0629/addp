@@ -41,6 +41,10 @@ func (p tableProvider) Capabilities() format.FormatCapability {
 	return capability
 }
 
+func (p tableProvider) ComponentSpecs() []resource.ComponentSpec {
+	return ComponentSpecs()
+}
+
 func (p tableProvider) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	return p.parser.ParseTableInfo(ctx, input, options)
 }

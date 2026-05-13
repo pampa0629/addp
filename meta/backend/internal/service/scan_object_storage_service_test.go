@@ -11,6 +11,11 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanstats"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
@@ -48,8 +53,77 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 }
 
+func TestEnsureObjectPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
+	db := openObjectStorageScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := &ObjectStorageScanService{
+		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		repo: repo,
+	}
+
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), models.JSONMap{"bucket": "addp"})
+	if err != nil {
+		t.Fatalf("create bucket node: %v", err)
+	}
+
+	stats := map[uint]*scanstats.NodeAggregate{}
+	parentNode, err := svc.ensureObjectPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
+	if err != nil {
+		t.Fatalf("ensure prefix nodes: %v", err)
+	}
+
+	if parentNode.ID == bucketNode.ID {
+		t.Fatal("composite item under addp/gis should attach to gis prefix, not bucket scope")
+	}
+	if parentNode.NodeType != "prefix" || parentNode.Name != "gis" || parentNode.FullName != "addp/gis" {
+		t.Fatalf("parent node = %#v, want addp/gis prefix", parentNode)
+	}
+	if _, ok := stats[parentNode.ID]; !ok {
+		t.Fatalf("gis prefix aggregate was not initialized")
+	}
+}
+
 func metaitemForJSONDocument(meta format.ObjectMetadata) *metaitem.DetectedItem {
 	return metaitem.InferObjectStorageDataItem(meta, "converted.json")
+}
+
+func openObjectStorageScanTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS metadata").Error; err != nil {
+		t.Fatalf("attach metadata schema: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE metadata.meta_node (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			engine_id INTEGER NOT NULL,
+			parent_node_id INTEGER,
+			node_type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			depth INTEGER NOT NULL,
+			path TEXT,
+			full_name TEXT,
+			scan_status TEXT,
+			scanned_at DATETIME,
+			scan_error TEXT,
+			item_count INTEGER,
+			total_size_bytes INTEGER,
+			attributes JSON,
+			created_at DATETIME,
+			deleted_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create meta_node table: %v", err)
+	}
+	return db
+}
+
+func strPtr(s string) *string {
+	return &s
 }
 
 type staticObjectContentReader struct {

@@ -58,6 +58,7 @@ type PreviewResolverRequest struct {
 	ItemType     string                    // 数据项类型（如 "table"），来自 MetaItem
 	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
 	ScopePath    string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName    string                    // 容器内部 child 名称，例如 Excel sheet
 }
 
 // Pagination 分页参数
@@ -131,7 +132,7 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 }
 
 // PreviewFromURI 从 URI 执行预览（便捷方法）
-func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, tenantID *uint) (*PreviewResult, error) {
+func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, childName string, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
 	loc, err := resource.ParseURI(locatorURI)
 	if err != nil {
@@ -258,7 +259,8 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			Page:     page,
 			PageSize: pageSize,
 		},
-		TenantID: tenantID,
+		TenantID:  tenantID,
+		ChildName: strings.TrimSpace(childName),
 	}
 
 	locatorType := strings.ToLower(strings.TrimSpace(string(loc.Type)))
@@ -412,6 +414,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		NodeType:     string(req.Locator.Type),
 		PhysicalPath: req.PhysicalPath,
 		ScopePath:    req.ScopePath,
+		ChildName:    req.ChildName,
 		Attributes:   req.MetadataAttributes(),
 	}
 }
@@ -486,7 +489,17 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 			return []string{"builtin:graph-relationship"}
 		}
 		return []string{"builtin:graph-label"}
-	case "media", "document", "container":
+	case "container":
+		if legacyReq != nil && strings.EqualFold(formatName, string(format.FormatExcel)) &&
+			strings.TrimSpace(legacyReq.ChildName) != "" &&
+			(isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
+			return []string{"builtin:file-table"}
+		}
+		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+			return []string{"builtin:filesystem"}
+		}
+		return []string{"builtin:object-storage"}
+	case "media", "document":
 		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
 			return []string{"builtin:filesystem"}
 		}

@@ -33,7 +33,7 @@ export const dataExplorerAPI = {
   refreshNode(engineId, locator) {
     return client.post(`/manager/tree/${engineId}/refresh`, { locator })
   },
-  getPreview(locator, page = 1, pageSize = 50) {
+  getPreview(locator, page = 1, pageSize = 50, childName = '') {
     // 取消之前未完成的预览请求
     if (previewAbortController) {
       previewAbortController.abort()
@@ -42,8 +42,13 @@ export const dataExplorerAPI = {
     // 创建新的取消控制器
     previewAbortController = new AbortController()
 
+    const params = { locator, page, page_size: pageSize }
+    if (childName) {
+      params.child_name = childName
+    }
+
     return client.get('/manager/preview', {
-      params: { locator, page, page_size: pageSize },
+      params,
       signal: previewAbortController.signal,
       timeout: 60000 // 空间数据预览可能需要更长时间（60秒）
     })

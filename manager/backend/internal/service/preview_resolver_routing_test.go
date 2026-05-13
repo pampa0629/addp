@@ -118,6 +118,34 @@ func TestResolveProviderByMetaUsesFileTableForFileSystemTableFormat(t *testing.T
 	}
 }
 
+func TestResolveProviderByMetaUsesFileTableForExcelChild(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type":    "container",
+				"format":       "excel",
+				"organization": "single",
+			},
+		}},
+		ItemType:  "object",
+		ChildName: "Cities",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "test.xlsx", ChildName: "Cities"})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:file-table" {
+		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	}
+}
+
 func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
@@ -198,6 +226,24 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	legacyReq := resolver.convertToLegacyRequest(req)
 	if legacyReq.PhysicalPath != "bucket/table.parquet" {
 		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", legacyReq.PhysicalPath)
+	}
+}
+
+func TestConvertToLegacyRequestKeepsChildName(t *testing.T) {
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{Path: []string{"bucket", "test.xlsx"}},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{"data_type": "container", "format": "excel"},
+		}},
+		ItemType:  "object",
+		ChildName: "Cities",
+	}
+
+	legacyReq := resolver.convertToLegacyRequest(req)
+	if legacyReq.ChildName != "Cities" {
+		t.Fatalf("ChildName = %q, want Cities", legacyReq.ChildName)
 	}
 }
 

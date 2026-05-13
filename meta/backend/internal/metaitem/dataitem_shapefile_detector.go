@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	formatShapefile "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/resource"
 	"github.com/addp/meta/internal/dataitem"
+	"github.com/addp/meta/internal/metaattr"
 )
 
 var (
@@ -172,139 +172,71 @@ func enrichShapefileInfo(
 	if contentReader == nil || info == nil {
 		return
 	}
-	tempDir, cleanup, err := copyShapefileComponentsToTempDir(ctx, contentReader, connInfo, engineID, match)
+	provider, err := format.GetTableProvider(format.FormatShapefile)
 	if err != nil {
 		return
 	}
-	defer cleanup()
-
-	reader, err := formatShapefile.Open(filepath.Join(tempDir, match.baseName+".shp"))
+	componentProvider, ok := provider.(format.ComponentTableProvider)
+	if !ok {
+		return
+	}
+	tableInfo, err := componentProvider.DescribeTableComponents(ctx, newShapefileMetaComponentReader(contentReader, connInfo, engineID, match), nil)
 	if err != nil {
 		return
 	}
-	defer reader.Close()
+	info.Fields = tableInfo.Fields
+	upsertShapefileTableInfo(info, tableInfo)
+}
 
-	geometryType := formatShapefile.MapShapeType(reader.GeometryType)
-	fields := []format.FieldInfo{{
-		Name:         "geometry",
-		Type:         format.FieldTypeGeometry,
-		OriginalType: geometryType,
-		Nullable:     false,
-		IsPrimaryKey: false,
-		Comment:      "Shapefile geometry field",
-	}}
+type shapefileMetaComponentReader struct {
+	contentReader plugin.ContentReadableProvider
+	connInfo      plugin.ConnectionInfo
+	engineID      uint
+	components    []resource.ComponentRef
+}
 
-	mapper := format.GetTypeMapper("shapefile")
-	for _, field := range reader.GetSchema() {
-		fieldType := format.FieldTypeUnknown
-		if mapper != nil {
-			fieldType = mapper.ToCommon(field.RawType)
+func newShapefileMetaComponentReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, match shapefileItemMatch) *shapefileMetaComponentReader {
+	components := make([]resource.ComponentRef, 0, len(match.files))
+	exts := make([]string, 0, len(match.files))
+	for ext := range match.files {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	for _, ext := range exts {
+		file := match.files[ext]
+		role, required := componentRoleAndRequired(format.FormatShapefile, ext)
+		if role == "" {
+			role = "component"
 		}
-		fields = append(fields, format.FieldInfo{
-			Name:         field.Name,
-			Type:         fieldType,
-			OriginalType: field.RawType,
-			Nullable:     true,
-			Size:         field.Size,
-			Precision:    field.Precision,
+		components = append(components, resource.ComponentRef{
+			ResourceRef:   resource.NewResourceRef(file.Path, resource.ResourceRoleComponent),
+			ComponentRole: role,
+			Required:      required,
 		})
 	}
-	info.Fields = fields
-
-	var rowCount int64
-	var bbox *[4]float64
-	for reader.Next() {
-		rowCount++
-		_, shape := reader.Shape()
-		if shape == nil {
-			continue
-		}
-		shapeBox := shape.BBox()
-		if bbox == nil {
-			bbox = &[4]float64{shapeBox.MinX, shapeBox.MinY, shapeBox.MaxX, shapeBox.MaxY}
-			continue
-		}
-		if shapeBox.MinX < bbox[0] {
-			bbox[0] = shapeBox.MinX
-		}
-		if shapeBox.MinY < bbox[1] {
-			bbox[1] = shapeBox.MinY
-		}
-		if shapeBox.MaxX > bbox[2] {
-			bbox[2] = shapeBox.MaxX
-		}
-		if shapeBox.MaxY > bbox[3] {
-			bbox[3] = shapeBox.MaxY
-		}
+	return &shapefileMetaComponentReader{
+		contentReader: contentReader,
+		connInfo:      connInfo,
+		engineID:      engineID,
+		components:    components,
 	}
-
-	var extent interface{}
-	if bbox != nil {
-		extent = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
-	}
-	upsertShapefileItemSection(info, "type_info", "table", map[string]interface{}{
-		"fields":      shapefileFieldAttributes(fields),
-		"row_count":   rowCount,
-		"primary_key": []string{},
-	})
-	upsertShapefileItemSection(info, "capabilities", "spatial", map[string]interface{}{
-		"geometry_columns": []map[string]interface{}{{
-			"name":          "geometry",
-			"geometry_type": geometryType,
-			"dimension":     2,
-			"nullable":      false,
-		}},
-		"primary_geometry_column": "geometry",
-		"extent":                  extent,
-		"has_spatial_index":       match.exts[".sbn"] && match.exts[".sbx"],
-	})
-	upsertShapefileItemSection(info, "format_info", "shapefile", map[string]interface{}{
-		"shape_type": geometryType,
-	})
 }
 
-func copyShapefileComponentsToTempDir(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	match shapefileItemMatch,
-) (string, func(), error) {
-	tempDir, err := os.MkdirTemp("", "addp-shapefile-*")
-	if err != nil {
-		return "", nil, err
-	}
-	cleanup := func() { _ = os.RemoveAll(tempDir) }
-	for ext, file := range match.files {
-		if err := copyShapefileContentToFile(ctx, contentReader, connInfo, engineID, file.Path, filepath.Join(tempDir, match.baseName+ext)); err != nil {
-			cleanup()
-			return "", nil, err
-		}
-	}
-	return tempDir, cleanup, nil
+func (r *shapefileMetaComponentReader) Components() []resource.ComponentRef {
+	return append([]resource.ComponentRef(nil), r.components...)
 }
 
-func copyShapefileContentToFile(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	sourcePath string,
-	targetPath string,
-) error {
-	rc, err := contentReader.OpenContent(ctx, connInfo, shapefileCatalogPathForContent(engineID, sourcePath), plugin.ReadOptions{})
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
+func (r *shapefileMetaComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
+	return r.contentReader.OpenContent(ctx, r.connInfo, shapefileCatalogPathForContent(r.engineID, component.Path), plugin.ReadOptions{})
+}
 
-	out, err := os.Create(targetPath)
-	if err != nil {
-		return err
+func (r *shapefileMetaComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {
+	for _, component := range r.components {
+		if strings.EqualFold(component.ComponentRole, role) {
+			return r.OpenComponent(ctx, component)
+		}
 	}
-	defer out.Close()
-	_, err = io.Copy(out, rc)
-	return err
+	return nil, resource.ErrComponentNotFound
 }
 
 func shapefileCatalogPathForContent(engineID uint, path string) plugin.CatalogPath {
@@ -317,6 +249,82 @@ func shapefileCatalogPathForContent(engineID uint, path string) plugin.CatalogPa
 			Name: path,
 		}},
 	}
+}
+
+func upsertShapefileTableInfo(info *CompositeItemInfo, tableInfo *format.TableInfo) {
+	if info == nil || tableInfo == nil {
+		return
+	}
+	upsertShapefileItemSection(info, "type_info", "table", shapefileTableAttributes(tableInfo))
+	if formatAttrs := shapefileFormatAttributes(tableInfo); len(formatAttrs) > 0 {
+		upsertShapefileItemSection(info, "format_info", "shapefile", formatAttrs)
+	}
+	if spatialAttrs := shapefileSpatialAttributes(tableInfo.GetSpatialInfo()); len(spatialAttrs) > 0 {
+		upsertShapefileItemSection(info, "capabilities", "spatial", spatialAttrs)
+	}
+}
+
+func shapefileTableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
+	attrs := map[string]interface{}{
+		"fields":      metaattr.FieldAttributesFromFormat(tableInfo.Fields),
+		"primary_key": append([]string(nil), tableInfo.PrimaryKey...),
+	}
+	if tableInfo.RowCount != nil {
+		attrs["row_count"] = *tableInfo.RowCount
+	}
+	return attrs
+}
+
+func shapefileFormatAttributes(tableInfo *format.TableInfo) map[string]interface{} {
+	for _, ext := range tableInfo.Extensions {
+		if ext == nil || ext.ExtensionType() != "shapefile" {
+			continue
+		}
+		if provider, ok := ext.(interface{ FormatAttributes() map[string]interface{} }); ok {
+			return provider.FormatAttributes()
+		}
+	}
+	return nil
+}
+
+func shapefileSpatialAttributes(spatialInfo *format.SpatialInfo) map[string]interface{} {
+	if spatialInfo == nil {
+		return nil
+	}
+	attrs := map[string]interface{}{
+		"geometry_columns": []map[string]interface{}{{
+			"name":          spatialInfo.GeometryColumn,
+			"geometry_type": spatialInfo.GeometryType,
+			"srid":          spatialInfo.SRID,
+			"dimension":     spatialInfo.Dimension,
+			"nullable":      false,
+		}},
+		"primary_geometry_column": spatialInfo.GeometryColumn,
+		"has_spatial_index":       spatialInfo.HasSpatialIndex,
+	}
+	if spatialInfo.BoundingBox != nil {
+		bbox := *spatialInfo.BoundingBox
+		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+	}
+	return attrs
+}
+
+func componentRoleAndRequired(formatType format.FormatType, ext string) (string, bool) {
+	provider, err := format.GetTableProvider(formatType)
+	if err != nil {
+		return "", false
+	}
+	specProvider, ok := provider.(format.ComponentSpecProvider)
+	if !ok {
+		return "", false
+	}
+	normalizedExt := resource.NormalizeExtension(ext)
+	for _, spec := range specProvider.ComponentSpecs() {
+		if resource.NormalizeExtension(spec.Extension) == normalizedExt {
+			return spec.Role, spec.Required
+		}
+	}
+	return "", false
 }
 
 func upsertShapefileItemSection(info *CompositeItemInfo, section string, namespace string, values map[string]interface{}) {
@@ -340,21 +348,6 @@ func upsertShapefileItemSection(info *CompositeItemInfo, section string, namespa
 	}
 	sectionAttrs[namespace] = namespaceAttrs
 	info.Attributes[section] = sectionAttrs
-}
-
-func shapefileFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
-	attrs := make([]map[string]interface{}, 0, len(fields))
-	for _, field := range fields {
-		attrs = append(attrs, map[string]interface{}{
-			"name":          field.Name,
-			"type":          string(field.Type),
-			"original_type": field.OriginalType,
-			"nullable":      field.Nullable,
-			"size":          field.Size,
-			"precision":     field.Precision,
-		})
-	}
-	return attrs
 }
 
 type shapefileItemMatch struct {

@@ -30,6 +30,7 @@ type FormatImplementationStatus struct {
 	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
 	DocumentProvider       bool `json:"document_provider,omitempty"` // legacy composite
 	MediaInfoProvider      bool `json:"media_info_provider,omitempty"`
+	ContainerInfoProvider  bool `json:"container_info_provider,omitempty"`
 	MetadataExtractor      bool `json:"metadata_extractor,omitempty"`
 }
 
@@ -107,6 +108,9 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if _, err := GetMediaInfoProvider(formatType); err == nil {
 		status.MediaInfoProvider = true
+	}
+	if _, err := GetContainerInfoProvider(formatType); err == nil {
+		status.ContainerInfoProvider = true
 	}
 	status.MetadataExtractor = hasMetadataExtractor(formatType, identification)
 

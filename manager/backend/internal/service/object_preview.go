@@ -333,9 +333,25 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,
+			Attributes:  preview.Object.Attributes,
 		}
 		handler := p.content.Resolve(req)
 		if handler != nil {
+			if strings.EqualFold(req.Format, string(format.FormatExcel)) {
+				if previewJSON := buildExcelPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
+					preview.Object.Content = &models.ObjectPreviewContent{
+						Kind: models.ObjectPreviewKindExcel,
+						JSON: previewJSON,
+						Metadata: map[string]interface{}{
+							"size_bytes": stat.Size,
+							"path":       req.Path,
+							"name":       req.Name,
+							"source":     "meta",
+						},
+					}
+					return preview, nil
+				}
+			}
 			// 优先支持复合流式处理（如 Shapefile 等多文件场景）
 			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {

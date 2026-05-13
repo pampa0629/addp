@@ -20,6 +20,7 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 节点选择
     selectedLocator: null,
+    selectedChildName: '',
 
     // 展开的节点（使用 locator URI 作为 key）
     expandedLocators: new Set(),
@@ -29,7 +30,9 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 预览数据
     previewData: null,
+    activeChildPreviewData: null,
     previewLoading: false,
+    childPreviewLoading: false,
 
     // 分页
     pagination: {
@@ -217,31 +220,69 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1) {
+    async loadPreview(locator, page = 1, childName = '') {
       this.selectedLocator = locator
-      this.previewLoading = true
       this.pagination.page = page
+      const normalizedChildName = childName || ''
+      this.selectedChildName = normalizedChildName
+      if (normalizedChildName) {
+        this.activeChildPreviewData = null
+        this.childPreviewLoading = true
+      } else {
+        this.previewLoading = true
+        this.activeChildPreviewData = null
+      }
 
       try {
+        const params = {
+          locator,
+          page,
+          page_size: this.pagination.pageSize
+        }
+        if (normalizedChildName) {
+          params.child_name = normalizedChildName
+        }
         const response = await client.get('/manager/preview', {
-          params: {
-            locator,
-            page,
-            page_size: this.pagination.pageSize
-          }
+          params
         })
         // 后端直接返回 PreviewResult 对象（符合 API 规范）
         // API 客户端的 extractData 已提取了 response.data
         // PreviewResult: {preview_type, data: TablePreview, metadata}
         // 前端预览插件期望直接收到 TablePreview 格式，所以需要提取 response.data
-        this.previewData = response.data
+        const preview = response.data
+        if (normalizedChildName) {
+          this.activeChildPreviewData = preview
+          return preview
+        }
+        this.previewData = preview
+        const defaultSheet = this.defaultExcelSheetName(preview)
+        if (defaultSheet) {
+          await this.loadPreview(locator, 1, defaultSheet)
+        }
         return this.previewData
       } catch (error) {
         console.error('加载预览失败:', error)
         throw error
       } finally {
-        this.previewLoading = false
+        if (normalizedChildName) {
+          this.childPreviewLoading = false
+        } else {
+          this.previewLoading = false
+        }
       }
+    },
+
+    defaultExcelSheetName(preview) {
+      const content = preview?.object?.content
+      const kind = String(content?.kind || '').toLowerCase()
+      const json = content?.json || content?.JSON || {}
+      if (kind !== 'excel' || !json || typeof json !== 'object') {
+        return ''
+      }
+      const explicit = json.active_sheet || json.default_sheet
+      if (explicit) return explicit
+      const sheets = Array.isArray(json.sheets) ? json.sheets : []
+      return sheets.find(sheet => sheet?.name)?.name || ''
     },
 
     /**
@@ -305,7 +346,9 @@ export const useExplorerStore = defineStore('explorer', {
      */
     reset() {
       this.selectedLocator = null
+      this.selectedChildName = ''
       this.previewData = null
+      this.activeChildPreviewData = null
       this.pagination.page = 1
     },
 

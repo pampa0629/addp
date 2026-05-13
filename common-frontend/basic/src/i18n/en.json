@@ -278,6 +278,7 @@
     "sheetsTruncatedBody": "Only showing the first {limit} sheets. Download the Excel file to view all content.",
     "rowsTruncatedTitle": "Limited sample data",
     "rowsTruncatedBody": "Only showing the first {limit} rows per sheet as sample data.",
+    "sheetSelector": "Sheet",
     "sheetName": "Sheet",
     "sampleRows": "Sample Rows",
     "totalRows": "Total Rows",

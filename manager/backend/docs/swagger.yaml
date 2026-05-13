@@ -1537,6 +1537,11 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: 容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel
+          sheet
+        in: query
+        name: child_name
+        type: string
       produces:
       - application/json
       responses:

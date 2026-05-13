@@ -31,6 +31,7 @@ type PreviewRequest struct {
 	NodeType     string                 // 节点类型（来自 locator type 参数，如 "prefix"/"object"/"bucket"）
 	PhysicalPath string                 // 物理路径（来自 meta_item.attributes.storage.physical_path），单文件表直接读取
 	ScopePath    string                 // 范围路径（来自 meta_item.attributes.storage.physical_path），目录型表读取 scope
+	ChildName    string                 // 容器内部 child 名称，例如 Excel sheet
 	Attributes   map[string]interface{} // 来自 meta_item/meta_node 的标准属性分区
 }
 

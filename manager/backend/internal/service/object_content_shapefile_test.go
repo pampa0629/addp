@@ -8,9 +8,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jonas-p/go-shp"
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestShapefileContentHandler_Transforms3857ToWGS84(t *testing.T) {
@@ -133,6 +135,127 @@ func TestShapefileContentHandler_Transforms3857ToWGS84(t *testing.T) {
 	}
 }
 
+func TestShapefileContentHandlerUsesMetaComponentFiles(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	base := filepath.Join(tmpDir, "roads")
+
+	writer, err := shp.Create(base+".shp", shp.POINT)
+	if err != nil {
+		t.Fatalf("create shapefile failed: %v", err)
+	}
+	writer.SetFields([]shp.Field{shp.StringField("NAME", 16)})
+	row := writer.Write(&shp.Point{X: 116.4, Y: 39.9})
+	if err := writer.WriteAttribute(int(row), 0, "beijing"); err != nil {
+		t.Fatalf("write dbf attribute failed: %v", err)
+	}
+	writer.Close()
+	if _, err := os.Stat(base + "dbf"); err == nil {
+		if err := os.Rename(base+"dbf", base+".dbf"); err != nil {
+			t.Fatalf("rename dbf failed: %v", err)
+		}
+	}
+
+	baseStreamerCalled := false
+	baseStreamer := func() (io.ReadCloser, error) {
+		baseStreamerCalled = true
+		return nil, fs.ErrNotExist
+	}
+	siblingProvider := func(path string) (io.ReadCloser, error) {
+		if strings.HasPrefix(path, "meta/components/") {
+			return os.Open(base + filepath.Ext(path))
+		}
+		return nil, fs.ErrNotExist
+	}
+
+	handler := &shapefileContentHandler{maxFeatures: 10}
+	content, truncated, err := handler.HandleCompositeStream(context.Background(), &ObjectContentRequest{
+		Bucket:      "test",
+		Path:        "wrong/",
+		Name:        "wrong.shp",
+		Extension:   ".shp",
+		ContentType: "application/x-esri-shapefile",
+		Size:        1024,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"component_files": []interface{}{
+					"meta/components/roads.dbf",
+					"meta/components/roads.shp",
+					"meta/components/roads.shx",
+				},
+			},
+		},
+	}, baseStreamer, siblingProvider)
+	if err != nil {
+		t.Fatalf("handle composite stream failed: %v", err)
+	}
+	if baseStreamerCalled {
+		t.Fatalf("base streamer should not be used when component_files are available")
+	}
+	if truncated {
+		t.Fatalf("expected non-truncated preview")
+	}
+	if content == nil || content.GeoJSON == nil {
+		t.Fatalf("expected shapefile geojson content")
+	}
+}
+
+func TestShapefileContentHandlerUsesCPGForDBFAttributes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	base := filepath.Join(tmpDir, "sample")
+	writeEncodedShapefileForPreview(t, base, "GBK", "北京")
+
+	baseStreamer := func() (io.ReadCloser, error) {
+		return os.Open(base + ".shp")
+	}
+	siblingProvider := func(path string) (io.ReadCloser, error) {
+		switch filepath.Ext(path) {
+		case ".shx":
+			return os.Open(base + ".shx")
+		case ".dbf":
+			return os.Open(base + ".dbf")
+		case ".cpg":
+			return os.Open(base + ".cpg")
+		default:
+			return nil, fs.ErrNotExist
+		}
+	}
+
+	handler := &shapefileContentHandler{maxFeatures: 10}
+	content, _, err := handler.HandleCompositeStream(context.Background(), &ObjectContentRequest{
+		Bucket:      "test",
+		Path:        "data/",
+		Name:        "sample.shp",
+		Extension:   ".shp",
+		ContentType: "application/x-esri-shapefile",
+		Size:        1024,
+	}, baseStreamer, siblingProvider)
+	if err != nil {
+		t.Fatalf("handle composite stream failed: %v", err)
+	}
+	featureCollection, ok := content.GeoJSON.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected geojson map, got %T", content.GeoJSON)
+	}
+	features, ok := featureCollection["features"].([]map[string]interface{})
+	if !ok || len(features) != 1 {
+		t.Fatalf("features = %#v", featureCollection["features"])
+	}
+	props, ok := features[0]["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("properties = %#v", features[0]["properties"])
+	}
+	if got := props["NAME"]; got != "北京" {
+		t.Fatalf("decoded property = %#v, want 北京", got)
+	}
+	if got := fmt.Sprint(content.Metadata["code_page"]); got != "GBK" {
+		t.Fatalf("code page metadata = %q, want GBK", got)
+	}
+}
+
 func TestDownloadSiblingText_CaseVariants(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +272,53 @@ func TestDownloadSiblingText_CaseVariants(t *testing.T) {
 	}
 	if text != "EPSG:3857" {
 		t.Fatalf("unexpected text: %s", text)
+	}
+}
+
+func writeEncodedShapefileForPreview(t *testing.T, base string, cpg string, value string) {
+	t.Helper()
+
+	writer, err := shp.Create(base+".shp", shp.POINT)
+	if err != nil {
+		t.Fatalf("create shapefile failed: %v", err)
+	}
+	writer.SetFields([]shp.Field{shp.StringField("NAME", 16)})
+	row := writer.Write(&shp.Point{X: 116.4, Y: 39.9})
+	if err := writer.WriteAttribute(int(row), 0, value); err != nil {
+		t.Fatalf("write dbf attribute failed: %v", err)
+	}
+	writer.Close()
+	if _, err := os.Stat(base + "dbf"); err == nil {
+		if err := os.Rename(base+"dbf", base+".dbf"); err != nil {
+			t.Fatalf("rename dbf failed: %v", err)
+		}
+	}
+	encoded, err := simplifiedchinese.GBK.NewEncoder().String(value)
+	if err != nil {
+		t.Fatalf("encode GBK failed: %v", err)
+	}
+	patchDBFPreviewAttribute(t, base+".dbf", encoded, 16)
+	if err := os.WriteFile(base+".cpg", []byte(cpg), 0o644); err != nil {
+		t.Fatalf("write cpg failed: %v", err)
+	}
+}
+
+func patchDBFPreviewAttribute(t *testing.T, path string, value string, width int) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read dbf failed: %v", err)
+	}
+	headerLength := int(data[8]) | int(data[9])<<8
+	field := make([]byte, width)
+	copy(field, []byte(value))
+	for i := len(value); i < width; i++ {
+		field[i] = ' '
+	}
+	copy(data[headerLength+1:headerLength+1+width], field)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write dbf failed: %v", err)
 	}
 }
 

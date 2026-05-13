@@ -3,6 +3,7 @@ package shapefile
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/jonas-p/go-shp"
@@ -11,15 +12,20 @@ import (
 // Reader wraps go-shp Reader with additional functionality
 type Reader struct {
 	*shp.Reader
+	encoding string
 }
 
 // Open opens a shapefile for reading
 func Open(filename string) (*Reader, error) {
+	return OpenWithEncoding(filename, readCPGEncoding(strings.TrimSuffix(filename, filepath.Ext(filename))))
+}
+
+func OpenWithEncoding(filename string, encodingName string) (*Reader, error) {
 	reader, err := shp.Open(filename)
 	if err != nil {
 		return nil, err
 	}
-	return &Reader{Reader: reader}, nil
+	return &Reader{Reader: reader, encoding: NormalizeDBFEncoding(encodingName)}, nil
 }
 
 // ReadAllFeatures reads all features from the shapefile
@@ -42,8 +48,8 @@ func (r *Reader) ReadAllFeatures(maxFeatures int) ([]Feature, error) {
 		// Read attributes
 		properties := make(map[string]interface{}, len(fields))
 		for i, field := range fields {
-			fieldName := TrimDBFFieldName(field.Name)
-			rawValue := strings.TrimSpace(r.ReadAttribute(recordIndex, i))
+			fieldName := r.TrimDBFFieldName(field.Name)
+			rawValue := strings.TrimSpace(r.ReadAttributeDecoded(recordIndex, i))
 			if rawValue == "" {
 				properties[fieldName] = nil
 				continue
@@ -73,7 +79,7 @@ func (r *Reader) GetSchema() []FieldInfo {
 
 	for _, field := range fields {
 		schema = append(schema, FieldInfo{
-			Name:      TrimDBFFieldName(field.Name),
+			Name:      r.TrimDBFFieldName(field.Name),
 			Type:      DecodeDBFFieldType(field.Fieldtype),
 			RawType:   string(field.Fieldtype),
 			Size:      int(field.Size),
@@ -86,9 +92,21 @@ func (r *Reader) GetSchema() []FieldInfo {
 
 // TrimDBFFieldName converts [11]byte field name to trimmed string
 func TrimDBFFieldName(name [11]byte) string {
-	raw := string(name[:])
-	raw = strings.TrimRight(raw, "\x00")
-	return strings.TrimSpace(raw)
+	return decodeDBFName(name, "")
+}
+
+func (r *Reader) TrimDBFFieldName(name [11]byte) string {
+	if r == nil {
+		return TrimDBFFieldName(name)
+	}
+	return decodeDBFName(name, r.encoding)
+}
+
+func (r *Reader) ReadAttributeDecoded(row int, field int) string {
+	if r == nil {
+		return ""
+	}
+	return DecodeDBFText(r.ReadAttribute(row, field), r.encoding)
 }
 
 // DownloadToFile downloads a reader stream to a file

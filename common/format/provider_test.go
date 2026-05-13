@@ -219,6 +219,53 @@ func TestListTableSampleProviderFormatsSorted(t *testing.T) {
 	}
 }
 
+func TestRegisterContainerInfoProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	provider := NewContainerInfoProvider(
+		FormatType("container_test"),
+		func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error) {
+			return &ContainerInfo{
+				Format:       FormatType("container_test"),
+				ChildCount:   1,
+				DefaultChild: "Sheet1",
+				Children: []ContainerChildInfo{{
+					Name:     "Sheet1",
+					Kind:     "sheet",
+					DataType: FormatDataTypeTable,
+				}},
+			}, nil
+		},
+	)
+
+	if err := registry.RegisterContainerInfoProvider(provider); err != nil {
+		t.Fatalf("RegisterContainerInfoProvider() error = %v", err)
+	}
+
+	got, err := registry.GetContainerInfoProvider(FormatType("container_test"))
+	if err != nil {
+		t.Fatalf("GetContainerInfoProvider() error = %v", err)
+	}
+	if got.Format() != FormatType("container_test") {
+		t.Fatalf("container info provider format = %q, want container_test", got.Format())
+	}
+}
+
+func TestListContainerInfoProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterContainerInfoProvider(NewContainerInfoProvider(FormatType("zeta"), nil)); err != nil {
+		t.Fatalf("RegisterContainerInfoProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterContainerInfoProvider(NewContainerInfoProvider(FormatType("alpha"), nil)); err != nil {
+		t.Fatalf("RegisterContainerInfoProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListContainerInfoProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListContainerInfoProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
 func TestNewTableProviderHandlesMissingImplementation(t *testing.T) {
 	provider := NewTableProvider(FormatType("empty"), nil, nil)
 

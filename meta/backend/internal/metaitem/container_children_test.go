@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"

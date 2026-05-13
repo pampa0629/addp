@@ -51,6 +51,11 @@ type ResourceReader interface {
 	List(ctx context.Context, scope ResourceRef) ([]ResourceRef, error)
 }
 
+type RangeReader interface {
+	ResourceReader
+	OpenRange(ctx context.Context, ref ResourceRef, offset, length int64) (io.ReadCloser, error)
+}
+
 func FirstResourceByExtension(ctx context.Context, reader ResourceReader, scope ResourceRef, extensions ...string) (ResourceRef, error) {
 	if reader == nil {
 		return ResourceRef{}, ErrResourceNotFound
@@ -100,6 +105,11 @@ type ComponentReader interface {
 	OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error)
 }
 
+type ComponentRangeReader interface {
+	ComponentReader
+	OpenComponentRange(ctx context.Context, component ComponentRef, offset, length int64) (io.ReadCloser, error)
+}
+
 type StaticComponentReader struct {
 	resourceReader ResourceReader
 	components     []ComponentRef
@@ -122,6 +132,14 @@ func (r *StaticComponentReader) Components() []ComponentRef {
 
 func (r *StaticComponentReader) OpenComponent(ctx context.Context, component ComponentRef) (io.ReadCloser, error) {
 	return r.resourceReader.Open(ctx, component.ResourceRef)
+}
+
+func (r *StaticComponentReader) OpenComponentRange(ctx context.Context, component ComponentRef, offset, length int64) (io.ReadCloser, error) {
+	rangeReader, ok := r.resourceReader.(RangeReader)
+	if !ok {
+		return nil, ErrResourceNotFound
+	}
+	return rangeReader.OpenRange(ctx, component.ResourceRef, offset, length)
 }
 
 func (r *StaticComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {

@@ -2,16 +2,20 @@ package shapefile
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
 // Parser 实现 Shapefile 格式的解析器
@@ -29,10 +33,7 @@ func NewParser(opts *format.ParseOptions) *Parser {
 
 // ParseTableInfo 从 Shapefile 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	opts := p.options
-	if options != nil {
-		opts = options
-	}
+	opts := p.resolveOptions(options)
 	tempDir, cleanup, err := p.saveToTempFiles(input)
 	if err != nil {
 		return nil, err
@@ -48,16 +49,18 @@ func (p *Parser) DescribeTableComponents(ctx context.Context, components resourc
 	}
 	defer cleanup()
 
-	opts := p.options
-	if options != nil {
-		opts = options
-	}
+	opts := p.resolveOptions(options)
 	if opts.SpatialRefSys == "" {
 		if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
 			opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
 		}
 	}
-	return p.parseTableInfoFromPath(basePath+".shp", opts)
+	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
+		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
+			opts.Encoding = cpgEncoding
+		}
+	}
+	return p.describeTableInfoFromHeaders(basePath, components.Components(), opts)
 }
 
 // SampleTable 读取 Shapefile 表格样本。
@@ -67,20 +70,37 @@ func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		return nil, err
 	}
 	defer cleanup()
-	return p.sampleTableFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit)
+	return p.sampleTableFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit, p.resolveOptions(options))
 }
 
 func (p *Parser) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	opts := p.resolveOptions(options)
+	if rows, ok, err := p.sampleTableComponentsIndexed(ctx, components, offset, limit, opts); ok {
+		if err == nil {
+			return rows, nil
+		}
+	}
+
 	_, basePath, cleanup, err := materializeComponents(ctx, components)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	return p.sampleTableFromPath(ctx, basePath+".shp", offset, limit)
+
+	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
+		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
+			opts.Encoding = cpgEncoding
+		}
+	}
+	return p.sampleTableFromPath(ctx, basePath+".shp", offset, limit, opts)
 }
 
 func (p *Parser) parseTableInfoFromPath(shpPath string, opts *format.ParseOptions) (*format.TableInfo, error) {
-	reader, err := Open(shpPath)
+	encodingName := ""
+	if opts != nil {
+		encodingName = opts.Encoding
+	}
+	reader, err := OpenWithEncoding(shpPath, encodingName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)
 	}
@@ -163,8 +183,193 @@ func (p *Parser) parseTableInfoFromPath(shpPath string, opts *format.ParseOption
 	}, nil
 }
 
-func (p *Parser) sampleTableFromPath(ctx context.Context, shpPath string, offset, limit int64) ([]map[string]interface{}, error) {
-	reader, err := Open(shpPath)
+func (p *Parser) describeTableInfoFromHeaders(basePath string, components []resource.ComponentRef, opts *format.ParseOptions) (*format.TableInfo, error) {
+	shpHeader, err := readSHPHeader(basePath + ".shp")
+	if err != nil {
+		return nil, err
+	}
+	dbfHeader, err := readDBFHeader(basePath+".dbf", opts.Encoding)
+	if err != nil {
+		return nil, err
+	}
+
+	geometryField := p.getGeometryFieldName()
+	fields := make([]format.FieldInfo, 0, len(dbfHeader.Fields)+1)
+	geomType := determineShapefileGeometryType(shpHeader.ShapeType)
+	fields = append(fields, format.FieldInfo{
+		Name:         geometryField,
+		Type:         format.FieldTypeGeometry,
+		OriginalType: geomType,
+		Nullable:     false,
+		IsPrimaryKey: false,
+		Comment:      "Shapefile geometry field",
+	})
+	mapper := format.GetTypeMapper("shapefile")
+	for _, field := range dbfHeader.Fields {
+		fieldType := format.FieldTypeUnknown
+		if mapper != nil {
+			fieldType = mapper.ToCommon(field.RawType)
+		}
+		fields = append(fields, format.FieldInfo{
+			Name:         field.Name,
+			Type:         fieldType,
+			OriginalType: field.RawType,
+			Nullable:     true,
+			Size:         field.Size,
+			Precision:    field.Precision,
+		})
+	}
+
+	rowCount := int64(dbfHeader.RecordCount)
+	spatialInfo := &format.SpatialInfo{
+		GeometryColumn: geometryField,
+		GeometryType:   geomType,
+		SRID:           0,
+		BoundingBox:    &shpHeader.BBox,
+		Dimension:      2,
+	}
+	if opts != nil && opts.SpatialRefSys != "" {
+		if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
+			spatialInfo.SRID = srid
+		}
+	}
+	shapefileInfo := &format.ShapefileInfo{
+		Encoding:   "",
+		ShapeType:  geomType,
+		HasPRJ:     fileExists(basePath + ".prj"),
+		HasCPG:     fileExists(basePath + ".cpg"),
+		DBFVersion: dbfHeader.Version,
+	}
+	if opts != nil {
+		shapefileInfo.Encoding = NormalizeDBFEncoding(opts.Encoding)
+	}
+
+	return &format.TableInfo{
+		Name:       "shapefile_data",
+		RowCount:   &rowCount,
+		Fields:     fields,
+		PrimaryKey: []string{},
+		Extensions: []format.ExtensionInfo{
+			spatialInfo,
+			shapefileInfo,
+			&Info{
+				BaseName:            filepath.Base(basePath),
+				ComponentExtensions: componentExtensions(components),
+				HasPRJ:              shapefileInfo.HasPRJ,
+				HasCPG:              shapefileInfo.HasCPG,
+				ShapeType:           geomType,
+				DBFVersion:          dbfHeader.Version,
+				Encoding:            shapefileInfo.Encoding,
+			},
+		},
+	}, nil
+}
+
+type shpHeaderInfo struct {
+	ShapeType shp.ShapeType
+	BBox      [4]float64
+}
+
+func readSHPHeader(path string) (*shpHeaderInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if _, err := file.Seek(32, io.SeekStart); err != nil {
+		return nil, err
+	}
+	var shapeType shp.ShapeType
+	if err := binary.Read(file, binary.LittleEndian, &shapeType); err != nil {
+		return nil, err
+	}
+	var bbox [4]float64
+	for i := range bbox {
+		if err := binary.Read(file, binary.LittleEndian, &bbox[i]); err != nil {
+			return nil, err
+		}
+	}
+	return &shpHeaderInfo{ShapeType: shapeType, BBox: bbox}, nil
+}
+
+type dbfHeaderInfo struct {
+	Version      byte
+	RecordCount  int32
+	HeaderLength int
+	RecordLength int
+	Fields       []FieldInfo
+}
+
+func readDBFHeader(path string, encodingName string) (*dbfHeaderInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var header [32]byte
+	if _, err := io.ReadFull(file, header[:]); err != nil {
+		return nil, err
+	}
+	recordCount := int32(binary.LittleEndian.Uint32(header[4:8]))
+	headerLength := int(binary.LittleEndian.Uint16(header[8:10]))
+	if headerLength < 33 {
+		return nil, fmt.Errorf("invalid DBF header length: %d", headerLength)
+	}
+	fieldCount := (headerLength - 33) / 32
+	fields := make([]FieldInfo, 0, fieldCount)
+	for i := 0; i < fieldCount; i++ {
+		var desc [32]byte
+		if _, err := io.ReadFull(file, desc[:]); err != nil {
+			return nil, err
+		}
+		var name [11]byte
+		copy(name[:], desc[0:11])
+		fieldType := desc[11]
+		fields = append(fields, FieldInfo{
+			Name:      decodeDBFName(name, encodingName),
+			Type:      DecodeDBFFieldType(fieldType),
+			RawType:   string(fieldType),
+			Size:      int(desc[16]),
+			Precision: int(desc[17]),
+		})
+	}
+	return &dbfHeaderInfo{
+		Version:      header[0],
+		RecordCount:  recordCount,
+		HeaderLength: headerLength,
+		RecordLength: int(binary.LittleEndian.Uint16(header[10:12])),
+		Fields:       fields,
+	}, nil
+}
+
+func componentExtensions(components []resource.ComponentRef) []string {
+	seen := map[string]bool{}
+	extensions := make([]string, 0, len(components))
+	for _, component := range components {
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(component.Path)), ".")
+		if ext == "" || seen[ext] {
+			continue
+		}
+		seen[ext] = true
+		extensions = append(extensions, ext)
+	}
+	sort.Strings(extensions)
+	return extensions
+}
+
+func (p *Parser) sampleTableFromPath(ctx context.Context, shpPath string, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, error) {
+	opts = p.resolveOptions(opts)
+	encodingName := ""
+	if opts != nil {
+		encodingName = opts.Encoding
+	}
+	if encodingName == "" || NormalizeDBFEncoding(encodingName) == "utf-8" {
+		if cpgEncoding := readCPGEncoding(strings.TrimSuffix(shpPath, filepath.Ext(shpPath))); cpgEncoding != "" {
+			encodingName = cpgEncoding
+		}
+	}
+	reader, err := OpenWithEncoding(shpPath, encodingName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)
 	}
@@ -195,8 +400,8 @@ func (p *Parser) sampleTableFromPath(ctx context.Context, shpPath string, offset
 		_, shape := reader.Shape()
 		record := make(map[string]interface{}, len(fields)+1)
 		for i, field := range fields {
-			fieldName := TrimDBFFieldName(field.Name)
-			rawValue := strings.TrimSpace(reader.ReadAttribute(recordIndex, i))
+			fieldName := reader.TrimDBFFieldName(field.Name)
+			rawValue := strings.TrimSpace(reader.ReadAttributeDecoded(recordIndex, i))
 			if rawValue == "" {
 				record[fieldName] = nil
 			} else {
@@ -218,6 +423,18 @@ func (p *Parser) sampleTableFromPath(ctx context.Context, shpPath string, offset
 		recordIndex++
 	}
 	return records, nil
+}
+
+func (p *Parser) resolveOptions(options *format.ParseOptions) *format.ParseOptions {
+	if options != nil {
+		copied := *options
+		return &copied
+	}
+	if p != nil && p.options != nil {
+		copied := *p.options
+		return &copied
+	}
+	return format.DefaultParseOptions()
 }
 
 func materializeComponents(ctx context.Context, components resource.ComponentReader) (tempDir string, basePath string, cleanup func(), err error) {
@@ -353,11 +570,8 @@ func ShapeToWKT(shape shp.Shape) (string, error) {
 }
 
 // geomToWKT 将 go-geom 几何转换为 WKT
-func geomToWKT(geom interface{}) (string, error) {
-	// 这里需要实现 WKT 转换
-	// 可以使用 github.com/twpayne/go-geom/encoding/wkt
-	// 简化实现，返回几何类型描述
-	return fmt.Sprintf("%T", geom), nil
+func geomToWKT(geometry geom.T) (string, error) {
+	return wkt.Marshal(geometry)
 }
 
 // determineShapefileGeometryType 根据 shape type 确定几何类型

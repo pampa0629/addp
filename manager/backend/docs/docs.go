@@ -1899,6 +1899,12 @@ const docTemplate = `{
                         "description": "每页数量，默认20 | Page size, default 20",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet",
+                        "name": "child_name",
+                        "in": "query"
                     }
                 ],
                 "responses": {

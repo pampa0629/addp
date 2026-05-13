@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/logger"
 	commonSpatial "github.com/addp/common/spatial"
@@ -50,31 +51,29 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		}), false, nil
 	}
 
+	components := componentFilesForShapefileContent(req)
 	tmpDir, err := os.MkdirTemp("", "shapefile-preview-*")
 	if err != nil {
 		return nil, false, fmt.Errorf("创建 shapefile 临时目录失败: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// 从 req.Name 获取文件名（不含扩展名）
-	rawExt := filepath.Ext(req.Name)
-	baseName := strings.TrimSuffix(req.Name, rawExt)
+	baseName := shapefileContentBaseName(req, components)
 	if baseName == "" {
 		baseName = models.ObjectPreviewKindShapefile
 	}
+	fullPath := req.Path + req.Name
 
 	shpPath := filepath.Join(tmpDir, baseName+".shp")
-	if _, err := downloadObjectToFile(baseStreamer, shpPath); err != nil {
+	if err := downloadShapefileComponent(ctx, ".shp", components, fullPath, baseStreamer, siblingProvider, shpPath); err != nil {
 		return nil, false, fmt.Errorf("下载 shapefile 主文件失败: %w", err)
 	}
 
-	// 构建完整路径用于下载同级文件
-	fullPath := req.Path + req.Name
 	requiredExts := []string{".shx", ".dbf"}
 	missing := make([]string, 0, len(requiredExts))
 	for _, ext := range requiredExts {
 		target := filepath.Join(tmpDir, baseName+ext)
-		if err := downloadSiblingToFile(fullPath, ext, siblingProvider, target); err != nil {
+		if err := downloadShapefileComponent(ctx, ext, components, fullPath, baseStreamer, siblingProvider, target); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				missing = append(missing, ext)
 				continue
@@ -93,11 +92,11 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		}), false, nil
 	}
 
-	prjText, _ := downloadSiblingText(fullPath, ".prj", siblingProvider)
-	cpgText, _ := downloadSiblingText(fullPath, ".cpg", siblingProvider)
+	prjText, _ := downloadShapefileComponentText(ctx, ".prj", components, fullPath, siblingProvider)
+	cpgText, _ := downloadShapefileComponentText(ctx, ".cpg", components, fullPath, siblingProvider)
 
 	// 使用 common/format/plugins/shapefile 的 Reader
-	reader, err := shapefile.Open(shpPath)
+	reader, err := shapefile.OpenWithEncoding(shpPath, shapefile.NormalizeDBFEncoding(cpgText))
 	if err != nil {
 		return nil, false, fmt.Errorf("打开 shapefile 失败: %w", err)
 	}
@@ -212,6 +211,107 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 
 	return decoratePreviewContent(content), truncated, nil
+}
+
+func componentFilesForShapefileContent(req *ObjectContentRequest) map[string]string {
+	if req == nil {
+		return nil
+	}
+	paths := stringSliceAttribute(req.Attributes, "component_files")
+	if len(paths) == 0 {
+		return nil
+	}
+	components := make(map[string]string, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if _, known := componentRoleForPreviewFormat(format.FormatShapefile, ext); !known {
+			continue
+		}
+		components[ext] = path
+	}
+	return components
+}
+
+func shapefileContentBaseName(req *ObjectContentRequest, components map[string]string) string {
+	if shpPath := components[".shp"]; shpPath != "" {
+		return strings.TrimSuffix(filepath.Base(shpPath), filepath.Ext(shpPath))
+	}
+	if req == nil {
+		return ""
+	}
+	return strings.TrimSuffix(req.Name, filepath.Ext(req.Name))
+}
+
+func downloadShapefileComponent(
+	ctx context.Context,
+	ext string,
+	components map[string]string,
+	fallbackBasePath string,
+	baseStreamer ObjectStreamProvider,
+	siblingProvider ObjectSiblingStreamProvider,
+	target string,
+) error {
+	cleanExt := strings.ToLower(ext)
+	if path := components[cleanExt]; path != "" {
+		return downloadComponentPathToFile(ctx, path, siblingProvider, target)
+	}
+	if len(components) == 0 {
+		if cleanExt == ".shp" {
+			_, err := downloadObjectToFile(baseStreamer, target)
+			return err
+		}
+		return downloadSiblingToFile(fallbackBasePath, cleanExt, siblingProvider, target)
+	}
+	return fs.ErrNotExist
+}
+
+func downloadComponentPathToFile(ctx context.Context, path string, provider ObjectSiblingStreamProvider, target string) error {
+	if provider == nil {
+		return fs.ErrNotExist
+	}
+	reader, err := provider(path)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	file, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(file, reader)
+	return err
+}
+
+func downloadShapefileComponentText(ctx context.Context, ext string, components map[string]string, fallbackBasePath string, provider ObjectSiblingStreamProvider) (string, error) {
+	cleanExt := strings.ToLower(ext)
+	path := components[cleanExt]
+	if path == "" {
+		if len(components) == 0 {
+			return downloadSiblingText(fallbackBasePath, cleanExt, provider)
+		}
+		return "", fs.ErrNotExist
+	}
+	if provider == nil {
+		return "", fs.ErrNotExist
+	}
+	reader, err := provider(path)
+	if err != nil {
+		return "", err
+	}
+	data, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil {
+		return "", readErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func toGeoJSONMap(value interface{}) map[string]interface{} {

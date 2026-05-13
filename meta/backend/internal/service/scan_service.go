@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"sort"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -14,7 +13,6 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
-	"github.com/addp/meta/internal/enginecap"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
@@ -316,36 +314,15 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
-	schemas, tables, fields := 0, 0, 0
-
-	// 获取插件以判断类型
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
-	}
-
-	family := enginecap.StorageFamily(p)
-
-	// 根据能力族路由到对应的扫描服务
-	if family == "document" || family == "graph" {
-		if _, ok := p.(plugin.CatalogProvider); !ok {
-			err = fmt.Errorf("engine %s declares %s storage but does not implement CatalogProvider", resource.EngineType, family)
-		} else {
-			// NoSQL 扫描（MongoDB、CouchDB 等）
-			schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(p, resource, effectiveTenantID, namespaces, scanDepth, reporter)
-		}
-	} else if family == "object" {
-		// 对象存储扫描（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
-		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, effectiveTenantID, objectPaths, scanDepth, reporter)
-	} else if family == "file" {
-		// 文件系统扫描（NFS、HDFS 等）—— 写入 root/dir/file/table 语义节点
-		schemas, tables, fields, err = s.scanFileSystemResourceWithReporter(resource, effectiveTenantID, objectPaths, scanDepth, reporter)
-	} else if family == "tabular" {
-		// 关系型数据库扫描（PostgreSQL、MySQL 等）
-		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, effectiveTenantID, namespaces, 0, scanDepth, reporter)
-	} else {
-		err = fmt.Errorf("plugin does not support metadata query")
-	}
+	result, err := s.dispatchScan(scanDispatchRequest{
+		Resource:    resource,
+		TenantID:    effectiveTenantID,
+		Namespaces:  namespaces,
+		ObjectPaths: objectPaths,
+		ScanDepth:   scanDepth,
+		Reporter:    reporter,
+		Mode:        scanDispatchManual,
+	})
 
 	if err != nil {
 		if reporter != nil {
@@ -362,9 +339,9 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 
 	finishFields := append(make([]any, 0, len(startFields)+6), startFields...)
 	finishFields = append(finishFields,
-		"namespaces_scanned", schemas,
-		"items_scanned", tables,
-		"fields_scanned", fields,
+		"namespaces_scanned", result.Namespaces,
+		"items_scanned", result.Items,
+		"fields_scanned", result.Fields,
 		"duration_ms", durationMs,
 	)
 	s.log.Info("资源扫描完成", finishFields...)
@@ -374,7 +351,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	}
 
 	if directExecID != "" {
-		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{Namespaces: schemas, Items: tables, Fields: fields})
+		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{Namespaces: result.Namespaces, Items: result.Items, Fields: result.Fields})
 		s.immediateRecorder.Complete(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
 		s.publishScanCompletedEvent(resource.ID, effectiveTenantID, models.JSONMap(resultMeta))
 	}
@@ -382,7 +359,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	return scantask.NewScanResponse(
 		"success",
 		"Scan completed successfully",
-		scantask.ScanCounts{Namespaces: schemas, Items: tables, Fields: fields},
+		scantask.ScanCounts{Namespaces: result.Namespaces, Items: result.Items, Fields: result.Fields},
 		startTime,
 		completedAt,
 	), nil
@@ -390,177 +367,29 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
-	engineID := resource.ID
-
 	startFields := append(connectionLogFields(resource),
 		"scan_log_id", scanLogID,
 		"mode", "auto",
 	)
 	s.log.Info("开始扫描资源", startFields...)
 
-	// 根据插件类型路由到对应的扫描服务
-	p0, err0 := plugin.Get(resource.EngineType)
-	if err0 != nil {
-		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
-	}
-
-	family := enginecap.StorageFamily(p0)
-
-	if family == "document" || family == "graph" {
-		if _, ok := p0.(plugin.CatalogProvider); !ok {
-			return 0, 0, 0, fmt.Errorf("engine %s declares %s storage but does not implement CatalogProvider", resource.EngineType, family)
-		}
-		catalogProvider := p0.(plugin.CatalogProvider)
-		databasesInfo, err := metacatalog.NoSQLDatabases(context.Background(), resource, catalogProvider)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to list namespaces: %w", err)
-		}
-		namespaces := make([]string, 0, len(databasesInfo))
-		for _, info := range databasesInfo {
-			namespaces = append(namespaces, info.Name)
-		}
-		schemas, items, fields, err := s.scanNoSQLResourceWithReporter(p0, resource, tenantID, namespaces, "deep", nil)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("%s scan failed: %w", family, err)
-		}
-		s.log.Info("NoSQL 资源扫描完成", cloneLogFields(startFields,
-			"family", family,
-			"namespaces_scanned", schemas,
-			"items_scanned", items,
-			"fields_scanned", fields,
-		)...)
-		return schemas, items, fields, nil
-	}
-
-	if family == "object" {
-		// 对象存储类型（MinIO、S3 等）—— 写入 bucket/prefix/object 语义节点
-		buckets, objects, _, err := s.scanObjectStorageResourceWithReporter(resource, tenantID, nil, "deep", nil)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("object storage scan failed: %w", err)
-		}
-		s.log.Info("对象存储资源扫描完成", cloneLogFields(startFields,
-			"buckets_scanned", buckets,
-			"objects_scanned", objects,
-		)...)
-		return buckets, objects, 0, nil
-	}
-
-	if family == "file" {
-		// 文件系统类型（NFS 等）—— 写入 root/dir/file/table 语义节点
-		paths, err := metacatalog.FileSystemRootPaths(context.Background(), resource, p0)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to list roots: %w", err)
-		}
-
-		if len(paths) == 0 {
-			s.log.Info("文件系统资源无可扫描根节点，跳过扫描", startFields...)
-			return 0, 0, 0, nil
-		}
-		sort.Strings(paths)
-
-		s.log.Info("文件系统资源扫描开始", cloneLogFields(startFields, "root_count", len(paths), "roots", paths)...)
-
-		totalRoots, totalItems, err := s.fsScanService.ScanPaths(resource, tenantID, paths, "deep", nil)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("filesystem scan failed: %w", err)
-		}
-
-		s.log.Info("文件系统资源扫描完成", cloneLogFields(startFields,
-			"roots_scanned", totalRoots,
-			"items_scanned", totalItems,
-		)...)
-		return totalRoots, totalItems, 0, nil
-	}
-
-	schemasInfo, err := metacatalog.SchemaInfos(context.Background(), resource, p0)
+	result, err := s.dispatchScan(scanDispatchRequest{
+		Resource:  resource,
+		TenantID:  tenantID,
+		ScanDepth: "deep",
+		ScanLogID: scanLogID,
+		Mode:      scanDispatchAuto,
+	})
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to list schemas: %w", err)
+		return 0, 0, 0, err
 	}
 
-	totalSchemas := 0
-	totalTables := 0
-	totalFields := 0
-
-	s.log.Info("数据库资源扫描开始", cloneLogFields(startFields, "schema_total", len(schemasInfo))...)
-
-	// 记录本次扫描到的 schema
-	scannedSchemas := make(map[string]bool)
-
-	for _, schemaInfo := range schemasInfo {
-		scannedSchemas[schemaInfo.Name] = true
-
-		var node models.MetaNode
-		err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-			tenantID, engineID, "schema", schemaInfo.Name).First(&node).Error
-
-		// 无论 schema 是否已存在,都进行扫描以确保元数据同步
-		// 这样可以触发表的增量更新和过期表的清理
-		if err == gorm.ErrRecordNotFound || err == nil {
-			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, engineID, schemaInfo.Name, "deep")
-			if err != nil {
-				s.log.Warn("Schema 扫描失败",
-					"engine_id", engineID,
-					"tenant_id", tenantID,
-					"schema", schemaInfo.Name,
-					"error", err,
-				)
-				continue
-			}
-			totalSchemas += schemas
-			totalTables += tables
-			totalFields += fields
-		} else {
-			s.log.Warn("查询 Schema 节点失败",
-				"engine_id", engineID,
-				"tenant_id", tenantID,
-				"schema", schemaInfo.Name,
-				"error", err,
-			)
-		}
-	}
-
-	// 软删除那些不再存在的 schema
-	var existingSchemas []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ?",
-		tenantID, engineID, "schema").Find(&existingSchemas).Error; err != nil {
-		s.log.Warn("查询已存在 schema 节点失败", "error", err)
-	} else {
-		s.log.Info("开始检查需要清理的 schema",
-			"engine_id", engineID,
-			"existing_count", len(existingSchemas),
-			"scanned_count", len(scannedSchemas),
-		)
-		for _, schemaNode := range existingSchemas {
-			if !scannedSchemas[schemaNode.Name] {
-				s.log.Info("Schema 已不存在，标记删除",
-					"engine_id", engineID,
-					"schema", schemaNode.Name,
-				)
-				if err := s.db.Delete(&schemaNode).Error; err != nil {
-					s.log.Warn("软删除 schema 节点失败",
-						"schema", schemaNode.Name,
-						"error", err,
-					)
-				} else {
-					// 同时软删除该 schema 下的所有表
-					if err := s.db.Where("node_id = ?", schemaNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
-						s.log.Warn("软删除 schema 下的表失败",
-							"schema", schemaNode.Name,
-							"error", err,
-						)
-					}
-				}
-			}
-		}
-	}
-
-	s.log.Info("数据库资源扫描完成", cloneLogFields(startFields,
-		"namespaces_scanned", totalSchemas,
-		"items_scanned", totalTables,
-		"fields_scanned", totalFields,
+	s.log.Info("资源扫描完成", cloneLogFields(startFields,
+		"namespaces_scanned", result.Namespaces,
+		"items_scanned", result.Items,
+		"fields_scanned", result.Fields,
 	)...)
-
-	return totalSchemas, totalTables, totalFields, nil
+	return result.Namespaces, result.Items, result.Fields, nil
 }
 
 func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {

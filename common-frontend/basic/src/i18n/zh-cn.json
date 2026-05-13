@@ -278,6 +278,7 @@
     "sheetsTruncatedBody": "当前仅展示前 {limit} 个工作表，可下载 Excel 查看全部内容。",
     "rowsTruncatedTitle": "示例数据有限",
     "rowsTruncatedBody": "每个工作表仅展示前 {limit} 行样例数据。",
+    "sheetSelector": "工作表",
     "sheetName": "工作表",
     "sampleRows": "示例行数",
     "totalRows": "总行数",

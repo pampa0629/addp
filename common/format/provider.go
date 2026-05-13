@@ -97,6 +97,15 @@ type MediaInfo struct {
 	SpatialAttrs map[string]interface{}
 }
 
+// ContainerInfoProvider 表示格式能够提供容器内部对象信息。
+//
+// 结果应由 Meta 映射到 type_info.container 和 format_info.<format>；
+// provider 不决定 child 是否成为独立 data item，也不返回上层展示 DTO。
+type ContainerInfoProvider interface {
+	Provider
+	DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*ContainerInfo, error)
+}
+
 type DocumentInfoProvider interface {
 	Provider
 	DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error)
@@ -127,6 +136,15 @@ type ComponentTableProvider interface {
 	SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
+// ComponentSpecProvider 表示格式能够声明多组件资源的组件规格。
+//
+// 该接口只描述组件角色和必需性，调用方仍负责 data item 边界识别、
+// 资源路径发现与 ResourceReader 构造。
+type ComponentSpecProvider interface {
+	Provider
+	ComponentSpecs() []resource.ComponentSpec
+}
+
 type ScopeTableProvider interface {
 	TableProvider
 	DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *ParseOptions) (*TableInfo, error)
@@ -153,6 +171,11 @@ type documentProviderAdapter struct {
 type mediaProviderAdapter struct {
 	formatType FormatType
 	describe   func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error)
+}
+
+type containerProviderAdapter struct {
+	formatType FormatType
+	describe   func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error)
 }
 
 func (p tableProviderAdapter) Format() FormatType {
@@ -259,32 +282,55 @@ func (p mediaProviderAdapter) DescribeMedia(ctx context.Context, input io.Reader
 	return p.describe(ctx, input, options)
 }
 
+func (p containerProviderAdapter) Format() FormatType {
+	return p.formatType
+}
+
+func (p containerProviderAdapter) Capabilities() FormatCapability {
+	capability, ok := GetFormatCapability(p.formatType)
+	if ok {
+		return capability
+	}
+	return FormatCapability{
+		Format:        p.formatType,
+		DataType:      FormatDataTypeContainer,
+		Layouts:       []string{FormatLayoutSingle},
+		ProviderHints: []string{FormatProviderContainer},
+	}
+}
+
+func (p containerProviderAdapter) DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*ContainerInfo, error) {
+	return p.describe(ctx, input, options)
+}
+
 type ProviderRegistry struct {
-	mu                    sync.RWMutex
-	formatPlugins         map[FormatType]FormatPlugin
-	tableProviders        map[FormatType]TableProvider
-	formatInfoProviders   map[FormatType]FormatInfoProvider
-	tableInfoProviders    map[FormatType]TableInfoProvider
-	tableSampleProviders  map[FormatType]TableSampleProvider
-	documentProviders     map[FormatType]DocumentProvider
-	documentInfoProviders map[FormatType]DocumentInfoProvider
-	documentTextReaders   map[FormatType]DocumentTextReader
-	mediaInfoProviders    map[FormatType]MediaInfoProvider
+	mu                     sync.RWMutex
+	formatPlugins          map[FormatType]FormatPlugin
+	tableProviders         map[FormatType]TableProvider
+	formatInfoProviders    map[FormatType]FormatInfoProvider
+	tableInfoProviders     map[FormatType]TableInfoProvider
+	tableSampleProviders   map[FormatType]TableSampleProvider
+	documentProviders      map[FormatType]DocumentProvider
+	documentInfoProviders  map[FormatType]DocumentInfoProvider
+	documentTextReaders    map[FormatType]DocumentTextReader
+	mediaInfoProviders     map[FormatType]MediaInfoProvider
+	containerInfoProviders map[FormatType]ContainerInfoProvider
 }
 
 var globalProviderRegistry = NewProviderRegistry()
 
 func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
-		formatPlugins:         make(map[FormatType]FormatPlugin),
-		tableProviders:        make(map[FormatType]TableProvider),
-		formatInfoProviders:   make(map[FormatType]FormatInfoProvider),
-		tableInfoProviders:    make(map[FormatType]TableInfoProvider),
-		tableSampleProviders:  make(map[FormatType]TableSampleProvider),
-		documentProviders:     make(map[FormatType]DocumentProvider),
-		documentInfoProviders: make(map[FormatType]DocumentInfoProvider),
-		documentTextReaders:   make(map[FormatType]DocumentTextReader),
-		mediaInfoProviders:    make(map[FormatType]MediaInfoProvider),
+		formatPlugins:          make(map[FormatType]FormatPlugin),
+		tableProviders:         make(map[FormatType]TableProvider),
+		formatInfoProviders:    make(map[FormatType]FormatInfoProvider),
+		tableInfoProviders:     make(map[FormatType]TableInfoProvider),
+		tableSampleProviders:   make(map[FormatType]TableSampleProvider),
+		documentProviders:      make(map[FormatType]DocumentProvider),
+		documentInfoProviders:  make(map[FormatType]DocumentInfoProvider),
+		documentTextReaders:    make(map[FormatType]DocumentTextReader),
+		mediaInfoProviders:     make(map[FormatType]MediaInfoProvider),
+		containerInfoProviders: make(map[FormatType]ContainerInfoProvider),
 	}
 }
 
@@ -356,6 +402,11 @@ func (r *ProviderRegistry) RegisterFormatPlugin(plugin FormatPlugin) error {
 	}
 	if provider, ok := plugin.(MediaInfoProvider); ok {
 		if err := r.RegisterMediaInfoProvider(provider); err != nil {
+			return err
+		}
+	}
+	if provider, ok := plugin.(ContainerInfoProvider); ok {
+		if err := r.RegisterContainerInfoProvider(provider); err != nil {
 			return err
 		}
 	}
@@ -531,6 +582,25 @@ func (r *ProviderRegistry) RegisterMediaInfoProvider(provider MediaInfoProvider)
 	return nil
 }
 
+func RegisterContainerInfoProvider(provider ContainerInfoProvider) error {
+	return globalProviderRegistry.RegisterContainerInfoProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterContainerInfoProvider(provider ContainerInfoProvider) error {
+	if provider == nil {
+		return fmt.Errorf("container info provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if formatType == "" || formatType == FormatUnknown {
+		return fmt.Errorf("container info provider must define format")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.containerInfoProviders[formatType] = provider
+	return nil
+}
+
 func GetFormatPlugin(formatType FormatType) (FormatPlugin, error) {
 	return globalProviderRegistry.GetFormatPlugin(formatType)
 }
@@ -670,6 +740,21 @@ func (r *ProviderRegistry) GetMediaInfoProvider(formatType FormatType) (MediaInf
 	provider, ok := r.mediaInfoProviders[formatType]
 	if !ok {
 		return nil, fmt.Errorf("no media info provider registered for format: %s", formatType)
+	}
+	return provider, nil
+}
+
+func GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, error) {
+	return globalProviderRegistry.GetContainerInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	provider, ok := r.containerInfoProviders[formatType]
+	if !ok {
+		return nil, fmt.Errorf("no container info provider registered for format: %s", formatType)
 	}
 	return provider, nil
 }
@@ -844,6 +929,24 @@ func (r *ProviderRegistry) ListMediaInfoProviderFormats() []FormatType {
 	return formats
 }
 
+func ListContainerInfoProviderFormats() []FormatType {
+	return globalProviderRegistry.ListContainerInfoProviderFormats()
+}
+
+func (r *ProviderRegistry) ListContainerInfoProviderFormats() []FormatType {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	formats := make([]FormatType, 0, len(r.containerInfoProviders))
+	for formatType := range r.containerInfoProviders {
+		formats = append(formats, formatType)
+	}
+	sort.Slice(formats, func(i, j int) bool {
+		return formats[i] < formats[j]
+	})
+	return formats
+}
+
 func NewFormatInfoProvider(
 	formatType FormatType,
 	describe func(context.Context, io.Reader, *ParseOptions) (map[string]interface{}, error),
@@ -891,6 +994,21 @@ func NewMediaProvider(
 		}
 	}
 	return mediaProviderAdapter{
+		formatType: formatType,
+		describe:   describe,
+	}
+}
+
+func NewContainerInfoProvider(
+	formatType FormatType,
+	describe func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error),
+) ContainerInfoProvider {
+	if describe == nil {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error) {
+			return nil, fmt.Errorf("container info provider %s does not implement DescribeContainer", formatType)
+		}
+	}
+	return containerProviderAdapter{
 		formatType: formatType,
 		describe:   describe,
 	}

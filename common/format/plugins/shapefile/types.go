@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/resource"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -22,6 +23,57 @@ type FieldInfo struct {
 	RawType   string
 	Size      int
 	Precision int
+}
+
+type Info struct {
+	BaseName            string   `json:"base_name,omitempty"`
+	ComponentExtensions []string `json:"component_extensions,omitempty"`
+	HasPRJ              bool     `json:"has_prj,omitempty"`
+	HasCPG              bool     `json:"has_cpg,omitempty"`
+	ShapeType           string   `json:"shape_type,omitempty"`
+	DBFVersion          byte     `json:"dbf_version,omitempty"`
+	Encoding            string   `json:"encoding,omitempty"`
+}
+
+func ComponentSpecs() []resource.ComponentSpec {
+	return []resource.ComponentSpec{
+		{Extension: ".shp", Role: "main", Required: true},
+		{Extension: ".shx", Role: "index", Required: true},
+		{Extension: ".dbf", Role: "attributes", Required: true},
+		{Extension: ".prj", Role: "projection", Required: false},
+		{Extension: ".cpg", Role: "encoding", Required: false},
+		{Extension: ".sbn", Role: "spatial_index", Required: false},
+		{Extension: ".sbx", Role: "spatial_index", Required: false},
+	}
+}
+
+func (i *Info) ExtensionType() string {
+	return "shapefile"
+}
+
+func (i *Info) FormatAttributes() map[string]interface{} {
+	if i == nil {
+		return nil
+	}
+	attrs := map[string]interface{}{}
+	if i.BaseName != "" {
+		attrs["base_name"] = i.BaseName
+	}
+	if len(i.ComponentExtensions) > 0 {
+		attrs["component_extensions"] = append([]string(nil), i.ComponentExtensions...)
+	}
+	attrs["has_prj"] = i.HasPRJ
+	attrs["has_cpg"] = i.HasCPG
+	if i.ShapeType != "" {
+		attrs["shape_type"] = i.ShapeType
+	}
+	if i.DBFVersion != 0 {
+		attrs["dbf_version"] = i.DBFVersion
+	}
+	if i.Encoding != "" {
+		attrs["encoding"] = i.Encoding
+	}
+	return attrs
 }
 
 // DecodeDBFFieldType converts DBF field type to human-readable string

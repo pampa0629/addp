@@ -182,6 +182,57 @@ func TestObjectContentTableFormatUsesExplicitFormat(t *testing.T) {
 	}
 }
 
+func TestBuildExcelPreviewFromAttributes(t *testing.T) {
+	preview := buildExcelPreviewFromAttributes(map[string]interface{}{
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"children": []interface{}{
+					map[string]interface{}{
+						"name":         "Cities",
+						"kind":         "sheet",
+						"row_count":    int64(7),
+						"column_count": int64(2),
+						"has_header":   true,
+						"fields": []interface{}{
+							map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "original_type": "string", "nullable": true},
+							map[string]interface{}{"name": "population", "type": string(format.FieldTypeInt), "original_type": "number", "nullable": true},
+						},
+					},
+				},
+			},
+		},
+		"format_info": map[string]interface{}{
+			"excel": map[string]interface{}{
+				"default_sheet": "Cities",
+				"sheet_count":   int64(1),
+				"row_limit":     int64(20),
+			},
+		},
+	}, 1024)
+
+	if preview == nil {
+		t.Fatal("buildExcelPreviewFromAttributes() returned nil")
+	}
+	if preview["default_sheet"] != "Cities" || preview["active_sheet"] != "Cities" {
+		t.Fatalf("default/active sheet = %#v/%#v, want Cities", preview["default_sheet"], preview["active_sheet"])
+	}
+	sheets, ok := preview["sheets"].([]map[string]interface{})
+	if !ok || len(sheets) != 1 {
+		t.Fatalf("sheets = %#v, want one sheet", preview["sheets"])
+	}
+	if sheets[0]["name"] != "Cities" || sheets[0]["row_count"] != int64(7) {
+		t.Fatalf("sheet summary = %#v, want Cities row_count 7", sheets[0])
+	}
+	headers, ok := sheets[0]["headers"].([]string)
+	if !ok || len(headers) != 2 || headers[0] != "city" || headers[1] != "population" {
+		t.Fatalf("headers = %#v, want city/population", sheets[0]["headers"])
+	}
+	summary, ok := preview["summary"].(map[string]interface{})
+	if !ok || summary["size_bytes"] != int64(1024) {
+		t.Fatalf("summary = %#v, want size_bytes 1024", preview["summary"])
+	}
+}
+
 func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
 	registry := NewObjectContentRegistry()
 	LoadObjectContentPlugins(registry, "../../plugins/content")
