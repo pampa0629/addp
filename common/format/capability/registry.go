@@ -51,6 +51,7 @@ const (
 	FormatWebM       Format = Format(formatregistry.FormatWebM)
 	FormatWebP       Format = Format(formatregistry.FormatWebP)
 	FormatWPS        Format = Format(formatregistry.FormatWPS)
+	FormatZIP        Format = Format(formatregistry.FormatZIP)
 	FormatAvro       Format = Format(formatregistry.FormatAvro)
 )
 

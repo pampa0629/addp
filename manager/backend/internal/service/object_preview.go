@@ -333,10 +333,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			Attributes:  preview.Object.Attributes,
 		}
 		if url := buildObjectStreamURL(resource.ID, preview.Object.ObjectKey); url != "" {
-			if req.Attributes == nil {
-				req.Attributes = make(map[string]interface{})
-			}
-			req.Attributes["preview_url"] = url
+			req.PreviewURL = url
 			preview.Object.URL = url
 		}
 		handler := p.content.Resolve(req)

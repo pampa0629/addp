@@ -1,6 +1,7 @@
 package metaitem
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"database/sql"
@@ -130,6 +131,33 @@ func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) 
 	}
 }
 
+func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
+	t.Parallel()
+
+	data := zipContainerBytes(t, map[string]string{
+		"data/cities.csv":  "id,name\n1,Hangzhou\n",
+		"notes/readme.txt": "hello",
+	})
+
+	attrs := models.JSONMap{}
+	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)}
+	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+
+	container := attrs["type_info"].(map[string]interface{})["container"].(map[string]interface{})
+	children := container["children"].([]map[string]interface{})
+	if len(children) != 2 || children[0]["name"] != "data/cities.csv" {
+		t.Fatalf("children = %#v", children)
+	}
+	if children[0]["format"] != string(format.FormatCSV) {
+		t.Fatalf("child format = %#v, want csv", children[0]["format"])
+	}
+	if _, ok := children[0]["fields"]; ok {
+		t.Fatalf("zip child should not carry fields: %#v", children[0])
+	}
+}
+
 func sqliteDatabaseBytes(t *testing.T, setup func(*sql.DB)) []byte {
 	t.Helper()
 
@@ -157,4 +185,24 @@ func sqliteDatabaseBytes(t *testing.T, setup func(*sql.DB)) []byte {
 		t.Fatalf("read sqlite: %v", err)
 	}
 	return data
+}
+
+func zipContainerBytes(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, body := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create zip entry %s: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			t.Fatalf("write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
 }

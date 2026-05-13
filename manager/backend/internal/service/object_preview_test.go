@@ -118,12 +118,18 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 		t.Fatalf("expected WPS handler to match descriptor MIME")
 	}
 
-	excel, err := builtinContentFactories["excel"](ObjectContentPluginConfig{Name: "excel"})
+	container, err := builtinContentFactories["container"](ObjectContentPluginConfig{Name: "container"})
 	if err != nil {
-		t.Fatalf("build excel handler: %v", err)
+		t.Fatalf("build container handler: %v", err)
 	}
-	if !excel.Matches(&ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"}) {
-		t.Fatalf("expected Excel handler to match descriptor extension and MIME")
+	for _, req := range []*ObjectContentRequest{
+		{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"},
+		{Extension: ".gpkg", ContentType: "application/geopackage+sqlite3"},
+		{Extension: ".sqlite", ContentType: "application/x-sqlite3"},
+	} {
+		if !container.Matches(req) {
+			t.Fatalf("expected container handler to match descriptor request: %#v", req)
+		}
 	}
 
 	image, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
@@ -132,6 +138,9 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 	}
 	if !image.Matches(&ObjectContentRequest{Extension: ".avif", ContentType: "image/avif"}) {
 		t.Fatalf("expected image handler to match media descriptor extension and MIME")
+	}
+	if !image.Matches(&ObjectContentRequest{Format: "jpg", Extension: ".jpg", ContentType: "image/jpeg"}) {
+		t.Fatalf("expected image handler to normalize jpg format alias to jpeg")
 	}
 }
 
@@ -157,7 +166,7 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 		{
 			name: "excel",
 			req:  ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"},
-			want: "builtin:content-excel",
+			want: "builtin:content-container",
 		},
 		{
 			name: "image",
@@ -197,9 +206,7 @@ func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
 			Extension:   ".avif",
 			ContentType: "image/avif",
 			Size:        1024,
-			Attributes: map[string]interface{}{
-				"preview_url": "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/photo.avif",
-			},
+			PreviewURL:  "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/photo.avif",
 		},
 		func(limit int64) ([]byte, bool, error) {
 			t.Fatalf("image handler must not read image bytes")
@@ -220,6 +227,39 @@ func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
 	}
 	if content.Encoding == "base64" {
 		t.Fatalf("image handler should not return base64 image data: %#v", content)
+	}
+}
+
+func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	if err != nil {
+		t.Fatalf("build image handler: %v", err)
+	}
+	content, _, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{
+			Name:        "photo.jpg",
+			Extension:   ".jpg",
+			ContentType: "image/jpeg",
+			Attributes: map[string]interface{}{
+				"preview_url": "http://minio.internal/addp/image/photo.jpg",
+				"url":         "http://example.invalid/photo.jpg",
+			},
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("image handler must not read image bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if content == nil {
+		t.Fatal("content is nil")
+	}
+	if content.URL != "" || content.PreviewMaterial == "url" {
+		t.Fatalf("image handler trusted attribute URL: %#v", content)
 	}
 }
 

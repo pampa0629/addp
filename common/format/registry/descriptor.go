@@ -49,6 +49,7 @@ const (
 	FormatWebM       Format = "webm"
 	FormatWebP       Format = "webp"
 	FormatWPS        Format = "wps"
+	FormatZIP        Format = "zip"
 	FormatAvro       Format = "avro"
 )
 
@@ -569,6 +570,23 @@ var builtinDescriptors = []Descriptor{
 		},
 		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
 		Spatial:        true,
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	},
+	{
+		ID:            "builtin-zip",
+		Format:        FormatZIP,
+		I18nKey:       "format.zip",
+		DataType:      DataTypeContainer,
+		Layouts:       []string{LayoutSingle},
+		ProviderHints: []string{ProviderContainer},
+		Identification: Identification{
+			Extensions: []string{".zip"},
+			MimeTypes:  []string{"application/zip", "application/x-zip-compressed"},
+		},
+		Providers: ProviderDescriptor{
+			ContainerInfo: true,
+		},
+		ContentReaders: []string{ContentReaderRawContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{

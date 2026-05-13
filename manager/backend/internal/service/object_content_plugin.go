@@ -28,6 +28,7 @@ type ObjectContentRequest struct {
 	ContentType string
 	Size        int64
 	Attributes  map[string]interface{}
+	PreviewURL  string
 }
 
 // ObjectContentProvider 用于按需读取对象数据，limit <= 0 表示使用默认限制。
@@ -250,10 +251,6 @@ func defaultFrontendRenderer(kind string) string {
 		return "map"
 	case models.ObjectPreviewKindContainer:
 		return models.ObjectPreviewKindContainer
-	case models.ObjectPreviewKindExcel:
-		return models.ObjectPreviewKindContainer
-	case models.ObjectPreviewKindSQLite:
-		return models.ObjectPreviewKindContainer
 	case models.ObjectPreviewKindMarkdown:
 		return models.ObjectPreviewKindMarkdown
 	case models.ObjectPreviewKindTable:
@@ -282,8 +279,6 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindJSON:        "JSON",
 		models.ObjectPreviewKindGeoJSON:     "GeoJSON",
 		models.ObjectPreviewKindContainer:   "容器",
-		models.ObjectPreviewKindExcel:       "Excel",
-		models.ObjectPreviewKindSQLite:      "SQLite",
 		models.ObjectPreviewKindText:        "文本",
 		models.ObjectPreviewKindMarkdown:    "Markdown",
 		models.ObjectPreviewKindUnsupported: "暂不支持的格式",
@@ -399,6 +394,9 @@ func normalizeContentFormat(formatName string) string {
 	case "", "unknown":
 		return ""
 	default:
+		if formatType := format.DetectFormat("value."+normalized, nil); formatType != format.FormatUnknown {
+			return string(formatType)
+		}
 		return normalized
 	}
 }
@@ -475,10 +473,10 @@ type imageContentHandler struct {
 
 func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	metadata := buildPreviewMetadata(req, 0)
-	if url := objectPreviewURL(req); url != "" {
+	if req != nil && strings.TrimSpace(req.PreviewURL) != "" {
 		content := &models.ObjectPreviewContent{
 			Kind:            models.ObjectPreviewKindImage,
-			URL:             url,
+			URL:             strings.TrimSpace(req.PreviewURL),
 			PreviewMaterial: models.PreviewMaterialURL,
 			Metadata:        metadata,
 		}
@@ -490,18 +488,6 @@ func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentReques
 		Text:     "图片预览需要对象流地址",
 		Metadata: metadata,
 	}), false, nil
-}
-
-func objectPreviewURL(req *ObjectContentRequest) string {
-	if req == nil || req.Attributes == nil {
-		return ""
-	}
-	for _, key := range []string{"preview_url", "url", "download_url", "signed_url"} {
-		if value, ok := req.Attributes[key].(string); ok && strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 type jsonContentHandler struct {
@@ -659,68 +645,6 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 
 func emptyContainerPreview(formatName string) map[string]interface{} {
 	return buildContainerPreview(formatName, "", "", []map[string]interface{}{}, map[string]interface{}{})
-}
-
-type excelContentHandler struct {
-	baseContentHandler
-	maxBytes   int64
-	childLimit int
-}
-
-const (
-	defaultExcelSheetLimit = 5
-	maxExcelPreviewBytes   = 15 * 1024 * 1024
-)
-
-func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
-	data, truncated, err := fetcher(h.maxBytes)
-	if err != nil {
-		return nil, false, err
-	}
-
-	if len(data) == 0 {
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindExcel,
-			Text: "Excel 文件为空或无法读取",
-		}), truncated, nil
-	}
-
-	if truncated {
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:      models.ObjectPreviewKindExcel,
-			Text:      buildLimitExceededMessage(models.ObjectPreviewKindExcel, req, h.maxBytes),
-			Truncated: true,
-		}), true, nil
-	}
-
-	formatType := objectContentContainerFormat(req)
-	provider, err := format.GetContainerInfoProvider(formatType)
-	if err != nil {
-		return nil, false, fmt.Errorf("获取 %s 容器 provider 失败: %w", formatType, err)
-	}
-	info, err := provider.DescribeContainer(ctx, bytes.NewReader(data), format.ContainerParseOptions(h.childLimit, 20))
-	if err != nil {
-		return nil, false, fmt.Errorf("提取 %s 容器元数据失败: %w", formatType, err)
-	}
-	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
-	previewTruncated := containerInfoTruncated(info)
-
-	metadata := map[string]interface{}{
-		"format":      string(formatType),
-		"child_limit": h.childLimit,
-	}
-	if req != nil {
-		metadata["size_bytes"] = req.Size
-		metadata["path"] = req.Path
-		metadata["name"] = req.Name
-	}
-
-	return decoratePreviewContent(&models.ObjectPreviewContent{
-		Kind:      models.ObjectPreviewKindContainer,
-		JSON:      preview,
-		Metadata:  metadata,
-		Truncated: previewTruncated,
-	}), truncated || previewTruncated, nil
 }
 
 func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
@@ -1154,7 +1078,7 @@ func objectContentContainerFormat(req *ObjectContentRequest) format.FormatType {
 			}
 		}
 	}
-	return format.FormatType(strings.TrimSpace(models.ObjectPreviewKindSQLite))
+	return firstContainerFormatType()
 }
 
 func isContainerFormatType(formatType format.FormatType) bool {
@@ -1163,6 +1087,15 @@ func isContainerFormatType(formatType format.FormatType) bool {
 	}
 	descriptor, ok := format.GetFormatDescriptor(formatType)
 	return ok && descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo
+}
+
+func firstContainerFormatType() format.FormatType {
+	for _, descriptor := range format.ListFormatDescriptors() {
+		if descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo {
+			return descriptor.Format
+		}
+	}
+	return format.FormatUnknown
 }
 
 type commandContentHandler struct {

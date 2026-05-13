@@ -65,13 +65,6 @@
       "enabled": true
     },
     {
-      "file": "content/114_content_excel.json",
-      "name": "content:excel",
-      "description": "Excel 文件预览",
-      "priority": 114,
-      "enabled": true
-    },
-    {
       "file": "content/120_content_image.json",
       "name": "content:image",
       "description": "图片文件预览",
@@ -93,9 +86,9 @@
       "enabled": true
     },
     {
-      "file": "content/150_content_sqlite.json",
-      "name": "content:sqlite",
-      "description": "SQLite 数据库预览",
+      "file": "content/150_content_container.json",
+      "name": "content:container",
+      "description": "容器文件预览",
       "priority": 150,
       "enabled": true
     },

@@ -53,6 +53,7 @@ const (
 	FormatParquet FormatType = "parquet"
 	FormatORC     FormatType = "orc"
 	FormatAvro    FormatType = "avro"
+	FormatZIP     FormatType = "zip"
 
 	// 多媒体格式
 	FormatVideo FormatType = "video"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	commonformat "github.com/addp/common/format"
@@ -142,30 +143,6 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			},
 			maxBytes: cfg.maxBytesOr(maxGeoJSONPreview),
 			kind:     models.ObjectPreviewKindGeoJSON,
-		}
-		return handler, nil
-	},
-	models.ObjectPreviewKindExcel: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &excelContentHandler{
-			baseContentHandler: baseContentHandler{
-				name:     cfg.Name,
-				priority: cfg.priorityOr(62),
-				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatExcel, nil, []string{"xlsx", "xls"}),
-			},
-			maxBytes:   cfg.maxBytesOr(maxExcelPreviewBytes),
-			childLimit: defaultExcelSheetLimit,
-		}
-		handler.childLimit = metadataInt(cfg.Metadata, "child_limit", metadataInt(cfg.Metadata, "sheet_limit", handler.childLimit))
-		return handler, nil
-	},
-	models.ObjectPreviewKindSQLite: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &containerDatabaseContentHandler{
-			baseContentHandler: baseContentHandler{
-				name:     cfg.Name,
-				priority: cfg.priorityOr(58),
-				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, []commonformat.FormatType{commonformat.FormatGeoPackage}, []string{"application/octet-stream"}),
-			},
-			maxBytes: cfg.maxBytesOr(maxContainerPreviewBytes),
 		}
 		return handler, nil
 	},
@@ -358,6 +335,9 @@ func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectConte
 		contentTypes = append(contentTypes, descriptor.Identification.MimeTypes...)
 	}
 	contentTypes = append(contentTypes, "application/octet-stream")
+	sort.Strings(formats)
+	sort.Strings(extensions)
+	sort.Strings(contentTypes)
 	return newObjectContentMatcher(
 		normalizeFormatsOrDefault(match.Formats, formats),
 		normalizeExtensionsOrDefault(match.Extensions, extensions),

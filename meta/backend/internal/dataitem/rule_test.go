@@ -60,6 +60,7 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 	seenMarkdown := false
 	seenParquet := false
 	seenText := false
+	seenZIP := false
 	for _, rule := range rules {
 		if err := ValidateFormatRule(rule); err != nil {
 			t.Fatalf("ValidateFormatRule(%s) error = %v", rule.Format, err)
@@ -83,9 +84,14 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 			rule.Organization == OrganizationSingle {
 			seenText = true
 		}
+		if rule.Format == string(format.FormatZIP) &&
+			rule.DataType == DataTypeContainer &&
+			rule.Organization == OrganizationSingle {
+			seenZIP = true
+		}
 	}
-	if !seenCSV || !seenGeoPackage || !seenMarkdown || !seenParquet || !seenText {
-		t.Fatalf("builtin rules missing csv=%v geopackage=%v markdown=%v parquet=%v text=%v", seenCSV, seenGeoPackage, seenMarkdown, seenParquet, seenText)
+	if !seenCSV || !seenGeoPackage || !seenMarkdown || !seenParquet || !seenText || !seenZIP {
+		t.Fatalf("builtin rules missing csv=%v geopackage=%v markdown=%v parquet=%v text=%v zip=%v", seenCSV, seenGeoPackage, seenMarkdown, seenParquet, seenText, seenZIP)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/shapefile"
 	_ "github.com/addp/common/format/plugins/sqlite"
+	_ "github.com/addp/common/format/plugins/zip"
 
 	// 导入内置文档 info provider / text reader，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/text"
