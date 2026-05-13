@@ -113,6 +113,9 @@ func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
 	if !containsString(capability.ContentReaders, formatregistry.ContentReaderTableSample) {
 		t.Fatalf("json ContentReaders = %#v, want table_sample", capability.ContentReaders)
 	}
+	if !containsString(capability.ContentReaders, formatregistry.ContentReaderDocumentText) {
+		t.Fatalf("json ContentReaders = %#v, want document_text", capability.ContentReaders)
+	}
 }
 
 func TestGetReturnsClone(t *testing.T) {

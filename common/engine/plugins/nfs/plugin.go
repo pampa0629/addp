@@ -7,6 +7,7 @@ import (
 	"mime"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/addp/common/engine/plugin"
 )
@@ -24,6 +25,62 @@ func (r *limitedReadCloser) Close() error {
 		return nil
 	}
 	return r.closer.Close()
+}
+
+type lockedReadCloser struct {
+	io.ReadCloser
+	mu *sync.Mutex
+}
+
+func (r *lockedReadCloser) Read(p []byte) (int, error) {
+	if r == nil || r.ReadCloser == nil {
+		return 0, io.ErrClosedPipe
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ReadCloser.Read(p)
+}
+
+func (r *lockedReadCloser) Close() error {
+	if r == nil || r.ReadCloser == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ReadCloser.Close()
+}
+
+func (r *lockedReadCloser) Seek(offset int64, whence int) (int64, error) {
+	seeker, ok := r.ReadCloser.(io.Seeker)
+	if !ok {
+		return 0, fmt.Errorf("NFS file reader does not support seek")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return seeker.Seek(offset, whence)
+}
+
+type lockedWriteCloser struct {
+	io.WriteCloser
+	mu *sync.Mutex
+}
+
+func (w *lockedWriteCloser) Write(p []byte) (int, error) {
+	if w == nil || w.WriteCloser == nil {
+		return 0, io.ErrClosedPipe
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.WriteCloser.Write(p)
+}
+
+func (w *lockedWriteCloser) Close() error {
+	if w == nil || w.WriteCloser == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.WriteCloser.Close()
 }
 
 func init() {
@@ -116,7 +173,7 @@ func (p *NFSPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInf
 		return nil, err
 	}
 
-	_, _, err = getOrCreateMount(server, exportPath)
+	_, err = getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
@@ -136,7 +193,7 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 		return nil, nil, err
 	}
 
-	_, target, err := getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, nil, fmt.Errorf("NFS connection failed: %w", err)
@@ -145,7 +202,9 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 	// 规范化路径
 	dirPath := normalizePath(path)
 
-	entries, err := target.ReadDirPlus(dirPath)
+	entry.mu.Lock()
+	entries, err := entry.target.ReadDirPlus(dirPath)
+	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, nil, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
@@ -187,19 +246,21 @@ func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo
 		return nil, err
 	}
 
-	_, target, err := getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
 	filePath := normalizePath(path)
-	rc, err := target.Open(filePath)
+	entry.mu.Lock()
+	rc, err := entry.target.Open(filePath)
+	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("failed to open NFS file %s: %w", filePath, err)
 	}
-	return rc, nil
+	return &lockedReadCloser{ReadCloser: rc, mu: &entry.mu}, nil
 }
 
 func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.ConnectionInfo, path string, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -229,14 +290,16 @@ func (p *NFSPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Connect
 		return nil, err
 	}
 
-	_, target, err := getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
 	filePath := normalizePath(path)
-	info, _, err := target.Lookup(filePath)
+	entry.mu.Lock()
+	info, _, err := entry.target.Lookup(filePath)
+	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("failed to stat NFS file %s: %w", filePath, err)
@@ -260,22 +323,24 @@ func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.Connec
 		return nil, err
 	}
 
-	_, target, err := getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
 	filePath := normalizePath(path)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
 	// 先删除已有文件（模拟 truncate，OpenFile 不会自动截断）
-	_ = target.Remove(filePath)
+	_ = entry.target.Remove(filePath)
 
-	f, err := target.OpenFile(filePath, 0644)
+	f, err := entry.target.OpenFile(filePath, 0644)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("failed to open NFS file for write %s: %w", filePath, err)
 	}
-	return f, nil
+	return &lockedWriteCloser{WriteCloser: f, mu: &entry.mu}, nil
 }
 
 // MkdirAll 在 NFS 上递归创建目录
@@ -285,12 +350,14 @@ func (p *NFSPlugin) MkdirAll(ctx context.Context, connInfo plugin.ConnectionInfo
 		return err
 	}
 
-	_, target, err := getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return fmt.Errorf("NFS connection failed: %w", err)
 	}
 
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
 	dirPath := normalizePath(path)
 	parts := strings.Split(strings.TrimPrefix(dirPath, "/"), "/")
 	current := ""
@@ -299,9 +366,9 @@ func (p *NFSPlugin) MkdirAll(ctx context.Context, connInfo plugin.ConnectionInfo
 			continue
 		}
 		current = current + "/" + part
-		if _, err := target.Mkdir(current, 0755); err != nil {
+		if _, err := entry.target.Mkdir(current, 0755); err != nil {
 			// 目录已存在则忽略
-			if _, _, lookupErr := target.Lookup(current); lookupErr == nil {
+			if _, _, lookupErr := entry.target.Lookup(current); lookupErr == nil {
 				continue
 			}
 			return fmt.Errorf("failed to create NFS directory %s: %w", current, err)

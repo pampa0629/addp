@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -205,6 +206,59 @@ func TestBuildFromMeta(t *testing.T) {
 		if itemCount, ok := child.Metadata["item_count"].(int); !ok || itemCount != 10 {
 			t.Errorf("child.Metadata[item_count] = %v, want 10", child.Metadata["item_count"])
 		}
+	}
+}
+
+func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
+	builder := NewTreeBuilder(nil)
+	engine := &models.Engine{ID: 26, Name: "Business NFS", EngineType: "nfs"}
+	parentID := uint(95)
+	metaNodes := []*models.MetaNode{
+		{
+			ID:           parentID,
+			EngineID:     26,
+			ParentNodeID: nil,
+			NodeType:     "dir",
+			Name:         "lake",
+			FullName:     "lake",
+			Depth:        1,
+			Path:         "lake",
+			ScanStatus:   "completed",
+			ItemCount:    1,
+		},
+		{
+			ID:           100975,
+			EngineID:     26,
+			ParentNodeID: &parentID,
+			NodeType:     "file",
+			Name:         "lake",
+			FullName:     "lake",
+			Depth:        1,
+			Path:         "lake",
+			ScanStatus:   "completed",
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"organization": "whole",
+					"data_type":    "table",
+					"format":       "parquet",
+				},
+			},
+		},
+	}
+
+	tree, err := builder.BuildFromMeta(engine, metaNodes, 2)
+	if err != nil {
+		t.Fatalf("BuildFromMeta() error = %v", err)
+	}
+	if len(tree.Children) != 1 {
+		t.Fatalf("len(tree.Children) = %d, want 1: %#v", len(tree.Children), tree.Children)
+	}
+	child := tree.Children[0]
+	if child.Label != "lake" || child.Type != "file" {
+		t.Fatalf("child = %s/%s, want lake/file", child.Label, child.Type)
+	}
+	if strings.Contains(child.Locator, "meta_id=95") || !strings.Contains(child.Locator, "meta_id=100975") {
+		t.Fatalf("locator = %q, want whole-scope item locator", child.Locator)
 	}
 }
 

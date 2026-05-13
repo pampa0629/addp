@@ -32,9 +32,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.MetaNode{},  // 元数据节点（schema/prefix）
-		&models.MetaItem{},  // 元数据条目（table/object）
-		&models.ScanTask{},  // 扫描任务定义
+		&models.MetaNode{}, // 元数据节点（schema/prefix）
+		&models.MetaItem{}, // 元数据条目（table/object）
+		&models.ScanTask{}, // 扫描任务定义
 	)
 	if err != nil {
 		return nil, err
@@ -169,6 +169,14 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 		WHERE parent_node_id IS NULL AND deleted_at IS NULL;
 	`).Error; err != nil {
 		logger.L().Warn("创建唯一索引 idx_meta_node_unique_without_parent 失败（可能已存在）", "error", err)
+	}
+
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_full_name
+		ON metadata.meta_node (tenant_id, engine_id, node_type, full_name)
+		WHERE deleted_at IS NULL AND full_name <> '';
+	`).Error; err != nil {
+		logger.L().Warn("创建唯一索引 idx_meta_node_unique_full_name 失败（可能已存在）", "error", err)
 	}
 
 	// 2. 添加租户-引擎外键约束（确保元数据 tenant_id 与引擎一致）

@@ -274,7 +274,7 @@ var builtinDescriptors = []Descriptor{
 			Table:        true,
 			ContentIndex: true,
 		},
-		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		ContentReaders: []string{ContentReaderDocumentText, ContentReaderTableSample, ContentReaderRawContent},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,

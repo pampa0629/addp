@@ -212,8 +212,9 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, contentTypes),
 				),
 			},
-			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
-			kind:     models.ObjectPreviewKindText,
+			maxBytes:   cfg.maxBytesOr(maxTextPreviewBytes),
+			kind:       models.ObjectPreviewKindText,
+			formatType: commonformat.FormatText,
 		}
 		return handler, nil
 	},
@@ -224,8 +225,9 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				priority: cfg.priorityOr(55),
 				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatMarkdown, nil, []string{"text/plain"}),
 			},
-			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
-			kind:     models.ObjectPreviewKindMarkdown,
+			maxBytes:   cfg.maxBytesOr(maxTextPreviewBytes),
+			kind:       models.ObjectPreviewKindMarkdown,
+			formatType: commonformat.FormatMarkdown,
 		}
 		return handler, nil
 	},

@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	commonJSON "github.com/addp/common/jsonmap"
@@ -17,9 +19,39 @@ type ScanRepository struct {
 	db *gorm.DB
 }
 
+var (
+	nodeUpsertLocksMu sync.Mutex
+	nodeUpsertLocks   = map[string]*sync.Mutex{}
+)
+
 // NewScanRepository 创建 Repository 实例
 func NewScanRepository(db *gorm.DB) *ScanRepository {
 	return &ScanRepository{db: db}
+}
+
+func lockNodeUpsert(tenantID, engineID uint, parentID *uint, nodeType, name string, fullName *string) func() {
+	key := fmt.Sprintf("hierarchy:%d:%d:%s:%s:%s", tenantID, engineID, nodeType, parentKey(parentID), name)
+	if fullName != nil {
+		key = fmt.Sprintf("semantic:%d:%d:%s:%s", tenantID, engineID, nodeType, *fullName)
+	}
+
+	nodeUpsertLocksMu.Lock()
+	lock := nodeUpsertLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		nodeUpsertLocks[key] = lock
+	}
+	nodeUpsertLocksMu.Unlock()
+
+	lock.Lock()
+	return lock.Unlock
+}
+
+func parentKey(parentID *uint) string {
+	if parentID == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *parentID)
 }
 
 // ============================================================================
@@ -69,12 +101,21 @@ func (r *ScanRepository) UpsertNode(
 		depth = parent.Depth + 1
 	}
 
+	unlock := lockNodeUpsert(tenantID, engineID, parentID, nodeType, name, fullName)
+	defer unlock()
+
 	// 查询现有节点（包括软删除的记录）
-	// 唯一性约束：(tenant_id, engine_id, parent_node_id, name, node_type)
-	query := r.db.Unscoped().Where("engine_id = ? AND tenant_id = ? AND name = ? AND node_type = ?", engineID, tenantID, name, nodeType)
+	// 显式 full_name 表示调用方已经给出资源语义路径，优先用它做幂等键。
+	// 这能覆盖 NFS 根节点显示名变化（"" -> "."）后刷新出两套相同目录树的问题。
+	query := r.db.Unscoped().Where("engine_id = ? AND tenant_id = ? AND node_type = ?", engineID, tenantID, nodeType)
+	if fullName != nil {
+		query = query.Where("full_name = ?", *fullName)
+	} else {
+		query = query.Where("name = ?", name)
+	}
 	if parentID == nil {
 		query = query.Where("parent_node_id IS NULL")
-	} else {
+	} else if fullName == nil {
 		query = query.Where("parent_node_id = ?", *parentID)
 	}
 
@@ -95,24 +136,31 @@ func (r *ScanRepository) UpsertNode(
 		}
 		if fullName != nil {
 			node.FullName = *fullName
+		} else {
+			node.FullName = composeNodeFullName(node.Name, parent, ".")
 		}
 		if attrs != nil {
 			node.Attributes = attrs
 		}
 
 		if err := r.db.Create(&node).Error; err != nil {
-			return nil, err
+			if !errors.Is(err, gorm.ErrDuplicatedKey) {
+				return nil, err
+			}
+			if existing, findErr := r.findNodeBySemanticOrHierarchy(tenantID, engineID, parentID, nodeType, name, fullName); findErr == nil {
+				node = *existing
+			} else {
+				return nil, err
+			}
 		}
 
 		// 更新 path 和 full_name
 		path := composeNodePath(node.ID, parent)
-		update := map[string]interface{}{"path": path}
-		node.Path = path
-
-		if fullName == nil {
-			node.FullName = composeNodeFullName(node.Name, parent, ".")
-			update["full_name"] = node.FullName
+		update := map[string]interface{}{
+			"path":      path,
+			"full_name": node.FullName,
 		}
+		node.Path = path
 
 		if err := r.db.Model(&node).Updates(update).Error; err != nil {
 			return nil, err
@@ -126,6 +174,16 @@ func (r *ScanRepository) UpsertNode(
 	// 更新现有节点
 	updates := map[string]interface{}{
 		"deleted_at": nil, // 恢复软删除的节点
+	}
+
+	if node.ParentNodeID == nil && parentID != nil || node.ParentNodeID != nil && (parentID == nil || *node.ParentNodeID != *parentID) {
+		updates["parent_node_id"] = parentID
+		node.ParentNodeID = parentID
+	}
+
+	if node.Name != name {
+		updates["name"] = name
+		node.Name = name
 	}
 
 	// 【优化】如果 node_type 不同，也更新它（支持节点类型变更）
@@ -165,6 +223,31 @@ func (r *ScanRepository) UpsertNode(
 		}
 	}
 
+	return &node, nil
+}
+
+func (r *ScanRepository) findNodeBySemanticOrHierarchy(
+	tenantID, engineID uint,
+	parentID *uint,
+	nodeType, name string,
+	fullName *string,
+) (*models.MetaNode, error) {
+	query := r.db.Unscoped().Where("engine_id = ? AND tenant_id = ? AND node_type = ?", engineID, tenantID, nodeType)
+	if fullName != nil {
+		query = query.Where("full_name = ?", *fullName)
+	} else {
+		query = query.Where("name = ?", name)
+	}
+	if parentID == nil {
+		query = query.Where("parent_node_id IS NULL")
+	} else if fullName == nil {
+		query = query.Where("parent_node_id = ?", *parentID)
+	}
+
+	var node models.MetaNode
+	if err := query.First(&node).Error; err != nil {
+		return nil, err
+	}
 	return &node, nil
 }
 

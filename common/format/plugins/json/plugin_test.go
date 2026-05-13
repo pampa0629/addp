@@ -16,8 +16,39 @@ func TestJSONPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.FormatPlugin = plugin
 	var _ format.FormatInfoProvider = plugin
 	var _ format.DocumentInfoProvider = plugin
+	var _ format.DocumentTextReader = plugin
 	var _ format.TableInfoProvider = plugin
 	var _ format.TableSampleReader = plugin
+}
+
+func TestJSONPluginReadDocumentText(t *testing.T) {
+	plugin := NewPlugin(nil)
+
+	got, truncated, err := plugin.ReadDocumentText(context.Background(), strings.NewReader("\ufeff{\"name\":\"测试\",\"enabled\":true}"), 1024, nil)
+	if err != nil {
+		t.Fatalf("ReadDocumentText failed: %v", err)
+	}
+	if truncated {
+		t.Fatal("ReadDocumentText truncated = true, want false")
+	}
+	if got != `{"name":"测试","enabled":true}` {
+		t.Fatalf("ReadDocumentText = %q", got)
+	}
+}
+
+func TestJSONPluginReadDocumentTextTruncates(t *testing.T) {
+	plugin := NewPlugin(nil)
+
+	got, truncated, err := plugin.ReadDocumentText(context.Background(), strings.NewReader(`{"name":"abcdef"}`), 8, nil)
+	if err != nil {
+		t.Fatalf("ReadDocumentText failed: %v", err)
+	}
+	if !truncated {
+		t.Fatal("ReadDocumentText truncated = false, want true")
+	}
+	if got != `{"name":` {
+		t.Fatalf("ReadDocumentText = %q", got)
+	}
 }
 
 func TestJSONPluginDescribeAndSampleGeoJSON(t *testing.T) {

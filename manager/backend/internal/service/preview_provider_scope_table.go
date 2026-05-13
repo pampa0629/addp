@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
@@ -97,9 +98,16 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
 		} else {
 			scope := resource.NewResourceRef(dirPath, resource.ResourceRoleScope)
-			tableInfo, err = tableProvider.DescribeTableScope(ctx, reader, scope, nil)
+			tableInfo, err = scopeTableInfoFromAttributes(req.Attributes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read scope table attributes: %w", err)
+			}
+			sampleOptions := scopeTableSampleOptionsFromAttributes(req.Attributes)
+			if tableInfo == nil {
+				tableInfo, err = tableProvider.DescribeTableScope(ctx, reader, scope, nil)
+			}
 			if err == nil {
-				rows, err = tableProvider.SampleTableScope(ctx, reader, scope, offset, limit, nil)
+				rows, err = tableProvider.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)
 			}
 		}
 		if err != nil {
@@ -133,6 +141,44 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		PageSize:       pageSize,
 		Total:          int(total),
 	}, nil
+}
+
+func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*format.TableInfo, error) {
+	tableAttrs := commonJSON.Section(attrs, "type_info.table")
+	if len(tableAttrs) == 0 {
+		return nil, nil
+	}
+	fields := fieldsFromAttribute(tableAttrs["fields"])
+	rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"])
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	info := &format.TableInfo{
+		Name:   "table",
+		Fields: fields,
+	}
+	if rowCount > 0 {
+		info.RowCount = &rowCount
+	}
+	return info, nil
+}
+
+func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
+	formatName := strings.TrimSpace(commonJSON.InterfaceString(attrs["format"]))
+	if formatName == "" {
+		return nil
+	}
+	provider, err := format.GetTableProvider(format.FormatType(formatName))
+	if err != nil {
+		return nil
+	}
+	optionsProvider, ok := provider.(interface {
+		SampleOptionsFromAttributes(map[string]interface{}) *format.ParseOptions
+	})
+	if !ok {
+		return nil
+	}
+	return optionsProvider.SampleOptionsFromAttributes(attrs)
 }
 
 func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo) (resource.ResourceReader, error) {

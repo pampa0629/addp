@@ -121,15 +121,22 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 
 	// 构建节点 ID 到 TreeNode 的映射
 	nodeMap := make(map[uint]*TreeNode)
+	skipNodeIDs, parentOverrides := wholeScopePresentationOverrides(metaNodes)
 
 	// 第一遍：创建所有节点
 	for _, node := range metaNodes {
+		if skipNodeIDs[node.ID] {
+			continue
+		}
 		treeNode := b.convertMetaNode(engine, node)
 		nodeMap[node.ID] = treeNode
 	}
 
 	// 第二遍：建立父子关系
 	for _, node := range metaNodes {
+		if skipNodeIDs[node.ID] {
+			continue
+		}
 		treeNode := nodeMap[node.ID]
 
 		// root 节点透明化：仅对 NFS/NAS 生效（挂载点不显示为独立层级）
@@ -139,12 +146,17 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 			continue
 		}
 
-		if node.ParentNodeID == nil || node.Depth == 1 {
+		parentNodeID := node.ParentNodeID
+		if override, ok := parentOverrides[node.ID]; ok {
+			parentNodeID = override
+		}
+
+		if parentNodeID == nil || node.Depth == 1 {
 			// 顶层节点，添加到引擎根节点
 			root.Children = append(root.Children, treeNode)
 		} else {
 			// 子节点，添加到父节点的 children
-			parentTreeNode, exists := nodeMap[*node.ParentNodeID]
+			parentTreeNode, exists := nodeMap[*parentNodeID]
 			if !exists {
 				// 父节点不存在（可能是被透明化的 NFS root），直接挂到引擎根节点
 				root.Children = append(root.Children, treeNode)
@@ -158,6 +170,53 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 	}
 
 	return root, nil
+}
+
+func wholeScopePresentationOverrides(metaNodes []*models.MetaNode) (map[uint]bool, map[uint]*uint) {
+	byID := make(map[uint]*models.MetaNode, len(metaNodes))
+	for _, node := range metaNodes {
+		if node != nil {
+			byID[node.ID] = node
+		}
+	}
+	skip := map[uint]bool{}
+	parentOverrides := map[uint]*uint{}
+	for _, node := range metaNodes {
+		if node == nil || !isWholeScopeItemNode(node) || node.ParentNodeID == nil {
+			continue
+		}
+		parent := byID[*node.ParentNodeID]
+		if parent == nil || !sameResourceFullName(parent.FullName, node.FullName) || !isPathContainerNodeType(parent.NodeType) {
+			continue
+		}
+		skip[parent.ID] = true
+		parentOverrides[node.ID] = parent.ParentNodeID
+	}
+	return skip, parentOverrides
+}
+
+func isWholeScopeItemNode(node *models.MetaNode) bool {
+	if node == nil {
+		return false
+	}
+	organization := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(node.Attributes, "organization", "item")))
+	if organization == "" {
+		organization = strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(node.Attributes["organization"])))
+	}
+	return organization == "whole"
+}
+
+func sameResourceFullName(left, right string) bool {
+	return strings.Trim(strings.TrimSpace(left), "/") == strings.Trim(strings.TrimSpace(right), "/")
+}
+
+func isPathContainerNodeType(nodeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(nodeType)) {
+	case "root", "dir", "directory", "prefix", "bucket":
+		return true
+	default:
+		return false
+	}
 }
 
 // ConvertMetaNodes 将 MetaNode 列表转换为 TreeNode 列表

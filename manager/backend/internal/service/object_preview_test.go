@@ -280,6 +280,34 @@ func TestTextContentHandlerUsesExplicitTextMatcher(t *testing.T) {
 	}
 }
 
+func TestTextContentHandlerUsesDocumentTextReader(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["text"](ObjectContentPluginConfig{Name: "text"})
+	if err != nil {
+		t.Fatalf("build text handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "note.txt", Format: "text", Size: 8},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte("\ufeffhello"), false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle text content: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "text" {
+		t.Fatalf("Kind = %q, want text", content.Kind)
+	}
+	if content.Text != "hello" {
+		t.Fatalf("Text = %q, want hello", content.Text)
+	}
+}
+
 func TestUnsupportedContentHandlerProbesText(t *testing.T) {
 	t.Parallel()
 	handler, err := builtinContentFactories["unsupported"](ObjectContentPluginConfig{Name: "unsupported"})
@@ -401,6 +429,35 @@ func TestMarkdownHandlerDeclaresMarkdownMaterialAndRenderer(t *testing.T) {
 	}
 	if content.FrontendRenderer != "markdown" {
 		t.Fatalf("FrontendRenderer = %q, want markdown", content.FrontendRenderer)
+	}
+}
+
+func TestMarkdownContentHandlerUsesDocumentTextReader(t *testing.T) {
+	t.Parallel()
+	maxBytes := int64(6)
+	handler, err := builtinContentFactories["markdown"](ObjectContentPluginConfig{Name: "markdown", MaxBytes: &maxBytes})
+	if err != nil {
+		t.Fatalf("build markdown handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "README.md", Format: "markdown", Size: 8},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte("\ufeff# Ti"), true, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle markdown content: %v", err)
+	}
+	if !truncated || !content.Truncated {
+		t.Fatalf("expected truncated content, truncated=%v content=%#v", truncated, content)
+	}
+	if content.Kind != "markdown" {
+		t.Fatalf("Kind = %q, want markdown", content.Kind)
+	}
+	if content.Text != "# T" {
+		t.Fatalf("Text = %q, want # T", content.Text)
 	}
 }
 

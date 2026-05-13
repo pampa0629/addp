@@ -1,15 +1,19 @@
 package metaitem
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	parquetformat "github.com/addp/common/format/plugins/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/dataitem"
+	parquetgo "github.com/parquet-go/parquet-go"
 )
 
 func TestTableFileDetectorDetectsPartitionedWholeScope(t *testing.T) {
@@ -43,6 +47,36 @@ func TestTableFileDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	}
 	if mode := commonJSON.String(info.Attributes, "format_info.parquet", "mode"); mode != "whole" {
 		t.Fatalf("mode = %v, want whole", mode)
+	}
+}
+
+func TestTableFileDetectorWritesParquetPartRowCounts(t *testing.T) {
+	reader := mapContentReader{content: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/dt=2026-05-06/part-001.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 2, Name: "Bob"}, testMetaitemParquetRow{ID: 3, Name: "Carol"}),
+	}}
+	files := []plugin.FileEntry{
+		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
+		{Name: "part-001.parquet", Path: "dataset/dt=2026-05-06/part-001.parquet", Size: 20},
+	}
+	subdirs := []plugin.DirEntry{
+		{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
+		{Name: "dt=2026-05-06", Path: "dataset/dt=2026-05-06/"},
+	}
+
+	info, err := extractTableFileWholeScopeInfo(context.Background(), reader, nil, 1, "dataset", files, subdirs)
+	if err != nil {
+		t.Fatalf("extractTableFileWholeScopeInfo() error = %v", err)
+	}
+	if rowCount := commonJSON.Int64(info.Attributes, "type_info.table", "row_count"); rowCount != 3 {
+		t.Fatalf("row_count = %d, want 3", rowCount)
+	}
+	counts := parquetformat.FileRowCountsFromAttributes(info.Attributes)
+	if len(counts) != 2 {
+		t.Fatalf("parquet file row counts = %#v, want two files", counts)
+	}
+	if counts["dataset/dt=2026-05-05/part-000.parquet"] != 1 || counts["dataset/dt=2026-05-06/part-001.parquet"] != 2 {
+		t.Fatalf("parquet file row counts = %#v", counts)
 	}
 }
 
@@ -260,4 +294,48 @@ func (r staticContentReader) Capabilities() plugin.EngineCapabilities {
 func (r staticContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
 func (r staticContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(r.content)), nil
+}
+
+type mapContentReader struct {
+	content map[string][]byte
+}
+
+func (r mapContentReader) Type() string         { return "map" }
+func (r mapContentReader) DisplayName() string  { return "map" }
+func (r mapContentReader) EngineOrigin() string { return "general" }
+func (r mapContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (r mapContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (r mapContentReader) DefaultPort() int                                   { return 0 }
+func (r mapContentReader) RequiredFields() []string                           { return nil }
+func (r mapContentReader) SensitiveFields() []string                          { return nil }
+func (r mapContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (r mapContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
+func (r mapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	data, ok := r.content[path.StringPath()]
+	if !ok {
+		return nil, fmt.Errorf("content not found: %s", path.StringPath())
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+type testMetaitemParquetRow struct {
+	ID   int64  `parquet:"id"`
+	Name string `parquet:"name"`
+}
+
+func buildMetaitemParquetRows(t *testing.T, rows ...testMetaitemParquetRow) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[testMetaitemParquetRow](&buf)
+	if _, err := writer.Write(rows); err != nil {
+		t.Fatalf("write parquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close parquet writer: %v", err)
+	}
+	return buf.Bytes()
 }

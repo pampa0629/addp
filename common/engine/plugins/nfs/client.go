@@ -22,6 +22,7 @@ type poolEntry struct {
 	mount     *gonfs.Mount
 	target    *gonfs.Target
 	createdAt time.Time
+	mu        sync.Mutex
 }
 
 var (
@@ -32,7 +33,7 @@ var (
 const connTTL = 5 * time.Minute
 
 // getOrCreateMount 获取或创建 NFS 挂载连接（带连接池）
-func getOrCreateMount(server, exportPath string) (*gonfs.Mount, *gonfs.Target, error) {
+func getOrCreateMount(server, exportPath string) (*poolEntry, error) {
 	key := poolKey{server: server, exportPath: exportPath}
 
 	poolMu.Lock()
@@ -40,7 +41,7 @@ func getOrCreateMount(server, exportPath string) (*gonfs.Mount, *gonfs.Target, e
 
 	if entry, ok := pool[key]; ok {
 		if time.Since(entry.createdAt) < connTTL {
-			return entry.mount, entry.target, nil
+			return entry, nil
 		}
 		// 过期，关闭旧连接
 		_ = entry.mount.Unmount()
@@ -50,7 +51,7 @@ func getOrCreateMount(server, exportPath string) (*gonfs.Mount, *gonfs.Target, e
 
 	mount, target, err := dialNFS(server, exportPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	pool[key] = &poolEntry{
@@ -58,7 +59,7 @@ func getOrCreateMount(server, exportPath string) (*gonfs.Mount, *gonfs.Target, e
 		target:    target,
 		createdAt: time.Now(),
 	}
-	return mount, target, nil
+	return pool[key], nil
 }
 
 // dialNFS 建立 NFS 连接

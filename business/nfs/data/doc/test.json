@@ -1,0 +1,90 @@
+{
+    "compute": {
+        "query": {
+            "languages": [
+                "sql"
+            ],
+            "supported": true,
+            "result_kinds": [
+                "table",
+                "scalar"
+            ],
+            "supports_cancel": true,
+            "default_language": "sql",
+            "supports_explain": true
+        }
+    },
+    "preview": {
+        "modes": [
+            "tabular_rows"
+        ],
+        "max_rows": 1000,
+        "supported": true,
+        "uses_composer": true
+    },
+    "storage": {
+        "store": {
+            "batch_read": true
+        },
+        "catalog": {
+            "real_time": true,
+            "supported": true,
+            "node_kinds": [
+                "namespace",
+                "table",
+                "view",
+                "materialized_view",
+                "external_table"
+            ],
+            "system_filtering": true
+        },
+        "metadata": {
+            "indexes": true,
+            "supported": true,
+            "statistics": true,
+            "constraints": true,
+            "field_schema": true,
+            "native_metadata": true
+        },
+        "catalog_model": {
+            "levels": [
+                {
+                    "term": "database",
+                    "kinds": [
+                        "namespace"
+                    ],
+                    "container": true
+                },
+                {
+                    "item": true,
+                    "term": "table",
+                    "kinds": [
+                        "table",
+                        "view",
+                        "materialized_view",
+                        "external_table"
+                    ],
+                    "container": false
+                }
+            ],
+            "root_term": "server",
+            "path_version": "catalog.path/v1"
+        }
+    },
+    "transfer": {
+        "read": true,
+        "write": true,
+        "checkpoint": true,
+        "connector_types": {
+            "reader": "jdbc",
+            "writer": "jdbc"
+        },
+        "preferred_writer": "jdbc",
+        "supported_formats": [
+            "table"
+        ]
+    },
+    "engine_type": "mysql",
+    "engine_family": "tabular",
+    "schema_version": "engine.capabilities/v1"
+}

@@ -49,6 +49,23 @@ func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
 	}
 }
 
+func TestParquetPluginSampleTableSeeksDeepOffset(t *testing.T) {
+	plugin := NewPlugin()
+	rowsData := make([]testParquetRow, 0, 256)
+	for i := 0; i < 256; i++ {
+		rowsData = append(rowsData, testParquetRow{ID: int64(i + 1), Name: "row"})
+	}
+	data := buildParquetRows(t, rowsData...)
+
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), 199, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["id"] != int64(200) || rows[1]["id"] != int64(201) {
+		t.Fatalf("rows = %#v, want ids 200 and 201", rows)
+	}
+}
+
 func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	plugin := NewPlugin()
 	reader := parquetMemoryResourceReader{data: map[string][]byte{
@@ -67,6 +84,13 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	if len(info.Fields) != 2 {
 		t.Fatalf("fields = %#v, want 2 fields", info.Fields)
 	}
+	parquetInfo := InfoFromTableInfo(info)
+	if parquetInfo == nil || len(parquetInfo.Files) != 2 {
+		t.Fatalf("parquet info = %#v, want two files", parquetInfo)
+	}
+	if parquetInfo.Files[0].Path != "dataset/part-000.parquet" || parquetInfo.Files[0].RowCount != 2 {
+		t.Fatalf("first parquet file info = %#v, want path and row count", parquetInfo.Files[0])
+	}
 
 	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 1, 3, nil)
 	if err != nil {
@@ -76,6 +100,44 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	want := []string{"Bob", "Carol", "Dan"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("rows = %#v, want names %v", rows, want)
+	}
+}
+
+func TestParquetPluginSampleScopeUsesRowCountHintsToSkipFiles(t *testing.T) {
+	plugin := NewPlugin()
+	openCounts := map[string]int{}
+	reader := parquetMemoryResourceReader{
+		data: map[string][]byte{
+			"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"}),
+			"dataset/part-001.parquet": buildParquetRows(t, testParquetRow{ID: 3, Name: "Carol"}, testParquetRow{ID: 4, Name: "Dan"}),
+			"dataset/part-002.parquet": buildParquetRows(t, testParquetRow{ID: 5, Name: "Eve"}, testParquetRow{ID: 6, Name: "Frank"}),
+		},
+		openCounts: openCounts,
+	}
+	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+	opts := format.DefaultParseOptions()
+	opts.ExtraParams = map[string]interface{}{
+		FileRowCountsOption: map[string]int64{
+			"dataset/part-000.parquet": 2,
+			"dataset/part-001.parquet": 2,
+			"dataset/part-002.parquet": 2,
+		},
+	}
+
+	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 4, 2, opts)
+	if err != nil {
+		t.Fatalf("SampleTableScope failed: %v", err)
+	}
+	got := rowNames(rows)
+	want := []string{"Eve", "Frank"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("rows = %#v, want names %v", rows, want)
+	}
+	if openCounts["dataset/part-000.parquet"] != 0 || openCounts["dataset/part-001.parquet"] != 0 {
+		t.Fatalf("open counts = %#v, want skipped files not opened", openCounts)
+	}
+	if openCounts["dataset/part-002.parquet"] != 1 {
+		t.Fatalf("part-002 open count = %d, want 1", openCounts["dataset/part-002.parquet"])
 	}
 }
 
@@ -155,13 +217,17 @@ func rowNames(rows []map[string]interface{}) []string {
 }
 
 type parquetMemoryResourceReader struct {
-	data map[string][]byte
+	data       map[string][]byte
+	openCounts map[string]int
 }
 
 func (r parquetMemoryResourceReader) Open(_ context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
 	data, ok := r.data[ref.Path]
 	if !ok {
 		return nil, resource.ErrResourceNotFound
+	}
+	if r.openCounts != nil {
+		r.openCounts[ref.Path]++
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
 }

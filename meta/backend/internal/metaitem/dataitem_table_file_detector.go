@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/common/resource"
 	"github.com/addp/meta/internal/dataitem"
 )
 
@@ -361,6 +362,12 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		}
 	}
 	if tableInfo != nil {
+		if formatAttrs := formatAttributesFromTableInfo(formatName, tableInfo); len(formatAttrs) > 0 {
+			attrs["format_info"].(map[string]interface{})[formatName] = mergeInterfaceMaps(
+				attrs["format_info"].(map[string]interface{})[formatName],
+				formatAttrs,
+			)
+		}
 		if spatialInfo := tableInfo.GetSpatialInfo(); spatialInfo != nil {
 			spatialAttrs := map[string]interface{}{
 				"geometry_columns": []map[string]interface{}{{
@@ -393,6 +400,40 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 	return attrs
 }
 
+type formatAttributesProvider interface {
+	FormatAttributes() map[string]interface{}
+}
+
+func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInfo) map[string]interface{} {
+	if tableInfo == nil {
+		return nil
+	}
+	for _, ext := range tableInfo.Extensions {
+		if ext == nil || ext.ExtensionType() != formatName {
+			continue
+		}
+		provider, ok := ext.(formatAttributesProvider)
+		if !ok {
+			continue
+		}
+		return provider.FormatAttributes()
+	}
+	return nil
+}
+
+func mergeInterfaceMaps(existing interface{}, additions map[string]interface{}) map[string]interface{} {
+	merged := map[string]interface{}{}
+	if current, ok := existing.(map[string]interface{}); ok {
+		for k, v := range current {
+			merged[k] = v
+		}
+	}
+	for k, v := range additions {
+		merged[k] = v
+	}
+	return merged
+}
+
 func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
 	if tableFileOrganization(files, subdirs, dirPath) == dataitem.OrganizationWhole {
 		return "whole"
@@ -412,6 +453,77 @@ func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEn
 		SizeBytes:      &totalSize,
 		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil, false),
 	}
+}
+
+type tableFileResourceReader struct {
+	contentReader plugin.ContentReadableProvider
+	connInfo      plugin.ConnectionInfo
+	engineID      uint
+	files         []plugin.FileEntry
+	subdirs       []plugin.DirEntry
+}
+
+func (r tableFileResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+	if r.contentReader == nil {
+		return nil, resource.ErrResourceNotFound
+	}
+	return r.contentReader.OpenContent(ctx, r.connInfo, tableFileCatalogPath(r.engineID, ref.Path), plugin.ReadOptions{})
+}
+
+func (r tableFileResourceReader) Stat(_ context.Context, ref resource.ResourceRef) (*resource.ResourceMetadata, error) {
+	for _, file := range r.files {
+		if strings.Trim(file.Path, "/") == strings.Trim(ref.Path, "/") {
+			return &resource.ResourceMetadata{
+				Ref:    resource.NewResourceRef(file.Path, resource.ResourceRoleMain),
+				Size:   file.Size,
+				Exists: true,
+			}, nil
+		}
+	}
+	for _, dir := range r.subdirs {
+		if strings.Trim(dir.Path, "/") == strings.Trim(ref.Path, "/") {
+			return &resource.ResourceMetadata{
+				Ref:    resource.NewResourceRef(dir.Path, resource.ResourceRoleScope),
+				Exists: true,
+			}, nil
+		}
+	}
+	return &resource.ResourceMetadata{Ref: ref, Exists: false}, nil
+}
+
+func (r tableFileResourceReader) List(_ context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+	scopePath := strings.Trim(scope.Path, "/")
+	refs := make([]resource.ResourceRef, 0)
+	for _, file := range r.files {
+		path := strings.Trim(file.Path, "/")
+		if !isImmediateChildPath(scopePath, path) {
+			continue
+		}
+		refs = append(refs, resource.NewResourceRef(path, resource.ResourceRoleMain))
+	}
+	for _, dir := range r.subdirs {
+		path := strings.Trim(dir.Path, "/")
+		if !isImmediateChildPath(scopePath, path) {
+			continue
+		}
+		refs = append(refs, resource.NewResourceRef(path, resource.ResourceRoleScope))
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Path < refs[j].Path })
+	if len(refs) == 0 {
+		return nil, resource.ErrResourceNotFound
+	}
+	return refs, nil
+}
+
+func isImmediateChildPath(scopePath string, childPath string) bool {
+	if scopePath == "" {
+		return childPath != "" && !strings.Contains(childPath, "/")
+	}
+	if !strings.HasPrefix(childPath, scopePath+"/") {
+		return false
+	}
+	rest := strings.TrimPrefix(childPath, scopePath+"/")
+	return rest != "" && !strings.Contains(rest, "/")
 }
 
 func (d *tableFileItemDetector) extractTableFileInfo(
@@ -436,19 +548,31 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstReadableFile.Path), plugin.ReadOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to read table file %s: %w", firstReadableFile.Path, err)
+	formatName := detectFormat(files)
+	reader := tableFileResourceReader{
+		contentReader: contentReader,
+		connInfo:      connInfo,
+		engineID:      engineID,
+		files:         files,
+		subdirs:       subdirs,
 	}
-	defer rc.Close()
-
-	tableInfo, err := describeTableFile(ctx, fileFormatName(firstReadableFile.Name), rc)
+	tableInfo, err := describeTableFileScope(ctx, formatName, reader, dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse table schema from %s: %w", firstReadableFile.Path, err)
+		rc, openErr := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstReadableFile.Path), plugin.ReadOptions{})
+		if openErr != nil {
+			return nil, fmt.Errorf("failed to read table file %s: %w", firstReadableFile.Path, openErr)
+		}
+		tableInfo, err = describeTableFile(ctx, fileFormatName(firstReadableFile.Name), rc)
+		closeErr := rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse table schema from %s: %w", firstReadableFile.Path, err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close table file %s: %w", firstReadableFile.Path, closeErr)
+		}
 	}
 
 	totalSize := tableFileSize(files)
-	formatName := detectFormat(files)
 	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
 	return &CompositeItemInfo{
 		Fields:         tableInfo.Fields,
@@ -460,6 +584,18 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		SizeBytes:      &totalSize,
 		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo, false),
 	}, nil
+}
+
+func describeTableFileScope(ctx context.Context, formatName string, reader resource.ResourceReader, dirPath string) (*format.TableInfo, error) {
+	provider, err := format.GetTableProvider(format.FormatType(formatName))
+	if err != nil {
+		return nil, err
+	}
+	scopeProvider, ok := provider.(format.ScopeTableProvider)
+	if !ok {
+		return nil, fmt.Errorf("%s provider does not implement scope table provider", formatName)
+	}
+	return scopeProvider.DescribeTableScope(ctx, reader, resource.NewResourceRef(dirPath, resource.ResourceRoleScope), nil)
 }
 
 // ExtractItemInfo 提取表格文件元信息（读取第一个 Parquet 文件获取 Schema）

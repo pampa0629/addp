@@ -540,33 +540,49 @@ func removeUTF8BOM(data []byte) []byte {
 }
 
 func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
-	data, truncated, err := fetcher(h.maxBytes)
+	reader, readerErr := format.GetDocumentTextReader(format.FormatJSON)
+	var text string
+	var truncated bool
+	var err error
+	if readerErr == nil {
+		var data []byte
+		var fetchTruncated bool
+		data, fetchTruncated, err = fetcher(h.maxBytes)
+		if err == nil {
+			var readerTruncated bool
+			text, readerTruncated, err = reader.ReadDocumentText(ctx, bytes.NewReader(data), h.maxBytes, nil)
+			truncated = fetchTruncated || readerTruncated
+		}
+	} else {
+		var data []byte
+		data, truncated, err = fetcher(h.maxBytes)
+		text = string(removeUTF8BOM(data))
+	}
 	if err != nil {
 		return nil, false, err
 	}
-	clean := removeUTF8BOM(data)
 	var parsed interface{}
-	if err := json.Unmarshal(clean, &parsed); err != nil {
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:      models.ObjectPreviewKindText,
-			Text:      string(data),
+			Text:      text,
 			Truncated: truncated,
 		}), truncated, nil
 	}
 	if h.kind == models.ObjectPreviewKindGeoJSON {
-		if preview, err := buildGeoJSONPreview(ctx, clean, parsed); err == nil {
+		if preview, err := buildGeoJSONPreview(ctx, []byte(text), parsed); err == nil {
 			preview.Truncated = truncated
 			return decoratePreviewContent(preview), truncated, nil
 		}
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind: models.ObjectPreviewKindJSON,
-			Text: string(clean),
+			Text: text,
 			JSON: parsed,
 		}), truncated, nil
 	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind: models.ObjectPreviewKindJSON,
-		Text: string(clean),
+		Text: text,
 		JSON: parsed,
 	}), truncated, nil
 }
@@ -819,14 +835,30 @@ func (h *excelContentHandler) effectiveColumnLimit() int {
 
 type textContentHandler struct {
 	baseContentHandler
-	maxBytes int64
-	kind     string
+	maxBytes   int64
+	kind       string
+	formatType format.FormatType
 }
 
 func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
-	data, truncated, err := fetcher(h.maxBytes)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	data, fetchTruncated, err := fetcher(h.maxBytes)
 	if err != nil {
 		return nil, false, err
+	}
+	text := string(data)
+	truncated := fetchTruncated
+	if h.formatType != "" {
+		if reader, readerErr := format.GetDocumentTextReader(h.formatType); readerErr == nil {
+			var readerTruncated bool
+			text, readerTruncated, err = reader.ReadDocumentText(ctx, bytes.NewReader(data), h.maxBytes, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			truncated = fetchTruncated || readerTruncated
+		}
 	}
 	kind := h.kind
 	if kind == "" {
@@ -834,7 +866,7 @@ func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:      kind,
-		Text:      string(data),
+		Text:      text,
 		Truncated: truncated,
 	}), truncated, nil
 }

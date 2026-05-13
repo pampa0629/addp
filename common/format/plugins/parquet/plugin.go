@@ -8,19 +8,99 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
 	parquetgo "github.com/parquet-go/parquet-go"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
 )
 
+const FileRowCountsOption = "parquet_file_row_counts"
+
 // Plugin 实现 Parquet 格式 plugin。
 type Plugin struct{}
 
+type Info struct {
+	Files []FileInfo
+}
+
+type FileInfo struct {
+	Path     string `json:"path"`
+	RowCount int64  `json:"row_count"`
+}
+
+func (i *Info) ExtensionType() string {
+	return "parquet"
+}
+
+func (i *Info) FormatAttributes() map[string]interface{} {
+	if i == nil || len(i.Files) == 0 {
+		return nil
+	}
+	return map[string]interface{}{
+		"files": i.Files,
+	}
+}
+
+func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
+	if tableInfo == nil {
+		return nil
+	}
+	ext := tableInfo.GetExtension("parquet")
+	if ext == nil {
+		return nil
+	}
+	if info, ok := ext.(*Info); ok {
+		return info
+	}
+	return nil
+}
+
+func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]interface{} {
+	info := InfoFromTableInfo(tableInfo)
+	return info.FormatAttributes()
+}
+
+func SampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
+	counts := FileRowCountsFromAttributes(attrs)
+	if len(counts) == 0 {
+		return nil
+	}
+	opts := format.DefaultParseOptions()
+	opts.ExtraParams = map[string]interface{}{
+		FileRowCountsOption: counts,
+	}
+	return opts
+}
+
+func FileRowCountsFromAttributes(attrs map[string]interface{}) map[string]int64 {
+	parquetAttrs := commonJSON.Section(attrs, "format_info.parquet")
+	if len(parquetAttrs) == 0 {
+		return nil
+	}
+	files, ok := parquetAttrs["files"].([]FileInfo)
+	if ok {
+		counts := make(map[string]int64, len(files))
+		for _, file := range files {
+			path := normalizeParquetPath(file.Path)
+			if path != "" && file.RowCount >= 0 {
+				counts[path] = file.RowCount
+			}
+		}
+		return counts
+	}
+	return fileRowCountsFromFileList(parquetAttrs["files"])
+}
+
 func NewPlugin() *Plugin {
 	return &Plugin{}
+}
+
+func (p *Plugin) SampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
+	return SampleOptionsFromAttributes(attrs)
 }
 
 func init() {
@@ -120,59 +200,72 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		}
 
 		rows := rg.Rows()
-		defer rows.Close()
-
-		// 跳过当前 row group 内的局部 offset。
+		// 使用 parquet row seeker 直接定位到 row group 内部行号，避免深分页逐行跳过。
 		if remainingOffset > 0 {
-			buf := make([]parquetgo.Row, 1)
-			skipped := int64(0)
-			for skipped < remainingOffset {
-				n, readErr := rows.ReadRows(buf)
-				if n > 0 {
-					skipped += int64(n)
-				}
-				if readErr == io.EOF {
-					break
-				}
-				if readErr != nil {
-					return nil, fmt.Errorf("failed to skip rows: %w", readErr)
-				}
-				if n == 0 {
-					break
-				}
+			if err := rows.SeekToRow(remainingOffset); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("failed to seek parquet row %d: %w", remainingOffset, err)
 			}
 			remainingOffset = 0
 		}
 
-		buf := make([]parquetgo.Row, 1)
-		for int64(len(result)) < limit {
-			n, readErr := rows.ReadRows(buf)
-			if readErr != nil {
-				if readErr != io.EOF {
-					return result, fmt.Errorf("failed to read row: %w", readErr)
-				}
-				if n == 0 {
-					break
-				}
-			}
-			if n == 0 {
-				break
-			}
-
-			row := make(map[string]interface{}, len(buf[0]))
-			for j, val := range buf[0] {
-				if j < len(fieldNames) {
-					row[fieldNames[j]] = valueToInterface(val)
-				}
-			}
-			result = append(result, row)
-			if readErr == io.EOF {
-				break
-			}
+		readErr := appendRows(ctx, rows, fieldNames, limit, &result)
+		closeErr := rows.Close()
+		if readErr != nil {
+			return result, readErr
+		}
+		if closeErr != nil {
+			return result, fmt.Errorf("failed to close parquet rows: %w", closeErr)
 		}
 	}
 
 	return result, nil
+}
+
+func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, limit int64, result *[]map[string]interface{}) error {
+	const maxBatchSize = 128
+	for int64(len(*result)) < limit {
+		if err := contextErr(ctx); err != nil {
+			return err
+		}
+		remaining := limit - int64(len(*result))
+		batchSize := int64(maxBatchSize)
+		if remaining < batchSize {
+			batchSize = remaining
+		}
+		if batchSize <= 0 || batchSize > math.MaxInt {
+			break
+		}
+		buf := make([]parquetgo.Row, int(batchSize))
+		n, readErr := rows.ReadRows(buf)
+		if n > 0 {
+			for _, parquetRow := range buf[:n] {
+				row := make(map[string]interface{}, len(parquetRow))
+				for j, val := range parquetRow {
+					if j < len(fieldNames) {
+						row[fieldNames[j]] = valueToInterface(val)
+					}
+				}
+				*result = append(*result, row)
+				if int64(len(*result)) >= limit {
+					break
+				}
+			}
+		}
+		if readErr != nil {
+			if readErr != io.EOF {
+				return fmt.Errorf("failed to read row: %w", readErr)
+			}
+			if n == 0 {
+				break
+			}
+			break
+		}
+		if n == 0 {
+			break
+		}
+	}
+	return nil
 }
 
 func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {
@@ -182,6 +275,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.Resourc
 	}
 	var merged *format.TableInfo
 	totalRows := int64(0)
+	files := make([]FileInfo, 0, len(refs))
 	for _, ref := range refs {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
@@ -209,12 +303,17 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.Resourc
 		}
 		if info.RowCount != nil {
 			totalRows += *info.RowCount
+			files = append(files, FileInfo{
+				Path:     normalizeParquetPath(ref.Path),
+				RowCount: *info.RowCount,
+			})
 		}
 	}
 	if merged == nil {
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.RowCount = &totalRows
+	merged.Extensions = append(merged.Extensions, &Info{Files: files})
 	return merged, nil
 }
 
@@ -223,6 +322,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceR
 	if err != nil {
 		return nil, err
 	}
+	fileRowCounts := parquetFileRowCountsFromOptions(options)
 	if offset < 0 {
 		offset = 0
 	}
@@ -238,33 +338,37 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceR
 		if int64(len(rows)) >= limit {
 			break
 		}
-		input, err := reader.Open(ctx, ref)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
-		}
-		info, describeErr := p.DescribeTable(ctx, input, options)
-		closeErr := input.Close()
-		if describeErr != nil {
-			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
-		}
 		fileRows := int64(0)
-		if info.RowCount != nil {
-			fileRows = *info.RowCount
+		if rowCount, ok := fileRowCounts[normalizeParquetPath(ref.Path)]; ok {
+			fileRows = rowCount
+		} else {
+			input, err := reader.Open(ctx, ref)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
+			}
+			info, describeErr := p.DescribeTable(ctx, input, options)
+			closeErr := input.Close()
+			if describeErr != nil {
+				return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
+			}
+			if closeErr != nil {
+				return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
+			}
+			if info.RowCount != nil {
+				fileRows = *info.RowCount
+			}
 		}
 		if remainingOffset >= fileRows {
 			remainingOffset -= fileRows
 			continue
 		}
-		input, err = reader.Open(ctx, ref)
+		input, err := reader.Open(ctx, ref)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 		}
 		limitForFile := limit - int64(len(rows))
 		partRows, sampleErr := p.SampleTable(ctx, input, remainingOffset, limitForFile, options)
-		closeErr = input.Close()
+		closeErr := input.Close()
 		if sampleErr != nil {
 			return nil, fmt.Errorf("failed to sample parquet file %s: %w", ref.Path, sampleErr)
 		}
@@ -275,6 +379,82 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceR
 		remainingOffset = 0
 	}
 	return rows, nil
+}
+
+func parquetFileRowCountsFromOptions(options *format.ParseOptions) map[string]int64 {
+	if options == nil || options.ExtraParams == nil {
+		return nil
+	}
+	value := options.ExtraParams[FileRowCountsOption]
+	return fileRowCountsFromPathMap(value)
+}
+
+func fileRowCountsFromPathMap(value interface{}) map[string]int64 {
+	switch typed := value.(type) {
+	case map[string]int64:
+		counts := make(map[string]int64, len(typed))
+		for path, count := range typed {
+			counts[normalizeParquetPath(path)] = count
+		}
+		return counts
+	case map[string]interface{}:
+		counts := make(map[string]int64, len(typed))
+		for path, raw := range typed {
+			if count := interfaceInt64(raw); count >= 0 {
+				counts[normalizeParquetPath(path)] = count
+			}
+		}
+		return counts
+	default:
+		return nil
+	}
+}
+
+func fileRowCountsFromFileList(value interface{}) map[string]int64 {
+	values, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	counts := make(map[string]int64, len(values))
+	for _, item := range values {
+		fileAttrs, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		path := normalizeParquetPath(commonJSON.InterfaceString(fileAttrs["path"]))
+		rowCount := commonJSON.InterfaceInt64(fileAttrs["row_count"])
+		if path == "" || rowCount < 0 {
+			continue
+		}
+		counts[path] = rowCount
+	}
+	return counts
+}
+
+func interfaceInt64(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case int32:
+		return int64(typed)
+	case uint:
+		return int64(typed)
+	case uint64:
+		if typed > math.MaxInt64 {
+			return -1
+		}
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return -1
+	}
+}
+
+func normalizeParquetPath(path string) string {
+	return strings.Trim(path, "/")
 }
 
 func contextErr(ctx context.Context) error {

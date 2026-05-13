@@ -12,12 +12,14 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/common/format"
 	commonSpatial "github.com/addp/common/spatial"
 )
 
 const defaultGeometryField = "geometry"
+const defaultDocumentTextLimit int64 = 512 * 1024
 
 const (
 	StructureDocument          = "document"
@@ -61,7 +63,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
 		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+		ContentReaders: []string{string(format.ContentReaderDocumentText), string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
 	}
 }
 
@@ -128,6 +130,41 @@ func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options 
 		Format:   format.FormatJSON,
 		Encoding: "utf-8",
 	}, nil
+}
+
+// ReadDocumentText 返回 JSON 文档原文片段。
+func (p *Plugin) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *format.ParseOptions) (string, bool, error) {
+	if limit <= 0 {
+		limit = defaultDocumentTextLimit
+	}
+	if err := contextErr(ctx); err != nil {
+		return "", false, err
+	}
+
+	data, err := io.ReadAll(io.LimitReader(input, limit+1))
+	if err != nil {
+		return "", false, err
+	}
+	if err := contextErr(ctx); err != nil {
+		return "", false, err
+	}
+
+	truncated := int64(len(data)) > limit
+	if truncated {
+		data = data[:limit]
+	}
+	data = removeUTF8BOM(data)
+	if !utf8.Valid(data) {
+		data = []byte(string(data))
+	}
+	return string(data), truncated, nil
+}
+
+func removeUTF8BOM(data []byte) []byte {
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		return data[3:]
+	}
+	return data
 }
 
 // DescribeTable 从 JSON 记录集合结构中提取 TableInfo。
