@@ -4,8 +4,8 @@
     :children="children"
     :default-child-key="defaultChildKey"
     :selector-label="t('excelPreview.sheetSelector')"
-    :active-child-preview="activeSheetPreview"
-    :active-child-loading="activeSheetLoading"
+    :active-child-preview="resolvedActiveChildPreview"
+    :active-child-loading="resolvedActiveChildLoading"
     :truncated="childrenTruncated"
     :empty-text="t('excelPreview.parseError')"
     @child-change="handleChildChange"
@@ -25,21 +25,23 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  activeSheetPreview: {
+  activeChildPreview: {
     type: Object,
     default: null
   },
-  activeSheetLoading: {
+  activeChildLoading: {
     type: Boolean,
     default: false
-  }
+  },
 })
 
-const emit = defineEmits(['sheet-change', 'page-change'])
+const emit = defineEmits(['child-change', 'page-change'])
 
 const content = computed(() => props.data?.object?.content ?? {})
 const json = computed(() => content.value?.json ?? {})
 const summary = computed(() => json.value?.summary ?? {})
+const resolvedActiveChildPreview = computed(() => props.activeChildPreview)
+const resolvedActiveChildLoading = computed(() => props.activeChildLoading)
 const sheets = computed(() => {
   const list = json.value?.sheets
   return Array.isArray(list) ? list : []
@@ -118,7 +120,7 @@ const formatBytes = (bytes) => {
 
 const handleChildChange = (child) => {
   if (!child?.name) return
-  emit('sheet-change', child.name)
+  emit('child-change', child.name)
 }
 
 const handlePageChange = (page) => {

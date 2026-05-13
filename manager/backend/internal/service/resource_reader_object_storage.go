@@ -136,10 +136,6 @@ func (r *fileSystemResourceReader) List(ctx context.Context, scope resource.Reso
 	return refs, nil
 }
 
-func shapefileComponentReader(reader resource.ResourceReader, mainPath string) *resource.StaticComponentReader {
-	return resource.NewStaticComponentReader(reader, resource.SameBasenameComponents(mainPath, componentSpecsForPreviewFormat(format.FormatShapefile)))
-}
-
 func componentReaderForPreview(reader resource.ResourceReader, mainPath string, formatType format.FormatType, attrs map[string]interface{}) *resource.StaticComponentReader {
 	specs := componentSpecsForPreviewFormat(formatType)
 	components := componentRefsFromAttributes(mainPath, formatType, stringSliceAttribute(attrs, "component_files"))

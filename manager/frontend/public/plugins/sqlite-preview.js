@@ -76,8 +76,8 @@
 
   const component = {
     name: 'SqlitePreview',
-    props: ['data', 'activeSheetPreview', 'activeSheetLoading'],
-    emits: ['sheet-change', 'page-change'],
+    props: ['data', 'activeChildPreview', 'activeChildLoading'],
+    emits: ['child-change', 'page-change'],
     computed: {
       content() {
         return this.data?.object?.content || {}
@@ -133,7 +133,7 @@
       handleChildChange(child) {
         const name = child?.name || child?.key
         if (!name) return
-        this.$emit('sheet-change', name)
+        this.$emit('child-change', name)
       },
       handlePageChange(page) {
         this.$emit('page-change', page)
@@ -152,8 +152,8 @@
         children: this.children,
         defaultChildKey: this.defaultChildKey,
         selectorLabel: '选择数据表',
-        activeChildPreview: this.activeSheetPreview,
-        activeChildLoading: Boolean(this.activeSheetLoading),
+        activeChildPreview: this.activeChildPreview,
+        activeChildLoading: Boolean(this.activeChildLoading),
         truncated: this.childrenTruncated,
         emptyText: 'SQLite 文件中未检测到可展示的数据表',
         onChildChange: this.handleChildChange,

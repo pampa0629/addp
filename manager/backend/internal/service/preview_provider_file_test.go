@@ -144,6 +144,22 @@ func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.
 	if got := enginePlugin.openedPath.StringPath(); got != "gis-data/sample.csv" {
 		t.Fatalf("opened path = %q, want gis-data/sample.csv", got)
 	}
+
+	rangeReader, ok := resourceCtx.reader.(resource.RangeReader)
+	if !ok {
+		t.Fatalf("reader = %T, want resource.RangeReader", resourceCtx.reader)
+	}
+	rc, err = rangeReader.OpenRange(context.Background(), resource.NewResourceRef(resourceCtx.path, resource.ResourceRoleMain), 10, 20)
+	if err != nil {
+		t.Fatalf("OpenRange() error = %v", err)
+	}
+	rc.Close()
+	if got := enginePlugin.rangeOpenedPath.StringPath(); got != "gis-data/sample.csv" {
+		t.Fatalf("range opened path = %q, want gis-data/sample.csv", got)
+	}
+	if enginePlugin.rangeOptions.Offset != 10 || enginePlugin.rangeOptions.Length != 20 {
+		t.Fatalf("range options = %+v, want offset 10 length 20", enginePlugin.rangeOptions)
+	}
 }
 
 func TestObjectStorageResourceReaderStripsBucketPrefixFromComponentPath(t *testing.T) {
@@ -655,6 +671,7 @@ type recordingContentPlugin struct {
 	engineType      string
 	openedPath      plugin.CatalogPath
 	rangeOpenedPath plugin.CatalogPath
+	rangeOptions    plugin.ReadOptions
 }
 
 func (p *recordingContentPlugin) Type() string         { return p.engineType }
@@ -679,8 +696,9 @@ func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.Connect
 	p.openedPath = path
 	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
 }
-func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	p.rangeOpenedPath = path
+	p.rangeOptions = opts
 	return io.NopCloser(strings.NewReader("range")), nil
 }
 

@@ -171,7 +171,7 @@
         :loading="loading"
         @page-change="handlePageChange"
         @navigate="handleNavigate"
-        @sheet-change="handleSheetChange"
+        @child-change="handleChildChange"
       />
     </div>
 
@@ -215,7 +215,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate', 'sheet-change'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -457,10 +457,10 @@ const previewComponentProps = computed(() => {
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
   }
-  if (['excel-preview', 'sqlite'].includes(previewPluginName.value)) {
+  if (['container-preview', 'excel-preview', 'sqlite'].includes(previewPluginName.value)) {
     return {
-      activeSheetPreview: store.activeChildPreviewData,
-      activeSheetLoading: store.childPreviewLoading
+      activeChildPreview: store.activeChildPreviewData,
+      activeChildLoading: store.childPreviewLoading
     }
   }
   return {}
@@ -1534,8 +1534,8 @@ const handlePageChange = (page) => {
   emit('page-change', page)
 }
 
-const handleSheetChange = (sheetName) => {
-  emit('sheet-change', sheetName)
+const handleChildChange = (childName) => {
+  emit('child-change', childName)
 }
 
 const handleNavigate = (path) => {

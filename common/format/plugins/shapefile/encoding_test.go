@@ -215,6 +215,41 @@ func TestShapefileParserUsesSHXIndexedComponentSample(t *testing.T) {
 	}
 }
 
+func TestShapefileParserDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a", "b"})
+	components := newFailingRangeComponentReader(base, ".dbf")
+	parser := NewParser(nil)
+
+	if _, err := parser.SampleTableComponents(context.Background(), components, 0, 1, nil); err == nil {
+		t.Fatal("SampleTableComponents() error = nil, want indexed read error")
+	}
+	if components.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full component fallback on indexed read failure", components.openReads)
+	}
+}
+
+type failingRangeComponentReader struct {
+	*localComponentReader
+	failExt string
+}
+
+func newFailingRangeComponentReader(base string, failExt string) *failingRangeComponentReader {
+	return &failingRangeComponentReader{
+		localComponentReader: newLocalComponentReader(base),
+		failExt:              failExt,
+	}
+}
+
+func (r *failingRangeComponentReader) OpenComponentRange(ctx context.Context, component resource.ComponentRef, offset, length int64) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(component.Path), r.failExt) {
+		r.rangeReads++
+		return nil, resource.ErrResourceNotFound
+	}
+	return r.localComponentReader.OpenComponentRange(ctx, component, offset, length)
+}
+
 func createPointShapefileRows(t *testing.T, values []string) string {
 	t.Helper()
 

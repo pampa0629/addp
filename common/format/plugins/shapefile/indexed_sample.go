@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -17,6 +18,12 @@ import (
 type shxEntry struct {
 	OffsetBytes int64
 	LengthBytes int64
+}
+
+var errUnsupportedIndexedShapeType = errors.New("unsupported indexed shapefile shape type")
+
+func isIndexedSampleFallbackError(err error) bool {
+	return errors.Is(err, errUnsupportedIndexedShapeType)
 }
 
 func (p *Parser) sampleTableComponentsIndexed(ctx context.Context, components resource.ComponentReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
@@ -333,7 +340,7 @@ func parseShapeContent(shapeType shp.ShapeType, content *bytes.Reader) (shp.Shap
 	case shp.MULTIPOINT:
 		return readMultiPointContent(content)
 	default:
-		return nil, fmt.Errorf("unsupported indexed shapefile shape type: %v", shapeType)
+		return nil, fmt.Errorf("%w: %v", errUnsupportedIndexedShapeType, shapeType)
 	}
 }
 

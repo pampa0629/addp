@@ -79,6 +79,9 @@ func (p *Parser) SampleTableComponents(ctx context.Context, components resource.
 		if err == nil {
 			return rows, nil
 		}
+		if !isIndexedSampleFallbackError(err) {
+			return nil, err
+		}
 	}
 
 	_, basePath, cleanup, err := materializeComponents(ctx, components)

@@ -24,7 +24,7 @@
         :loading="loading"
         @page-change="$emit('page-change', $event)"
         @navigate="$emit('navigate', $event)"
-        @sheet-change="$emit('sheet-change', $event)"
+        @child-change="$emit('child-change', $event)"
       />
     </div>
   </div>
@@ -52,7 +52,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['page-change', 'navigate', 'sheet-change'])
+defineEmits(['page-change', 'navigate', 'child-change'])
 
 const metaExpanded = ref(true)
 

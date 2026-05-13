@@ -33,6 +33,28 @@ func (r memoryResourceReader) List(context.Context, ResourceRef) ([]ResourceRef,
 	return refs, nil
 }
 
+type memoryRangeResourceReader struct {
+	memoryResourceReader
+	rangeRef    ResourceRef
+	rangeOffset int64
+	rangeLength int64
+}
+
+func (r *memoryRangeResourceReader) OpenRange(_ context.Context, ref ResourceRef, offset, length int64) (io.ReadCloser, error) {
+	r.rangeRef = ref
+	r.rangeOffset = offset
+	r.rangeLength = length
+	value, ok := r.data[ref.Path]
+	if !ok {
+		return nil, ErrComponentNotFound
+	}
+	end := offset + length
+	if offset < 0 || length < 0 || offset > int64(len(value)) || end > int64(len(value)) {
+		return nil, ErrResourceNotFound
+	}
+	return io.NopCloser(strings.NewReader(value[offset:end])), nil
+}
+
 func TestSameBasenameComponents(t *testing.T) {
 	got := SameBasenameComponents("datasets/roads/roads.shp", []ComponentSpec{
 		{Extension: ".shp", Role: "main", Required: true},
@@ -78,5 +100,46 @@ func TestStaticComponentReaderOpensRole(t *testing.T) {
 	}
 	if string(data) != "shape" {
 		t.Fatalf("component data = %q, want shape", data)
+	}
+}
+
+func TestStaticComponentReaderOpenComponentRangeDelegatesToRangeReader(t *testing.T) {
+	backing := &memoryRangeResourceReader{
+		memoryResourceReader: memoryResourceReader{data: map[string]string{
+			"roads.shx": "0123456789",
+		}},
+	}
+	reader := NewStaticComponentReader(backing, []ComponentRef{
+		{ResourceRef: NewResourceRef("roads.shx", ResourceRoleComponent), ComponentRole: "index", Required: true},
+	})
+	component := reader.Components()[0]
+
+	rc, err := reader.OpenComponentRange(context.Background(), component, 2, 4)
+	if err != nil {
+		t.Fatalf("OpenComponentRange() error = %v", err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(data) != "2345" {
+		t.Fatalf("range data = %q, want 2345", data)
+	}
+	if backing.rangeRef.Path != "roads.shx" || backing.rangeOffset != 2 || backing.rangeLength != 4 {
+		t.Fatalf("range call = (%q,%d,%d), want (roads.shx,2,4)", backing.rangeRef.Path, backing.rangeOffset, backing.rangeLength)
+	}
+}
+
+func TestStaticComponentReaderOpenComponentRangeRequiresRangeReader(t *testing.T) {
+	reader := NewStaticComponentReader(memoryResourceReader{data: map[string]string{
+		"roads.shx": "0123456789",
+	}}, []ComponentRef{
+		{ResourceRef: NewResourceRef("roads.shx", ResourceRoleComponent), ComponentRole: "index", Required: true},
+	})
+	component := reader.Components()[0]
+
+	if _, err := reader.OpenComponentRange(context.Background(), component, 2, 4); err != ErrResourceNotFound {
+		t.Fatalf("OpenComponentRange() error = %v, want ErrResourceNotFound", err)
 	}
 }

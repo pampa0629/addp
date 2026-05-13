@@ -997,6 +997,15 @@ func legacySQLiteTables(children []map[string]interface{}) []map[string]interfac
 	return tables
 }
 
+func isContainerObjectContentFormat(formatName string) bool {
+	switch strings.ToLower(strings.TrimSpace(formatName)) {
+	case string(format.FormatExcel), "xlsx", "xls", string(format.FormatSQLite), "sqlite3", "db":
+		return true
+	default:
+		return false
+	}
+}
+
 func (h *excelContentHandler) effectiveSheetLimit(total int) int {
 	limit := h.sheetLimit
 	if limit <= 0 || limit > total {

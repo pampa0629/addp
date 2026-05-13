@@ -1,6 +1,7 @@
 {
   "scripts": [
     "/plugins/table-preview.js",
+    "/plugins/container-preview.js",
     "/plugins/object-storage-preview.js",
     "/plugins/geojson-preview.js",
     "/plugins/shapefile-preview.js",

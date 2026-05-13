@@ -42,7 +42,7 @@
           :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
           @navigate="handleNavigate"
-          @sheet-change="handleSheetChange"
+          @child-change="handleChildChange"
         />
       </div>
     </div>
@@ -190,10 +190,10 @@ const handlePageChange = async (page) => {
   }
 }
 
-const handleSheetChange = async (sheetName) => {
-  if (!store.selectedLocator || !sheetName) return
+const handleChildChange = async (childName) => {
+  if (!store.selectedLocator || !childName) return
   try {
-    await store.loadPreview(store.selectedLocator, 1, sheetName)
+    await store.loadPreview(store.selectedLocator, 1, childName)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }

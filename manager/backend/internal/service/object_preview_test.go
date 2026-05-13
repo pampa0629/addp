@@ -182,8 +182,11 @@ func TestObjectContentTableFormatUsesExplicitFormat(t *testing.T) {
 	}
 }
 
-func TestBuildExcelPreviewFromAttributes(t *testing.T) {
-	preview := buildExcelPreviewFromAttributes(map[string]interface{}{
+func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
+	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": "excel",
+		},
 		"type_info": map[string]interface{}{
 			"container": map[string]interface{}{
 				"children": []interface{}{
@@ -211,10 +214,20 @@ func TestBuildExcelPreviewFromAttributes(t *testing.T) {
 	}, 1024)
 
 	if preview == nil {
-		t.Fatal("buildExcelPreviewFromAttributes() returned nil")
+		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+	}
+	if preview["format"] != "excel" || preview["default_child"] != "Cities" || preview["active_child"] != "Cities" {
+		t.Fatalf("container header = %#v, want excel/Cities", preview)
 	}
 	if preview["default_sheet"] != "Cities" || preview["active_sheet"] != "Cities" {
 		t.Fatalf("default/active sheet = %#v/%#v, want Cities", preview["default_sheet"], preview["active_sheet"])
+	}
+	children, ok := preview["children"].([]map[string]interface{})
+	if !ok || len(children) != 1 {
+		t.Fatalf("children = %#v, want one child", preview["children"])
+	}
+	if children[0]["name"] != "Cities" || children[0]["kind"] != "sheet" {
+		t.Fatalf("child summary = %#v, want Cities sheet", children[0])
 	}
 	sheets, ok := preview["sheets"].([]map[string]interface{})
 	if !ok || len(sheets) != 1 {
@@ -230,6 +243,55 @@ func TestBuildExcelPreviewFromAttributes(t *testing.T) {
 	summary, ok := preview["summary"].(map[string]interface{})
 	if !ok || summary["size_bytes"] != int64(1024) {
 		t.Fatalf("summary = %#v, want size_bytes 1024", preview["summary"])
+	}
+}
+
+func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
+	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": "sqlite",
+		},
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"child_count": int64(1),
+				"children": []interface{}{
+					map[string]interface{}{
+						"name":      "Cities",
+						"table":     "city_table",
+						"kind":      "table",
+						"data_type": "table",
+						"row_count": int64(7),
+						"fields": []interface{}{
+							map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "original_type": "TEXT", "nullable": true},
+						},
+					},
+				},
+			},
+		},
+		"format_info": map[string]interface{}{
+			"sqlite": map[string]interface{}{
+				"table_count":      int64(1),
+				"sampled_children": int64(1),
+			},
+		},
+	}, 2048)
+
+	if preview == nil {
+		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+	}
+	if preview["format"] != "sqlite" || preview["default_child"] != "Cities" {
+		t.Fatalf("container header = %#v, want sqlite/Cities", preview)
+	}
+	children, ok := preview["children"].([]map[string]interface{})
+	if !ok || len(children) != 1 {
+		t.Fatalf("children = %#v, want one child", preview["children"])
+	}
+	if children[0]["table"] != "city_table" || children[0]["row_count"] != int64(7) {
+		t.Fatalf("child = %#v, want city_table row_count 7", children[0])
+	}
+	tables, ok := preview["tables"].([]map[string]interface{})
+	if !ok || len(tables) != 1 || tables[0]["table"] != "city_table" {
+		t.Fatalf("tables = %#v, want legacy table city_table", preview["tables"])
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
