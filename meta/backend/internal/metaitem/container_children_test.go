@@ -72,9 +72,11 @@ func TestEnrichSQLiteContainerChildrenWritesTables(t *testing.T) {
 	if len(children) != 1 || children[0]["name"] != "people" {
 		t.Fatalf("children = %#v", children)
 	}
-	fields := children[0]["fields"].([]map[string]interface{})
-	if len(fields) != 2 || fields[0]["name"] != "id" {
-		t.Fatalf("fields = %#v", fields)
+	if _, ok := children[0]["fields"]; ok {
+		t.Fatalf("container child should not carry fields: %#v", children[0])
+	}
+	if children[0]["column_count"] != 2 {
+		t.Fatalf("column_count = %#v, want 2", children[0]["column_count"])
 	}
 }
 

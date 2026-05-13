@@ -83,13 +83,14 @@ func TestInferSingleGeoJSONKeepsJSONAsDocumentUntilContentInspection(t *testing.
 	}
 }
 
-func TestInferSingleTIFFWritesRasterSpatialShell(t *testing.T) {
+func TestInferSingleTIFFDoesNotInferSpatialWithoutContentFacts(t *testing.T) {
 	item := InferSingleResource(SingleResourceInput{Name: "scene.tif", Path: "scene.tif"})
-	spatial := item.Attributes["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
-	if _, ok := spatial["extent"]; !ok {
-		t.Fatalf("capabilities.spatial.extent missing: %#v", spatial)
+	if item.DataType != dataitem.DataTypeMedia {
+		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeMedia)
 	}
-	if spatial["has_spatial_index"] != false {
-		t.Fatalf("capabilities.spatial = %#v", spatial)
+	if capabilities, ok := item.Attributes["capabilities"].(map[string]interface{}); ok {
+		if spatial := capabilities["spatial"]; spatial != nil {
+			t.Fatalf("tiff path should not imply spatial capability: %#v", spatial)
+		}
 	}
 }

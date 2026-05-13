@@ -35,6 +35,8 @@
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
 | GeoPackage | `single` | `container` | `geopackage` | 内部 layer 先写入 `type_info.container.children` |
 | 图片 | `single` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
+| 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
+| 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |
 | PDF | `single` | `document` | `pdf` | 文档元信息和提取状态分区写入 |
 
 ## CSV / TSV
@@ -317,12 +319,16 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 | `format` | `jpeg`、`png`、`gif`、`tiff`、`image` |
 | 主资源 | `meta_item.full_name` 指向图片文件 |
 
+`image` 是图片兜底格式，只在无法稳定识别具体图片格式时使用。JPEG、PNG、GIF、TIFF 等具体格式应优先写入具体 `format`。GeoTIFF 不新增独立基础格式，表达为 `format=tiff + capabilities.spatial`。
+
+WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descriptor、MIME、预览方式和后端解析边界；在仅能 raw / range 预览时，不应标记为后端已经具备完整 `MediaInfoProvider`。
+
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `organization`、`data_type`、`format` |
-| `type_info.media` | `kind=image`、宽高、颜色模式、方向、编码等媒体信息 |
+| `type_info.media` | `kind=image`、宽高、颜色模式、方向、编码、帧数或页数等媒体信息 |
 | `format_info.<format>` | EXIF、TIFF tag、压缩方式等格式私有信息 |
 | `capabilities.spatial` | 图片 GPS 或 GeoTIFF 可确定空间信息 |
 
@@ -330,11 +336,86 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 
 图片预览面向 `data_type=media`。如果图片包含 GPS 或 GeoTIFF 空间信息，可以额外启用空间能力展示，但图片本身仍是 `media` 类型。
 
+GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播放、帧数、页数、首帧缩略图等属于媒体信息或内容读取能力，不应改写为 `kind=video`。
+
+大图、GeoTIFF、多页 TIFF 等不应依赖全量 base64 作为首屏预览。Manager 应优先使用 raw / range URL、缩略图、降采样或切片能力；后端是否生成缩略图由 `MediaThumbnailReader` 或后续媒体读取能力声明。
+
 ### 格式约束
 
 - 不得给图片写入 `type_info.table.fields`。
 - 不得把所有图片都视为空间数据。
 - 不得把 EXIF 私有字段直接铺到 attributes 顶层。
+- 不得把 GeoTIFF 表达为新的基础数据类型。
+- 不得为了前端展示把大图全量内容写入 attributes。
+
+## 视频
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `organization` | `single` |
+| `data_type` | `media` |
+| `format` | `mp4`、`mov`、`mkv`、`avi`、`webm`、`video` |
+| 主资源 | `meta_item.full_name` 指向视频文件 |
+
+`format` 表达视频文件或容器格式。H.264、H.265、AV1、VP9、AAC、Opus 等编码不作为基础 `format`，应进入 `type_info.media` 或 `format_info.<format>`。
+
+`video` 是兜底格式，只在无法稳定识别具体视频容器时使用。第一阶段视频格式目标是稳定识别、记录轻量元信息，并支持 raw / range / stream 播放链路，不要求后端转码。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `organization`、`data_type`、`format` |
+| `type_info.media` | `kind=video`、宽高、时长、视频编码、音频编码、帧率、码率、轨道数等媒体信息 |
+| `format_info.<format>` | 容器版本、轨道摘要、metadata atom、字幕轨、封面帧等格式私有信息 |
+| `capabilities.extraction` | 仅在已有明确抽帧、OCR、语音转写或字幕提取任务状态时写入 |
+
+### 消费要求
+
+视频预览面向 `data_type=media + type_info.media.kind=video`。Manager 应优先使用 range / stream URL 播放，不应通过后端全量 base64 返回视频内容。转码、抽帧、封面图、字幕提取和语音转写属于后续媒体处理能力，不是格式识别的前置条件。
+
+Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用，但不应把抽帧结果、完整字幕或语音转写全文直接塞入 `attributes`。
+
+### 格式约束
+
+- 不得把视频编码当作基础 `format`。
+- 不得把视频写入 `type_info.document` 或 `type_info.table`。
+- 不得因为视频包含音轨就拆成多个基础 data item。
+- 不得为了预览全量读取大视频文件。
+
+## 音频
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `organization` | `single` |
+| `data_type` | `media` |
+| `format` | `mp3`、`wav`、`flac`、`aac`、`ogg`、`audio` |
+| 主资源 | `meta_item.full_name` 指向音频文件 |
+
+`audio` 是兜底格式，只在无法稳定识别具体音频格式时使用。第一阶段音频格式目标是稳定识别、记录轻量元信息，并支持 raw / range / stream 播放链路。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `organization`、`data_type`、`format` |
+| `type_info.media` | `kind=audio`、时长、编码、采样率、声道数、码率等媒体信息 |
+| `format_info.<format>` | ID3 / Vorbis comment / RIFF chunk / 封面图等格式私有信息 |
+| `capabilities.extraction` | 仅在已有明确语音转写、音乐识别或摘要任务状态时写入 |
+
+### 消费要求
+
+音频预览面向 `data_type=media + type_info.media.kind=audio`。Manager 应优先使用 range / stream URL 播放；语音转写、摘要、声纹、音乐识别等属于后续提取或语义能力，不是音频格式识别的前置条件。
+
+### 格式约束
+
+- 不得把音频写入 `type_info.document`。
+- 不得把歌词、转写全文或封面大图直接塞入 attributes。
+- 不得为了预览全量读取大音频文件。
 
 ## PDF
 

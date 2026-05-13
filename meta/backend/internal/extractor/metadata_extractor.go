@@ -41,6 +41,11 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	meta format.ObjectMetadata,
 	baseAttrs models.JSONMap,
 ) models.JSONMap {
+	if len(meta.ExtractedAttributes) > 0 {
+		mergeStandardAttributes(baseAttrs, meta.ExtractedAttributes)
+		return baseAttrs
+	}
+
 	// 如果 S3Scanner 已经提取了元数据，直接使用。
 	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
 		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
@@ -71,6 +76,27 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	metaattr.SetStorage(baseAttrs, "content_type", contentType)
 
 	return baseAttrs
+}
+
+func mergeStandardAttributes(dst models.JSONMap, src map[string]interface{}) {
+	if dst == nil || len(src) == 0 {
+		return
+	}
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+		values, ok := src[section].(map[string]interface{})
+		if !ok || len(values) == 0 {
+			continue
+		}
+		existing := metaattr.Section(dst, section)
+		for namespace, value := range values {
+			if valueMap, ok := value.(map[string]interface{}); ok {
+				metaattr.UpsertNested(dst, section, namespace, valueMap)
+				continue
+			}
+			existing[namespace] = value
+		}
+		dst[section] = existing
+	}
 }
 
 // ExtractEnhancedMetadataWithCache 带缓存检查的元数据提取。
@@ -182,6 +208,36 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
 		contentType = "application/octet-stream"
+	}
+
+	formatType := format.MIMEToFormat(contentType)
+	if formatType == format.FormatUnknown {
+		formatType = format.DetectFormat(objectKey, nil)
+	}
+	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType == format.FormatDataTypeMedia {
+		provider, err := format.GetMediaInfoProvider(formatType)
+		if err != nil {
+			return nil, fmt.Errorf("format %s has no media info provider: %w", formatType, err)
+		}
+		mediaInfo, err := provider.DescribeMedia(context.Background(), objectReader, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe media: %w", err)
+		}
+		item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
+		if err != nil {
+			return nil, err
+		}
+		enhancedAttrs := item.Attributes
+		if enhancedAttrs == nil {
+			enhancedAttrs = make(models.JSONMap)
+		}
+		mergeStandardAttributes(enhancedAttrs, MediaInfoAttributes(mediaInfo))
+		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
+		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
+		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 
 	extractor := format.GetExtractor(contentType)
@@ -376,8 +432,6 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 			continue
 		}
 		switch standardExtensionForMetadataKey(key) {
-		case "media":
-			metaattr.SetExtension(attrs, "media", key, value)
 		case "document":
 			metaattr.SetExtension(attrs, "document", key, value)
 		case "statistics":
@@ -398,9 +452,6 @@ func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.Ext
 
 func standardExtensionForMetadataKey(key string) string {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "kind", "width", "height", "format", "color_space", "color_mode", "bit_depth", "has_alpha",
-		"duration", "duration_seconds", "codec", "frame_rate", "sample_rate", "channels":
-		return "media"
 	case "document_type", "title", "author", "keywords", "page_count", "word_count",
 		"char_count", "created_date", "modified_date", "file_type_friendly", "encoding":
 		return "document"

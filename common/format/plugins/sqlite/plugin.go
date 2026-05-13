@@ -79,7 +79,7 @@ func (p *Parser) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}, nil
 }
 
-func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err
@@ -90,11 +90,61 @@ func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if err != nil {
 		return nil, err
 	}
-	table := firstSQLiteTable(result)
-	if table == nil {
-		return &format.TableInfo{Name: "sqlite_data", Fields: []format.FieldInfo{}, PrimaryKey: []string{}}, nil
+
+	children := make([]format.ContainerChildInfo, 0, len(result.Metadata.Tables))
+	for _, table := range result.Metadata.Tables {
+		columnCount := len(table.Columns)
+		children = append(children, format.ContainerChildInfo{
+			Name:        table.Name,
+			Kind:        table.Type,
+			DataType:    format.FormatDataTypeTable,
+			RowCount:    table.RowCount,
+			ColumnCount: &columnCount,
+			Properties: map[string]interface{}{
+				"table": table.Name,
+			},
+		})
 	}
-	return sqliteTableInfoToFormatTable(*table), nil
+	defaultChild := ""
+	if len(children) > 0 {
+		defaultChild = children[0].Name
+	}
+	return &format.ContainerInfo{
+		Format:        format.FormatSQLite,
+		ChildCount:    result.Metadata.TableCount + result.Metadata.ViewCount,
+		DefaultChild:  defaultChild,
+		ResourceCount: 1,
+		Children:      children,
+		FormatInfo: map[string]interface{}{
+			"version":            result.Metadata.Version,
+			"page_size":          result.Metadata.PageSize,
+			"page_count":         result.Metadata.PageCount,
+			"table_count":        result.Metadata.TableCount,
+			"view_count":         result.Metadata.ViewCount,
+			"index_count":        result.Metadata.IndexCount,
+			"sampled_children":   len(children),
+			"children_truncated": result.Metadata.TableCount+result.Metadata.ViewCount > len(children),
+		},
+	}, nil
+}
+
+func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+	tableName := tableNameFromOptions(options)
+	if tableName == "" {
+		return nil, fmt.Errorf("sqlite table preview requires table option")
+	}
+
+	db, cleanup, err := p.openDatabase(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	table, err := describeSQLiteTable(ctx, db, tableName)
+	if err != nil {
+		return nil, err
+	}
+	return sqliteTableInfoToFormatTable(table), nil
 }
 
 func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -174,6 +224,23 @@ func firstSQLiteTable(result *AnalysisResult) *TableInfo {
 		return nil
 	}
 	return &result.Metadata.Tables[0]
+}
+
+func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (TableInfo, error) {
+	objectType := "table"
+	err := db.QueryRowContext(ctx, `
+		SELECT type
+		FROM sqlite_master
+		WHERE name = ?
+		  AND type IN ('table', 'view')
+		  AND name NOT LIKE 'sqlite_%'
+	`, tableName).Scan(&objectType)
+	if err != nil {
+		return TableInfo{}, fmt.Errorf("sqlite table %q not found: %w", tableName, err)
+	}
+	opts := DefaultOptions()
+	opts.SampleRowLimit = 0
+	return analyzeTable(ctx, db, tableName, strings.ToLower(objectType), opts)
 }
 
 func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {

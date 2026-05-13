@@ -14,8 +14,8 @@ import (
 )
 
 type InlineMetadataExtractor interface {
-	ShouldExtract(contentType string, sizeBytes int64) bool
-	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string) *format.ExtractedMetadata
+	ShouldExtract(key, contentType string, sizeBytes int64) bool
+	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string) map[string]interface{}
 }
 
 func ListBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogNode, error) {
@@ -112,8 +112,8 @@ func ConvertObjectsToMetadata(
 			ObjectCount:  1,
 			LastModified: lastModified,
 		}
-		if deepScan && inlineExtractor != nil && lastModified != nil && inlineExtractor.ShouldExtract(contentType, size) {
-			meta.ExtractedMetadata = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag)
+		if deepScan && inlineExtractor != nil && lastModified != nil && inlineExtractor.ShouldExtract(key, contentType, size) {
+			meta.ExtractedAttributes = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag)
 		}
 		metas = append(metas, meta)
 	}

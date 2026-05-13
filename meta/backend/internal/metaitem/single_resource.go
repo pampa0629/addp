@@ -2,7 +2,6 @@ package metaitem
 
 import (
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/dataitem"
 )
 
@@ -50,38 +49,5 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 			},
 		},
 	}
-	applyKnownFormatCapabilities(item)
 	return item
-}
-
-func applyKnownFormatCapabilities(item *DetectedItem) {
-	if item == nil {
-		return
-	}
-	switch item.Format {
-	case string(format.FormatTIFF):
-		upsertNestedAttributeMap(item.Attributes, "capabilities", "spatial", map[string]interface{}{
-			"extent":            nil,
-			"has_spatial_index": false,
-		})
-	}
-}
-
-func upsertNestedAttributeMap(attrs map[string]interface{}, section string, namespace string, values map[string]interface{}) {
-	if attrs == nil || section == "" || namespace == "" || len(values) == 0 {
-		return
-	}
-	sectionAttrs, _ := attrs[section].(map[string]interface{})
-	if sectionAttrs == nil {
-		sectionAttrs = map[string]interface{}{}
-	}
-	namespaceAttrs, _ := sectionAttrs[namespace].(map[string]interface{})
-	if namespaceAttrs == nil {
-		namespaceAttrs = map[string]interface{}{}
-	}
-	for key, value := range values {
-		namespaceAttrs[key] = value
-	}
-	sectionAttrs[namespace] = namespaceAttrs
-	attrs[section] = sectionAttrs
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -19,10 +20,8 @@ func TestExtractionMetadataWritesCapabilitiesAndTypeInfo(t *testing.T) {
 	applyExtractedMetadataExtensions(attrs, &format.ExtractedMetadata{
 		BasicInfo: format.BasicMetadata{FileType: "PDF", Encoding: "UTF-8"},
 		CustomAttrs: map[string]interface{}{
-			"kind":       "image",
 			"page_count": 12,
 			"word_count": 2400,
-			"width":      800,
 			"plain_text": "not stored",
 			"vendor_key": "kept",
 		},
@@ -46,16 +45,46 @@ func TestExtractionMetadataWritesCapabilitiesAndTypeInfo(t *testing.T) {
 	if document["page_count"] != 12 || document["word_count"] != 2400 || document["file_type_friendly"] != "PDF" {
 		t.Fatalf("type_info.document = %#v", document)
 	}
-	media := typeInfo["media"].(map[string]interface{})
-	if media["kind"] != "image" || media["width"] != 800 {
-		t.Fatalf("type_info.media = %#v", media)
-	}
 	unqualified := attrs["format_info"].(map[string]interface{})["unqualified"].(map[string]interface{})
 	if unqualified["vendor_key"] != "kept" {
 		t.Fatalf("format_info.unqualified = %#v", unqualified)
 	}
 	if _, ok := unqualified["plain_text"]; ok {
 		t.Fatalf("plain_text should not be stored: %#v", unqualified)
+	}
+}
+
+func TestMediaInfoAttributesWritesTypeInfoAndSpatial(t *testing.T) {
+	t.Parallel()
+
+	duration := int64(1234)
+	size := int64(4567)
+	attrs := MediaInfoAttributes(&format.MediaInfo{
+		Format:     format.FormatTIFF,
+		MediaType:  "image",
+		MIMEType:   "image/tiff",
+		Width:      800,
+		Height:     600,
+		DurationMS: &duration,
+		Encoding:   "tiff",
+		ColorSpace: "RGB",
+		SizeBytes:  &size,
+		SpatialAttrs: map[string]interface{}{
+			"srid":   4326,
+			"extent": []float64{1, 2, 3, 4},
+		},
+	})
+
+	media := commonJSON.Section(attrs, "type_info.media")
+	if media["kind"] != "image" || media["width"] != 800 || media["height"] != 600 {
+		t.Fatalf("type_info.media = %#v", media)
+	}
+	if media["duration_ms"] != duration || media["encoding"] != "tiff" || media["mime_type"] != "image/tiff" {
+		t.Fatalf("type_info.media = %#v", media)
+	}
+	spatial := commonJSON.Section(attrs, "capabilities.spatial")
+	if spatial["srid"] != 4326 {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
 	}
 }
 

@@ -69,11 +69,13 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 
 典型来源：
 
-- JPEG / PNG / GIF / TIFF / GeoTIFF。
-- 视频。
-- 音频。
+- 图片：JPEG / PNG / GIF / TIFF / WebP / BMP / SVG / AVIF / HEIC / GeoTIFF。
+- 视频：MP4 / MOV / MKV / AVI / WebM 等容器格式。
+- 音频：MP3 / WAV / FLAC / AAC / OGG 等音频格式。
 
 图片、视频、音频之间的差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达，不新增基础数据类型。
+
+媒体文件的容器格式、编码格式和横切能力应分层表达：`format` 优先表达文件或容器格式，视频编码、音频编码、帧率、采样率、码率等进入 `type_info.media` 或 `format_info.<format>`；GeoTIFF、带 GPS 的图片等空间语义进入 `capabilities.spatial`，不新增“空间图片”或“视频数据”数据类型。
 
 ### container
 

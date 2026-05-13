@@ -685,9 +685,6 @@ func buildContainerPreviewFromAnalysis(formatName string, analysis *excel.Workbo
 			"row_count":    sheet.RowCount,
 			"column_count": sheet.ColumnCount,
 			"has_header":   sheet.HasHeader,
-			"columns":      sheet.Headers,
-			"column_types": sheet.ColumnTypes,
-			"rows":         sheet.SampleRows,
 		})
 	}
 
@@ -697,9 +694,6 @@ func buildContainerPreviewFromAnalysis(formatName string, analysis *excel.Workbo
 	}
 
 	preview := buildContainerPreview(formatName, analysis.DefaultSheet, analysis.ActiveSheet, children, summary)
-	preview["sheets"] = legacyExcelSheets(children)
-	preview["default_sheet"] = analysis.DefaultSheet
-	preview["active_sheet"] = analysis.ActiveSheet
 	return preview
 }
 
@@ -726,17 +720,13 @@ type excelContentHandler struct {
 	baseContentHandler
 	maxBytes    int64
 	sheetLimit  int
-	rowLimit    int
 	columnLimit int
 }
 
 const (
 	defaultExcelSheetLimit  = 5
-	defaultExcelRowLimit    = 50
 	defaultExcelColumnLimit = 50
 	maxExcelPreviewBytes    = 15 * 1024 * 1024
-	excelMaxReadRows        = 200
-	excelSampleRowsFallback = 20
 	excelTypeDetectLimit    = 100
 )
 
@@ -773,7 +763,6 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	sheetNames := workbook.GetSheetList()
 	options := excel.Options{
 		SheetLimit:      h.effectiveSheetLimit(len(sheetNames)),
-		RowLimit:        h.effectiveRowLimit(),
 		ColumnLimit:     h.effectiveColumnLimit(),
 		TypeDetectLimit: excelTypeDetectLimit,
 	}
@@ -790,7 +779,6 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 
 	metadata := map[string]interface{}{
 		"sheet_limit":  h.sheetLimit,
-		"row_limit":    h.rowLimit,
 		"column_limit": h.columnLimit,
 	}
 	if req != nil {
@@ -829,20 +817,10 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		if len(child) == 0 {
 			continue
 		}
-		fields := fieldsFromAttribute(child["fields"])
-		columns := make([]string, 0, len(fields))
-		columnTypes := make([]string, 0, len(fields))
-		for _, field := range fields {
-			columns = append(columns, field.Name)
-			originalType := field.OriginalType
-			if originalType == "" {
-				originalType = string(field.Type)
-			}
-			columnTypes = append(columnTypes, originalType)
-		}
 		name := commonJSON.InterfaceString(child["name"])
 		tableName := commonJSON.InterfaceString(child["table"])
 		kind := commonJSON.InterfaceString(child["kind"])
+		columnCount := commonJSON.InterfaceInt64(child["column_count"])
 		childMap := map[string]interface{}{
 			"key":          containerChildKey(name, tableName, index),
 			"name":         name,
@@ -852,10 +830,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 			"kind":         kind,
 			"data_type":    commonJSON.InterfaceString(child["data_type"]),
 			"row_count":    commonJSON.InterfaceInt64(child["row_count"]),
-			"column_count": commonJSON.InterfaceInt64(child["column_count"]),
-			"columns":      columns,
-			"column_types": columnTypes,
-			"rows":         []map[string]interface{}{},
+			"column_count": columnCount,
 		}
 		if _, ok := child["has_header"]; ok {
 			childMap["has_header"] = commonJSON.InterfaceBool(child["has_header"])
@@ -874,18 +849,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 
 	summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
 	defaultChild := containerDefaultChild(formatName, formatAttrs, previewChildren)
-	preview := buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
-	if formatName == string(format.FormatExcel) {
-		preview["sheets"] = legacyExcelSheets(previewChildren)
-		preview["default_sheet"] = defaultChild
-		preview["active_sheet"] = defaultChild
-	}
-	if formatName == string(format.FormatSQLite) {
-		preview["tables"] = legacySQLiteTables(previewChildren)
-		preview["default_table"] = defaultChild
-		preview["active_table"] = defaultChild
-	}
-	return preview
+	return buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
 }
 
 func buildContainerPreview(formatName, defaultChild, activeChild string, children []map[string]interface{}, summary map[string]interface{}) map[string]interface{} {
@@ -951,43 +915,6 @@ func containerChildKey(name, tableName string, index int) string {
 	return fmt.Sprintf("%d", index)
 }
 
-func legacyExcelSheets(children []map[string]interface{}) []map[string]interface{} {
-	sheets := make([]map[string]interface{}, 0, len(children))
-	for _, child := range children {
-		if kind := commonJSON.InterfaceString(child["kind"]); kind != "" && !strings.EqualFold(kind, "sheet") {
-			continue
-		}
-		sheets = append(sheets, map[string]interface{}{
-			"name":           child["name"],
-			"index":          child["index"],
-			"row_count":      child["row_count"],
-			"column_count":   child["column_count"],
-			"has_header":     child["has_header"],
-			"headers":        child["columns"],
-			"column_types":   child["column_types"],
-			"rows":           child["rows"],
-			"rows_truncated": false,
-		})
-	}
-	return sheets
-}
-
-func legacySQLiteTables(children []map[string]interface{}) []map[string]interface{} {
-	tables := make([]map[string]interface{}, 0, len(children))
-	for _, child := range children {
-		tables = append(tables, map[string]interface{}{
-			"name":         child["name"],
-			"table":        child["table"],
-			"type":         child["kind"],
-			"row_count":    child["row_count"],
-			"column_count": child["column_count"],
-			"columns":      child["columns"],
-			"rows":         child["rows"],
-		})
-	}
-	return tables
-}
-
 func isContainerObjectContentFormat(formatName string) bool {
 	switch strings.ToLower(strings.TrimSpace(formatName)) {
 	case string(format.FormatExcel), "xlsx", "xls", string(format.FormatSQLite), "sqlite3", "db":
@@ -1003,13 +930,6 @@ func (h *excelContentHandler) effectiveSheetLimit(total int) int {
 		return total
 	}
 	return limit
-}
-
-func (h *excelContentHandler) effectiveRowLimit() int {
-	if h.rowLimit <= 0 {
-		return defaultExcelRowLimit
-	}
-	return h.rowLimit
 }
 
 func (h *excelContentHandler) effectiveColumnLimit() int {
@@ -1280,7 +1200,6 @@ func buildSQLiteMetadataMap(meta sqlite.Metadata, req *ObjectContentRequest) map
 func buildContainerPreviewFromSQLiteAnalysis(meta sqlite.Metadata) map[string]interface{} {
 	children := make([]map[string]interface{}, 0, len(meta.Tables))
 	for _, tbl := range meta.Tables {
-		columns, columnTypes := sqlitePreviewColumns(tbl.Columns)
 		child := map[string]interface{}{
 			"key":          tbl.Name,
 			"name":         tbl.Name,
@@ -1288,10 +1207,7 @@ func buildContainerPreviewFromSQLiteAnalysis(meta sqlite.Metadata) map[string]in
 			"table":        tbl.Name,
 			"kind":         tbl.Type,
 			"data_type":    string(format.FormatDataTypeTable),
-			"column_count": len(columns),
-			"columns":      columns,
-			"column_types": columnTypes,
-			"rows":         tbl.SampleRows,
+			"column_count": len(tbl.Columns),
 		}
 		if tbl.RowCount != nil {
 			child["row_count"] = *tbl.RowCount
@@ -1312,23 +1228,7 @@ func buildContainerPreviewFromSQLiteAnalysis(meta sqlite.Metadata) map[string]in
 		defaultChild = commonJSON.InterfaceString(children[0]["key"])
 	}
 	preview := buildContainerPreview(string(format.FormatSQLite), defaultChild, defaultChild, children, summary)
-	preview["tables"] = legacySQLiteTables(children)
-	preview["default_table"] = defaultChild
-	preview["active_table"] = defaultChild
 	return preview
-}
-
-func sqlitePreviewColumns(columns []sqlite.ColumnInfo) ([]string, []string) {
-	names := make([]string, 0, len(columns))
-	types := make([]string, 0, len(columns))
-	for _, column := range columns {
-		if column.Name == "" {
-			continue
-		}
-		names = append(names, column.Name)
-		types = append(types, column.Type)
-	}
-	return names, types
 }
 
 func hasAnyTruncatedTable(tables []sqlite.TableInfo) bool {

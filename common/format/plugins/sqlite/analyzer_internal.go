@@ -71,7 +71,7 @@ func Analyze(ctx context.Context, db *sql.DB, opts *Options) (*AnalysisResult, e
 
 	options := DefaultOptions()
 	if opts != nil {
-		if opts.TableLimit > 0 {
+		if opts.TableLimit >= 0 {
 			options.TableLimit = opts.TableLimit
 		}
 		if opts.SampleRowLimit >= 0 {
@@ -113,15 +113,16 @@ func Analyze(ctx context.Context, db *sql.DB, opts *Options) (*AnalysisResult, e
 		WHERE type IN (` + placeholders(len(tableTypes)) + `)
 		  AND name NOT LIKE 'sqlite_%'
 		ORDER BY name
-		LIMIT ?
 	`
 
 	args := make([]interface{}, 0, len(tableTypes)+1)
 	for _, t := range tableTypes {
 		args = append(args, t)
 	}
-	args = append(args, options.TableLimit)
-
+	if options.TableLimit > 0 {
+		query += " LIMIT ?"
+		args = append(args, options.TableLimit)
+	}
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite analyzer: list tables failed: %w", err)

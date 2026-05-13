@@ -42,6 +42,33 @@ func TestCapabilityViewFromDescriptor(t *testing.T) {
 	}
 }
 
+func TestMediaDescriptorsDeclareRawRangeOnly(t *testing.T) {
+	tests := []Format{
+		FormatWebP,
+		FormatSVG,
+		FormatMP4,
+		FormatMP3,
+	}
+	for _, format := range tests {
+		t.Run(string(format), func(t *testing.T) {
+			view, ok := GetCapabilityView(format)
+			if !ok {
+				t.Fatalf("expected %s capability view", format)
+			}
+			if view.DataType != DataTypeMedia {
+				t.Fatalf("DataType = %q, want %q", view.DataType, DataTypeMedia)
+			}
+			if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderRawContent) ||
+				!containsStringForDescriptorTest(view.ContentReaders, ContentReaderRangeContent) {
+				t.Fatalf("ContentReaders = %#v, want raw and range", view.ContentReaders)
+			}
+			if view.Transfer.Read || view.Transfer.Write {
+				t.Fatalf("Transfer = %#v, media descriptors should not declare transfer", view.Transfer)
+			}
+		})
+	}
+}
+
 func containsStringForDescriptorTest(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {

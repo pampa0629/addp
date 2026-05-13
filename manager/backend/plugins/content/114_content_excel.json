@@ -7,7 +7,7 @@
   "max_bytes": 15728640,
   "metadata": {
     "sheet_limit": 10,
-    "row_limit": 50,
-    "column_limit": 50
+    "column_limit": 50,
+    "_comment": "Excel 对象预览只生成容器 children 索引；行数据由 child table preview 分页读取"
   }
 }

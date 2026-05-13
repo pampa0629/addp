@@ -1,6 +1,15 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/manager/internal/models"
+)
 
 func TestNFSPhysicalPath(t *testing.T) {
 	t.Parallel()
@@ -26,4 +35,121 @@ func TestNFSPhysicalPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFileSystemPreviewUsesMetaContainerAttributes(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileSystemPreviewPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := NewFileSystemPreviewProvider(nil, NewObjectContentRegistry())
+	LoadObjectContentPlugins(provider.(*fileSystemPreviewProvider).content, "../../plugins/content")
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 7},
+		Schema: "gis-data",
+		Table:  "sample.sqlite",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "container",
+				"format":    "sqlite",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"child_count": int64(2),
+					"children": []interface{}{
+						map[string]interface{}{"name": "cities", "table": "cities", "kind": "table", "data_type": "table", "row_count": int64(3), "column_count": int64(2)},
+						map[string]interface{}{"name": "roads", "table": "roads", "kind": "table", "data_type": "table", "row_count": int64(4), "column_count": int64(5)},
+					},
+				},
+			},
+			"format_info": map[string]interface{}{
+				"sqlite": map[string]interface{}{
+					"table_count":      int64(2),
+					"sampled_children": int64(2),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindContainer {
+		t.Fatalf("content kind = %q, want container", preview.Object.Content.Kind)
+	}
+	jsonMap, ok := preview.Object.Content.JSON.(map[string]interface{})
+	if !ok {
+		t.Fatalf("content json = %#v, want map", preview.Object.Content.JSON)
+	}
+	children, ok := jsonMap["children"].([]map[string]interface{})
+	if !ok || len(children) != 2 {
+		t.Fatalf("children = %#v, want 2 children", jsonMap["children"])
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when meta container attrs are available", enginePlugin.openContentCalls)
+	}
+	if _, ok := children[0]["columns"]; ok {
+		t.Fatalf("container child should not carry columns: %#v", children[0])
+	}
+}
+
+type recordingFileSystemPreviewPlugin struct {
+	engineType        string
+	openContentCalls  int
+	describedItemPath plugin.CatalogPath
+}
+
+func (p *recordingFileSystemPreviewPlugin) Type() string         { return p.engineType }
+func (p *recordingFileSystemPreviewPlugin) DisplayName() string  { return p.engineType }
+func (p *recordingFileSystemPreviewPlugin) EngineOrigin() string { return "general" }
+func (p *recordingFileSystemPreviewPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingFileSystemPreviewPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingFileSystemPreviewPlugin) DefaultPort() int          { return 0 }
+func (p *recordingFileSystemPreviewPlugin) RequiredFields() []string  { return nil }
+func (p *recordingFileSystemPreviewPlugin) SensitiveFields() []string { return nil }
+func (p *recordingFileSystemPreviewPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (p *recordingFileSystemPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p *recordingFileSystemPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return nil, nil
+}
+func (p *recordingFileSystemPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	return nil, nil
+}
+func (p *recordingFileSystemPreviewPlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	p.describedItemPath = path
+	now := time.Now()
+	return &plugin.ItemMetadata{
+		Path: path,
+		Kind: plugin.CatalogKindFile,
+		Stats: map[string]interface{}{
+			"size_bytes": int64(1024),
+		},
+		Attributes: map[string]interface{}{
+			"path":         path.StringPath(),
+			"content_type": "application/vnd.sqlite3",
+		},
+		UpdatedAt: &now,
+	}, nil
+}
+func (p *recordingFileSystemPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	p.openContentCalls++
+	return io.NopCloser(strings.NewReader("unused")), nil
 }

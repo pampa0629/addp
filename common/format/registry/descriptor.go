@@ -16,11 +16,23 @@ const (
 	FormatDOCX      Format = "docx"
 	FormatExcel     Format = "excel"
 	FormatGIF       Format = "gif"
+	FormatAAC       Format = "aac"
+	FormatAVI       Format = "avi"
+	FormatAVIF      Format = "avif"
+	FormatAudio     Format = "audio"
+	FormatBMP       Format = "bmp"
+	FormatFLAC      Format = "flac"
+	FormatHEIC      Format = "heic"
 	FormatImage     Format = "image"
 	FormatJPEG      Format = "jpeg"
 	FormatJSON      Format = "json"
 	FormatMarkdown  Format = "markdown"
+	FormatMKV       Format = "mkv"
+	FormatMOV       Format = "mov"
+	FormatMP3       Format = "mp3"
+	FormatMP4       Format = "mp4"
 	FormatORC       Format = "orc"
+	FormatOGG       Format = "ogg"
 	FormatParquet   Format = "parquet"
 	FormatPDF       Format = "pdf"
 	FormatPNG       Format = "png"
@@ -30,6 +42,11 @@ const (
 	FormatText      Format = "text"
 	FormatTIFF      Format = "tiff"
 	FormatTSV       Format = "tsv"
+	FormatSVG       Format = "svg"
+	FormatVideo     Format = "video"
+	FormatWAV       Format = "wav"
+	FormatWebM      Format = "webm"
+	FormatWebP      Format = "webp"
 	FormatWPS       Format = "wps"
 	FormatAvro      Format = "avro"
 )
@@ -475,6 +492,23 @@ var builtinDescriptors = []Descriptor{
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
+	mediaRawRangeDescriptor("builtin-webp", FormatWebP, "format.webp", []string{".webp"}, []string{"image/webp"}),
+	mediaRawRangeDescriptor("builtin-bmp", FormatBMP, "format.bmp", []string{".bmp"}, []string{"image/bmp", "image/x-ms-bmp"}),
+	mediaRawRangeDescriptor("builtin-svg", FormatSVG, "format.svg", []string{".svg", ".svgz"}, []string{"image/svg+xml"}),
+	mediaRawRangeDescriptor("builtin-avif", FormatAVIF, "format.avif", []string{".avif"}, []string{"image/avif"}),
+	mediaRawRangeDescriptor("builtin-heic", FormatHEIC, "format.heic", []string{".heic", ".heif"}, []string{"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"}),
+	mediaRawRangeDescriptor("builtin-video", FormatVideo, "format.video", nil, []string{"video/*"}),
+	mediaRawRangeDescriptor("builtin-mp4", FormatMP4, "format.mp4", []string{".mp4", ".m4v"}, []string{"video/mp4", "application/mp4"}),
+	mediaRawRangeDescriptor("builtin-mov", FormatMOV, "format.mov", []string{".mov", ".qt"}, []string{"video/quicktime"}),
+	mediaRawRangeDescriptor("builtin-mkv", FormatMKV, "format.mkv", []string{".mkv"}, []string{"video/x-matroska", "video/matroska"}),
+	mediaRawRangeDescriptor("builtin-avi", FormatAVI, "format.avi", []string{".avi"}, []string{"video/x-msvideo", "video/avi"}),
+	mediaRawRangeDescriptor("builtin-webm", FormatWebM, "format.webm", []string{".webm"}, []string{"video/webm"}),
+	mediaRawRangeDescriptor("builtin-audio", FormatAudio, "format.audio", nil, []string{"audio/*"}),
+	mediaRawRangeDescriptor("builtin-mp3", FormatMP3, "format.mp3", []string{".mp3"}, []string{"audio/mpeg", "audio/mp3"}),
+	mediaRawRangeDescriptor("builtin-wav", FormatWAV, "format.wav", []string{".wav"}, []string{"audio/wav", "audio/wave", "audio/x-wav"}),
+	mediaRawRangeDescriptor("builtin-flac", FormatFLAC, "format.flac", []string{".flac"}, []string{"audio/flac"}),
+	mediaRawRangeDescriptor("builtin-aac", FormatAAC, "format.aac", []string{".aac", ".m4a"}, []string{"audio/aac", "audio/mp4", "audio/x-m4a"}),
+	mediaRawRangeDescriptor("builtin-ogg", FormatOGG, "format.ogg", []string{".ogg", ".oga", ".opus"}, []string{"audio/ogg", "audio/opus"}),
 	{
 		ID:            "builtin-shapefile",
 		Format:        FormatShapefile,
@@ -557,6 +591,23 @@ var builtinDescriptors = []Descriptor{
 }
 
 var globalRegistry = newRegistry()
+
+func mediaRawRangeDescriptor(id string, format Format, i18nKey string, extensions, mimeTypes []string) Descriptor {
+	return Descriptor{
+		ID:            id,
+		Format:        format,
+		I18nKey:       i18nKey,
+		DataType:      DataTypeMedia,
+		Layouts:       []string{LayoutSingle},
+		ProviderHints: []string{ProviderMedia},
+		Identification: Identification{
+			Extensions: extensions,
+			MimeTypes:  mimeTypes,
+		},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	}
+}
 
 func init() {
 	for _, descriptor := range builtinDescriptors {

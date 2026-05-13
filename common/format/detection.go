@@ -36,6 +36,11 @@ const (
 	FormatPNG   FormatType = "png"
 	FormatGIF   FormatType = "gif"
 	FormatTIFF  FormatType = "tiff"
+	FormatWebP  FormatType = "webp"
+	FormatBMP   FormatType = "bmp"
+	FormatSVG   FormatType = "svg"
+	FormatAVIF  FormatType = "avif"
+	FormatHEIC  FormatType = "heic"
 
 	// 数据库格式
 	FormatSQLite   FormatType = "sqlite"
@@ -52,6 +57,16 @@ const (
 	// 多媒体格式
 	FormatVideo FormatType = "video"
 	FormatAudio FormatType = "audio"
+	FormatMP4   FormatType = "mp4"
+	FormatMOV   FormatType = "mov"
+	FormatMKV   FormatType = "mkv"
+	FormatAVI   FormatType = "avi"
+	FormatWebM  FormatType = "webm"
+	FormatMP3   FormatType = "mp3"
+	FormatWAV   FormatType = "wav"
+	FormatFLAC  FormatType = "flac"
+	FormatAAC   FormatType = "aac"
+	FormatOGG   FormatType = "ogg"
 
 	// 未知格式
 	FormatUnknown FormatType = "unknown"
@@ -138,6 +153,16 @@ func extToFormat(ext string) FormatType {
 		return FormatGIF
 	case ".tif", ".tiff":
 		return FormatTIFF
+	case ".webp":
+		return FormatWebP
+	case ".bmp":
+		return FormatBMP
+	case ".svg", ".svgz":
+		return FormatSVG
+	case ".avif":
+		return FormatAVIF
+	case ".heic", ".heif":
+		return FormatHEIC
 
 	// 数据库
 	case ".sqlite", ".db", ".sqlite3":
@@ -156,10 +181,28 @@ func extToFormat(ext string) FormatType {
 		return FormatAvro
 
 	// 多媒体
-	case ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv":
+	case ".mp4", ".m4v":
+		return FormatMP4
+	case ".avi":
+		return FormatAVI
+	case ".mov", ".qt":
+		return FormatMOV
+	case ".mkv":
+		return FormatMKV
+	case ".webm":
+		return FormatWebM
+	case ".mp3":
+		return FormatMP3
+	case ".wav":
+		return FormatWAV
+	case ".flac":
+		return FormatFLAC
+	case ".aac", ".m4a":
+		return FormatAAC
+	case ".ogg", ".oga", ".opus":
+		return FormatOGG
+	case ".flv", ".wmv":
 		return FormatVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg":
-		return FormatAudio
 
 	default:
 		return FormatUnknown
@@ -205,16 +248,51 @@ func getMagicBytes(format FormatType) []byte {
 
 // detectByMagic 通过Magic Bytes检测格式
 func detectByMagic(peek []byte) FormatType {
+	lowerPeek := bytes.ToLower(bytes.TrimSpace(peek))
+	if bytes.HasPrefix(lowerPeek, []byte("<svg")) ||
+		(bytes.HasPrefix(lowerPeek, []byte("<?xml")) && bytes.Contains(lowerPeek[:minInt(len(lowerPeek), 4096)], []byte("<svg"))) {
+		return FormatSVG
+	}
+
+	if len(peek) >= 12 && bytes.HasPrefix(peek, []byte("RIFF")) {
+		switch string(peek[8:12]) {
+		case "WEBP":
+			return FormatWebP
+		case "WAVE":
+			return FormatWAV
+		case "AVI ":
+			return FormatAVI
+		}
+	}
+	if len(peek) >= 12 && string(peek[4:8]) == "ftyp" {
+		brand := strings.ToLower(string(peek[8:minInt(len(peek), 12)]))
+		switch brand {
+		case "avif":
+			return FormatAVIF
+		case "heic", "heix", "hevc", "hevx", "mif1", "msf1":
+			return FormatHEIC
+		case "qt  ":
+			return FormatMOV
+		default:
+			return FormatMP4
+		}
+	}
+
 	magicMap := map[string]FormatType{
-		"%PDF":            FormatPDF,
-		"SQLite format 3": FormatSQLite,
-		"\xFF\xD8\xFF":    FormatJPEG,
-		"\x89PNG":         FormatPNG,
-		"GIF89a":          FormatGIF,
-		"GIF87a":          FormatGIF,
-		"PK\x03\x04":      FormatUnknown, // ZIP格式，可能是DOCX/XLSX/GPKG等
-		"0000":            FormatShapefile,
-		"9994":            FormatShapefile,
+		"%PDF":             FormatPDF,
+		"SQLite format 3":  FormatSQLite,
+		"\xFF\xD8\xFF":     FormatJPEG,
+		"\x89PNG":          FormatPNG,
+		"GIF89a":           FormatGIF,
+		"GIF87a":           FormatGIF,
+		"BM":               FormatBMP,
+		"ID3":              FormatMP3,
+		"OggS":             FormatOGG,
+		"fLaC":             FormatFLAC,
+		"\x1A\x45\xDF\xA3": FormatMKV,
+		"PK\x03\x04":       FormatUnknown, // ZIP格式，可能是DOCX/XLSX/GPKG等
+		"0000":             FormatShapefile,
+		"9994":             FormatShapefile,
 	}
 
 	for magic, format := range magicMap {
@@ -224,6 +302,13 @@ func detectByMagic(peek []byte) FormatType {
 	}
 
 	return FormatUnknown
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // isShapefileComponent 判断是否为Shapefile组合文件的一部分
@@ -312,10 +397,26 @@ func MIMEToFormat(mimeType string) FormatType {
 		return FormatAvro
 
 	// 多媒体
-	case "video/mp4", "video/x-msvideo", "video/quicktime":
-		return FormatVideo
-	case "audio/mpeg", "audio/wav", "audio/flac":
-		return FormatAudio
+	case "video/mp4", "application/mp4":
+		return FormatMP4
+	case "video/x-msvideo", "video/avi":
+		return FormatAVI
+	case "video/quicktime":
+		return FormatMOV
+	case "video/x-matroska", "video/matroska":
+		return FormatMKV
+	case "video/webm":
+		return FormatWebM
+	case "audio/mpeg", "audio/mp3":
+		return FormatMP3
+	case "audio/wav", "audio/wave", "audio/x-wav":
+		return FormatWAV
+	case "audio/flac":
+		return FormatFLAC
+	case "audio/aac", "audio/mp4", "audio/x-m4a":
+		return FormatAAC
+	case "audio/ogg", "audio/opus":
+		return FormatOGG
 
 	default:
 		// 尝试主类型匹配
@@ -400,8 +501,28 @@ func FormatToMIME(format FormatType) string {
 		return "application/avro"
 
 	// 多媒体
+	case FormatMP4:
+		return "video/mp4"
+	case FormatMOV:
+		return "video/quicktime"
+	case FormatMKV:
+		return "video/x-matroska"
+	case FormatAVI:
+		return "video/x-msvideo"
+	case FormatWebM:
+		return "video/webm"
 	case FormatVideo:
 		return "video/*"
+	case FormatMP3:
+		return "audio/mpeg"
+	case FormatWAV:
+		return "audio/wav"
+	case FormatFLAC:
+		return "audio/flac"
+	case FormatAAC:
+		return "audio/aac"
+	case FormatOGG:
+		return "audio/ogg"
 	case FormatAudio:
 		return "audio/*"
 
@@ -480,11 +601,8 @@ func IsDocumentFormat(format FormatType) bool {
 
 // IsImageFormat 判断是否为图像格式
 func IsImageFormat(format FormatType) bool {
-	if capability, ok := GetFormatCapability(format); ok {
-		return capability.DataType == FormatDataTypeMedia
-	}
 	switch format {
-	case FormatImage, FormatJPEG, FormatPNG, FormatGIF, FormatTIFF:
+	case FormatImage, FormatJPEG, FormatPNG, FormatGIF, FormatTIFF, FormatWebP, FormatBMP, FormatSVG, FormatAVIF, FormatHEIC:
 		return true
 	default:
 		return false

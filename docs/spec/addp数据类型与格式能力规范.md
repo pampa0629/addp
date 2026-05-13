@@ -222,6 +222,8 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 
 注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。
 
+容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
+
 ### Content Reader
 
 content reader 负责提供上层可继续组装的数据，不直接负责展示协议，也不等于最终 attributes。
@@ -322,13 +324,13 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | 格式 | FormatInfoProvider | TableInfoProvider | TableSampleReader | 兼容期 TableProvider | DocumentInfoProvider | DocumentTextReader | ComponentTableProvider | ScopeTableProvider | MediaInfoProvider | Legacy FileMetadataExtractor | TypeMapper | 说明 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `csv` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` reader 待补 |
-| `excel` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 可提取工作簿中的表格 info 和样本；Meta 规范上外层仍按 container item 表达 |
+| `excel` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 可提取工作簿 container info；指定 sheet 后可提取该 sheet 的 table info 和分页样本；Meta 规范上外层仍按 container item 表达 |
 | `json` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
 | `markdown` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
 | `parquet` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 已实现 | 无 | 无 | 无 | 支持单文件和 scope 表读取 |
 | `shapefile` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
 | `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
-| `sqlite` | 未注册 | 未注册 | 未注册 | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | capability 声明 container/table 目标能力，当前作为容器分析能力使用，暂不注册为 TableProvider |
+| `sqlite` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 可提取数据库 container info；指定 table 后可提取该 table 的 table info 和分页样本；SQLite 文件自身仍是 container，不写父级 `type_info.table` |
 | `geopackage` | 未注册 | 未注册 | 未注册 | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
 | `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
 | `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
@@ -420,12 +422,12 @@ info provider 只回答对应 data type 的元数据语义，content reader 只�
 
 它提供：
 
-- 子对象列表。
+- 子对象列表。该列表是轻量索引，只应包含 child 定位和摘要信息，不承载完整字段数组或行样本。
 - 默认入口。
 - 内部对象定位。
 - 容器统计信息。
 
-它不负责把内部对象解释成最终 table / document / media 内容数据；那部分交给对应 info provider 或 content reader 继续处理。
+它不负责把内部对象解释成最终 table / document / media 内容数据；那部分交给对应 info provider 或 content reader 继续处理。Excel sheet、SQLite table / view 等 child 的字段和行数据必须通过 child 定位参数按需读取。
 
 ### GraphInfoProvider / GraphSampleReader
 

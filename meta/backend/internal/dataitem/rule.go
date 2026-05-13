@@ -61,10 +61,6 @@ func explicitSingleResourceRules() []FormatRule {
 		singleResourceRule("orc", DataTypeTable, []string{".orc"}),
 		singleResourceRule("avro", DataTypeTable, []string{".avro"}),
 		singleResourceRule("pdf", DataTypeDocument, []string{".pdf"}),
-		singleResourceRule("jpeg", DataTypeMedia, []string{".jpg", ".jpeg"}),
-		singleResourceRule("png", DataTypeMedia, []string{".png"}),
-		singleResourceRule("gif", DataTypeMedia, []string{".gif"}),
-		singleResourceRule("tiff", DataTypeMedia, []string{".tif", ".tiff"}),
 		containerResourceRule("sqlite", DataTypeContainer, []string{".sqlite", ".sqlite3", ".db"}),
 		containerResourceRule("geopackage", DataTypeContainer, []string{".gpkg"}),
 	}

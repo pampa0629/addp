@@ -334,7 +334,7 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 	}
 }
 
-func TestFileTablePreviewProviderUsesContainerChildAttributes(t *testing.T) {
+func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t *testing.T) {
 	t.Parallel()
 
 	provider := &FileTablePreviewProvider{}
@@ -357,10 +357,6 @@ func TestFileTablePreviewProviderUsesContainerChildAttributes(t *testing.T) {
 							"kind":       "table",
 							"row_count":  int64(7),
 							"has_header": true,
-							"fields": []interface{}{
-								map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "nullable": true},
-								map[string]interface{}{"name": "population", "type": string(format.FieldTypeInt), "nullable": true},
-							},
 						},
 					},
 				},
@@ -381,17 +377,17 @@ func TestFileTablePreviewProviderUsesContainerChildAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("previewStreamable() error = %v", err)
 	}
-	if tableProvider.describeCalls != 0 {
-		t.Fatalf("DescribeTable calls = %d, want 0 when child attributes have table info", tableProvider.describeCalls)
+	if tableProvider.describeCalls != 1 {
+		t.Fatalf("DescribeTable calls = %d, want 1 because container child attributes are only an index", tableProvider.describeCalls)
 	}
 	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams["table"] != "city_table" {
 		t.Fatalf("sqlite sample table option = %#v, want city_table", tableProvider.sampleOptions)
 	}
-	if preview.Total != 7 {
-		t.Fatalf("Total = %d, want 7", preview.Total)
+	if preview.Total != 3 {
+		t.Fatalf("Total = %d, want 3 from DescribeTable", preview.Total)
 	}
-	if len(preview.Columns) != 2 || preview.Columns[0] != "city" || preview.Columns[1] != "population" {
-		t.Fatalf("Columns = %#v, want child columns", preview.Columns)
+	if len(preview.Columns) != 1 || preview.Columns[0] != "name" {
+		t.Fatalf("Columns = %#v, want described columns", preview.Columns)
 	}
 }
 
@@ -611,7 +607,7 @@ func (p *recordingTableProvider) Capabilities() format.FormatCapability {
 
 func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
-	rowCount := int64(1)
+	rowCount := int64(3)
 	return &format.TableInfo{
 		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},
 		RowCount: &rowCount,

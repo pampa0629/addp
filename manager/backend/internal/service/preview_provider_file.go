@@ -203,11 +203,6 @@ func (p *FileTablePreviewProvider) previewStreamable(
 }
 
 func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*format.TableInfo, error) {
-	if req != nil && strings.TrimSpace(req.ChildName) != "" {
-		if tableInfo := p.containerChildTableInfoFromAttributes(req.Attributes, req.ChildName); tableInfo != nil {
-			return tableInfo, nil
-		}
-	}
 	attrs := map[string]interface{}(nil)
 	if req != nil {
 		attrs = req.Attributes
@@ -233,37 +228,6 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 		info.Extensions = append(info.Extensions, spatialInfo)
 	}
 	return info, nil
-}
-
-func (p *FileTablePreviewProvider) containerChildTableInfoFromAttributes(attrs map[string]interface{}, childName string) *format.TableInfo {
-	childName = strings.TrimSpace(childName)
-	if childName == "" {
-		return nil
-	}
-	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	if len(containerAttrs) == 0 {
-		return nil
-	}
-	for _, item := range interfaceSlice(containerAttrs["children"]) {
-		child := rawMapAttribute(item)
-		if len(child) == 0 || !containerChildNameMatches(child, childName) {
-			continue
-		}
-		fields := fieldsFromAttribute(child["fields"])
-		if len(fields) == 0 {
-			return nil
-		}
-		info := &format.TableInfo{
-			Name:       containerChildTableName(child, childName),
-			Fields:     fields,
-			PrimaryKey: []string{},
-		}
-		if rowCount := commonJSON.InterfaceInt64(child["row_count"]); rowCount > 0 {
-			info.RowCount = &rowCount
-		}
-		return info
-	}
-	return nil
 }
 
 func containerChildNameMatches(child map[string]interface{}, childName string) bool {

@@ -43,14 +43,8 @@ func InferDataType(formatName, contentType string) DataType {
 		return DataTypeTable
 	case format.FormatJSON:
 		return DataTypeDocument
-	case format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF, format.FormatImage:
-		return DataTypeMedia
-	case format.FormatVideo:
-		return DataTypeMedia
 	case format.FormatPDF, format.FormatDOCX, format.FormatPPTX, format.FormatWPS, format.FormatText:
 		return DataTypeDocument
-	case format.FormatAudio:
-		return DataTypeMedia
 	}
 
 	switch normalizedFormat {
@@ -111,24 +105,11 @@ func canonicalFormat(formatName string) string {
 	if name == "" || name == string(format.FormatUnknown) {
 		return ""
 	}
-	switch name {
-	case "shp", "shx", "dbf", "prj", "cpg", "sbn", "sbx":
-		return string(format.FormatShapefile)
-	case "geojson":
-		return string(format.FormatJSON)
-	case "gpkg":
-		return string(format.FormatGeoPackage)
-	case "xls", "xlsx":
-		return string(format.FormatExcel)
-	case "jpg", "jpeg":
-		return string(format.FormatJPEG)
-	case "tif", "tiff":
-		return string(format.FormatTIFF)
-	case "txt":
-		return string(format.FormatText)
-	case "sqlite3", "db":
-		return string(format.FormatSQLite)
-	default:
+	if _, ok := format.GetFormatCapability(format.FormatType(name)); ok {
 		return name
 	}
+	if detected := format.DetectFormat("value."+name, nil); detected != format.FormatUnknown {
+		return string(detected)
+	}
+	return name
 }

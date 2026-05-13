@@ -195,10 +195,6 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 						"row_count":    int64(7),
 						"column_count": int64(2),
 						"has_header":   true,
-						"fields": []interface{}{
-							map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "original_type": "string", "nullable": true},
-							map[string]interface{}{"name": "population", "type": string(format.FieldTypeInt), "original_type": "number", "nullable": true},
-						},
 					},
 				},
 			},
@@ -207,7 +203,6 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 			"excel": map[string]interface{}{
 				"default_sheet": "Cities",
 				"sheet_count":   int64(1),
-				"row_limit":     int64(20),
 			},
 		},
 	}, 1024)
@@ -218,9 +213,6 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	if preview["format"] != "excel" || preview["default_child"] != "Cities" || preview["active_child"] != "Cities" {
 		t.Fatalf("container header = %#v, want excel/Cities", preview)
 	}
-	if preview["default_sheet"] != "Cities" || preview["active_sheet"] != "Cities" {
-		t.Fatalf("default/active sheet = %#v/%#v, want Cities", preview["default_sheet"], preview["active_sheet"])
-	}
 	children, ok := preview["children"].([]map[string]interface{})
 	if !ok || len(children) != 1 {
 		t.Fatalf("children = %#v, want one child", preview["children"])
@@ -228,16 +220,11 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	if children[0]["name"] != "Cities" || children[0]["kind"] != "sheet" {
 		t.Fatalf("child summary = %#v, want Cities sheet", children[0])
 	}
-	sheets, ok := preview["sheets"].([]map[string]interface{})
-	if !ok || len(sheets) != 1 {
-		t.Fatalf("sheets = %#v, want one sheet", preview["sheets"])
+	if _, ok := preview["sheets"]; ok {
+		t.Fatalf("container preview should not carry legacy sheets: %#v", preview)
 	}
-	if sheets[0]["name"] != "Cities" || sheets[0]["row_count"] != int64(7) {
-		t.Fatalf("sheet summary = %#v, want Cities row_count 7", sheets[0])
-	}
-	headers, ok := sheets[0]["headers"].([]string)
-	if !ok || len(headers) != 2 || headers[0] != "city" || headers[1] != "population" {
-		t.Fatalf("headers = %#v, want city/population", sheets[0]["headers"])
+	if _, ok := preview["default_sheet"]; ok {
+		t.Fatalf("container preview should not carry legacy default_sheet: %#v", preview)
 	}
 	summary, ok := preview["summary"].(map[string]interface{})
 	if !ok || summary["size_bytes"] != int64(1024) {
@@ -260,9 +247,6 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 						"kind":      "table",
 						"data_type": "table",
 						"row_count": int64(7),
-						"fields": []interface{}{
-							map[string]interface{}{"name": "city", "type": string(format.FieldTypeString), "original_type": "TEXT", "nullable": true},
-						},
 					},
 				},
 			},
@@ -288,9 +272,11 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 	if children[0]["table"] != "city_table" || children[0]["row_count"] != int64(7) {
 		t.Fatalf("child = %#v, want city_table row_count 7", children[0])
 	}
-	tables, ok := preview["tables"].([]map[string]interface{})
-	if !ok || len(tables) != 1 || tables[0]["table"] != "city_table" {
-		t.Fatalf("tables = %#v, want legacy table city_table", preview["tables"])
+	if _, ok := preview["tables"]; ok {
+		t.Fatalf("container preview should not carry legacy tables: %#v", preview)
+	}
+	if _, ok := preview["default_table"]; ok {
+		t.Fatalf("container preview should not carry legacy default_table: %#v", preview)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
-	spatialiteMapper "github.com/addp/common/format/mappers/spatialite"
 	commonSQLite "github.com/addp/common/format/plugins/sqlite"
 	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
@@ -32,7 +31,7 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	case string(format.FormatExcel):
 		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatExcel, reader, excelContainerParseOptions())
 	case string(format.FormatSQLite):
-		return enrichSQLiteContainerChildren(ctx, attrs, reader, false)
+		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatSQLite, reader, sqliteContainerParseOptions())
 	case string(format.FormatGeoPackage):
 		return enrichSQLiteContainerChildren(ctx, attrs, reader, true)
 	default:
@@ -45,7 +44,15 @@ func excelContainerParseOptions() *format.ParseOptions {
 	opts.SampleSize = 20
 	opts.ExtraParams = map[string]interface{}{
 		"sheet_limit": containerChildLimit,
-		"row_limit":   20,
+	}
+	return opts
+}
+
+func sqliteContainerParseOptions() *format.ParseOptions {
+	opts := format.DefaultParseOptions()
+	opts.ExtraParams = map[string]interface{}{
+		"table_limit": containerChildLimit,
+		"row_limit":   0,
 	}
 	return opts
 }
@@ -75,7 +82,6 @@ func enrichContainerChildrenFromProvider(
 			"name":      child.Name,
 			"kind":      child.Kind,
 			"data_type": child.DataType,
-			"fields":    metaattr.FieldAttributesFromFormat(child.Fields),
 		}
 		if child.RowCount != nil {
 			attrs["row_count"] = *child.RowCount
@@ -160,12 +166,12 @@ func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, re
 			spatialColumns = append(spatialColumns, spatialColumn)
 		}
 		children = append(children, map[string]interface{}{
-			"name":      childName,
-			"table":     table.Name,
-			"kind":      childKind,
-			"data_type": string(dataitem.DataTypeTable),
-			"row_count": table.RowCount,
-			"fields":    sqliteFieldAttributes(table.Columns),
+			"name":         childName,
+			"table":        table.Name,
+			"kind":         childKind,
+			"data_type":    string(dataitem.DataTypeTable),
+			"row_count":    table.RowCount,
+			"column_count": len(table.Columns),
 		})
 	}
 
@@ -198,21 +204,6 @@ func enrichSQLiteContainerChildren(ctx context.Context, attrs models.JSONMap, re
 		metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
 	}
 	return nil
-}
-
-func sqliteFieldAttributes(columns []commonSQLite.ColumnInfo) []map[string]interface{} {
-	mapper := &spatialiteMapper.TypeMapper{}
-	fields := make([]format.FieldInfo, 0, len(columns))
-	for _, column := range columns {
-		fields = append(fields, format.FieldInfo{
-			Name:         column.Name,
-			Type:         mapper.ToCommon(column.Type),
-			OriginalType: column.Type,
-			Nullable:     !column.NotNull,
-			IsPrimaryKey: column.PrimaryKey,
-		})
-	}
-	return metaattr.FieldAttributesFromFormat(fields)
 }
 
 type geoPackageLayer struct {

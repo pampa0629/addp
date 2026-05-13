@@ -282,15 +282,9 @@ export const useExplorerStore = defineStore('explorer', {
       if (!['container', 'excel', 'sqlite'].includes(kind)) {
         return ''
       }
-      const explicit = json.active_child || json.default_child || json.active_sheet || json.default_sheet || json.active_table || json.default_table
+      const explicit = json.active_child || json.default_child
       if (explicit) return explicit
-      const children = Array.isArray(json.children)
-        ? json.children
-        : Array.isArray(json.sheets)
-          ? json.sheets
-          : Array.isArray(json.tables)
-            ? json.tables
-            : []
+      const children = Array.isArray(json.children) ? json.children : []
       const firstNamedChild = children.find(child => child?.key || child?.name || child?.table || child?.table_name || child?.tableName)
       return firstNamedChild?.key || firstNamedChild?.name || firstNamedChild?.table || firstNamedChild?.table_name || firstNamedChild?.tableName || ''
     },

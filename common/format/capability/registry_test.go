@@ -96,6 +96,36 @@ func TestTextCapabilityIsDocumentTextFormat(t *testing.T) {
 	}
 }
 
+func TestMediaCapabilitiesArePreviewOnly(t *testing.T) {
+	tests := []Format{
+		FormatWebP,
+		FormatSVG,
+		FormatMP4,
+		FormatMP3,
+	}
+	for _, format := range tests {
+		t.Run(string(format), func(t *testing.T) {
+			capability, ok := Get(format)
+			if !ok {
+				t.Fatalf("expected %s capability", format)
+			}
+			if capability.DataType != DataTypeMedia {
+				t.Fatalf("DataType = %q, want %q", capability.DataType, DataTypeMedia)
+			}
+			if !containsString(capability.ProviderHints, ProviderMedia) {
+				t.Fatalf("ProviderHints = %#v, want media", capability.ProviderHints)
+			}
+			if !containsString(capability.ContentReaders, formatregistry.ContentReaderRawContent) ||
+				!containsString(capability.ContentReaders, formatregistry.ContentReaderRangeContent) {
+				t.Fatalf("ContentReaders = %#v, want raw and range", capability.ContentReaders)
+			}
+			if capability.TransferRead || capability.TransferWrite {
+				t.Fatalf("media capability should not declare transfer: %#v", capability)
+			}
+		})
+	}
+}
+
 func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
 	capability, ok := Get(FormatJSON)
 	if !ok {

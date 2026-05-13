@@ -3,12 +3,13 @@ package extractor
 import (
 	"context"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/objectstore"
 	"github.com/minio/minio-go/v7"
 )
@@ -22,10 +23,21 @@ func NewInlineObjectMetadataExtractor(clientManager *objectstore.ClientManager, 
 	return &InlineObjectMetadataExtractor{clientManager: clientManager, log: log}
 }
 
-func (e *InlineObjectMetadataExtractor) ShouldExtract(contentType string, sizeBytes int64) bool {
-	if !strings.HasPrefix(contentType, "image/") {
+func (e *InlineObjectMetadataExtractor) ShouldExtract(key, contentType string, sizeBytes int64) bool {
+	formatType := format.MIMEToFormat(contentType)
+	if formatType == format.FormatUnknown {
+		formatType = format.DetectFormat(key, nil)
+	}
+	capability, ok := format.GetFormatCapability(formatType)
+	if !ok || capability.DataType != format.FormatDataTypeMedia {
 		if e.log != nil {
-			e.log.Debug("跳过非图片类型", "content_type", contentType)
+			e.log.Debug("跳过非媒体类型", "content_type", contentType, "format", formatType, "key", key)
+		}
+		return false
+	}
+	if _, err := format.GetMediaInfoProvider(formatType); err != nil {
+		if e.log != nil {
+			e.log.Debug("跳过无媒体信息 Provider 的格式", "content_type", contentType, "format", formatType, "key", key)
 		}
 		return false
 	}
@@ -47,22 +59,21 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	size int64,
 	lastModified time.Time,
 	etag string,
-) *format.ExtractedMetadata {
+) map[string]interface{} {
 	if e == nil || e.clientManager == nil {
 		return nil
 	}
 
-	if e.log != nil {
-		e.log.Debug("正在获取文件元数据提取器", "content_type", contentType, "key", key)
+	formatType := format.MIMEToFormat(contentType)
+	if formatType == format.FormatUnknown {
+		formatType = format.DetectFormat(key, nil)
 	}
-	parser := format.GetExtractor(contentType)
-	if parser == nil && strings.HasPrefix(contentType, "image/") {
-		parser = format.GetExtractor("image/*")
-	}
-	if parser == nil {
+	provider, err := format.GetMediaInfoProvider(formatType)
+	if err != nil {
 		if e.log != nil {
-			e.log.Debug("无可用的文件元数据提取器",
+			e.log.Debug("无可用的媒体信息 Provider",
 				"content_type", contentType,
+				"format", formatType,
 				"key", key)
 		}
 		return nil
@@ -96,48 +107,71 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	}
 	defer obj.Close()
 
-	extractedMeta, err := parser.Extract(ctx, format.ExtractInput{
-		ObjectKey:    key,
-		ContentType:  contentType,
-		Size:         size,
-		Reader:       obj,
-		LastModified: lastModified,
-		ETag:         etag,
-	})
+	mediaInfo, err := provider.DescribeMedia(ctx, obj, nil)
 	if err != nil {
 		if e.log != nil {
-			e.log.Debug("提取对象元数据失败",
+			e.log.Debug("提取媒体信息失败",
 				"bucket", bucket,
 				"key", key,
+				"format", formatType,
 				"error", err)
 		}
 		return nil
 	}
-	if extractedMeta == nil {
+	attrs := MediaInfoAttributes(mediaInfo)
+	if len(attrs) == 0 {
 		return nil
 	}
-	if extractedMeta.BasicInfo.FileName == "" {
-		extractedMeta.BasicInfo.FileName = filepath.Base(key)
+	if contentType != "" {
+		metaattr.SetStorage(attrs, "content_type", contentType)
 	}
-	if extractedMeta.BasicInfo.ContentType == "" {
-		extractedMeta.BasicInfo.ContentType = contentType
-	}
-	if extractedMeta.BasicInfo.Size == 0 {
-		extractedMeta.BasicInfo.Size = size
-	}
-	if extractedMeta.BasicInfo.LastModified.IsZero() {
-		extractedMeta.BasicInfo.LastModified = lastModified
-	}
-	if extractedMeta.BasicInfo.ETag == "" {
-		extractedMeta.BasicInfo.ETag = etag
-	}
+	metaattr.SetStorage(attrs, "etag", etag)
 
 	if e.log != nil {
-		e.log.Debug("成功提取对象元数据",
+		e.log.Debug("成功提取媒体信息",
 			"bucket", bucket,
 			"key", key,
-			"attrs", extractedMeta.CustomAttrs)
+			"attrs", attrs)
 	}
 
-	return extractedMeta
+	return attrs
+}
+
+func MediaInfoAttributes(info *format.MediaInfo) models.JSONMap {
+	attrs := models.JSONMap{}
+	if info == nil {
+		return attrs
+	}
+	media := map[string]interface{}{}
+	if info.MediaType != "" {
+		media["kind"] = info.MediaType
+	}
+	if info.Width > 0 {
+		media["width"] = info.Width
+	}
+	if info.Height > 0 {
+		media["height"] = info.Height
+	}
+	if info.DurationMS != nil {
+		media["duration_ms"] = *info.DurationMS
+	}
+	if info.Encoding != "" {
+		media["encoding"] = info.Encoding
+	}
+	if info.ColorSpace != "" {
+		media["color_space"] = info.ColorSpace
+	}
+	if info.MIMEType != "" {
+		media["mime_type"] = info.MIMEType
+	}
+	if info.SizeBytes != nil {
+		media["size_bytes"] = *info.SizeBytes
+	}
+	if len(media) > 0 {
+		metaattr.UpsertNested(attrs, "type_info", "media", media)
+	}
+	if len(info.SpatialAttrs) > 0 {
+		metaattr.UpsertNested(attrs, "capabilities", "spatial", info.SpatialAttrs)
+	}
+	return attrs
 }
