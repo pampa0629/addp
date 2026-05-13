@@ -15,23 +15,6 @@ import (
 	"github.com/addp/meta/internal/metaattr"
 )
 
-var (
-	shapefileRequiredExts = map[string]bool{
-		".shp": true,
-		".shx": true,
-		".dbf": true,
-	}
-	shapefileKnownExts = map[string]bool{
-		".shp": true,
-		".shx": true,
-		".dbf": true,
-		".prj": true,
-		".cpg": true,
-		".sbn": true,
-		".sbx": true,
-	}
-)
-
 type shapefileItemDetector struct{}
 
 var shapefileItemRule = dataitem.FormatRule{
@@ -310,16 +293,8 @@ func shapefileSpatialAttributes(spatialInfo *format.SpatialInfo) map[string]inte
 }
 
 func componentRoleAndRequired(formatType format.FormatType, ext string) (string, bool) {
-	provider, err := format.GetTableProvider(formatType)
-	if err != nil {
-		return "", false
-	}
-	specProvider, ok := provider.(format.ComponentSpecProvider)
-	if !ok {
-		return "", false
-	}
 	normalizedExt := resource.NormalizeExtension(ext)
-	for _, spec := range specProvider.ComponentSpecs() {
+	for _, spec := range componentSpecsForFormat(formatType) {
 		if resource.NormalizeExtension(spec.Extension) == normalizedExt {
 			return spec.Role, spec.Required
 		}
@@ -365,10 +340,11 @@ func matchShapefileItem(files []plugin.FileEntry) (shapefileItemMatch, bool) {
 }
 
 func matchShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
+	requiredExts, knownExts := shapefileComponentExtensionSets()
 	groups := map[string]map[string]plugin.FileEntry{}
 	for _, file := range files {
-		ext := strings.ToLower(filepath.Ext(file.Name))
-		if !shapefileKnownExts[ext] {
+		ext := resource.NormalizeExtension(filepath.Ext(file.Name))
+		if !knownExts[ext] {
 			continue
 		}
 		base := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
@@ -392,7 +368,7 @@ func matchShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
 	for _, key := range groupKeys {
 		group := groups[key]
 		complete := true
-		for ext := range shapefileRequiredExts {
+		for ext := range requiredExts {
 			if _, ok := group[ext]; !ok {
 				complete = false
 				break
@@ -412,6 +388,34 @@ func matchShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
 		})
 	}
 	return matches
+}
+
+func shapefileComponentExtensionSets() (required map[string]bool, known map[string]bool) {
+	required = map[string]bool{}
+	known = map[string]bool{}
+	for _, spec := range componentSpecsForFormat(format.FormatShapefile) {
+		ext := resource.NormalizeExtension(spec.Extension)
+		if ext == "" {
+			continue
+		}
+		known[ext] = true
+		if spec.Required {
+			required[ext] = true
+		}
+	}
+	return required, known
+}
+
+func componentSpecsForFormat(formatType format.FormatType) []resource.ComponentSpec {
+	provider, err := format.GetTableProvider(formatType)
+	if err != nil {
+		return nil
+	}
+	specProvider, ok := provider.(format.ComponentSpecProvider)
+	if !ok {
+		return nil
+	}
+	return specProvider.ComponentSpecs()
 }
 
 func shapefileItemGroupKey(path, base string) string {

@@ -725,7 +725,7 @@ import { StorageEngineForm, ImagePreview } from '@common-ui'
 import { formatFileSize, FieldType } from '@common-ui'
 
 // 对于启用地图的模块（Manager, Service）
-import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
+import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 
 const resourceForm = ref({
   resource_type: 'postgresql',

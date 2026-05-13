@@ -35,7 +35,7 @@ ADDP 存在多个 registry：engine、dataitem、format、preview、object conte
     }
   ],
   "parses": ["type_info.table", "format_info.shapefile", "capabilities.spatial"],
-  "previews": ["map_table"],
+  "previews": ["table", "table.spatial"],
   "transfers": ["read", "export"]
 }
 ```

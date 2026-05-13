@@ -6,8 +6,6 @@
   "max_bytes": 1073741824,
   "match": {},
   "metadata": {
-    "table_limit": 10,
-    "row_limit": 50,
-    "_comment": "使用流式处理，支持大文件 SQLite 预览（最大 1GB），仅传输表元数据和示例数据到前端"
+    "_comment": "使用流式处理，支持大文件 SQLite 容器概览（最大 1GB），只枚举表/视图；行数据由 child table preview 分页读取"
   }
 }

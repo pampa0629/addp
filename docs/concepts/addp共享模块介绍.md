@@ -60,7 +60,7 @@ common-frontend/
 │
 └── map/            # 地图相关组件 (需要 ol 和 @amap/amap-jsapi-loader)
     └── src/
-        ├── components/  - MapContainer, GeoJsonPreview, ShapefilePreview, TablePreview
+        ├── components/  - MapContainer, GeoJsonPreview, TablePreview
         ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
         └── utils/       - 地理工具, 格式化器
 ```
@@ -99,12 +99,12 @@ resolve: {
 }
 
 // 在组件中
-import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
+import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 ```
 
 **关键组件**:
 
-- **预览组件**: ShapefilePreview, GeoJsonPreview, TablePreview, ImagePreview
+- **预览组件**: GeoJsonPreview, TablePreview, ImagePreview
 - **表单组件**: EngineForm (PostgreSQL/MinIO/S3 配置)
 - **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
 - **工具**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
@@ -121,7 +121,7 @@ import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
 **模块使用**:
 
 - **System Frontend**: 使用 `basic` (引擎配置的 EngineForm)
-- **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, ShapefilePreview, TablePreview)
+- **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, TablePreview)
 - **Meta Frontend**: 使用 `basic` (元数据显示的 ExtractedMetadata)
 - **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
 - **Console Frontend**: 使用 `basic` (通用 UI 元素)

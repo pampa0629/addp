@@ -1,6 +1,5 @@
 // Map-related Components (requires ol and @amap/amap-jsapi-loader)
 export { default as GeoJsonPreview } from './components/GeoJsonPreview.vue'
-export { default as ShapefilePreview } from './components/ShapefilePreview.vue'
 export { default as TablePreview } from './components/TablePreview.vue'
 export { default as TilePreview } from './components/TilePreview.vue'
 export { default as MapContainer } from './components/map/MapContainer.vue'

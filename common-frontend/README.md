@@ -15,7 +15,7 @@ npm install file:../../common-frontend
 
 ```vue
 <script setup>
-import { ShapefilePreview, GeoJsonPreview, TablePreview, StorageEngineForm } from '@addp/common-frontend'
+import { GeoJsonPreview, TablePreview, StorageEngineForm } from '@addp/common-frontend'
 import { formatFileSize, detectFormatByExtension } from '@addp/common-frontend'
 
 const previewData = ref(null)
@@ -27,7 +27,7 @@ const engineForm = ref({
 </script>
 
 <template>
-  <ShapefilePreview :data="previewData" />
+  <TablePreview :data="previewData" />
 
   <StorageEngineForm v-model="engineForm" />
 </template>
@@ -153,9 +153,8 @@ import {
 
 ### 预览组件
 
-- **ShapefilePreview** - Shapefile 文件预览（带地图）
 - **GeoJsonPreview** - GeoJSON 文件预览（带地图）
-- **TablePreview** - 表格数据预览
+- **TablePreview** - 表格数据预览，支持空间字段渲染
 - **ImagePreview** - 图片预览
 
 ### 表单组件

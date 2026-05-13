@@ -165,3 +165,10 @@ data/yanshi.udbx
 business/neo4j/plugins/*.jar
 .push-cache
 *.parquet
+business/nfs/data/shp/规划用地.cpg
+business/nfs/data/shp/规划用地.dbf
+business/nfs/data/shp/规划用地.prj
+business/nfs/data/shp/规划用地.qmd
+business/nfs/data/shp/规划用地.shp
+business/nfs/data/shp/规划用地.shx
+business/nfs/data/container/shapefile.zip

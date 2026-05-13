@@ -32,23 +32,12 @@
         return true
       }
       const mode = (data.mode || '').toLowerCase()
-      const object = data.object || {}
-      const attrs = object.attributes || {}
-      const fileType = String(attrs.file_type || '').toLowerCase()
-      const kind = String(object?.content?.kind || '').toLowerCase()
-      const hasTabularData = Array.isArray(data.rows) && data.rows.length > 0
-      const hasGeometryColumns = Array.isArray(data.geometry_columns) && data.geometry_columns.length > 0
 
       if (mode === 'table') {
         return true
       }
 
-      const isShapefile =
-        fileType.includes('shp') ||
-        fileType.includes('shapefile') ||
-        kind === 'shapefile'
-
-      return isShapefile && hasTabularData && hasGeometryColumns
+      return false
     },
     priority: 100
   })

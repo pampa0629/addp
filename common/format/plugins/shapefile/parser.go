@@ -33,13 +33,7 @@ func NewParser(opts *format.ParseOptions) *Parser {
 
 // ParseTableInfo 从 Shapefile 文件中提取 TableInfo
 func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	opts := p.resolveOptions(options)
-	tempDir, cleanup, err := p.saveToTempFiles(input)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	return p.parseTableInfoFromPath(filepath.Join(tempDir, "data.shp"), opts)
+	return nil, fmt.Errorf("shapefile requires component input; use DescribeTableComponents with .shp/.shx/.dbf components")
 }
 
 func (p *Parser) DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *format.ParseOptions) (*format.TableInfo, error) {
@@ -65,12 +59,7 @@ func (p *Parser) DescribeTableComponents(ctx context.Context, components resourc
 
 // SampleTable 读取 Shapefile 表格样本。
 func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	tempDir, cleanup, err := p.saveToTempFiles(input)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	return p.sampleTableFromPath(ctx, filepath.Join(tempDir, "data.shp"), offset, limit, p.resolveOptions(options))
+	return nil, fmt.Errorf("shapefile requires component input; use SampleTableComponents with .shp/.shx/.dbf components")
 }
 
 func (p *Parser) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -519,40 +508,6 @@ func (p *Parser) getGeometryFieldName() string {
 		}
 	}
 	return "geometry" // 默认几何字段名
-}
-
-// saveToTempFiles 将 shapefile 相关文件保存到临时目录
-// 注意：这个实现假设 input 是一个包含所有必需文件的 tar/zip 流
-// 实际使用中，可能需要根据具体情况调整
-func (p *Parser) saveToTempFiles(input io.Reader) (string, func(), error) {
-	// 创建临时目录
-	tempDir, err := os.MkdirTemp("", "shapefile-*")
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	// 注意：这里简化处理，假设 input 是 .shp 文件
-	// 实际使用中需要处理 .shp, .shx, .dbf 三个文件
-	shpPath := filepath.Join(tempDir, "data.shp")
-	file, err := os.Create(shpPath)
-	if err != nil {
-		os.RemoveAll(tempDir)
-		return "", nil, fmt.Errorf("failed to create shp file: %w", err)
-	}
-
-	if _, err := io.Copy(file, input); err != nil {
-		file.Close()
-		os.RemoveAll(tempDir)
-		return "", nil, fmt.Errorf("failed to write shp file: %w", err)
-	}
-	file.Close()
-
-	// 返回清理函数
-	cleanup := func() {
-		os.RemoveAll(tempDir)
-	}
-
-	return tempDir, cleanup, nil
 }
 
 // ShapeToWKT 将 shapefile 几何转换为 WKT 格式

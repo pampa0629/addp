@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -65,10 +64,11 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		Columns:  []string{},
 		Rows:     []map[string]interface{}{},
 		Object: &models.ObjectPreview{
-			Bucket:   rootName,
-			Path:     displayPath,
-			NodeType: "object",
-			EngineID: engine.ID,
+			Bucket:     rootName,
+			Path:       displayPath,
+			NodeType:   "object",
+			EngineID:   engine.ID,
+			Attributes: models.JSONMap(req.Attributes),
 		},
 		GeometryColumns: []string{},
 	}
@@ -166,25 +166,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 					return preview, nil
 				}
 			}
-			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
-				streamer := func() (io.ReadCloser, error) {
-					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
-				}
-				siblingProvider := func(path string) (io.ReadCloser, error) {
-					return readFileSystemSibling(ctxTimeout, contentReader, connInfo, engine.ID, path)
-				}
-				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, contentReq, streamer, siblingProvider)
-				if err != nil {
-					return nil, err
-				}
-				if content != nil {
-					preview.Object.Content = content
-					if truncated || content.Truncated {
-						preview.Object.Truncated = true
-						preview.Object.Content.Truncated = true
-					}
-				}
-			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 				}
@@ -226,8 +208,6 @@ func (p *fileSystemPreviewProvider) previewFile(
 		}
 	}
 
-	applyShapefileTablePreview(preview)
-
 	return preview, nil
 }
 
@@ -236,30 +216,6 @@ func openFileSystemContent(ctx context.Context, contentReader plugin.ContentRead
 		return contentReader.OpenContent(ctx, connInfo, fileSystemCatalogPath(engineID, path), plugin.ReadOptions{})
 	}
 	return nil, fs.ErrNotExist
-}
-
-func readFileSystemSibling(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
-	if contentReader == nil {
-		return nil, fs.ErrNotExist
-	}
-	var lastErr error
-	for _, candidate := range candidateSiblingPathVariants(path) {
-		reader, err := openFileSystemContent(ctx, contentReader, connInfo, engineID, candidate)
-		if err == nil {
-			return reader, nil
-		}
-		if isFileSystemNotFoundErr(err) {
-			if lastErr == nil {
-				lastErr = err
-			}
-			continue
-		}
-		lastErr = err
-	}
-	if lastErr == nil || isFileSystemNotFoundErr(lastErr) {
-		return nil, fs.ErrNotExist
-	}
-	return nil, lastErr
 }
 
 func fileSystemCatalogPath(engineID uint, path string) plugin.CatalogPath {
@@ -588,42 +544,4 @@ func splitFSPath(path string) (dir, name string) {
 		return "/", path
 	}
 	return path[:idx+1], path[idx+1:]
-}
-
-func candidateSiblingPathVariants(path string) []string {
-	trimmed := strings.TrimSpace(path)
-	if trimmed == "" {
-		return nil
-	}
-	withoutLeading := strings.TrimLeft(trimmed, "/")
-	withLeading := "/" + withoutLeading
-	candidates := []string{trimmed, withoutLeading, withLeading}
-
-	seen := make(map[string]struct{}, len(candidates))
-	unique := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
-		if _, exists := seen[candidate]; exists {
-			continue
-		}
-		seen[candidate] = struct{}{}
-		unique = append(unique, candidate)
-	}
-	return unique
-}
-
-func isFileSystemNotFoundErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "not exist") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "no such file") ||
-		strings.Contains(msg, "no such object")
 }

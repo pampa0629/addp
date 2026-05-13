@@ -22,10 +22,10 @@ import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import { ImagePreview } from '@common-ui'
 import {
   ObjectStoragePreview, JsonPreview, PdfPreview, ContainerPreview,
-  DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview, ExcelPreview
+  DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {
-  TablePreview, GeoJsonPreview, ShapefilePreview,
+  TablePreview, GeoJsonPreview,
   mapMessagesZhCn, mapMessagesEn, setMapConfigAPI
 } from '@common-ui-map'
 import configAPI from '@/api/config'
@@ -85,15 +85,13 @@ if (typeof window !== 'undefined') {
     ObjectStoragePreview,
     ImagePreview,
     GeoJsonPreview,
-    ShapefilePreview,
     JsonPreview,
     PdfPreview,
     DocxPreview,
     PptxPreview,
     TextPreview,
     MarkdownPreview,
-    VideoPreview,
-    ExcelPreview
+    VideoPreview
   }
 }
 

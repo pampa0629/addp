@@ -243,8 +243,7 @@ graph LR
     Basic --> BasicOther[其他基础组件...]
 
     Map --> GeoJSON[GeoJsonPreview<br/>GeoJSON预览]
-    Map --> Shapefile[ShapefilePreview<br/>Shapefile预览]
-    Map --> Table[TablePreview<br/>表格预览]
+    Map --> Table[TablePreview<br/>表格/空间表预览]
     Map --> MapOther[依赖OpenLayers<br/>高德地图]
 
     classDef mainNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
@@ -262,8 +261,7 @@ graph LR
   - 其他通用 UI 组件
 - **map/**: 地图相关组件,依赖 OpenLayers 和高德地图
   - `GeoJsonPreview`: GeoJSON 数据预览组件
-  - `ShapefilePreview`: Shapefile 数据预览组件
-  - `TablePreview`: 表格数据预览组件(带空间可视化)
+  - `TablePreview`: 表格数据预览组件，支持 Shapefile 等空间表的空间字段可视化
 
 **使用原则**:
 - 各模块通过 `npm install` 引入 common-frontend

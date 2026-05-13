@@ -50,22 +50,21 @@ Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` �
 
 ```json
 {
-  "id": "builtin-shapefile-preview",
+  "id": "builtin-table-preview",
   "version": "0.1.0",
   "preview": {
     "match": {
-      "organization": ["multi"],
       "data_type": ["table"],
-      "format": ["shapefile"],
-      "capabilities": ["spatial"]
+      "organization": ["single", "multi", "whole"]
     },
     "priority": 100,
     "input": {
-      "requires_component_files": true
+      "requires_resource_reader": true
     },
     "output": {
-      "kind": "map_table",
-      "stream": false
+      "mode": "table",
+      "stream": false,
+      "paging": true
     }
   }
 }

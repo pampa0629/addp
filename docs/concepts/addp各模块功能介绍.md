@@ -395,8 +395,7 @@ import commonModels "github.com/addp/common/models"
   - 类型定义（FieldType、FormatType、ResourceType）
 - **map 子模块**（地图相关，依赖 OpenLayers 和高德地图）：
   - GeoJsonPreview（GeoJSON 预览）
-  - ShapefilePreview（Shapefile 预览）
-  - TablePreview（表格数据预览）
+  - TablePreview（表格数据预览，支持 Shapefile 等空间表）
   - MapContainer（地图容器，支持 OpenLayers 和高德地图）
 
 **模块路径**：`common-frontend/`

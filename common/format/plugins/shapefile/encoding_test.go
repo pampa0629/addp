@@ -2,6 +2,7 @@ package shapefile
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +24,41 @@ func TestDecodeDBFTextGBK(t *testing.T) {
 	}
 	if got := DecodeDBFText(encoded, "GBK"); got != "北京" {
 		t.Fatalf("DecodeDBFText() = %q, want 北京", got)
+	}
+}
+
+func TestNormalizeDBFEncodingHandlesBOMAndGB18030(t *testing.T) {
+	t.Parallel()
+
+	if got := NormalizeDBFEncoding("\ufeffUTF-8"); got != "utf-8" {
+		t.Fatalf("NormalizeDBFEncoding(UTF-8 BOM) = %q, want utf-8", got)
+	}
+	if got := NormalizeDBFEncoding("GB18030"); got != "gb18030" {
+		t.Fatalf("NormalizeDBFEncoding(GB18030) = %q, want gb18030", got)
+	}
+}
+
+func TestDecodeDBFTextGB18030(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := simplifiedchinese.GB18030.NewEncoder().String("规划用地")
+	if err != nil {
+		t.Fatalf("encode GB18030 failed: %v", err)
+	}
+	if got := DecodeDBFText(encoded, "GB18030"); got != "规划用地" {
+		t.Fatalf("DecodeDBFText() = %q, want 规划用地", got)
+	}
+}
+
+func TestShapefileSingleStreamTableProviderIsRejected(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser(nil)
+	if _, err := parser.ParseTableInfo(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
+		t.Fatalf("ParseTableInfo() error = %v, want component input error", err)
+	}
+	if _, err := parser.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
+		t.Fatalf("SampleTable() error = %v, want component input error", err)
 	}
 }
 
@@ -230,6 +266,22 @@ func TestShapefileParserDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *
 	}
 }
 
+func TestShapefileParserReportsMissingRequiredComponent(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a"})
+	components := newMissingComponentReader(base, ".dbf")
+	parser := NewParser(nil)
+
+	_, err := parser.DescribeTableComponents(context.Background(), components, nil)
+	if err == nil {
+		t.Fatal("DescribeTableComponents() error = nil, want missing required component error")
+	}
+	if !strings.Contains(err.Error(), "failed to read required component") || !strings.Contains(err.Error(), ".dbf") {
+		t.Fatalf("DescribeTableComponents() error = %v, want missing required .dbf component", err)
+	}
+}
+
 type failingRangeComponentReader struct {
 	*localComponentReader
 	failExt string
@@ -248,6 +300,26 @@ func (r *failingRangeComponentReader) OpenComponentRange(ctx context.Context, co
 		return nil, resource.ErrResourceNotFound
 	}
 	return r.localComponentReader.OpenComponentRange(ctx, component, offset, length)
+}
+
+type missingComponentReader struct {
+	*localComponentReader
+	missingExt string
+}
+
+func newMissingComponentReader(base string, missingExt string) *missingComponentReader {
+	return &missingComponentReader{
+		localComponentReader: newLocalComponentReader(base),
+		missingExt:           missingExt,
+	}
+}
+
+func (r *missingComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(component.Path), r.missingExt) {
+		r.openReads++
+		return nil, errors.New("component missing")
+	}
+	return r.localComponentReader.OpenComponent(ctx, component)
 }
 
 func createPointShapefileRows(t *testing.T, values []string) string {

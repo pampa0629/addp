@@ -202,7 +202,6 @@ const (
 	ObjectPreviewKindText        = "text"
 	ObjectPreviewKindMarkdown    = "markdown"
 	ObjectPreviewKindTable       = "table"
-	ObjectPreviewKindShapefile   = "shapefile"
 	ObjectPreviewKindUnsupported = "unsupported"
 )
 

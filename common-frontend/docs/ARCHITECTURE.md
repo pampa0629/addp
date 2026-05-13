@@ -26,7 +26,6 @@ common-frontend/
         │   │   ├── GaodeMapRenderer.vue
         │   │   └── OpenLayersRenderer.vue
         │   ├── GeoJsonPreview.vue
-        │   ├── ShapefilePreview.vue
         │   ├── TablePreview.vue
         │   └── ExtractedMetadata.vue
         ├── composables/

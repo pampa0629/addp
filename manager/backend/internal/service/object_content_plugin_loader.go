@@ -168,22 +168,6 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		handler.columnLimit = metadataInt(cfg.Metadata, "column_limit", handler.columnLimit)
 		return handler, nil
 	},
-	models.ObjectPreviewKindShapefile: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &shapefileContentHandler{
-			baseContentHandler: baseContentHandler{
-				name:     cfg.Name,
-				priority: cfg.priorityOr(66),
-				matcher: newObjectContentMatcher(
-					normalizeFormatsOrDefault(cfg.Match.Formats, []string{models.ObjectPreviewKindShapefile, "shp"}),
-					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}),
-					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, defaultShapefileContentTypes()),
-				),
-			},
-			maxFeatures: defaultShapefilePreviewFeatures,
-		}
-		handler.maxFeatures = metadataInt(cfg.Metadata, "max_features", handler.maxFeatures)
-		return handler, nil
-	},
 	models.ObjectPreviewKindSQLite: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &sqliteContentHandler{
 			baseContentHandler: baseContentHandler{
@@ -191,12 +175,8 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				priority: cfg.priorityOr(58),
 				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, nil, []string{"application/octet-stream"}),
 			},
-			maxBytes:   cfg.maxBytesOr(maxSQLitePreviewBytes),
-			tableLimit: defaultSQLiteTableLimit,
-			rowLimit:   defaultSQLiteRowLimit,
+			maxBytes: cfg.maxBytesOr(maxSQLitePreviewBytes),
 		}
-		handler.tableLimit = metadataInt(cfg.Metadata, "table_limit", handler.tableLimit)
-		handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
 		return handler, nil
 	},
 	models.ObjectPreviewKindText: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
@@ -292,16 +272,6 @@ func normalizeContentTypes(values []string) []string {
 		}
 	}
 	return normalized
-}
-
-func defaultShapefileContentTypes() []string {
-	return []string{
-		"application/x-esri-shapefile",
-		"application/x-shapefile",
-		"application/octet-stream",
-		"binary/octet-stream",
-		"shp",
-	}
 }
 
 func descriptorObjectContentMatcher(match ObjectContentMatcherConfig, formatType commonformat.FormatType, extraFormats []commonformat.FormatType, extraContentTypes []string) objectContentMatcher {

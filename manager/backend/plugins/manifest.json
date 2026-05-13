@@ -86,13 +86,6 @@
       "enabled": true
     },
     {
-      "file": "content/131_content_shapefile.json",
-      "name": "content:shapefile",
-      "description": "Shapefile 预览",
-      "priority": 131,
-      "enabled": true
-    },
-    {
       "file": "content/140_content_json.json",
       "name": "content:json",
       "description": "JSON 文件预览",

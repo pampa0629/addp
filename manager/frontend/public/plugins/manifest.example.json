@@ -6,7 +6,6 @@
     "/plugins/geojson-preview.js",
     "/plugins/image-preview.js",
     "/plugins/json-preview.js",
-    "/plugins/sqlite-preview.js",
     "/plugins/pdf-preview.js",
     "/plugins/docx-preview.js",
     "/plugins/wps-preview.js",

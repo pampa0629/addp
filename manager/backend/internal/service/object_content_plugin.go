@@ -55,15 +55,6 @@ type StreamableContentHandler interface {
 	HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error)
 }
 
-// ObjectSiblingStreamProvider 用于获取同前缀下其他对象的流式读取器（针对多文件场景，如 Shapefile）
-type ObjectSiblingStreamProvider func(path string) (io.ReadCloser, error)
-
-// CompositeStreamableContentHandler 扩展接口，支持一次处理同一资源下的多个对象文件
-type CompositeStreamableContentHandler interface {
-	ObjectContentHandler
-	HandleCompositeStream(ctx context.Context, req *ObjectContentRequest, baseStreamer ObjectStreamProvider, siblingProvider ObjectSiblingStreamProvider) (*models.ObjectPreviewContent, bool, error)
-}
-
 // ObjectContentRegistry 负责根据优先级注册和解析对象内容插件。
 type ObjectContentRegistry struct {
 	handlers []ObjectContentHandler
@@ -260,7 +251,7 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindImage
 	case models.ObjectPreviewKindJSON:
 		return models.ObjectPreviewKindJSON
-	case models.ObjectPreviewKindGeoJSON, models.ObjectPreviewKindShapefile:
+	case models.ObjectPreviewKindGeoJSON:
 		return "map"
 	case models.ObjectPreviewKindContainer:
 		return models.ObjectPreviewKindContainer
@@ -1143,15 +1134,8 @@ func isLikelyTextContent(data []byte) bool {
 
 type sqliteContentHandler struct {
 	baseContentHandler
-	maxBytes   int64
-	tableLimit int
-	rowLimit   int
+	maxBytes int64
 }
-
-const (
-	defaultSQLiteTableLimit = 5
-	defaultSQLiteRowLimit   = 20
-)
 
 // HandleStream 实现流式处理 SQLite 文件（推荐，避免大文件内存占用）
 func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
@@ -1254,16 +1238,8 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	defer db.Close()
 
 	options := sqlite.DefaultOptions()
-	if h.tableLimit > 0 {
-		options.TableLimit = h.tableLimit
-	} else {
-		options.TableLimit = defaultSQLiteTableLimit
-	}
-	if h.rowLimit > 0 {
-		options.SampleRowLimit = h.rowLimit
-	} else {
-		options.SampleRowLimit = defaultSQLiteRowLimit
-	}
+	options.TableLimit = 0
+	options.SampleRowLimit = 0
 
 	analysis, err := sqlite.Analyze(ctx, db, &options)
 	if err != nil {

@@ -111,6 +111,25 @@ func TestDetectorRuleDeclaresMultiFileComponents(t *testing.T) {
 	}
 }
 
+func TestDetectorUsesFormatComponentSpecs(t *testing.T) {
+	t.Parallel()
+
+	required, known := shapefileComponentExtensionSets()
+	for _, ext := range []string{".shp", ".shx", ".dbf"} {
+		if !required[ext] {
+			t.Fatalf("required component extension %s missing: %#v", ext, required)
+		}
+	}
+	for _, ext := range []string{".prj", ".cpg", ".sbn", ".sbx"} {
+		if required[ext] {
+			t.Fatalf("optional component extension %s marked required: %#v", ext, required)
+		}
+		if !known[ext] {
+			t.Fatalf("known component extension %s missing: %#v", ext, known)
+		}
+	}
+}
+
 type shapefileMapContentReader struct {
 	content map[string][]byte
 }

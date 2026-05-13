@@ -60,7 +60,7 @@
       hasHeader: child?.has_header ?? child?.hasHeader,
       columns,
       columnTypes,
-      rows: Array.isArray(child?.rows) ? child.rows : []
+      rows: []
     }
   }
 
