@@ -295,8 +295,8 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | `item` | `organization`、`data_type`、`format` | `organization`、`data_type`、`format` |
 | `type_info.container` | 内部表、view、默认入口、对象数量 | 内部 layer、表、默认入口、对象数量 |
 | `format_info.sqlite` | SQLite 版本、内部表数量、表清单、pragma 摘要 | 不适用 |
-| `format_info.geopackage` | 不适用 | gpkg 元数据、layer 清单、扩展信息 |
-| `capabilities.spatial` | 仅 SpatiaLite 等可确认空间能力时写入 | layer 空间字段、SRID / CRS、extent 等空间能力 |
+| `format_info.geopackage` | 不适用 | gpkg 容器级元数据和 layer / table 统计摘要 |
+| `capabilities.spatial` | 仅 SpatiaLite 等可确认空间能力时写入 | 外层容器不写入；选中具体 layer 后由 child `TableInfo.Extensions.SpatialInfo` 表达空间字段、SRID / CRS、extent 和空间索引 |
 
 ### 消费要求
 
@@ -306,6 +306,7 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 
 - 未形成子 item 规范前，不得自动展开内部表或 layer 为独立 `meta_item`。
 - 不得把容器内所有表字段合并成外层 item 的 `type_info.table.fields`。
+- 不得把容器内单个表或 layer 的字段、样本行、空间字段、SRID、extent、空间索引等 child 内容写入外层容器 attributes。
 - 不得把 GeoPackage 的格式私有元数据混入 `capabilities.spatial`。
 
 ## 图片

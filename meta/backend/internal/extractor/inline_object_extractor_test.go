@@ -1,6 +1,10 @@
 package extractor
 
-import "testing"
+import (
+	"testing"
+
+	_ "github.com/addp/common/format/builtin"
+)
 
 func TestInlineObjectMetadataExtractorShouldExtract(t *testing.T) {
 	t.Parallel()

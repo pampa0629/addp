@@ -14,7 +14,8 @@ import (
 
 // Parser 实现 SQLite 格式的解析器
 type Parser struct {
-	options *format.ParseOptions
+	formatType format.FormatType
+	options    *format.ParseOptions
 }
 
 // NewParser 创建 SQLite 解析器
@@ -22,15 +23,25 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{options: opts}
+	return &Parser{formatType: format.FormatSQLite, options: opts}
+}
+
+func NewGeoPackageParser(opts *format.ParseOptions) *Parser {
+	if opts == nil {
+		opts = format.DefaultParseOptions()
+	}
+	return &Parser{formatType: format.FormatGeoPackage, options: opts}
 }
 
 func (p *Parser) Format() format.FormatType {
-	return format.FormatSQLite
+	if p.formatType == "" {
+		return format.FormatSQLite
+	}
+	return p.formatType
 }
 
 func (p *Parser) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatSQLite)
+	descriptor, ok := format.GetFormatDescriptor(p.Format())
 	if ok {
 		return descriptor
 	}
@@ -45,12 +56,12 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 }
 
 func (p *Parser) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(format.FormatSQLite)
+	capability, ok := format.GetFormatCapability(p.Format())
 	if ok {
 		return capability
 	}
 	return format.FormatCapability{
-		Format:        format.FormatSQLite,
+		Format:        p.Format(),
 		DataType:      format.FormatDataTypeContainer,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
@@ -91,12 +102,29 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 		return nil, err
 	}
 
+	layerByTable := map[string]geoPackageLayer{}
+	if p.Format() == format.FormatGeoPackage {
+		layerByTable = readGeoPackageLayers(ctx, db)
+	}
+
 	children := make([]format.ContainerChildInfo, 0, len(result.Metadata.Tables))
 	for _, table := range result.Metadata.Tables {
+		if p.Format() == format.FormatGeoPackage && isGeoPackageSystemTable(table.Name) {
+			continue
+		}
 		columnCount := len(table.Columns)
+		name := table.Name
+		kind := table.Type
+		if layer, ok := layerByTable[table.Name]; ok {
+			kind = "layer"
+			name = layer.Identifier
+			if name == "" {
+				name = table.Name
+			}
+		}
 		children = append(children, format.ContainerChildInfo{
-			Name:        table.Name,
-			Kind:        table.Type,
+			Name:        name,
+			Kind:        kind,
 			DataType:    format.FormatDataTypeTable,
 			RowCount:    table.RowCount,
 			ColumnCount: &columnCount,
@@ -109,9 +137,15 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 	if len(children) > 0 {
 		defaultChild = children[0].Name
 	}
+	childCount := result.Metadata.TableCount + result.Metadata.ViewCount
+	childrenTruncated := childCount > len(children)
+	if p.Format() == format.FormatGeoPackage {
+		childCount = len(children)
+		childrenTruncated = false
+	}
 	return &format.ContainerInfo{
-		Format:        format.FormatSQLite,
-		ChildCount:    result.Metadata.TableCount + result.Metadata.ViewCount,
+		Format:        p.Format(),
+		ChildCount:    childCount,
 		DefaultChild:  defaultChild,
 		ResourceCount: 1,
 		Children:      children,
@@ -123,7 +157,7 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 			"view_count":         result.Metadata.ViewCount,
 			"index_count":        result.Metadata.IndexCount,
 			"sampled_children":   len(children),
-			"children_truncated": result.Metadata.TableCount+result.Metadata.ViewCount > len(children),
+			"children_truncated": childrenTruncated,
 		},
 	}, nil
 }
@@ -144,7 +178,11 @@ func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if err != nil {
 		return nil, err
 	}
-	return sqliteTableInfoToFormatTable(table), nil
+	info := sqliteTableInfoToFormatTable(table)
+	if p.Format() == format.FormatGeoPackage {
+		applyGeoPackageSpatialInfo(ctx, db, info)
+	}
+	return info, nil
 }
 
 func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -406,4 +444,5 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 
 func init() {
 	_ = format.RegisterFormatPlugin(NewParser(nil))
+	_ = format.RegisterFormatPlugin(NewGeoPackageParser(nil))
 }

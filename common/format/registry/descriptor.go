@@ -10,45 +10,46 @@ import (
 type Format string
 
 const (
-	FormatTable     Format = "table"
-	FormatDocument  Format = "document"
-	FormatCSV       Format = "csv"
-	FormatDOCX      Format = "docx"
-	FormatExcel     Format = "excel"
-	FormatGIF       Format = "gif"
-	FormatAAC       Format = "aac"
-	FormatAVI       Format = "avi"
-	FormatAVIF      Format = "avif"
-	FormatAudio     Format = "audio"
-	FormatBMP       Format = "bmp"
-	FormatFLAC      Format = "flac"
-	FormatHEIC      Format = "heic"
-	FormatImage     Format = "image"
-	FormatJPEG      Format = "jpeg"
-	FormatJSON      Format = "json"
-	FormatMarkdown  Format = "markdown"
-	FormatMKV       Format = "mkv"
-	FormatMOV       Format = "mov"
-	FormatMP3       Format = "mp3"
-	FormatMP4       Format = "mp4"
-	FormatORC       Format = "orc"
-	FormatOGG       Format = "ogg"
-	FormatParquet   Format = "parquet"
-	FormatPDF       Format = "pdf"
-	FormatPNG       Format = "png"
-	FormatPPTX      Format = "pptx"
-	FormatShapefile Format = "shapefile"
-	FormatSQLite    Format = "sqlite"
-	FormatText      Format = "text"
-	FormatTIFF      Format = "tiff"
-	FormatTSV       Format = "tsv"
-	FormatSVG       Format = "svg"
-	FormatVideo     Format = "video"
-	FormatWAV       Format = "wav"
-	FormatWebM      Format = "webm"
-	FormatWebP      Format = "webp"
-	FormatWPS       Format = "wps"
-	FormatAvro      Format = "avro"
+	FormatTable      Format = "table"
+	FormatDocument   Format = "document"
+	FormatCSV        Format = "csv"
+	FormatDOCX       Format = "docx"
+	FormatExcel      Format = "excel"
+	FormatGIF        Format = "gif"
+	FormatAAC        Format = "aac"
+	FormatAVI        Format = "avi"
+	FormatAVIF       Format = "avif"
+	FormatAudio      Format = "audio"
+	FormatBMP        Format = "bmp"
+	FormatFLAC       Format = "flac"
+	FormatHEIC       Format = "heic"
+	FormatImage      Format = "image"
+	FormatJPEG       Format = "jpeg"
+	FormatJSON       Format = "json"
+	FormatMarkdown   Format = "markdown"
+	FormatMKV        Format = "mkv"
+	FormatMOV        Format = "mov"
+	FormatMP3        Format = "mp3"
+	FormatMP4        Format = "mp4"
+	FormatORC        Format = "orc"
+	FormatOGG        Format = "ogg"
+	FormatParquet    Format = "parquet"
+	FormatPDF        Format = "pdf"
+	FormatPNG        Format = "png"
+	FormatPPTX       Format = "pptx"
+	FormatShapefile  Format = "shapefile"
+	FormatSQLite     Format = "sqlite"
+	FormatGeoPackage Format = "geopackage"
+	FormatText       Format = "text"
+	FormatTIFF       Format = "tiff"
+	FormatTSV        Format = "tsv"
+	FormatSVG        Format = "svg"
+	FormatVideo      Format = "video"
+	FormatWAV        Format = "wav"
+	FormatWebM       Format = "webm"
+	FormatWebP       Format = "webp"
+	FormatWPS        Format = "wps"
+	FormatAvro       Format = "avro"
 )
 
 const (
@@ -415,7 +416,6 @@ var builtinDescriptors = []Descriptor{
 		ProviderHints: []string{ProviderMedia},
 		Providers: ProviderDescriptor{
 			MediaInfo: true,
-			Metadata:  true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
@@ -433,7 +433,6 @@ var builtinDescriptors = []Descriptor{
 		},
 		Providers: ProviderDescriptor{
 			MediaInfo: true,
-			Metadata:  true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
@@ -451,7 +450,6 @@ var builtinDescriptors = []Descriptor{
 		},
 		Providers: ProviderDescriptor{
 			MediaInfo: true,
-			Metadata:  true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
@@ -469,7 +467,6 @@ var builtinDescriptors = []Descriptor{
 		},
 		Providers: ProviderDescriptor{
 			MediaInfo: true,
-			Metadata:  true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
@@ -487,7 +484,6 @@ var builtinDescriptors = []Descriptor{
 		},
 		Providers: ProviderDescriptor{
 			MediaInfo: true,
-			Metadata:  true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
@@ -552,6 +548,27 @@ var builtinDescriptors = []Descriptor{
 			Table:         true,
 		},
 		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	},
+	{
+		ID:            "builtin-geopackage",
+		Format:        FormatGeoPackage,
+		I18nKey:       "format.geopackage",
+		DataType:      DataTypeContainer,
+		Layouts:       []string{LayoutSingle},
+		ProviderHints: []string{ProviderContainer, ProviderTable, ProviderSpatial},
+		Identification: Identification{
+			Extensions: []string{".gpkg"},
+			MimeTypes:  []string{"application/geopackage+sqlite3"},
+		},
+		Providers: ProviderDescriptor{
+			ContainerInfo: true,
+			TableInfo:     true,
+			TableSample:   true,
+			Table:         true,
+		},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		Spatial:        true,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{

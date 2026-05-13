@@ -112,14 +112,8 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(70),
-				matcher: descriptorObjectContentMatcher(
-					cfg.Match,
-					commonformat.FormatImage,
-					[]commonformat.FormatType{commonformat.FormatJPEG, commonformat.FormatPNG, commonformat.FormatGIF, commonformat.FormatTIFF},
-					[]string{"image/", "image/jpg", "image/bmp", "image/webp", "image/svg+xml", "image/heic"},
-				),
+				matcher:  mediaObjectContentMatcher(cfg.Match, "image"),
 			},
-			maxBytes: cfg.maxBytesOr(maxImagePreviewBytes),
 		}
 		return handler, nil
 	},
@@ -171,7 +165,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(58),
-				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, nil, []string{"application/octet-stream"}),
+				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, []commonformat.FormatType{commonformat.FormatGeoPackage}, []string{"application/octet-stream"}),
 			},
 			maxBytes: cfg.maxBytesOr(maxSQLitePreviewBytes),
 		}
@@ -286,6 +280,51 @@ func descriptorObjectContentMatcher(match ObjectContentMatcherConfig, formatType
 		normalizeExtensionsOrDefault(match.Extensions, extensions),
 		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
 	)
+}
+
+func mediaObjectContentMatcher(match ObjectContentMatcherConfig, mediaKind string) objectContentMatcher {
+	formats, extensions, contentTypes := mediaMatcherDefaults(mediaKind)
+	return newObjectContentMatcher(
+		normalizeFormatsOrDefault(match.Formats, formats),
+		normalizeExtensionsOrDefault(match.Extensions, extensions),
+		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
+	)
+}
+
+func mediaMatcherDefaults(mediaKind string) ([]string, []string, []string) {
+	mediaKind = strings.ToLower(strings.TrimSpace(mediaKind))
+	formats := make([]string, 0)
+	extensions := make([]string, 0)
+	contentTypes := make([]string, 0)
+	for _, descriptor := range commonformat.ListFormatDescriptors() {
+		if descriptor.DataType != commonformat.FormatDataTypeMedia {
+			continue
+		}
+		if mediaKind != "" && !formatDescriptorMatchesMediaKind(descriptor, mediaKind) {
+			continue
+		}
+		formats = append(formats, string(descriptor.Format))
+		extensions = append(extensions, descriptor.Identification.Extensions...)
+		contentTypes = append(contentTypes, descriptor.Identification.MimeTypes...)
+	}
+	return formats, extensions, contentTypes
+}
+
+func formatDescriptorMatchesMediaKind(descriptor commonformat.FormatDescriptor, mediaKind string) bool {
+	if mediaKind == "" {
+		return true
+	}
+	if strings.EqualFold(string(descriptor.Format), mediaKind) {
+		return true
+	}
+	prefix := mediaKind + "/"
+	for _, mimeType := range descriptor.Identification.MimeTypes {
+		normalized := strings.ToLower(strings.TrimSpace(mimeType))
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func descriptorMatcherDefaults(formatType commonformat.FormatType) ([]string, []string, []string) {

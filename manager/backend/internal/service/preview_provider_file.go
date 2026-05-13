@@ -631,7 +631,7 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 	if formatType == format.FormatExcel && len(req) > 0 && req[0] != nil {
 		opts.SheetName = strings.TrimSpace(req[0].ChildName)
 	}
-	if formatType == format.FormatSQLite && len(req) > 0 && req[0] != nil {
+	if (formatType == format.FormatSQLite || formatType == format.FormatGeoPackage) && len(req) > 0 && req[0] != nil {
 		tableName := containerChildTableNameForRequest(req[0].Attributes, req[0].ChildName)
 		if tableName != "" {
 			opts.ExtraParams = map[string]interface{}{"table": tableName}

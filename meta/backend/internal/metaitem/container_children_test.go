@@ -80,7 +80,7 @@ func TestEnrichSQLiteContainerChildrenWritesTables(t *testing.T) {
 	}
 }
 
-func TestEnrichGeoPackageContainerChildrenWritesLayersAndSpatialCapability(t *testing.T) {
+func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) {
 	t.Parallel()
 
 	data := sqliteDatabaseBytes(t, func(db *sql.DB) {
@@ -110,20 +110,23 @@ func TestEnrichGeoPackageContainerChildrenWritesLayersAndSpatialCapability(t *te
 	if len(children) != 1 || children[0]["kind"] != "layer" || children[0]["name"] != "Road Layer" {
 		t.Fatalf("children = %#v", children)
 	}
-	spatial := attrs["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
-	if spatial["primary_geometry_column"] != "geom" {
-		t.Fatalf("spatial = %#v", spatial)
+	if container["child_count"] != 1 {
+		t.Fatalf("child_count = %#v, want visible layer count 1", container["child_count"])
 	}
-	if spatial["has_spatial_index"] != true {
-		t.Fatalf("spatial index = %#v", spatial)
+	if children[0]["table"] != "roads" {
+		t.Fatalf("child table = %#v, want roads", children[0]["table"])
 	}
-	extent := spatial["extent"].([]float64)
-	if len(extent) != 4 || extent[0] != 120.0 || extent[3] != 31.0 {
-		t.Fatalf("extent = %#v", extent)
+	if _, ok := children[0]["fields"]; ok {
+		t.Fatalf("container child should not carry fields: %#v", children[0])
 	}
-	columns := spatial["geometry_columns"].([]map[string]interface{})
-	if columns[0]["srid"] != 4326 {
-		t.Fatalf("geometry_columns = %#v", columns)
+	if _, ok := children[0]["rows"]; ok {
+		t.Fatalf("container child should not carry rows: %#v", children[0])
+	}
+	if _, ok := attrs["capabilities"]; ok {
+		t.Fatalf("container should not carry child spatial capability: %#v", attrs["capabilities"])
+	}
+	if children[0]["column_count"] != 3 {
+		t.Fatalf("column_count = %#v, want 3", children[0]["column_count"])
 	}
 }
 

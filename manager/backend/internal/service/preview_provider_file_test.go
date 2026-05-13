@@ -105,6 +105,34 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesSQLiteChildTable(t *testin
 	}
 }
 
+func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+
+	opts := provider.buildParseOptions(format.FormatGeoPackage, &PreviewRequest{
+		ChildName: "Road Layer",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":  "Road Layer",
+							"table": "roads",
+							"kind":  "layer",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if opts.ExtraParams == nil {
+		t.Fatal("ExtraParams is nil, want geopackage table option")
+	}
+	if got := opts.ExtraParams["table"]; got != "roads" {
+		t.Fatalf("geopackage table option = %#v, want roads", got)
+	}
+}
+
 func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}

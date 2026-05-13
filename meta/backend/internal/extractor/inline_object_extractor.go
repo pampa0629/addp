@@ -3,7 +3,6 @@ package extractor
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/addp/common/format"

@@ -331,11 +331,11 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `shapefile` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
 | `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
 | `sqlite` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 可提取数据库 container info；指定 table 后可提取该 table 的 table info 和分页样本；SQLite 文件自身仍是 container，不写父级 `type_info.table` |
-| `geopackage` | 未注册 | 未注册 | 未注册 | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前按容器 / 空间元数据链路表达，provider 待补 |
+| `geopackage` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 作为容器格式注册；父级只输出 layer / table 轻量 children，选中 child 后再读取字段、分页样本和 `SpatialInfo` |
 | `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
 | `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
 
-当前 provider / reader 家族已包含 `TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerInfoProvider` / `ContainerEntryReader`、`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+当前 provider / reader 家族已包含 `ContainerInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerEntryReader`、`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
 
 ### FileMetadataExtractor 兼容说明
 

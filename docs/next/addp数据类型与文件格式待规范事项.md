@@ -36,7 +36,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不自动展开内�
 
 ### 当前实现状态
 
-Excel、SQLite、GeoPackage 已有容器 children 提取实现。Excel 会写入 sheet 列表、字段摘要、默认 sheet 和 sampled / truncated 信息；SQLite / GeoPackage 会写入 table / view / layer、字段摘要和容器统计，GeoPackage 还会补 `capabilities.spatial` 中的空间列、主几何列、空间索引和范围。
+Excel、SQLite、GeoPackage 已有容器 children 提取实现。容器父级只写入 sheet / table / view / layer 的轻量 children 索引、默认入口和容器统计；字段、样本行和 GeoPackage 单个 layer 的空间字段、SRID、extent、空间索引等 child 内容在选中 child 后由 table info / sample reader 按需读取。
 
 ZIP 目前仍只在概念上属于容器候选，未看到与 Excel / SQLite / GeoPackage 同等的 children 提取实现。容器子对象没有独立 fingerprint、权限、搜索索引或生命周期模型。
 

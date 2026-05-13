@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,11 +14,9 @@ import (
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/excel"
-	"github.com/addp/common/format/plugins/sqlite"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -917,7 +914,7 @@ func containerChildKey(name, tableName string, index int) string {
 
 func isContainerObjectContentFormat(formatName string) bool {
 	switch strings.ToLower(strings.TrimSpace(formatName)) {
-	case string(format.FormatExcel), "xlsx", "xls", string(format.FormatSQLite), "sqlite3", "db":
+	case string(format.FormatExcel), "xlsx", "xls", string(format.FormatSQLite), "sqlite3", "db", string(format.FormatGeoPackage), "gpkg":
 		return true
 	default:
 		return false
@@ -1145,32 +1142,33 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 	return h.parseSQLiteDatabase(ctx, tmpPath, req)
 }
 
-// parseSQLiteDatabase 解析 SQLite 数据库文件并提取元数据和示例数据
+// parseSQLiteDatabase 解析 SQLite 族容器文件并提取容器索引。
 func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
-	dsn := fmt.Sprintf("file:%s?mode=ro&_query_only=1&_busy_timeout=5000", strings.ReplaceAll(tmpPath, "\\\\", "/"))
-	logger.L().Info("SQLite 预览: 打开数据库", "dsn", dsn)
-
-	db, err := sql.Open("sqlite3", dsn)
+	formatType := objectContentContainerFormat(req)
+	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
-		logger.L().Error("SQLite 预览: 打开数据库失败", "error", err, "dsn", dsn)
-		return nil, false, fmt.Errorf("打开 SQLite 数据库失败: %w", err)
-	}
-	defer db.Close()
-
-	options := sqlite.DefaultOptions()
-	options.TableLimit = 0
-	options.SampleRowLimit = 0
-
-	analysis, err := sqlite.Analyze(ctx, db, &options)
-	if err != nil {
-		logger.L().Error("SQLite 预览: 分析数据库失败", "error", err)
-		return nil, false, fmt.Errorf("提取 SQLite 元数据失败: %w", err)
+		return nil, false, fmt.Errorf("获取 %s 容器 provider 失败: %w", formatType, err)
 	}
 
-	metadata := buildSQLiteMetadataMap(analysis.Metadata, req)
-	preview := buildContainerPreviewFromSQLiteAnalysis(analysis.Metadata)
+	file, err := os.Open(tmpPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("打开临时容器文件失败: %w", err)
+	}
+	info, err := provider.DescribeContainer(ctx, file, &format.ParseOptions{
+		ExtraParams: map[string]interface{}{
+			"table_limit": 0,
+			"row_limit":   0,
+		},
+	})
+	_ = file.Close()
+	if err != nil {
+		logger.L().Error("SQLite 族容器预览: 分析失败", "error", err, "format", formatType)
+		return nil, false, fmt.Errorf("提取 %s 容器元数据失败: %w", formatType, err)
+	}
 
-	truncated := len(analysis.Metadata.Tables) < analysis.Metadata.TableCount || hasAnyTruncatedTable(analysis.Metadata.Tables)
+	metadata := buildContainerMetadataMap(info, req, formatType)
+	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
+	truncated := containerInfoTruncated(info)
 
 	content := &models.ObjectPreviewContent{
 		Kind:      models.ObjectPreviewKindContainer,
@@ -1182,62 +1180,96 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	return decoratePreviewContent(content), truncated, nil
 }
 
-func buildSQLiteMetadataMap(meta sqlite.Metadata, req *ObjectContentRequest) map[string]interface{} {
-	result := map[string]interface{}{
-		"version":     meta.Version,
-		"page_size":   meta.PageSize,
-		"page_count":  meta.PageCount,
-		"table_count": meta.TableCount,
-		"view_count":  meta.ViewCount,
-		"index_count": meta.IndexCount,
-	}
+func buildContainerMetadataMap(info *format.ContainerInfo, req *ObjectContentRequest, formatType format.FormatType) map[string]interface{} {
+	result := map[string]interface{}{"format": string(formatType)}
 	if req != nil {
 		result["size_bytes"] = req.Size
 	}
+	if info == nil {
+		return result
+	}
+	for key, value := range info.FormatInfo {
+		result[key] = value
+	}
+	result["child_count"] = info.ChildCount
+	result["sampled_children"] = len(info.Children)
 	return result
 }
 
-func buildContainerPreviewFromSQLiteAnalysis(meta sqlite.Metadata) map[string]interface{} {
-	children := make([]map[string]interface{}, 0, len(meta.Tables))
-	for _, tbl := range meta.Tables {
+func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallbackFormat string) map[string]interface{} {
+	if info == nil {
+		return emptyContainerPreview(fallbackFormat)
+	}
+	formatName := string(info.Format)
+	if formatName == "" {
+		formatName = fallbackFormat
+	}
+	children := make([]map[string]interface{}, 0, len(info.Children))
+	for _, childInfo := range info.Children {
+		key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), len(children))
 		child := map[string]interface{}{
-			"key":          tbl.Name,
-			"name":         tbl.Name,
-			"label":        tbl.Name,
-			"table":        tbl.Name,
-			"kind":         tbl.Type,
-			"data_type":    string(format.FormatDataTypeTable),
-			"column_count": len(tbl.Columns),
+			"key":       key,
+			"name":      childInfo.Name,
+			"label":     childInfo.Name,
+			"kind":      childInfo.Kind,
+			"data_type": childInfo.DataType,
 		}
-		if tbl.RowCount != nil {
-			child["row_count"] = *tbl.RowCount
+		if childInfo.RowCount != nil {
+			child["row_count"] = *childInfo.RowCount
+		}
+		if childInfo.ColumnCount != nil {
+			child["column_count"] = *childInfo.ColumnCount
+		}
+		if childInfo.HasHeader != nil {
+			child["has_header"] = *childInfo.HasHeader
+		}
+		for key, value := range childInfo.Properties {
+			child[key] = value
 		}
 		children = append(children, child)
 	}
 
 	summary := map[string]interface{}{
-		"table_count":        meta.TableCount,
-		"view_count":         meta.ViewCount,
-		"child_count":        meta.TableCount + meta.ViewCount,
-		"sampled_children":   len(meta.Tables),
-		"children_truncated": meta.TableCount+meta.ViewCount > len(meta.Tables),
+		"child_count":      info.ChildCount,
+		"sampled_children": len(info.Children),
+	}
+	for key, value := range info.FormatInfo {
+		summary[key] = value
 	}
 
-	defaultChild := ""
-	if len(children) > 0 {
+	defaultChild := info.DefaultChild
+	if defaultChild == "" && len(children) > 0 {
 		defaultChild = commonJSON.InterfaceString(children[0]["key"])
 	}
-	preview := buildContainerPreview(string(format.FormatSQLite), defaultChild, defaultChild, children, summary)
-	return preview
+	return buildContainerPreview(formatName, defaultChild, defaultChild, children, summary)
 }
 
-func hasAnyTruncatedTable(tables []sqlite.TableInfo) bool {
-	for _, tbl := range tables {
-		if tbl.RowsTruncated {
-			return true
+func containerInfoTruncated(info *format.ContainerInfo) bool {
+	if info == nil {
+		return false
+	}
+	if info.ChildCount > len(info.Children) {
+		return true
+	}
+	return commonJSON.InterfaceBool(info.FormatInfo["children_truncated"])
+}
+
+func objectContentContainerFormat(req *ObjectContentRequest) format.FormatType {
+	if req == nil {
+		return format.FormatSQLite
+	}
+	for _, value := range []string{req.Format, req.Extension, req.ContentType, req.Name} {
+		if formatType := normalizeFileTableFormat(value); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
+			return formatType
+		}
+		if formatType := format.MIMEToFormat(value); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
+			return formatType
+		}
+		if formatType := format.DetectFormat(value, nil); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
+			return formatType
 		}
 	}
-	return false
+	return format.FormatSQLite
 }
 
 type commandContentHandler struct {
