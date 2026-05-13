@@ -242,15 +242,6 @@ func (p *Parser) analysisOptions(options *format.ParseOptions) *Options {
 		if v, ok := options.ExtraParams[format.ContainerRowLimitParam].(int); ok && v >= 0 {
 			result.SampleRowLimit = v
 		}
-		if v, ok := options.ExtraParams["table_limit"].(int); ok && v > 0 {
-			result.TableLimit = v
-		}
-		if v, ok := options.ExtraParams["row_limit"].(int); ok && v >= 0 {
-			result.SampleRowLimit = v
-		}
-		if v, ok := options.ExtraParams["include_views"].(bool); ok {
-			result.IncludeViews = v
-		}
 	}
 	return &result
 }

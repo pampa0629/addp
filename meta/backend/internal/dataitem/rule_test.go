@@ -57,9 +57,13 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 
 	seenCSV := false
 	seenGeoPackage := false
+	seenDOCX := false
 	seenMarkdown := false
 	seenParquet := false
+	seenPDF := false
+	seenPPTX := false
 	seenText := false
+	seenWPS := false
 	seenZIP := false
 	for _, rule := range rules {
 		if err := ValidateFormatRule(rule); err != nil {
@@ -71,6 +75,11 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 		if rule.Format == "geopackage" && rule.Organization == OrganizationSingle {
 			seenGeoPackage = true
 		}
+		if rule.Format == string(format.FormatDOCX) &&
+			rule.DataType == DataTypeDocument &&
+			rule.Organization == OrganizationSingle {
+			seenDOCX = true
+		}
 		if rule.Format == string(format.FormatMarkdown) &&
 			rule.DataType == DataTypeDocument &&
 			rule.Organization == OrganizationSingle {
@@ -79,10 +88,25 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 		if rule.Format == "parquet" && rule.DataType == DataTypeTable && rule.Organization == OrganizationSingle {
 			seenParquet = true
 		}
+		if rule.Format == string(format.FormatPDF) &&
+			rule.DataType == DataTypeDocument &&
+			rule.Organization == OrganizationSingle {
+			seenPDF = true
+		}
+		if rule.Format == string(format.FormatPPTX) &&
+			rule.DataType == DataTypeDocument &&
+			rule.Organization == OrganizationSingle {
+			seenPPTX = true
+		}
 		if rule.Format == string(format.FormatText) &&
 			rule.DataType == DataTypeDocument &&
 			rule.Organization == OrganizationSingle {
 			seenText = true
+		}
+		if rule.Format == string(format.FormatWPS) &&
+			rule.DataType == DataTypeDocument &&
+			rule.Organization == OrganizationSingle {
+			seenWPS = true
 		}
 		if rule.Format == string(format.FormatZIP) &&
 			rule.DataType == DataTypeContainer &&
@@ -90,8 +114,8 @@ func TestBuiltinSingleResourceRulesAreValid(t *testing.T) {
 			seenZIP = true
 		}
 	}
-	if !seenCSV || !seenGeoPackage || !seenMarkdown || !seenParquet || !seenText || !seenZIP {
-		t.Fatalf("builtin rules missing csv=%v geopackage=%v markdown=%v parquet=%v text=%v zip=%v", seenCSV, seenGeoPackage, seenMarkdown, seenParquet, seenText, seenZIP)
+	if !seenCSV || !seenGeoPackage || !seenDOCX || !seenMarkdown || !seenParquet || !seenPDF || !seenPPTX || !seenText || !seenWPS || !seenZIP {
+		t.Fatalf("builtin rules missing csv=%v geopackage=%v docx=%v markdown=%v parquet=%v pdf=%v pptx=%v text=%v wps=%v zip=%v", seenCSV, seenGeoPackage, seenDOCX, seenMarkdown, seenParquet, seenPDF, seenPPTX, seenText, seenWPS, seenZIP)
 	}
 }
 
@@ -118,6 +142,23 @@ func TestMatchBuiltinSingleResourceRuleDerivesMarkdownFromFormatCapability(t *te
 	}
 	if rule.DataType != DataTypeDocument {
 		t.Fatalf("DataType = %q, want document", rule.DataType)
+	}
+}
+
+func TestMatchBuiltinSingleResourceRuleDerivesRawRangeDocumentsFromFormatCapability(t *testing.T) {
+	for _, formatType := range []format.FormatType{format.FormatPDF, format.FormatDOCX, format.FormatPPTX, format.FormatWPS} {
+		t.Run(string(formatType), func(t *testing.T) {
+			rule, ok := MatchBuiltinSingleResourceRule(string(formatType))
+			if !ok {
+				t.Fatalf("expected %s rule to derive from format capability", formatType)
+			}
+			if rule.Organization != OrganizationSingle {
+				t.Fatalf("Organization = %q, want single", rule.Organization)
+			}
+			if rule.DataType != DataTypeDocument {
+				t.Fatalf("DataType = %q, want document", rule.DataType)
+			}
+		})
 	}
 }
 

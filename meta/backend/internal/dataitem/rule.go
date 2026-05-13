@@ -60,7 +60,6 @@ func explicitSingleResourceRules() []FormatRule {
 		singleResourceRule("parquet", DataTypeTable, []string{".parquet"}),
 		singleResourceRule("orc", DataTypeTable, []string{".orc"}),
 		singleResourceRule("avro", DataTypeTable, []string{".avro"}),
-		singleResourceRule("pdf", DataTypeDocument, []string{".pdf"}),
 		containerResourceRule("sqlite", DataTypeContainer, []string{".sqlite", ".sqlite3", ".db"}),
 		containerResourceRule("geopackage", DataTypeContainer, []string{".gpkg"}),
 	}

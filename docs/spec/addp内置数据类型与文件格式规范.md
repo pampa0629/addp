@@ -34,10 +34,14 @@
 | Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
 | GeoPackage | `single` | `container` | `geopackage` | 内部 layer 先写入 `type_info.container.children` |
+| ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
 | 图片 | `single` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
 | 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
 | 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |
 | PDF | `single` | `document` | `pdf` | 文档元信息和提取状态分区写入 |
+| DOCX | `single` | `document` | `docx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
+| PPTX | `single` | `document` | `pptx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
+| WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 
 ## CSV / TSV
 
@@ -309,6 +313,40 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 - 不得把容器内单个表或 layer 的字段、样本行、空间字段、SRID、extent、空间索引等 child 内容写入外层容器 attributes。
 - 不得把 GeoPackage 的格式私有元数据混入 `capabilities.spatial`。
 
+## ZIP / 压缩包
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `organization` | `single` |
+| `data_type` | `container` |
+| `format` | `zip` |
+| 主资源 | `meta_item.full_name` 指向 ZIP 文件 |
+
+ZIP 压缩包先作为一个容器 item。压缩包内部 entry 是内部子对象，不自动展开为独立 `meta_item`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `organization`、`data_type`、`format` |
+| `type_info.container` | entry 轻量 `children`、`default_child`、`child_count` |
+| `format_info.zip` | `entry_count`、`file_count`、`directory_count`、`sampled_children`、`children_truncated` 等容器统计 |
+
+`type_info.container.children` 只能记录 entry 定位和摘要，例如 `name`、`kind`、`data_type`、`path`、压缩前后大小、压缩方法和可推断的 child `format`。不得把 entry 的字段、行样本、文档正文或媒体内容写入父容器。
+
+### 消费要求
+
+Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个 entry 的内容预览，需要后续 `ContainerEntryReader` 或等价的通用 entry resource wrapper 定位内部对象，再交给对应 data type 的 info provider / content reader 处理；不得在 Manager 或 Meta 中为 ZIP 单独解压并绕过通用链路。
+
+### 格式约束
+
+- 未形成子 item 规范前，不得自动展开 entry 为独立 `meta_item`。
+- 不得把压缩包内文件内容、字段数组、行样本或正文片段写入外层容器 attributes。
+- 不得把 ZIP 内部文件的格式识别结果提升为父容器 `format`。
+- RAR、TAR 等其他压缩格式进入内置主线前，应先明确 descriptor、MIME、解包依赖和 entry 读取边界。
+
 ## 图片
 
 ### 识别与组织
@@ -447,3 +485,39 @@ Manager 文档内容读取消费 `type_info.document` 和 `capabilities.extracti
 - 不得给 PDF 写入 `type_info.table.fields`。
 - 不得把大文本全文直接写入 attributes。
 - 不得把 PDF 文档提取状态写入 `format_info.pdf`。
+
+## DOCX / PPTX / WPS
+
+### 识别与组织
+
+| 维度 | DOCX | PPTX | WPS |
+|---|---|---|---|
+| `organization` | `single` | `single` | `single` |
+| `data_type` | `document` | `document` | `document` |
+| `format` | `docx` | `pptx` | `wps` |
+| 主资源 | `meta_item.full_name` 指向 DOCX 文件 | `meta_item.full_name` 指向 PPTX 文件 | `meta_item.full_name` 指向 WPS 文件 |
+
+DOCX / PPTX / WPS 是单资源文档文件。第一阶段内置规范只要求稳定识别格式、声明 raw / range 内容读取能力，并让 Manager 通过文档预览组件消费原始文件流；后端不承诺内置 `DocumentInfoProvider` 或 `DocumentTextReader`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `organization`、`data_type`、`format` |
+| `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、作者、语言、加密状态等文档元信息；没有解析事实时不得写入空壳对象 |
+| `format_info.docx` / `format_info.pptx` / `format_info.wps` | 仅在后端已有确定解析事实时写入格式私有信息 |
+| `capabilities.extraction` | 仅在已有明确文本提取、转换、OCR、摘要或外部索引任务状态时写入 |
+
+### 消费要求
+
+Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`content.kind` 等后端语义字段，并优先使用 raw / range / object-stream URL 读取原始文件；扩展名和 MIME 只作为兜底识别依据。没有 URL 时才允许在受限大小内使用 `raw_binary` + base64 兜底。
+
+Transfer、Search 等模块不得因为 `data_type=document` 就假设存在可搜索全文；全文、缩略图、转换产物和摘要必须来自后续提取或转换任务，并通过 `capabilities.extraction` 或外部索引引用管理。
+
+### 格式约束
+
+- 不得把 DOCX / PPTX / WPS 归为 unknown binary。
+- 不得给 DOCX / PPTX / WPS 写入 `type_info.table.fields`。
+- 不得在没有后端解析事实时虚报 `type_info.document`、`DocumentInfoProvider` 或 `DocumentTextReader` 能力。
+- 不得把预览转换产物、全文、缩略图或大段摘要直接塞入 attributes。
+- 不得为了 Manager 预览默认全量读取大文档并返回 base64。

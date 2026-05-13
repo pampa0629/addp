@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -479,6 +481,7 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	// 设置响应头
 	c.Header("Content-Type", contentType)
 	c.Header("Accept-Ranges", "bytes")
+	c.Header("Content-Disposition", objectStreamContentDisposition(objectKey, contentType))
 
 	if contentRange != "" {
 		// Range 请求返回 206 Partial Content
@@ -495,5 +498,30 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	_, err = io.Copy(c.Writer, reader)
 	if err != nil {
 		logger.L().Error("对象流传输失败", "error", err)
+	}
+}
+
+func objectStreamContentDisposition(objectKey, contentType string) string {
+	filename := path.Base(strings.TrimSpace(objectKey))
+	if filename == "." || filename == "/" || filename == "" {
+		filename = "download"
+	}
+	disposition := "attachment"
+	if streamContentTypeIsInline(contentType) {
+		disposition = "inline"
+	}
+	return fmt.Sprintf("%s; filename=%q", disposition, filename)
+}
+
+func streamContentTypeIsInline(contentType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch normalized {
+	case "application/pdf":
+		return true
+	default:
+		return strings.HasPrefix(normalized, "image/") ||
+			strings.HasPrefix(normalized, "video/") ||
+			strings.HasPrefix(normalized, "audio/") ||
+			strings.HasPrefix(normalized, "text/")
 	}
 }

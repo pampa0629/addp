@@ -11,17 +11,83 @@ import (
 	"github.com/addp/common/format"
 )
 
-// Parser 实现 PDF 格式的解析器
-type Parser struct {
+const defaultReadLimit int64 = 8 * 1024 * 1024
+const readLimitParam = "document_metadata_read_limit"
+
+// Plugin 实现 PDF 格式插件。当前只提供轻量文档信息，正文提取仍不在格式主线内。
+type Plugin struct {
 	options *format.ParseOptions
 }
 
-// NewParser 创建 PDF 解析器
-func NewParser(opts *format.ParseOptions) *Parser {
+// NewPlugin 创建 PDF 插件。
+func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{options: opts}
+	return &Plugin{options: opts}
+}
+
+// Parser 是旧 extractor 入口的兼容别名。
+type Parser = Plugin
+
+// NewParser 创建旧 extractor 兼容入口。
+func NewParser(opts *format.ParseOptions) *Parser {
+	return NewPlugin(opts)
+}
+
+func (p *Plugin) Format() format.FormatType {
+	return format.FormatPDF
+}
+
+func (p *Plugin) Descriptor() format.FormatDescriptor {
+	descriptor, ok := format.GetFormatDescriptor(p.Format())
+	if ok {
+		return descriptor
+	}
+	return format.FormatDescriptor{
+		ID:            "builtin-pdf",
+		Format:        p.Format(),
+		DataType:      format.FormatDataTypeDocument,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderDocument},
+		ContentReaders: []string{
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderRangeContent),
+		},
+	}
+}
+
+func (p *Plugin) Capabilities() format.FormatCapability {
+	capability, ok := format.GetFormatCapability(p.Format())
+	if ok {
+		return capability
+	}
+	return format.FormatCapability{
+		Format:        p.Format(),
+		DataType:      format.FormatDataTypeDocument,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderDocument},
+		ContentReaders: []string{
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderRangeContent),
+		},
+	}
+}
+
+func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
+	metadata, err := p.extractWithOptions(ctx, input, "", 0, options)
+	if err != nil {
+		return nil, err
+	}
+	info := &format.DocumentInfo{Format: p.Format()}
+	if title, ok := metadata.CustomAttrs["title"].(string); ok {
+		info.Title = title
+	}
+	if metadata.BasicInfo.Size > 0 {
+		size := metadata.BasicInfo.Size
+		info.SizeBytes = &size
+	}
+	return info, nil
 }
 
 // extractPDFMetadata 从 PDF Info 字典中提取元数据
@@ -118,12 +184,34 @@ func estimatePageCount(content []byte) int {
 	return -1
 }
 
-// Extract 实现 FileMetadataExtractor 接口。
-func (p *Parser) Extract(ctx context.Context, input format.ExtractInput) (*format.ExtractedMetadata, error) {
+// Extract 实现 FileMetadataExtractor 接口，保留给 Meta 深度扫描兼容链路使用。
+func (p *Plugin) Extract(ctx context.Context, input format.ExtractInput) (*format.ExtractedMetadata, error) {
+	metadata, err := p.extract(ctx, input.Reader, input.ContentType, input.Size)
+	if err != nil {
+		return nil, err
+	}
+	metadata.BasicInfo.LastModified = input.LastModified
+	metadata.BasicInfo.ETag = input.ETag
+	return metadata, nil
+}
+
+func (p *Plugin) extract(ctx context.Context, input io.Reader, contentType string, size int64) (*format.ExtractedMetadata, error) {
+	return p.extractWithOptions(ctx, input, contentType, size, nil)
+}
+
+func (p *Plugin) extractWithOptions(ctx context.Context, input io.Reader, contentType string, size int64, options *format.ParseOptions) (*format.ExtractedMetadata, error) {
+	readLimit := pdfReadLimit(options)
+
 	// 读取 PDF 内容
-	content, err := io.ReadAll(input.Reader)
+	content, err := io.ReadAll(io.LimitReader(input, readLimit+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PDF content: %w", err)
+	}
+	if int64(len(content)) > readLimit {
+		return nil, fmt.Errorf("PDF metadata extraction exceeds limit %d bytes", readLimit)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// 验证 PDF
@@ -157,27 +245,48 @@ func (p *Parser) Extract(ctx context.Context, input format.ExtractInput) (*forma
 
 	return &format.ExtractedMetadata{
 		BasicInfo: format.BasicMetadata{
-			FileType:     "PDF",
-			Size:         input.Size,
-			ContentType:  input.ContentType,
-			LastModified: input.LastModified,
-			ETag:         input.ETag,
+			FileType:    "PDF",
+			Size:        size,
+			ContentType: contentType,
 		},
 		CustomAttrs: customAttrs,
 	}, nil
 }
 
+func pdfReadLimit(options *format.ParseOptions) int64 {
+	if options != nil && options.ExtraParams != nil {
+		switch value := options.ExtraParams[readLimitParam].(type) {
+		case int:
+			if value > 0 {
+				return int64(value)
+			}
+		case int64:
+			if value > 0 {
+				return value
+			}
+		case float64:
+			if value > 0 {
+				return int64(value)
+			}
+		}
+	}
+	return defaultReadLimit
+}
+
 // SupportedTypes 实现 FileMetadataExtractor 接口。
-func (p *Parser) SupportedTypes() []string {
+func (p *Plugin) SupportedTypes() []string {
 	return []string{"application/pdf"}
 }
 
 // Priority 实现 FileMetadataExtractor 接口。
-func (p *Parser) Priority() int {
+func (p *Plugin) Priority() int {
 	return 100
 }
 
 func init() {
-	parser := NewParser(nil)
-	_ = format.RegisterExtractor(parser)
+	plugin := NewPlugin(nil)
+	if err := format.RegisterFormatPlugin(plugin); err != nil {
+		panic(err)
+	}
+	_ = format.RegisterExtractor(plugin)
 }

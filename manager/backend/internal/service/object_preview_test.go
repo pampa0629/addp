@@ -527,7 +527,47 @@ func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
 	}
 }
 
-func TestBinaryBase64HandlerDeclaresRawBinaryMaterialAndRenderer(t *testing.T) {
+func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["pdf"](ObjectContentPluginConfig{Name: "pdf"})
+	if err != nil {
+		t.Fatalf("build pdf handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{
+			Name:       "report.pdf",
+			Format:     "pdf",
+			Size:       1024,
+			PreviewURL: "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/report.pdf",
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("document URL preview should not read bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle pdf content: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "pdf" {
+		t.Fatalf("Kind = %q, want pdf", content.Kind)
+	}
+	if content.URL == "" || content.PreviewMaterial != "url" {
+		t.Fatalf("content = %#v, want URL material", content)
+	}
+	if content.FrontendRenderer != "pdf" {
+		t.Fatalf("FrontendRenderer = %q, want pdf", content.FrontendRenderer)
+	}
+	if content.Encoding == "base64" || content.Data != "" {
+		t.Fatalf("URL preview should not return base64 data: %#v", content)
+	}
+}
+
+func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL(t *testing.T) {
 	t.Parallel()
 	handler, err := builtinContentFactories["wps"](ObjectContentPluginConfig{Name: "wps"})
 	if err != nil {

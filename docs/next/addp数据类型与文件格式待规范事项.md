@@ -18,7 +18,7 @@
 
 1. `common/format` 已有 FormatPlugin、FormatDescriptor、FormatCapability、info provider、content reader、manifest 和能力发现视图等基础能力。
 2. Meta 已有 `single`、`multi`、`whole` 三类组织方式和 `FormatRule` 校验；普通 `single` 格式可以从 `common/format` capability 派生识别规则。
-3. Excel、SQLite、GeoPackage 容器内部对象已写入 `type_info.container.children`，暂未升格为独立 data item。
+3. Excel、SQLite、GeoPackage、ZIP 容器内部对象已写入 `type_info.container.children`，暂未升格为独立 data item。
 4. Manager 内容读取已有自己的 content handler / preview DTO / 前端渲染体系，并已部分使用 format descriptor 生成匹配默认值，但还没有完全改为基于能力发现视图派生。
 5. `content_index.table` 的稀疏行索引已用于 CSV 等表格文件扫描和 Manager range preview；其他索引类型和失效规则仍未扩展。
 
@@ -36,9 +36,7 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不自动展开内�
 
 ### 当前实现状态
 
-Excel、SQLite、GeoPackage 已有容器 children 提取实现。容器父级只写入 sheet / table / view / layer 的轻量 children 索引、默认入口和容器统计；字段、样本行和 GeoPackage 单个 layer 的空间字段、SRID、extent、空间索引等 child 内容在选中 child 后由 table info / sample reader 按需读取。
-
-ZIP 目前仍只在概念上属于容器候选，未看到与 Excel / SQLite / GeoPackage 同等的 children 提取实现。容器子对象没有独立 fingerprint、权限、搜索索引或生命周期模型。
+Excel、SQLite、GeoPackage、ZIP 已有容器 children 提取实现。容器父级只写入 sheet / table / view / layer / entry 的轻量 children 索引、默认入口和容器统计；字段、样本行、正文、媒体内容和 GeoPackage 单个 layer 的空间字段、SRID、extent、空间索引等 child 内容不得写入父容器。Excel / SQLite / GeoPackage 的表格 child 在选中后由 table info / sample reader 按需读取；ZIP entry 内容读取仍待补 `ContainerEntryReader` 或通用 entry resource wrapper。
 
 ### 待确认
 

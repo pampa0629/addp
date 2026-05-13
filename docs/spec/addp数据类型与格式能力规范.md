@@ -293,6 +293,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `pptx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | 演示文档；当前后端只声明原始内容读取能力 |
 | `shapefile` | `table` | `multi` | table、spatial | table_sample、component_table_sample、raw_content | 是 | 是 / 是 | 多组件空间表 |
 | `sqlite` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | SQLite 容器；当前按容器 / 表格内容读取能力表达 |
+| `zip` | `container` | `single` | container | raw_content | 否 | 否 / 否 | ZIP 压缩包；当前只提取 entry 轻量 children，不读取 entry 内容 |
 | `text` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | 纯文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
 | `wps` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | WPS 文档；后端不解析正文，由上层按内容读取能力处理 |
 
@@ -332,6 +333,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
 | `sqlite` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 可提取数据库 container info；指定 table 后可提取该 table 的 table info 和分页样本；SQLite 文件自身仍是 container，不写父级 `type_info.table` |
 | `geopackage` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 作为容器格式注册；父级只输出 layer / table 轻量 children，选中 child 后再读取字段、分页样本和 `SpatialInfo` |
+| `zip` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已注册 `ContainerInfoProvider`；父级只输出 entry 轻量 children 和容器统计，`ContainerEntryReader` 尚未实现 |
 | `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
 | `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
 

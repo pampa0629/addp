@@ -245,9 +245,7 @@ var builtinDescriptors = []Descriptor{
 			Extensions: []string{".docx"},
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
-		Providers: ProviderDescriptor{
-			DocumentInfo: true,
-		},
+		Providers:      ProviderDescriptor{},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},
@@ -347,9 +345,7 @@ var builtinDescriptors = []Descriptor{
 			Extensions: []string{".pptx"},
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 		},
-		Providers: ProviderDescriptor{
-			DocumentInfo: true,
-		},
+		Providers:      ProviderDescriptor{},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
 	},

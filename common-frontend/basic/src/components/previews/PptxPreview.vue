@@ -153,6 +153,31 @@ const pptxData = computed(() => {
 
 const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
 
+const pptxUrl = computed(() => {
+  const root = props.data || {}
+  const object = root.object || {}
+  const content = object.content || {}
+  return (
+    content.url ||
+    content.URL ||
+    content.preview_url ||
+    content.previewUrl ||
+    content.download_url ||
+    content.downloadUrl ||
+    object.url ||
+    object.URL ||
+    object.preview_url ||
+    object.previewUrl ||
+    object.download_url ||
+    object.downloadUrl ||
+    root.preview_url ||
+    root.previewUrl ||
+    root.download_url ||
+    root.downloadUrl ||
+    ''
+  )
+})
+
 const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
 
 const formattedLimit = computed(() => {
@@ -180,6 +205,34 @@ const isTruncated = computed(() => {
 const truncatedMessage = computed(() => {
   return props.data.object?.content?.text || '文件太大，无法加载'
 })
+
+const fetchPptxBytesFromUrl = async (url) => {
+  const response = await fetch(url, { credentials: 'include' })
+  if (!response.ok) {
+    throw new Error(`请求失败（${response.status}）`)
+  }
+  const buffer = await response.arrayBuffer()
+  return new Uint8Array(buffer)
+}
+
+const decodePptxBase64 = (base64Data) => {
+  const binaryString = atob(base64Data)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+const getPptxBytes = async () => {
+  if (pptxData.value) {
+    return decodePptxBase64(pptxData.value)
+  }
+  if (pptxUrl.value) {
+    return fetchPptxBytesFromUrl(pptxUrl.value)
+  }
+  return null
+}
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
@@ -212,20 +265,13 @@ const parsePptxMetadata = async () => {
       return
     }
 
-    if (!pptxData.value) {
+    const bytes = await getPptxBytes()
+    if (!bytes) {
       error.value = '未找到文件数据'
       return
     }
 
     console.log(`📊 开始解析 PPTX 元数据: ${fileName.value}`)
-
-    // 将 base64 转换为 ArrayBuffer
-    const base64Data = pptxData.value
-    const binaryString = atob(base64Data)
-    const bytes = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
-    }
 
     // 使用 JSZip 解压 PPTX 文件
     const zip = await JSZip.loadAsync(bytes.buffer)

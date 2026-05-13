@@ -34,7 +34,7 @@ type ObjectContentRequest struct {
 // ObjectContentProvider 用于按需读取对象数据，limit <= 0 表示使用默认限制。
 type ObjectContentProvider func(limit int64) ([]byte, bool, error)
 
-// ObjectStreamProvider 用于获取对象的流式读取器（用于大文件场景，如 SQLite）
+// ObjectStreamProvider 用于获取对象的流式读取器（用于大文件容器场景）
 type ObjectStreamProvider func() (io.ReadCloser, error)
 
 // ObjectContentHandler 定义对象内容插件需要实现的接口。
@@ -45,7 +45,7 @@ type ObjectContentHandler interface {
 	Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error)
 }
 
-// StreamableContentHandler 扩展接口，支持流式处理大文件（如 SQLite）
+// StreamableContentHandler 扩展接口，支持流式处理大文件容器
 type StreamableContentHandler interface {
 	ObjectContentHandler
 	HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error)
@@ -423,20 +423,30 @@ func (h *baseContentHandler) Matches(req *ObjectContentRequest) bool {
 
 // ------------ 内置处理器实现 ------------
 
-type binaryBase64Handler struct {
+type rawDocumentContentHandler struct {
 	baseContentHandler
 	maxBytes    int64
 	contentKind string
 	emptyTip    string
 }
 
-func (h *binaryBase64Handler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *rawDocumentContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	limit := h.maxBytes
+	metadata := buildPreviewMetadata(req, limit)
+	if req != nil && strings.TrimSpace(req.PreviewURL) != "" {
+		content := &models.ObjectPreviewContent{
+			Kind:            h.contentKind,
+			URL:             strings.TrimSpace(req.PreviewURL),
+			PreviewMaterial: models.PreviewMaterialURL,
+			Metadata:        metadata,
+		}
+		setFrontendRenderer(content, h.contentKind)
+		return decoratePreviewContent(content), false, nil
+	}
 	data, truncated, err := fetcher(limit)
 	if err != nil {
 		return nil, false, err
 	}
-	metadata := buildPreviewMetadata(req, limit)
 	if truncated {
 		message := buildLimitExceededMessage(h.contentKind, req, limit)
 		return decoratePreviewContent(&models.ObjectPreviewContent{
@@ -867,13 +877,13 @@ func isLikelyTextContent(data []byte) bool {
 	return controlCount*100 <= runeCount
 }
 
-type containerDatabaseContentHandler struct {
+type containerContentHandler struct {
 	baseContentHandler
 	maxBytes int64
 }
 
 // HandleStream streams large file-backed containers into a temporary file before provider parsing.
-func (h *containerDatabaseContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *containerContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
 	tmpFile, err := os.CreateTemp("", "container-preview-*.bin")
 	if err != nil {
 		return nil, false, fmt.Errorf("创建临时容器文件失败: %w", err)
@@ -908,10 +918,10 @@ func (h *containerDatabaseContentHandler) HandleStream(ctx context.Context, req 
 
 	logger.L().Info("容器预览: 流式下载完成", "path", req.Path+req.Name, "size_bytes", written, "tmp_path", tmpPath)
 
-	return h.parseSQLiteDatabase(ctx, tmpPath, req)
+	return h.parseContainer(ctx, tmpPath, req)
 }
 
-func (h *containerDatabaseContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *containerContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	data, truncated, err := fetcher(h.maxBytes)
 	if err != nil {
 		return nil, false, err
@@ -949,11 +959,11 @@ func (h *containerDatabaseContentHandler) Handle(ctx context.Context, req *Objec
 		return nil, false, fmt.Errorf("关闭容器临时文件失败: %w", err)
 	}
 
-	return h.parseSQLiteDatabase(ctx, tmpPath, req)
+	return h.parseContainer(ctx, tmpPath, req)
 }
 
-// parseSQLiteDatabase uses common/format container providers to build the container index.
-func (h *containerDatabaseContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
+// parseContainer uses common/format container providers to build the container index.
+func (h *containerContentHandler) parseContainer(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
 	formatType := objectContentContainerFormat(req)
 	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
@@ -972,7 +982,7 @@ func (h *containerDatabaseContentHandler) parseSQLiteDatabase(ctx context.Contex
 	})
 	_ = file.Close()
 	if err != nil {
-		logger.L().Error("SQLite 族容器预览: 分析失败", "error", err, "format", formatType)
+		logger.L().Error("容器预览: 分析失败", "error", err, "format", formatType)
 		return nil, false, fmt.Errorf("提取 %s 容器元数据失败: %w", formatType, err)
 	}
 

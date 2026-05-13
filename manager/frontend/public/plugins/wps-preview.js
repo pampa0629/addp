@@ -30,11 +30,32 @@
       ''
     ).toString().toLowerCase()
 
+  const contentKind = (data = {}) =>
+    (
+      data.object?.content?.kind ||
+      data.object?.content?.Kind ||
+      data.object?.kind ||
+      data.object?.Kind ||
+      ''
+    ).toString().toLowerCase()
+
+  const contentTypeCandidates = (object = {}) => [
+    object.content_type,
+    object.contentType,
+    object.content?.content_type,
+    object.content?.contentType,
+    object.content?.metadata?.content_type,
+    object.content?.metadata?.contentType
+  ]
+
   register({
     name: 'wps',
     component,
     canHandle: (data = {}) => {
       if (frontendRenderer(data) === 'wps') {
+        return true
+      }
+      if (contentKind(data) === 'wps') {
         return true
       }
       const object = data.object || {}
@@ -46,20 +67,7 @@
       if (extension === '.wps' || extension === 'wps') {
         return true
       }
-      const kind =
-        (object.content?.kind || object.content?.Kind || object.kind || object.Kind || '').toString().toLowerCase()
-      if (kind === 'wps') {
-        return true
-      }
-      const contentTypeCandidates = [
-        object.content_type,
-        object.contentType,
-        object.content?.content_type,
-        object.content?.contentType,
-        object.content?.metadata?.content_type,
-        object.content?.metadata?.contentType
-      ]
-      return contentTypeCandidates.some(matchesContentType)
+      return contentTypeCandidates(object).some(matchesContentType)
     },
     priority: 63
   })

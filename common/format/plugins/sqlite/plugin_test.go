@@ -45,8 +45,8 @@ func TestDescribeContainerReturnsLightweightChildren(t *testing.T) {
 	parser := NewParser(nil)
 	info, err := parser.DescribeContainer(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{
-			"table_limit": 0,
-			"row_limit":   0,
+			format.ContainerChildLimitParam: 0,
+			format.ContainerRowLimitParam:   0,
 		},
 	})
 	if err != nil {
@@ -69,8 +69,8 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 	parser := NewGeoPackageParser(nil)
 	info, err := parser.DescribeContainer(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{
-			"table_limit": 0,
-			"row_limit":   0,
+			format.ContainerChildLimitParam: 0,
+			format.ContainerRowLimitParam:   0,
 		},
 	})
 	if err != nil {

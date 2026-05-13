@@ -24,6 +24,33 @@
       ''
     ).toString().toLowerCase()
 
+  const contentKind = (data = {}) =>
+    (
+      data.object?.content?.kind ||
+      data.object?.content?.Kind ||
+      data.object?.kind ||
+      data.object?.Kind ||
+      ''
+    ).toString().toLowerCase()
+
+  const contentTypeCandidates = (object = {}) => [
+    object.content_type,
+    object.contentType,
+    object.content?.content_type,
+    object.content?.contentType,
+    object.content?.metadata?.content_type,
+    object.content?.metadata?.contentType
+  ]
+
+  const matchesContentType = (type) => {
+    if (!type) return false
+    const lower = type.toLowerCase()
+    return (
+      lower.includes('presentationml') ||
+      lower === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    )
+  }
+
   register({
     name: 'pptx',
     component,
@@ -31,19 +58,15 @@
       if (frontendRenderer(data) === 'pptx') {
         return true
       }
+      if (contentKind(data) === 'pptx') {
+        return true
+      }
       const object = data.object || {}
       const path = (object.path || '').toLowerCase()
       if (path.endsWith('.pptx')) {
         return true
       }
-      const contentType = (object.content_type || '').toLowerCase()
-      if (
-        contentType.includes('presentationml') ||
-        contentType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-      ) {
-        return true
-      }
-      return (object.content?.kind || '').toLowerCase() === 'pptx'
+      return contentTypeCandidates(object).some(matchesContentType)
     },
     priority: 63
   })

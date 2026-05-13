@@ -60,6 +60,25 @@ func TestDescribeContainerHonorsEntryLimit(t *testing.T) {
 	}
 }
 
+func TestDescribeContainerZeroEntryLimitListsAllEntries(t *testing.T) {
+	t.Parallel()
+
+	data := zipBytes(t, map[string]string{
+		"a.txt": "a",
+		"b.txt": "b",
+	})
+	info, err := NewPlugin(nil).DescribeContainer(context.Background(), bytes.NewReader(data), format.ContainerParseOptions(0, 0))
+	if err != nil {
+		t.Fatalf("DescribeContainer() error = %v", err)
+	}
+	if len(info.Children) != 2 || info.ChildCount != 2 {
+		t.Fatalf("children = %#v child_count=%d, want all entries", info.Children, info.ChildCount)
+	}
+	if info.FormatInfo["children_truncated"] != false {
+		t.Fatalf("children_truncated = %#v, want false", info.FormatInfo["children_truncated"])
+	}
+}
+
 func zipBytes(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 

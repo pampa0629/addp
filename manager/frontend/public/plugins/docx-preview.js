@@ -24,6 +24,33 @@
       ''
     ).toString().toLowerCase()
 
+  const contentKind = (data = {}) =>
+    (
+      data.object?.content?.kind ||
+      data.object?.content?.Kind ||
+      data.object?.kind ||
+      data.object?.Kind ||
+      ''
+    ).toString().toLowerCase()
+
+  const contentTypeCandidates = (object = {}) => [
+    object.content_type,
+    object.contentType,
+    object.content?.content_type,
+    object.content?.contentType,
+    object.content?.metadata?.content_type,
+    object.content?.metadata?.contentType
+  ]
+
+  const matchesContentType = (type) => {
+    if (!type) return false
+    const lower = type.toLowerCase()
+    return (
+      lower.includes('wordprocessingml') ||
+      lower === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+  }
+
   register({
     name: 'docx',
     component,
@@ -31,19 +58,15 @@
       if (frontendRenderer(data) === 'docx') {
         return true
       }
+      if (contentKind(data) === 'docx') {
+        return true
+      }
       const object = data.object || {}
       const path = (object.path || '').toLowerCase()
       if (path.endsWith('.docx')) {
         return true
       }
-      const contentType = (object.content_type || '').toLowerCase()
-      if (
-        contentType.includes('wordprocessingml') ||
-        contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      ) {
-        return true
-      }
-      return (object.content?.kind || '').toLowerCase() === 'docx'
+      return contentTypeCandidates(object).some(matchesContentType)
     },
     priority: 64
   })

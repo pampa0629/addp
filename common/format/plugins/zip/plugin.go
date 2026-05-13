@@ -72,7 +72,12 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}
 
 	entryLimit := p.entryLimit(options)
-	children := make([]format.ContainerChildInfo, 0, min(entryLimit, len(reader.File)))
+	limited := entryLimit > 0
+	childCapacity := len(reader.File)
+	if limited && entryLimit < childCapacity {
+		childCapacity = entryLimit
+	}
+	children := make([]format.ContainerChildInfo, 0, childCapacity)
 	fileCount := 0
 	dirCount := 0
 	defaultChild := ""
@@ -90,7 +95,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		} else {
 			fileCount++
 		}
-		if len(children) >= entryLimit {
+		if limited && len(children) >= entryLimit {
 			continue
 		}
 		child := zipEntryToContainerChild(entry, isDir)
@@ -115,11 +120,13 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 			"file_count":         fileCount,
 			"directory_count":    dirCount,
 			"sampled_children":   len(children),
-			"children_truncated": entryCount > len(children),
+			"children_truncated": limited && entryCount > len(children),
 		},
 	}, nil
 }
 
+// entryLimit returns the default sampling limit when unspecified.
+// An explicit zero means "unlimited", matching other container providers.
 func (p *Plugin) entryLimit(options *format.ParseOptions) int {
 	if options == nil {
 		options = p.options

@@ -57,7 +57,7 @@ type objectContentBuiltinFactory func(ObjectContentPluginConfig) (ObjectContentH
 
 var builtinContentFactories = map[string]objectContentBuiltinFactory{
 	models.ObjectPreviewKindPDF: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &binaryBase64Handler{
+		handler := &rawDocumentContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(80),
@@ -70,7 +70,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		return handler, nil
 	},
 	models.ObjectPreviewKindDOCX: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &binaryBase64Handler{
+		handler := &rawDocumentContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(75),
@@ -83,7 +83,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		return handler, nil
 	},
 	models.ObjectPreviewKindWPS: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &binaryBase64Handler{
+		handler := &rawDocumentContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
@@ -96,7 +96,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		return handler, nil
 	},
 	models.ObjectPreviewKindPPTX: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &binaryBase64Handler{
+		handler := &rawDocumentContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(74),
@@ -147,7 +147,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		return handler, nil
 	},
 	models.ObjectPreviewKindContainer: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &containerDatabaseContentHandler{
+		handler := &containerContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(58),

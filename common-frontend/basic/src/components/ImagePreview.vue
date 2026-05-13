@@ -140,8 +140,17 @@ const contentType = computed(() => {
 
 const fileName = computed(() => objectData.value?.path || objectData.value?.name || 'image')
 
+const withAuthToken = (url) => {
+  if (!url || typeof url !== 'string') return ''
+  if (!url.startsWith('/api/v1/manager/object-stream')) return url
+  const token = localStorage.getItem('token')
+  if (!token) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}token=${encodeURIComponent(token)}`
+}
+
 const imageSrc = computed(() => {
-  return imageURL.value || ''
+  return withAuthToken(imageURL.value)
 })
 
 const contentMessage = computed(() => content.value?.text || '图片超出预览限制，无法在线展示')

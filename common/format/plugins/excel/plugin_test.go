@@ -34,8 +34,8 @@ func TestParserDescribeContainer(t *testing.T) {
 	opts := format.DefaultParseOptions()
 	opts.SampleSize = 20
 	opts.ExtraParams = map[string]interface{}{
-		"sheet_limit": 10,
-		"row_limit":   20,
+		format.ContainerChildLimitParam: 10,
+		format.ContainerRowLimitParam:   20,
 	}
 
 	info, err := NewParser(nil).DescribeContainer(context.Background(), bytes.NewReader(buf.Bytes()), opts)
