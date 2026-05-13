@@ -146,6 +146,34 @@ func TestResolveProviderByMetaUsesFileTableForExcelChild(t *testing.T) {
 	}
 }
 
+func TestResolveProviderByMetaUsesFileTableForSQLiteChild(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resource.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type":    "container",
+				"format":       "sqlite",
+				"organization": "single",
+			},
+		}},
+		ItemType:  "object",
+		ChildName: "cities",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, Table: "sample.db", ChildName: "cities"})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:file-table" {
+		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	}
+}
+
 func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})

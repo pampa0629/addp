@@ -78,6 +78,33 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesExcelChildSheet(t *testing
 	}
 }
 
+func TestFileTablePreviewProviderBuildParseOptionsUsesSQLiteChildTable(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+
+	opts := provider.buildParseOptions(format.FormatSQLite, &PreviewRequest{
+		ChildName: "Cities",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":  "Cities",
+							"table": "city_table",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if opts.ExtraParams == nil {
+		t.Fatal("ExtraParams is nil, want sqlite table option")
+	}
+	if got := opts.ExtraParams["table"]; got != "city_table" {
+		t.Fatalf("sqlite table option = %#v, want city_table", got)
+	}
+}
+
 func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -138,6 +165,29 @@ func TestObjectStorageResourceReaderStripsBucketPrefixFromComponentPath(t *testi
 	}
 	objectSegment := enginePlugin.openedPath.Segments[2]
 	if objectSegment.Name != "规划用地.dbf" {
+		t.Fatalf("object segment = %#v, want key without duplicated bucket", objectSegment)
+	}
+}
+
+func TestObjectStorageResourceReaderOpenRangeStripsBucketPrefixFromComponentPath(t *testing.T) {
+	t.Parallel()
+
+	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component-range"}
+	reader := newObjectStorageResourceReader(enginePlugin, nil, nil, 9, "addp")
+
+	rc, err := reader.OpenRange(context.Background(), resource.NewResourceRef("addp/gis/规划用地.shx", resource.ResourceRoleComponent), 100, 8)
+	if err != nil {
+		t.Fatalf("OpenRange() error = %v", err)
+	}
+	rc.Close()
+	if got := enginePlugin.rangeOpenedPath.StringPath(); got != "addp/gis/规划用地.shx" {
+		t.Fatalf("range opened path = %q, want catalog path with bucket plus object key", got)
+	}
+	if len(enginePlugin.rangeOpenedPath.Segments) != 3 {
+		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.rangeOpenedPath.Segments)
+	}
+	objectSegment := enginePlugin.rangeOpenedPath.Segments[2]
+	if objectSegment.Name != "规划用地.shx" {
 		t.Fatalf("object segment = %#v, want key without duplicated bucket", objectSegment)
 	}
 }
@@ -268,7 +318,7 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 	}
 }
 
-func TestFileTablePreviewProviderUsesExcelChildAttributes(t *testing.T) {
+func TestFileTablePreviewProviderUsesContainerChildAttributes(t *testing.T) {
 	t.Parallel()
 
 	provider := &FileTablePreviewProvider{}
@@ -276,18 +326,19 @@ func TestFileTablePreviewProviderUsesExcelChildAttributes(t *testing.T) {
 	req := &PreviewRequest{
 		Page:      1,
 		PageSize:  2,
-		Table:     "manager/book.xlsx",
+		Table:     "manager/sample.db",
 		ChildName: "Cities",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"format": "excel",
+				"format": "sqlite",
 			},
 			"type_info": map[string]interface{}{
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
 							"name":       "Cities",
-							"kind":       "sheet",
+							"table":      "city_table",
+							"kind":       "table",
 							"row_count":  int64(7),
 							"has_header": true,
 							"fields": []interface{}{
@@ -305,10 +356,10 @@ func TestFileTablePreviewProviderUsesExcelChildAttributes(t *testing.T) {
 		context.Background(),
 		staticResourceReader{content: []byte("mock")},
 		"manager",
-		"manager/book.xlsx",
-		format.FormatExcel,
+		"manager/sample.db",
+		format.FormatSQLite,
 		tableProvider,
-		provider.buildParseOptions(format.FormatExcel, req),
+		provider.buildParseOptions(format.FormatSQLite, req),
 		req,
 	)
 	if err != nil {
@@ -317,11 +368,14 @@ func TestFileTablePreviewProviderUsesExcelChildAttributes(t *testing.T) {
 	if tableProvider.describeCalls != 0 {
 		t.Fatalf("DescribeTable calls = %d, want 0 when child attributes have table info", tableProvider.describeCalls)
 	}
+	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams["table"] != "city_table" {
+		t.Fatalf("sqlite sample table option = %#v, want city_table", tableProvider.sampleOptions)
+	}
 	if preview.Total != 7 {
 		t.Fatalf("Total = %d, want 7", preview.Total)
 	}
 	if len(preview.Columns) != 2 || preview.Columns[0] != "city" || preview.Columns[1] != "population" {
-		t.Fatalf("Columns = %#v, want child sheet columns", preview.Columns)
+		t.Fatalf("Columns = %#v, want child columns", preview.Columns)
 	}
 }
 
@@ -528,6 +582,7 @@ func (r staticResourceReader) List(context.Context, resource.ResourceRef) ([]res
 type recordingTableProvider struct {
 	sampleOffset  int64
 	describeCalls int
+	sampleOptions *format.ParseOptions
 }
 
 func (p *recordingTableProvider) Format() format.FormatType {
@@ -547,8 +602,9 @@ func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *form
 	}, nil
 }
 
-func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, offset, _ int64, opts *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
+	p.sampleOptions = opts
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
 
@@ -596,8 +652,9 @@ var _ resource.ResourceReader = staticResourceReader{}
 var _ resource.ComponentReader = emptyComponentReader{}
 
 type recordingContentPlugin struct {
-	engineType string
-	openedPath plugin.CatalogPath
+	engineType      string
+	openedPath      plugin.CatalogPath
+	rangeOpenedPath plugin.CatalogPath
 }
 
 func (p *recordingContentPlugin) Type() string         { return p.engineType }
@@ -621,6 +678,10 @@ func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
 func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openedPath = path
 	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
+}
+func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	p.rangeOpenedPath = path
+	return io.NopCloser(strings.NewReader("range")), nil
 }
 
 func TestContentIndexObjectKeyIncludesBucketForObjectStorage(t *testing.T) {

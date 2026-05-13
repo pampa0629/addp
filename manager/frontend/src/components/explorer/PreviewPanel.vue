@@ -457,7 +457,7 @@ const previewComponentProps = computed(() => {
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
   }
-  if (previewPluginName.value === 'excel-preview') {
+  if (['excel-preview', 'sqlite'].includes(previewPluginName.value)) {
     return {
       activeSheetPreview: store.activeChildPreviewData,
       activeSheetLoading: store.childPreviewLoading

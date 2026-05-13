@@ -337,10 +337,10 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		handler := p.content.Resolve(req)
 		if handler != nil {
-			if strings.EqualFold(req.Format, string(format.FormatExcel)) {
-				if previewJSON := buildExcelPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
+			if isContainerObjectContentFormat(req.Format) {
+				if previewJSON := buildContainerPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
 					preview.Object.Content = &models.ObjectPreviewContent{
-						Kind: models.ObjectPreviewKindExcel,
+						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
 						Metadata: map[string]interface{}{
 							"size_bytes": stat.Size,

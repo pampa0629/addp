@@ -1,4 +1,14 @@
 (function () {
+  const COMPONENT_KEY = 'ContainerPreview'
+
+  const components = window.DataExplorerPluginComponents || {}
+  const ContainerPreview = components[COMPONENT_KEY]
+
+  if (!ContainerPreview) {
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 sqlite 注册`)
+    return
+  }
+
   const registerPlugin = (plugin) => {
     const queue = (window.DataExplorerPlugins = window.DataExplorerPlugins || [])
     if (typeof window.registerDataExplorerPlugin === 'function') {
@@ -8,8 +18,18 @@
     }
   }
 
-  const normalizeNumber = (value) => {
-    if (typeof value !== 'number') return value
+  const numberOrUndefined = (value) => {
+    const number = Number(value)
+    return Number.isFinite(number) ? number : undefined
+  }
+
+  const numberOrDefault = (value, fallback) => {
+    const number = numberOrUndefined(value)
+    return number === undefined ? fallback : number
+  }
+
+  const formatNumber = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '--'
     return new Intl.NumberFormat().format(value)
   }
 
@@ -27,14 +47,37 @@
     return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`
   }
 
+  const normalizeColumns = (columns) => {
+    if (!Array.isArray(columns)) return { names: [], types: [] }
+    const names = []
+    const types = []
+    for (const column of columns) {
+      if (typeof column === 'string') {
+        names.push(column)
+        types.push('string')
+        continue
+      }
+      if (!column || typeof column !== 'object') continue
+      const name = column.name || column.column_name || column.columnName || column.field || ''
+      if (!name) continue
+      names.push(name)
+      types.push(column.type || column.data_type || column.dataType || column.original_type || 'string')
+    }
+    return { names, types }
+  }
+
+  const tableKey = (table, index) => {
+    return table?.name || table?.table || table?.table_name || table?.tableName || String(index)
+  }
+
+  const tableLabel = (table, index) => {
+    return table?.name || table?.table || table?.table_name || table?.tableName || `表 ${index + 1}`
+  }
+
   const component = {
     name: 'SqlitePreview',
-    props: ['data'],
-    data() {
-      return {
-        activeIndex: 0
-      }
-    },
+    props: ['data', 'activeSheetPreview', 'activeSheetLoading'],
+    emits: ['sheet-change', 'page-change'],
     computed: {
       content() {
         return this.data?.object?.content || {}
@@ -48,352 +91,74 @@
       tables() {
         return Array.isArray(this.json.tables) ? this.json.tables : []
       },
-      activeTable() {
-        return this.tables[this.activeIndex] || null
+      defaultChildKey() {
+        const explicit = this.json.active_table || this.json.default_table || ''
+        const target = this.tables.find((table, index) => tableKey(table, index) === explicit) || this.tables[0]
+        return target ? tableKey(target, this.tables.indexOf(target)) : ''
       },
-      columns() {
-        if (!this.activeTable) return []
-        return Array.isArray(this.activeTable.columns) ? this.activeTable.columns : []
-      },
-      rows() {
-        if (!this.activeTable) return []
-        return Array.isArray(this.activeTable.rows) ? this.activeTable.rows : []
-      },
-      tablesTruncated() {
-        return Boolean(this.summary.tables_truncated)
-      },
-      rowsTruncated() {
-        return Boolean(this.summary.rows_truncated)
-      }
-    },
-    watch: {
-      tables: {
-        immediate: true,
-        handler(newTables) {
-          if (!Array.isArray(newTables) || newTables.length === 0) {
-            this.activeIndex = 0
-            return
+      children() {
+        return this.tables.map((table, index) => {
+          const columns = normalizeColumns(table.columns || table.fields)
+          return {
+            key: tableKey(table, index),
+            name: tableKey(table, index),
+            label: tableLabel(table, index),
+            kind: table.type || table.kind || 'table',
+            dataType: table.data_type || table.dataType || 'table',
+            rowCount: numberOrUndefined(table.row_count ?? table.rowCount),
+            columnCount: numberOrDefault(table.column_count ?? table.columnCount, columns.names.length),
+            columns: columns.names,
+            columnTypes: columns.types,
+            rows: Array.isArray(table.rows) ? table.rows : []
           }
-          if (this.activeIndex >= newTables.length) {
-            this.activeIndex = 0
-          }
+        })
+      },
+      summaryItems() {
+        const summary = this.summary
+        const items = [
+          { label: '表总数', value: formatNumber(numberOrDefault(summary.table_count, this.tables.length)) },
+          { label: '已加载表', value: formatNumber(numberOrDefault(summary.sampled_tables, this.tables.length)) }
+        ]
+        const sizeBytes = numberOrUndefined(summary.size_bytes ?? this.data?.object?.size_bytes)
+        if (sizeBytes !== undefined) {
+          items.push({ label: '文件大小', value: formatBytes(sizeBytes) })
         }
+        return items
+      },
+      childrenTruncated() {
+        return Boolean(this.summary.children_truncated || this.summary.tables_truncated)
       }
     },
     methods: {
-      handleTableChange(value) {
-        if (typeof value === 'number') {
-          this.activeIndex = value
-        } else if (value && typeof value === 'string') {
-          const parsed = Number.parseInt(value, 10)
-          if (!Number.isNaN(parsed)) {
-            this.activeIndex = parsed
-          }
-        }
+      handleChildChange(child) {
+        const name = child?.name || child?.key
+        if (!name) return
+        this.$emit('sheet-change', name)
       },
-      renderSummary(runtime, h, ElAlert) {
-        const items = []
-        const summary = this.summary
-        const sizeBytes = summary.size_bytes
-        const tableCount = summary.table_count
-        const sampledTables = summary.sampled_tables
-
-        items.push(
-          h('div', { class: 'sqlite-summary-item' }, [
-            h('span', { class: 'label' }, '表总数'),
-            h('span', { class: 'value' }, normalizeNumber(tableCount ?? this.tables.length))
-          ])
-        )
-
-        items.push(
-          h('div', { class: 'sqlite-summary-item' }, [
-            h('span', { class: 'label' }, '已加载表'),
-            h('span', { class: 'value' }, normalizeNumber(sampledTables ?? this.tables.length))
-          ])
-        )
-
-        items.push(
-          h('div', { class: 'sqlite-summary-item' }, [
-            h('span', { class: 'label' }, '文件大小'),
-            h('span', { class: 'value' }, formatBytes(sizeBytes ?? this.data?.object?.size_bytes))
-          ])
-        )
-
-        items.push(
-          h('div', { class: 'sqlite-summary-item' }, [
-            h('span', { class: 'label' }, '单表示例上限'),
-            h('span', { class: 'value' }, normalizeNumber(summary.row_limit ?? 20))
-          ])
-        )
-
-        const summaryBox = h('div', { class: 'sqlite-summary' }, items)
-
-        const warnings = []
-        if (this.tablesTruncated && ElAlert) {
-          warnings.push(
-            h(
-              ElAlert,
-              {
-                type: 'info',
-                closable: false,
-                showIcon: true,
-                title: '仅加载部分表'
-              },
-              {
-                default: () => [
-                  h(
-                    'p',
-                    { class: 'alert-tip' },
-                    `当前仅展示前 ${summary.table_limit ?? this.tables.length} 张表，可下载 SQLite 文件查看更多内容。`
-                  )
-                ]
-              }
-            )
-          )
-        }
-        if (this.rowsTruncated && ElAlert) {
-          warnings.push(
-            h(
-              ElAlert,
-              {
-                type: 'info',
-                closable: false,
-                showIcon: true,
-                title: '示例数据有限'
-              },
-              {
-                default: () => [
-                  h(
-                    'p',
-                    { class: 'alert-tip' },
-                    `每张表仅展示前 ${summary.row_limit ?? 20} 行。`
-                  )
-                ]
-              }
-            )
-          )
-        }
-        if (!this.tables.length && (summary.table_count || 0) > 0 && ElAlert) {
-          warnings.push(
-            h(
-              ElAlert,
-              {
-                type: 'warning',
-                closable: false,
-                showIcon: true,
-                title: '未能加载表结构'
-              },
-              {
-                default: () => [
-                  h(
-                    'p',
-                    { class: 'alert-tip' },
-                    '检测到数据库包含数据表，但在提取结构时出现异常，请稍后重试或下载查看。'
-                  )
-                ]
-              }
-            )
-          )
-        }
-
-        return [summaryBox, ...warnings]
-      },
-      renderTableSelector(runtime, h, ElSelect, ElOption) {
-        if (!this.tables.length) {
-          return null
-        }
-        const options = this.tables.map((table, index) => {
-          const label = table.name || `表 ${index + 1}`
-          return ElOption
-            ? h(ElOption, {
-                key: table.name || index,
-                label,
-                value: index
-              })
-            : h('option', { key: table.name || index, value: index }, label)
-        })
-
-        if (ElSelect && ElOption) {
-          return h(
-            'div',
-            { class: 'sqlite-selector' },
-            [
-              h('span', { class: 'selector-label' }, '选择数据表'),
-              h(
-                ElSelect,
-                {
-                  modelValue: this.activeIndex,
-                  'onUpdate:modelValue': this.handleTableChange,
-                  size: 'small',
-                  style: 'min-width: 240px;'
-                },
-                {
-                  default: () => options
-                }
-              )
-            ]
-          )
-        }
-
-        return h(
-          'label',
-          { class: 'sqlite-selector sqlite-selector--fallback' },
-          [
-            h('span', { class: 'selector-label' }, '选择数据表'),
-            h(
-              'select',
-              {
-                value: this.activeIndex,
-                onChange: (event) => this.handleTableChange(event.target.value)
-              },
-              options
-            )
-          ]
-        )
-      },
-      renderDataTable(runtime, h, ElTable, ElTableColumn, ElTag) {
-        if (!this.activeTable) {
-          return h('div', { class: 'sqlite-empty' }, '无可用数据')
-        }
-
-        const table = this.activeTable
-        const rows = this.rows
-        const columns = this.columns
-
-        const metaBadge =
-          ElTag
-            ? h(
-                ElTag,
-                { type: 'info', size: 'small' },
-                { default: () => `共 ${table.row_count != null ? normalizeNumber(table.row_count) : '未知'} 行` }
-              )
-            : null
-
-        const sampleBadge =
-          ElTag && table.rows_truncated
-            ? h(
-                ElTag,
-                { type: 'warning', size: 'small', effect: 'dark' },
-                { default: () => '仅展示部分行' }
-              )
-            : null
-
-        const typeBadge =
-          ElTag && table.type
-            ? h(
-                ElTag,
-                { type: table.type === 'view' ? 'success' : 'primary', size: 'small', effect: 'plain' },
-                { default: () => (table.type === 'view' ? '视图' : '表') }
-              )
-            : null
-
-        const header = h('div', { class: 'sqlite-table-header' }, [
-          h(
-            'div',
-            { class: 'table-title' },
-            [
-              h('span', { class: 'name' }, table.name || `表 ${this.activeIndex + 1}`),
-              typeBadge,
-              metaBadge,
-              sampleBadge
-            ].filter(Boolean)
-          )
-        ])
-
-        if (ElTable && ElTableColumn) {
-          const columnNodes = columns.map((col) =>
-            h(ElTableColumn, {
-              key: col,
-              prop: col,
-              label: col,
-              showOverflowTooltip: true,
-              minWidth: 140
-            })
-          )
-
-        return h('div', { class: 'sqlite-table' }, [
-          header,
-          h(
-            ElTable,
-            {
-              data: rows,
-              border: true,
-              height: 420,
-              size: 'small',
-              stripe: true
-            },
-            {
-              default: () => columnNodes
-            }
-          )
-        ])
-        }
-
-        // Fallback 渲染
-        return h('div', { class: 'sqlite-table sqlite-table--fallback' }, [
-          header,
-          h(
-            'table',
-            { class: 'fallback-table' },
-            [
-              h(
-                'thead',
-                null,
-                h(
-                  'tr',
-                  null,
-                  columns.map((col) => h('th', { key: col }, col))
-                )
-              ),
-              h(
-                'tbody',
-                null,
-                rows.map((row, idx) =>
-                  h(
-                    'tr',
-                    { key: idx },
-                    columns.map((col) => h('td', { key: col }, String(row[col] ?? '')))
-                  )
-                )
-              )
-            ]
-          )
-        ])
+      handlePageChange(page) {
+        this.$emit('page-change', page)
       }
     },
     render() {
       const runtime = window.Vue || {}
       const h = runtime.h
-      const resolveComponent = runtime.resolveComponent
-
-      if (typeof h !== 'function' || typeof resolveComponent !== 'function') {
+      if (typeof h !== 'function') {
         console.warn('SQLite 预览插件: Vue runtime helper 未注入')
         return null
       }
 
-      const ElAlert = resolveComponent('ElAlert')
-      const ElSelect = resolveComponent('ElSelect')
-      const ElOption = resolveComponent('ElOption')
-      const ElEmpty = resolveComponent('ElEmpty')
-      const ElTable = resolveComponent('ElTable')
-      const ElTableColumn = resolveComponent('ElTableColumn')
-
-      if (!this.tables.length) {
-        if (ElEmpty) {
-          return h(ElEmpty, {
-            description: 'SQLite 文件中未检测到可展示的数据表'
-          })
-        }
-        return h('div', { class: 'sqlite-empty' }, 'SQLite 文件中未检测到可展示的数据表')
-      }
-
-      const children = [
-        ...this.renderSummary(runtime, h, ElAlert),
-        this.renderTableSelector(runtime, h, ElSelect, ElOption),
-        this.renderDataTable(runtime, h, ElTable, ElTableColumn, resolveComponent('ElTag'))
-      ].filter(Boolean)
-
-      return h('div', { class: 'sqlite-preview' }, children)
+      return h(ContainerPreview, {
+        summaryItems: this.summaryItems,
+        children: this.children,
+        defaultChildKey: this.defaultChildKey,
+        selectorLabel: '选择数据表',
+        activeChildPreview: this.activeSheetPreview,
+        activeChildLoading: Boolean(this.activeSheetLoading),
+        truncated: this.childrenTruncated,
+        emptyText: 'SQLite 文件中未检测到可展示的数据表',
+        onChildChange: this.handleChildChange,
+        onPageChange: this.handlePageChange
+      })
     }
   }
 
@@ -429,5 +194,5 @@
     priority: 58
   })
 
-  console.log('📦 SQLite 预览插件已注册')
+  console.log('SQLite 预览插件已注册')
 })()

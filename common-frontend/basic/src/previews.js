@@ -20,6 +20,7 @@
 export { default as TextPreview } from './components/previews/TextPreview.vue'
 export { default as JsonPreview } from './components/previews/JsonPreview.vue'
 export { default as MarkdownPreview } from './components/previews/MarkdownPreview.vue'
+export { default as ContainerPreview } from './components/previews/ContainerPreview.vue'
 export { default as ExcelPreview } from './components/previews/ExcelPreview.vue'
 export { default as VideoPreview } from './components/previews/VideoPreview.vue'
 export { default as PdfPreview } from './components/previews/PdfPreview.vue'

@@ -4,7 +4,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
+# from fastapi.openapi.utils import get_openapi
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.logging_setup import setup_logging
 from config import settings
@@ -19,10 +19,14 @@ logger = logging.getLogger(__name__)
 
 _API_PREFIX = "/api/v1/agent"
 
+# 禁用 Swagger / OpenAPI 以加快启动速度
 app = FastAPI(
     title="ADDP Agent Service",
     description="ADDP 平台智能体服务 | ADDP Platform Agent Service",
     version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # CORS 配置
@@ -42,32 +46,33 @@ app.include_router(sessions_router, prefix=_API_PREFIX)
 app.include_router(chat_router, prefix=_API_PREFIX)
 
 
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    # 剥离路径前缀，与 Go 模块 BasePath 风格一致
-    new_paths = {}
-    for path, item in schema.get("paths", {}).items():
-        short = path[len(_API_PREFIX):] if path.startswith(_API_PREFIX) else path
-        new_paths[short or "/"] = item
-    schema["paths"] = new_paths
-    schema["servers"] = [{"url": _API_PREFIX}]
-    # 清理 info 字段，只保留 title 和 version
-    schema["info"] = {
-        "title": schema["info"]["title"],
-        "version": schema["info"]["version"]
-    }
-    app.openapi_schema = schema
-    return schema
-
-
-app.openapi = custom_openapi
+# Swagger / OpenAPI 已禁用以加快启动速度
+# def custom_openapi():
+#     if app.openapi_schema:
+#         return app.openapi_schema
+#     schema = get_openapi(
+#         title=app.title,
+#         version=app.version,
+#         description=app.description,
+#         routes=app.routes,
+#     )
+#     # 剥离路径前缀，与 Go 模块 BasePath 风格一致
+#     new_paths = {}
+#     for path, item in schema.get("paths", {}).items():
+#         short = path[len(_API_PREFIX):] if path.startswith(_API_PREFIX) else path
+#         new_paths[short or "/"] = item
+#     schema["paths"] = new_paths
+#     schema["servers"] = [{"url": _API_PREFIX}]
+#     # 清理 info 字段，只保留 title 和 version
+#     schema["info"] = {
+#         "title": schema["info"]["title"],
+#         "version": schema["info"]["version"]
+#     }
+#     app.openapi_schema = schema
+#     return schema
+#
+#
+# app.openapi = custom_openapi
 
 
 @app.get("/health", summary="健康检查 | Health Check")
@@ -156,10 +161,11 @@ async def startup():
 
 
 if __name__ == "__main__":
+    # 禁用 reload 避免进程匹配问题及性能开销
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=settings.AGENT_BACKEND_PORT,
-        reload=True,
+        reload=False,
         log_level="info",
     )

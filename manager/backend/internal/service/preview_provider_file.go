@@ -203,8 +203,8 @@ func (p *FileTablePreviewProvider) previewStreamable(
 }
 
 func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*format.TableInfo, error) {
-	if req != nil && normalizeFileTableFormat(stringAttribute(req.Attributes, "format")) == format.FormatExcel && strings.TrimSpace(req.ChildName) != "" {
-		if tableInfo := p.excelChildTableInfoFromAttributes(req.Attributes, req.ChildName); tableInfo != nil {
+	if req != nil && strings.TrimSpace(req.ChildName) != "" {
+		if tableInfo := p.containerChildTableInfoFromAttributes(req.Attributes, req.ChildName); tableInfo != nil {
 			return tableInfo, nil
 		}
 	}
@@ -235,7 +235,7 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 	return info, nil
 }
 
-func (p *FileTablePreviewProvider) excelChildTableInfoFromAttributes(attrs map[string]interface{}, childName string) *format.TableInfo {
+func (p *FileTablePreviewProvider) containerChildTableInfoFromAttributes(attrs map[string]interface{}, childName string) *format.TableInfo {
 	childName = strings.TrimSpace(childName)
 	if childName == "" {
 		return nil
@@ -246,7 +246,7 @@ func (p *FileTablePreviewProvider) excelChildTableInfoFromAttributes(attrs map[s
 	}
 	for _, item := range interfaceSlice(containerAttrs["children"]) {
 		child := rawMapAttribute(item)
-		if len(child) == 0 || !strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child["name"])), childName) {
+		if len(child) == 0 || !containerChildNameMatches(child, childName) {
 			continue
 		}
 		fields := fieldsFromAttribute(child["fields"])
@@ -254,7 +254,7 @@ func (p *FileTablePreviewProvider) excelChildTableInfoFromAttributes(attrs map[s
 			return nil
 		}
 		info := &format.TableInfo{
-			Name:       childName,
+			Name:       containerChildTableName(child, childName),
 			Fields:     fields,
 			PrimaryKey: []string{},
 		}
@@ -264,6 +264,24 @@ func (p *FileTablePreviewProvider) excelChildTableInfoFromAttributes(attrs map[s
 		return info
 	}
 	return nil
+}
+
+func containerChildNameMatches(child map[string]interface{}, childName string) bool {
+	for _, key := range []string{"name", "table"} {
+		if strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child[key])), childName) {
+			return true
+		}
+	}
+	return false
+}
+
+func containerChildTableName(child map[string]interface{}, fallback string) string {
+	for _, key := range []string{"table", "name"} {
+		if value := strings.TrimSpace(commonJSON.InterfaceString(child[key])); value != "" {
+			return value
+		}
+	}
+	return fallback
 }
 
 func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo {
@@ -649,7 +667,28 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 	if formatType == format.FormatExcel && len(req) > 0 && req[0] != nil {
 		opts.SheetName = strings.TrimSpace(req[0].ChildName)
 	}
+	if formatType == format.FormatSQLite && len(req) > 0 && req[0] != nil {
+		tableName := containerChildTableNameForRequest(req[0].Attributes, req[0].ChildName)
+		if tableName != "" {
+			opts.ExtraParams = map[string]interface{}{"table": tableName}
+		}
+	}
 	return opts
+}
+
+func containerChildTableNameForRequest(attrs map[string]interface{}, childName string) string {
+	childName = strings.TrimSpace(childName)
+	if childName == "" {
+		return ""
+	}
+	containerAttrs := commonJSON.Section(attrs, "type_info.container")
+	for _, item := range interfaceSlice(containerAttrs["children"]) {
+		child := rawMapAttribute(item)
+		if len(child) > 0 && containerChildNameMatches(child, childName) {
+			return containerChildTableName(child, childName)
+		}
+	}
+	return childName
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {

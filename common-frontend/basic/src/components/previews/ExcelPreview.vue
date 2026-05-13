@@ -1,143 +1,22 @@
 <template>
-  <div class="excel-preview">
-    <div v-if="summaryItems.length" class="excel-summary">
-      <div v-for="item in summaryItems" :key="item.label" class="summary-item">
-        <span class="label">{{ item.label }}</span>
-        <span class="value">{{ item.value }}</span>
-      </div>
-    </div>
-
-    <div class="excel-alerts">
-      <el-alert
-        v-if="summary?.sheets_truncated"
-        type="info"
-        show-icon
-        :closable="false"
-        :title="t('excelPreview.sheetsTruncatedTitle')"
-      >
-        <template #default>
-          {{ t('excelPreview.sheetsTruncatedBody', { limit: summary.sheet_limit ?? sheets.length }) }}
-        </template>
-      </el-alert>
-      <el-alert
-        v-if="summary?.rows_truncated"
-        type="info"
-        show-icon
-        :closable="false"
-        :title="t('excelPreview.rowsTruncatedTitle')"
-      >
-        <template #default>
-          {{ t('excelPreview.rowsTruncatedBody', { limit: summary.row_limit ?? excelSampleRows }) }}
-        </template>
-      </el-alert>
-    </div>
-
-    <div v-if="sheets.length" class="excel-body">
-      <div class="sheet-toolbar">
-        <span class="sheet-toolbar-label">{{ t('excelPreview.sheetSelector') }}</span>
-        <el-select
-          v-model="activeTab"
-          size="small"
-          class="sheet-select"
-          :disabled="sheets.length <= 1"
-          @change="handleSheetSelect"
-        >
-          <el-option
-            v-for="sheet in sheets"
-            :key="sheet.index"
-            :label="sheetLabel(sheet)"
-            :value="String(sheet.index)"
-          />
-        </el-select>
-      </div>
-
-      <el-tabs v-model="activeTab" class="sheet-tabs" @tab-change="handleTabChange">
-        <el-tab-pane
-          v-for="sheet in sheets"
-          :key="sheet.index"
-          :name="String(sheet.index)"
-          :label="sheetLabel(sheet)"
-        >
-          <div class="sheet-meta">
-            <el-descriptions border size="small" :column="3">
-              <el-descriptions-item :label="t('excelPreview.sheetName')">{{ sheet.name || `Sheet ${sheet.index + 1}` }}</el-descriptions-item>
-              <el-descriptions-item :label="t('excelPreview.sampleRows')">{{ formatNumber(sheetPreviewRows(sheet).length || 0) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('excelPreview.totalRows')">
-                {{ sheet.row_count != null ? formatNumber(sheet.row_count) : '—' }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('excelPreview.columns')">{{ formatNumber(sheet.column_count || 0) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('excelPreview.hasHeader')">{{ sheet.has_header ? t('common.yes') : t('common.no') }}</el-descriptions-item>
-              <el-descriptions-item :label="t('excelPreview.rowsTruncated')">{{ sheet.rows_truncated ? t('common.yes') : t('common.no') }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
-
-          <div class="column-tags" v-if="getColumnPairs(sheet).length">
-            <el-tag
-              v-for="[header, type] in getColumnPairs(sheet)"
-              :key="`${sheet.index}-${header}`"
-              size="small"
-              effect="plain"
-            >
-              {{ header }}: {{ type }}
-            </el-tag>
-          </div>
-
-          <div class="sheet-table-wrap">
-            <el-table
-              v-if="sheetPreviewColumns(sheet).length"
-              v-loading="activeSheetLoading && isActiveSheet(sheet)"
-              :data="sheetPreviewRows(sheet)"
-              height="420"
-              border
-              stripe
-              class="sheet-table"
-            >
-              <el-table-column
-                v-for="header in sheetPreviewColumns(sheet)"
-                :key="`${sheet.index}-${header}`"
-                :prop="header"
-                :label="header"
-                show-overflow-tooltip
-                min-width="140"
-              />
-            </el-table>
-            <el-empty v-else :description="t('excelPreview.noColumns')" />
-
-            <div v-if="isActiveSheet(sheet) && activeSheetTotal > 0" class="sheet-pagination">
-              <el-pagination
-                background
-                layout="prev, pager, next"
-                :total="activeSheetTotal"
-                :page-size="activeSheetPageSize"
-                :current-page="activeSheetPage"
-                @current-change="handlePageChange"
-              />
-            </div>
-          </div>
-
-          <el-alert
-            v-if="sheet.rows_truncated"
-            type="info"
-            :closable="false"
-            show-icon
-            :title="t('excelPreview.partialDataTitle')"
-            class="sheet-alert"
-          >
-            <template #default>
-              {{ t('excelPreview.partialDataBody', { limit: excelSampleRows }) }}
-            </template>
-          </el-alert>
-        </el-tab-pane>
-      </el-tabs>
-    </div>
-
-    <el-empty v-else :description="t('excelPreview.parseError')" />
-  </div>
+  <ContainerPreview
+    :summary-items="summaryItems"
+    :children="children"
+    :default-child-key="defaultChildKey"
+    :selector-label="t('excelPreview.sheetSelector')"
+    :active-child-preview="activeSheetPreview"
+    :active-child-loading="activeSheetLoading"
+    :truncated="childrenTruncated"
+    :empty-text="t('excelPreview.parseError')"
+    @child-change="handleChildChange"
+    @page-change="handlePageChange"
+  />
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ContainerPreview from './ContainerPreview.vue'
 
 const { t } = useI18n()
 
@@ -155,9 +34,8 @@ const props = defineProps({
     default: false
   }
 })
-const emit = defineEmits(['sheet-change', 'page-change'])
 
-const excelSampleRows = 20
+const emit = defineEmits(['sheet-change', 'page-change'])
 
 const content = computed(() => props.data?.object?.content ?? {})
 const json = computed(() => content.value?.json ?? {})
@@ -169,81 +47,55 @@ const sheets = computed(() => {
 
 const defaultSheetName = computed(() => json.value?.active_sheet || json.value?.default_sheet || '')
 
-const activeTab = ref('')
-
-const ensureActiveTab = () => {
-  const list = sheets.value
-  if (!Array.isArray(list) || list.length === 0) {
-    activeTab.value = ''
-    return
-  }
-  const target = list.find((sheet) => sheet.name === defaultSheetName.value) || list[0]
-  activeTab.value = String(target.index ?? 0)
-}
-
-watch([sheets, defaultSheetName], ensureActiveTab, { immediate: true })
-
-const handleTabChange = (tabName) => {
-  emitSheetChange(tabName)
-}
-
-const handleSheetSelect = (tabName) => {
-  emitSheetChange(tabName)
-}
-
-const emitSheetChange = (tabName) => {
-  const idx = Number.parseInt(String(tabName ?? ''), 10)
-  if (Number.isNaN(idx)) return
-  const target = sheets.value.find((sheet) => sheet.index === idx)
-  if (!target?.name) return
-  emit('sheet-change', target.name)
-}
-
-const activeSheet = computed(() => {
-  const list = sheets.value
-  if (!Array.isArray(list) || !list.length || !activeTab.value) {
-    return null
-  }
-  const idx = Number.parseInt(activeTab.value, 10)
-  if (Number.isNaN(idx)) {
-    return list[0]
-  }
-  return list.find((sheet) => sheet.index === idx) || list[0]
+const defaultChildKey = computed(() => {
+  const target = sheets.value.find(sheet => sheet.name === defaultSheetName.value) || sheets.value[0]
+  return target ? sheetKey(target) : ''
 })
 
-const activeSheetName = computed(() => activeSheet.value?.name || '')
-const activeSheetRows = computed(() => {
-  const rows = props.activeSheetPreview?.rows
-  return Array.isArray(rows) ? rows : []
+const children = computed(() => {
+  return sheets.value.map(sheet => ({
+    key: sheetKey(sheet),
+    name: sheet.name || `Sheet ${Number(sheet.index ?? 0) + 1}`,
+    label: sheet.name || `Sheet ${Number(sheet.index ?? 0) + 1}`,
+    kind: 'sheet',
+    dataType: 'table',
+    rowCount: numberOrUndefined(sheet.row_count),
+    columnCount: numberOrUndefined(sheet.column_count),
+    hasHeader: !!sheet.has_header,
+    columns: Array.isArray(sheet.headers) ? sheet.headers : [],
+    columnTypes: Array.isArray(sheet.column_types) ? sheet.column_types : [],
+    rows: Array.isArray(sheet.rows) ? sheet.rows : []
+  }))
 })
-const activeSheetColumns = computed(() => {
-  const columns = props.activeSheetPreview?.columns
-  return Array.isArray(columns) ? columns : []
+
+const childrenTruncated = computed(() => Boolean(summary.value?.children_truncated || summary.value?.sheets_truncated))
+
+const summaryItems = computed(() => {
+  const meta = summary.value || {}
+  const items = [
+    { label: t('excelPreview.totalSheets'), value: formatNumber(numberOrDefault(meta.sheet_count, sheets.value.length)) },
+    { label: t('excelPreview.loadedSheets'), value: formatNumber(numberOrDefault(meta.sampled_sheets, sheets.value.length)) }
+  ]
+  const sizeBytes = numberOrUndefined(meta.size_bytes)
+  if (sizeBytes !== undefined) {
+    items.push({ label: t('excelPreview.fileSize'), value: formatBytes(sizeBytes) })
+  }
+  return items
 })
-const activeSheetTotal = computed(() => Number(props.activeSheetPreview?.total || activeSheet.value?.row_count || 0))
-const activeSheetPage = computed(() => Number(props.activeSheetPreview?.page || 1))
-const activeSheetPageSize = computed(() => Number(props.activeSheetPreview?.page_size || 20))
 
-const isActiveSheet = (sheet) => {
-  return !!sheet && sheet.name === activeSheetName.value
+const sheetKey = (sheet) => {
+  if (sheet?.name) return sheet.name
+  return String(sheet?.index ?? '')
 }
 
-const sheetPreviewRows = (sheet) => {
-  if (isActiveSheet(sheet) && activeSheetRows.value.length) {
-    return activeSheetRows.value
-  }
-  return Array.isArray(sheet?.rows) ? sheet.rows : []
+const numberOrUndefined = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
 }
 
-const sheetPreviewColumns = (sheet) => {
-  if (isActiveSheet(sheet) && activeSheetColumns.value.length) {
-    return activeSheetColumns.value
-  }
-  return Array.isArray(sheet?.headers) ? sheet.headers : []
-}
-
-const handlePageChange = (page) => {
-  emit('page-change', page)
+const numberOrDefault = (value, fallback) => {
+  const number = numberOrUndefined(value)
+  return number === undefined ? fallback : number
 }
 
 const formatNumber = (value) => {
@@ -264,125 +116,12 @@ const formatBytes = (bytes) => {
   return `${size.toFixed(digits)} ${units[index]}`
 }
 
-const summaryItems = computed(() => {
-  const meta = summary.value || {}
-  const items = [
-    { label: t('excelPreview.totalSheets'), value: formatNumber(meta.sheet_count ?? sheets.value.length) },
-    { label: t('excelPreview.loadedSheets'), value: formatNumber(meta.sampled_sheets ?? sheets.value.length) },
-    { label: t('excelPreview.rowLimit'), value: formatNumber(meta.row_limit ?? excelSampleRows) },
-    { label: t('excelPreview.columnLimit'), value: formatNumber(meta.column_limit ?? 0) }
-  ]
-  if (meta.size_bytes != null) {
-    items.push({ label: t('excelPreview.fileSize'), value: formatBytes(meta.size_bytes) })
-  }
-  return items
-})
-
-const sheetLabel = (sheet) => {
-  if (!sheet) return 'Sheet'
-  const name = sheet.name || `Sheet ${Number(sheet.index ?? 0) + 1}`
-  if (typeof sheet.row_count === 'number') {
-    return `${name} (${t('excelPreview.rowCount', { count: formatNumber(sheet.row_count) })})`
-  }
-  return name
+const handleChildChange = (child) => {
+  if (!child?.name) return
+  emit('sheet-change', child.name)
 }
 
-const getColumnPairs = (sheet) => {
-  if (!sheet || !Array.isArray(sheet.headers)) return []
-  const types = Array.isArray(sheet.column_types) ? sheet.column_types : []
-  return sheet.headers.map((header, idx) => [header, types[idx] || 'string'])
+const handlePageChange = (page) => {
+  emit('page-change', page)
 }
 </script>
-
-<style scoped>
-.excel-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.excel-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.summary-item {
-  background: var(--el-fill-color);
-  border-radius: 6px;
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  min-width: 140px;
-}
-
-.summary-item .label {
-  font-size: 12px;
-  color: var(--addp-text-tertiary);
-  margin-bottom: 4px;
-}
-
-.summary-item .value {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-}
-
-.excel-alerts :deep(.el-alert) + :deep(.el-alert) {
-  margin-top: 8px;
-}
-
-.excel-body {
-  background: var(--addp-bg-primary);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  padding: 8px;
-}
-
-.sheet-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.sheet-toolbar-label {
-  color: var(--addp-text-secondary);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.sheet-select {
-  width: min(360px, 100%);
-}
-
-.sheet-tabs :deep(.el-tabs__header) {
-  margin-bottom: 12px;
-}
-
-.sheet-meta {
-  margin-bottom: 12px;
-}
-
-.column-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.sheet-alert {
-  margin-top: 12px;
-}
-
-.sheet-table-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sheet-pagination {
-  display: flex;
-  justify-content: flex-end;
-}
-</style>

@@ -255,9 +255,9 @@ export const useExplorerStore = defineStore('explorer', {
           return preview
         }
         this.previewData = preview
-        const defaultSheet = this.defaultExcelSheetName(preview)
-        if (defaultSheet) {
-          await this.loadPreview(locator, 1, defaultSheet)
+        const defaultChild = this.defaultContainerChildName(preview)
+        if (defaultChild) {
+          await this.loadPreview(locator, 1, defaultChild)
         }
         return this.previewData
       } catch (error) {
@@ -272,17 +272,21 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    defaultExcelSheetName(preview) {
+    defaultContainerChildName(preview) {
       const content = preview?.object?.content
       const kind = String(content?.kind || '').toLowerCase()
       const json = content?.json || content?.JSON || {}
-      if (kind !== 'excel' || !json || typeof json !== 'object') {
+      if (!json || typeof json !== 'object') {
         return ''
       }
-      const explicit = json.active_sheet || json.default_sheet
+      if (!['excel', 'sqlite'].includes(kind)) {
+        return ''
+      }
+      const explicit = json.active_sheet || json.default_sheet || json.active_table || json.default_table
       if (explicit) return explicit
-      const sheets = Array.isArray(json.sheets) ? json.sheets : []
-      return sheets.find(sheet => sheet?.name)?.name || ''
+      const children = Array.isArray(json.sheets) ? json.sheets : Array.isArray(json.tables) ? json.tables : []
+      const firstNamedChild = children.find(child => child?.name || child?.table || child?.table_name || child?.tableName)
+      return firstNamedChild?.name || firstNamedChild?.table || firstNamedChild?.table_name || firstNamedChild?.tableName || ''
     },
 
     /**

@@ -110,6 +110,7 @@ stop_services_concurrent() {
   pkill -9 -f "engines/jupyter.*api_server.py" 2>/dev/null || true
   pkill -9 -f "jupyter.*lab.*8088" 2>/dev/null || true
   pkill -9 -f "python.*main.py.*copilot" 2>/dev/null || true
+  pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
   pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）
@@ -120,8 +121,8 @@ stop_services_concurrent() {
       # 获取进程的命令行信息
       proc_cmd=$(ps -p $pid -o command= 2>/dev/null || echo "")
 
-      # 检查是否是 ADDP 相关进程（Go 二进制、vite、python workflow/copilot、jupyter）
-      if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab)"; then
+      # 检查是否是 ADDP 相关进程（Go 二进制、vite、python workflow/copilot/agent、jupyter）
+      if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
         echo "  发现端口 $port 被 ADDP 进程占用 (PID: $pid)，强制清理..."
         echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
         kill -9 $pid 2>/dev/null || true

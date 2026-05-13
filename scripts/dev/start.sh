@@ -468,7 +468,7 @@ check_service_running() {
             local proc_cmd=$(ps -p $occupying_pid -o command= 2>/dev/null || echo "")
 
             # 检查是否是 ADDP 相关进程
-            if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab)"; then
+            if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
                 echo -e "${RED}✗ 端口 $port 已被 ADDP 进程占用 (PID: $occupying_pid)${NC}"
                 echo -e "${YELLOW}  进程: $(echo "$proc_cmd" | cut -c1-80)${NC}"
                 echo -e "${RED}✗ 无法启动 ${service_name}，可能是旧进程未清理${NC}"
@@ -1871,7 +1871,8 @@ if [ "$START_AGENT_BACKEND" = true ]; then
     echo "启动 Agent Backend..."
     cd agent/backend
     export PORT=$AGENT_BACKEND_PORT
-    ./venv/bin/python main.py > ../../logs/agent-backend.log 2> ../../logs/agent-backend-stderr.log &
+    # 使用 main.py 绝对路径启动，便于 pkill -f "agent/backend/main.py" 精确匹配残留进程
+    ./venv/bin/python "${PROJECT_ROOT}/agent/backend/main.py" > ../../logs/agent-backend.log 2> ../../logs/agent-backend-stderr.log &
     AGENT_PID=$!
     echo $AGENT_PID > ../../.dev-pids/agent-backend.pid
     cd ../..

@@ -196,6 +196,7 @@ const (
 	ObjectPreviewKindImage       = "image"
 	ObjectPreviewKindJSON        = "json"
 	ObjectPreviewKindGeoJSON     = "geojson"
+	ObjectPreviewKindContainer   = "container"
 	ObjectPreviewKindExcel       = "excel"
 	ObjectPreviewKindSQLite      = "sqlite"
 	ObjectPreviewKindText        = "text"

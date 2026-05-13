@@ -490,7 +490,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		}
 		return []string{"builtin:graph-label"}
 	case "container":
-		if legacyReq != nil && strings.EqualFold(formatName, string(format.FormatExcel)) &&
+		if legacyReq != nil && isFileTableFormat(formatName) &&
 			strings.TrimSpace(legacyReq.ChildName) != "" &&
 			(isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
 			return []string{"builtin:file-table"}

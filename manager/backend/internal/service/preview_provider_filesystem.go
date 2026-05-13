@@ -152,10 +152,10 @@ func (p *fileSystemPreviewProvider) previewFile(
 		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if strings.EqualFold(contentReq.Format, string(format.FormatExcel)) {
-				if previewJSON := buildExcelPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
+			if isContainerObjectContentFormat(contentReq.Format) {
+				if previewJSON := buildContainerPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
 					preview.Object.Content = &models.ObjectPreviewContent{
-						Kind: models.ObjectPreviewKindExcel,
+						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
 						Metadata: map[string]interface{}{
 							"size_bytes": meta.Size,

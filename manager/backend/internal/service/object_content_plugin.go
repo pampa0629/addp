@@ -262,10 +262,12 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindJSON
 	case models.ObjectPreviewKindGeoJSON, models.ObjectPreviewKindShapefile:
 		return "map"
+	case models.ObjectPreviewKindContainer:
+		return models.ObjectPreviewKindContainer
 	case models.ObjectPreviewKindExcel:
-		return models.ObjectPreviewKindExcel
+		return models.ObjectPreviewKindContainer
 	case models.ObjectPreviewKindSQLite:
-		return models.ObjectPreviewKindSQLite
+		return models.ObjectPreviewKindContainer
 	case models.ObjectPreviewKindMarkdown:
 		return models.ObjectPreviewKindMarkdown
 	case models.ObjectPreviewKindTable:
@@ -293,6 +295,7 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindImage:       "图片",
 		models.ObjectPreviewKindJSON:        "JSON",
 		models.ObjectPreviewKindGeoJSON:     "GeoJSON",
+		models.ObjectPreviewKindContainer:   "容器",
 		models.ObjectPreviewKindExcel:       "Excel",
 		models.ObjectPreviewKindSQLite:      "SQLite",
 		models.ObjectPreviewKindText:        "文本",
@@ -674,30 +677,27 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 	}), nil
 }
 
-func buildExcelPreviewFromAnalysis(analysis *excel.WorkbookAnalysis) map[string]interface{} {
+func buildContainerPreviewFromAnalysis(formatName string, analysis *excel.WorkbookAnalysis) map[string]interface{} {
 	if analysis == nil {
-		return map[string]interface{}{
-			"default_sheet": "",
-			"active_sheet":  "",
-			"sheets":        []map[string]interface{}{},
-			"summary":       map[string]interface{}{},
-		}
+		return emptyContainerPreview(formatName)
 	}
 
-	sheets := make([]map[string]interface{}, 0, len(analysis.Sheets))
+	children := make([]map[string]interface{}, 0, len(analysis.Sheets))
 	for _, sheet := range analysis.Sheets {
-		sheetMap := map[string]interface{}{
-			"name":           sheet.Name,
-			"index":          sheet.Index,
-			"row_count":      sheet.RowCount,
-			"column_count":   sheet.ColumnCount,
-			"has_header":     sheet.HasHeader,
-			"headers":        sheet.Headers,
-			"column_types":   sheet.ColumnTypes,
-			"rows":           sheet.SampleRows,
-			"rows_truncated": sheet.RowsTruncated,
-		}
-		sheets = append(sheets, sheetMap)
+		children = append(children, map[string]interface{}{
+			"key":          sheet.Name,
+			"name":         sheet.Name,
+			"label":        sheet.Name,
+			"index":        sheet.Index,
+			"kind":         "sheet",
+			"data_type":    string(format.FormatDataTypeTable),
+			"row_count":    sheet.RowCount,
+			"column_count": sheet.ColumnCount,
+			"has_header":   sheet.HasHeader,
+			"columns":      sheet.Headers,
+			"column_types": sheet.ColumnTypes,
+			"rows":         sheet.SampleRows,
+		})
 	}
 
 	summary := make(map[string]interface{}, len(analysis.Summary))
@@ -705,12 +705,15 @@ func buildExcelPreviewFromAnalysis(analysis *excel.WorkbookAnalysis) map[string]
 		summary[k] = v
 	}
 
-	return map[string]interface{}{
-		"default_sheet": analysis.DefaultSheet,
-		"active_sheet":  analysis.ActiveSheet,
-		"sheets":        sheets,
-		"summary":       summary,
-	}
+	preview := buildContainerPreview(formatName, analysis.DefaultSheet, analysis.ActiveSheet, children, summary)
+	preview["sheets"] = legacyExcelSheets(children)
+	preview["default_sheet"] = analysis.DefaultSheet
+	preview["active_sheet"] = analysis.ActiveSheet
+	return preview
+}
+
+func emptyContainerPreview(formatName string) map[string]interface{} {
+	return buildContainerPreview(formatName, "", "", []map[string]interface{}{}, map[string]interface{}{})
 }
 
 func boolValue(v interface{}) bool {
@@ -791,7 +794,7 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		}), false, nil
 	}
 
-	preview := buildExcelPreviewFromAnalysis(analysis)
+	preview := buildContainerPreviewFromAnalysis(string(format.FormatExcel), analysis)
 	previewTruncated := boolValue(analysis.Summary["sheets_truncated"]) || boolValue(analysis.Summary["rows_truncated"])
 
 	metadata := map[string]interface{}{
@@ -806,18 +809,22 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	}
 
 	return decoratePreviewContent(&models.ObjectPreviewContent{
-		Kind:      models.ObjectPreviewKindExcel,
+		Kind:      models.ObjectPreviewKindContainer,
 		JSON:      preview,
 		Metadata:  metadata,
 		Truncated: previewTruncated,
 	}), truncated || previewTruncated, nil
 }
 
-func buildExcelPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
+func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	formatAttrs := commonJSON.Section(attrs, "format_info.excel")
-	if len(containerAttrs) == 0 || len(formatAttrs) == 0 {
+	if len(containerAttrs) == 0 {
 		return nil
+	}
+	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
+	formatAttrs := commonJSON.Section(attrs, "format_info."+formatName)
+	if len(formatAttrs) == 0 && strings.EqualFold(formatName, string(format.FormatExcel)) {
+		formatAttrs = commonJSON.Section(attrs, "format_info.excel")
 	}
 
 	children := interfaceSlice(containerAttrs["children"])
@@ -825,53 +832,169 @@ func buildExcelPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int
 		return nil
 	}
 
-	sheets := make([]map[string]interface{}, 0, len(children))
+	previewChildren := make([]map[string]interface{}, 0, len(children))
 	for index, item := range children {
 		child := rawMapAttribute(item)
-		if len(child) == 0 || !strings.EqualFold(commonJSON.InterfaceString(child["kind"]), "sheet") {
+		if len(child) == 0 {
 			continue
 		}
 		fields := fieldsFromAttribute(child["fields"])
-		headers := make([]string, 0, len(fields))
+		columns := make([]string, 0, len(fields))
 		columnTypes := make([]string, 0, len(fields))
 		for _, field := range fields {
-			headers = append(headers, field.Name)
+			columns = append(columns, field.Name)
 			originalType := field.OriginalType
 			if originalType == "" {
 				originalType = string(field.Type)
 			}
 			columnTypes = append(columnTypes, originalType)
 		}
-		sheets = append(sheets, map[string]interface{}{
-			"name":           commonJSON.InterfaceString(child["name"]),
-			"index":          index,
-			"row_count":      commonJSON.InterfaceInt64(child["row_count"]),
-			"column_count":   commonJSON.InterfaceInt64(child["column_count"]),
-			"has_header":     commonJSON.InterfaceBool(child["has_header"]),
-			"headers":        headers,
-			"column_types":   columnTypes,
-			"rows":           []map[string]interface{}{},
-			"rows_truncated": false,
-		})
+		name := commonJSON.InterfaceString(child["name"])
+		tableName := commonJSON.InterfaceString(child["table"])
+		kind := commonJSON.InterfaceString(child["kind"])
+		childMap := map[string]interface{}{
+			"key":          containerChildKey(name, tableName, index),
+			"name":         name,
+			"label":        name,
+			"table":        tableName,
+			"index":        index,
+			"kind":         kind,
+			"data_type":    commonJSON.InterfaceString(child["data_type"]),
+			"row_count":    commonJSON.InterfaceInt64(child["row_count"]),
+			"column_count": commonJSON.InterfaceInt64(child["column_count"]),
+			"columns":      columns,
+			"column_types": columnTypes,
+			"rows":         []map[string]interface{}{},
+		}
+		if _, ok := child["has_header"]; ok {
+			childMap["has_header"] = commonJSON.InterfaceBool(child["has_header"])
+		}
+		if childMap["label"] == "" {
+			childMap["label"] = tableName
+		}
+		if childMap["data_type"] == "" {
+			childMap["data_type"] = string(format.FormatDataTypeTable)
+		}
+		previewChildren = append(previewChildren, childMap)
 	}
-	if len(sheets) == 0 {
+	if len(previewChildren) == 0 {
 		return nil
 	}
 
+	summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
+	defaultChild := containerDefaultChild(formatName, formatAttrs, previewChildren)
+	preview := buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
+	if formatName == string(format.FormatExcel) {
+		preview["sheets"] = legacyExcelSheets(previewChildren)
+		preview["default_sheet"] = defaultChild
+		preview["active_sheet"] = defaultChild
+	}
+	if formatName == string(format.FormatSQLite) {
+		preview["tables"] = legacySQLiteTables(previewChildren)
+		preview["default_table"] = defaultChild
+		preview["active_table"] = defaultChild
+	}
+	return preview
+}
+
+func buildContainerPreview(formatName, defaultChild, activeChild string, children []map[string]interface{}, summary map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"format":        formatName,
+		"default_child": defaultChild,
+		"active_child":  activeChild,
+		"children":      children,
+		"summary":       summary,
+	}
+}
+
+func buildContainerSummary(formatName string, containerAttrs, formatAttrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
 	summary := map[string]interface{}{}
 	for key, value := range formatAttrs {
 		summary[key] = value
 	}
+	if childCount := commonJSON.InterfaceInt64(containerAttrs["child_count"]); childCount > 0 {
+		summary["child_count"] = childCount
+	}
+	if sampledChildren := commonJSON.InterfaceInt64(formatAttrs["sampled_children"]); sampledChildren > 0 {
+		summary["sampled_children"] = sampledChildren
+	}
 	if sizeBytes > 0 {
 		summary["size_bytes"] = sizeBytes
 	}
-
-	return map[string]interface{}{
-		"default_sheet": commonJSON.InterfaceString(formatAttrs["default_sheet"]),
-		"active_sheet":  commonJSON.InterfaceString(formatAttrs["default_sheet"]),
-		"sheets":        sheets,
-		"summary":       summary,
+	if formatName == string(format.FormatExcel) {
+		if sheetCount := commonJSON.InterfaceInt64(formatAttrs["sheet_count"]); sheetCount > 0 {
+			summary["child_count"] = sheetCount
+		}
+		if sampledSheets := commonJSON.InterfaceInt64(formatAttrs["sampled_sheets"]); sampledSheets > 0 {
+			summary["sampled_children"] = sampledSheets
+		}
 	}
+	if formatName == string(format.FormatSQLite) {
+		total := commonJSON.InterfaceInt64(formatAttrs["table_count"]) + commonJSON.InterfaceInt64(formatAttrs["view_count"])
+		if total > 0 {
+			summary["child_count"] = total
+		}
+	}
+	return summary
+}
+
+func containerDefaultChild(formatName string, formatAttrs map[string]interface{}, children []map[string]interface{}) string {
+	if formatName == string(format.FormatExcel) {
+		if value := strings.TrimSpace(commonJSON.InterfaceString(formatAttrs["default_sheet"])); value != "" {
+			return value
+		}
+	}
+	if len(children) == 0 {
+		return ""
+	}
+	return commonJSON.InterfaceString(children[0]["key"])
+}
+
+func containerChildKey(name, tableName string, index int) string {
+	if name != "" {
+		return name
+	}
+	if tableName != "" {
+		return tableName
+	}
+	return fmt.Sprintf("%d", index)
+}
+
+func legacyExcelSheets(children []map[string]interface{}) []map[string]interface{} {
+	sheets := make([]map[string]interface{}, 0, len(children))
+	for _, child := range children {
+		if kind := commonJSON.InterfaceString(child["kind"]); kind != "" && !strings.EqualFold(kind, "sheet") {
+			continue
+		}
+		sheets = append(sheets, map[string]interface{}{
+			"name":           child["name"],
+			"index":          child["index"],
+			"row_count":      child["row_count"],
+			"column_count":   child["column_count"],
+			"has_header":     child["has_header"],
+			"headers":        child["columns"],
+			"column_types":   child["column_types"],
+			"rows":           child["rows"],
+			"rows_truncated": false,
+		})
+	}
+	return sheets
+}
+
+func legacySQLiteTables(children []map[string]interface{}) []map[string]interface{} {
+	tables := make([]map[string]interface{}, 0, len(children))
+	for _, child := range children {
+		tables = append(tables, map[string]interface{}{
+			"name":         child["name"],
+			"table":        child["table"],
+			"type":         child["kind"],
+			"row_count":    child["row_count"],
+			"column_count": child["column_count"],
+			"columns":      child["columns"],
+			"rows":         child["rows"],
+		})
+	}
+	return tables
 }
 
 func (h *excelContentHandler) effectiveSheetLimit(total int) int {
@@ -1048,7 +1171,7 @@ func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectCont
 
 	if written == 0 {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindSQLite,
+			Kind: models.ObjectPreviewKindContainer,
 			Text: "SQLite 文件为空或无法读取",
 		}), false, nil
 	}
@@ -1074,7 +1197,7 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 
 	if truncated {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:      models.ObjectPreviewKindSQLite,
+			Kind:      models.ObjectPreviewKindContainer,
 			Text:      fmt.Sprintf("SQLite 文件超过 %d MB 预览限制，建议下载查看。如需预览大文件，请联系管理员。", h.maxBytes/(1024*1024)),
 			Truncated: true,
 		}), true, nil
@@ -1082,7 +1205,7 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 
 	if len(data) == 0 {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindSQLite,
+			Kind: models.ObjectPreviewKindContainer,
 			Text: "SQLite 文件为空或无法读取",
 		}), false, nil
 	}
@@ -1140,12 +1263,12 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	}
 
 	metadata := buildSQLiteMetadataMap(analysis.Metadata, req)
-	preview := buildSQLitePreviewFromAnalysis(analysis.Metadata)
+	preview := buildContainerPreviewFromSQLiteAnalysis(analysis.Metadata)
 
 	truncated := len(analysis.Metadata.Tables) < analysis.Metadata.TableCount || hasAnyTruncatedTable(analysis.Metadata.Tables)
 
 	content := &models.ObjectPreviewContent{
-		Kind:      models.ObjectPreviewKindSQLite,
+		Kind:      models.ObjectPreviewKindContainer,
 		JSON:      preview,
 		Metadata:  metadata,
 		Truncated: truncated,
@@ -1169,33 +1292,58 @@ func buildSQLiteMetadataMap(meta sqlite.Metadata, req *ObjectContentRequest) map
 	return result
 }
 
-func buildSQLitePreviewFromAnalysis(meta sqlite.Metadata) map[string]interface{} {
-	tables := make([]map[string]interface{}, 0, len(meta.Tables))
+func buildContainerPreviewFromSQLiteAnalysis(meta sqlite.Metadata) map[string]interface{} {
+	children := make([]map[string]interface{}, 0, len(meta.Tables))
 	for _, tbl := range meta.Tables {
-		row := map[string]interface{}{
-			"name":           tbl.Name,
-			"type":           tbl.Type,
-			"columns":        tbl.Columns,
-			"rows":           tbl.SampleRows,
-			"rows_truncated": tbl.RowsTruncated,
+		columns, columnTypes := sqlitePreviewColumns(tbl.Columns)
+		child := map[string]interface{}{
+			"key":          tbl.Name,
+			"name":         tbl.Name,
+			"label":        tbl.Name,
+			"table":        tbl.Name,
+			"kind":         tbl.Type,
+			"data_type":    string(format.FormatDataTypeTable),
+			"column_count": len(columns),
+			"columns":      columns,
+			"column_types": columnTypes,
+			"rows":         tbl.SampleRows,
 		}
 		if tbl.RowCount != nil {
-			row["row_count"] = *tbl.RowCount
+			child["row_count"] = *tbl.RowCount
 		}
-		tables = append(tables, row)
+		children = append(children, child)
 	}
 
 	summary := map[string]interface{}{
-		"table_count":      meta.TableCount,
-		"sampled_tables":   len(meta.Tables),
-		"tables_truncated": meta.TableCount > len(meta.Tables),
-		"rows_truncated":   hasAnyTruncatedTable(meta.Tables),
+		"table_count":        meta.TableCount,
+		"view_count":         meta.ViewCount,
+		"child_count":        meta.TableCount + meta.ViewCount,
+		"sampled_children":   len(meta.Tables),
+		"children_truncated": meta.TableCount+meta.ViewCount > len(meta.Tables),
 	}
 
-	return map[string]interface{}{
-		"tables":  tables,
-		"summary": summary,
+	defaultChild := ""
+	if len(children) > 0 {
+		defaultChild = commonJSON.InterfaceString(children[0]["key"])
 	}
+	preview := buildContainerPreview(string(format.FormatSQLite), defaultChild, defaultChild, children, summary)
+	preview["tables"] = legacySQLiteTables(children)
+	preview["default_table"] = defaultChild
+	preview["active_table"] = defaultChild
+	return preview
+}
+
+func sqlitePreviewColumns(columns []sqlite.ColumnInfo) ([]string, []string) {
+	names := make([]string, 0, len(columns))
+	types := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if column.Name == "" {
+			continue
+		}
+		names = append(names, column.Name)
+		types = append(types, column.Type)
+	}
+	return names, types
 }
 
 func hasAnyTruncatedTable(tables []sqlite.TableInfo) bool {
