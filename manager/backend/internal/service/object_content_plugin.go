@@ -13,11 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/plugins/excel"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
-	"github.com/xuri/excelize/v2"
 )
 
 // ObjectContentRequest 描述对象内容的上下文信息。
@@ -210,11 +208,11 @@ func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
 	if content == nil {
 		return ""
 	}
+	if content.URL != "" {
+		return models.PreviewMaterialURL
+	}
 	if content.Encoding == "base64" && content.Data != "" {
 		return models.PreviewMaterialRawBinary
-	}
-	if content.ImageData != "" {
-		return models.PreviewMaterialImage
 	}
 	if content.GeoJSON != nil {
 		return models.PreviewMaterialGeoJSON
@@ -473,43 +471,37 @@ func (h *binaryBase64Handler) Handle(ctx context.Context, req *ObjectContentRequ
 
 type imageContentHandler struct {
 	baseContentHandler
-	maxBytes int64
 }
 
-func (h *imageContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
-	data, truncated, err := fetcher(h.maxBytes)
-	if err != nil {
-		return nil, false, err
+func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	metadata := buildPreviewMetadata(req, 0)
+	if url := objectPreviewURL(req); url != "" {
+		content := &models.ObjectPreviewContent{
+			Kind:            models.ObjectPreviewKindImage,
+			URL:             url,
+			PreviewMaterial: models.PreviewMaterialURL,
+			Metadata:        metadata,
+		}
+		setFrontendRenderer(content, models.ObjectPreviewKindImage)
+		return decoratePreviewContent(content), false, nil
 	}
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:     models.ObjectPreviewKindImage,
+		Text:     "图片预览需要对象流地址",
+		Metadata: metadata,
+	}), false, nil
+}
 
-	metadata := buildPreviewMetadata(req, h.maxBytes)
-	if truncated {
-		message := buildLimitExceededMessage(models.ObjectPreviewKindImage, req, h.maxBytes)
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:      models.ObjectPreviewKindImage,
-			Text:      message,
-			Truncated: true,
-			Metadata:  metadata,
-		}), true, nil
+func objectPreviewURL(req *ObjectContentRequest) string {
+	if req == nil || req.Attributes == nil {
+		return ""
 	}
-
-	if len(data) == 0 {
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:     models.ObjectPreviewKindImage,
-			Text:     "图片内容为空或无法读取",
-			Metadata: metadata,
-		}), false, nil
+	for _, key := range []string{"preview_url", "url", "download_url", "signed_url"} {
+		if value, ok := req.Attributes[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
 	}
-
-	encoded := base64.StdEncoding.EncodeToString(data)
-	content := &models.ObjectPreviewContent{
-		Kind:      models.ObjectPreviewKindImage,
-		ImageData: encoded,
-		Encoding:  "base64",
-		Metadata:  metadata,
-	}
-
-	return decoratePreviewContent(content), false, nil
+	return ""
 }
 
 type jsonContentHandler struct {
@@ -665,66 +657,19 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 	}), nil
 }
 
-func buildContainerPreviewFromAnalysis(formatName string, analysis *excel.WorkbookAnalysis) map[string]interface{} {
-	if analysis == nil {
-		return emptyContainerPreview(formatName)
-	}
-
-	children := make([]map[string]interface{}, 0, len(analysis.Sheets))
-	for _, sheet := range analysis.Sheets {
-		children = append(children, map[string]interface{}{
-			"key":          sheet.Name,
-			"name":         sheet.Name,
-			"label":        sheet.Name,
-			"index":        sheet.Index,
-			"kind":         "sheet",
-			"data_type":    string(format.FormatDataTypeTable),
-			"row_count":    sheet.RowCount,
-			"column_count": sheet.ColumnCount,
-			"has_header":   sheet.HasHeader,
-		})
-	}
-
-	summary := make(map[string]interface{}, len(analysis.Summary))
-	for k, v := range analysis.Summary {
-		summary[k] = v
-	}
-
-	preview := buildContainerPreview(formatName, analysis.DefaultSheet, analysis.ActiveSheet, children, summary)
-	return preview
-}
-
 func emptyContainerPreview(formatName string) map[string]interface{} {
 	return buildContainerPreview(formatName, "", "", []map[string]interface{}{}, map[string]interface{}{})
 }
 
-func boolValue(v interface{}) bool {
-	switch val := v.(type) {
-	case bool:
-		return val
-	case string:
-		return strings.EqualFold(val, "true")
-	case int:
-		return val != 0
-	case int64:
-		return val != 0
-	default:
-		return false
-	}
-}
-
 type excelContentHandler struct {
 	baseContentHandler
-	maxBytes    int64
-	sheetLimit  int
-	columnLimit int
+	maxBytes   int64
+	childLimit int
 }
 
 const (
-	defaultExcelSheetLimit  = 5
-	defaultExcelColumnLimit = 50
-	maxExcelPreviewBytes    = 15 * 1024 * 1024
-	excelTypeDetectLimit    = 100
+	defaultExcelSheetLimit = 5
+	maxExcelPreviewBytes   = 15 * 1024 * 1024
 )
 
 func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
@@ -748,35 +693,21 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		}), true, nil
 	}
 
-	workbook, err := excelize.OpenReader(bytes.NewReader(data))
+	formatType := objectContentContainerFormat(req)
+	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindExcel,
-			Text: fmt.Sprintf("解析 Excel 失败: %v", err),
-		}), false, nil
+		return nil, false, fmt.Errorf("获取 %s 容器 provider 失败: %w", formatType, err)
 	}
-	defer workbook.Close()
-
-	sheetNames := workbook.GetSheetList()
-	options := excel.Options{
-		SheetLimit:      h.effectiveSheetLimit(len(sheetNames)),
-		ColumnLimit:     h.effectiveColumnLimit(),
-		TypeDetectLimit: excelTypeDetectLimit,
-	}
-	analysis, err := excel.Analyze(ctx, workbook, &options)
+	info, err := provider.DescribeContainer(ctx, bytes.NewReader(data), format.ContainerParseOptions(h.childLimit, 20))
 	if err != nil {
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindExcel,
-			Text: fmt.Sprintf("解析 Excel 失败: %v", err),
-		}), false, nil
+		return nil, false, fmt.Errorf("提取 %s 容器元数据失败: %w", formatType, err)
 	}
-
-	preview := buildContainerPreviewFromAnalysis(string(format.FormatExcel), analysis)
-	previewTruncated := boolValue(analysis.Summary["sheets_truncated"]) || boolValue(analysis.Summary["rows_truncated"])
+	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
+	previewTruncated := containerInfoTruncated(info)
 
 	metadata := map[string]interface{}{
-		"sheet_limit":  h.sheetLimit,
-		"column_limit": h.columnLimit,
+		"format":      string(formatType),
+		"child_limit": h.childLimit,
 	}
 	if req != nil {
 		metadata["size_bytes"] = req.Size
@@ -799,9 +730,6 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	}
 	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
 	formatAttrs := commonJSON.Section(attrs, "format_info."+formatName)
-	if len(formatAttrs) == 0 && strings.EqualFold(formatName, string(format.FormatExcel)) {
-		formatAttrs = commonJSON.Section(attrs, "format_info.excel")
-	}
 
 	children := interfaceSlice(containerAttrs["children"])
 	if len(children) == 0 {
@@ -873,28 +801,12 @@ func buildContainerSummary(formatName string, containerAttrs, formatAttrs map[st
 	if sizeBytes > 0 {
 		summary["size_bytes"] = sizeBytes
 	}
-	if formatName == string(format.FormatExcel) {
-		if sheetCount := commonJSON.InterfaceInt64(formatAttrs["sheet_count"]); sheetCount > 0 {
-			summary["child_count"] = sheetCount
-		}
-		if sampledSheets := commonJSON.InterfaceInt64(formatAttrs["sampled_sheets"]); sampledSheets > 0 {
-			summary["sampled_children"] = sampledSheets
-		}
-	}
-	if formatName == string(format.FormatSQLite) {
-		total := commonJSON.InterfaceInt64(formatAttrs["table_count"]) + commonJSON.InterfaceInt64(formatAttrs["view_count"])
-		if total > 0 {
-			summary["child_count"] = total
-		}
-	}
 	return summary
 }
 
 func containerDefaultChild(formatName string, formatAttrs map[string]interface{}, children []map[string]interface{}) string {
-	if formatName == string(format.FormatExcel) {
-		if value := strings.TrimSpace(commonJSON.InterfaceString(formatAttrs["default_sheet"])); value != "" {
-			return value
-		}
+	if value := strings.TrimSpace(commonJSON.InterfaceString(formatAttrs["default_child"])); value != "" {
+		return value
 	}
 	if len(children) == 0 {
 		return ""
@@ -913,27 +825,9 @@ func containerChildKey(name, tableName string, index int) string {
 }
 
 func isContainerObjectContentFormat(formatName string) bool {
-	switch strings.ToLower(strings.TrimSpace(formatName)) {
-	case string(format.FormatExcel), "xlsx", "xls", string(format.FormatSQLite), "sqlite3", "db", string(format.FormatGeoPackage), "gpkg":
-		return true
-	default:
-		return false
-	}
-}
-
-func (h *excelContentHandler) effectiveSheetLimit(total int) int {
-	limit := h.sheetLimit
-	if limit <= 0 || limit > total {
-		return total
-	}
-	return limit
-}
-
-func (h *excelContentHandler) effectiveColumnLimit() int {
-	if h.columnLimit <= 0 {
-		return defaultExcelColumnLimit
-	}
-	return h.columnLimit
+	formatType := normalizeFileTableFormat(formatName)
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	return ok && descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo
 }
 
 type textContentHandler struct {
@@ -1049,17 +943,16 @@ func isLikelyTextContent(data []byte) bool {
 	return controlCount*100 <= runeCount
 }
 
-type sqliteContentHandler struct {
+type containerDatabaseContentHandler struct {
 	baseContentHandler
 	maxBytes int64
 }
 
-// HandleStream 实现流式处理 SQLite 文件（推荐，避免大文件内存占用）
-func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
-	// 创建临时文件
-	tmpFile, err := os.CreateTemp("", "sqlite-preview-*.db")
+// HandleStream streams large file-backed containers into a temporary file before provider parsing.
+func (h *containerDatabaseContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+	tmpFile, err := os.CreateTemp("", "container-preview-*.bin")
 	if err != nil {
-		return nil, false, fmt.Errorf("创建临时 SQLite 文件失败: %w", err)
+		return nil, false, fmt.Errorf("创建临时容器文件失败: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -1067,7 +960,6 @@ func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectCont
 		os.Remove(tmpPath)
 	}()
 
-	// 流式下载到临时文件（无需加载到内存）
 	reader, err := streamer()
 	if err != nil {
 		return nil, false, fmt.Errorf("获取对象流失败: %w", err)
@@ -1076,30 +968,26 @@ func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectCont
 
 	written, err := io.Copy(tmpFile, reader)
 	if err != nil {
-		return nil, false, fmt.Errorf("写入 SQLite 临时文件失败: %w", err)
+		return nil, false, fmt.Errorf("写入容器临时文件失败: %w", err)
 	}
 
 	if written == 0 {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind: models.ObjectPreviewKindContainer,
-			Text: "SQLite 文件为空或无法读取",
+			Text: "容器文件为空或无法读取",
 		}), false, nil
 	}
 
 	if err := tmpFile.Close(); err != nil {
-		return nil, false, fmt.Errorf("关闭 SQLite 临时文件失败: %w", err)
+		return nil, false, fmt.Errorf("关闭容器临时文件失败: %w", err)
 	}
 
-	logger.L().Info("SQLite 预览: 流式下载完成", "path", req.Path+req.Name, "size_bytes", written, "tmp_path", tmpPath)
+	logger.L().Info("容器预览: 流式下载完成", "path", req.Path+req.Name, "size_bytes", written, "tmp_path", tmpPath)
 
-	// 解析 SQLite 数据库
 	return h.parseSQLiteDatabase(ctx, tmpPath, req)
 }
 
-// Handle 实现传统的字节数组处理（保持兼容性，但不推荐用于大文件）
-func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
-	// 对于大文件，如果调用方支持流式处理，应该优先调用 HandleStream
-	// 这里保留向后兼容，但会受 maxBytes 限制
+func (h *containerDatabaseContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	data, truncated, err := fetcher(h.maxBytes)
 	if err != nil {
 		return nil, false, err
@@ -1108,7 +996,7 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 	if truncated {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:      models.ObjectPreviewKindContainer,
-			Text:      fmt.Sprintf("SQLite 文件超过 %d MB 预览限制，建议下载查看。如需预览大文件，请联系管理员。", h.maxBytes/(1024*1024)),
+			Text:      fmt.Sprintf("容器文件超过 %d MB 预览限制，建议下载查看。如需预览大文件，请联系管理员。", h.maxBytes/(1024*1024)),
 			Truncated: true,
 		}), true, nil
 	}
@@ -1116,14 +1004,13 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 	if len(data) == 0 {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind: models.ObjectPreviewKindContainer,
-			Text: "SQLite 文件为空或无法读取",
+			Text: "容器文件为空或无法读取",
 		}), false, nil
 	}
 
-	// 写入临时文件
-	tmpFile, err := os.CreateTemp("", "sqlite-preview-*.db")
+	tmpFile, err := os.CreateTemp("", "container-preview-*.bin")
 	if err != nil {
-		return nil, false, fmt.Errorf("创建临时 SQLite 文件失败: %w", err)
+		return nil, false, fmt.Errorf("创建临时容器文件失败: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -1132,18 +1019,17 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 	}()
 
 	if _, err := tmpFile.Write(data); err != nil {
-		return nil, false, fmt.Errorf("写入 SQLite 临时文件失败: %w", err)
+		return nil, false, fmt.Errorf("写入容器临时文件失败: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
-		return nil, false, fmt.Errorf("关闭 SQLite 临时文件失败: %w", err)
+		return nil, false, fmt.Errorf("关闭容器临时文件失败: %w", err)
 	}
 
-	// 解析 SQLite 数据库
 	return h.parseSQLiteDatabase(ctx, tmpPath, req)
 }
 
-// parseSQLiteDatabase 解析 SQLite 族容器文件并提取容器索引。
-func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
+// parseSQLiteDatabase uses common/format container providers to build the container index.
+func (h *containerDatabaseContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
 	formatType := objectContentContainerFormat(req)
 	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
@@ -1156,8 +1042,8 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	}
 	info, err := provider.DescribeContainer(ctx, file, &format.ParseOptions{
 		ExtraParams: map[string]interface{}{
-			"table_limit": 0,
-			"row_limit":   0,
+			format.ContainerChildLimitParam: 0,
+			format.ContainerRowLimitParam:   0,
 		},
 	})
 	_ = file.Close()
@@ -1255,21 +1141,28 @@ func containerInfoTruncated(info *format.ContainerInfo) bool {
 }
 
 func objectContentContainerFormat(req *ObjectContentRequest) format.FormatType {
-	if req == nil {
-		return format.FormatSQLite
+	if req != nil {
+		for _, value := range []string{req.Format, req.Extension, req.ContentType, req.Name} {
+			for _, formatType := range []format.FormatType{
+				normalizeFileTableFormat(value),
+				format.MIMEToFormat(value),
+				format.DetectFormat(value, nil),
+			} {
+				if isContainerFormatType(formatType) {
+					return formatType
+				}
+			}
+		}
 	}
-	for _, value := range []string{req.Format, req.Extension, req.ContentType, req.Name} {
-		if formatType := normalizeFileTableFormat(value); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
-			return formatType
-		}
-		if formatType := format.MIMEToFormat(value); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
-			return formatType
-		}
-		if formatType := format.DetectFormat(value, nil); formatType == format.FormatSQLite || formatType == format.FormatGeoPackage {
-			return formatType
-		}
+	return format.FormatType(strings.TrimSpace(models.ObjectPreviewKindSQLite))
+}
+
+func isContainerFormatType(formatType format.FormatType) bool {
+	if formatType == "" || formatType == format.FormatUnknown {
+		return false
 	}
-	return format.FormatSQLite
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	return ok && descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo
 }
 
 type commandContentHandler struct {

@@ -417,21 +417,21 @@ func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
 	c.JSON(http.StatusOK, schema)
 }
 
-// VideoStream 视频流式传输（支持 Range 请求）
-// GET /api/explorer/video-stream?engine_id=1&object_key=bucket/path/to/video.mp4
-// @Summary 视频流式传输 | Video streaming
-// @Description 支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support for online playback
+// ObjectStream 对象内容流式传输（支持 Range 请求）
+// GET /api/v1/manager/object-stream?engine_id=1&object_key=bucket/path/to/file
+// @Summary 对象内容流式传输 | Object content streaming
+// @Description 支持 Range 请求的对象内容流式传输，用于图片、视频等媒体在线预览 | Object content streaming with Range request support for media preview
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id query int true "存储引擎ID | Engine ID"
 // @Param object_key query string true "对象存储路径 | Object storage path"
-// @Success 200 "视频流数据 | Video stream data"
-// @Success 206 "部分视频流数据 | Partial video stream data"
+// @Success 200 "对象内容流 | Object content stream"
+// @Success 206 "部分对象内容流 | Partial object content stream"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /video-stream [get]
+// @Router /object-stream [get]
 // @Security BearerAuth
-func (h *ExplorerHandler) VideoStream(c *gin.Context) {
+func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
 	// 解析参数
@@ -452,10 +452,9 @@ func (h *ExplorerHandler) VideoStream(c *gin.Context) {
 	// 获取 Range header
 	rangeHeader := c.GetHeader("Range")
 
-	logger.L().Info("视频流请求", "engine_id", engineID, "object_key", objectKey, "range", rangeHeader)
+	logger.L().Info("对象流请求", "engine_id", engineID, "object_key", objectKey, "range", rangeHeader)
 
-	// 调用 MetadataService.StreamVideo
-	reader, contentLength, contentRange, contentType, err := h.metadataService.StreamVideo(
+	reader, contentLength, contentRange, contentType, err := h.metadataService.StreamObject(
 		c.Request.Context(),
 		uint(engineID),
 		objectKey,
@@ -467,11 +466,11 @@ func (h *ExplorerHandler) VideoStream(c *gin.Context) {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
-		if strings.Contains(err.Error(), "does not support video streaming") {
+		if strings.Contains(err.Error(), "does not support object streaming") {
 			commonAPI.BadRequestError(c, err.Error())
 			return
 		}
-		logger.L().Error("视频流失败", "error", err)
+		logger.L().Error("对象流失败", "error", err)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -495,6 +494,6 @@ func (h *ExplorerHandler) VideoStream(c *gin.Context) {
 	// 流式传输
 	_, err = io.Copy(c.Writer, reader)
 	if err != nil {
-		logger.L().Error("视频流传输失败", "error", err)
+		logger.L().Error("对象流传输失败", "error", err)
 	}
 }

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,15 +26,14 @@ import (
 )
 
 const (
-	maxTextPreviewBytes   = 256 * 1024        // 256KB
-	maxJSONPreviewBytes   = 512 * 1024        // 512KB
-	maxGeoJSONPreview     = 1024 * 1024       // 1MB
-	maxImagePreviewBytes  = 10 * 1024 * 1024  // 10MB - 图片预览限制
-	maxPDFPreviewBytes    = 20 * 1024 * 1024  // 20MB - PDF 文件预览限制
-	maxDOCXPreviewBytes   = 100 * 1024 * 1024 // 100MB - DOCX 文件预览限制
-	maxWPSPreviewBytes    = 100 * 1024 * 1024 // 100MB - WPS 文件预览限制
-	maxPPTXPreviewBytes   = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
-	maxSQLitePreviewBytes = 30 * 1024 * 1024  // 30MB - SQLite 文件默认预览限制
+	maxTextPreviewBytes      = 256 * 1024        // 256KB
+	maxJSONPreviewBytes      = 512 * 1024        // 512KB
+	maxGeoJSONPreview        = 1024 * 1024       // 1MB
+	maxPDFPreviewBytes       = 20 * 1024 * 1024  // 20MB - PDF 文件预览限制
+	maxDOCXPreviewBytes      = 100 * 1024 * 1024 // 100MB - DOCX 文件预览限制
+	maxWPSPreviewBytes       = 100 * 1024 * 1024 // 100MB - WPS 文件预览限制
+	maxPPTXPreviewBytes      = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
+	maxContainerPreviewBytes = 30 * 1024 * 1024  // 30MB - file-backed container preview limit
 )
 
 var reservedObjectSegments = map[string]struct{}{
@@ -331,6 +332,13 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			Size:        stat.Size,
 			Attributes:  preview.Object.Attributes,
 		}
+		if url := buildObjectStreamURL(resource.ID, preview.Object.ObjectKey); url != "" {
+			if req.Attributes == nil {
+				req.Attributes = make(map[string]interface{})
+			}
+			req.Attributes["preview_url"] = url
+			preview.Object.URL = url
+		}
 		handler := p.content.Resolve(req)
 		if handler != nil {
 			if isContainerObjectContentFormat(req.Format) {
@@ -608,6 +616,17 @@ func openObjectStorageContent(ctx context.Context, contentReader plugin.ContentR
 		return nil, fs.ErrNotExist
 	}
 	return contentReader.OpenContent(ctx, connInfo, objectStorageObjectCatalogPath(engineID, bucket, objectPath), plugin.ReadOptions{})
+}
+
+func buildObjectStreamURL(engineID uint, objectKey string) string {
+	objectKey = strings.Trim(objectKey, "/")
+	if engineID == 0 || objectKey == "" {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
+	values.Set("object_key", objectKey)
+	return "/api/v1/manager/object-stream?" + values.Encode()
 }
 
 func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {

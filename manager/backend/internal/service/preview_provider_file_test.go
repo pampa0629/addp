@@ -100,8 +100,8 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesSQLiteChildTable(t *testin
 	if opts.ExtraParams == nil {
 		t.Fatal("ExtraParams is nil, want sqlite table option")
 	}
-	if got := opts.ExtraParams["table"]; got != "city_table" {
-		t.Fatalf("sqlite table option = %#v, want city_table", got)
+	if got := opts.ExtraParams[format.ChildTableParam]; got != "city_table" {
+		t.Fatalf("child table option = %#v, want city_table", got)
 	}
 }
 
@@ -128,8 +128,8 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *te
 	if opts.ExtraParams == nil {
 		t.Fatal("ExtraParams is nil, want geopackage table option")
 	}
-	if got := opts.ExtraParams["table"]; got != "roads" {
-		t.Fatalf("geopackage table option = %#v, want roads", got)
+	if got := opts.ExtraParams[format.ChildTableParam]; got != "roads" {
+		t.Fatalf("child table option = %#v, want roads", got)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 	if tableProvider.describeCalls != 1 {
 		t.Fatalf("DescribeTable calls = %d, want 1 because container child attributes are only an index", tableProvider.describeCalls)
 	}
-	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams["table"] != "city_table" {
+	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams[format.ChildTableParam] != "city_table" {
 		t.Fatalf("sqlite sample table option = %#v, want city_table", tableProvider.sampleOptions)
 	}
 	if preview.Total != 3 {

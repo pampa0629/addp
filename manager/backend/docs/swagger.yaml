@@ -1519,6 +1519,43 @@ paths:
       summary: 更新MVT生成任务配置 | Update MVT generation task configuration
       tags:
       - Manager
+  /object-stream:
+    get:
+      description: 支持 Range 请求的对象内容流式传输，用于图片、视频等媒体在线预览 | Object content streaming
+        with Range request support for media preview
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 对象存储路径 | Object storage path
+        in: query
+        name: object_key
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 对象内容流 | Object content stream
+        "206":
+          description: 部分对象内容流 | Partial object content stream
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 对象内容流式传输 | Object content streaming
+      tags:
+      - Manager
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
@@ -2025,43 +2062,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 搜索资源节点 | Search resource nodes
-      tags:
-      - Manager
-  /video-stream:
-    get:
-      description: 支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support
-        for online playback
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: 对象存储路径 | Object storage path
-        in: query
-        name: object_key
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: 视频流数据 | Video stream data
-        "206":
-          description: 部分视频流数据 | Partial video stream data
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 视频流式传输 | Video streaming
       tags:
       - Manager
 securityDefinitions:

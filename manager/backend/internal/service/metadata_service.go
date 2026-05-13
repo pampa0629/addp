@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -407,9 +406,8 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 	}
 }
 
-// StreamVideo 视频流式传输
-// 支持HTTP Range请求，用于视频播放器的seek功能
-func (s *MetadataService) StreamVideo(
+// StreamObject 对象内容流式传输，支持 HTTP Range 请求。
+func (s *MetadataService) StreamObject(
 	ctx context.Context,
 	resourceID uint,
 	objectKey string,
@@ -425,7 +423,7 @@ func (s *MetadataService) StreamVideo(
 	// 检查是否为对象存储类型
 	resourceType := strings.ToLower(resource.EngineType)
 	if resourceType != "minio" && resourceType != "s3" && resourceType != "oss" {
-		return nil, 0, "", "", fmt.Errorf("resource type %s does not support video streaming", resource.EngineType)
+		return nil, 0, "", "", fmt.Errorf("resource type %s does not support object streaming", resource.EngineType)
 	}
 
 	pl, err := plugin.Get(resource.EngineType)
@@ -454,29 +452,9 @@ func (s *MetadataService) StreamVideo(
 		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
 	}
 
-	// 推断Content-Type
-	contentType := meta.ContentType
+	contentType := inferContentType(objectPath, meta.ContentType)
 	if contentType == "" {
-		// 根据扩展名推断
-		ext := strings.ToLower(filepath.Ext(objectPath))
-		switch ext {
-		case ".mp4":
-			contentType = "video/mp4"
-		case ".avi":
-			contentType = "video/x-msvideo"
-		case ".mkv":
-			contentType = "video/x-matroska"
-		case ".mov":
-			contentType = "video/quicktime"
-		case ".webm":
-			contentType = "video/webm"
-		case ".flv":
-			contentType = "video/x-flv"
-		case ".wmv":
-			contentType = "video/x-ms-wmv"
-		default:
-			contentType = "application/octet-stream"
-		}
+		contentType = "application/octet-stream"
 	}
 
 	var contentLength int64

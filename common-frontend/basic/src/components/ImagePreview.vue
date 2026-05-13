@@ -77,7 +77,25 @@ const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
 const attributes = computed(() => objectData.value?.attributes || {})
 
-const imageData = computed(() => content.value?.image_data || content.value?.imageData || null)
+const imageURL = computed(() => {
+  return (
+    content.value?.url ||
+    content.value?.preview_url ||
+    content.value?.previewUrl ||
+    content.value?.download_url ||
+    content.value?.downloadUrl ||
+    content.value?.signed_url ||
+    content.value?.signedUrl ||
+    objectData.value?.url ||
+    objectData.value?.preview_url ||
+    objectData.value?.previewUrl ||
+    objectData.value?.download_url ||
+    objectData.value?.downloadUrl ||
+    objectData.value?.signed_url ||
+    objectData.value?.signedUrl ||
+    ''
+  )
+})
 
 // 提取元数据
 const extractedMetadata = computed(() => {
@@ -123,8 +141,7 @@ const contentType = computed(() => {
 const fileName = computed(() => objectData.value?.path || objectData.value?.name || 'image')
 
 const imageSrc = computed(() => {
-  if (!imageData.value) return ''
-  return `data:${contentType.value};base64,${imageData.value}`
+  return imageURL.value || ''
 })
 
 const contentMessage = computed(() => content.value?.text || '图片超出预览限制，无法在线展示')

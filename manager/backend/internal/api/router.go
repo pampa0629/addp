@@ -148,7 +148,7 @@ func SetupRouter(
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
 		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema) // 图数据库 Schema（节点标签 + 关系类型）
 		api.GET("/preview", explorerHandler.Preview)
-		api.GET("/video-stream", explorerHandler.VideoStream)
+		api.GET("/object-stream", explorerHandler.ObjectStream)
 
 		// ============================================================
 		// 空间数据服务路由组

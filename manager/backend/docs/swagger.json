@@ -1858,6 +1858,61 @@
                 }
             }
         },
+        "/object-stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "支持 Range 请求的对象内容流式传输，用于图片、视频等媒体在线预览 | Object content streaming with Range request support for media preview",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "对象内容流式传输 | Object content streaming",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "对象存储路径 | Object storage path",
+                        "name": "object_key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "对象内容流 | Object content stream"
+                    },
+                    "206": {
+                        "description": "部分对象内容流 | Partial object content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/preview": {
             "get": {
                 "security": [
@@ -2604,61 +2659,6 @@
                             "type": "object",
                             "additionalProperties": true
                         }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/video-stream": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "支持Range请求的视频流式传输，用于在线播放 | Video streaming with Range request support for online playback",
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "视频流式传输 | Video streaming",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "对象存储路径 | Object storage path",
-                        "name": "object_key",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "视频流数据 | Video stream data"
-                    },
-                    "206": {
-                        "description": "部分视频流数据 | Partial video stream data"
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/addp/common/format"
@@ -124,6 +125,14 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 	if !excel.Matches(&ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"}) {
 		t.Fatalf("expected Excel handler to match descriptor extension and MIME")
 	}
+
+	image, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	if err != nil {
+		t.Fatalf("build image handler: %v", err)
+	}
+	if !image.Matches(&ObjectContentRequest{Extension: ".avif", ContentType: "image/avif"}) {
+		t.Fatalf("expected image handler to match media descriptor extension and MIME")
+	}
 }
 
 func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
@@ -172,6 +181,45 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	if err != nil {
+		t.Fatalf("build image handler: %v", err)
+	}
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{
+			Name:        "photo.avif",
+			Extension:   ".avif",
+			ContentType: "image/avif",
+			Size:        1024,
+			Attributes: map[string]interface{}{
+				"preview_url": "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/photo.avif",
+			},
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("image handler must not read image bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatalf("truncated = true, want false")
+	}
+	if content == nil {
+		t.Fatal("content is nil")
+	}
+	if content.URL == "" || content.PreviewMaterial != "url" || content.FrontendRenderer != "image" {
+		t.Fatalf("content = %#v, want URL material with image renderer", content)
+	}
+	if content.Encoding == "base64" {
+		t.Fatalf("image handler should not return base64 image data: %#v", content)
 	}
 }
 

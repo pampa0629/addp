@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/addp/common/format"
 	"github.com/xuri/excelize/v2"
@@ -73,7 +74,7 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 	defer workbook.Close()
 
 	analyzeOpts := p.buildAnalyzeOptionsFromParseOptions(opts)
-	if opts == nil || opts.ExtraParams == nil || opts.ExtraParams["sheet_limit"] == nil {
+	if opts == nil || opts.ExtraParams == nil || (opts.ExtraParams["sheet_limit"] == nil && opts.ExtraParams[format.ContainerChildLimitParam] == nil) {
 		analyzeOpts.SheetLimit = defaultSheetLimit
 	}
 	if analyzeOpts.RowLimit <= 0 {
@@ -350,6 +351,12 @@ func (p *Parser) buildAnalyzeOptionsFromParseOptions(opts *format.ParseOptions) 
 
 	// 从 ExtraParams 中读取自定义参数
 	if opts.ExtraParams != nil {
+		if v, ok := opts.ExtraParams[format.ContainerChildLimitParam].(int); ok && v > 0 {
+			analyzeOpts.SheetLimit = v
+		}
+		if v, ok := opts.ExtraParams[format.ContainerRowLimitParam].(int); ok && v >= 0 {
+			analyzeOpts.RowLimit = v
+		}
 		if v, ok := opts.ExtraParams["sheet_limit"].(int); ok && v > 0 {
 			analyzeOpts.SheetLimit = v
 		}
@@ -369,6 +376,11 @@ func (p *Parser) getTargetSheetNameFromOptions(workbook *excelize.File, opts *fo
 	// 优先使用指定的工作表名称
 	if opts.SheetName != "" {
 		return opts.SheetName
+	}
+	if opts.ExtraParams != nil {
+		if childName, ok := opts.ExtraParams[format.ChildNameParam].(string); ok && strings.TrimSpace(childName) != "" {
+			return strings.TrimSpace(childName)
+		}
 	}
 
 	// 使用指定的工作表索引

@@ -20,34 +20,11 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if attrs == nil || detected == nil || reader == nil || detected.DataType != dataitem.DataTypeContainer {
 		return nil
 	}
-	switch detected.Format {
-	case string(format.FormatExcel):
-		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatExcel, reader, excelContainerParseOptions())
-	case string(format.FormatSQLite):
-		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatSQLite, reader, sqliteContainerParseOptions())
-	case string(format.FormatGeoPackage):
-		return enrichContainerChildrenFromProvider(ctx, attrs, format.FormatGeoPackage, reader, sqliteContainerParseOptions())
-	default:
+	formatType := format.FormatType(detected.Format)
+	if _, err := format.GetContainerInfoProvider(formatType); err != nil {
 		return nil
 	}
-}
-
-func excelContainerParseOptions() *format.ParseOptions {
-	opts := format.DefaultParseOptions()
-	opts.SampleSize = 20
-	opts.ExtraParams = map[string]interface{}{
-		"sheet_limit": containerChildLimit,
-	}
-	return opts
-}
-
-func sqliteContainerParseOptions() *format.ParseOptions {
-	opts := format.DefaultParseOptions()
-	opts.ExtraParams = map[string]interface{}{
-		"table_limit": containerChildLimit,
-		"row_limit":   0,
-	}
-	return opts
+	return enrichContainerChildrenFromProvider(ctx, attrs, formatType, reader, format.ContainerParseOptions(containerChildLimit, 0))
 }
 
 func enrichContainerChildrenFromProvider(

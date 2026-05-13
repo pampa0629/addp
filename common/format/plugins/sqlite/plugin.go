@@ -236,6 +236,12 @@ func (p *Parser) analysisOptions(options *format.ParseOptions) *Options {
 		result.SampleRowLimit = options.SampleSize
 	}
 	if options.ExtraParams != nil {
+		if v, ok := options.ExtraParams[format.ContainerChildLimitParam].(int); ok && v >= 0 {
+			result.TableLimit = v
+		}
+		if v, ok := options.ExtraParams[format.ContainerRowLimitParam].(int); ok && v >= 0 {
+			result.SampleRowLimit = v
+		}
 		if v, ok := options.ExtraParams["table_limit"].(int); ok && v > 0 {
 			result.TableLimit = v
 		}
@@ -308,10 +314,10 @@ func tableNameFromOptions(options *format.ParseOptions) string {
 	if options == nil || options.ExtraParams == nil {
 		return ""
 	}
-	if v, ok := options.ExtraParams["table"].(string); ok {
+	if v, ok := options.ExtraParams[format.ChildTableParam].(string); ok {
 		return strings.TrimSpace(v)
 	}
-	if v, ok := options.ExtraParams["table_name"].(string); ok {
+	if v, ok := options.ExtraParams[format.ChildNameParam].(string); ok {
 		return strings.TrimSpace(v)
 	}
 	return ""

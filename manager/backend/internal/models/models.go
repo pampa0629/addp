@@ -155,6 +155,7 @@ type ObjectPreview struct {
 	ObjectCount       int64                  `json:"object_count,omitempty"`
 	LastModified      *time.Time             `json:"last_modified,omitempty"`
 	ContentType       string                 `json:"content_type,omitempty"`
+	URL               string                 `json:"url,omitempty"`
 	Metadata          map[string]string      `json:"metadata,omitempty"`
 	Attributes        JSONMap                `json:"attributes,omitempty"`
 	EngineID          uint                   `json:"engine_id,omitempty"`
@@ -181,7 +182,6 @@ type ObjectPreviewContent struct {
 	Text             string                 `json:"text,omitempty"`
 	JSON             interface{}            `json:"json,omitempty"`
 	GeoJSON          interface{}            `json:"geojson,omitempty"`
-	ImageData        string                 `json:"image_data,omitempty"`
 	Data             string                 `json:"data,omitempty"` // Generic data field (used for PDF base64)
 	URL              string                 `json:"url,omitempty"`
 	Encoding         string                 `json:"encoding,omitempty"`
@@ -212,7 +212,6 @@ const (
 	PreviewMaterialHTML      = "html"
 	PreviewMaterialJSON      = "json"
 	PreviewMaterialGeoJSON   = "geojson"
-	PreviewMaterialImage     = "image"
 	PreviewMaterialRawBinary = "raw_binary"
 	PreviewMaterialTable     = "table"
 	PreviewMaterialURL       = "url"

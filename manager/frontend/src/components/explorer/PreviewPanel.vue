@@ -617,8 +617,6 @@ const downloadInfo = computed(() => {
         content.Data ||
         content.pdf_data ||
         content.pdfData ||
-        content.image_data ||
-        content.imageData ||
         ''
     )
 

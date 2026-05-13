@@ -37,20 +37,6 @@
       if (kind === 'image') {
         return true
       }
-
-      const path = (object.path || '').toLowerCase()
-      if (path) {
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.tiff']
-        if (imageExtensions.some((ext) => path.endsWith(ext))) {
-          return true
-        }
-      }
-
-      const contentType = (object.content_type || '').toLowerCase()
-      if (contentType.includes('image') || contentType.includes('bmp')) {
-        return true
-      }
-
       return false
     },
     priority: 70

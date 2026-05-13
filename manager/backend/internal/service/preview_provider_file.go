@@ -239,15 +239,6 @@ func containerChildNameMatches(child map[string]interface{}, childName string) b
 	return false
 }
 
-func containerChildTableName(child map[string]interface{}, fallback string) string {
-	for _, key := range []string{"table", "name"} {
-		if value := strings.TrimSpace(commonJSON.InterfaceString(child[key])); value != "" {
-			return value
-		}
-	}
-	return fallback
-}
-
 func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo {
 	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
 	if len(spatialAttrs) == 0 {
@@ -628,31 +619,36 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 		HasHeader:  true,
 		SampleSize: 100,
 	}
-	if formatType == format.FormatExcel && len(req) > 0 && req[0] != nil {
-		opts.SheetName = strings.TrimSpace(req[0].ChildName)
-	}
-	if (formatType == format.FormatSQLite || formatType == format.FormatGeoPackage) && len(req) > 0 && req[0] != nil {
-		tableName := containerChildTableNameForRequest(req[0].Attributes, req[0].ChildName)
-		if tableName != "" {
-			opts.ExtraParams = map[string]interface{}{"table": tableName}
-		}
+	if len(req) > 0 && req[0] != nil && strings.TrimSpace(req[0].ChildName) != "" {
+		return format.ChildTableParseOptions(req[0].ChildName, containerChildForRequest(req[0].Attributes, req[0].ChildName))
 	}
 	return opts
 }
 
 func containerChildTableNameForRequest(attrs map[string]interface{}, childName string) string {
+	child := containerChildForRequest(attrs, childName)
+	if len(child) > 0 {
+		tableName := strings.TrimSpace(commonJSON.InterfaceString(child["table"]))
+		if tableName != "" {
+			return tableName
+		}
+	}
+	return strings.TrimSpace(childName)
+}
+
+func containerChildForRequest(attrs map[string]interface{}, childName string) map[string]interface{} {
 	childName = strings.TrimSpace(childName)
 	if childName == "" {
-		return ""
+		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
 	for _, item := range interfaceSlice(containerAttrs["children"]) {
 		child := rawMapAttribute(item)
 		if len(child) > 0 && containerChildNameMatches(child, childName) {
-			return containerChildTableName(child, childName)
+			return child
 		}
 	}
-	return childName
+	return map[string]interface{}{"name": childName}
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {
@@ -666,16 +662,17 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 }
 
 func normalizeFileTableFormat(formatName string) format.FormatType {
-	switch strings.ToLower(strings.TrimSpace(formatName)) {
-	case "xlsx", "xls":
-		return format.FormatExcel
-	case "shp":
-		return format.FormatShapefile
-	case "gpkg":
-		return format.FormatGeoPackage
-	default:
-		return format.FormatType(strings.ToLower(strings.TrimSpace(formatName)))
+	normalized := strings.ToLower(strings.TrimSpace(formatName))
+	if normalized == "" {
+		return format.FormatUnknown
 	}
+	if byExt := format.DetectFormat("file."+strings.TrimPrefix(normalized, "."), nil); byExt != format.FormatUnknown {
+		return byExt
+	}
+	if byMime := format.MIMEToFormat(normalized); byMime != format.FormatUnknown {
+		return byMime
+	}
+	return format.FormatType(normalized)
 }
 
 func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {

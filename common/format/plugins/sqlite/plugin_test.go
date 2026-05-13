@@ -26,7 +26,7 @@ func TestDescribeTableUsesSelectedTable(t *testing.T) {
 
 	parser := NewParser(nil)
 	info, err := parser.DescribeTable(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
-		ExtraParams: map[string]interface{}{"table": "cities"},
+		ExtraParams: map[string]interface{}{format.ChildTableParam: "cities"},
 	})
 	if err != nil {
 		t.Fatalf("DescribeTable() error = %v", err)
@@ -108,7 +108,7 @@ func TestDescribeGeoPackageTableCarriesChildSpatialInfo(t *testing.T) {
 
 	parser := NewGeoPackageParser(nil)
 	info, err := parser.DescribeTable(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
-		ExtraParams: map[string]interface{}{"table": "roads"},
+		ExtraParams: map[string]interface{}{format.ChildTableParam: "roads"},
 	})
 	if err != nil {
 		t.Fatalf("DescribeTable() error = %v", err)

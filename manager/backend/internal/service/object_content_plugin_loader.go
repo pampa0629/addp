@@ -152,22 +152,31 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				priority: cfg.priorityOr(62),
 				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatExcel, nil, []string{"xlsx", "xls"}),
 			},
-			maxBytes:    cfg.maxBytesOr(maxExcelPreviewBytes),
-			sheetLimit:  defaultExcelSheetLimit,
-			columnLimit: defaultExcelColumnLimit,
+			maxBytes:   cfg.maxBytesOr(maxExcelPreviewBytes),
+			childLimit: defaultExcelSheetLimit,
 		}
-		handler.sheetLimit = metadataInt(cfg.Metadata, "sheet_limit", handler.sheetLimit)
-		handler.columnLimit = metadataInt(cfg.Metadata, "column_limit", handler.columnLimit)
+		handler.childLimit = metadataInt(cfg.Metadata, "child_limit", metadataInt(cfg.Metadata, "sheet_limit", handler.childLimit))
 		return handler, nil
 	},
 	models.ObjectPreviewKindSQLite: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &sqliteContentHandler{
+		handler := &containerDatabaseContentHandler{
 			baseContentHandler: baseContentHandler{
 				name:     cfg.Name,
 				priority: cfg.priorityOr(58),
 				matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatSQLite, []commonformat.FormatType{commonformat.FormatGeoPackage}, []string{"application/octet-stream"}),
 			},
-			maxBytes: cfg.maxBytesOr(maxSQLitePreviewBytes),
+			maxBytes: cfg.maxBytesOr(maxContainerPreviewBytes),
+		}
+		return handler, nil
+	},
+	models.ObjectPreviewKindContainer: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &containerDatabaseContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(58),
+				matcher:  containerObjectContentMatcher(cfg.Match),
+			},
+			maxBytes: cfg.maxBytesOr(maxContainerPreviewBytes),
 		}
 		return handler, nil
 	},
@@ -334,6 +343,26 @@ func descriptorMatcherDefaults(formatType commonformat.FormatType) ([]string, []
 	}
 	formats := []string{string(descriptor.Format)}
 	return formats, descriptor.Identification.Extensions, descriptor.Identification.MimeTypes
+}
+
+func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectContentMatcher {
+	formats := make([]string, 0)
+	extensions := make([]string, 0)
+	contentTypes := make([]string, 0)
+	for _, descriptor := range commonformat.ListFormatDescriptors() {
+		if descriptor.DataType != commonformat.FormatDataTypeContainer || !descriptor.Providers.ContainerInfo {
+			continue
+		}
+		formats = append(formats, string(descriptor.Format))
+		extensions = append(extensions, descriptor.Identification.Extensions...)
+		contentTypes = append(contentTypes, descriptor.Identification.MimeTypes...)
+	}
+	contentTypes = append(contentTypes, "application/octet-stream")
+	return newObjectContentMatcher(
+		normalizeFormatsOrDefault(match.Formats, formats),
+		normalizeExtensionsOrDefault(match.Extensions, extensions),
+		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
+	)
 }
 
 func normalizeExtensionsOrDefault(values, fallback []string) []string {
