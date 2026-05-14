@@ -582,11 +582,12 @@ const componentKey = computed(() => {
 
   const nodeId = props.selectedNode.id || ''
   const nodePath = props.selectedNode.path || props.selectedNode.table || ''
+  const objectPath = props.previewData?.object?.path || props.previewData?.object?.object_key || ''
   const contentType = props.previewData?.object?.content_type || ''
   const contentKind = props.previewData?.object?.content?.kind || ''
   const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
 
-  return `preview-${pluginName}-${nodeId}-${nodePath}-${contentType}-${contentKind}`
+  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedComponentPath}-${contentType}-${contentKind}`
 })
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
