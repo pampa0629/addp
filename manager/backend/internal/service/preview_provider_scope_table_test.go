@@ -43,7 +43,7 @@ func (p *recordingCatalogProvider) ResolvePath(context.Context, plugin.Connectio
 	return nil, nil
 }
 
-func TestScopeTableResourceReaderUsesObjectStorageReader(t *testing.T) {
+func TestScopeTableResourceReaderUsesObjectCatalogReader(t *testing.T) {
 	t.Parallel()
 
 	reader, err := scopeTableResourceReader(&PreviewRequest{
@@ -54,12 +54,12 @@ func TestScopeTableResourceReaderUsesObjectStorageReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scopeTableResourceReader() error = %v", err)
 	}
-	if _, ok := reader.(*objectStorageResourceReader); !ok {
-		t.Fatalf("reader = %T, want *objectStorageResourceReader", reader)
+	if _, ok := reader.(*objectCatalogResourceReader); !ok {
+		t.Fatalf("reader = %T, want *objectCatalogResourceReader", reader)
 	}
 }
 
-func TestScopeTableResourceReaderUsesFileSystemReader(t *testing.T) {
+func TestScopeTableResourceReaderUsesFileCatalogReader(t *testing.T) {
 	t.Parallel()
 
 	reader, err := scopeTableResourceReader(&PreviewRequest{
@@ -69,16 +69,16 @@ func TestScopeTableResourceReaderUsesFileSystemReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scopeTableResourceReader() error = %v", err)
 	}
-	if _, ok := reader.(*fileSystemResourceReader); !ok {
-		t.Fatalf("reader = %T, want *fileSystemResourceReader", reader)
+	if _, ok := reader.(*fileCatalogResourceReader); !ok {
+		t.Fatalf("reader = %T, want *fileCatalogResourceReader", reader)
 	}
 }
 
-func TestObjectStorageResourceReaderListTrimsBucketFromScope(t *testing.T) {
+func TestObjectCatalogResourceReaderListTrimsBucketFromScope(t *testing.T) {
 	t.Parallel()
 
 	catalog := &recordingCatalogProvider{}
-	reader := newObjectStorageResourceReader(nil, catalog, nil, 7, "demo")
+	reader := newObjectCatalogResourceReader(nil, catalog, nil, 7, "demo")
 	if _, err := reader.List(context.Background(), resource.NewResourceRef("demo/dataset", resource.ResourceRoleScope)); err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

@@ -203,9 +203,6 @@ func (s *NoSQLScanService) scanCatalogItems(
 		}
 		s.softDeleteMissingItemsByType(tenantID, resource.ID, dbNode.ID, itemType, scanned)
 	}
-	if strings.EqualFold(resource.EngineType, "neo4j") {
-		s.softDeleteLegacyGraphTableItems(tenantID, resource.ID, dbNode.ID)
-	}
 	return totalItems, totalFields, nil
 }
 
@@ -236,22 +233,6 @@ func (s *NoSQLScanService) softDeleteMissingItemsByType(tenantID, engineID, dbNo
 			)
 			s.db.Delete(&item)
 		}
-	}
-}
-
-func (s *NoSQLScanService) softDeleteLegacyGraphTableItems(tenantID, engineID, dbNodeID uint) {
-	var items []models.MetaItem
-	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, dbNodeID, "table").Find(&items)
-
-	for _, item := range items {
-		s.log.Info("软删除旧图数据库 table 数据项",
-			"tenant_id", tenantID,
-			"engine_id", engineID,
-			"item_id", item.ID,
-			"name", item.Name,
-		)
-		s.db.Delete(&item)
 	}
 }
 

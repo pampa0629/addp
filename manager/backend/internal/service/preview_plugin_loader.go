@@ -37,11 +37,11 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"component-file": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewComponentFilePreviewProvider(content), nil
 	},
-	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
+	"object-catalog": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewObjectCatalogPreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	},
-	"filesystem": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewFileSystemPreviewProvider(repo, content), nil
+	"file-catalog": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewFileCatalogPreviewProvider(repo, content), nil
 	},
 	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewSchemaPreviewProvider(repo, metaClient), nil

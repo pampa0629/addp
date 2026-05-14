@@ -1,8 +1,9 @@
-package objectstore
+package objectcatalog
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 
 type InlineMetadataExtractor interface {
 	ShouldExtract(key, contentType string, sizeBytes int64) bool
-	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string) map[string]interface{}
+	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string, openContent func() (io.ReadCloser, error)) map[string]interface{}
 }
 
 func ListBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogNode, error) {
@@ -113,11 +114,28 @@ func ConvertObjectsToMetadata(
 			LastModified: lastModified,
 		}
 		if deepScan && inlineExtractor != nil && lastModified != nil && inlineExtractor.ShouldExtract(key, contentType, size) {
-			meta.ExtractedAttributes = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag)
+			meta.ExtractedAttributes = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag, func() (io.ReadCloser, error) {
+				return openObjectContent(ctx, resource, bucket, key)
+			})
 		}
 		metas = append(metas, meta)
 	}
 	return metas
+}
+
+func openObjectContent(ctx context.Context, resource *commonModels.Engine, bucket, key string) (io.ReadCloser, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("resource is nil")
+	}
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
+	}
+	return contentReader.OpenContent(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), CatalogPath(resource.ID, bucket, key), plugin.ReadOptions{})
 }
 
 func ObjectKeyFromNode(node plugin.CatalogNode, bucket string) string {

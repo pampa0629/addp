@@ -501,10 +501,10 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	if isNodePreview(req, legacyReq) {
 		if legacyReq != nil {
 			if isFileSystemType(legacyReq.Engine.EngineType) {
-				return []string{"builtin:filesystem"}
+				return []string{"builtin:file-catalog"}
 			}
 			if isObjectStorageType(legacyReq.Engine.EngineType) {
-				return []string{"builtin:object-storage"}
+				return []string{"builtin:object-catalog"}
 			}
 		}
 		return []string{"builtin:schema-node"}
@@ -519,7 +519,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 			return []string{"builtin:file-table"}
 		}
 		if legacyReq != nil && itemType == "file" {
-			return []string{"builtin:filesystem"}
+			return []string{"builtin:file-catalog"}
 		}
 		return []string{"builtin:database-table"}
 	case "graph":
@@ -532,23 +532,23 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 			return []string{"builtin:container-child"}
 		}
 		if legacyReq != nil && itemType == "file" {
-			return []string{"builtin:filesystem"}
+			return []string{"builtin:file-catalog"}
 		}
-		return []string{"builtin:object-storage"}
+		return []string{"builtin:object-catalog"}
 	case "media", "document":
 		if legacyReq != nil && itemType == "file" {
-			return []string{"builtin:filesystem"}
+			return []string{"builtin:file-catalog"}
 		}
-		return []string{"builtin:object-storage"}
+		return []string{"builtin:object-catalog"}
 	}
 
 	switch itemType {
 	case "table", "view", "materialized_view":
 		return []string{"builtin:database-table"}
 	case "object":
-		return []string{"builtin:object-storage"}
+		return []string{"builtin:object-catalog"}
 	case "file":
-		return []string{"builtin:filesystem"}
+		return []string{"builtin:file-catalog"}
 	}
 
 	return nil

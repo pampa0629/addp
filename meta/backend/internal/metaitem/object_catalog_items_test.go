@@ -45,10 +45,10 @@ func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
 	}
 }
 
-func TestObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
+func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	t.Parallel()
 
-	name, objectPath := ObjectStorageCompositeName(ObjectStorageCompositeItem{
+	name, objectPath := ObjectCatalogCompositeName(ObjectCatalogCompositeItem{
 		Bucket: "addp",
 		Prefix: "lake",
 		Item: &DetectedItem{
@@ -65,10 +65,10 @@ func TestObjectStorageCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	}
 }
 
-func TestPlanObjectStorageRelativePathRemovesScanPrefix(t *testing.T) {
+func TestPlanObjectCatalogRelativePathRemovesScanPrefix(t *testing.T) {
 	t.Parallel()
 
-	plan := PlanObjectStorageRelativePath("datasets/roads/roads.shp", "datasets")
+	plan := PlanObjectCatalogRelativePath("datasets/roads/roads.shp", "datasets")
 	if plan.ExactBase {
 		t.Fatal("child path should not be treated as exact base")
 	}
@@ -77,10 +77,10 @@ func TestPlanObjectStorageRelativePathRemovesScanPrefix(t *testing.T) {
 	}
 }
 
-func TestPlanObjectStorageRelativePathDetectsExactScanPrefix(t *testing.T) {
+func TestPlanObjectCatalogRelativePathDetectsExactScanPrefix(t *testing.T) {
 	t.Parallel()
 
-	plan := PlanObjectStorageRelativePath("datasets", "datasets")
+	plan := PlanObjectCatalogRelativePath("datasets", "datasets")
 	if !plan.ExactBase {
 		t.Fatal("exact scan prefix should be detected")
 	}
@@ -89,11 +89,11 @@ func TestPlanObjectStorageRelativePathDetectsExactScanPrefix(t *testing.T) {
 	}
 }
 
-func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
+func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 	t.Parallel()
 
 	modifiedAt := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	plan := PlanObjectStorageSingleItem(7, format.ObjectMetadata{
+	plan := PlanObjectCatalogSingleItem(7, format.ObjectMetadata{
 		Bucket:       "addp",
 		Path:         "datasets/roads.geojson",
 		NodeType:     "object",
@@ -123,10 +123,10 @@ func TestPlanObjectStorageSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 	}
 }
 
-func TestPlanObjectStorageCompositeItemBuildsStandardAttributes(t *testing.T) {
+func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 	t.Parallel()
 
-	plan, ok := PlanObjectStorageCompositeItem(7, ObjectStorageCompositeItem{
+	plan, ok := PlanObjectCatalogCompositeItem(7, ObjectCatalogCompositeItem{
 		Bucket: "addp",
 		Prefix: "datasets/roads",
 		Item: &DetectedItem{

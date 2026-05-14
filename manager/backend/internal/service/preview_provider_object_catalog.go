@@ -65,15 +65,15 @@ func metaItemLiteAttributes(item *models.MetaItemLite) map[string]interface{} {
 	return item.Attributes
 }
 
-type objectStoragePreviewProvider struct {
+type objectCatalogPreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
 	metaClient     *commonClient.MetaClient
 	metaServiceURL string
 	content        *ObjectContentRegistry
 }
 
-func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) PreviewProvider {
-	return &objectStoragePreviewProvider{
+func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) PreviewProvider {
+	return &objectCatalogPreviewProvider{
 		metadataRepo:   metadataRepo,
 		metaClient:     metaClient,
 		metaServiceURL: metaServiceURL,
@@ -81,57 +81,8 @@ func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository
 	}
 }
 
-func (p *objectStoragePreviewProvider) Name() string {
-	return "builtin:object-storage"
-}
-
-func isObjectStorageType(resourceType string) bool {
-	return catalogItemTermMatches(resourceType, plugin.CatalogTermObject)
-}
-
-// isFileSystemType 判断引擎 catalog 是否以 file 作为 item 术语。
-func isFileSystemType(resourceType string) bool {
-	return catalogItemTermMatches(resourceType, plugin.CatalogTermFile)
-}
-
-func previewRequestCatalogItemTerm(req *PreviewRequest) string {
-	if req == nil {
-		return ""
-	}
-	itemType := strings.ToLower(strings.TrimSpace(req.ItemType))
-	switch itemType {
-	case plugin.CatalogTermObject, plugin.CatalogTermFile:
-		return itemType
-	}
-	if req.Engine == nil {
-		return itemType
-	}
-	switch {
-	case isObjectStorageType(req.Engine.EngineType):
-		return plugin.CatalogTermObject
-	case isFileSystemType(req.Engine.EngineType):
-		return plugin.CatalogTermFile
-	default:
-		return itemType
-	}
-}
-
-func catalogItemTermMatches(engineType, term string) bool {
-	if strings.TrimSpace(term) == "" {
-		return false
-	}
-	p, err := plugin.Get(strings.TrimSpace(engineType))
-	if err != nil {
-		return false
-	}
-	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
-		return plugin.CatalogItemTerm(modelProvider.CatalogModel()) == term
-	}
-	capabilities := p.Capabilities()
-	if capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
-		return false
-	}
-	return plugin.CatalogItemTerm(*capabilities.Storage.CatalogModel) == term
+func (p *objectCatalogPreviewProvider) Name() string {
+	return "builtin:object-catalog"
 }
 
 // isMetaNotFoundError 检查错误是否为 Meta API 的 404 错误
@@ -158,7 +109,7 @@ func resolveBucket(connBucket, schemaParam string) (string, error) {
 	return bucket, nil
 }
 
-func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	resource := req.Engine
 	bucket := req.Schema
 	path := req.Table
@@ -300,7 +251,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
-	stat, err := getObjectPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	stat, err := getObjectCatalogPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat object %s: %w", objectPath, err)
 	}
@@ -386,7 +337,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			}
 			if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					return openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 
 				content, truncated, err := streamHandler.HandleStream(ctx, req, streamer)
@@ -407,7 +358,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 					if limitBytes <= 0 {
 						limitBytes = maxTextPreviewBytes
 					}
-					reader, err := openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					reader, err := openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 					if err != nil {
 						return nil, false, fmt.Errorf("failed to get object: %w", err)
 					}
@@ -445,7 +396,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 		if extractorAvailable && !hasExtracted {
 			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, func() (io.ReadCloser, error) {
-				return openObjectStorageContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+				return openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 			})
 			if extracted != nil {
 				preview.Object.ExtractedMetadata = extracted
@@ -472,7 +423,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 }
 
 // tryExtractMetadataFromMeta 尝试从Meta模块提取元数据
-func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
+func (p *objectCatalogPreviewProvider) tryExtractMetadataFromMeta(
 	ctx context.Context,
 	resourceID uint,
 	bucket, objectPath string,
@@ -528,7 +479,7 @@ func getTokenFromContext(ctx context.Context) string {
 	return ""
 }
 
-func (p *objectStoragePreviewProvider) decryptedConnectionInfo(engine *models.Engine) (plugin.ConnectionInfo, error) {
+func (p *objectCatalogPreviewProvider) decryptedConnectionInfo(engine *models.Engine) (plugin.ConnectionInfo, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("engine is required")
 	}
@@ -543,7 +494,7 @@ func (p *objectStoragePreviewProvider) decryptedConnectionInfo(engine *models.En
 	return plugin.ConnectionInfo(connInfo), nil
 }
 
-func objectStorageCatalogPath(engineID uint, bucket, objectPath string, isContainer bool) plugin.CatalogPath {
+func objectCatalogPath(engineID uint, bucket, objectPath string, isContainer bool) plugin.CatalogPath {
 	path := plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
@@ -581,16 +532,16 @@ func objectStorageCatalogPath(engineID uint, bucket, objectPath string, isContai
 	return path
 }
 
-func objectStorageDirectoryCatalogPath(engineID uint, bucket, prefix string) plugin.CatalogPath {
-	return objectStorageCatalogPath(engineID, bucket, prefix, true)
+func objectCatalogDirectoryPath(engineID uint, bucket, prefix string) plugin.CatalogPath {
+	return objectCatalogPath(engineID, bucket, prefix, true)
 }
 
-func objectStorageObjectCatalogPath(engineID uint, bucket, objectPath string) plugin.CatalogPath {
-	return objectStorageCatalogPath(engineID, bucket, objectPath, false)
+func objectCatalogItemPath(engineID uint, bucket, objectPath string) plugin.CatalogPath {
+	return objectCatalogPath(engineID, bucket, objectPath, false)
 }
 
 func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, objectStorageDirectoryCatalogPath(engineID, bucket, prefix), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, objectCatalogDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -628,22 +579,22 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 	return children, nil
 }
 
-func getObjectPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
+func getObjectCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
 	if metadataProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, objectStorageObjectCatalogPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, objectCatalogItemPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return itemMetadataToFileMetadata(item, bucket+"/"+strings.Trim(objectPath, "/")), nil
 }
 
-func openObjectStorageContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (io.ReadCloser, error) {
+func openObjectCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (io.ReadCloser, error) {
 	if contentReader == nil {
 		return nil, fs.ErrNotExist
 	}
-	return contentReader.OpenContent(ctx, connInfo, objectStorageObjectCatalogPath(engineID, bucket, objectPath), plugin.ReadOptions{})
+	return contentReader.OpenContent(ctx, connInfo, objectCatalogItemPath(engineID, bucket, objectPath), plugin.ReadOptions{})
 }
 
 func buildObjectStreamURL(engineID uint, objectKey string) string {

@@ -9,7 +9,7 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-func FileSystemRootPaths(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]string, error) {
+func FileCatalogRootPaths(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]string, error) {
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)

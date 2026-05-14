@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/resource"
 )
 
-type objectStorageResourceReader struct {
+type objectCatalogResourceReader struct {
 	contentReader plugin.ContentReadableProvider
 	catalog       plugin.CatalogProvider
 	connInfo      plugin.ConnectionInfo
@@ -19,8 +19,8 @@ type objectStorageResourceReader struct {
 	bucket        string
 }
 
-func newObjectStorageResourceReader(contentReader plugin.ContentReadableProvider, catalog plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket string) *objectStorageResourceReader {
-	return &objectStorageResourceReader{
+func newObjectCatalogResourceReader(contentReader plugin.ContentReadableProvider, catalog plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket string) *objectCatalogResourceReader {
+	return &objectCatalogResourceReader{
 		contentReader: contentReader,
 		catalog:       catalog,
 		connInfo:      connInfo,
@@ -29,31 +29,31 @@ func newObjectStorageResourceReader(contentReader plugin.ContentReadableProvider
 	}
 }
 
-func (r *objectStorageResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
-	return openObjectStorageContent(ctx, r.contentReader, r.connInfo, r.engineID, r.bucket, r.objectKey(ref.Path))
+func (r *objectCatalogResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+	return openObjectCatalogContent(ctx, r.contentReader, r.connInfo, r.engineID, r.bucket, r.objectKey(ref.Path))
 }
 
-func (r *objectStorageResourceReader) OpenRange(ctx context.Context, ref resource.ResourceRef, offset, length int64) (io.ReadCloser, error) {
+func (r *objectCatalogResourceReader) OpenRange(ctx context.Context, ref resource.ResourceRef, offset, length int64) (io.ReadCloser, error) {
 	rangeReader, ok := r.contentReader.(plugin.RangeReadableProvider)
 	if !ok {
 		return nil, resource.ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, r.connInfo, objectStorageObjectCatalogPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
+	return rangeReader.OpenRange(ctx, r.connInfo, objectCatalogItemPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
 		Offset: offset,
 		Length: length,
 	})
 }
 
-func (r *objectStorageResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r *objectCatalogResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
 	return nil, nil
 }
 
-func (r *objectStorageResourceReader) List(ctx context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r *objectCatalogResourceReader) List(ctx context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
 	if r.catalog == nil {
 		return nil, resource.ErrResourceNotFound
 	}
 	scopePath := r.objectKey(scope.Path)
-	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, objectStorageDirectoryCatalogPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
+	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, objectCatalogDirectoryPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (r *objectStorageResourceReader) List(ctx context.Context, scope resource.R
 	return refs, nil
 }
 
-func (r *objectStorageResourceReader) objectKey(path string) string {
+func (r *objectCatalogResourceReader) objectKey(path string) string {
 	path = strings.Trim(path, "/")
 	bucket := strings.Trim(r.bucket, "/")
 	if bucket != "" && strings.HasPrefix(path, bucket+"/") {
@@ -81,15 +81,15 @@ func (r *objectStorageResourceReader) objectKey(path string) string {
 	return path
 }
 
-type fileSystemResourceReader struct {
+type fileCatalogResourceReader struct {
 	contentReader plugin.ContentReadableProvider
 	catalog       plugin.CatalogProvider
 	connInfo      plugin.ConnectionInfo
 	engineID      uint
 }
 
-func newFileSystemResourceReader(contentReader plugin.ContentReadableProvider, catalog plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint) *fileSystemResourceReader {
-	return &fileSystemResourceReader{
+func newFileCatalogResourceReader(contentReader plugin.ContentReadableProvider, catalog plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint) *fileCatalogResourceReader {
+	return &fileCatalogResourceReader{
 		contentReader: contentReader,
 		catalog:       catalog,
 		connInfo:      connInfo,
@@ -97,30 +97,30 @@ func newFileSystemResourceReader(contentReader plugin.ContentReadableProvider, c
 	}
 }
 
-func (r *fileSystemResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
-	return openFileSystemContent(ctx, r.contentReader, r.connInfo, r.engineID, ref.Path)
+func (r *fileCatalogResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+	return openFileCatalogContent(ctx, r.contentReader, r.connInfo, r.engineID, ref.Path)
 }
 
-func (r *fileSystemResourceReader) OpenRange(ctx context.Context, ref resource.ResourceRef, offset, length int64) (io.ReadCloser, error) {
+func (r *fileCatalogResourceReader) OpenRange(ctx context.Context, ref resource.ResourceRef, offset, length int64) (io.ReadCloser, error) {
 	rangeReader, ok := r.contentReader.(plugin.RangeReadableProvider)
 	if !ok {
 		return nil, resource.ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, r.connInfo, fileSystemCatalogPath(r.engineID, ref.Path), plugin.ReadOptions{
+	return rangeReader.OpenRange(ctx, r.connInfo, fileCatalogPath(r.engineID, ref.Path), plugin.ReadOptions{
 		Offset: offset,
 		Length: length,
 	})
 }
 
-func (r *fileSystemResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r *fileCatalogResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
 	return nil, nil
 }
 
-func (r *fileSystemResourceReader) List(ctx context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r *fileCatalogResourceReader) List(ctx context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
 	if r.catalog == nil {
 		return nil, resource.ErrResourceNotFound
 	}
-	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, fileSystemDirectoryCatalogPath(r.engineID, scope.Path), plugin.ListOptions{})
+	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, fileCatalogDirectoryPath(r.engineID, scope.Path), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

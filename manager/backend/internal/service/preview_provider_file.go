@@ -139,14 +139,14 @@ func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest
 			return nil, err
 		}
 		return &tablePreviewResourceContext{
-			reader: newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket),
+			reader: newObjectCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket),
 			bucket: bucket,
 			path:   objectKeyFromPreviewRequest(req, bucket),
 		}, nil
 	case "file":
 		path := fileSystemPathFromPreviewRequest(req)
 		return &tablePreviewResourceContext{
-			reader: newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
+			reader: newFileCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
 			bucket: req.Schema,
 			path:   path,
 		}, nil
@@ -425,7 +425,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	}
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	if previewRequestCatalogItemTerm(req) == "file" {
-		reader, err := rangeReader.OpenRange(ctx, connInfo, fileSystemCatalogPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
+		reader, err := rangeReader.OpenRange(ctx, connInfo, fileCatalogPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
 			Offset: anchor.ByteOffset,
 			Length: length,
 		})
@@ -443,7 +443,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		bucket = resolved
 	}
 	objectPath := objectKeyFromPreviewRequest(req, bucket)
-	reader, err := rangeReader.OpenRange(ctx, connInfo, objectStorageObjectCatalogPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
+	reader, err := rangeReader.OpenRange(ctx, connInfo, objectCatalogItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
 		Offset: anchor.ByteOffset,
 		Length: length,
 	})

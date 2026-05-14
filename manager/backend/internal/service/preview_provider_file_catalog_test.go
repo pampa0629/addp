@@ -37,9 +37,9 @@ func TestNFSPhysicalPath(t *testing.T) {
 	}
 }
 
-func TestFileSystemPreviewUsesMetaContainerAttributes(t *testing.T) {
+func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
-	enginePlugin := &recordingFileSystemPreviewPlugin{engineType: "nfs"}
+	enginePlugin := &recordingFileCatalogPreviewPlugin{engineType: "nfs"}
 	plugin.Register(enginePlugin)
 	defer func() {
 		if previousErr == nil {
@@ -49,8 +49,8 @@ func TestFileSystemPreviewUsesMetaContainerAttributes(t *testing.T) {
 		plugin.Unregister(enginePlugin.Type())
 	}()
 
-	provider := NewFileSystemPreviewProvider(nil, NewObjectContentRegistry())
-	LoadObjectContentPlugins(provider.(*fileSystemPreviewProvider).content, "../../plugins/content")
+	provider := NewFileCatalogPreviewProvider(nil, NewObjectContentRegistry())
+	LoadObjectContentPlugins(provider.(*fileCatalogPreviewProvider).content, "../../plugins/content")
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
 		Engine: &models.Engine{EngineType: "nfs", ID: 7},
@@ -103,37 +103,37 @@ func TestFileSystemPreviewUsesMetaContainerAttributes(t *testing.T) {
 	}
 }
 
-type recordingFileSystemPreviewPlugin struct {
+type recordingFileCatalogPreviewPlugin struct {
 	engineType        string
 	openContentCalls  int
 	describedItemPath plugin.CatalogPath
 }
 
-func (p *recordingFileSystemPreviewPlugin) Type() string         { return p.engineType }
-func (p *recordingFileSystemPreviewPlugin) DisplayName() string  { return p.engineType }
-func (p *recordingFileSystemPreviewPlugin) EngineOrigin() string { return "general" }
-func (p *recordingFileSystemPreviewPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+func (p *recordingFileCatalogPreviewPlugin) Type() string         { return p.engineType }
+func (p *recordingFileCatalogPreviewPlugin) DisplayName() string  { return p.engineType }
+func (p *recordingFileCatalogPreviewPlugin) EngineOrigin() string { return "general" }
+func (p *recordingFileCatalogPreviewPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
 	return nil
 }
-func (p *recordingFileSystemPreviewPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+func (p *recordingFileCatalogPreviewPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
 	return nil
 }
-func (p *recordingFileSystemPreviewPlugin) DefaultPort() int          { return 0 }
-func (p *recordingFileSystemPreviewPlugin) RequiredFields() []string  { return nil }
-func (p *recordingFileSystemPreviewPlugin) SensitiveFields() []string { return nil }
-func (p *recordingFileSystemPreviewPlugin) Capabilities() plugin.EngineCapabilities {
+func (p *recordingFileCatalogPreviewPlugin) DefaultPort() int          { return 0 }
+func (p *recordingFileCatalogPreviewPlugin) RequiredFields() []string  { return nil }
+func (p *recordingFileCatalogPreviewPlugin) SensitiveFields() []string { return nil }
+func (p *recordingFileCatalogPreviewPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p *recordingFileSystemPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
+func (p *recordingFileCatalogPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingFileSystemPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *recordingFileCatalogPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
 	return nil, nil
 }
-func (p *recordingFileSystemPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogNode, error) {
 	return nil, nil
 }
-func (p *recordingFileSystemPreviewPlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+func (p *recordingFileCatalogPreviewPlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
 	p.describedItemPath = path
 	now := time.Now()
 	return &plugin.ItemMetadata{
@@ -149,7 +149,7 @@ func (p *recordingFileSystemPreviewPlugin) DescribeItem(_ context.Context, _ plu
 		UpdatedAt: &now,
 	}, nil
 }
-func (p *recordingFileSystemPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *recordingFileCatalogPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openContentCalls++
 	return io.NopCloser(strings.NewReader("unused")), nil
 }

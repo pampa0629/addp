@@ -1,6 +1,6 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`container-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`container-preview.js`、`object-catalog-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
@@ -13,7 +13,7 @@
   "scripts": [
     "/plugins/table-preview.js",
     "/plugins/container-preview.js",
-    "/plugins/object-storage-preview.js",
+    "/plugins/object-catalog-preview.js",
     "/plugins/geojson-preview.js",
     "/plugins/image-preview.js",
     "/plugins/json-preview.js",
@@ -222,7 +222,7 @@ canHandle: (data) => {
 }
 ```
 
-### 对象存储模式 (mode: 'object')
+### 对象 catalog模式 (mode: 'object')
 
 ```javascript
 {
@@ -287,7 +287,7 @@ manager/frontend/
 │       ├── README.md                # 本文件
 │       ├── table-preview.js         # 内置表格预览
 │       ├── container-preview.js     # 容器 children 预览
-│       ├── object-storage-preview.js# 对象存储树/目录
+│       ├── object-catalog-preview.js# 对象 catalog 树/目录
 │       ├── geojson-preview.js       # GeoJSON 预览
 │       ├── image-preview.js         # 图片预览（含 BMP）
 │       ├── json-preview.js          # JSON 预览

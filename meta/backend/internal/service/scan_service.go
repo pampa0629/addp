@@ -24,23 +24,23 @@ import (
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                   *gorm.DB
-	repo                 *metaRepo.ScanRepository  // 数据访问层
-	dbScanService        *DatabaseScanService      // 数据库扫描服务
-	nosqlScanService     *NoSQLScanService         // NoSQL 数据库扫描服务
-	objectScanService    *ObjectStorageScanService // 对象存储扫描服务
-	fsScanService        *FileSystemScanService    // 文件系统扫描服务
-	metadataQueryService *MetadataQueryService     // 元数据查询服务（独立）
-	engineService        *EngineService
-	config               *config.Config
-	log                  *slog.Logger
-	indexer              *search.Indexer
-	indexerService       *IndexerService              // 索引服务（独立）
-	spatialService       *SpatialMetadataService      // 空间元数据服务（独立）
-	scanEventPublisher   *events.ScanEventPublisher   // 扫描事件发布器
-	metadataExtractor    *extractor.MetadataExtractor // 元数据提取器
-	dedupService         *ScanDedupService            // 扫描去重服务（可选）
-	immediateRecorder    *scantask.ImmediateExecutionRecorder
+	db                       *gorm.DB
+	repo                     *metaRepo.ScanRepository  // 数据访问层
+	dbScanService            *DatabaseScanService      // 数据库扫描服务
+	nosqlScanService         *NoSQLScanService         // NoSQL 数据库扫描服务
+	objectCatalogScanService *ObjectCatalogScanService // 对象 catalog 扫描服务
+	fileCatalogScanService   *FileCatalogScanService   // 文件 catalog 扫描服务
+	metadataQueryService     *MetadataQueryService     // 元数据查询服务（独立）
+	engineService            *EngineService
+	config                   *config.Config
+	log                      *slog.Logger
+	indexer                  *search.Indexer
+	indexerService           *IndexerService              // 索引服务（独立）
+	spatialService           *SpatialMetadataService      // 空间元数据服务（独立）
+	scanEventPublisher       *events.ScanEventPublisher   // 扫描事件发布器
+	metadataExtractor        *extractor.MetadataExtractor // 元数据提取器
+	dedupService             *ScanDedupService            // 扫描去重服务（可选）
+	immediateRecorder        *scantask.ImmediateExecutionRecorder
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -80,11 +80,11 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 NoSQLScanService（使用独立服务，无循环依赖）
 	s.nosqlScanService = NewNoSQLScanService(db, log, nil, repo, indexerService)
 
-	// 创建 ObjectStorageScanService（使用独立服务，无循环依赖）
-	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
+	// 创建 ObjectCatalogScanService（使用独立服务，无循环依赖）
+	s.objectCatalogScanService = NewObjectCatalogScanService(db, log, repo, metadataExtractor, indexerService)
 
-	// 创建 FileSystemScanService
-	s.fsScanService = NewFileSystemScanService(db, log, repo, indexerService)
+	// 创建 FileCatalogScanService
+	s.fileCatalogScanService = NewFileCatalogScanService(db, log, repo, indexerService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
@@ -648,16 +648,16 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 	return totalDatabases, totalCollections, totalFields, nil
 }
 
-// scanFileSystemResourceWithReporter 扫描文件系统资源。
-func (s *ScanService) scanFileSystemResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
-	roots, items, err := s.fsScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, reporter)
+// scanFileCatalogResourceWithReporter 扫描文件 catalog 资源。
+func (s *ScanService) scanFileCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+	roots, items, err := s.fileCatalogScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 	return roots, items, 0, nil
 }
 
-func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanObjectCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	// 标准化 scanDepth
 	if scanDepth == "" {
 		scanDepth = "deep"
@@ -667,8 +667,8 @@ func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonMode
 		reporter.SetTotal(len(objectPaths))
 	}
 
-	// 调用 ObjectStorageScanService 进行扫描
-	buckets, objects, err := s.objectScanService.ScanPaths(
+	// 调用 ObjectCatalogScanService 进行扫描
+	buckets, objects, err := s.objectCatalogScanService.ScanPaths(
 		resource,
 		tenantID,
 		objectPaths,

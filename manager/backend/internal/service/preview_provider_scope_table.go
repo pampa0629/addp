@@ -190,9 +190,9 @@ func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentR
 		if err != nil {
 			return nil, err
 		}
-		return newObjectStorageResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
+		return newObjectCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
 	}
-	return newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
+	return newFileCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
 }
 
 func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {

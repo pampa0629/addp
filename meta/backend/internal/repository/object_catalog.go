@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (r *ScanRepository) EnsureObjectPrefixPath(
+func (r *ScanRepository) EnsureObjectCatalogPrefixPath(
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
 	scanPathPrefix string,
@@ -38,7 +38,7 @@ func (r *ScanRepository) EnsureObjectPrefixPath(
 	return currentParent, nil
 }
 
-func (r *ScanRepository) EnsureObjectPrefixRelativePath(
+func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	prefix string,
@@ -85,7 +85,7 @@ func (r *ScanRepository) EnsureObjectPrefixRelativePath(
 	return current, created, nil
 }
 
-func (r *ScanRepository) SoftDeleteObjectItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
+func (r *ScanRepository) SoftDeleteObjectCatalogItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
 	if len(scannedFingerprints) == 0 {
 		return nil, nil
 	}
@@ -111,7 +111,7 @@ func (r *ScanRepository) SoftDeleteObjectItemsMissingFingerprints(tenantID, engi
 	return deleted, nil
 }
 
-func (r *ScanRepository) FinalizeObjectPrefixNode(node *models.MetaNode, itemCount int, totalSize int64) error {
+func (r *ScanRepository) FinalizeObjectCatalogPrefixNode(node *models.MetaNode, itemCount int, totalSize int64) error {
 	now := time.Now()
 	return r.db.Model(node).Updates(map[string]interface{}{
 		"item_count":       itemCount,

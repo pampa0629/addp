@@ -1,11 +1,11 @@
 (function () {
-  const COMPONENT_KEY = 'ObjectStoragePreview'
+  const COMPONENT_KEY = 'ObjectCatalogPreview'
 
   const components = window.DataExplorerPluginComponents || {}
   const component = components[COMPONENT_KEY]
 
   if (!component) {
-    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 object-storage 注册`)
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 object-catalog 注册`)
     return
   }
 
@@ -16,7 +16,7 @@
       : (plugin) => queue.push(plugin)
 
   register({
-    name: 'object-storage',
+    name: 'object-catalog',
     component,
     canHandle: (data = {}) => {
       const mode = (data.mode || '').toLowerCase()
@@ -24,7 +24,7 @@
       const nodeType = (object.node_type || '').toLowerCase()
 
       if (mode === 'node') {
-        // 处理对象存储容器节点和数据库结构节点（schema/database）
+        // 处理对象 catalog容器节点和数据库结构节点（schema/database）
         return ['directory', 'prefix', 'bucket', 'schema', 'database'].includes(nodeType)
       }
 
@@ -45,5 +45,5 @@
     priority: 90
   })
 
-  console.log('📦 Object Storage 预览插件已注册')
+  console.log('📦 Object Catalog 预览插件已注册')
 })()

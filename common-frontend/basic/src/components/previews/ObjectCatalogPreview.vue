@@ -1,5 +1,5 @@
 <template>
-  <div class="object-storage-preview" :style="{ gridTemplateRows: metaHeight + 'px 8px 1fr' }">
+  <div class="object-catalog-preview" :style="{ gridTemplateRows: metaHeight + 'px 8px 1fr' }">
     <!-- 元数据区域 -->
     <div class="object-meta">
       <div class="meta-row">
@@ -133,7 +133,7 @@ const parseMaybeJSON = (value) => {
     try {
       return JSON.parse(value)
     } catch (error) {
-      console.warn('对象存储预览: JSON 解析失败', error)
+      console.warn('对象 catalog预览: JSON 解析失败', error)
       return null
     }
   }
@@ -219,7 +219,7 @@ const handleRowDblclick = (row) => {
 </script>
 
 <style scoped>
-.object-storage-preview {
+.object-catalog-preview {
   display: grid;
   grid-template-rows: 140px 8px 1fr;
   gap: 0;

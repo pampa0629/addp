@@ -7,10 +7,10 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func TestFileSystemDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
+func TestFileCatalogDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileSystemDetectedItemName("/shp", &DetectedItem{
+	name, fullName := FileCatalogDetectedItemName("/shp", &DetectedItem{
 		Organization: dataitem.OrganizationMulti,
 		EntryPath:    "/shp/farmland.shp",
 	})
@@ -23,10 +23,10 @@ func TestFileSystemDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	}
 }
 
-func TestFileSystemDetectedItemNameKeepsWholeScopePath(t *testing.T) {
+func TestFileCatalogDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileSystemDetectedItemName("/lake/sales", &DetectedItem{
+	name, fullName := FileCatalogDetectedItemName("/lake/sales", &DetectedItem{
 		Organization: dataitem.OrganizationWhole,
 		EntryPath:    "/lake/sales/_metadata",
 	})

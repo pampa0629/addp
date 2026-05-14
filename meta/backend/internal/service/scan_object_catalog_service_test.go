@@ -21,7 +21,7 @@ import (
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	t.Parallel()
 
-	svc := &ObjectStorageScanService{log: slog.Default()}
+	svc := &ObjectCatalogScanService{log: slog.Default()}
 	meta := format.ObjectMetadata{
 		Bucket:    "addp",
 		Path:      "datasets/converted.json",
@@ -30,7 +30,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 	item := metaitemForJSONDocument(meta)
 
-	attrs, err := svc.enrichObjectStorageTableFileAttributes(
+	attrs, err := svc.enrichObjectCatalogTableFileAttributes(
 		context.Background(),
 		staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
 		nil,
@@ -40,7 +40,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 		false,
 	)
 	if err != nil {
-		t.Fatalf("enrichObjectStorageTableFileAttributes() error = %v", err)
+		t.Fatalf("enrichObjectCatalogTableFileAttributes() error = %v", err)
 	}
 	itemAttrs := attrs["item"].(map[string]interface{})
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) || itemAttrs["format"] != string(format.FormatJSON) {
@@ -53,10 +53,10 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 }
 
-func TestEnsureObjectPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
-	db := openObjectStorageScanTestDB(t)
+func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
-	svc := &ObjectStorageScanService{
+	svc := &ObjectCatalogScanService{
 		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		repo: repo,
 	}
@@ -67,7 +67,7 @@ func TestEnsureObjectPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
 	}
 
 	stats := map[uint]*scanstats.NodeAggregate{}
-	parentNode, err := svc.ensureObjectPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
+	parentNode, err := svc.ensureObjectCatalogPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
 	if err != nil {
 		t.Fatalf("ensure prefix nodes: %v", err)
 	}
@@ -84,10 +84,10 @@ func TestEnsureObjectPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
 }
 
 func metaitemForJSONDocument(meta format.ObjectMetadata) *metaitem.DetectedItem {
-	return metaitem.InferObjectStorageDataItem(meta, "converted.json")
+	return metaitem.InferObjectCatalogDataItem(meta, "converted.json")
 }
 
-func openObjectStorageScanTestDB(t *testing.T) *gorm.DB {
+func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

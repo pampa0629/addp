@@ -9,7 +9,7 @@ plugins/
 ├── README.md                    # 本文件
 ├── providers/                   # 预览提供程序配置（PreviewProvider）
 │   ├── 010_relational.json     # 关系型数据库表预览
-│   ├── 020_builtin_object_storage.json  # 对象存储预览
+│   ├── 020_builtin_object_catalog.json  # 对象 catalog 预览
 │   └── 030_builtin_schema_node.json     # Schema 节点预览
 └── content/                     # 内容处理器配置（ObjectContentHandler）
     ├── README.md
@@ -24,7 +24,7 @@ plugins/
 
 **位置**: `providers/` 目录
 **职责**: 决定**能不能预览**某种数据源/节点类型
-**处理层级**: 数据源级别（数据库表、对象存储、Schema 节点等）
+**处理层级**: 数据源级别（数据库表、对象 catalog、Schema 节点等）
 
 **配置示例**:
 ```json
@@ -78,7 +78,7 @@ PreviewResolver 根据 Meta 标准属性选择 Provider（providers/ 目录）
   ↓
 Provider 执行对应预览
   ↓
-如果是对象存储，调用 ObjectContentRegistry（content/ 目录）
+如果是对象 catalog，调用 ObjectContentRegistry（content/ 目录）
   ↓
 ContentHandler 优先根据 Meta 标准 format 匹配，必要时再使用扩展名和 Content-Type
 ```

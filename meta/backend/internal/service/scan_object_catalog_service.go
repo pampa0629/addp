@@ -15,42 +15,40 @@ import (
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/objectstore"
+	"github.com/addp/meta/internal/objectcatalog"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/scanstats"
 	"gorm.io/gorm"
 )
 
-// ObjectStorageScanService 对象存储扫描服务
-// 职责：扫描 MinIO、S3 等对象存储的 Bucket 和 Object
-type ObjectStorageScanService struct {
+// ObjectCatalogScanService 对象 catalog 扫描服务
+// 职责：按插件 catalog 语义扫描 bucket 和 object 项
+type ObjectCatalogScanService struct {
 	db                *gorm.DB
 	log               *slog.Logger
 	repo              *metaRepo.ScanRepository     // 数据访问层
 	metadataExtractor *extractor.MetadataExtractor // 元数据提取器
 	indexer           *IndexerService              // 索引服务
-	clientManager     *objectstore.ClientManager
 	inlineExtractor   *extractor.InlineObjectMetadataExtractor
 }
 
-// NewObjectStorageScanService 创建对象存储扫描服务
-func NewObjectStorageScanService(
+// NewObjectCatalogScanService 创建对象 catalog 扫描服务
+func NewObjectCatalogScanService(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
 	metadataExtractor *extractor.MetadataExtractor,
 	indexer *IndexerService,
-) *ObjectStorageScanService {
-	service := &ObjectStorageScanService{
+) *ObjectCatalogScanService {
+	service := &ObjectCatalogScanService{
 		db:                db,
 		log:               log,
 		repo:              repo,
 		metadataExtractor: metadataExtractor,
 		indexer:           indexer,
-		clientManager:     objectstore.NewClientManager(db),
 	}
-	service.inlineExtractor = extractor.NewInlineObjectMetadataExtractor(service.clientManager, log)
+	service.inlineExtractor = extractor.NewInlineObjectMetadataExtractor(log)
 	return service
 }
 
@@ -58,8 +56,8 @@ func NewObjectStorageScanService(
 // 公共接口方法
 // ============================================================================
 
-// ScanPaths 扫描对象存储路径
-func (s *ObjectStorageScanService) ScanPaths(
+// ScanPaths 扫描对象 catalog 路径
+func (s *ObjectCatalogScanService) ScanPaths(
 	resource *commonModels.Engine,
 	tenantID uint,
 	objectPaths, fallback []string,
@@ -92,7 +90,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 
 	// 如果仍然没有路径，列出所有 buckets
 	if len(paths) == 0 {
-		buckets, err := objectstore.ListBucketNodes(context.Background(), resource, catalogProvider)
+		buckets, err := objectcatalog.ListBucketNodes(context.Background(), resource, catalogProvider)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
 		}
@@ -113,7 +111,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePathsWithCatalog(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter, itemTerm)
+	buckets, objects, err := s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter, itemTerm)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -125,8 +123,8 @@ func (s *ObjectStorageScanService) ScanPaths(
 // 核心扫描方法
 // ============================================================================
 
-// scanObjectStoragePathsWithCatalog 使用 CatalogProvider 扫描对象存储路径
-func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
+// scanObjectCatalogPaths 使用 CatalogProvider 扫描对象 catalog 路径
+func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	catalogProvider plugin.CatalogProvider,
@@ -135,7 +133,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 	reporter ScanProgressReporter,
 	itemTerm string,
 ) (int, int, error) {
-	s.log.Info("进入 scanObjectStoragePathsWithCatalog",
+	s.log.Info("进入 scanObjectCatalogPaths",
 		"engine_id", engineID,
 		"tenant_id", tenantID,
 		"paths_count", len(paths),
@@ -161,7 +159,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 		}
 		bucketName, prefix := metapath.SplitObjectPath(rawPath)
 		if bucketName == "" {
-			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
+			s.log.Warn("对象 catalog 路径缺少 bucket，跳过刷新", "path", rawPath)
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 缺少 bucket 信息，已跳过", rawPath))
 			}
@@ -172,9 +170,9 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 			continue
 		}
 
-		objects, err := objectstore.ListObjects(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
+		objects, err := objectcatalog.ListObjects(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
 		if err != nil {
-			s.log.Warn("对象存储路径扫描失败",
+			s.log.Warn("对象 catalog 路径扫描失败",
 				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"path", rawPath,
@@ -190,7 +188,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 			continue
 		}
 
-		metas := objectstore.ConvertObjectsToMetadata(context.Background(), objects, bucketName, isDeepScan, resource, s.inlineExtractor)
+		metas := objectcatalog.ConvertObjectsToMetadata(context.Background(), objects, bucketName, isDeepScan, resource, s.inlineExtractor)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
@@ -239,7 +237,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 			"scanDepth", scanDepth)
 		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
-			s.log.Error("对象存储元数据持久化失败",
+			s.log.Error("对象 catalog 元数据持久化失败",
 				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"bucket", bucketName,
@@ -260,7 +258,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 			if bucketNodes[bucketName] == nil {
 				continue
 			}
-			deletedItems, err := s.repo.SoftDeleteObjectItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints)
+			deletedItems, err := s.repo.SoftDeleteObjectCatalogItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints)
 			if err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
 					"bucket", bucketName,
@@ -307,7 +305,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 
 		// 更新子目录节点的统计信息和扫描状态
 		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"completed"
-		if err := s.repo.FinalizeObjectPrefixNode(agg.Node, agg.ItemCount, agg.TotalSize); err != nil {
+		if err := s.repo.FinalizeObjectCatalogPrefixNode(agg.Node, agg.ItemCount, agg.TotalSize); err != nil {
 			s.log.Warn("更新子目录节点统计信息失败",
 				"node_id", nodeID,
 				"node_name", agg.Node.Name,
@@ -323,7 +321,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 		}
 	}
 
-	s.log.Info("对象存储路径扫描完成",
+	s.log.Info("对象 catalog 路径扫描完成",
 		"buckets", totalBuckets,
 		"objects", totalObjects,
 	)
@@ -353,7 +351,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithCatalog(
 //   - scannedFingerprints: 已扫描对象的指纹集合
 //
 // 返回：(持久化对象数量, error)
-func (s *ObjectStorageScanService) persistObjectMetas(
+func (s *ObjectCatalogScanService) persistObjectMetas(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
@@ -381,7 +379,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		s.log.Info("处理scanPathPrefix建立基础父节点",
 			"scanPathPrefix", scanPathPrefix,
 			"bucket", bucketNode.Name)
-		node, err := s.repo.EnsureObjectPrefixPath(tenantID, engineID, bucketNode, scanPathPrefix)
+		node, err := s.repo.EnsureObjectCatalogPrefixPath(tenantID, engineID, bucketNode, scanPathPrefix)
 		if err != nil {
 			return objects, err
 		}
@@ -393,11 +391,11 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
-	compositeSkipPaths, compositeItems, compositeWarnings := metaitem.DetectObjectStorageCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+	compositeSkipPaths, compositeItems, compositeWarnings := metaitem.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
 	for _, warning := range compositeWarnings {
-		s.log.Warn("对象存储组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
+		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
-	compositeCount, err := s.persistObjectStorageCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
+	compositeCount, err := s.persistObjectCatalogCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
 	if err != nil {
 		return objects, err
 	}
@@ -429,7 +427,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"scanPathPrefix", scanPathPrefix,
 			"basePrefixNode", basePrefixNode.Name)
 
-		pathPlan := metaitem.PlanObjectStorageRelativePath(trimmed, scanPathPrefix)
+		pathPlan := metaitem.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
 		if pathPlan.ExactBase && meta.NodeType == "prefix" {
 			scanstats.EnsureNodeAggregate(stats, basePrefixNode)
 		}
@@ -475,7 +473,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			continue
 		}
 
-		itemPlan := metaitem.PlanObjectStorageSingleItem(engineID, meta, trimmed, itemTerm)
+		itemPlan := metaitem.PlanObjectCatalogSingleItem(engineID, meta, trimmed, itemTerm)
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
@@ -539,7 +537,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		if tableAttrs, err := s.enrichObjectStorageTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, strings.EqualFold(scanDepth, "deep")); err != nil {
+		if tableAttrs, err := s.enrichObjectCatalogTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, strings.EqualFold(scanDepth, "deep")); err != nil {
 			s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
 		} else if tableAttrs != nil {
 			metaitem.MergeAttributeMaps(enhancedAttrs, tableAttrs)
@@ -584,10 +582,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	return objects, nil
 }
 
-func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
+func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
-	items []metaitem.ObjectStorageCompositeItem,
+	items []metaitem.ObjectCatalogCompositeItem,
 	stats map[uint]*scanstats.NodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
@@ -599,7 +597,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		if composite.Item == nil {
 			continue
 		}
-		itemPlan, ok := metaitem.PlanObjectStorageCompositeItem(engineID, composite, itemTerm)
+		itemPlan, ok := metaitem.PlanObjectCatalogCompositeItem(engineID, composite, itemTerm)
 		if !ok {
 			continue
 		}
@@ -607,7 +605,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
-		parentNode, err := s.ensureObjectPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
+		parentNode, err := s.ensureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
 		if err != nil {
 			return count, err
 		}
@@ -634,7 +632,7 @@ func (s *ObjectStorageScanService) persistObjectStorageCompositeItems(
 	return count, nil
 }
 
-func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
+func (s *ObjectCatalogScanService) ensureObjectCatalogPrefixNodes(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	parentPath string,
@@ -645,7 +643,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	if basePrefixNode != nil {
 		parent = basePrefixNode
 	}
-	parentNode, createdNodes, err := s.repo.EnsureObjectPrefixRelativePath(tenantID, engineID, bucketNode, parent, parentPath, scanPathPrefix)
+	parentNode, createdNodes, err := s.repo.EnsureObjectCatalogPrefixRelativePath(tenantID, engineID, bucketNode, parent, parentPath, scanPathPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -655,7 +653,7 @@ func (s *ObjectStorageScanService) ensureObjectPrefixNodes(
 	return parentNode, nil
 }
 
-func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
+func (s *ObjectCatalogScanService) enrichObjectCatalogTableFileAttributes(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -696,20 +694,6 @@ func (s *ObjectStorageScanService) enrichObjectStorageTableFileAttributes(
 		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
 	}
 	return attrs, nil
-}
-
-// ============================================================================
-// MinIO 客户端管理
-// ============================================================================
-
-// FetchObjectContent 获取对象内容
-func (s *ObjectStorageScanService) FetchObjectContent(
-	ctx context.Context,
-	engineID, tenantID uint,
-	bucket, objectPath string,
-	maxSize int64,
-) ([]byte, string, error) {
-	return s.clientManager.FetchObjectContent(ctx, engineID, tenantID, bucket, objectPath, maxSize)
 }
 
 func objectCatalogPathForContent(engineID uint, bucket, objectPath string) plugin.CatalogPath {

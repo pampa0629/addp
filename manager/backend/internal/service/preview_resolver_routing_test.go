@@ -91,10 +91,10 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	}
 }
 
-func TestResolveProviderByMetaUsesFileTableForFileSystemTableFormat(t *testing.T) {
+func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
-	registry.Register(namedPreviewProvider{name: "builtin:filesystem"})
+	registry.Register(namedPreviewProvider{name: "builtin:file-catalog"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
@@ -121,7 +121,7 @@ func TestResolveProviderByMetaUsesFileTableForFileSystemTableFormat(t *testing.T
 func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
-	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
+	registry.Register(namedPreviewProvider{name: "builtin:object-catalog"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
@@ -149,7 +149,7 @@ func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
-	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
+	registry.Register(namedPreviewProvider{name: "builtin:object-catalog"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{

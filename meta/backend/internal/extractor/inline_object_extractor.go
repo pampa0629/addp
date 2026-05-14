@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"time"
 
@@ -9,17 +10,14 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/objectstore"
-	"github.com/minio/minio-go/v7"
 )
 
 type InlineObjectMetadataExtractor struct {
-	clientManager *objectstore.ClientManager
-	log           *slog.Logger
+	log *slog.Logger
 }
 
-func NewInlineObjectMetadataExtractor(clientManager *objectstore.ClientManager, log *slog.Logger) *InlineObjectMetadataExtractor {
-	return &InlineObjectMetadataExtractor{clientManager: clientManager, log: log}
+func NewInlineObjectMetadataExtractor(log *slog.Logger) *InlineObjectMetadataExtractor {
+	return &InlineObjectMetadataExtractor{log: log}
 }
 
 func (e *InlineObjectMetadataExtractor) ShouldExtract(key, contentType string, sizeBytes int64) bool {
@@ -58,8 +56,9 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	size int64,
 	lastModified time.Time,
 	etag string,
+	openContent func() (io.ReadCloser, error),
 ) map[string]interface{} {
-	if e == nil || e.clientManager == nil {
+	if e == nil || openContent == nil {
 		return nil
 	}
 
@@ -78,23 +77,7 @@ func (e *InlineObjectMetadataExtractor) Extract(
 		return nil
 	}
 
-	client, err := e.clientManager.GetByResource(resource)
-	if err != nil {
-		if e.log != nil {
-			e.log.Warn("创建对象存储客户端失败",
-				"engine_id", resource.ID,
-				"error", err)
-		}
-		return nil
-	}
-
-	const headerSize = 16 * 1024
-	opts := minio.GetObjectOptions{}
-	if size > headerSize {
-		opts.SetRange(0, headerSize-1)
-	}
-
-	obj, err := client.GetObject(ctx, bucket, key, opts)
+	obj, err := openContent()
 	if err != nil {
 		if e.log != nil {
 			e.log.Warn("获取对象内容失败",

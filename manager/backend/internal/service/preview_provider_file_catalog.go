@@ -14,23 +14,23 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-// fileSystemPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
+// fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
 // 使用 CatalogProvider / ItemMetadataProvider / ContentReadableProvider 读取，不依赖具体客户端。
-type fileSystemPreviewProvider struct {
+type fileCatalogPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	content      *ObjectContentRegistry
 }
 
-func NewFileSystemPreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
-	return &fileSystemPreviewProvider{
+func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
+	return &fileCatalogPreviewProvider{
 		metadataRepo: metadataRepo,
 		content:      content,
 	}
 }
 
-func (p *fileSystemPreviewProvider) Name() string { return "builtin:filesystem" }
+func (p *fileCatalogPreviewProvider) Name() string { return "builtin:file-catalog" }
 
-func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	engine := req.Engine
 	// schema = locator path[0]，table = locator path[1:] 的 join
 	// NFS 物理路径 = "/" + schema + "/" + table（schema 为空时返回 "/"）
@@ -85,7 +85,7 @@ func (p *fileSystemPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	return p.previewFile(ctx, metadataProvider, contentReader, connInfo, engine, rootName, fullPath, preview)
 }
 
-func (p *fileSystemPreviewProvider) previewDirectory(
+func (p *fileCatalogPreviewProvider) previewDirectory(
 	ctx context.Context,
 	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
@@ -100,7 +100,7 @@ func (p *fileSystemPreviewProvider) previewDirectory(
 	preview.Object.NodeType = "directory"
 	preview.Object.ContentType = "application/x-directory"
 
-	children, err := listFileSystemPreviewChildren(ctxTimeout, catalogProvider, connInfo, engine, dirPath)
+	children, err := listFileCatalogPreviewChildren(ctxTimeout, catalogProvider, connInfo, engine, dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list directory via catalog: %w", err)
 	}
@@ -109,7 +109,7 @@ func (p *fileSystemPreviewProvider) previewDirectory(
 	return preview, nil
 }
 
-func (p *fileSystemPreviewProvider) previewFile(
+func (p *fileCatalogPreviewProvider) previewFile(
 	ctx context.Context,
 	metadataProvider plugin.ItemMetadataProvider,
 	contentReader plugin.ContentReadableProvider,
@@ -121,7 +121,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	meta, err := getFileSystemPreviewMetadata(ctxTimeout, metadataProvider, connInfo, engine, filePath)
+	meta, err := getFileCatalogPreviewMetadata(ctxTimeout, metadataProvider, connInfo, engine, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
@@ -168,7 +168,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 			}
 			if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
+					return openFileCatalogContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 				}
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, streamer)
 				if err != nil {
@@ -186,7 +186,7 @@ func (p *fileSystemPreviewProvider) previewFile(
 					if limit <= 0 {
 						limit = maxTextPreviewBytes
 					}
-					rc, err := openFileSystemContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
+					rc, err := openFileCatalogContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 					if err != nil {
 						return nil, false, err
 					}
@@ -211,14 +211,14 @@ func (p *fileSystemPreviewProvider) previewFile(
 	return preview, nil
 }
 
-func openFileSystemContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
+func openFileCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
 	if contentReader != nil {
-		return contentReader.OpenContent(ctx, connInfo, fileSystemCatalogPath(engineID, path), plugin.ReadOptions{})
+		return contentReader.OpenContent(ctx, connInfo, fileCatalogPath(engineID, path), plugin.ReadOptions{})
 	}
 	return nil, fs.ErrNotExist
 }
 
-func fileSystemCatalogPath(engineID uint, path string) plugin.CatalogPath {
+func fileCatalogPath(engineID uint, path string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
@@ -230,7 +230,7 @@ func fileSystemCatalogPath(engineID uint, path string) plugin.CatalogPath {
 	}
 }
 
-func fileSystemDirectoryCatalogPath(engineID uint, path string) plugin.CatalogPath {
+func fileCatalogDirectoryPath(engineID uint, path string) plugin.CatalogPath {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" || trimmed == "." {
 		return plugin.CatalogPath{
@@ -254,8 +254,8 @@ func fileSystemDirectoryCatalogPath(engineID uint, path string) plugin.CatalogPa
 	}
 }
 
-func listFileSystemPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileSystemDirectoryCatalogPath(engine.ID, dirPath), plugin.ListOptions{})
+func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogDirectoryPath(engine.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -278,11 +278,11 @@ func listFileSystemPreviewChildren(ctx context.Context, catalogProvider plugin.C
 	return children, nil
 }
 
-func getFileSystemPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.FileMetadata, error) {
+func getFileCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.FileMetadata, error) {
 	if metadataProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, fileSystemCatalogPath(engine.ID, path), plugin.MetadataOptions{})
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, fileCatalogPath(engine.ID, path), plugin.MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}

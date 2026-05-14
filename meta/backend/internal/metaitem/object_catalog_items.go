@@ -16,34 +16,34 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-type ObjectStorageCompositeItem struct {
+type ObjectCatalogCompositeItem struct {
 	Bucket string
 	Prefix string
 	Item   *DetectedItem
 	Claims ResourceClaimSet
 }
 
-type ObjectStorageCompositeDetectionError struct {
+type ObjectCatalogCompositeDetectionError struct {
 	Bucket string
 	Prefix string
 	Err    error
 }
 
-func DetectObjectStorageCompositeItems(
+func DetectObjectCatalogCompositeItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	metas []format.ObjectMetadata,
-) (map[string]bool, []ObjectStorageCompositeItem, []ObjectStorageCompositeDetectionError) {
+) (map[string]bool, []ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
 	if contentReader == nil {
 		return skipPaths, nil, nil
 	}
 
 	groups := objectMetasByParentPrefix(metas)
-	items := make([]ObjectStorageCompositeItem, 0)
-	warnings := make([]ObjectStorageCompositeDetectionError, 0)
+	items := make([]ObjectCatalogCompositeItem, 0)
+	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	groupKeys := make([]string, 0, len(groups))
 	for groupKey := range groups {
 		groupKeys = append(groupKeys, groupKey)
@@ -77,7 +77,7 @@ func DetectObjectStorageCompositeItems(
 			Files:         files,
 		})
 		if err != nil {
-			warnings = append(warnings, ObjectStorageCompositeDetectionError{
+			warnings = append(warnings, ObjectCatalogCompositeDetectionError{
 				Bucket: bucket,
 				Prefix: prefix,
 				Err:    err,
@@ -96,7 +96,7 @@ func DetectObjectStorageCompositeItems(
 			if detected == nil {
 				continue
 			}
-			items = append(items, ObjectStorageCompositeItem{
+			items = append(items, ObjectCatalogCompositeItem{
 				Bucket: bucket,
 				Prefix: prefix,
 				Item:   detected,
@@ -107,7 +107,7 @@ func DetectObjectStorageCompositeItems(
 	return skipPaths, items, warnings
 }
 
-func InferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *DetectedItem {
+func InferObjectCatalogDataItem(meta format.ObjectMetadata, objectName string) *DetectedItem {
 	physicalPath := meta.Bucket + "/" + meta.Path
 	return InferSingleResource(SingleResourceInput{
 		Name:   objectName,
@@ -117,7 +117,7 @@ func InferObjectStorageDataItem(meta format.ObjectMetadata, objectName string) *
 	})
 }
 
-func ObjectStorageCompositeName(composite ObjectStorageCompositeItem) (name, objectPath string) {
+func ObjectCatalogCompositeName(composite ObjectCatalogCompositeItem) (name, objectPath string) {
 	if composite.Item != nil {
 		switch composite.Item.Organization {
 		case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
@@ -138,7 +138,7 @@ func ObjectStorageCompositeName(composite ObjectStorageCompositeItem) (name, obj
 	return name, objectPath
 }
 
-func ObjectStorageCompositeMode(item *DetectedItem) string {
+func ObjectCatalogCompositeMode(item *DetectedItem) string {
 	if item == nil {
 		return "directory"
 	}
@@ -154,13 +154,13 @@ func ObjectStorageCompositeMode(item *DetectedItem) string {
 	}
 }
 
-type ObjectStorageRelativePathPlan struct {
+type ObjectCatalogRelativePathPlan struct {
 	Segments   []string
 	ExactBase  bool
 	SkipReason string
 }
 
-type ObjectStorageSingleItemPlan struct {
+type ObjectCatalogSingleItemPlan struct {
 	ItemType    string
 	ItemName    string
 	ObjectName  string
@@ -170,7 +170,7 @@ type ObjectStorageSingleItemPlan struct {
 	DataItem    *DetectedItem
 }
 
-type ObjectStorageCompositeItemPlan struct {
+type ObjectCatalogCompositeItemPlan struct {
 	ItemType    string
 	ItemName    string
 	ObjectPath  string
@@ -181,34 +181,34 @@ type ObjectStorageCompositeItemPlan struct {
 	Attributes  models.JSONMap
 }
 
-func PlanObjectStorageRelativePath(trimmedPath, scanPathPrefix string) ObjectStorageRelativePathPlan {
+func PlanObjectCatalogRelativePath(trimmedPath, scanPathPrefix string) ObjectCatalogRelativePathPlan {
 	trimmedPath = strings.Trim(trimmedPath, "/")
 	scanPathPrefix = strings.Trim(scanPathPrefix, "/")
 
 	switch {
 	case scanPathPrefix != "" && trimmedPath == scanPathPrefix:
-		return ObjectStorageRelativePathPlan{
+		return ObjectCatalogRelativePathPlan{
 			ExactBase:  true,
 			SkipReason: "trimmed==scanPathPrefix",
 		}
 	case scanPathPrefix != "" && strings.HasPrefix(trimmedPath, scanPathPrefix+"/"):
 		remaining := strings.TrimPrefix(trimmedPath, scanPathPrefix+"/")
-		return ObjectStorageRelativePathPlan{
-			Segments:   splitObjectStoragePathSegments(remaining),
+		return ObjectCatalogRelativePathPlan{
+			Segments:   splitObjectCatalogPathSegments(remaining),
 			SkipReason: "trimmed以scanPathPrefix/开头，去掉前缀",
 		}
 	case trimmedPath != "":
-		return ObjectStorageRelativePathPlan{
-			Segments: splitObjectStoragePathSegments(trimmedPath),
+		return ObjectCatalogRelativePathPlan{
+			Segments: splitObjectCatalogPathSegments(trimmedPath),
 		}
 	default:
-		return ObjectStorageRelativePathPlan{
+		return ObjectCatalogRelativePathPlan{
 			SkipReason: "空路径",
 		}
 	}
 }
 
-func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trimmedPath string, itemType string) ObjectStorageSingleItemPlan {
+func PlanObjectCatalogSingleItem(engineID uint, meta format.ObjectMetadata, trimmedPath string, itemType string) ObjectCatalogSingleItemPlan {
 	objectName := path.Base(strings.Trim(meta.Path, "/"))
 	if objectName == "" {
 		objectName = strings.Trim(trimmedPath, "/")
@@ -218,7 +218,7 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 		objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
 	}
 
-	dataItem := InferObjectStorageDataItem(meta, objectName)
+	dataItem := InferObjectCatalogDataItem(meta, objectName)
 
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	attrs := models.JSONMap{
@@ -240,7 +240,7 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	ApplyContainerSummary(attrs, dataItem)
 
 	fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
-	return ObjectStorageSingleItemPlan{
+	return ObjectCatalogSingleItemPlan{
 		ItemType:    itemType,
 		ItemName:    objectName,
 		ObjectName:  objectName,
@@ -251,12 +251,12 @@ func PlanObjectStorageSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	}
 }
 
-func PlanObjectStorageCompositeItem(engineID uint, composite ObjectStorageCompositeItem, itemType string) (ObjectStorageCompositeItemPlan, bool) {
+func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompositeItem, itemType string) (ObjectCatalogCompositeItemPlan, bool) {
 	if composite.Item == nil {
-		return ObjectStorageCompositeItemPlan{}, false
+		return ObjectCatalogCompositeItemPlan{}, false
 	}
 
-	itemName, objectPath := ObjectStorageCompositeName(composite)
+	itemName, objectPath := ObjectCatalogCompositeName(composite)
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 
@@ -267,9 +267,9 @@ func PlanObjectStorageCompositeItem(engineID uint, composite ObjectStorageCompos
 	metaattr.SetStorage(attrs, "bucket", composite.Bucket)
 	metaattr.SetStorage(attrs, "path", parentPath)
 	metaattr.SetStorage(attrs, "name", itemName)
-	metaattr.SetItem(attrs, "mode", ObjectStorageCompositeMode(composite.Item))
+	metaattr.SetItem(attrs, "mode", ObjectCatalogCompositeMode(composite.Item))
 
-	return ObjectStorageCompositeItemPlan{
+	return ObjectCatalogCompositeItemPlan{
 		ItemType:    itemType,
 		ItemName:    itemName,
 		ObjectPath:  objectPath,
@@ -352,7 +352,7 @@ func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []pl
 	return files
 }
 
-func splitObjectStoragePathSegments(pathValue string) []string {
+func splitObjectCatalogPathSegments(pathValue string) []string {
 	pathValue = strings.Trim(pathValue, "/")
 	if pathValue == "" {
 		return nil

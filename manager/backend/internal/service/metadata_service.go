@@ -447,7 +447,7 @@ func (s *MetadataService) StreamObject(
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
 	// 获取对象信息
-	meta, err := getObjectPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	meta, err := getObjectCatalogPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
 	}
@@ -506,9 +506,9 @@ func (s *MetadataService) StreamObject(
 	// 获取对象流
 	var reader io.ReadCloser
 	if readOptions.Length > 0 && rangeReader != nil {
-		reader, err = rangeReader.OpenRange(ctx, connInfo, objectStorageObjectCatalogPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = rangeReader.OpenRange(ctx, connInfo, objectCatalogItemPath(resource.ID, bucket, objectPath), readOptions)
 	} else {
-		reader, err = contentReader.OpenContent(ctx, connInfo, objectStorageObjectCatalogPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = contentReader.OpenContent(ctx, connInfo, objectCatalogItemPath(resource.ID, bucket, objectPath), readOptions)
 	}
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)

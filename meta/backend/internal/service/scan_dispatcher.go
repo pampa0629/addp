@@ -60,8 +60,8 @@ func (s *ScanService) scanDispatchers() map[string]scanDispatchFunc {
 		"tabular":  s.dispatchTabularScan,
 		"document": s.dispatchNoSQLScan,
 		"graph":    s.dispatchNoSQLScan,
-		"object":   s.dispatchObjectStorageScan,
-		"file":     s.dispatchFileSystemScan,
+		"object":   s.dispatchObjectCatalogScan,
+		"file":     s.dispatchFileCatalogScan,
 	}
 }
 
@@ -93,10 +93,10 @@ func (s *ScanService) dispatchNoSQLScan(ctx context.Context, enginePlugin plugin
 	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
 }
 
-func (s *ScanService) dispatchObjectStorageScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
 	_ = ctx
 	_ = enginePlugin
-	namespaces, items, fields, err := s.scanObjectStorageResourceWithReporter(
+	namespaces, items, fields, err := s.scanObjectCatalogResourceWithReporter(
 		req.Resource,
 		req.TenantID,
 		req.ObjectPaths,
@@ -106,23 +106,23 @@ func (s *ScanService) dispatchObjectStorageScan(ctx context.Context, enginePlugi
 	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
 }
 
-func (s *ScanService) dispatchFileSystemScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
 	paths := req.ObjectPaths
 	if req.Mode == scanDispatchAuto && len(paths) == 0 {
 		var err error
-		paths, err = metacatalog.FileSystemRootPaths(ctx, req.Resource, enginePlugin)
+		paths, err = metacatalog.FileCatalogRootPaths(ctx, req.Resource, enginePlugin)
 		if err != nil {
 			return scanDispatchResult{}, fmt.Errorf("failed to list roots: %w", err)
 		}
 		if len(paths) == 0 {
-			s.log.Info("文件系统资源无可扫描根节点，跳过扫描")
+			s.log.Info("文件 catalog 资源无可扫描根节点，跳过扫描")
 			return scanDispatchResult{}, nil
 		}
 		sort.Strings(paths)
-		s.log.Info("文件系统资源扫描开始", "root_count", len(paths), "roots", paths)
+		s.log.Info("文件 catalog 资源扫描开始", "root_count", len(paths), "roots", paths)
 	}
 
-	roots, items, fields, err := s.scanFileSystemResourceWithReporter(
+	roots, items, fields, err := s.scanFileCatalogResourceWithReporter(
 		req.Resource,
 		req.TenantID,
 		paths,

@@ -134,7 +134,7 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *te
 	}
 }
 
-func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.T) {
+func TestFileTablePreviewProviderResourceContextUsesFileCatalogReader(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
 	plugin.Register(enginePlugin)
@@ -159,8 +159,8 @@ func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.
 	if err != nil {
 		t.Fatalf("resourceContextForPreview() error = %v", err)
 	}
-	if _, ok := resourceCtx.reader.(*fileSystemResourceReader); !ok {
-		t.Fatalf("reader = %T, want *fileSystemResourceReader", resourceCtx.reader)
+	if _, ok := resourceCtx.reader.(*fileCatalogResourceReader); !ok {
+		t.Fatalf("reader = %T, want *fileCatalogResourceReader", resourceCtx.reader)
 	}
 	if resourceCtx.path != "gis-data/sample.csv" {
 		t.Fatalf("path = %q, want gis-data/sample.csv", resourceCtx.path)
@@ -192,11 +192,11 @@ func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.
 	}
 }
 
-func TestObjectStorageResourceReaderStripsBucketPrefixFromComponentPath(t *testing.T) {
+func TestObjectCatalogResourceReaderStripsBucketPrefixFromComponentPath(t *testing.T) {
 	t.Parallel()
 
 	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component"}
-	reader := newObjectStorageResourceReader(enginePlugin, nil, nil, 9, "addp")
+	reader := newObjectCatalogResourceReader(enginePlugin, nil, nil, 9, "addp")
 
 	rc, err := reader.Open(context.Background(), resource.NewResourceRef("addp/gis/规划用地.dbf", resource.ResourceRoleComponent))
 	if err != nil {
@@ -215,11 +215,11 @@ func TestObjectStorageResourceReaderStripsBucketPrefixFromComponentPath(t *testi
 	}
 }
 
-func TestObjectStorageResourceReaderOpenRangeStripsBucketPrefixFromComponentPath(t *testing.T) {
+func TestObjectCatalogResourceReaderOpenRangeStripsBucketPrefixFromComponentPath(t *testing.T) {
 	t.Parallel()
 
 	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component-range"}
-	reader := newObjectStorageResourceReader(enginePlugin, nil, nil, 9, "addp")
+	reader := newObjectCatalogResourceReader(enginePlugin, nil, nil, 9, "addp")
 
 	rc, err := reader.OpenRange(context.Background(), resource.NewResourceRef("addp/gis/规划用地.shx", resource.ResourceRoleComponent), 100, 8)
 	if err != nil {
@@ -949,7 +949,7 @@ func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.Connectio
 	return io.NopCloser(strings.NewReader("range")), nil
 }
 
-func TestContentIndexObjectKeyIncludesBucketForObjectStorage(t *testing.T) {
+func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, ItemType: "object"}
 
 	if got := contentIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {

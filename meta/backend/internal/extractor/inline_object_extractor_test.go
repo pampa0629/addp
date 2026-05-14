@@ -9,7 +9,7 @@ import (
 func TestInlineObjectMetadataExtractorShouldExtract(t *testing.T) {
 	t.Parallel()
 
-	extractor := NewInlineObjectMetadataExtractor(nil, nil)
+	extractor := NewInlineObjectMetadataExtractor(nil)
 	if !extractor.ShouldExtract("image.png", "image/png", 1024) {
 		t.Fatalf("image/png should be extracted")
 	}

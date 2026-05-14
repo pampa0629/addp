@@ -9,9 +9,9 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func FileSystemDetectedItemName(dirPath string, item *DetectedItem) (name, fullName string) {
+func FileCatalogDetectedItemName(dirPath string, item *DetectedItem) (name, fullName string) {
 	if item == nil {
-		return inferFileSystemItemName(dirPath)
+		return inferFileCatalogItemName(dirPath)
 	}
 	if item.Organization != dataitem.OrganizationWhole && item.EntryPath != "" {
 		cleaned := strings.Trim(item.EntryPath, "/")
@@ -21,7 +21,7 @@ func FileSystemDetectedItemName(dirPath string, item *DetectedItem) (name, fullN
 		cleaned := strings.Trim(item.PhysicalPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}
-	return inferFileSystemItemName(dirPath)
+	return inferFileCatalogItemName(dirPath)
 }
 
 func ApplyContainerSummary(attrs models.JSONMap, detected *DetectedItem) {
@@ -35,7 +35,7 @@ func ApplyContainerSummary(attrs models.JSONMap, detected *DetectedItem) {
 	})
 }
 
-func inferFileSystemItemName(dirPath string) (name, fullName string) {
+func inferFileCatalogItemName(dirPath string) (name, fullName string) {
 	cleaned := strings.Trim(dirPath, "/")
 	parts := strings.Split(cleaned, "/")
 	if len(parts) == 0 {

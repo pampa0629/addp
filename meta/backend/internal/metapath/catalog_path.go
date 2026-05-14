@@ -85,8 +85,8 @@ func ComposeNodeFullName(name string, parent *models.MetaNode, separator string)
 	return parent.FullName + separator + name
 }
 
-// FileCatalogPathFromFSPath 将文件系统路径转换为统一 CatalogPath。
-func FileCatalogPathFromFSPath(engineID uint, rawPath string) plugin.CatalogPath {
+// FileCatalogPath 将文件系统路径转换为统一 CatalogPath。
+func FileCatalogPath(engineID uint, rawPath string) plugin.CatalogPath {
 	path := plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
@@ -119,11 +119,6 @@ func JoinFSPath(parent, name string) string {
 		return name
 	}
 	return parent + "/" + name
-}
-
-// RootFSIdentifier 返回文件系统根节点的 full_name 标识。
-func RootFSIdentifier(rootPath string) string {
-	return ""
 }
 
 func FilterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {

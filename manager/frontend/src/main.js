@@ -21,7 +21,7 @@ import App from './App.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import { ImagePreview } from '@common-ui'
 import {
-  ObjectStoragePreview, JsonPreview, PdfPreview, ContainerPreview,
+  ObjectCatalogPreview, JsonPreview, PdfPreview, ContainerPreview,
   DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {
@@ -82,7 +82,7 @@ if (typeof window !== 'undefined') {
   window.DataExplorerPluginComponents = {
     TablePreview,
     ContainerPreview,
-    ObjectStoragePreview,
+    ObjectCatalogPreview,
     ImagePreview,
     GeoJsonPreview,
     JsonPreview,
