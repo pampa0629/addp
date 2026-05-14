@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
@@ -44,12 +45,15 @@ func (d *shapefileItemDetector) Priority() int {
 }
 
 func (d *shapefileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
-	_, ok := matchShapefileItem(files)
-	return ok
+	return len(resolveShapefileItems(files)) > 0
 }
 
 func (d *shapefileItemDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
-	matches := matchShapefileItems(input.Files)
+	files := input.Files
+	if len(input.RecursiveFiles) > 0 {
+		files = input.RecursiveFiles
+	}
+	matches := resolveShapefileItems(files)
 	result := &DetectionResult{
 		Items:  []*DetectedItem{},
 		Claims: ResourceClaimSet{},
@@ -93,11 +97,11 @@ func (d *shapefileItemDetector) ExtractItemInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 ) (*CompositeItemInfo, error) {
-	match, ok := matchShapefileItem(files)
-	if !ok {
+	matches := resolveShapefileItems(files)
+	if len(matches) == 0 {
 		return nil, fmt.Errorf("no complete shapefile component set in directory: %s", dirPath)
 	}
-	return d.extractMatchedItemInfo(ctx, contentReader, connInfo, engineID, match)
+	return d.extractMatchedItemInfo(ctx, contentReader, connInfo, engineID, matches[0])
 }
 
 func (d *shapefileItemDetector) extractMatchedItemInfo(
@@ -331,79 +335,55 @@ type shapefileItemMatch struct {
 	exts     map[string]bool
 }
 
-func matchShapefileItem(files []plugin.FileEntry) (shapefileItemMatch, bool) {
-	matches := matchShapefileItems(files)
-	if len(matches) == 0 {
-		return shapefileItemMatch{}, false
-	}
-	return matches[0], true
-}
-
-func matchShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
-	requiredExts, knownExts := shapefileComponentExtensionSets()
-	groups := map[string]map[string]plugin.FileEntry{}
+func resolveShapefileItems(files []plugin.FileEntry) []shapefileItemMatch {
+	byPath := make(map[string]plugin.FileEntry, len(files))
+	candidates := make([]commondataitem.Candidate, 0, len(files))
 	for _, file := range files {
-		ext := resource.NormalizeExtension(filepath.Ext(file.Name))
-		if !knownExts[ext] {
+		byPath[file.Path] = file
+		size := file.Size
+		candidates = append(candidates, commondataitem.Candidate{
+			Path:      file.Path,
+			Name:      file.Name,
+			SizeBytes: &size,
+		})
+	}
+	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
+		ScopeKind:  commondataitem.ScopeKindDirectory,
+		Candidates: candidates,
+	})
+	if err != nil || resolved == nil {
+		return nil
+	}
+	matches := make([]shapefileItemMatch, 0, len(resolved.Items))
+	for _, item := range resolved.Items {
+		if item.Organization != commondataitem.OrganizationMulti || item.Format != string(format.FormatShapefile) {
 			continue
 		}
-		base := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
-		if base == "" {
-			continue
-		}
-		groupKey := shapefileItemGroupKey(file.Path, base)
-		if _, ok := groups[groupKey]; !ok {
-			groups[groupKey] = map[string]plugin.FileEntry{}
-		}
-		groups[groupKey][ext] = file
-	}
-
-	groupKeys := make([]string, 0, len(groups))
-	for key := range groups {
-		groupKeys = append(groupKeys, key)
-	}
-	sort.Strings(groupKeys)
-
-	matches := make([]shapefileItemMatch, 0, len(groupKeys))
-	for _, key := range groupKeys {
-		group := groups[key]
-		complete := true
-		for ext := range requiredExts {
-			if _, ok := group[ext]; !ok {
-				complete = false
-				break
+		group := map[string]plugin.FileEntry{}
+		exts := map[string]bool{}
+		for _, component := range item.ComponentList {
+			file, ok := byPath[component.Path]
+			if !ok {
+				continue
 			}
-		}
-		if !complete {
-			continue
-		}
-		exts := make(map[string]bool, len(group))
-		for ext := range group {
+			ext := resource.NormalizeExtension(component.Extension)
+			if ext == "" {
+				ext = resource.NormalizeExtension(file.Name)
+			}
+			group[ext] = file
 			exts[ext] = true
 		}
+		entry, ok := byPath[item.EntryPath]
+		if !ok || len(group) == 0 {
+			continue
+		}
 		matches = append(matches, shapefileItemMatch{
-			baseName: strings.TrimSuffix(group[".shp"].Name, filepath.Ext(group[".shp"].Name)),
+			baseName: strings.TrimSuffix(entry.Name, filepath.Ext(entry.Name)),
 			files:    group,
 			exts:     exts,
 		})
 	}
 	return matches
-}
-
-func shapefileComponentExtensionSets() (required map[string]bool, known map[string]bool) {
-	required = map[string]bool{}
-	known = map[string]bool{}
-	for _, spec := range componentSpecsForFormat(format.FormatShapefile) {
-		ext := resource.NormalizeExtension(spec.Extension)
-		if ext == "" {
-			continue
-		}
-		known[ext] = true
-		if spec.Required {
-			required[ext] = true
-		}
-	}
-	return required, known
 }
 
 func componentSpecsForFormat(formatType format.FormatType) []resource.ComponentSpec {
@@ -416,12 +396,4 @@ func componentSpecsForFormat(formatType format.FormatType) []resource.ComponentS
 		return nil
 	}
 	return specProvider.ComponentSpecs()
-}
-
-func shapefileItemGroupKey(path, base string) string {
-	dir := filepath.Dir(strings.Trim(path, "/"))
-	if dir == "." {
-		dir = ""
-	}
-	return dir + "\x00" + base
 }

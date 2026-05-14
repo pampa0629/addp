@@ -165,3 +165,11 @@ func SplitBucketPrefix(path string) (bucket, prefix string) {
 	}
 	return path[:idx], path[idx+1:]
 }
+
+func SplitBucketDirectory(path string) (bucket, prefix string) {
+	bucket, prefix = SplitBucketPrefix(path)
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	return bucket, prefix
+}

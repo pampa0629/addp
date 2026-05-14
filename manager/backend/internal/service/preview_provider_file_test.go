@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
@@ -419,6 +420,187 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 	}
 }
 
+func TestFileTablePreviewProviderResolvesZIPEntryBeforeTablePreview(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	enginePlugin.content = zipBytesForFilePreviewTest(t, map[string]string{
+		"data/cities.csv": "id,name\n1,Hangzhou\n2,Shanghai\n",
+	})
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "data/cities.csv",
+		Page:         1,
+		PageSize:     10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":      "data/cities.csv",
+							"kind":      "file",
+							"data_type": "table",
+							"format":    string(format.FormatCSV),
+							"path":      "data/cities.csv",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "name"}) {
+		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
+	}
+	if len(preview.Rows) != 2 || preview.Rows[0]["name"] != "Hangzhou" {
+		t.Fatalf("Rows = %#v, want cities rows", preview.Rows)
+	}
+}
+
+func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	enginePlugin.content = zipBytesForFilePreviewTest(t, map[string]string{
+		"docs/readme.txt": "hello nested document",
+	})
+	provider := NewContainerChildPreviewProvider(NewObjectContentRegistry())
+	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "docs/readme.txt",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":      "docs/readme.txt",
+							"kind":      "file",
+							"data_type": "document",
+							"format":    string(format.FormatText),
+							"path":      "docs/readme.txt",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object content", preview)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "hello nested document" {
+		t.Fatalf("content = %#v, want text entry", preview.Object.Content)
+	}
+}
+
+func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	inner := zipBytesForFilePreviewTest(t, map[string]string{
+		"data/cities.csv": "id,name\n1,Hangzhou\n",
+	})
+	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"inner.zip": inner,
+	})
+	provider := NewContainerChildPreviewProvider(NewObjectContentRegistry())
+	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "inner.zip",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":      "inner.zip",
+							"kind":      "file",
+							"data_type": "container",
+							"format":    string(format.FormatZIP),
+							"path":      "inner.zip",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object container content", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindContainer {
+		t.Fatalf("content kind = %q, want container", content.Kind)
+	}
+	container, ok := content.JSON.(map[string]interface{})
+	if !ok {
+		t.Fatalf("container JSON = %#v", content.JSON)
+	}
+	children, ok := container["children"].([]map[string]interface{})
+	if !ok || len(children) != 1 || children[0]["name"] != "data/cities.csv" {
+		t.Fatalf("nested children = %#v", container["children"])
+	}
+}
+
 func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -472,6 +654,34 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T)
 	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geometry" {
 		t.Fatalf("GeometryColumns = %#v", preview.GeometryColumns)
 	}
+}
+
+func zipBytesForFilePreviewTest(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	raw := make(map[string][]byte, len(files))
+	for name, body := range files {
+		raw[name] = []byte(body)
+	}
+	return zipBytesRawForFilePreviewTest(t, raw)
+}
+
+func zipBytesRawForFilePreviewTest(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, body := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create zip entry %s: %v", name, err)
+		}
+		if _, err := entry.Write(body); err != nil {
+			t.Fatalf("write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t *testing.T) {
@@ -693,6 +903,7 @@ var _ resource.ComponentReader = emptyComponentReader{}
 
 type recordingContentPlugin struct {
 	engineType      string
+	content         []byte
 	openedPath      plugin.CatalogPath
 	rangeOpenedPath plugin.CatalogPath
 	rangeOptions    plugin.ReadOptions
@@ -718,6 +929,9 @@ func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
 }
 func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openedPath = path
+	if len(p.content) > 0 {
+		return io.NopCloser(bytes.NewReader(p.content)), nil
+	}
 	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
 }
 func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -734,5 +948,25 @@ func TestContentIndexObjectKeyIncludesBucketForObjectStorage(t *testing.T) {
 	}
 	if got := contentIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
 		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
+	}
+}
+
+func TestMapToContainerChildInfoKeepsComponents(t *testing.T) {
+	child := mapToContainerChildInfo(map[string]interface{}{
+		"name":         "roads.shp",
+		"kind":         "multi",
+		"data_type":    "table",
+		"format":       "shapefile",
+		"organization": "multi",
+		"components": []interface{}{
+			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
+			map[string]interface{}{"role": "index", "path": "roads.shx", "required": true, "extension": ".shx"},
+		},
+	})
+	if child.Format != format.FormatShapefile || child.Organization != "multi" || len(child.Components) != 2 {
+		t.Fatalf("child = %#v, want shapefile multi components", child)
+	}
+	if !child.Components[0].Primary || child.Components[0].Path != "roads.shp" {
+		t.Fatalf("primary component = %#v, want roads.shp", child.Components[0])
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -38,7 +39,7 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 		DataType:       format.FormatDataTypeContainer,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
 	}
 }
 
@@ -52,12 +53,21 @@ func (p *Parser) Capabilities() format.FormatCapability {
 		DataType:      format.FormatDataTypeContainer,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
-		Parse:         true,
+		ContentReaders: []string{
+			string(format.ContentReaderTableSample),
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderContainerEntry),
+		},
+		Parse: true,
 	}
 }
 
 func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	return p.ParseTableInfo(ctx, input, options)
+}
+
+func (p *Parser) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
 }
 
 // DescribeContainer 从 Excel 文件中提取 workbook / sheet 容器信息。

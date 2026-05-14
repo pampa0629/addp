@@ -81,7 +81,7 @@ mindmap
         DocumentInfoProvider
         DocumentTextReader
         MediaInfoProvider
-        ContainerEntryReader
+        ContainerChildResolver
         GraphSampleReader
         Spatial 横切能力
     数据开发

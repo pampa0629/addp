@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -51,7 +52,7 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 		DataType:       format.FormatDataTypeContainer,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
 	}
 }
 
@@ -65,7 +66,12 @@ func (p *Parser) Capabilities() format.FormatCapability {
 		DataType:      format.FormatDataTypeContainer,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
-		Parse:         true,
+		ContentReaders: []string{
+			string(format.ContentReaderTableSample),
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderContainerEntry),
+		},
+		Parse: true,
 	}
 }
 
@@ -88,6 +94,10 @@ func (p *Parser) DescribeFormat(ctx context.Context, input io.Reader, options *f
 		"view_count":  result.Metadata.ViewCount,
 		"index_count": result.Metadata.IndexCount,
 	}, nil
+}
+
+func (p *Parser) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
 }
 
 func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {

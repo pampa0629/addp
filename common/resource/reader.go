@@ -136,10 +136,26 @@ func (r *StaticComponentReader) OpenComponent(ctx context.Context, component Com
 
 func (r *StaticComponentReader) OpenComponentRange(ctx context.Context, component ComponentRef, offset, length int64) (io.ReadCloser, error) {
 	rangeReader, ok := r.resourceReader.(RangeReader)
-	if !ok {
+	if ok {
+		return rangeReader.OpenRange(ctx, component.ResourceRef, offset, length)
+	}
+	if offset < 0 || length < 0 {
 		return nil, ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, component.ResourceRef, offset, length)
+	rc, err := r.OpenComponent(ctx, component)
+	if err != nil {
+		return nil, err
+	}
+	if offset > 0 {
+		if _, err := io.CopyN(io.Discard, rc, offset); err != nil {
+			rc.Close()
+			return nil, err
+		}
+	}
+	return &limitedReadCloser{
+		Reader: io.LimitReader(rc, length),
+		closer: rc,
+	}, nil
 }
 
 func (r *StaticComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {
@@ -153,4 +169,16 @@ func (r *StaticComponentReader) OpenComponentRole(ctx context.Context, role stri
 		}
 	}
 	return nil, ErrComponentNotFound
+}
+
+type limitedReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *limitedReadCloser) Close() error {
+	if r == nil || r.closer == nil {
+		return nil
+	}
+	return r.closer.Close()
 }

@@ -127,7 +127,7 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 	}
 
 	// 解析 bucket 和 prefix
-	bucket, prefix := objectstore.SplitBucketPrefix(path)
+	bucket, prefix := objectstore.SplitBucketDirectory(path)
 	if bucket == "" {
 		return nil, nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
 	}

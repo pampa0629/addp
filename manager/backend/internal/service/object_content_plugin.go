@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
@@ -670,6 +671,13 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		return nil
 	}
 
+	if resolved := resolveContainerAttributeChildrenForPreview(formatName, children); len(resolved) > 0 {
+		summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
+		summary["sampled_children"] = len(resolved)
+		defaultChild := containerDefaultChild(formatName, formatAttrs, resolved)
+		return buildContainerPreview(formatName, defaultChild, defaultChild, resolved, summary)
+	}
+
 	previewChildren := make([]map[string]interface{}, 0, len(children))
 	for index, item := range children {
 		child := rawMapAttribute(item)
@@ -709,6 +717,90 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
 	defaultChild := containerDefaultChild(formatName, formatAttrs, previewChildren)
 	return buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
+}
+
+func resolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) []map[string]interface{} {
+	if normalizeFileTableFormat(formatName) != format.FormatZIP || len(children) == 0 {
+		return nil
+	}
+	candidates := make([]commondataitem.Candidate, 0, len(children))
+	for _, item := range children {
+		child := rawMapAttribute(item)
+		if len(child) == 0 || strings.EqualFold(commonJSON.InterfaceString(child["kind"]), "directory") {
+			continue
+		}
+		pathValue := commonJSON.InterfaceString(child["path"])
+		name := commonJSON.InterfaceString(child["name"])
+		if pathValue == "" {
+			pathValue = name
+		}
+		var sizePtr *int64
+		if size := commonJSON.InterfaceInt64(child["uncompressed_size"]); size > 0 {
+			sizePtr = &size
+		}
+		props := map[string]interface{}{}
+		for key, value := range child {
+			props[key] = value
+		}
+		candidates = append(candidates, commondataitem.Candidate{
+			Path:       pathValue,
+			Name:       name,
+			SizeBytes:  sizePtr,
+			Properties: props,
+		})
+	}
+	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
+		ScopeKind:  commondataitem.ScopeKindContainer,
+		Candidates: candidates,
+	})
+	if err != nil || resolved == nil {
+		return nil
+	}
+	previewChildren := make([]map[string]interface{}, 0, len(resolved.Items))
+	for index, item := range resolved.Items {
+		childInfo := commondataitem.ContainerChildInfoFromResolvedItem(item)
+		previewChildren = append(previewChildren, containerChildPreviewMap(childInfo, index))
+	}
+	return previewChildren
+}
+
+func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) map[string]interface{} {
+	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), index)
+	child := map[string]interface{}{
+		"key":          key,
+		"name":         childInfo.Name,
+		"label":        childInfo.Name,
+		"kind":         childInfo.Kind,
+		"data_type":    childInfo.DataType,
+		"format":       string(childInfo.Format),
+		"organization": childInfo.Organization,
+	}
+	if childInfo.RowCount != nil {
+		child["row_count"] = *childInfo.RowCount
+	}
+	if childInfo.ColumnCount != nil {
+		child["column_count"] = *childInfo.ColumnCount
+	}
+	if childInfo.HasHeader != nil {
+		child["has_header"] = *childInfo.HasHeader
+	}
+	if len(childInfo.Components) > 0 {
+		components := make([]map[string]interface{}, 0, len(childInfo.Components))
+		for _, component := range childInfo.Components {
+			components = append(components, map[string]interface{}{
+				"role":      component.Role,
+				"path":      component.Path,
+				"required":  component.Required,
+				"primary":   component.Primary,
+				"extension": component.Extension,
+			})
+		}
+		child["components"] = components
+	}
+	for key, value := range childInfo.Properties {
+		child[key] = value
+	}
+	return child
 }
 
 func buildContainerPreview(formatName, defaultChild, activeChild string, children []map[string]interface{}, summary map[string]interface{}) map[string]interface{} {
@@ -987,6 +1079,9 @@ func (h *containerContentHandler) parseContainer(ctx context.Context, tmpPath st
 	}
 
 	metadata := buildContainerMetadataMap(info, req, formatType)
+	if formatType == format.FormatZIP {
+		info = resolveContainerChildrenForPreview(info)
+	}
 	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
 	truncated := containerInfoTruncated(info)
 
@@ -1016,6 +1111,59 @@ func buildContainerMetadataMap(info *format.ContainerInfo, req *ObjectContentReq
 	return result
 }
 
+func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.ContainerInfo {
+	if info == nil || len(info.Children) == 0 {
+		return info
+	}
+	candidates := make([]commondataitem.Candidate, 0, len(info.Children))
+	for _, child := range info.Children {
+		if strings.EqualFold(child.Kind, "directory") {
+			continue
+		}
+		pathValue := commonJSON.InterfaceString(child.Properties["path"])
+		if pathValue == "" {
+			pathValue = child.Name
+		}
+		var sizePtr *int64
+		if size := commonJSON.InterfaceInt64(child.Properties["uncompressed_size"]); size > 0 {
+			sizePtr = &size
+		}
+		props := map[string]interface{}{}
+		for key, value := range child.Properties {
+			props[key] = value
+		}
+		if child.Format != "" {
+			props["format"] = string(child.Format)
+		}
+		candidates = append(candidates, commondataitem.Candidate{
+			Path:       pathValue,
+			Name:       child.Name,
+			SizeBytes:  sizePtr,
+			Properties: props,
+		})
+	}
+	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
+		ScopeKind:  commondataitem.ScopeKindContainer,
+		Candidates: candidates,
+	})
+	if err != nil || resolved == nil {
+		return info
+	}
+	next := *info
+	next.Children = make([]format.ContainerChildInfo, 0, len(resolved.Items))
+	for _, item := range resolved.Items {
+		next.Children = append(next.Children, commondataitem.ContainerChildInfoFromResolvedItem(item))
+	}
+	if len(next.Children) > 0 {
+		next.DefaultChild = next.Children[0].Name
+		if next.FormatInfo == nil {
+			next.FormatInfo = map[string]interface{}{}
+		}
+		next.FormatInfo["sampled_children"] = len(next.Children)
+	}
+	return &next
+}
+
 func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallbackFormat string) map[string]interface{} {
 	if info == nil {
 		return emptyContainerPreview(fallbackFormat)
@@ -1028,11 +1176,13 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 	for _, childInfo := range info.Children {
 		key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), len(children))
 		child := map[string]interface{}{
-			"key":       key,
-			"name":      childInfo.Name,
-			"label":     childInfo.Name,
-			"kind":      childInfo.Kind,
-			"data_type": childInfo.DataType,
+			"key":          key,
+			"name":         childInfo.Name,
+			"label":        childInfo.Name,
+			"kind":         childInfo.Kind,
+			"data_type":    childInfo.DataType,
+			"format":       string(childInfo.Format),
+			"organization": childInfo.Organization,
 		}
 		if childInfo.RowCount != nil {
 			child["row_count"] = *childInfo.RowCount
@@ -1042,6 +1192,19 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 		}
 		if childInfo.HasHeader != nil {
 			child["has_header"] = *childInfo.HasHeader
+		}
+		if len(childInfo.Components) > 0 {
+			components := make([]map[string]interface{}, 0, len(childInfo.Components))
+			for _, component := range childInfo.Components {
+				components = append(components, map[string]interface{}{
+					"role":      component.Role,
+					"path":      component.Path,
+					"required":  component.Required,
+					"primary":   component.Primary,
+					"extension": component.Extension,
+				})
+			}
+			child["components"] = components
 		}
 		for key, value := range childInfo.Properties {
 			child[key] = value

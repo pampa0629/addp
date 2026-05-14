@@ -204,7 +204,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `table` | `TableInfoProvider` | `TableSampleReader`、批量行读取 |
 | `document` | `DocumentInfoProvider` | `DocumentTextReader`、`RawContentReader`、`RangeContentReader` |
 | `media` | `MediaInfoProvider` | `MediaThumbnailReader`、`RawContentReader`、`RangeContentReader` |
-| `container` | `ContainerInfoProvider` | `ContainerEntryReader`、内部对象读取 |
+| `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 |
 | `graph` | `GraphInfoProvider` | `GraphSampleReader`、图查询读取 |
 | 横切能力 | `SpatialInfoProvider` 等 | 视具体能力定义，不替代 data type reader |
 

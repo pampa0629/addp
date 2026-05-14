@@ -6,11 +6,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 )
 
 const defaultEntryLimit = 100
@@ -43,6 +45,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ProviderHints: []string{format.FormatProviderContainer},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
+			string(format.ContentReaderContainerEntry),
 		},
 	}
 }
@@ -57,7 +60,11 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 		DataType:      format.FormatDataTypeContainer,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer},
-		Parse:         true,
+		ContentReaders: []string{
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderContainerEntry),
+		},
+		Parse: true,
 	}
 }
 
@@ -125,6 +132,127 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
+func (p *Plugin) ResolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
+	if parent == nil {
+		return nil, fmt.Errorf("zip child resolver requires parent resource reader")
+	}
+	entryPath := zipChildPath(child, options)
+	if entryPath == "" {
+		return nil, fmt.Errorf("zip child resolver requires child path")
+	}
+	if child.Kind == "directory" {
+		return nil, fmt.Errorf("zip child %s is a directory", entryPath)
+	}
+
+	openEntry := func(openCtx context.Context) (io.ReadCloser, error) {
+		parentReader, err := parent.Open(openCtx, parentRef)
+		if err != nil {
+			return nil, err
+		}
+		defer parentReader.Close()
+
+		data, err := io.ReadAll(parentReader)
+		if err != nil {
+			return nil, fmt.Errorf("read zip parent: %w", err)
+		}
+		reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, fmt.Errorf("open zip parent: %w", err)
+		}
+		for _, entry := range reader.File {
+			name := strings.Trim(strings.TrimSpace(entry.Name), "/")
+			if name != entryPath || entry.FileInfo().IsDir() {
+				continue
+			}
+			entryReader, err := entry.Open()
+			if err != nil {
+				return nil, err
+			}
+			return entryReader, nil
+		}
+		return nil, resource.ErrResourceNotFound
+	}
+
+	entryRef := resource.NewResourceRef(path.Join(parentRef.Path, entryPath), resource.ResourceRoleMain)
+	size := int64(0)
+	if rawSize, ok := child.Properties["uncompressed_size"]; ok {
+		size = interfaceInt64(rawSize)
+	}
+	childFormat := format.FormatType(strings.TrimSpace(formatInterfaceString(child.Properties["format"])))
+	if childFormat == "" {
+		childFormat = format.FormatUnknown
+	}
+	components := zipChildComponents(child, parentRef.Path)
+	if len(components) > 0 {
+		entryPath = zipPrimaryComponentPath(components, entryPath)
+	}
+	metadata := &resource.ResourceMetadata{
+		Ref:          entryRef,
+		Size:         size,
+		Exists:       true,
+		FormatHint:   string(childFormat),
+		DataTypeHint: child.DataType,
+	}
+	reader := format.NewSingleResourceReader(entryRef, openEntry, metadata)
+	if len(components) > 0 {
+		reader = &zipChildResourceReader{
+			parent:    parent,
+			parentRef: parentRef,
+			basePath:  parentRef.Path,
+			metadata:  metadata,
+		}
+	}
+	resolved := format.StreamContainerChildResource(reader, entryRef, child)
+	resolved.Components = components
+	return resolved, nil
+}
+
+type zipChildResourceReader struct {
+	parent    resource.ResourceReader
+	parentRef resource.ResourceRef
+	basePath  string
+	metadata  *resource.ResourceMetadata
+}
+
+func (r *zipChildResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+	entryPath := strings.Trim(strings.TrimPrefix(strings.Trim(ref.Path, "/"), strings.Trim(r.basePath, "/")), "/")
+	if entryPath == "" {
+		return nil, resource.ErrResourceNotFound
+	}
+	parentReader, err := r.parent.Open(ctx, r.parentRef)
+	if err != nil {
+		return nil, err
+	}
+	defer parentReader.Close()
+	data, err := io.ReadAll(parentReader)
+	if err != nil {
+		return nil, fmt.Errorf("read zip parent: %w", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("open zip parent: %w", err)
+	}
+	for _, entry := range reader.File {
+		name := strings.Trim(strings.TrimSpace(entry.Name), "/")
+		if name != entryPath || entry.FileInfo().IsDir() {
+			continue
+		}
+		return entry.Open()
+	}
+	return nil, resource.ErrResourceNotFound
+}
+
+func (r *zipChildResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
+	if r.metadata == nil {
+		return nil, resource.ErrResourceNotFound
+	}
+	return r.metadata, nil
+}
+
+func (r *zipChildResourceReader) List(context.Context, resource.ResourceRef) ([]resource.ResourceRef, error) {
+	return nil, nil
+}
+
 // entryLimit returns the default sampling limit when unspecified.
 // An explicit zero means "unlimited", matching other container providers.
 func (p *Plugin) entryLimit(options *format.ParseOptions) int {
@@ -179,6 +307,84 @@ func zipEntryToContainerChild(entry *zip.File, isDir bool) format.ContainerChild
 		Kind:       kind,
 		DataType:   dataType,
 		Properties: properties,
+	}
+}
+
+func zipChildPath(child format.ContainerChildInfo, options *format.ParseOptions) string {
+	if options != nil && options.ExtraParams != nil {
+		if value := strings.Trim(strings.TrimSpace(formatInterfaceString(options.ExtraParams[format.ChildNameParam])), "/"); value != "" {
+			return value
+		}
+	}
+	if value := strings.Trim(strings.TrimSpace(formatInterfaceString(child.Properties["path"])), "/"); value != "" {
+		return value
+	}
+	return strings.Trim(strings.TrimSpace(child.Name), "/")
+}
+
+func zipChildComponents(child format.ContainerChildInfo, basePath string) []resource.ComponentRef {
+	if len(child.Components) == 0 {
+		return nil
+	}
+	components := make([]resource.ComponentRef, 0, len(child.Components))
+	for _, component := range child.Components {
+		role := resource.ResourceRoleComponent
+		if component.Primary {
+			role = resource.ResourceRoleMain
+		}
+		componentPath := strings.TrimSpace(component.Path)
+		if basePath != "" && componentPath != "" {
+			componentPath = path.Join(basePath, componentPath)
+		}
+		components = append(components, resource.ComponentRef{
+			ResourceRef:   resource.NewResourceRef(componentPath, role),
+			ComponentRole: component.Role,
+			Required:      component.Required,
+		})
+	}
+	return components
+}
+
+func zipPrimaryComponentPath(components []resource.ComponentRef, fallback string) string {
+	for _, component := range components {
+		if component.ResourceRef.Role == resource.ResourceRoleMain {
+			return component.Path
+		}
+	}
+	for _, component := range components {
+		if strings.TrimSpace(component.Path) != "" {
+			return component.Path
+		}
+	}
+	return fallback
+}
+
+func formatInterfaceString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return ""
+	}
+}
+
+func interfaceInt64(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case uint64:
+		if typed > uint64(^uint64(0)>>1) {
+			return 0
+		}
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return 0
 	}
 }
 

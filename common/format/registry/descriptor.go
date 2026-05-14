@@ -270,7 +270,7 @@ var builtinDescriptors = []Descriptor{
 			TableSample:   true,
 			Table:         true,
 		},
-		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent, ContentReaderContainerEntry},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -544,7 +544,7 @@ var builtinDescriptors = []Descriptor{
 			TableSample:   true,
 			Table:         true,
 		},
-		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent, ContentReaderContainerEntry},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{
@@ -564,7 +564,7 @@ var builtinDescriptors = []Descriptor{
 			TableSample:   true,
 			Table:         true,
 		},
-		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent},
+		ContentReaders: []string{ContentReaderTableSample, ContentReaderRawContent, ContentReaderContainerEntry},
 		Spatial:        true,
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
@@ -582,7 +582,7 @@ var builtinDescriptors = []Descriptor{
 		Providers: ProviderDescriptor{
 			ContainerInfo: true,
 		},
-		ContentReaders: []string{ContentReaderRawContent},
+		ContentReaders: []string{ContentReaderRawContent, ContentReaderContainerEntry},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
 	},
 	{

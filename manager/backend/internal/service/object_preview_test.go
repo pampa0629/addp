@@ -368,6 +368,31 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 	}
 }
 
+func TestResolveContainerChildrenForPreviewGroupsShapefileComponents(t *testing.T) {
+	info := &format.ContainerInfo{
+		Format:       format.FormatZIP,
+		ChildCount:   5,
+		DefaultChild: "roads.shp",
+		Children: []format.ContainerChildInfo{
+			{Name: "roads.shp", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shp", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.shx", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shx", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.dbf", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.dbf", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.prj", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "readme.md", Kind: "file", DataType: "document", Properties: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
+		},
+		FormatInfo: map[string]interface{}{},
+	}
+
+	resolved := resolveContainerChildrenForPreview(info)
+	if resolved == nil || len(resolved.Children) != 2 {
+		t.Fatalf("children = %#v, want shapefile child + markdown child", resolved)
+	}
+	child := resolved.Children[0]
+	if child.Organization != "multi" || child.Format != format.FormatShapefile || len(child.Components) != 4 {
+		t.Fatalf("first child = %#v, want multi shapefile with components", child)
+	}
+}
+
 func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
 	registry := NewObjectContentRegistry()
 	LoadObjectContentPlugins(registry, "../../plugins/content")

@@ -198,8 +198,6 @@ const (
 	ObjectPreviewKindJSON        = "json"
 	ObjectPreviewKindGeoJSON     = "geojson"
 	ObjectPreviewKindContainer   = "container"
-	ObjectPreviewKindExcel       = "excel"
-	ObjectPreviewKindSQLite      = "sqlite"
 	ObjectPreviewKindText        = "text"
 	ObjectPreviewKindMarkdown    = "markdown"
 	ObjectPreviewKindTable       = "table"

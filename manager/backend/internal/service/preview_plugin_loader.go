@@ -31,6 +31,9 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"scope-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewScopeTablePreviewProvider(), nil
 	},
+	"container-child": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewContainerChildPreviewProvider(content), nil
+	},
 	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	},

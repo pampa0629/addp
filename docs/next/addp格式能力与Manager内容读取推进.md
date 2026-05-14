@@ -26,7 +26,7 @@
 | CSV / TSV / JSON / Parquet / Shapefile 表格内容 | Manager 通过 ResourceReader / ComponentReader 调用 `TableInfoProvider` / `TableSampleReader` |
 | 文档内容 | 能后端提取文本时使用 `DocumentTextReader`；不能后端解析时走 raw / range content reader，由 Manager 和 Frontend 处理展示 |
 | 媒体内容 | 元信息走 `MediaInfoProvider`；原始内容、缩略图、range content 作为 content reader 能力逐步补齐 |
-| 容器内容 | 外层 item 先写 `type_info.container`；内部对象读取后续通过 `ContainerInfoProvider` / `ContainerEntryReader` 稳定 |
+| 容器内容 | 外层 item 先写 `type_info.container`；内部对象读取通过 `ContainerInfoProvider` / `ContainerChildResolver` 稳定 |
 | 第三方格式扩展 | 先通过 FormatDescriptor / FormatPlugin 进入 common/format；Manager 不维护独立扩展名清单 |
 
 ## 待清理问题

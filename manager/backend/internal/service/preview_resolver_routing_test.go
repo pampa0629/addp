@@ -118,9 +118,9 @@ func TestResolveProviderByMetaUsesFileTableForFileSystemTableFormat(t *testing.T
 	}
 }
 
-func TestResolveProviderByMetaUsesFileTableForExcelChild(t *testing.T) {
+func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 	registry := NewPreviewRegistry()
-	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
 	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
@@ -141,14 +141,14 @@ func TestResolveProviderByMetaUsesFileTableForExcelChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveProviderByMeta() error = %v", err)
 	}
-	if provider.Name() != "builtin:file-table" {
-		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	if provider.Name() != "builtin:container-child" {
+		t.Fatalf("provider = %q, want builtin:container-child", provider.Name())
 	}
 }
 
-func TestResolveProviderByMetaUsesFileTableForSQLiteChild(t *testing.T) {
+func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	registry := NewPreviewRegistry()
-	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
 	registry.Register(namedPreviewProvider{name: "builtin:object-storage"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
@@ -169,8 +169,8 @@ func TestResolveProviderByMetaUsesFileTableForSQLiteChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveProviderByMeta() error = %v", err)
 	}
-	if provider.Name() != "builtin:file-table" {
-		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	if provider.Name() != "builtin:container-child" {
+		t.Fatalf("provider = %q, want builtin:container-child", provider.Name())
 	}
 }
 

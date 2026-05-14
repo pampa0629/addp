@@ -131,7 +131,7 @@ func TestStaticComponentReaderOpenComponentRangeDelegatesToRangeReader(t *testin
 	}
 }
 
-func TestStaticComponentReaderOpenComponentRangeRequiresRangeReader(t *testing.T) {
+func TestStaticComponentReaderOpenComponentRangeFallsBackToStream(t *testing.T) {
 	reader := NewStaticComponentReader(memoryResourceReader{data: map[string]string{
 		"roads.shx": "0123456789",
 	}}, []ComponentRef{
@@ -139,7 +139,16 @@ func TestStaticComponentReaderOpenComponentRangeRequiresRangeReader(t *testing.T
 	})
 	component := reader.Components()[0]
 
-	if _, err := reader.OpenComponentRange(context.Background(), component, 2, 4); err != ErrResourceNotFound {
-		t.Fatalf("OpenComponentRange() error = %v, want ErrResourceNotFound", err)
+	rc, err := reader.OpenComponentRange(context.Background(), component, 2, 4)
+	if err != nil {
+		t.Fatalf("OpenComponentRange() error = %v", err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(data) != "2345" {
+		t.Fatalf("range data = %q, want 2345", data)
 	}
 }

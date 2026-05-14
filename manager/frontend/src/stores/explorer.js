@@ -279,7 +279,7 @@ export const useExplorerStore = defineStore('explorer', {
       if (!json || typeof json !== 'object') {
         return ''
       }
-      if (!['container', 'excel', 'sqlite'].includes(kind)) {
+      if (kind !== 'container') {
         return ''
       }
       const explicit = json.active_child || json.default_child

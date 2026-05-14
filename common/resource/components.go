@@ -12,6 +12,7 @@ type ComponentSpec struct {
 	Extension string
 	Role      string
 	Required  bool
+	Primary   bool
 }
 
 func SameBasenameComponents(mainPath string, specs []ComponentSpec) []ComponentRef {

@@ -338,7 +338,7 @@ ZIP 压缩包先作为一个容器 item。压缩包内部 entry 是内部子对�
 
 ### 消费要求
 
-Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个 entry 的内容预览，需要后续 `ContainerEntryReader` 或等价的通用 entry resource wrapper 定位内部对象，再交给对应 data type 的 info provider / content reader 处理；不得在 Manager 或 Meta 中为 ZIP 单独解压并绕过通用链路。
+Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个普通文件 entry 的内容预览时，由 `ContainerChildResolver` 把 entry 解析为 stream child resource，再交给对应 data type 的 info provider / content reader 处理；不得在 Manager 或 Meta 中为 ZIP 单独解压并绕过通用链路。
 
 ### 格式约束
 

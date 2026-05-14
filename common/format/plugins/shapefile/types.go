@@ -37,7 +37,7 @@ type Info struct {
 
 func ComponentSpecs() []resource.ComponentSpec {
 	return []resource.ComponentSpec{
-		{Extension: ".shp", Role: "main", Required: true},
+		{Extension: ".shp", Role: "main", Required: true, Primary: true},
 		{Extension: ".shx", Role: "index", Required: true},
 		{Extension: ".dbf", Role: "attributes", Required: true},
 		{Extension: ".prj", Role: "projection", Required: false},

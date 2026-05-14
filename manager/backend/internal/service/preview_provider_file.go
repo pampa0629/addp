@@ -58,6 +58,24 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
 	formatType := p.resolveFormat(req)
+	fullPath := resourceCtx.path
+
+	// 构建解析选项
+	opts := p.buildParseOptions(formatType, req)
+	resourceReader := resourceCtx.reader
+	if strings.TrimSpace(req.ChildName) != "" {
+		resolved, err := p.resolveContainerChild(ctx, resourceReader, fullPath, formatType, req)
+		if err != nil {
+			return nil, err
+		}
+		resourceReader = resolved.Reader
+		fullPath = resolved.Ref.Path
+		formatType = resolved.Format
+		opts = resolved.ParentOptions
+		if opts == nil {
+			opts = p.buildParseOptions(formatType, req)
+		}
+	}
 
 	// 获取对应的格式 provider。provider 只负责从外部提供的内容流中提取 table 语义。
 	provider, err := format.GetTableProvider(formatType)
@@ -65,17 +83,42 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return nil, fmt.Errorf("no table provider for format %s: %w", formatType, err)
 	}
 
-	// 构建解析选项
-	opts := p.buildParseOptions(formatType, req)
-
 	if componentProvider, ok := provider.(format.ComponentTableProvider); ok {
-		return p.previewComponents(ctx, componentReaderForPreview(resourceCtx.reader, resourceCtx.path, formatType, req.Attributes), resourceCtx.bucket, formatType, componentProvider, opts, req)
+		return p.previewComponents(ctx, componentReaderForPreview(resourceReader, fullPath, formatType, req.Attributes), resourceCtx.bucket, formatType, componentProvider, opts, req)
 	}
 
-	p.ensureContentIndex(ctx, req, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType)
+	p.ensureContentIndex(ctx, req, resourceReader, resourceCtx.bucket, fullPath, formatType)
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, resourceCtx.reader, resourceCtx.bucket, resourceCtx.path, formatType, provider, opts, req)
+	return p.previewStreamable(ctx, resourceReader, resourceCtx.bucket, fullPath, formatType, provider, opts, req)
+}
+
+func resolvePreviewContainerChild(ctx context.Context, parent resource.ResourceReader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	child := containerChildForRequest(req.Attributes, req.ChildName)
+	resolver, err := format.GetContainerChildResolver(parentFormat)
+	if err != nil {
+		return nil, fmt.Errorf("no container child resolver for format %s: %w", parentFormat, err)
+	}
+	resolved, err := resolver.ResolveContainerChild(ctx, parent, resource.NewResourceRef(parentPath, resource.ResourceRoleMain), mapToContainerChildInfo(child), format.ChildTableParseOptions(req.ChildName, child))
+	if err != nil {
+		return nil, err
+	}
+	if resolved == nil {
+		return nil, fmt.Errorf("container child %s resolved to nil", req.ChildName)
+	}
+	if resolved.ResourceKind == format.ContainerChildResourceNative {
+		resolved.Reader = resolved.ParentReader
+		resolved.Ref = resolved.ParentRef
+		resolved.Format = resolved.ParentFormat
+	}
+	if resolved.Reader == nil {
+		return nil, fmt.Errorf("container child %s has no reader", req.ChildName)
+	}
+	return resolved, nil
+}
+
+func (p *FileTablePreviewProvider) resolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	return resolvePreviewContainerChild(ctx, parent, parentPath, parentFormat, req)
 }
 
 func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest) (*tablePreviewResourceContext, error) {
@@ -642,6 +685,15 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
+	if normalizeFileTableFormat(stringAttribute(attrs, "format")) == format.FormatZIP {
+		if resolved := resolveContainerAttributeChildrenForPreview(string(format.FormatZIP), interfaceSlice(containerAttrs["children"])); len(resolved) > 0 {
+			for _, child := range resolved {
+				if len(child) > 0 && containerChildNameMatches(child, childName) {
+					return child
+				}
+			}
+		}
+	}
 	for _, item := range interfaceSlice(containerAttrs["children"]) {
 		child := rawMapAttribute(item)
 		if len(child) > 0 && containerChildNameMatches(child, childName) {
@@ -649,6 +701,77 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 		}
 	}
 	return map[string]interface{}{"name": childName}
+}
+
+func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChildInfo {
+	if child == nil {
+		child = map[string]interface{}{}
+	}
+	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
+	kind := strings.TrimSpace(commonJSON.InterfaceString(child["kind"]))
+	dataType := strings.TrimSpace(commonJSON.InterfaceString(child["data_type"]))
+	properties := make(map[string]interface{}, len(child))
+	for key, value := range child {
+		switch key {
+		case "name", "kind", "data_type", "format", "organization", "components", "row_count", "column_count", "has_header":
+			continue
+		default:
+			properties[key] = value
+		}
+	}
+	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
+	var rowCount *int64
+	if rowCountValue > 0 {
+		rowCount = &rowCountValue
+	}
+	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
+	var columnCount *int
+	if columnCountValue > 0 {
+		columnCount = &columnCountValue
+	}
+	var hasHeader *bool
+	if _, ok := child["has_header"]; ok {
+		value := commonJSON.InterfaceBool(child["has_header"])
+		hasHeader = &value
+	}
+	return format.ContainerChildInfo{
+		Name:         name,
+		Kind:         kind,
+		DataType:     dataType,
+		Format:       format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
+		Organization: strings.TrimSpace(commonJSON.InterfaceString(child["organization"])),
+		Components:   containerChildComponentsFromMap(child),
+		RowCount:     rowCount,
+		ColumnCount:  columnCount,
+		HasHeader:    hasHeader,
+		Properties:   properties,
+	}
+}
+
+func containerChildComponentsFromMap(child map[string]interface{}) []format.ContainerChildComponent {
+	values := interfaceSlice(child["components"])
+	if len(values) == 0 {
+		return nil
+	}
+	components := make([]format.ContainerChildComponent, 0, len(values))
+	for _, value := range values {
+		component := rawMapAttribute(value)
+		if len(component) == 0 {
+			continue
+		}
+		path := strings.TrimSpace(commonJSON.InterfaceString(component["path"]))
+		if path == "" {
+			continue
+		}
+		components = append(components, format.ContainerChildComponent{
+			Role:      strings.TrimSpace(commonJSON.InterfaceString(component["role"])),
+			Path:      path,
+			Required:  commonJSON.InterfaceBool(component["required"]),
+			Primary:   commonJSON.InterfaceBool(component["primary"]),
+			Extension: strings.TrimSpace(commonJSON.InterfaceString(component["extension"])),
+		})
+	}
+	return components
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {

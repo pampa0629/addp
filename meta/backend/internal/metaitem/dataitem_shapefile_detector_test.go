@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/common/resource"
 	"github.com/addp/meta/internal/dataitem"
 	"github.com/jonas-p/go-shp"
 )
@@ -114,7 +118,16 @@ func TestDetectorRuleDeclaresMultiFileComponents(t *testing.T) {
 func TestDetectorUsesFormatComponentSpecs(t *testing.T) {
 	t.Parallel()
 
-	required, known := shapefileComponentExtensionSets()
+	specs := commondataitem.ComponentSpecs(format.FormatShapefile)
+	required := map[string]bool{}
+	known := map[string]bool{}
+	for _, spec := range specs {
+		ext := resource.NormalizeExtension(spec.Extension)
+		known[ext] = true
+		if spec.Required {
+			required[ext] = true
+		}
+	}
 	for _, ext := range []string{".shp", ".shx", ".dbf"} {
 		if !required[ext] {
 			t.Fatalf("required component extension %s missing: %#v", ext, required)

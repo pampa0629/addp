@@ -293,7 +293,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `pptx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | 演示文档；当前后端只声明原始内容读取能力 |
 | `shapefile` | `table` | `multi` | table、spatial | table_sample、component_table_sample、raw_content | 是 | 是 / 是 | 多组件空间表 |
 | `sqlite` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | SQLite 容器；当前按容器 / 表格内容读取能力表达 |
-| `zip` | `container` | `single` | container | raw_content | 否 | 否 / 否 | ZIP 压缩包；当前只提取 entry 轻量 children，不读取 entry 内容 |
+| `zip` | `container` | `single` | container | raw_content、container_entry | 否 | 否 / 否 | ZIP 压缩包；当前提取 entry 轻量 children，并可按需打开普通文件 entry |
 | `text` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | 纯文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
 | `wps` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | WPS 文档；后端不解析正文，由上层按内容读取能力处理 |
 
@@ -333,11 +333,11 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
 | `sqlite` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 可提取数据库 container info；指定 table 后可提取该 table 的 table info 和分页样本；SQLite 文件自身仍是 container，不写父级 `type_info.table` |
 | `geopackage` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 作为容器格式注册；父级只输出 layer / table 轻量 children，选中 child 后再读取字段、分页样本和 `SpatialInfo` |
-| `zip` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已注册 `ContainerInfoProvider`；父级只输出 entry 轻量 children 和容器统计，`ContainerEntryReader` 尚未实现 |
+| `zip` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已注册 `ContainerInfoProvider` 和 `ContainerChildResolver`；父级只输出 entry 轻量 children 和容器统计，选中 entry 后再按 child 的 `data_type` / `format` 交给对应 reader |
 | `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
 | `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
 
-当前 provider / reader 家族已包含 `ContainerInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`ContainerEntryReader`、`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
+当前 provider / reader 家族已包含 `ContainerInfoProvider`、`ContainerChildResolver`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
 
 ### FileMetadataExtractor 兼容说明
 
@@ -418,9 +418,9 @@ info provider 只回答对应 data type 的元数据语义，content reader 只�
 
 缩略图、raw content、range content 或可流式 URL 应由对应 content reader / engine 能力表达。`MediaInfoProvider` 只返回已经确认的事实，不硬凑完整展示对象。
 
-### ContainerInfoProvider / ContainerEntryReader
+### ContainerInfoProvider / ContainerChildResolver
 
-`ContainerInfoProvider` 和 `ContainerEntryReader` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档集合等容器型 data item。
+`ContainerInfoProvider` 和 `ContainerChildResolver` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档集合等容器型 data item。
 
 它提供：
 
@@ -430,6 +430,13 @@ info provider 只回答对应 data type 的元数据语义，content reader 只�
 - 容器统计信息。
 
 它不负责把内部对象解释成最终 table / document / media 内容数据；那部分交给对应 info provider 或 content reader 继续处理。Excel sheet、SQLite table / view 等 child 的字段和行数据必须通过 child 定位参数按需读取。
+
+Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫描 child 内容。ZIP 中嵌套 ZIP、目录中嵌套文件等关系由 Manager 或其他消费者在用户选中 child 后按需解析：如果 child 仍是 `data_type=container`，继续进入同一套 container provider / resolver 链路。
+
+`ContainerChildResolver` 不连接 engine，也不自己构造 engine reader。调用方必须先基于 engine capability、权限、连接信息和资源路径构造 `resource.ResourceReader` 与父 `ResourceRef`。resolver 只把父资源和 child locator 转换为两类结果之一：
+
+- stream child：返回 child 自己的 `ResourceReader` / `ResourceRef`，例如 ZIP entry、目录文件；后续按 child 的 `data_type` / `format` 调对应 reader。
+- native child：复用父资源和 child 定位 options，例如 SQLite table、Excel sheet、GeoPackage layer；后续按父格式的 table reader 读取指定 child。
 
 ### GraphInfoProvider / GraphSampleReader
 

@@ -207,7 +207,12 @@ const truncatedMessage = computed(() => {
 })
 
 const fetchPptxBytesFromUrl = async (url) => {
-  const response = await fetch(url, { credentials: 'include' })
+  const headers = {}
+  const token = localStorage.getItem('token')
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const response = await fetch(url, { credentials: 'include', headers })
   if (!response.ok) {
     throw new Error(`请求失败（${response.status}）`)
   }

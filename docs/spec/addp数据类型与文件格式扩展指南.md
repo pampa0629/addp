@@ -29,7 +29,7 @@
 | `table` | 有字段、行列、记录集合，或能稳定映射成字段集合 | `TableInfoProvider`，需要内容样本时实现 `TableSampleReader` |
 | `document` | 以阅读、正文提取、全文索引为主 | `DocumentInfoProvider`，需要后端文本时实现 `DocumentTextReader`；否则至少声明 raw / range content reader |
 | `media` | 图片、视频、音频等可感知媒体 | `MediaInfoProvider`，需要缩略图时实现 media content reader |
-| `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerEntryReader` 目标能力；当前未稳定时先写入 `type_info.container` |
+| `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerChildResolver`；父容器先写入轻量 `type_info.container`，child 内容按需解析 |
 | `graph` | 节点、边、关系结构 | `GraphInfoProvider` / `GraphSampleReader` 目标能力；引擎原生图通常走 engine capability |
 | `unknown` | 暂不能归类 | 只保留 storage、item 和必要 raw / range content 能力 |
 

@@ -89,13 +89,9 @@
         return this.json.active_child || this.json.default_child || this.children[0]?.key || ''
       },
       selectorLabel() {
-        if (this.formatName === 'excel') return '工作表'
-        if (this.formatName === 'sqlite') return '数据表'
         return '子项'
       },
       emptyText() {
-        if (this.formatName === 'excel') return '未能解析 Excel 工作表'
-        if (this.formatName === 'sqlite') return 'SQLite 文件中未检测到可展示的数据表'
         return '暂无可预览的子项'
       },
       summaryItems() {

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/addp/common/resource"
 )
 
 func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
@@ -263,6 +265,44 @@ func TestListContainerInfoProviderFormatsSorted(t *testing.T) {
 	want := []FormatType{"alpha", "zeta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListContainerInfoProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRegisterContainerChildResolver(t *testing.T) {
+	registry := NewProviderRegistry()
+	resolver := NewContainerChildResolver(
+		FormatType("container_child_test"),
+		func(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child ContainerChildInfo, _ *ParseOptions) (*ContainerChildResource, error) {
+			return NativeContainerChildResource(parent, parentRef, FormatType("container_child_test"), child, ChildTableParseOptions(child.Name, nil)), nil
+		},
+	)
+
+	if err := registry.RegisterContainerChildResolver(resolver); err != nil {
+		t.Fatalf("RegisterContainerChildResolver() error = %v", err)
+	}
+
+	got, err := registry.GetContainerChildResolver(FormatType("container_child_test"))
+	if err != nil {
+		t.Fatalf("GetContainerChildResolver() error = %v", err)
+	}
+	if got.Format() != FormatType("container_child_test") {
+		t.Fatalf("container child resolver format = %q, want container_child_test", got.Format())
+	}
+}
+
+func TestListContainerChildResolverFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterContainerChildResolver(NewContainerChildResolver(FormatType("zeta"), nil)); err != nil {
+		t.Fatalf("RegisterContainerChildResolver(zeta) error = %v", err)
+	}
+	if err := registry.RegisterContainerChildResolver(NewContainerChildResolver(FormatType("alpha"), nil)); err != nil {
+		t.Fatalf("RegisterContainerChildResolver(alpha) error = %v", err)
+	}
+
+	got := registry.ListContainerChildResolverFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListContainerChildResolverFormats() = %#v, want %#v", got, want)
 	}
 }
 

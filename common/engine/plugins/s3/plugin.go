@@ -138,7 +138,7 @@ func (p *S3Plugin) listDirectory(ctx context.Context, connInfo plugin.Connection
 		return nil, nil, err
 	}
 
-	bucket, prefix := objectstore.SplitBucketPrefix(path)
+	bucket, prefix := objectstore.SplitBucketDirectory(path)
 	if bucket == "" {
 		return nil, nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
 	}

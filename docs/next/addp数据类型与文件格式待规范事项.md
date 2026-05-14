@@ -36,7 +36,9 @@ SQLite、GeoPackage、Excel、ZIP 等容器类 data item 暂不自动展开内�
 
 ### 当前实现状态
 
-Excel、SQLite、GeoPackage、ZIP 已有容器 children 提取实现。容器父级只写入 sheet / table / view / layer / entry 的轻量 children 索引、默认入口和容器统计；字段、样本行、正文、媒体内容和 GeoPackage 单个 layer 的空间字段、SRID、extent、空间索引等 child 内容不得写入父容器。Excel / SQLite / GeoPackage 的表格 child 在选中后由 table info / sample reader 按需读取；ZIP entry 内容读取仍待补 `ContainerEntryReader` 或通用 entry resource wrapper。
+Excel、SQLite、GeoPackage、ZIP 已有容器 children 提取实现。容器父级只写入 sheet / table / view / layer / entry 的轻量 children 索引、默认入口和容器统计；字段、样本行、正文、媒体内容和 GeoPackage 单个 layer 的空间字段、SRID、extent、空间索引等 child 内容不得写入父容器。Excel / SQLite / GeoPackage 的表格 child 在选中后由 native child resolver 复用父资源和 child options 读取；ZIP 普通文件 entry 由 stream child resolver 打开后，再按 entry 自身的 `data_type` / `format` 交给对应 reader。
+
+Meta 默认只做一层容器 children 索引，不递归扫描嵌套容器。ZIP 中还有 ZIP 等嵌套关系由消费方在选中 child 后按需继续走同一套 `ContainerInfoProvider` / `ContainerChildResolver` 链路，并受最大深度、最大 children 数和解压大小等策略约束。
 
 ### 待确认
 

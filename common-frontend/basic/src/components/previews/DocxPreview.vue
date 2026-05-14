@@ -100,8 +100,23 @@
         </el-alert>
       </div>
 
+      <div v-if="unsupportedMessage" class="unsupported-preview">
+        <el-icon><WarningFilled /></el-icon>
+        <h3>{{ unsupportedMessage.title }}</h3>
+        <p>{{ unsupportedMessage.description }}</p>
+        <div class="unsupported-meta">
+          <span>文件名：{{ fileName }}</span>
+          <span v-if="displayContentType">文件类型：{{ displayContentType }}</span>
+          <span v-if="fileSize">文件大小：{{ formatFileSize(fileSize) }}</span>
+        </div>
+        <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocument">
+          <el-icon><Download /></el-icon>
+          下载后查看
+        </el-button>
+      </div>
+
       <!-- 文档内容 -->
-      <div class="docx-content" v-html="htmlContent"></div>
+      <div v-else class="docx-content" v-html="htmlContent"></div>
     </div>
   </div>
 </template>
@@ -124,6 +139,7 @@ const loading = ref(false)
 const error = ref('')
 const htmlContent = ref('')
 const infoMessage = ref('')
+const unsupportedMessage = ref(null)
 const showLargeFileWarning = ref(false)
 const cachedDocumentBytes = ref(null)
 let currentLoadToken = 0
@@ -362,7 +378,12 @@ const decodeBase64ToBytes = (base64) => {
 
 const fetchDocumentBytesFromUrl = async (url) => {
   try {
-    const response = await fetch(url, { credentials: 'include' })
+    const headers = {}
+    const token = localStorage.getItem('token')
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+    const response = await fetch(url, { credentials: 'include', headers })
     if (!response.ok) {
       throw new Error(`请求失败（${response.status}）`)
     }
@@ -525,51 +546,8 @@ const isZipArchive = (bytes) => {
   return bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05) && (bytes[3] === 0x04 || bytes[3] === 0x06)
 }
 
-const decodeWithEncoding = (bytes, encoding) => {
-  try {
-    const decoder = new TextDecoder(encoding, { fatal: false })
-    return decoder.decode(bytes)
-  } catch (err) {
-    return ''
-  }
-}
-
-const pickBestDecodedText = (bytes) => {
-  const encodings = ['utf-8', 'gb18030', 'gbk', 'utf-16le', 'utf-16be']
-  let bestText = ''
-  let bestScore = -1
-
-  encodings.forEach((encoding) => {
-    const text = decodeWithEncoding(bytes, encoding)
-    if (!text) {
-      return
-    }
-    const normalized = text.replace(/\s+/g, ' ').trim()
-    if (!normalized) {
-      return
-    }
-    const replacementMatches = text.match(/\uFFFD/g)
-    const replacementCount = replacementMatches ? replacementMatches.length : 0
-    const score = normalized.length - replacementCount * 5
-    if (score > bestScore) {
-      bestScore = score
-      bestText = text
-    }
-  })
-
-  return bestText
-}
-
-const convertLegacyWpsToHtml = (bytes) => {
-  const text = pickBestDecodedText(bytes)
-  if (text) {
-    const safe = escapeHtml(text).replace(/\r?\n/g, '<br />')
-    return {
-      html: `<pre class="wps-plain-text">${safe}</pre>`,
-      infoMessage: '检测到旧版 WPS 文档，已使用纯文本模式展示，排版可能存在偏差。'
-    }
-  }
-  throw new Error('该 WPS 文件为旧格式或加密格式，暂不支持在线预览，请下载后查看。')
+const convertLegacyWpsToHtml = () => {
+  throw new Error('该 WPS 文件不是可在线解析的新式文档结构。请下载后使用 WPS 打开，或另存为 DOCX / 新版 WPS 后再预览。')
 }
 
 const convertWpsZipToHtml = async (bytes) => {
@@ -645,6 +623,17 @@ const convertWpsBytesToHtml = async (bytes) => {
   }
 }
 
+const unsupportedWpsResult = () => ({
+  html: '',
+  messages: [],
+  usedFallback: true,
+  fallbackMessage: '',
+  unsupported: {
+    title: '暂不支持在线预览该 WPS 文档',
+    description: '当前浏览器预览组件暂不支持 WPS 专有文档格式。请下载后使用 WPS 打开；如需在线预览，可在 WPS 中另存为 DOCX 后重新上传。'
+  }
+})
+
 const convertDocumentBytesToHtml = async (bytes, arrayBuffer) => {
   if (!isWpsDocument.value) {
     const result = await convertDocxArrayBufferToHtml(arrayBuffer)
@@ -656,27 +645,21 @@ const convertDocumentBytesToHtml = async (bytes, arrayBuffer) => {
     }
   }
 
-  try {
-    const docxResult = await convertDocxArrayBufferToHtml(arrayBuffer)
-    if (docxResult.value && docxResult.value.trim().length > 0) {
-      return {
-        html: docxResult.value || '',
-        messages: docxResult.messages || [],
-        usedFallback: false,
-        fallbackMessage: ''
-      }
-    }
-    console.warn('WPS 文档使用 DOCX 解析结果为空，自动尝试兼容模式。')
-  } catch (err) {
-    console.warn('WPS 文档使用 DOCX 解析失败，尝试兼容模式。', err)
+  if (!isZipArchive(bytes)) {
+    return unsupportedWpsResult()
   }
 
-  const { html, infoMessage: fallbackMessage } = await convertWpsBytesToHtml(bytes)
-  return {
-    html,
-    messages: [],
-    usedFallback: true,
-    fallbackMessage: fallbackMessage || '已使用 WPS 兼容解析，排版可能与原文略有差异。'
+  try {
+    const { html, infoMessage: fallbackMessage } = await convertWpsBytesToHtml(bytes)
+    return {
+      html,
+      messages: [],
+      usedFallback: true,
+      fallbackMessage: fallbackMessage || '已使用 WPS 兼容解析，排版可能与原文略有差异。'
+    }
+  } catch (err) {
+    console.warn('WPS ZIP 兼容解析失败。', err)
+    return unsupportedWpsResult()
   }
 }
 
@@ -781,13 +764,14 @@ const loadDocument = async () => {
 
     console.log('🔄 转换中...')
 
-    const { html, messages, usedFallback, fallbackMessage } = await convertDocumentBytesToHtml(bytes, arrayBuffer)
+    const { html, messages, usedFallback, fallbackMessage, unsupported } = await convertDocumentBytesToHtml(bytes, arrayBuffer)
 
     if (token !== currentLoadToken) {
       return
     }
 
     htmlContent.value = html || ''
+    unsupportedMessage.value = unsupported || null
 
     const normalizedMessages = Array.isArray(messages) ? messages : []
     const errorMessages = normalizedMessages.filter((msg) => msg.type === 'error')
@@ -801,11 +785,11 @@ const loadDocument = async () => {
       throw new Error(firstError)
     }
 
-    if (usedFallback) {
+    if (usedFallback && !unsupportedMessage.value) {
       infoMessage.value = fallbackMessage || '已使用 WPS 兼容解析，排版可能与原文略有差异。'
     }
 
-    console.log(`✅ ${docLabel.value} 加载成功`)
+    console.log(unsupportedMessage.value ? `ℹ️ ${docLabel.value} 不支持在线解析` : `✅ ${docLabel.value} 加载成功`)
   } catch (err) {
     if (token !== currentLoadToken) {
       return
@@ -814,6 +798,7 @@ const loadDocument = async () => {
     error.value = `加载失败: ${err.message}`
     htmlContent.value = ''
     infoMessage.value = ''
+    unsupportedMessage.value = null
   } finally {
     if (token === currentLoadToken) {
       loading.value = false
@@ -828,6 +813,7 @@ const initLoad = () => {
   error.value = ''
   htmlContent.value = ''
   infoMessage.value = ''
+  unsupportedMessage.value = null
   showLargeFileWarning.value = false
   loading.value = false
   cachedDocumentBytes.value = null
@@ -1091,6 +1077,49 @@ onMounted(() => {
   background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
+}
+
+.unsupported-preview {
+  flex: 1;
+  margin: 16px;
+  padding: 48px 32px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.unsupported-preview .el-icon {
+  font-size: 48px;
+  color: var(--el-color-warning);
+}
+
+.unsupported-preview h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.unsupported-preview p {
+  margin: 0;
+  max-width: 560px;
+  line-height: 1.7;
+  color: var(--addp-text-secondary);
+}
+
+.unsupported-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: var(--addp-text-tertiary);
 }
 
 /* 文档内容样式 - 保持原有样式 */

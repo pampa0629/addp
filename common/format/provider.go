@@ -178,6 +178,11 @@ type containerProviderAdapter struct {
 	describe   func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error)
 }
 
+type containerChildResolverAdapter struct {
+	formatType FormatType
+	resolve    func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
+}
+
 func (p tableProviderAdapter) Format() FormatType {
 	return p.formatType
 }
@@ -303,34 +308,58 @@ func (p containerProviderAdapter) DescribeContainer(ctx context.Context, input i
 	return p.describe(ctx, input, options)
 }
 
+func (p containerChildResolverAdapter) Format() FormatType {
+	return p.formatType
+}
+
+func (p containerChildResolverAdapter) Capabilities() FormatCapability {
+	capability, ok := GetFormatCapability(p.formatType)
+	if ok {
+		return capability
+	}
+	return FormatCapability{
+		Format:         p.formatType,
+		DataType:       FormatDataTypeContainer,
+		Layouts:        []string{FormatLayoutSingle},
+		ProviderHints:  []string{FormatProviderContainer},
+		ContentReaders: []string{string(ContentReaderContainerEntry)},
+	}
+}
+
+func (p containerChildResolverAdapter) ResolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {
+	return p.resolve(ctx, parent, parentRef, child, options)
+}
+
 type ProviderRegistry struct {
-	mu                     sync.RWMutex
-	formatPlugins          map[FormatType]FormatPlugin
-	tableProviders         map[FormatType]TableProvider
-	formatInfoProviders    map[FormatType]FormatInfoProvider
-	tableInfoProviders     map[FormatType]TableInfoProvider
-	tableSampleProviders   map[FormatType]TableSampleProvider
-	documentProviders      map[FormatType]DocumentProvider
-	documentInfoProviders  map[FormatType]DocumentInfoProvider
-	documentTextReaders    map[FormatType]DocumentTextReader
-	mediaInfoProviders     map[FormatType]MediaInfoProvider
-	containerInfoProviders map[FormatType]ContainerInfoProvider
+	mu                      sync.RWMutex
+	formatPlugins           map[FormatType]FormatPlugin
+	tableProviders          map[FormatType]TableProvider
+	formatInfoProviders     map[FormatType]FormatInfoProvider
+	tableInfoProviders      map[FormatType]TableInfoProvider
+	tableSampleProviders    map[FormatType]TableSampleProvider
+	documentProviders       map[FormatType]DocumentProvider
+	documentInfoProviders   map[FormatType]DocumentInfoProvider
+	documentTextReaders     map[FormatType]DocumentTextReader
+	mediaInfoProviders      map[FormatType]MediaInfoProvider
+	containerInfoProviders  map[FormatType]ContainerInfoProvider
+	containerChildResolvers map[FormatType]ContainerChildResolver
 }
 
 var globalProviderRegistry = NewProviderRegistry()
 
 func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
-		formatPlugins:          make(map[FormatType]FormatPlugin),
-		tableProviders:         make(map[FormatType]TableProvider),
-		formatInfoProviders:    make(map[FormatType]FormatInfoProvider),
-		tableInfoProviders:     make(map[FormatType]TableInfoProvider),
-		tableSampleProviders:   make(map[FormatType]TableSampleProvider),
-		documentProviders:      make(map[FormatType]DocumentProvider),
-		documentInfoProviders:  make(map[FormatType]DocumentInfoProvider),
-		documentTextReaders:    make(map[FormatType]DocumentTextReader),
-		mediaInfoProviders:     make(map[FormatType]MediaInfoProvider),
-		containerInfoProviders: make(map[FormatType]ContainerInfoProvider),
+		formatPlugins:           make(map[FormatType]FormatPlugin),
+		tableProviders:          make(map[FormatType]TableProvider),
+		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
+		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
+		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
+		documentProviders:       make(map[FormatType]DocumentProvider),
+		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
+		documentTextReaders:     make(map[FormatType]DocumentTextReader),
+		mediaInfoProviders:      make(map[FormatType]MediaInfoProvider),
+		containerInfoProviders:  make(map[FormatType]ContainerInfoProvider),
+		containerChildResolvers: make(map[FormatType]ContainerChildResolver),
 	}
 }
 
@@ -407,6 +436,11 @@ func (r *ProviderRegistry) RegisterFormatPlugin(plugin FormatPlugin) error {
 	}
 	if provider, ok := plugin.(ContainerInfoProvider); ok {
 		if err := r.RegisterContainerInfoProvider(provider); err != nil {
+			return err
+		}
+	}
+	if resolver, ok := plugin.(ContainerChildResolver); ok {
+		if err := r.RegisterContainerChildResolver(resolver); err != nil {
 			return err
 		}
 	}
@@ -601,6 +635,25 @@ func (r *ProviderRegistry) RegisterContainerInfoProvider(provider ContainerInfoP
 	return nil
 }
 
+func RegisterContainerChildResolver(resolver ContainerChildResolver) error {
+	return globalProviderRegistry.RegisterContainerChildResolver(resolver)
+}
+
+func (r *ProviderRegistry) RegisterContainerChildResolver(resolver ContainerChildResolver) error {
+	if resolver == nil {
+		return fmt.Errorf("container child resolver cannot be nil")
+	}
+	formatType := resolver.Format()
+	if formatType == "" || formatType == FormatUnknown {
+		return fmt.Errorf("container child resolver must define format")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.containerChildResolvers[formatType] = resolver
+	return nil
+}
+
 func GetFormatPlugin(formatType FormatType) (FormatPlugin, error) {
 	return globalProviderRegistry.GetFormatPlugin(formatType)
 }
@@ -757,6 +810,21 @@ func (r *ProviderRegistry) GetContainerInfoProvider(formatType FormatType) (Cont
 		return nil, fmt.Errorf("no container info provider registered for format: %s", formatType)
 	}
 	return provider, nil
+}
+
+func GetContainerChildResolver(formatType FormatType) (ContainerChildResolver, error) {
+	return globalProviderRegistry.GetContainerChildResolver(formatType)
+}
+
+func (r *ProviderRegistry) GetContainerChildResolver(formatType FormatType) (ContainerChildResolver, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	resolver, ok := r.containerChildResolvers[formatType]
+	if !ok {
+		return nil, fmt.Errorf("no container child resolver registered for format: %s", formatType)
+	}
+	return resolver, nil
 }
 
 func ListFormatPluginFormats() []FormatType {
@@ -947,6 +1015,24 @@ func (r *ProviderRegistry) ListContainerInfoProviderFormats() []FormatType {
 	return formats
 }
 
+func ListContainerChildResolverFormats() []FormatType {
+	return globalProviderRegistry.ListContainerChildResolverFormats()
+}
+
+func (r *ProviderRegistry) ListContainerChildResolverFormats() []FormatType {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	formats := make([]FormatType, 0, len(r.containerChildResolvers))
+	for formatType := range r.containerChildResolvers {
+		formats = append(formats, formatType)
+	}
+	sort.Slice(formats, func(i, j int) bool {
+		return formats[i] < formats[j]
+	})
+	return formats
+}
+
 func NewFormatInfoProvider(
 	formatType FormatType,
 	describe func(context.Context, io.Reader, *ParseOptions) (map[string]interface{}, error),
@@ -1011,6 +1097,21 @@ func NewContainerInfoProvider(
 	return containerProviderAdapter{
 		formatType: formatType,
 		describe:   describe,
+	}
+}
+
+func NewContainerChildResolver(
+	formatType FormatType,
+	resolve func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error),
+) ContainerChildResolver {
+	if resolve == nil {
+		resolve = func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error) {
+			return nil, fmt.Errorf("container child resolver %s does not implement ResolveContainerChild", formatType)
+		}
+	}
+	return containerChildResolverAdapter{
+		formatType: formatType,
+		resolve:    resolve,
 	}
 }
 

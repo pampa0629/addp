@@ -15,12 +15,23 @@ type ContainerInfo struct {
 
 // ContainerChildInfo 描述容器内部的一个子对象，例如 Excel sheet、SQLite table。
 type ContainerChildInfo struct {
-	Name        string
-	Kind        string
-	DataType    string
-	RowCount    *int64
-	ColumnCount *int
-	HasHeader   *bool
-	Fields      []FieldInfo
-	Properties  map[string]interface{}
+	Name         string
+	Kind         string
+	DataType     string
+	Format       FormatType
+	Organization string
+	RowCount     *int64
+	ColumnCount  *int
+	HasHeader    *bool
+	Fields       []FieldInfo
+	Components   []ContainerChildComponent
+	Properties   map[string]interface{}
+}
+
+type ContainerChildComponent struct {
+	Role      string
+	Path      string
+	Required  bool
+	Primary   bool
+	Extension string
 }
