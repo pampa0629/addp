@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -83,7 +84,7 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 }
 
 func metaitemForJSONDocument(meta format.ObjectMetadata) *metaitem.DetectedItem {
-	return metaitem.InferObjectCatalogDataItem(meta, "converted.json")
+	return metacatalog.InferObjectCatalogDataItem(meta, "converted.json")
 }
 
 func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {

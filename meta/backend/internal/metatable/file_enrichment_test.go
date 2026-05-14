@@ -1,4 +1,4 @@
-package metaitem
+package metatable
 
 import (
 	"bytes"
@@ -13,13 +13,14 @@ import (
 	"github.com/addp/common/format"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/meta/internal/metaitem"
 	parquetgo "github.com/parquet-go/parquet-go"
 )
 
-func TestTableFileDetectorDetectsPartitionedWholeScope(t *testing.T) {
+func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
+	d := &tableFileItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
 		{Name: "part-001.parquet", Path: "dataset/dt=2026-05-06/part-001.parquet", Size: 20},
@@ -50,7 +51,7 @@ func TestTableFileDetectorDetectsPartitionedWholeScope(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorWritesParquetPartRowCounts(t *testing.T) {
+func TestTableFileResolverWritesParquetPartRowCounts(t *testing.T) {
 	reader := mapContentReader{content: map[string][]byte{
 		"dataset/dt=2026-05-05/part-000.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"}),
 		"dataset/dt=2026-05-06/part-001.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 2, Name: "Bob"}, testMetaitemParquetRow{ID: 3, Name: "Carol"}),
@@ -80,10 +81,10 @@ func TestTableFileDetectorWritesParquetPartRowCounts(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorRulesDeclareSingleFileAndWholeScope(t *testing.T) {
+func TestTableFileResolverRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
+	d := &tableFileItemResolver{}
 	rules := d.Rules()
 	if len(rules) != 2 {
 		t.Fatalf("Rules len = %d, want 2", len(rules))
@@ -110,10 +111,10 @@ func TestTableFileDetectorRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorAllowsAuxiliaryFiles(t *testing.T) {
+func TestTableFileResolverAllowsAuxiliaryFiles(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
+	d := &tableFileItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/part-000.parquet", Size: 10},
 		{Name: "_SUCCESS", Path: "dataset/_SUCCESS", Size: 0},
@@ -135,10 +136,10 @@ func TestTableFileDetectorAllowsAuxiliaryFiles(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorRejectsMixedWholeScope(t *testing.T) {
+func TestTableFileResolverRejectsMixedWholeScope(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
+	d := &tableFileItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet"},
 		{Name: "README.txt", Path: "dataset/README.txt"},
@@ -150,11 +151,11 @@ func TestTableFileDetectorRejectsMixedWholeScope(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
+func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
-	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+	d := &tableFileItemResolver{}
+	result, err := d.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
 		DirPath: "dataset",
 		Subdirs: []plugin.DirEntry{
 			{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
@@ -187,10 +188,10 @@ func TestTableFileDetectorResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	}
 }
 
-func TestTableFileDetectorRejectsSiblingIndependentParquetFiles(t *testing.T) {
+func TestTableFileResolverRejectsSiblingIndependentParquetFiles(t *testing.T) {
 	t.Parallel()
 
-	d := &tableFileItemDetector{}
+	d := &tableFileItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "sales.parquet", Path: "dataset/sales.parquet"},
 		{Name: "customers.parquet", Path: "dataset/customers.parquet"},

@@ -1,4 +1,4 @@
-package metaitem
+package metacatalog
 
 import (
 	"context"
@@ -13,14 +13,17 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metaitemattr"
+	_ "github.com/addp/meta/internal/metatable"
 	"github.com/addp/meta/internal/models"
 )
 
 type ObjectCatalogCompositeItem struct {
 	Bucket string
 	Prefix string
-	Item   *DetectedItem
-	Claims ResourceClaimSet
+	Item   *metaitem.DetectedItem
+	Claims metaitem.ResourceClaimSet
 }
 
 type ObjectCatalogCompositeDetectionError struct {
@@ -69,7 +72,7 @@ func DetectObjectCatalogCompositeItems(
 			continue
 		}
 		files := objectMetasToFileEntries(bucket, group)
-		detection, err := ResolveItems(ctx, DirectoryResolveInput{
+		detection, err := metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
 			ContentReader: contentReader,
 			ConnInfo:      connInfo,
 			EngineID:      engineID,
@@ -107,9 +110,9 @@ func DetectObjectCatalogCompositeItems(
 	return skipPaths, items, warnings
 }
 
-func InferObjectCatalogDataItem(meta format.ObjectMetadata, objectName string) *DetectedItem {
+func InferObjectCatalogDataItem(meta format.ObjectMetadata, objectName string) *metaitem.DetectedItem {
 	physicalPath := meta.Bucket + "/" + meta.Path
-	return InferSingleResource(SingleResourceInput{
+	return metaitem.InferSingleResource(metaitem.SingleResourceInput{
 		Name:   objectName,
 		Path:   physicalPath,
 		Size:   meta.SizeBytes,
@@ -138,7 +141,7 @@ func ObjectCatalogCompositeName(composite ObjectCatalogCompositeItem) (name, obj
 	return name, objectPath
 }
 
-func ObjectCatalogCompositeMode(item *DetectedItem) string {
+func ObjectCatalogCompositeMode(item *metaitem.DetectedItem) string {
 	if item == nil {
 		return "directory"
 	}
@@ -167,7 +170,7 @@ type ObjectCatalogSingleItemPlan struct {
 	FullName    string
 	Fingerprint string
 	Attributes  models.JSONMap
-	DataItem    *DetectedItem
+	DataItem    *metaitem.DetectedItem
 }
 
 type ObjectCatalogCompositeItemPlan struct {
@@ -236,7 +239,7 @@ func PlanObjectCatalogSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	if meta.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
 	}
-	MergeDataItemAttributes(attrs, dataItem)
+	metaitemattr.MergeDataItemAttributes(attrs, dataItem)
 	ApplyContainerSummary(attrs, dataItem)
 
 	fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
@@ -260,7 +263,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 
-	attrs := models.JSONMap(BuildAttributes(composite.Item))
+	attrs := models.JSONMap(metaitemattr.BuildAttributes(composite.Item))
 	if len(composite.Item.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(composite.Item.Fields))
 	}
@@ -276,7 +279,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 		ParentPath:  parentPath,
 		FullName:    fullName,
 		Fingerprint: commonModels.GenerateItemFingerprint(engineID, fullName),
-		SizeBytes:   composite.Item.SizeBytes,
+		SizeBytes:   composite.Item.Size(),
 		Attributes:  attrs,
 	}, true
 }

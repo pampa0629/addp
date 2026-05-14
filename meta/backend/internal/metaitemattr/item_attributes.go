@@ -1,9 +1,12 @@
-package metaitem
+package metaitemattr
 
-import "github.com/addp/common/dataitem"
+import (
+	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/metaitem"
+)
 
 // BuildAttributes 将 Meta 扫描得到的 item 语义合并为可落库 attributes。
-func BuildAttributes(item *DetectedItem) map[string]interface{} {
+func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	if item == nil {
 		return map[string]interface{}{}
 	}
@@ -23,44 +26,24 @@ func BuildAttributes(item *DetectedItem) map[string]interface{} {
 	if item.PhysicalPath != "" {
 		storageAttrs["physical_path"] = item.PhysicalPath
 	}
-	if item.Organization == dataitem.OrganizationMulti && len(item.ComponentFiles) > 0 {
-		itemAttrs["component_files"] = item.ComponentFiles
-		itemAttrs["file_count"] = len(item.ComponentFiles)
+	componentFiles := item.ComponentFilePaths()
+	if item.Organization == dataitem.OrganizationMulti && len(componentFiles) > 0 {
+		itemAttrs["component_files"] = componentFiles
+		itemAttrs["file_count"] = len(componentFiles)
 	}
 	if item.Organization == dataitem.OrganizationWhole {
 		itemAttrs["scope_exclusive"] = true
 		itemAttrs["claim_policy"] = "whole_scope"
 	}
-	if item.SizeBytes > 0 {
-		storageAttrs["total_size"] = item.SizeBytes
+	if item.Size() > 0 {
+		storageAttrs["total_size"] = item.Size()
 	}
 	attrs["item"] = mergeAttributeSection(attrs["item"], itemAttrs)
 	attrs["storage"] = mergeAttributeSection(attrs["storage"], storageAttrs)
 	return attrs
 }
 
-func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string, fallbackSize int64) *DetectedItem {
-	if info == nil {
-		return nil
-	}
-	sizeBytes := fallbackSize
-	if info.SizeBytes != nil {
-		sizeBytes = *info.SizeBytes
-	}
-	return &DetectedItem{
-		Organization:   info.Organization,
-		DataType:       info.DataType,
-		Format:         info.Format,
-		PhysicalPath:   physicalPath,
-		EntryPath:      info.EntryPath,
-		ComponentFiles: info.ComponentFiles,
-		SizeBytes:      sizeBytes,
-		Fields:         info.Fields,
-		Attributes:     info.Attributes,
-	}
-}
-
-func MergeDataItemAttributes(attrs map[string]interface{}, item *DetectedItem) {
+func MergeDataItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {
 	if attrs == nil || item == nil {
 		return
 	}

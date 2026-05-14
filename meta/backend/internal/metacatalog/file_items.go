@@ -1,4 +1,4 @@
-package metaitem
+package metacatalog
 
 import (
 	"path/filepath"
@@ -6,10 +6,11 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
-func FileCatalogDetectedItemName(dirPath string, item *DetectedItem) (name, fullName string) {
+func FileCatalogDetectedItemName(dirPath string, item *metaitem.DetectedItem) (name, fullName string) {
 	if item == nil {
 		return inferFileCatalogItemName(dirPath)
 	}
@@ -24,7 +25,7 @@ func FileCatalogDetectedItemName(dirPath string, item *DetectedItem) (name, full
 	return inferFileCatalogItemName(dirPath)
 }
 
-func ApplyContainerSummary(attrs models.JSONMap, detected *DetectedItem) {
+func ApplyContainerSummary(attrs models.JSONMap, detected *metaitem.DetectedItem) {
 	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
 		return
 	}

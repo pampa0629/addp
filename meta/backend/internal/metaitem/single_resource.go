@@ -26,21 +26,37 @@ func InferSingleResourceItem(file plugin.FileEntry) *DetectedItem {
 
 // InferSingleResource 基于单个资源信息推断基础 Meta item 语义。
 func InferSingleResource(input SingleResourceInput) *DetectedItem {
-	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
-	organization := dataitem.OrganizationSingle
-	dataType := dataitem.InferDataType(formatName, input.ContentType)
-	if rule, ok := dataitem.MatchBuiltinSingleResourceRule(formatName); ok {
-		organization = rule.Organization
-		dataType = rule.DataType
+	properties := map[string]interface{}{}
+	if input.Format != "" {
+		properties["format"] = input.Format
 	}
-	item := &DetectedItem{
-		Organization:   organization,
-		DataType:       dataType,
-		Format:         formatName,
-		PhysicalPath:   input.Path,
-		EntryPath:      input.Path,
-		ComponentFiles: []string{input.Path},
-		SizeBytes:      input.Size,
+	resolved, _ := dataitem.ResolveItems(dataitem.ResolveInput{
+		ScopeKind: dataitem.ScopeKindDirectory,
+		ScopePath: input.Path,
+		Candidates: []dataitem.Candidate{{
+			Name:        input.Name,
+			Path:        input.Path,
+			ContentType: input.ContentType,
+			SizeBytes:   &input.Size,
+			Properties:  properties,
+		}},
+		Options: dataitem.ResolveOptions{MaxItems: 1},
+	})
+	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
+	item := dataitem.ResolvedItem{
+		Organization:  dataitem.OrganizationSingle,
+		DataType:      dataitem.InferDataType(formatName, input.ContentType),
+		Format:        formatName,
+		EntryPath:     input.Path,
+		ComponentList: ComponentRefsFromPaths([]string{input.Path}),
+		SizeBytes:     &input.Size,
+	}
+	if resolved != nil && len(resolved.Items) > 0 {
+		item = resolved.Items[0]
+	}
+	detected := &DetectedItem{
+		ResolvedItem: item,
+		PhysicalPath: input.Path,
 		Attributes: map[string]interface{}{
 			"storage": map[string]interface{}{
 				"path":         input.Path,
@@ -49,5 +65,5 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 			},
 		},
 	}
-	return item
+	return detected
 }

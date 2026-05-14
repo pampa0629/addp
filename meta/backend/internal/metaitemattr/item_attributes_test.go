@@ -1,14 +1,19 @@
-package metaitem
+package metaitemattr
 
 import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metaitem"
 )
 
+func int64PtrForTest(value int64) *int64 {
+	return &value
+}
+
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
-	item := InferSingleResource(SingleResourceInput{
+	item := metaitem.InferSingleResource(metaitem.SingleResourceInput{
 		Name: "roads.parquet",
 		Path: "bucket/roads.parquet",
 		Size: 42,
@@ -40,12 +45,14 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 }
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
-	item := &DetectedItem{
-		Organization: dataitem.OrganizationWhole,
-		DataType:     dataitem.DataTypeTable,
-		Format:       "parquet",
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Organization: dataitem.OrganizationWhole,
+			DataType:     dataitem.DataTypeTable,
+			Format:       "parquet",
+			SizeBytes:    int64PtrForTest(128),
+		},
 		PhysicalPath: "/lake/sales",
-		SizeBytes:    128,
 	}
 
 	attrs := BuildAttributes(item)
@@ -56,9 +63,11 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 }
 
 func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
-	item := &DetectedItem{
-		Organization: dataitem.OrganizationSingle,
-		DataType:     dataitem.DataTypeDocument,
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Organization: dataitem.OrganizationSingle,
+			DataType:     dataitem.DataTypeDocument,
+		},
 		Attributes: map[string]interface{}{
 			"path": "legacy/path",
 			"size": int64(10),

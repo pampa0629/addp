@@ -12,8 +12,12 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/metacontainer"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metaitemattr"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metatable"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
@@ -139,8 +143,8 @@ func (s *FileCatalogScanService) ScanPaths(
 	return totalRoots, totalItems, nil
 }
 
-// scanDirectory 递归扫描目录，对每个目录运行 detector 链
-// isBucketRoot=true 时跳过 detector 检测（bucket 根目录不应被整体识别为一张表）
+// scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
+// isBucketRoot=true 时跳过独占 whole-scope 识别（bucket 根目录不应被整体识别为一张表）。
 func (s *FileCatalogScanService) scanDirectory(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
@@ -163,7 +167,7 @@ func (s *FileCatalogScanService) scanDirectory(
 
 	claimedPaths := metaitem.ResourceClaimSet{}
 
-	// 根目录允许非独占组合识别（如根目录下的 Shapefile），但不允许被目录树 detector 整体吞掉。
+	// 根目录允许非独占组合识别（如根目录下的 multi 组件 item），但不允许被目录树 whole-scope 识别整体吞掉。
 	// 子目录走完整组合识别入口；只有 whole scope 等明确独占范围时才停止后续探测。
 	if isBucketRoot {
 		detection, err := resolveNonExclusiveScopeItems(ctx, contentReader, connInfo, resource, dirPath, files, subdirs)
@@ -216,7 +220,7 @@ func (s *FileCatalogScanService) scanDirectory(
 		}
 	}
 
-	// 未被组合 detector 认领的文件继续逐文件处理。
+	// 未被组合 item 认领的文件继续逐文件处理。
 	for _, file := range files {
 		if claimedPaths[file.Path] {
 			continue
@@ -276,16 +280,16 @@ func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
 	detected *metaitem.DetectedItem,
 	itemTerm string,
 ) bool {
-	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaitemattr.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
 
-	itemName, fullName := metaitem.FileCatalogDetectedItemName(dirPath, detected)
+	itemName, fullName := metacatalog.FileCatalogDetectedItemName(dirPath, detected)
 	_, upsertErr := s.repo.UpsertItem(
 		tenantID, resource.ID, parentNode,
 		itemTerm, itemName, fullName,
-		attrs, nil, &detected.SizeBytes, nil,
+		attrs, nil, int64Ptr(detected.Size()), nil,
 	)
 	if upsertErr != nil {
 		s.log.Warn("保存复合数据项失败",
@@ -320,20 +324,20 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 		detected = metaitem.InferSingleResourceItem(file)
 	}
 	if detected.Organization == dataitem.OrganizationSingle {
-		enriched, ok, err := metaitem.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
+		enriched, ok, err := metatable.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
-			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
+			return metaattr.JSONMap(metaitemattr.BuildAttributes(detected)), nil, nil
 		}
 		if ok {
 			detected = enriched
 		}
 	}
-	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaitemattr.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
-	metaitem.ApplyContainerSummary(attrs, detected)
+	metacatalog.ApplyContainerSummary(attrs, detected)
 	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {
 		reader, err := contentReader.OpenContent(ctx, connInfo, metapath.FileCatalogPath(resource.ID, file.Path), plugin.ReadOptions{})
 		if err != nil {
@@ -341,7 +345,7 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 			return attrs, detected.Fields, nil
 		}
 		defer reader.Close()
-		if err := metaitem.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
+		if err := metacontainer.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
 			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
 		}
 	}
@@ -397,6 +401,10 @@ func resolveNonExclusiveScopeItems(
 		Files:         files,
 		Subdirs:       subdirs,
 	})
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
 }
 
 func (s *FileCatalogScanService) listRoots(

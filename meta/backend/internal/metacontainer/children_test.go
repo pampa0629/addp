@@ -1,4 +1,4 @@
-package metaitem
+package metacontainer
 
 import (
 	"archive/zip"
@@ -11,10 +11,15 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/xuri/excelize/v2"
 )
+
+func detectedItemForTest(item dataitem.ResolvedItem) *metaitem.DetectedItem {
+	return &metaitem.DetectedItem{ResolvedItem: item}
+}
 
 func TestEnrichExcelContainerChildrenWritesSheets(t *testing.T) {
 	t.Parallel()
@@ -38,7 +43,7 @@ func TestEnrichExcelContainerChildrenWritesSheets(t *testing.T) {
 	}
 
 	attrs := models.JSONMap{}
-	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatExcel)}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatExcel)})
 	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(buf.Bytes())); err != nil {
 		t.Fatalf("enrich: %v", err)
 	}
@@ -63,7 +68,7 @@ func TestEnrichSQLiteContainerChildrenWritesTables(t *testing.T) {
 	})
 
 	attrs := models.JSONMap{}
-	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatSQLite)}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatSQLite)})
 	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
 		t.Fatalf("enrich: %v", err)
 	}
@@ -101,7 +106,7 @@ func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) 
 	})
 
 	attrs := models.JSONMap{}
-	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatGeoPackage)}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatGeoPackage)})
 	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
 		t.Fatalf("enrich: %v", err)
 	}
@@ -140,7 +145,7 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	})
 
 	attrs := models.JSONMap{}
-	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)})
 	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
 		t.Fatalf("enrich: %v", err)
 	}
@@ -170,7 +175,7 @@ func TestEnrichZIPContainerChildrenGroupsMultiComponents(t *testing.T) {
 	})
 
 	attrs := models.JSONMap{}
-	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)}
+	item := detectedItemForTest(dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)})
 	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
 		t.Fatalf("enrich: %v", err)
 	}

@@ -15,8 +15,12 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/metacontainer"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metaitemattr"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metatable"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
@@ -579,7 +583,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
-	compositeSkipPaths, compositeItems, compositeWarnings := metaitem.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+	compositeSkipPaths, compositeItems, compositeWarnings := metacatalog.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
@@ -615,7 +619,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			"scanPathPrefix", scanPathPrefix,
 			"basePrefixNode", basePrefixNode.Name)
 
-		pathPlan := metaitem.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
+		pathPlan := metacatalog.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
 		if pathPlan.ExactBase && meta.NodeType == "prefix" {
 			ensureObjectCatalogNodeAggregate(stats, basePrefixNode)
 		}
@@ -661,7 +665,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			continue
 		}
 
-		itemPlan := metaitem.PlanObjectCatalogSingleItem(engineID, meta, trimmed, itemTerm)
+		itemPlan := metacatalog.PlanObjectCatalogSingleItem(engineID, meta, trimmed, itemTerm)
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
@@ -728,15 +732,15 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 		if tableAttrs, err := s.enrichObjectCatalogTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, strings.EqualFold(scanDepth, "deep")); err != nil {
 			s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
 		} else if tableAttrs != nil {
-			metaitem.MergeAttributeMaps(enhancedAttrs, tableAttrs)
+			metaitemattr.MergeAttributeMaps(enhancedAttrs, tableAttrs)
 		}
-		metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
+		metacatalog.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
 		if itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
 			reader, err := readableProvider.OpenContent(context.Background(), connInfo, objectCatalogPathForContent(engineID, meta.Bucket, meta.Path), plugin.ReadOptions{})
 			if err != nil {
 				s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", meta.Bucket, "path", meta.Path, "error", err)
 			} else {
-				if err := metaitem.EnrichContainerChildren(context.Background(), enhancedAttrs, itemPlan.DataItem, reader); err != nil {
+				if err := metacontainer.EnrichContainerChildren(context.Background(), enhancedAttrs, itemPlan.DataItem, reader); err != nil {
 					s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", meta.Bucket, "path", meta.Path, "error", err)
 				}
 				_ = reader.Close()
@@ -773,7 +777,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
-	items []metaitem.ObjectCatalogCompositeItem,
+	items []metacatalog.ObjectCatalogCompositeItem,
 	stats map[uint]*objectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
@@ -785,7 +789,7 @@ func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 		if composite.Item == nil {
 			continue
 		}
-		itemPlan, ok := metaitem.PlanObjectCatalogCompositeItem(engineID, composite, itemTerm)
+		itemPlan, ok := metacatalog.PlanObjectCatalogCompositeItem(engineID, composite, itemTerm)
 		if !ok {
 			continue
 		}
@@ -857,7 +861,7 @@ func (s *ObjectCatalogScanService) enrichObjectCatalogTableFileAttributes(
 		return nil, nil
 	}
 	physicalPath := meta.Bucket + "/" + meta.Path
-	enriched, ok, err := metaitem.EnrichSingleTableFileItem(ctx, readableProvider, connInfo, engineID, item, physicalPath, meta.SizeBytes, includeContentIndex)
+	enriched, ok, err := metatable.EnrichSingleTableFileItem(ctx, readableProvider, connInfo, engineID, item, physicalPath, meta.SizeBytes, includeContentIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -865,7 +869,7 @@ func (s *ObjectCatalogScanService) enrichObjectCatalogTableFileAttributes(
 		return nil, nil
 	}
 	attrs := metaattr.JSONMap(enriched.Attributes)
-	metaitem.MergeDataItemAttributes(attrs, enriched)
+	metaitemattr.MergeDataItemAttributes(attrs, enriched)
 	metaattr.SetStorage(attrs, "bucket", meta.Bucket)
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	metaattr.SetStorage(attrs, "path", dir)

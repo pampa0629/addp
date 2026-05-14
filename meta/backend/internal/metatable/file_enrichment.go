@@ -1,4 +1,4 @@
-package metaitem
+package metatable
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/resource"
+	"github.com/addp/meta/internal/metaitem"
 )
 
 var tableFileAuxiliaryFileNames = map[string]bool{
@@ -21,10 +22,12 @@ var tableFileAuxiliaryFileNames = map[string]bool{
 	"_common_metadata": true,
 }
 
-// TableFileDetector 表格文件检测器。
-// 检测条件：目录树内存在 common/format 声明为 whole scope table 的数据文件，
-// 且参与候选的文件全部为表格数据文件或常见辅助文件。
-type tableFileItemDetector struct{}
+// TableFileResolver 识别 common/dataitem 判定出的表格文件 item，并补充 schema 等 Meta 落库信息。
+type tableFileItemResolver struct{}
+
+func init() {
+	metaitem.RegisterResolver(&tableFileItemResolver{})
+}
 
 func tableFileItemRules() []dataitem.FormatRule {
 	formats := tableFileFormatsByExtension()
@@ -111,18 +114,54 @@ func containsLayout(values []string, target string) bool {
 	return false
 }
 
-func (d *tableFileItemDetector) Priority() int {
+func (d *tableFileItemResolver) Priority() int {
 	return 80
 }
 
-func (d *tableFileItemDetector) Rules() []dataitem.FormatRule {
+func (d *tableFileItemResolver) Rules() []dataitem.FormatRule {
 	return tableFileItemRules()
 }
 
-func (d *tableFileItemDetector) ResolveItems(
+func resolveTableFileDataItem(dirPath string, files []plugin.FileEntry) (*dataitem.ResolvedItem, bool, error) {
+	resolved, err := dataitem.ResolveItems(dataitem.ResolveInput{
+		ScopeKind:  dataitem.ScopeKindDirectory,
+		ScopePath:  dirPath,
+		Candidates: tableFileCandidates(files),
+		Options: dataitem.ResolveOptions{
+			AllowWholeScope: true,
+		},
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if resolved == nil || len(resolved.Items) != 1 {
+		return nil, false, nil
+	}
+	item := resolved.Items[0]
+	if item.DataType != dataitem.DataTypeTable {
+		return nil, false, nil
+	}
+	return &item, item.Organization == dataitem.OrganizationWhole && resolved.Exclusive, nil
+}
+
+func tableFileCandidates(files []plugin.FileEntry) []dataitem.Candidate {
+	candidates := make([]dataitem.Candidate, 0, len(files))
+	for _, file := range files {
+		size := file.Size
+		candidates = append(candidates, dataitem.Candidate{
+			Path:        file.Path,
+			Name:        file.Name,
+			ContentType: file.ContentType,
+			SizeBytes:   &size,
+		})
+	}
+	return candidates
+}
+
+func (d *tableFileItemResolver) ResolveItems(
 	ctx context.Context,
-	input DirectoryResolveInput,
-) (*DetectionResult, error) {
+	input metaitem.DirectoryResolveInput,
+) (*metaitem.DetectionResult, error) {
 	files := input.Files
 	subdirs := input.Subdirs
 	if len(input.RecursiveFiles) > 0 {
@@ -143,80 +182,61 @@ func (d *tableFileItemDetector) ResolveItems(
 	if info.SizeBytes != nil {
 		totalSize = *info.SizeBytes
 	}
-	item := &DetectedItem{
-		Organization:   info.Organization,
-		DataType:       info.DataType,
-		Format:         info.Format,
-		PhysicalPath:   input.DirPath,
-		EntryPath:      info.EntryPath,
-		ComponentFiles: info.ComponentFiles,
-		SizeBytes:      totalSize,
-		Fields:         info.Fields,
-		Attributes:     info.Attributes,
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Organization:  info.Organization,
+			DataType:      info.DataType,
+			Format:        info.Format,
+			EntryPath:     info.EntryPath,
+			ComponentList: metaitem.ComponentRefsFromPaths(info.ComponentFiles),
+			SizeBytes:     &totalSize,
+		},
+		PhysicalPath: input.DirPath,
+		Fields:       info.Fields,
+		Attributes:   info.Attributes,
 	}
-	claims := ResourceClaimSet{}
-	for _, path := range item.ComponentFiles {
+	claims := metaitem.ResourceClaimSet{}
+	for _, path := range item.ComponentFilePaths() {
 		claims[path] = true
 	}
-	return &DetectionResult{
-		Items:     []*DetectedItem{item},
+	return &metaitem.DetectionResult{
+		Items:     []*metaitem.DetectedItem{item},
 		Claims:    claims,
 		Exclusive: item.Organization == dataitem.OrganizationWhole,
 	}, nil
 }
 
-func (d *tableFileItemDetector) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
-	formats := tableFileFormatsByExtension()
-	tableFileCount := 0
-	auxiliaryFileCount := 0
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if formats[ext] == "" {
-			if isTableFileAuxiliaryFile(f.Name) {
-				auxiliaryFileCount++
-				continue
-			}
-			return false
-		}
-		tableFileCount++
-	}
-	if tableFileCount == 0 {
-		return false
-	}
-	if len(subdirs) == 0 {
-		return tableFileCount == 1 || auxiliaryFileCount > 0 || hasPartLikeTableFiles(files)
-	}
-	return hasPartitionLikeSubdir(subdirs)
+func (d *tableFileItemResolver) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+	_, ok, err := resolveTableFileDataItem(inferScopePath(files, subdirs), files)
+	return err == nil && ok
 }
 
-func hasPartitionLikeSubdir(subdirs []plugin.DirEntry) bool {
+func inferScopePath(files []plugin.FileEntry, subdirs []plugin.DirEntry) string {
 	for _, subdir := range subdirs {
-		name := strings.Trim(strings.ToLower(subdir.Name), "/")
-		if name == "" {
-			continue
-		}
-		if strings.Contains(name, "=") || strings.HasPrefix(name, "_") {
-			return true
-		}
-	}
-	return false
-}
-
-func hasPartLikeTableFiles(files []plugin.FileEntry) bool {
-	formats := tableFileFormatsByExtension()
-	tableFileCount := 0
-	for _, file := range files {
-		ext := strings.ToLower(filepath.Ext(file.Name))
-		if formats[ext] == "" {
-			continue
-		}
-		tableFileCount++
-		name := strings.ToLower(strings.TrimSpace(filepath.Base(file.Name)))
-		if !(strings.HasPrefix(name, "part-") || strings.HasPrefix(name, "part_")) {
-			return false
+		if path := strings.Trim(subdir.Path, "/"); path != "" {
+			parent := strings.Trim(filepath.ToSlash(filepath.Dir(path)), "/")
+			if parent != "." {
+				return parent
+			}
 		}
 	}
-	return tableFileCount > 1
+	if len(files) == 0 {
+		return ""
+	}
+	parent := strings.Trim(filepath.ToSlash(filepath.Dir(strings.Trim(files[0].Path, "/"))), "/")
+	if parent == "." {
+		return ""
+	}
+	for _, file := range files[1:] {
+		current := strings.Trim(filepath.ToSlash(filepath.Dir(strings.Trim(file.Path, "/"))), "/")
+		for parent != "" && current != parent && !strings.HasPrefix(current, parent+"/") {
+			parent = strings.Trim(filepath.ToSlash(filepath.Dir(parent)), "/")
+			if parent == "." {
+				parent = ""
+			}
+		}
+	}
+	return parent
 }
 
 func tableFiles(files []plugin.FileEntry) []plugin.FileEntry {
@@ -276,6 +296,9 @@ func firstReadableTableFile(files []plugin.FileEntry, dirPath string) *plugin.Fi
 }
 
 func tableFileEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+	if item, _, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && item.EntryPath != "" {
+		return item.EntryPath
+	}
 	if len(subdirs) > 0 {
 		return dirPath
 	}
@@ -291,6 +314,9 @@ func tableFileEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dir
 }
 
 func tableFileOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.Organization {
+	if item, ok, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && ok {
+		return item.Organization
+	}
 	if len(subdirs) > 0 {
 		return dataitem.OrganizationWhole
 	}
@@ -301,16 +327,11 @@ func tableFileOrganization(files []plugin.FileEntry, subdirs []plugin.DirEntry, 
 }
 
 func validateTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
-	formats := tableFileFormatsByExtension()
 	filtered := tableFiles(files)
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no table file files in directory: %s", dirPath)
 	}
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if formats[ext] != "" || isTableFileAuxiliaryFile(f.Name) {
-			continue
-		}
+	if _, ok, err := resolveTableFileDataItem(dirPath, files); err != nil || !ok {
 		return nil, fmt.Errorf("directory contains files outside supported scope table formats: %s", dirPath)
 	}
 	return filtered, nil
@@ -441,14 +462,25 @@ func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath 
 	return "single"
 }
 
-func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *CompositeItemInfo {
+func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *metaitem.CompositeItemInfo {
+	resolved, _, _ := resolveTableFileDataItem(dirPath, files)
 	totalSize := tableFileSize(files)
 	formatName := detectFormat(files)
-	return &CompositeItemInfo{
-		Organization:   tableFileOrganization(files, subdirs, dirPath),
+	organization := tableFileOrganization(files, subdirs, dirPath)
+	entryPath := tableFileEntryPath(files, subdirs, dirPath)
+	if resolved != nil {
+		formatName = resolved.Format
+		organization = resolved.Organization
+		entryPath = resolved.EntryPath
+		if resolved.SizeBytes != nil {
+			totalSize = *resolved.SizeBytes
+		}
+	}
+	return &metaitem.CompositeItemInfo{
+		Organization:   organization,
 		DataType:       dataitem.DataTypeTable,
 		Format:         formatName,
-		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
+		EntryPath:      entryPath,
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
 		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil, false),
@@ -526,7 +558,7 @@ func isImmediateChildPath(scopePath string, childPath string) bool {
 	return rest != "" && !strings.Contains(rest, "/")
 }
 
-func (d *tableFileItemDetector) extractTableFileInfo(
+func (d *tableFileItemResolver) extractTableFileInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -534,7 +566,7 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*CompositeItemInfo, error) {
+) (*metaitem.CompositeItemInfo, error) {
 	files, err := validateTableFiles(files, dirPath)
 	if err != nil {
 		return nil, err
@@ -572,14 +604,25 @@ func (d *tableFileItemDetector) extractTableFileInfo(
 		}
 	}
 
+	resolved, _, _ := resolveTableFileDataItem(dirPath, files)
 	totalSize := tableFileSize(files)
+	organization := tableFileOrganization(files, subdirs, dirPath)
+	entryPath := tableFileEntryPath(files, subdirs, dirPath)
+	if resolved != nil {
+		formatName = resolved.Format
+		organization = resolved.Organization
+		entryPath = resolved.EntryPath
+		if resolved.SizeBytes != nil {
+			totalSize = *resolved.SizeBytes
+		}
+	}
 	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
-	return &CompositeItemInfo{
+	return &metaitem.CompositeItemInfo{
 		Fields:         tableInfo.Fields,
-		Organization:   tableFileOrganization(files, subdirs, dirPath),
+		Organization:   organization,
 		DataType:       dataitem.DataTypeTable,
 		Format:         formatName,
-		EntryPath:      tableFileEntryPath(files, subdirs, dirPath),
+		EntryPath:      entryPath,
 		ComponentFiles: filePaths(files),
 		SizeBytes:      &totalSize,
 		Attributes:     tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo, false),
@@ -598,18 +641,6 @@ func describeTableFileScope(ctx context.Context, formatName string, reader resou
 	return scopeProvider.DescribeTableScope(ctx, reader, resource.NewResourceRef(dirPath, resource.ResourceRoleScope), nil)
 }
 
-// ExtractItemInfo 提取表格文件元信息（读取第一个 Parquet 文件获取 Schema）
-func (d *tableFileItemDetector) ExtractItemInfo(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	dirPath string,
-	files []plugin.FileEntry,
-) (*CompositeItemInfo, error) {
-	return d.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, nil)
-}
-
 func extractTableFileWholeScopeInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
@@ -618,12 +649,12 @@ func extractTableFileWholeScopeInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
-) (*CompositeItemInfo, error) {
-	detector := &tableFileItemDetector{}
-	if !detector.Detect(ctx, files, subdirs) {
+) (*metaitem.CompositeItemInfo, error) {
+	resolver := &tableFileItemResolver{}
+	if !resolver.Detect(ctx, files, subdirs) {
 		return nil, fmt.Errorf("directory is not a table file dataset: %s", dirPath)
 	}
-	return detector.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
+	return resolver.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
 }
 
 // ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）。
@@ -635,12 +666,12 @@ func ExtractTableFileSingleFileInfo(
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
-) (*CompositeItemInfo, error) {
+) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 
 	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
 	if providerErr != nil {
-		return &CompositeItemInfo{
+		return &metaitem.CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
 			Format:         formatName,
@@ -660,7 +691,7 @@ func ExtractTableFileSingleFileInfo(
 	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
-		return &CompositeItemInfo{
+		return &metaitem.CompositeItemInfo{
 			Organization:   dataitem.OrganizationSingle,
 			DataType:       dataitem.DataTypeTable,
 			Format:         formatName,
@@ -681,7 +712,7 @@ func ExtractTableFileSingleFileInfo(
 		})
 	}
 
-	return &CompositeItemInfo{
+	return &metaitem.CompositeItemInfo{
 		Fields:         tableInfo.Fields,
 		Organization:   dataitem.OrganizationSingle,
 		DataType:       dataitem.DataTypeTable,
@@ -703,7 +734,7 @@ func ExtractTableFileSingleFileInfoStrict(
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
-) (*CompositeItemInfo, error) {
+) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
 	if providerErr != nil {
@@ -722,7 +753,7 @@ func ExtractTableFileSingleFileInfoStrict(
 	}
 
 	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
-	return &CompositeItemInfo{
+	return &metaitem.CompositeItemInfo{
 		Fields:         tableInfo.Fields,
 		Organization:   dataitem.OrganizationSingle,
 		DataType:       dataitem.DataTypeTable,
@@ -739,11 +770,11 @@ func EnrichSingleTableFileItem(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	item *DetectedItem,
+	item *metaitem.DetectedItem,
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
-) (*DetectedItem, bool, error) {
+) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
 		return item, false, nil
 	}
@@ -755,7 +786,7 @@ func EnrichSingleTableFileItem(
 	if err != nil || info == nil {
 		return item, false, err
 	}
-	return DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
+	return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 }
 
 // detectFormat 根据文件列表检测主要格式

@@ -1,4 +1,4 @@
-package metaitem
+package metacontainer
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -18,7 +19,7 @@ const (
 )
 
 // EnrichContainerChildren 枚举容器内部对象，并写入 type_info.container.children。
-func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected *DetectedItem, reader io.Reader) error {
+func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected *metaitem.DetectedItem, reader io.Reader) error {
 	if attrs == nil || detected == nil || reader == nil || detected.DataType != dataitem.DataTypeContainer {
 		return nil
 	}

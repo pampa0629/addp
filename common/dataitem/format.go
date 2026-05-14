@@ -147,6 +147,39 @@ func BuiltinMultiRules() []FormatRule {
 	return rules
 }
 
+func BuiltinWholeScopeRules() []FormatRule {
+	rules := []FormatRule{}
+	for _, capability := range format.ListFormatCapabilities() {
+		if !containsString(capability.Layouts, format.FormatLayoutWhole) || len(capability.Extensions) == 0 {
+			continue
+		}
+		dataType := dataTypeFromString(capability.DataType)
+		if dataType == DataTypeUnknown {
+			continue
+		}
+		rules = append(rules, FormatRule{
+			Format:       string(capability.Format),
+			DataType:     dataType,
+			Organization: OrganizationWhole,
+			Priority:     80,
+			Entry:        EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+			WholeScope: &WholeScopeRule{
+				AllowRecursive:       true,
+				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
+				RequiresStrongMatch:  true,
+				ExclusiveOnStrongHit: true,
+			},
+		})
+	}
+	sort.SliceStable(rules, func(i, j int) bool {
+		if rules[i].Priority != rules[j].Priority {
+			return rules[i].Priority > rules[j].Priority
+		}
+		return rules[i].Format < rules[j].Format
+	})
+	return rules
+}
+
 func ComponentSpecs(formatType format.FormatType) []resource.ComponentSpec {
 	if provider, err := format.GetTableProvider(formatType); err == nil {
 		if specProvider, ok := provider.(format.ComponentSpecProvider); ok {

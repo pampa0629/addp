@@ -13,13 +13,13 @@ import (
 	"github.com/addp/meta/internal/metaattr"
 )
 
-type commonDataItemDetector struct{}
+type commonDataItemResolver struct{}
 
-func (d *commonDataItemDetector) Priority() int {
+func (d *commonDataItemResolver) Priority() int {
 	return 100
 }
 
-func (d *commonDataItemDetector) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
 	files := input.Files
 	if len(input.RecursiveFiles) > 0 {
 		files = input.RecursiveFiles
@@ -46,7 +46,7 @@ func (d *commonDataItemDetector) ResolveItems(ctx context.Context, input Directo
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
 		enrichComponentTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, item, detected)
 		result.Items = append(result.Items, detected)
-		for _, path := range detected.ComponentFiles {
+		for _, path := range detected.ComponentFilePaths() {
 			result.Claims[path] = true
 		}
 	}
@@ -68,27 +68,13 @@ func fileEntriesToCandidates(files []plugin.FileEntry) []dataitem.Candidate {
 }
 
 func detectedItemFromResolvedItem(physicalPath string, item dataitem.ResolvedItem) *DetectedItem {
-	size := int64(0)
-	if item.SizeBytes != nil {
-		size = *item.SizeBytes
-	}
-	componentFiles := make([]string, 0, len(item.ComponentList))
-	for _, component := range item.ComponentList {
-		if component.Path != "" {
-			componentFiles = append(componentFiles, component.Path)
-		}
-	}
-	sort.Strings(componentFiles)
+	sort.Slice(item.ComponentList, func(i, j int) bool {
+		return item.ComponentList[i].Path < item.ComponentList[j].Path
+	})
 
 	return &DetectedItem{
-		Organization:   item.Organization,
-		DataType:       item.DataType,
-		Format:         item.Format,
-		PhysicalPath:   physicalPath,
-		EntryPath:      item.EntryPath,
-		ComponentFiles: componentFiles,
-		SizeBytes:      size,
-		Attributes:     nil,
+		ResolvedItem: item,
+		PhysicalPath: physicalPath,
 	}
 }
 
@@ -186,6 +172,27 @@ func tableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
 		attrs["row_count"] = *tableInfo.RowCount
 	}
 	return attrs
+}
+
+type formatAttributesProvider interface {
+	FormatAttributes() map[string]interface{}
+}
+
+func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInfo) map[string]interface{} {
+	if tableInfo == nil {
+		return nil
+	}
+	for _, ext := range tableInfo.Extensions {
+		if ext == nil || ext.ExtensionType() != formatName {
+			continue
+		}
+		provider, ok := ext.(formatAttributesProvider)
+		if !ok {
+			continue
+		}
+		return provider.FormatAttributes()
+	}
+	return nil
 }
 
 func spatialAttributes(spatialInfo *format.SpatialInfo) map[string]interface{} {

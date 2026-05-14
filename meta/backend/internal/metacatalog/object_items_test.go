@@ -1,4 +1,4 @@
-package metaitem
+package metacatalog
 
 import (
 	"testing"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metaitem"
 )
 
 func TestObjectMetasByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t *testing.T) {
@@ -51,9 +52,11 @@ func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 	name, objectPath := ObjectCatalogCompositeName(ObjectCatalogCompositeItem{
 		Bucket: "addp",
 		Prefix: "lake",
-		Item: &DetectedItem{
-			Organization: dataitem.OrganizationSingle,
-			EntryPath:    "addp/lake/sales.parquet",
+		Item: &metaitem.DetectedItem{
+			ResolvedItem: dataitem.ResolvedItem{
+				Organization: dataitem.OrganizationSingle,
+				EntryPath:    "addp/lake/sales.parquet",
+			},
 		},
 	})
 
@@ -129,11 +132,13 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 	plan, ok := PlanObjectCatalogCompositeItem(7, ObjectCatalogCompositeItem{
 		Bucket: "addp",
 		Prefix: "datasets/roads",
-		Item: &DetectedItem{
-			DataType:     dataitem.DataTypeTable,
-			Organization: dataitem.OrganizationMulti,
-			EntryPath:    "addp/datasets/roads/roads.shp",
-			SizeBytes:    256,
+		Item: &metaitem.DetectedItem{
+			ResolvedItem: dataitem.ResolvedItem{
+				DataType:     dataitem.DataTypeTable,
+				Organization: dataitem.OrganizationMulti,
+				EntryPath:    "addp/datasets/roads/roads.shp",
+				SizeBytes:    int64PtrForTest(256),
+			},
 			Fields: []format.FieldInfo{{
 				Name: "id",
 				Type: format.FieldTypeInt,
@@ -161,4 +166,8 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 	if table["fields"] == nil {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
+}
+
+func int64PtrForTest(value int64) *int64 {
+	return &value
 }

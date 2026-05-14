@@ -1,18 +1,21 @@
-package metaitem
+package metacatalog
 
 import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
 func TestFileCatalogDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileCatalogDetectedItemName("/shp", &DetectedItem{
-		Organization: dataitem.OrganizationMulti,
-		EntryPath:    "/shp/farmland.shp",
+	name, fullName := FileCatalogDetectedItemName("/shp", &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Organization: dataitem.OrganizationMulti,
+			EntryPath:    "/shp/farmland.shp",
+		},
 	})
 
 	if name != "farmland.shp" {
@@ -26,9 +29,11 @@ func TestFileCatalogDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 func TestFileCatalogDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	t.Parallel()
 
-	name, fullName := FileCatalogDetectedItemName("/lake/sales", &DetectedItem{
-		Organization: dataitem.OrganizationWhole,
-		EntryPath:    "/lake/sales/_metadata",
+	name, fullName := FileCatalogDetectedItemName("/lake/sales", &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Organization: dataitem.OrganizationWhole,
+			EntryPath:    "/lake/sales/_metadata",
+		},
 	})
 
 	if name != "sales" {
@@ -43,8 +48,8 @@ func TestApplyContainerSummaryWritesStandardTypeInfo(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyContainerSummary(attrs, &DetectedItem{
-		DataType: dataitem.DataTypeContainer,
+	ApplyContainerSummary(attrs, &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer},
 	})
 
 	typeInfo := attrs["type_info"].(map[string]interface{})

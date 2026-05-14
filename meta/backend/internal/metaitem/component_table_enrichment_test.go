@@ -16,8 +16,8 @@ import (
 	"github.com/jonas-p/go-shp"
 )
 
-func TestCommonDataItemDetectorAdaptsMultiItems(t *testing.T) {
-	d := &commonDataItemDetector{}
+func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
+	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "farmland.shp", Path: "/shp/farmland.shp", Size: 10},
 		{Name: "farmland.shx", Path: "/shp/farmland.shx", Size: 20},
@@ -61,8 +61,8 @@ func TestCommonDataItemDetectorAdaptsMultiItems(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemDetectorRejectsIncompleteMultiComponents(t *testing.T) {
-	d := &commonDataItemDetector{}
+func TestCommonDataItemResolverRejectsIncompleteMultiComponents(t *testing.T) {
+	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "bucket/roads/roads.shp"},
 		{Name: "roads.dbf", Path: "bucket/roads/roads.dbf"},
@@ -77,8 +77,8 @@ func TestCommonDataItemDetectorRejectsIncompleteMultiComponents(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemDetectorRejectsCrossDirectoryComponents(t *testing.T) {
-	d := &commonDataItemDetector{}
+func TestCommonDataItemResolverRejectsCrossDirectoryComponents(t *testing.T) {
+	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "dataset/roads/roads.shp"},
 		{Name: "roads.shx", Path: "dataset/roads/roads.shx"},
@@ -94,7 +94,7 @@ func TestCommonDataItemDetectorRejectsCrossDirectoryComponents(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemDetectorEnrichesComponentTableViaFormatProvider(t *testing.T) {
+func TestCommonDataItemResolverEnrichesComponentTableViaFormatProvider(t *testing.T) {
 	t.Parallel()
 
 	base := createMetaTestShapefile(t)
@@ -107,7 +107,7 @@ func TestCommonDataItemDetectorEnrichesComponentTableViaFormatProvider(t *testin
 		content["bucket/gis/roads"+ext] = data
 	}
 
-	d := &commonDataItemDetector{}
+	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "bucket/gis/roads.shp", Size: int64(len(content["bucket/gis/roads.shp"]))},
 		{Name: "roads.shx", Path: "bucket/gis/roads.shx", Size: int64(len(content["bucket/gis/roads.shx"]))},
