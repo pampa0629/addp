@@ -122,13 +122,8 @@ func JoinFSPath(parent, name string) string {
 }
 
 // RootFSIdentifier 返回文件系统根节点的 full_name 标识。
-func RootFSIdentifier(engineType, rootPath string) string {
-	switch strings.ToLower(engineType) {
-	case "nfs", "nas":
-		return ""
-	default:
-		return rootPath
-	}
+func RootFSIdentifier(rootPath string) string {
+	return ""
 }
 
 func FilterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {

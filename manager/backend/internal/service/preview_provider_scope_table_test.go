@@ -47,8 +47,9 @@ func TestScopeTableResourceReaderUsesObjectStorageReader(t *testing.T) {
 	t.Parallel()
 
 	reader, err := scopeTableResourceReader(&PreviewRequest{
-		Engine: &models.Engine{EngineType: "minio", ID: 7},
-		Schema: "demo",
+		Engine:   &models.Engine{EngineType: "minio", ID: 7},
+		ItemType: "object",
+		Schema:   "demo",
 	}, nil, nil, plugin.ConnectionInfo{"bucket": "demo"})
 	if err != nil {
 		t.Fatalf("scopeTableResourceReader() error = %v", err)
@@ -62,7 +63,8 @@ func TestScopeTableResourceReaderUsesFileSystemReader(t *testing.T) {
 	t.Parallel()
 
 	reader, err := scopeTableResourceReader(&PreviewRequest{
-		Engine: &models.Engine{EngineType: "nfs", ID: 7},
+		Engine:   &models.Engine{EngineType: "nfs", ID: 7},
+		ItemType: "file",
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("scopeTableResourceReader() error = %v", err)

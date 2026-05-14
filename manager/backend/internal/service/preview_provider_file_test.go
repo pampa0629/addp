@@ -149,6 +149,7 @@ func TestFileTablePreviewProviderResourceContextUsesFileSystemReader(t *testing.
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
 		Schema:       "gis-data",
 		Table:        "sample.csv",
 		PhysicalPath: "/gis-data/sample.csv",
@@ -438,6 +439,7 @@ func TestFileTablePreviewProviderResolvesZIPEntryBeforeTablePreview(t *testing.T
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
 		Schema:       "datasets",
 		Table:        "outer.zip",
 		PhysicalPath: "/datasets/outer.zip",
@@ -496,6 +498,7 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
 		Schema:       "datasets",
 		Table:        "outer.zip",
 		PhysicalPath: "/datasets/outer.zip",
@@ -555,6 +558,7 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
 		Schema:       "datasets",
 		Table:        "outer.zip",
 		PhysicalPath: "/datasets/outer.zip",
@@ -922,7 +926,12 @@ func (p *recordingContentPlugin) DefaultPort() int          { return 0 }
 func (p *recordingContentPlugin) RequiredFields() []string  { return nil }
 func (p *recordingContentPlugin) SensitiveFields() []string { return nil }
 func (p *recordingContentPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{}
+	switch p.engineType {
+	case "nfs":
+		return plugin.NewFileCapabilities(p.engineType)
+	default:
+		return plugin.NewObjectCapabilities(p.engineType)
+	}
 }
 func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
@@ -941,7 +950,7 @@ func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.Connectio
 }
 
 func TestContentIndexObjectKeyIncludesBucketForObjectStorage(t *testing.T) {
-	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}}
+	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, ItemType: "object"}
 
 	if got := contentIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {
 		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)

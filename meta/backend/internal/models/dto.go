@@ -32,6 +32,9 @@ type ResourceWithStats struct {
 	EngineID            uint   `json:"id"`   // 前端期待 id
 	ResourceName        string `json:"name"` // 前端期待 name
 	ResourceType        string `json:"resource_type"`
+	EngineFamily        string `json:"engine_family,omitempty"`
+	CatalogItemTerm     string `json:"catalog_item_term,omitempty"`
+	CatalogRootTerm     string `json:"catalog_root_term,omitempty"`
 	TotalNamespaces     int    `json:"total_namespaces"`
 	ScannedNamespaces   int    `json:"scanned_namespaces"`
 	UnscannedNamespaces int    `json:"unscanned_namespaces"`

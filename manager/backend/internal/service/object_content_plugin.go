@@ -83,29 +83,50 @@ func (r *ObjectContentRegistry) Resolve(req *ObjectContentRequest) ObjectContent
 	if r == nil || req == nil {
 		return nil
 	}
-	if isCSVObjectContentRequest(req) {
-		return nil
-	}
+	tableContent := isTableObjectContentRequest(req)
 	for _, handler := range r.handlers {
 		if handler.Matches(req) {
+			if tableContent && isGenericObjectContentHandler(handler) {
+				return nil
+			}
 			return handler
 		}
 	}
 	return nil
 }
 
-func isCSVObjectContentRequest(req *ObjectContentRequest) bool {
+func isTableObjectContentRequest(req *ObjectContentRequest) bool {
 	if req == nil {
 		return false
 	}
-	formatName := strings.ToLower(strings.TrimSpace(req.Format))
-	extension := strings.ToLower(strings.TrimSpace(req.Extension))
+	formatType := normalizeFileTableFormat(req.Format)
+	if formatType == "" || formatType == format.FormatUnknown {
+		formatType = format.DetectFormat(req.Name, nil)
+	}
+	if formatType == format.FormatUnknown && req.Extension != "" {
+		formatType = format.DetectFormat("file"+req.Extension, nil)
+	}
+	if formatType != "" && formatType != format.FormatUnknown {
+		if _, err := format.GetTableProvider(formatType); err == nil {
+			return true
+		}
+	}
 	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
-	return formatName == "csv" ||
-		extension == ".csv" ||
-		contentType == "text/csv" ||
+	return contentType == "text/csv" ||
 		strings.Contains(contentType, "text/csv;") ||
 		strings.Contains(contentType, "comma-separated")
+}
+
+func isGenericObjectContentHandler(handler ObjectContentHandler) bool {
+	if handler == nil {
+		return false
+	}
+	switch handler.Name() {
+	case "builtin:content-text", "builtin:content-unsupported":
+		return true
+	default:
+		return false
+	}
 }
 
 // ------------ 辅助函数 ------------

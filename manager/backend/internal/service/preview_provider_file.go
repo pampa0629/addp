@@ -132,7 +132,8 @@ func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest
 	if err != nil {
 		return nil, err
 	}
-	if isObjectStorageType(req.Engine.EngineType) {
+	switch previewRequestCatalogItemTerm(req) {
+	case "object":
 		bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
 		if err != nil {
 			return nil, err
@@ -142,16 +143,16 @@ func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest
 			bucket: bucket,
 			path:   objectKeyFromPreviewRequest(req, bucket),
 		}, nil
-	}
-	if isFileSystemType(req.Engine.EngineType) {
+	case "file":
 		path := fileSystemPathFromPreviewRequest(req)
 		return &tablePreviewResourceContext{
 			reader: newFileSystemResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
 			bucket: req.Schema,
 			path:   path,
 		}, nil
+	default:
+		return nil, fmt.Errorf("item type %s does not provide file content table preview", req.ItemType)
 	}
-	return nil, fmt.Errorf("engine %s does not provide file content table preview", req.Engine.EngineType)
 }
 
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
@@ -386,7 +387,7 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 }
 
 func contentIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
-	if req != nil && req.Engine != nil && isObjectStorageType(req.Engine.EngineType) {
+	if previewRequestCatalogItemTerm(req) == "object" {
 		if strings.HasPrefix(fullPath, bucket+"/") {
 			return fullPath
 		}
@@ -423,7 +424,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		return nil, nil, false
 	}
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	if isFileSystemType(req.Engine.EngineType) {
+	if previewRequestCatalogItemTerm(req) == "file" {
 		reader, err := rangeReader.OpenRange(ctx, connInfo, fileSystemCatalogPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
 			Offset: anchor.ByteOffset,
 			Length: length,

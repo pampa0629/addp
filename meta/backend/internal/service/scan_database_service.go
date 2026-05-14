@@ -344,8 +344,8 @@ func (s *DatabaseScanService) scanTableDetails(
 			})
 		}
 
-		// 扫描空间元数据（仅 PostgreSQL）
-		if resource.EngineType == "postgresql" && db != nil {
+		// 扫描空间元数据由引擎能力声明控制，具体实现通过连接池增强元数据。
+		if engineSupportsSpatialMetadata(resource.EngineType) && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.TableName)
 			if spatialMeta != nil {
 				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialCapabilityFromMetadata(spatialMeta))
@@ -372,6 +372,17 @@ func (s *DatabaseScanService) scanTableDetails(
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 
 	return fields, attrs, nil
+}
+
+func engineSupportsSpatialMetadata(engineType string) bool {
+	p, err := plugin.Get(engineType)
+	if err != nil {
+		return false
+	}
+	capabilities := p.Capabilities()
+	return capabilities.Storage != nil &&
+		capabilities.Storage.Metadata != nil &&
+		capabilities.Storage.Metadata.SpatialMetadata
 }
 
 func databaseFieldInfo(columns []plugin.ColumnInfo) []format.FieldInfo {

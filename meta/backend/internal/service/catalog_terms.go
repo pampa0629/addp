@@ -10,3 +10,15 @@ func catalogItemTermForPlugin(p plugin.EnginePlugin, fallback string) string {
 	}
 	return fallback
 }
+
+func catalogModelForPlugin(p plugin.EnginePlugin) *plugin.CatalogModelSpec {
+	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
+		model := modelProvider.CatalogModel()
+		return &model
+	}
+	capabilities := p.Capabilities()
+	if capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
+		return nil
+	}
+	return capabilities.Storage.CatalogModel
+}

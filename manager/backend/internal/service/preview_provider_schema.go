@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/manager/internal/models"
@@ -38,15 +39,15 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 		return nil, fmt.Errorf("failed to get node info: %w", err)
 	}
 
-	isObjectStorage := isObjectStorageType(req.Engine.EngineType)
-
 	nodeType := "schema"
-	if isObjectStorage {
+	if req != nil && strings.TrimSpace(req.NodeType) != "" {
+		nodeType = req.NodeType
+	} else if isObjectStorageType(req.Engine.EngineType) {
 		nodeType = "bucket"
 	}
 
 	bucket := ""
-	if isObjectStorage {
+	if isObjectStorageType(req.Engine.EngineType) {
 		bucket = req.Schema
 	}
 

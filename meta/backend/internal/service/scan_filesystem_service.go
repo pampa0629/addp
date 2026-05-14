@@ -111,7 +111,7 @@ func (s *FileSystemScanService) ScanPaths(
 		// 创建根节点（root）
 		// full_name 按规范：NFS 为 ""，本地FS 为 "/" 或 "C:/" 等
 		// NFS 引擎的 root 标识为空字符串，路径由引擎配置的 export_path 决定
-		rootFullName := metapath.RootFSIdentifier(resource.EngineType, rootPath)
+		rootFullName := metapath.RootFSIdentifier(rootPath)
 		rootAttrs := models.JSONMap{"path": rootPath}
 		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, &rootFullName, rootAttrs)
 		if err != nil {

@@ -142,7 +142,7 @@ func (r *PreviewResolver) resolveComponentPreviewProvider(req *PreviewResolverRe
 	if strings.TrimSpace(req.ChildName) != "" || strings.TrimSpace(req.ComponentPath) == "" {
 		return nil
 	}
-	if !isObjectStorageType(legacyReq.Engine.EngineType) && !isFileSystemType(legacyReq.Engine.EngineType) {
+	if !isContentFileItemType(legacyReq.ItemType) {
 		return nil
 	}
 	if provider, err := r.registry.GetByName("builtin:component-file"); err == nil {
@@ -227,7 +227,7 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 		}
 	}
 
-	if r.metaClient != nil && (isObjectStorageType(engine.EngineType) || isFileSystemType(engine.EngineType)) {
+	if r.metaClient != nil && isContentCatalogEngine(engine.EngineType) {
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
@@ -335,6 +335,19 @@ func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, sc
 		return "", physPath
 	default:
 		return "", ""
+	}
+}
+
+func isContentCatalogEngine(engineType string) bool {
+	return isObjectStorageType(engineType) || isFileSystemType(engineType)
+}
+
+func isContentFileItemType(itemType string) bool {
+	switch strings.ToLower(strings.TrimSpace(itemType)) {
+	case "object", "file":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -502,11 +515,10 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		if organization == "whole" && hasScopeTableProvider(formatName) {
 			return []string{"builtin:scope-table"}
 		}
-		if legacyReq != nil && isFileTableFormat(formatName) &&
-			(isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
+		if legacyReq != nil && isFileTableFormat(formatName) && isContentFileItemType(itemType) {
 			return []string{"builtin:file-table"}
 		}
-		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+		if legacyReq != nil && itemType == "file" {
 			return []string{"builtin:filesystem"}
 		}
 		return []string{"builtin:database-table"}
@@ -516,16 +528,15 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		}
 		return []string{"builtin:graph-label"}
 	case "container":
-		if legacyReq != nil && strings.TrimSpace(legacyReq.ChildName) != "" &&
-			(isObjectStorageType(legacyReq.Engine.EngineType) || isFileSystemType(legacyReq.Engine.EngineType)) {
+		if legacyReq != nil && strings.TrimSpace(legacyReq.ChildName) != "" && isContentFileItemType(itemType) {
 			return []string{"builtin:container-child"}
 		}
-		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+		if legacyReq != nil && itemType == "file" {
 			return []string{"builtin:filesystem"}
 		}
 		return []string{"builtin:object-storage"}
 	case "media", "document":
-		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
+		if legacyReq != nil && itemType == "file" {
 			return []string{"builtin:filesystem"}
 		}
 		return []string{"builtin:object-storage"}
@@ -537,10 +548,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	case "object":
 		return []string{"builtin:object-storage"}
 	case "file":
-		if legacyReq != nil && isFileSystemType(legacyReq.Engine.EngineType) {
-			return []string{"builtin:filesystem"}
-		}
-		return []string{"builtin:object-storage"}
+		return []string{"builtin:filesystem"}
 	}
 
 	return nil

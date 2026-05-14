@@ -46,7 +46,7 @@ func (r *PreviewRequest) Mode() string {
 		return PreviewModeNode
 	}
 
-	if r.Engine != nil && isObjectStorageType(r.Engine.EngineType) {
+	if r.ItemType == "object" || r.ItemType == "file" {
 		return PreviewModeObject
 	}
 

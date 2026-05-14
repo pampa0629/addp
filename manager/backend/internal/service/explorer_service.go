@@ -738,8 +738,7 @@ func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.J
 	if strings.Contains(fullName, "/") {
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "minio", "s3", "nfs", "nas":
+	if isContentCatalogEngine(engineType) {
 		return true
 	}
 	formatName := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "format", "item")))

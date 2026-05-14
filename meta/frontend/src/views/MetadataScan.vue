@@ -448,8 +448,8 @@ const getSchemaPlan = (schema) => {
     const schemas = params.namespaces || []
     const paths = params.object_paths || []
     // 精确匹配：该任务只扫描这一个命名空间或 bucket/path
-    const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
-    if (isObjectStorage) {
+    const usesPathTargets = usesObjectPathTargets(selectedResource.value)
+    if (usesPathTargets) {
       const path = schema.path || schema.name
       return paths.length === 1 && paths[0] === path
     } else {
@@ -594,11 +594,10 @@ const stopResizing = () => {
   enforceBounds()
 }
 
-// 判断是否为对象存储/文件系统类型（扫描参数使用 object_paths）
-const isObjectStorageType = (resourceType) => {
-  if (!resourceType) return false
-  const type = resourceType.toLowerCase()
-  return ['s3', 'minio', 'oss', 'object_storage', 'object-storage', 'nfs'].includes(type)
+// 判断扫描目标是否使用 object_paths。依据 catalog item 术语，不列举具体引擎 type。
+const usesObjectPathTargets = (resource) => {
+  const itemTerm = String(resource?.catalog_item_term || '').toLowerCase()
+  return itemTerm === 'object' || itemTerm === 'file'
 }
 
 // 判断是否为 NoSQL 数据库类型
@@ -611,13 +610,15 @@ const isNoSQLType = (resourceType) => {
 // 获取命名空间/Collection/Bucket/目录的术语
 const getSchemaTerminology = (resourceType, plural = false) => {
   if (!resourceType) return t('meta.scan.defaultNamespaceTerm')
-  const type = resourceType.toLowerCase()
-  if (type === 'nfs') {
+  const itemTerm = String(selectedResource.value?.catalog_item_term || '').toLowerCase()
+  const rootTerm = String(selectedResource.value?.catalog_root_term || '').toLowerCase()
+  if (itemTerm === 'file' || rootTerm === 'root') {
     return t('meta.scan.directoryTerm')
   }
-  if (['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)) {
+  if (itemTerm === 'object' || rootTerm === 'service') {
     return 'Bucket'
   }
+  const type = resourceType.toLowerCase()
   if (isNoSQLType(resourceType)) {
     return plural ? 'Collection' : 'Collection'
   }
@@ -842,7 +843,7 @@ const handleBatchScan = async () => {
   if (!selectedSchemas.value.length) return
 
   const terminology = getSchemaTerminology(selectedResource.value.resource_type)
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  const usesPathTargets = usesObjectPathTargets(selectedResource.value)
 
   try {
     await ElMessageBox.confirm(
@@ -860,7 +861,7 @@ const handleBatchScan = async () => {
     let namespaces = null
     let objectPaths = null
 
-    if (isObjectStorage) {
+    if (usesPathTargets) {
       // 对象存储：传递路径列表
       objectPaths = selectedSchemas.value.map(item => item.path || item.name)
     } else {
@@ -943,7 +944,7 @@ const handleScanSchema = async (schema) => {
   scanningSchemas[key] = true
 
   try {
-    if (isObjectStorageType(selectedResource.value.resource_type)) {
+    if (usesObjectPathTargets(selectedResource.value)) {
       await metaApi.scanEngine(selectedResource.value.id, [], [schema.path || schemaName])
     } else {
       await metaApi.scanEngine(selectedResource.value.id, [schemaName])
@@ -964,7 +965,7 @@ const handleScanSchema = async (schema) => {
 const handleSchemaSchedule = async (schema) => {
   currentSchema.value = schema
   const schemaName = schema.schema_name || schema.name
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  const usesPathTargets = usesObjectPathTargets(selectedResource.value)
 
   // 查找该命名空间或对象路径的调度任务
   currentSchemaTask.value = allScanTasks.value.find(task => {
@@ -973,7 +974,7 @@ const handleSchemaSchedule = async (schema) => {
     const schemas = params.namespaces || []
     const paths = params.object_paths || []
 
-    if (isObjectStorage) {
+    if (usesPathTargets) {
       const path = schema.path || schema.name
       return paths.length === 1 && paths[0] === path
     } else {
@@ -1000,16 +1001,16 @@ const submitSchemaSchedule = async () => {
   if (!currentSchema.value) return
 
   const schemaName = currentSchema.value.schema_name || currentSchema.value.name
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  const usesPathTargets = usesObjectPathTargets(selectedResource.value)
 
   savingSchedule.value = true
   try {
     const terminology = getSchemaTerminology(selectedResource.value.resource_type)
     const payload = {
-      name: `${selectedResource.value.name} - ${schemaName}`,
-      description: `${terminology} ${schemaName} 的定时扫描`,
-      namespaces: isObjectStorage ? [] : [schemaName],
-      object_paths: isObjectStorage ? [currentSchema.value.path || schemaName] : [],
+	      name: `${selectedResource.value.name} - ${schemaName}`,
+	      description: `${terminology} ${schemaName} 的定时扫描`,
+      namespaces: usesPathTargets ? [] : [schemaName],
+      object_paths: usesPathTargets ? [currentSchema.value.path || schemaName] : [],
       scan_depth: schemaScheduleDepth.value,
       schedule_type: 'cron',
       schedule: schemaScheduleCron.value,

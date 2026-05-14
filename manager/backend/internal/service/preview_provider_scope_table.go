@@ -185,7 +185,7 @@ func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentR
 	if req == nil || req.Engine == nil {
 		return nil, fmt.Errorf("engine is required")
 	}
-	if isObjectStorageType(req.Engine.EngineType) {
+	if previewRequestCatalogItemTerm(req) == "object" {
 		bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
 		if err != nil {
 			return nil, err

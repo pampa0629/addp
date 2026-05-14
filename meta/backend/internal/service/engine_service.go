@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -447,6 +448,9 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		totalNamespaces := 0
 		scannedNamespaces := 0
 		lastScanAt := ""
+		engineFamily := ""
+		catalogRootTerm := ""
+		catalogItemTerm := ""
 
 		if cnt, ok := totalCount[res.ID]; ok {
 			totalNamespaces = int(cnt)
@@ -463,11 +467,22 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		if res.LastCheckAt != nil {
 			lastCheckAt = res.LastCheckAt.Format("2006-01-02 15:04:05")
 		}
+		if enginePlugin, err := plugin.Get(res.EngineType); err == nil {
+			capabilities := enginePlugin.Capabilities()
+			engineFamily = capabilities.EngineFamily
+			if model := catalogModelForPlugin(enginePlugin); model != nil {
+				catalogRootTerm = model.RootTerm
+				catalogItemTerm = plugin.CatalogItemTerm(*model)
+			}
+		}
 
 		result = append(result, &models.ResourceWithStats{
 			EngineID:            res.ID,
 			ResourceName:        res.Name,
 			ResourceType:        res.EngineType,
+			EngineFamily:        engineFamily,
+			CatalogRootTerm:     catalogRootTerm,
+			CatalogItemTerm:     catalogItemTerm,
 			TotalNamespaces:     totalNamespaces,
 			ScannedNamespaces:   scannedNamespaces,
 			UnscannedNamespaces: totalNamespaces - scannedNamespaces,
