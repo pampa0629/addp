@@ -13,9 +13,8 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	_ "github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
-	"github.com/addp/meta/internal/metaitemattr"
-	_ "github.com/addp/meta/internal/metatable"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -239,7 +238,7 @@ func PlanObjectCatalogSingleItem(engineID uint, meta format.ObjectMetadata, trim
 	if meta.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
 	}
-	metaitemattr.MergeDataItemAttributes(attrs, dataItem)
+	metaattr.MergeDataItemAttributes(attrs, dataItem)
 	ApplyContainerSummary(attrs, dataItem)
 
 	fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
@@ -263,7 +262,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 
-	attrs := models.JSONMap(metaitemattr.BuildAttributes(composite.Item))
+	attrs := models.JSONMap(metaattr.BuildAttributes(composite.Item))
 	if len(composite.Item.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(composite.Item.Fields))
 	}

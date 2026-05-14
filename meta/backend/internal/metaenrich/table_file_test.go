@@ -1,4 +1,4 @@
-package metatable
+package metaenrich
 
 import (
 	"bytes"

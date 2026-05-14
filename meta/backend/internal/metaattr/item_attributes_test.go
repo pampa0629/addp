@@ -1,4 +1,4 @@
-package metaitemattr
+package metaattr
 
 import (
 	"testing"

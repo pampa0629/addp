@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
-	"github.com/addp/meta/internal/metaattr"
 )
 
 type commonDataItemResolver struct{}
@@ -165,13 +164,26 @@ func upsertComponentTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
 
 func tableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
 	attrs := map[string]interface{}{
-		"fields":      metaattr.FieldAttributesFromFormat(tableInfo.Fields),
+		"fields":      fieldAttributesFromFormat(tableInfo.Fields),
 		"primary_key": append([]string(nil), tableInfo.PrimaryKey...),
 	}
 	if tableInfo.RowCount != nil {
 		attrs["row_count"] = *tableInfo.RowCount
 	}
 	return attrs
+}
+
+func fieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
+	fieldsData := make([]map[string]interface{}, 0, len(fields))
+	for _, f := range fields {
+		fieldsData = append(fieldsData, map[string]interface{}{
+			"name":          f.Name,
+			"type":          string(f.Type),
+			"original_type": f.OriginalType,
+			"nullable":      f.Nullable,
+		})
+	}
+	return fieldsData
 }
 
 type formatAttributesProvider interface {

@@ -13,11 +13,9 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
-	"github.com/addp/meta/internal/metacontainer"
+	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
-	"github.com/addp/meta/internal/metaitemattr"
 	"github.com/addp/meta/internal/metapath"
-	"github.com/addp/meta/internal/metatable"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
@@ -280,7 +278,7 @@ func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
 	detected *metaitem.DetectedItem,
 	itemTerm string,
 ) bool {
-	attrs := metaattr.JSONMap(metaitemattr.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
@@ -324,16 +322,16 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 		detected = metaitem.InferSingleResourceItem(file)
 	}
 	if detected.Organization == dataitem.OrganizationSingle {
-		enriched, ok, err := metatable.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
+		enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
-			return metaattr.JSONMap(metaitemattr.BuildAttributes(detected)), nil, nil
+			return metaattr.JSONMap(metaattr.BuildAttributes(detected)), nil, nil
 		}
 		if ok {
 			detected = enriched
 		}
 	}
-	attrs := metaattr.JSONMap(metaitemattr.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
 		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
 	}
@@ -345,7 +343,7 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 			return attrs, detected.Fields, nil
 		}
 		defer reader.Close()
-		if err := metacontainer.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
+		if err := metaenrich.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
 			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
 		}
 	}

@@ -1,4 +1,4 @@
-package metaitemattr
+package metaattr
 
 import (
 	"github.com/addp/common/dataitem"

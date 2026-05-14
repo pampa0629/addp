@@ -1,4 +1,4 @@
-package metacontainer
+package metaenrich
 
 import (
 	"context"
