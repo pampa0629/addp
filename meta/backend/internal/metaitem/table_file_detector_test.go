@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/meta/internal/dataitem"
 	parquetgo "github.com/parquet-go/parquet-go"
 )
 

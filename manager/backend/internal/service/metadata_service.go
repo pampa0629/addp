@@ -420,15 +420,12 @@ func (s *MetadataService) StreamObject(
 		return nil, 0, "", "", ErrEngineAccessDenied
 	}
 
-	// 检查是否为对象存储类型
-	resourceType := strings.ToLower(resource.EngineType)
-	if resourceType != "minio" && resourceType != "s3" && resourceType != "oss" {
-		return nil, 0, "", "", fmt.Errorf("resource type %s does not support object streaming", resource.EngineType)
-	}
-
 	pl, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+	if !catalogItemTermMatches(resource.EngineType, plugin.CatalogTermObject) {
+		return nil, 0, "", "", fmt.Errorf("resource type %s does not support object streaming", resource.EngineType)
 	}
 	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)

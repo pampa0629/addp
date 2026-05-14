@@ -4,9 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/mappers/mysql"
-	_ "github.com/addp/common/format/mappers/postgresql"
-	_ "github.com/addp/common/format/mappers/spatialite"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func IsSpatialDataType(dataType string) bool {
@@ -37,32 +35,7 @@ func StandardizeFieldType(dataType, columnType string) string {
 	}
 	typeToMap = strings.ToLower(strings.TrimSpace(typeToMap))
 
-	var standardType format.FieldType
-	if isGeometryType(typeToMap) {
-		if mapper := format.GetTypeMapper("postgresql"); mapper != nil {
-			standardType = mapper.ToCommon(typeToMap)
-		}
-	} else {
-		if mapper := format.GetTypeMapper("postgresql"); mapper != nil {
-			standardType = mapper.ToCommon(typeToMap)
-			if standardType != format.FieldTypeUnknown {
-				return string(standardType)
-			}
-		}
-		if mapper := format.GetTypeMapper("mysql"); mapper != nil {
-			standardType = mapper.ToCommon(typeToMap)
-			if standardType != format.FieldTypeUnknown {
-				return string(standardType)
-			}
-		}
-		if mapper := format.GetTypeMapper("spatialite"); mapper != nil {
-			standardType = mapper.ToCommon(typeToMap)
-			if standardType != format.FieldTypeUnknown {
-				return string(standardType)
-			}
-		}
-	}
-
+	standardType := format.InferCommonFieldType(typeToMap)
 	if standardType == "" || standardType == format.FieldTypeUnknown {
 		return string(format.FieldTypeString)
 	}

@@ -24,9 +24,9 @@
 Meta 目前已经在做两类工作：
 
 1. **item 归并与识别**
-   - `meta/backend/internal/metaitem/dataitem_resolver.go`
-   - `meta/backend/internal/metaitem/dataitem_shapefile_detector.go`
-   - `meta/backend/internal/metaitem/dataitem_table_file_detector.go`
+   - `meta/backend/internal/metaitem/resolver.go`
+   - `meta/backend/internal/metaitem/shapefile_detector.go`
+   - `meta/backend/internal/metaitem/table_file_detector.go`
    - `meta/backend/internal/metaitem/single_resource.go`
 
    这部分决定：
@@ -41,8 +41,8 @@ Meta 目前已经在做两类工作：
 
 2. **格式信息 / 元数据 / item capability 结果提取**
    - `meta/backend/internal/extractor/metadata_extractor.go`
-   - `meta/backend/internal/metaitem/dataitem_shapefile_detector.go`
-   - `meta/backend/internal/metaitem/dataitem_table_file_detector.go`
+   - `meta/backend/internal/metaitem/shapefile_detector.go`
+   - `meta/backend/internal/metaitem/table_file_detector.go`
 
    这里会把结果归到：
 
@@ -78,7 +78,7 @@ Manager 现在主要依赖两类信号：
 - `manager/backend/internal/service/preview_resolver.go`
 - `manager/backend/internal/service/preview_provider_file.go`
 - `manager/backend/internal/service/preview_provider_scope_table.go`
-- `manager/backend/internal/service/preview_provider_graph_neo4j.go`
+- `manager/backend/internal/service/preview_provider_graph.go`
 - `manager/backend/internal/service/object_content_plugin.go`
 
 当前问题是，Manager 仍然保留了不少按 `engine.EngineType`、`format`、`item_type` 的分支。

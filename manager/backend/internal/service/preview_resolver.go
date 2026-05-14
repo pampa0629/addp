@@ -179,7 +179,7 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 	}
 
 	// 3. 尝试从 Meta 获取元数据。
-	// meta_id 是最可靠的类型来源，尤其是 Neo4j 的 label/relationship 这类
+	// meta_id 是最可靠的类型来源，尤其是图模型的 label/relationship 这类
 	// 旧 locator type 可能被前端树兼容层误写成 table 的数据项。
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem

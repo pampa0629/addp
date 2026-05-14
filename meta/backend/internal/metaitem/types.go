@@ -3,9 +3,9 @@ package metaitem
 import (
 	"context"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/meta/internal/dataitem"
 )
 
 // CompositeItemInfo 是 Meta detector 提取出的 data item 元信息。
@@ -57,19 +57,24 @@ type DirectoryResolveInput struct {
 	RecursiveSubdirs []plugin.DirEntry
 }
 
+// MetaItemDetector 是 Meta item 识别器的最小公共接口。
+type MetaItemDetector interface {
+	Priority() int
+}
+
 // CompositeItemDetector 检测目录或文件组是否构成一个 Meta data item。
 type CompositeItemDetector interface {
+	MetaItemDetector
 	Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool
 	ExtractItemInfo(ctx context.Context, contentReader plugin.ContentReadableProvider,
 		connInfo plugin.ConnectionInfo, engineID uint, dirPath string,
 		files []plugin.FileEntry) (*CompositeItemInfo, error)
-	Priority() int
 }
 
 // ScopeItemDetector 从一个扫描范围内识别 0..N 个 Meta data item。
 type ScopeItemDetector interface {
+	MetaItemDetector
 	ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error)
-	Priority() int
 }
 
 // FormatRuleProvider 声明 detector 背后的格式规则。

@@ -10,7 +10,7 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
-// GraphLabelPreviewProvider Neo4j label 预览
+// GraphLabelPreviewProvider 图 label 预览
 // 使用 GraphQueryProvider 采样节点属性，输出表格预览
 type GraphLabelPreviewProvider struct{}
 
@@ -21,7 +21,7 @@ func NewGraphLabelPreviewProvider() PreviewProvider {
 func (p *GraphLabelPreviewProvider) Name() string { return "builtin:graph-label" }
 
 func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
+	graphRuntime, connInfo, database, targetName, err := resolveGraphQuery(req)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (p *GraphLabelPreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}, nil
 }
 
-// GraphRelationshipPreviewProvider Neo4j relationship 预览
+// GraphRelationshipPreviewProvider 图 relationship 预览
 // 使用 GraphQueryProvider 采样关系属性，输出表格预览
 type GraphRelationshipPreviewProvider struct{}
 
@@ -66,7 +66,7 @@ func NewGraphRelationshipPreviewProvider() PreviewProvider {
 func (p *GraphRelationshipPreviewProvider) Name() string { return "builtin:graph-relationship" }
 
 func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	graphRuntime, connInfo, database, targetName, err := resolveNeo4jGraphQuery(req)
+	graphRuntime, connInfo, database, targetName, err := resolveGraphQuery(req)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (p *GraphRelationshipPreviewProvider) Preview(ctx context.Context, req *Pre
 	}, nil
 }
 
-func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryProvider, plugin.ConnectionInfo, string, string, error) {
+func resolveGraphQuery(req *PreviewRequest) (plugin.GraphQueryProvider, plugin.ConnectionInfo, string, string, error) {
 	if req == nil || req.Engine == nil {
 		return nil, nil, "", "", fmt.Errorf("invalid preview request")
 	}
@@ -117,11 +117,11 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryProvider, plu
 
 	database := req.Schema
 	if database == "" {
-		database = "neo4j"
+		database = strings.TrimSpace(fmt.Sprint(req.Engine.ConnectionInfo["database"]))
 	}
 
 	targetName := req.Table
-	if strings.HasPrefix(targetName, database+".") {
+	if database != "" && strings.HasPrefix(targetName, database+".") {
 		targetName = strings.TrimPrefix(targetName, database+".")
 	}
 	if targetName == "" {
@@ -132,7 +132,9 @@ func resolveNeo4jGraphQuery(req *PreviewRequest) (plugin.GraphQueryProvider, plu
 	if connInfo == nil {
 		connInfo = plugin.ConnectionInfo{}
 	}
-	connInfo["database"] = database
+	if database != "" {
+		connInfo["database"] = database
+	}
 
 	return graphRuntime, connInfo, database, targetName, nil
 }

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"

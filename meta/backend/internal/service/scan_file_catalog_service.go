@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
@@ -319,19 +319,14 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.Organization == dataitem.OrganizationSingle && hasTableProvider(detected.Format) &&
-		(detected.DataType == dataitem.DataTypeTable || detected.Format == string(format.FormatJSON)) {
-		extract := metaitem.ExtractTableFileSingleFileInfo
-		if detected.Format == string(format.FormatJSON) && detected.DataType != dataitem.DataTypeTable {
-			extract = metaitem.ExtractTableFileSingleFileInfoStrict
-		}
-		info, err := extract(ctx, contentReader, connInfo, resource.ID, file.Path, file.Size, includeContentIndex)
+	if detected.Organization == dataitem.OrganizationSingle {
+		enriched, ok, err := metaitem.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaitem.BuildAttributes(detected)), nil, nil
 		}
-		if info != nil {
-			detected = metaitem.DetectedItemFromCompositeInfo(info, file.Path, file.Size)
+		if ok {
+			detected = enriched
 		}
 	}
 	attrs := metaattr.JSONMap(metaitem.BuildAttributes(detected))
@@ -351,15 +346,6 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 		}
 	}
 	return attrs, detected.Fields, nil
-}
-
-func hasTableProvider(formatName string) bool {
-	if strings.TrimSpace(formatName) == "" {
-		return false
-	}
-	normalized := dataitem.InferFormat("", "", formatName)
-	_, err := format.GetTableProvider(format.FormatType(normalized))
-	return err == nil
 }
 
 func (s *FileCatalogScanService) resolveFileCatalogDirectoryItems(

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/meta/internal/dataitem"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 )

@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/resource"
-	"github.com/addp/meta/internal/dataitem"
 )
 
 var tableFileAuxiliaryFileNames = map[string]bool{
@@ -732,6 +732,30 @@ func ExtractTableFileSingleFileInfoStrict(
 		SizeBytes:      &fileSize,
 		Attributes:     tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
 	}, nil
+}
+
+func EnrichSingleTableFileItem(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	item *DetectedItem,
+	filePath string,
+	fileSize int64,
+	includeContentIndex bool,
+) (*DetectedItem, bool, error) {
+	if item == nil || item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
+		return item, false, nil
+	}
+	extract := ExtractTableFileSingleFileInfo
+	if item.DataType != dataitem.DataTypeTable {
+		extract = ExtractTableFileSingleFileInfoStrict
+	}
+	info, err := extract(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex)
+	if err != nil || info == nil {
+		return item, false, err
+	}
+	return DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 }
 
 // detectFormat 根据文件列表检测主要格式

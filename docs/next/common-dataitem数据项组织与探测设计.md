@@ -648,7 +648,6 @@ test.zip
    - `docs/spec/addp数据项探测器规范.md`
    - `docs/spec/addp数据类型与格式能力规范.md`
    - `common/format/provider.go`
-   - `meta/backend/internal/dataitem/`
    - `meta/backend/internal/metaitem/`
    - `common/format/plugins/zip/`
    - `manager/backend/internal/service/preview_provider_container_child.go`

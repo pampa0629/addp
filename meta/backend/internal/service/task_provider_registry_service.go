@@ -62,10 +62,10 @@ func (s *TaskProviderRegistryService) Register() error {
 				"description":  "提取文件元数据（图片、视频、文档）",
 			},
 		},
-		"supported_sources": []string{"postgresql", "mysql", "doris", "minio", "s3", "oss"},
-		"features":          []string{"async", "cron", "spatial_metadata", "vector_index"},
-		"create_task_url":   "http://localhost:5175/#/scan/new",
-		"edit_task_url":     "http://localhost:5175/#/scan/:id",
+		"supported_source_models": []string{"tabular_catalog", "object_catalog", "file_catalog", "nosql_catalog", "graph_catalog"},
+		"features":                []string{"async", "cron", "spatial_metadata", "vector_index"},
+		"create_task_url":         "http://localhost:5175/#/scan/new",
+		"edit_task_url":           "http://localhost:5175/#/scan/:id",
 	}
 
 	// 序列化为 JSON 字符串
@@ -83,11 +83,11 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.metaURL,
-		TaskListEndpoint:    "/api/v1/meta/scan/tasks",              // 扫描任务列表
-		TaskDetailEndpoint:  "/api/v1/meta/scan/tasks/:task_id",     // 扫描任务详情
+		TaskListEndpoint:    "/api/v1/meta/scan/tasks",                  // 扫描任务列表
+		TaskDetailEndpoint:  "/api/v1/meta/scan/tasks/:task_id",         // 扫描任务详情
 		TaskExecuteEndpoint: "/api/v1/meta/scan/tasks/:task_id/trigger", // 执行扫描任务
-		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/:run_id",       // 查询执行状态（UUID）
-		TaskCancelEndpoint:  "/api/v1/meta/scan/runs/:run_id/cancel", // 取消执行
+		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/:run_id",           // 查询执行状态（UUID）
+		TaskCancelEndpoint:  "/api/v1/meta/scan/runs/:run_id/cancel",    // 取消执行
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

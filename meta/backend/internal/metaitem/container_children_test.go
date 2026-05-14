@@ -8,9 +8,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/xuri/excelize/v2"
@@ -155,6 +155,42 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	}
 	if _, ok := children[0]["fields"]; ok {
 		t.Fatalf("zip child should not carry fields: %#v", children[0])
+	}
+}
+
+func TestEnrichZIPContainerChildrenGroupsMultiComponents(t *testing.T) {
+	t.Parallel()
+
+	data := zipContainerBytes(t, map[string]string{
+		"roads/roads.shp":     "shp",
+		"roads/roads.shx":     "shx",
+		"roads/roads.dbf":     "dbf",
+		"notes/readme.txt":    "hello",
+		"__MACOSX/._junk.dbf": "junk",
+	})
+
+	attrs := models.JSONMap{}
+	item := &DetectedItem{DataType: dataitem.DataTypeContainer, Format: string(format.FormatZIP)}
+	if err := EnrichContainerChildren(context.Background(), attrs, item, bytes.NewReader(data)); err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+
+	container := attrs["type_info"].(map[string]interface{})["container"].(map[string]interface{})
+	children := container["children"].([]map[string]interface{})
+	if len(children) != 2 {
+		t.Fatalf("children = %#v, want grouped multi item + text item", children)
+	}
+	multi := children[0]
+	if multi["organization"] != string(dataitem.OrganizationMulti) {
+		t.Fatalf("organization = %#v, want multi: %#v", multi["organization"], multi)
+	}
+	components, ok := multi["components"].([]map[string]interface{})
+	if !ok || len(components) != 3 {
+		t.Fatalf("components = %#v, want 3 component descriptors", multi["components"])
+	}
+	formatInfo := attrs["format_info"].(map[string]interface{})[string(format.FormatZIP)].(map[string]interface{})
+	if formatInfo["resolved_children"] != true {
+		t.Fatalf("format_info.zip = %#v, want resolved_children", formatInfo)
 	}
 }
 

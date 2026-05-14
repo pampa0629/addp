@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/meta/internal/dataitem"
 )
 
-var metaItemDetectors = []CompositeItemDetector{
-	&shapefileItemDetector{},
+var metaItemDetectors = []MetaItemDetector{
+	&commonDataItemDetector{},
 	&tableFileItemDetector{},
 }
 
@@ -20,8 +20,8 @@ func init() {
 	}
 }
 
-func sortedMetaItemDetectors() []CompositeItemDetector {
-	result := make([]CompositeItemDetector, len(metaItemDetectors))
+func sortedMetaItemDetectors() []MetaItemDetector {
+	result := make([]MetaItemDetector, len(metaItemDetectors))
 	copy(result, metaItemDetectors)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Priority() > result[j].Priority()
@@ -87,10 +87,11 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 			continue
 		}
 
-		if !detector.Detect(ctx, detectorInput.Files, detectorInput.Subdirs) {
+		composite, ok := detector.(CompositeItemDetector)
+		if !ok || !composite.Detect(ctx, detectorInput.Files, detectorInput.Subdirs) {
 			continue
 		}
-		info, err := detector.ExtractItemInfo(
+		info, err := composite.ExtractItemInfo(
 			ctx,
 			detectorInput.ContentReader,
 			detectorInput.ConnInfo,

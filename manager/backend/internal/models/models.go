@@ -117,7 +117,7 @@ type TablePreview struct {
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
 	Table      string `json:"table,omitempty"`      // Table name for MVT API
-	EngineType string `json:"engineType,omitempty"` // Engine type (e.g., "postgresql")
+	EngineType string `json:"engineType,omitempty"` // Engine type for downstream preview APIs
 	// Spatial metadata (for spatial data preview)
 	SRID   int       `json:"srid,omitempty"`   // 空间参考系统 ID
 	Extent []float64 `json:"extent,omitempty"` // 空间范围 [minX, minY, maxX, maxY]

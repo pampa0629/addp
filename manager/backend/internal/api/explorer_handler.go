@@ -382,7 +382,7 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 }
 
 // GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
-// GET /api/manager/graph-schema/:engine_id?database=neo4j
+// GET /api/manager/graph-schema/:engine_id?database=graph
 // @Summary 获取图数据库 Schema | Get graph database schema
 // @Description 获取图数据库的节点标签和关系类型 | Get node labels and relationship types from graph database
 // @Tags Manager

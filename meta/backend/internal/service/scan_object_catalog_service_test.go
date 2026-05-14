@@ -7,13 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scanstats"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -66,7 +65,7 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	stats := map[uint]*scanstats.NodeAggregate{}
+	stats := map[uint]*objectCatalogNodeAggregate{}
 	parentNode, err := svc.ensureObjectCatalogPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
 	if err != nil {
 		t.Fatalf("ensure prefix nodes: %v", err)

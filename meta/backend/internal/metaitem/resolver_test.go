@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/meta/internal/dataitem"
 )
 
 func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
@@ -35,7 +35,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextDetector(t *testing.T) {
 	}
 	second := &testScopeDetector{priority: 10, result: &DetectionResult{Claims: ResourceClaimSet{}}}
 	old := metaItemDetectors
-	metaItemDetectors = []CompositeItemDetector{first, second}
+	metaItemDetectors = []MetaItemDetector{first, second}
 	defer func() { metaItemDetectors = old }()
 
 	_, err := ResolveItems(context.Background(), DirectoryResolveInput{

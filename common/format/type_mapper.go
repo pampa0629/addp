@@ -1,6 +1,7 @@
 package format
 
 import (
+	"sort"
 	"sync"
 )
 
@@ -58,12 +59,41 @@ func GetTypeMapper(name string) TypeMapper {
 	return defaultMapperRegistry.GetTypeMapper(name)
 }
 
+// InferCommonFieldType 使用已注册 TypeMapper 将原生字段类型归一到通用字段类型。
+func InferCommonFieldType(nativeType string) FieldType {
+	return defaultMapperRegistry.InferCommonFieldType(nativeType)
+}
+
 // GetTypeMapper 从当前注册表获取类型映射器
 func (r *TypeMapperRegistry) GetTypeMapper(name string) TypeMapper {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	return r.mappers[name]
+}
+
+// InferCommonFieldType 使用当前注册表中的 TypeMapper 推断通用字段类型。
+func (r *TypeMapperRegistry) InferCommonFieldType(nativeType string) FieldType {
+	r.mu.RLock()
+	names := make([]string, 0, len(r.mappers))
+	for name := range r.mappers {
+		names = append(names, name)
+	}
+	mappers := make(map[string]TypeMapper, len(r.mappers))
+	for name, mapper := range r.mappers {
+		mappers[name] = mapper
+	}
+	r.mu.RUnlock()
+
+	sort.Strings(names)
+	for _, name := range names {
+		if mapper := mappers[name]; mapper != nil {
+			if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != FieldTypeUnknown {
+				return fieldType
+			}
+		}
+	}
+	return FieldTypeUnknown
 }
 
 // ListTypeMappers 列出所有已注册的类型映射器名称

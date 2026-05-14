@@ -7,7 +7,6 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/enginecap"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -48,11 +47,26 @@ func (s *ScanService) dispatchScan(req scanDispatchRequest) (scanDispatchResult,
 		return scanDispatchResult{}, fmt.Errorf("unsupported engine type: %s", req.Resource.EngineType)
 	}
 
-	dispatch, ok := s.scanDispatchers()[enginecap.StorageFamily(enginePlugin)]
+	dispatch, ok := s.scanDispatchers()[storageFamily(enginePlugin)]
 	if !ok {
 		return scanDispatchResult{}, fmt.Errorf("plugin does not support metadata query")
 	}
 	return dispatch(context.Background(), enginePlugin, req)
+}
+
+func storageFamily(p plugin.EnginePlugin) string {
+	if p == nil {
+		return ""
+	}
+	caps := p.Capabilities()
+	if caps.Storage == nil {
+		return ""
+	}
+	switch caps.EngineFamily {
+	case "object", "file", "tabular", "document", "graph":
+		return caps.EngineFamily
+	}
+	return ""
 }
 
 func (s *ScanService) scanDispatchers() map[string]scanDispatchFunc {

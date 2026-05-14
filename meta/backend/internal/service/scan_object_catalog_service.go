@@ -3,24 +3,212 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/dataitem"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/objectcatalog"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
-	"github.com/addp/meta/internal/scanstats"
 	"gorm.io/gorm"
 )
+
+type objectCatalogInlineMetadataExtractor interface {
+	ShouldExtract(key, contentType string, sizeBytes int64) bool
+	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string, openContent func() (io.ReadCloser, error)) map[string]interface{}
+}
+
+type objectCatalogNodeAggregate struct {
+	Node      *models.MetaNode
+	ItemCount int
+	TotalSize int64
+}
+
+func ensureObjectCatalogNodeAggregate(stats map[uint]*objectCatalogNodeAggregate, node *models.MetaNode) *objectCatalogNodeAggregate {
+	if agg, ok := stats[node.ID]; ok {
+		return agg
+	}
+	agg := &objectCatalogNodeAggregate{Node: node}
+	stats[node.ID] = agg
+	return agg
+}
+
+func listObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogNode, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+	}, plugin.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	buckets := make([]plugin.CatalogNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Kind == plugin.CatalogKindBucket {
+			buckets = append(buckets, node)
+		}
+	}
+	return buckets, nil
+}
+
+func listObjectCatalogItems(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	bucketName, prefix string,
+	recursive bool,
+) ([]plugin.CatalogNode, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), objectCatalogPath(resource.ID, bucketName, prefix), plugin.ListOptions{Recursive: recursive})
+	if err != nil {
+		return nil, err
+	}
+
+	objects := make([]plugin.CatalogNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.IsItem {
+			objects = append(objects, node)
+		}
+	}
+	return objects, nil
+}
+
+func objectCatalogNodesToMetadata(
+	ctx context.Context,
+	objects []plugin.CatalogNode,
+	bucket string,
+	deepScan bool,
+	resource *commonModels.Engine,
+	inlineExtractor objectCatalogInlineMetadataExtractor,
+) []format.ObjectMetadata {
+	metas := make([]format.ObjectMetadata, 0, len(objects))
+	for _, obj := range objects {
+		key := objectKeyFromCatalogNode(obj, bucket)
+		size, _ := int64Stat(obj.Stats, "size_bytes")
+		contentType := stringAttribute(obj.Attributes, "content_type")
+		lastModified := timeAttribute(obj.Attributes, "modified_at")
+		etag := stringAttribute(obj.Attributes, "etag")
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(key)), ".")
+		meta := format.ObjectMetadata{
+			Bucket:       bucket,
+			Path:         key,
+			NodeType:     "object",
+			FileType:     ext,
+			SizeBytes:    size,
+			ObjectCount:  1,
+			LastModified: lastModified,
+		}
+		if deepScan && inlineExtractor != nil && lastModified != nil && inlineExtractor.ShouldExtract(key, contentType, size) {
+			meta.ExtractedAttributes = inlineExtractor.Extract(ctx, resource, bucket, key, contentType, size, *lastModified, etag, func() (io.ReadCloser, error) {
+				return openObjectCatalogContent(ctx, resource, bucket, key)
+			})
+		}
+		metas = append(metas, meta)
+	}
+	return metas
+}
+
+func openObjectCatalogContent(ctx context.Context, resource *commonModels.Engine, bucket, key string) (io.ReadCloser, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("resource is nil")
+	}
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
+	}
+	return contentReader.OpenContent(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), objectCatalogPath(resource.ID, bucket, key), plugin.ReadOptions{})
+}
+
+func objectCatalogPath(engineID uint, bucketName, prefix string) plugin.CatalogPath {
+	path := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: engineID,
+	}
+	if bucketName == "" {
+		return path
+	}
+	path.Segments = append(path.Segments, plugin.CatalogSegment{
+		Term: plugin.CatalogTermBucket,
+		Kind: plugin.CatalogKindBucket,
+		Name: bucketName,
+	})
+	trimmed := strings.Trim(prefix, "/")
+	if trimmed == "" {
+		return path
+	}
+	for _, part := range strings.Split(trimmed, "/") {
+		if part == "" {
+			continue
+		}
+		path.Segments = append(path.Segments, plugin.CatalogSegment{
+			Term: plugin.CatalogTermPrefix,
+			Kind: plugin.CatalogKindPrefix,
+			Name: part,
+		})
+	}
+	return path
+}
+
+func objectKeyFromCatalogNode(node plugin.CatalogNode, bucket string) string {
+	rawPath := stringAttribute(node.Attributes, "path")
+	if rawPath == "" {
+		rawPath = node.Path.StringPath()
+	}
+	if rawPath != "" {
+		_, key := metapath.SplitObjectPath(rawPath)
+		if key != "" {
+			return key
+		}
+	}
+	return strings.TrimPrefix(node.Path.StringPath(), bucket+"/")
+}
+
+func stringAttribute(attrs map[string]interface{}, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	if value, ok := raw.(string); ok {
+		return value
+	}
+	return fmt.Sprintf("%v", raw)
+}
+
+func timeAttribute(attrs map[string]interface{}, key string) *time.Time {
+	if attrs == nil {
+		return nil
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch value := raw.(type) {
+	case time.Time:
+		return &value
+	case string:
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
 
 // ObjectCatalogScanService 对象 catalog 扫描服务
 // 职责：按插件 catalog 语义扫描 bucket 和 object 项
@@ -90,7 +278,7 @@ func (s *ObjectCatalogScanService) ScanPaths(
 
 	// 如果仍然没有路径，列出所有 buckets
 	if len(paths) == 0 {
-		buckets, err := objectcatalog.ListBucketNodes(context.Background(), resource, catalogProvider)
+		buckets, err := listObjectCatalogBucketNodes(context.Background(), resource, catalogProvider)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
 		}
@@ -141,7 +329,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
-	nodeStats := make(map[uint]*scanstats.NodeAggregate)
+	nodeStats := make(map[uint]*objectCatalogNodeAggregate)
 
 	// 记录本次扫描到的所有fingerprints，用于后续清理未扫描到的item
 	scannedFingerprints := make(map[string]bool)
@@ -170,7 +358,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		objects, err := objectcatalog.ListObjects(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
+		objects, err := listObjectCatalogItems(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
 		if err != nil {
 			s.log.Warn("对象 catalog 路径扫描失败",
 				"engine_id", engineID,
@@ -188,7 +376,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		metas := objectcatalog.ConvertObjectsToMetadata(context.Background(), objects, bucketName, isDeepScan, resource, s.inlineExtractor)
+		metas := objectCatalogNodesToMetadata(context.Background(), objects, bucketName, isDeepScan, resource, s.inlineExtractor)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
@@ -213,7 +401,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 
 		if len(metas) == 0 {
 			if fullBucket {
-				scanstats.EnsureNodeAggregate(nodeStats, bucketNode)
+				ensureObjectCatalogNodeAggregate(nodeStats, bucketNode)
 			}
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 未发现新对象", rawPath))
@@ -356,7 +544,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
 	metas []format.ObjectMetadata,
-	stats map[uint]*scanstats.NodeAggregate,
+	stats map[uint]*objectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanDepth string,
 	scanPathPrefix string,
@@ -385,7 +573,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 		}
 		if node != nil && node != bucketNode {
 			basePrefixNode = node
-			scanstats.EnsureNodeAggregate(stats, node)
+			ensureObjectCatalogNodeAggregate(stats, node)
 		}
 		s.log.Info("scanPathPrefix处理完成",
 			"basePrefixNode_id", basePrefixNode.ID,
@@ -404,7 +592,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
 			if includeBucketAggregate {
-				scanstats.EnsureNodeAggregate(stats, bucketNode)
+				ensureObjectCatalogNodeAggregate(stats, bucketNode)
 			}
 			continue
 		}
@@ -429,10 +617,10 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 
 		pathPlan := metaitem.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
 		if pathPlan.ExactBase && meta.NodeType == "prefix" {
-			scanstats.EnsureNodeAggregate(stats, basePrefixNode)
+			ensureObjectCatalogNodeAggregate(stats, basePrefixNode)
 		}
 		if pathPlan.SkipReason == "空路径" && includeBucketAggregate {
-			scanstats.EnsureNodeAggregate(stats, bucketNode)
+			ensureObjectCatalogNodeAggregate(stats, bucketNode)
 		}
 
 		if pathPlan.SkipReason != "" {
@@ -462,7 +650,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 				}
 				currentParent = childNode
 				parentChain = append(parentChain, childNode)
-				scanstats.EnsureNodeAggregate(stats, childNode)
+				ensureObjectCatalogNodeAggregate(stats, childNode)
 			}
 		}
 
@@ -497,7 +685,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 				if !includeBucketAggregate && idx == 0 {
 					continue
 				}
-				agg := scanstats.EnsureNodeAggregate(stats, node)
+				agg := ensureObjectCatalogNodeAggregate(stats, node)
 				agg.ItemCount++
 				agg.TotalSize += meta.SizeBytes
 			}
@@ -570,14 +758,14 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			if !includeBucketAggregate && idx == 0 {
 				continue
 			}
-			agg := scanstats.EnsureNodeAggregate(stats, node)
+			agg := ensureObjectCatalogNodeAggregate(stats, node)
 			agg.ItemCount++
 			agg.TotalSize += meta.SizeBytes
 		}
 	}
 
 	if includeBucketAggregate {
-		scanstats.EnsureNodeAggregate(stats, bucketNode)
+		ensureObjectCatalogNodeAggregate(stats, bucketNode)
 	}
 	return objects, nil
 }
@@ -586,7 +774,7 @@ func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	items []metaitem.ObjectCatalogCompositeItem,
-	stats map[uint]*scanstats.NodeAggregate,
+	stats map[uint]*objectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
@@ -624,7 +812,7 @@ func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 				continue
 			}
 			updatedNodes[node.ID] = true
-			agg := scanstats.EnsureNodeAggregate(stats, node)
+			agg := ensureObjectCatalogNodeAggregate(stats, node)
 			agg.ItemCount++
 			agg.TotalSize += itemPlan.SizeBytes
 		}
@@ -637,7 +825,7 @@ func (s *ObjectCatalogScanService) ensureObjectCatalogPrefixNodes(
 	bucketNode, basePrefixNode *models.MetaNode,
 	parentPath string,
 	scanPathPrefix string,
-	stats map[uint]*scanstats.NodeAggregate,
+	stats map[uint]*objectCatalogNodeAggregate,
 ) (*models.MetaNode, error) {
 	parent := bucketNode
 	if basePrefixNode != nil {
@@ -648,7 +836,7 @@ func (s *ObjectCatalogScanService) ensureObjectCatalogPrefixNodes(
 		return nil, err
 	}
 	for _, node := range createdNodes {
-		scanstats.EnsureNodeAggregate(stats, node)
+		ensureObjectCatalogNodeAggregate(stats, node)
 	}
 	return parentNode, nil
 }
@@ -665,26 +853,19 @@ func (s *ObjectCatalogScanService) enrichObjectCatalogTableFileAttributes(
 	if readableProvider == nil || item == nil {
 		return nil, nil
 	}
-	if item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
-		return nil, nil
-	}
-	if item.DataType != dataitem.DataTypeTable && item.Format != string(format.FormatJSON) {
+	if item.Organization != dataitem.OrganizationSingle {
 		return nil, nil
 	}
 	physicalPath := meta.Bucket + "/" + meta.Path
-	extract := metaitem.ExtractTableFileSingleFileInfo
-	if item.Format == string(format.FormatJSON) && item.DataType != dataitem.DataTypeTable {
-		extract = metaitem.ExtractTableFileSingleFileInfoStrict
-	}
-	info, err := extract(ctx, readableProvider, connInfo, engineID, physicalPath, meta.SizeBytes, includeContentIndex)
+	enriched, ok, err := metaitem.EnrichSingleTableFileItem(ctx, readableProvider, connInfo, engineID, item, physicalPath, meta.SizeBytes, includeContentIndex)
 	if err != nil {
 		return nil, err
 	}
-	if info == nil {
+	if !ok || enriched == nil {
 		return nil, nil
 	}
-	attrs := metaattr.JSONMap(info.Attributes)
-	metaitem.MergeDataItemAttributes(attrs, metaitem.DetectedItemFromCompositeInfo(info, physicalPath, meta.SizeBytes))
+	attrs := metaattr.JSONMap(enriched.Attributes)
+	metaitem.MergeDataItemAttributes(attrs, enriched)
 	metaattr.SetStorage(attrs, "bucket", meta.Bucket)
 	dir, name := commonModels.SplitObjectPath(meta.Path)
 	metaattr.SetStorage(attrs, "path", dir)

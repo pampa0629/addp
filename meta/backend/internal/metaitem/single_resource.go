@@ -1,8 +1,8 @@
 package metaitem
 
 import (
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/meta/internal/dataitem"
 )
 
 // SingleResourceInput 是 single 组织方式 item 推断的输入。
