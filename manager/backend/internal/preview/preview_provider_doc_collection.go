@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -99,7 +100,7 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 	total := int64(len(rows))
 	if metadataProvider != nil {
 		if item, err := metadataProvider.DescribeItem(ctx, connInfo, documentCollectionCatalogPath(req.Engine.ID, database, collectionName), plugin.MetadataOptions{IncludeStatistics: true}); err == nil {
-			if count := int64Stat(item.Stats, "document_count"); count > 0 {
+			if count := catalogutil.Int64Stat(item.Stats, "document_count"); count > 0 {
 				total = count
 			}
 		}

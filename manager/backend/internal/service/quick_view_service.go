@@ -542,10 +542,7 @@ func (s *QuickViewService) RunPreparationChecks(
 	}
 
 	// 2. 创建准备阶段服务
-	resourceService := &systemClientResourceAdapter{
-		systemClient: s.systemClient,
-	}
-	prepService := mvt.NewPreparationService(s.repo.GetDB(), resourceService)
+	prepService := mvt.NewPreparationService(s.repo.GetDB(), s.systemClient)
 
 	// 3. 执行所有检查，传递实际的几何列名
 	prepStatus, err := prepService.RunPreparationChecks(
@@ -733,15 +730,4 @@ func (s *QuickViewService) UpdatePreferredMode(
 		"preferred_mode", preferredMode)
 
 	return nil
-}
-
-// systemClientResourceAdapter 实现 mvt.ResourceService 接口
-// 使用 SystemClient 获取引擎配置
-type systemClientResourceAdapter struct {
-	systemClient *commonClient.SystemClient
-}
-
-func (a *systemClientResourceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
-	// SystemClient.GetEngine 只需要 engineID（租户信息通过 token/auth 已经绑定）
-	return a.systemClient.GetEngine(engineID)
 }

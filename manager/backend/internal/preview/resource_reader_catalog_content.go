@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
+	"github.com/addp/manager/internal/catalogutil"
 )
 
 type objectCatalogResourceReader struct {
@@ -30,7 +31,7 @@ func newObjectCatalogResourceReader(contentReader plugin.ContentReadableProvider
 }
 
 func (r *objectCatalogResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
-	return openObjectCatalogContent(ctx, r.contentReader, r.connInfo, r.engineID, r.bucket, r.objectKey(ref.Path))
+	return catalogutil.OpenObjectContent(ctx, r.contentReader, r.connInfo, r.engineID, r.bucket, r.objectKey(ref.Path))
 }
 
 func (r *objectCatalogResourceReader) OpenRange(ctx context.Context, ref resource.ResourceRef, offset, length int64) (io.ReadCloser, error) {
@@ -38,7 +39,7 @@ func (r *objectCatalogResourceReader) OpenRange(ctx context.Context, ref resourc
 	if !ok {
 		return nil, resource.ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, r.connInfo, objectCatalogItemPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
+	return rangeReader.OpenRange(ctx, r.connInfo, catalogutil.ObjectItemPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
 		Offset: offset,
 		Length: length,
 	})
@@ -53,13 +54,13 @@ func (r *objectCatalogResourceReader) List(ctx context.Context, scope resource.R
 		return nil, resource.ErrResourceNotFound
 	}
 	scopePath := r.objectKey(scope.Path)
-	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, objectCatalogDirectoryPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
+	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, catalogutil.ObjectDirectoryPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 	refs := make([]resource.ResourceRef, 0, len(nodes))
 	for _, node := range nodes {
-		path := strings.TrimPrefix(catalogNodePhysicalPath(node), strings.Trim(r.bucket, "/")+"/")
+		path := strings.TrimPrefix(catalogutil.NodePhysicalPath(node), strings.Trim(r.bucket, "/")+"/")
 		if path == "" {
 			path = node.Path.StringPath()
 		}
@@ -126,7 +127,7 @@ func (r *fileCatalogResourceReader) List(ctx context.Context, scope resource.Res
 	}
 	refs := make([]resource.ResourceRef, 0, len(nodes))
 	for _, node := range nodes {
-		path := catalogNodePhysicalPath(node)
+		path := catalogutil.NodePhysicalPath(node)
 		role := resource.ResourceRoleMain
 		if node.IsContainer {
 			role = resource.ResourceRoleScope

@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/resource"
 	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/preview"
 )
 
 // ExplorerService 数据探查服务
@@ -23,17 +24,16 @@ type ExplorerService struct {
 	systemClient    *commonClient.SystemClient
 	metaClient      *commonClient.MetaClient
 	treeBuilder     *resource.TreeBuilder
-	previewResolver *PreviewResolver
+	previewResolver *preview.PreviewResolver
 }
 
 // NewExplorerService 创建数据探查服务
 func NewExplorerService(
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
-	previewResolver *PreviewResolver,
+	previewResolver *preview.PreviewResolver,
 ) *ExplorerService {
-	// 创建 TreeBuilder（使用 metaClient 作为可选依赖）
-	treeBuilder := resource.NewTreeBuilder(&metaClientAdapter{client: metaClient})
+	treeBuilder := resource.NewTreeBuilder(metaClient)
 
 	return &ExplorerService{
 		systemClient:    systemClient,
@@ -738,52 +738,12 @@ func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.J
 	if strings.Contains(fullName, "/") {
 		return true
 	}
-	if isContentCatalogEngine(engineType) {
+	if preview.IsContentCatalogEngine(engineType) {
 		return true
 	}
 	formatName := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "format", "item")))
 	organization := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "organization", "item")))
 	return formatName != "" && organization != ""
-}
-
-// metaClientAdapter 适配器：将 MetaClient 适配为 TreeBuilder 的 MetaClient 接口
-type metaClientAdapter struct {
-	client *commonClient.MetaClient
-}
-
-func (a *metaClientAdapter) GetMetadataTree(engineID uint) (*commonModels.MetadataTree, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("meta client not initialized")
-	}
-	return a.client.GetMetadataTree(engineID)
-}
-
-func (a *metaClientAdapter) GetNodeByPath(engineID uint, nodePath string) (*commonModels.MetaNode, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("meta client not initialized")
-	}
-	return a.client.GetNodeByPath(engineID, nodePath)
-}
-
-func (a *metaClientAdapter) GetNodeChildren(nodeID uint) ([]commonModels.MetaNode, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("meta client not initialized")
-	}
-	return a.client.GetNodeChildren(nodeID)
-}
-
-func (a *metaClientAdapter) GetNodeItems(nodeID uint) ([]commonModels.MetaItem, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("meta client not initialized")
-	}
-	return a.client.GetNodeItems(nodeID)
-}
-
-func (a *metaClientAdapter) GetMetaNode(nodeID uint) (*commonModels.MetaNode, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("meta client not initialized")
-	}
-	return a.client.GetMetaNode(nodeID)
 }
 
 // convertManagerEngineToCommon 将 Manager 的 Engine 转换为 Common 的 Engine

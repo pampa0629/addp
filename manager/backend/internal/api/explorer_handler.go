@@ -11,6 +11,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/logger"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -19,14 +20,14 @@ import (
 // 基于 ResourceLocator URI 系统
 type ExplorerHandler struct {
 	explorerService *service.ExplorerService
-	previewResolver *service.PreviewResolver
+	previewResolver *preview.PreviewResolver
 	metadataService *service.MetadataService
 }
 
 // NewExplorerHandler 创建 Explorer Handler
 func NewExplorerHandler(
 	explorerService *service.ExplorerService,
-	previewResolver *service.PreviewResolver,
+	previewResolver *preview.PreviewResolver,
 	metadataService *service.MetadataService,
 ) *ExplorerHandler {
 	return &ExplorerHandler{
@@ -75,7 +76,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 	// 调用 ExplorerService
 	tree, err := h.explorerService.GetTree(c.Request.Context(), tenantID, uint(engineID), expandDepth)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
@@ -117,7 +118,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	// 调用 ExplorerService
 	node, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
@@ -185,16 +186,16 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 调用 PreviewResolver
 	result, err := h.previewResolver.PreviewFromURIWithComponent(c.Request.Context(), locatorURI, page, pageSize, c.Query("child_name"), componentPath, tenantID)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
-		if err == service.ErrPreviewRequiresScannedMeta {
+		if err == preview.ErrPreviewRequiresScannedMeta {
 			commonAPI.NotFoundError(c, "Resource has not been scanned by meta")
 			return
 		}
 		// 检查是否为表不存在错误（使用 errors.As 处理包装后的错误）
-		var tableNotFoundErr *service.TableNotFoundError
+		var tableNotFoundErr *preview.TableNotFoundError
 		if errors.As(err, &tableNotFoundErr) {
 			logger.L().Warn("表不存在", "error", tableNotFoundErr.Error())
 			c.JSON(http.StatusNotFound, gin.H{
@@ -290,7 +291,7 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 	// 调用 ExplorerService
 	result, err := h.explorerService.GetNodeChildren(c.Request.Context(), tenantID, uint(engineID), locatorURI, expandDepth)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
@@ -362,7 +363,7 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	// 调用 ExplorerService
 	results, total, err := h.explorerService.SearchNodes(c.Request.Context(), tenantID, uint(engineID), keyword, nodeTypes, limit)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
@@ -409,7 +410,7 @@ func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
 
 	schema, err := h.explorerService.GetGraphSchema(c.Request.Context(), tenantID, uint(engineID), database)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
@@ -466,7 +467,7 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 		tenantID,
 	)
 	if err != nil {
-		if err == service.ErrEngineAccessDenied {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}

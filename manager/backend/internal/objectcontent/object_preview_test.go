@@ -1,4 +1,4 @@
-package service
+package objectcontent
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func TestInferContentType(t *testing.T) {
@@ -69,9 +70,9 @@ func TestInferContentType(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := inferContentType(tc.objectPath, tc.contentType)
+			got := InferContentType(tc.objectPath, tc.contentType)
 			if got != tc.expect {
-				t.Fatalf("inferContentType(%q, %q) = %q, want %q", tc.objectPath, tc.contentType, got, tc.expect)
+				t.Fatalf("InferContentType(%q, %q) = %q, want %q", tc.objectPath, tc.contentType, got, tc.expect)
 			}
 		})
 	}

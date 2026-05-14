@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -438,4 +439,144 @@ func (c *MetaClient) GetItemSpatialMetadata(engineID uint, namespace, itemName s
 	}
 
 	return &result, nil
+}
+
+// ObjectMetadataRequest 描述按需对象元数据提取请求。
+type ObjectMetadataRequest struct {
+	EngineID   uint
+	ObjectKey  string
+	ObjectData io.Reader
+}
+
+// ExtractObjectMetadata 按需调用 Meta 提取对象深度元数据。
+func (c *MetaClient) ExtractObjectMetadata(req *ObjectMetadataRequest) (map[string]interface{}, error) {
+	if req == nil {
+		return nil, fmt.Errorf("object metadata request is required")
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/extract?engine_id=%d&object_key=%s",
+		c.baseURL, req.EngineID, url.QueryEscape(req.ObjectKey))
+
+	httpReq, err := http.NewRequest("POST", endpoint, req.ObjectData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if data, ok := result["data"].(map[string]interface{}); ok {
+		return data, nil
+	}
+	return result, nil
+}
+
+// BuildObjectContentIndex 按需调用 Meta 建立对象内容索引。
+func (c *MetaClient) BuildObjectContentIndex(req *ObjectMetadataRequest) (map[string]interface{}, error) {
+	if req == nil {
+		return nil, fmt.Errorf("object metadata request is required")
+	}
+	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/content-index?engine_id=%d&object_key=%s",
+		c.baseURL, req.EngineID, url.QueryEscape(req.ObjectKey))
+
+	httpReq, err := http.NewRequest("POST", endpoint, req.ObjectData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data struct {
+			Attributes map[string]interface{} `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result.Data.Attributes, nil
+}
+
+// GetObjectMetadata 获取已存储的对象提取元数据。
+func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/object?engine_id=%d&object_key=%s",
+		c.baseURL, engineID, url.QueryEscape(objectKey))
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if extracted, ok := commonJSON.Value(result, "capabilities.extraction", "extracted_metadata").(map[string]interface{}); ok {
+		return extracted, nil
+	}
+	return nil, nil
+}
+
+// TryExtractMetadata 先读取已有对象元数据，缺失时再按需提取。
+func (c *MetaClient) TryExtractMetadata(engineID uint, objectKey string, objectDataProvider func() (io.Reader, error)) (map[string]interface{}, error) {
+	existing, err := c.GetObjectMetadata(engineID, objectKey)
+	if err == nil && existing != nil {
+		return existing, nil
+	}
+	if objectDataProvider == nil {
+		return nil, fmt.Errorf("no object data provider for extraction")
+	}
+	objectData, err := objectDataProvider()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object data: %w", err)
+	}
+	return c.ExtractObjectMetadata(&ObjectMetadataRequest{
+		EngineID:   engineID,
+		ObjectKey:  objectKey,
+		ObjectData: objectData,
+	})
 }

@@ -16,7 +16,10 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
 )
 
@@ -24,22 +27,22 @@ type MetadataService struct {
 	metadataRepo   *repository.MetadataRepository
 	systemClient   *commonClient.SystemClient
 	metaClient     *commonClient.MetaClient
-	previews       *PreviewRegistry
-	content        *ObjectContentRegistry
+	previews       *preview.PreviewRegistry
+	content        *objectcontent.ObjectContentRegistry
 	metaServiceURL string
 	httpClient     *http.Client
 }
 
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
+func NewMetadataService(metadataRepo *repository.MetadataRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *preview.PreviewRegistry, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string) *MetadataService {
 	pr := previewRegistry
 	if pr == nil {
-		pr = NewPreviewRegistry()
+		pr = preview.NewPreviewRegistry()
 	}
 	cr := contentRegistry
 	if cr == nil {
-		cr = NewObjectContentRegistry()
+		cr = objectcontent.NewObjectContentRegistry()
 	}
 	client := &http.Client{
 		Timeout: 120 * time.Second,
@@ -56,12 +59,12 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, systemClien
 }
 
 // PreviewRegistry 返回预览插件注册表
-func (s *MetadataService) PreviewRegistry() *PreviewRegistry {
+func (s *MetadataService) PreviewRegistry() *preview.PreviewRegistry {
 	return s.previews
 }
 
 // ContentRegistry 返回内容处理器注册表
-func (s *MetadataService) ContentRegistry() *ObjectContentRegistry {
+func (s *MetadataService) ContentRegistry() *objectcontent.ObjectContentRegistry {
 	return s.content
 }
 
@@ -424,7 +427,7 @@ func (s *MetadataService) StreamObject(
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	if !catalogItemTermMatches(resource.EngineType, plugin.CatalogTermObject) {
+	if !catalogutil.ItemTermMatches(resource.EngineType, plugin.CatalogTermObject) {
 		return nil, 0, "", "", fmt.Errorf("resource type %s does not support object streaming", resource.EngineType)
 	}
 	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
@@ -444,12 +447,12 @@ func (s *MetadataService) StreamObject(
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
 	// 获取对象信息
-	meta, err := getObjectCatalogPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	meta, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
 	}
 
-	contentType := inferContentType(objectPath, meta.ContentType)
+	contentType := objectcontent.InferContentType(objectPath, meta.ContentType)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -503,9 +506,9 @@ func (s *MetadataService) StreamObject(
 	// 获取对象流
 	var reader io.ReadCloser
 	if readOptions.Length > 0 && rangeReader != nil {
-		reader, err = rangeReader.OpenRange(ctx, connInfo, objectCatalogItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = rangeReader.OpenRange(ctx, connInfo, catalogutil.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
 	} else {
-		reader, err = contentReader.OpenContent(ctx, connInfo, objectCatalogItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = contentReader.OpenContent(ctx, connInfo, catalogutil.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
 	}
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)

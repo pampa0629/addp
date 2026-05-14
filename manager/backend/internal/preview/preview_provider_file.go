@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -8,11 +8,14 @@ import (
 	"sort"
 	"strings"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 )
 
 // FileTablePreviewProvider 通用文件表预览 Provider
@@ -374,8 +377,8 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 	defer object.Close()
 
 	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
-	metaClient := NewMetaClient(metaURL, token)
-	attrs, err := metaClient.BuildObjectContentIndex(&ExtractObjectMetadataRequest{
+	metaClient := commonClient.NewMetaClient(metaURL, token)
+	attrs, err := metaClient.BuildObjectContentIndex(&commonClient.ObjectMetadataRequest{
 		EngineID:   req.Engine.ID,
 		ObjectKey:  contentIndexObjectKey(req, bucket, fullPath),
 		ObjectData: object,
@@ -443,7 +446,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		bucket = resolved
 	}
 	objectPath := objectKeyFromPreviewRequest(req, bucket)
-	reader, err := rangeReader.OpenRange(ctx, connInfo, objectCatalogItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
+	reader, err := rangeReader.OpenRange(ctx, connInfo, catalogutil.ObjectItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
 		Offset: anchor.ByteOffset,
 		Length: length,
 	})
@@ -758,7 +761,7 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	if resolved := resolveContainerAttributeChildrenForPreview(stringAttribute(attrs, "format"), interfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
+	if resolved := objectcontent.ResolveContainerAttributeChildrenForPreview(stringAttribute(attrs, "format"), interfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
 		for _, child := range resolved.Children {
 			if len(child) > 0 && containerChildNameMatches(child, childName) {
 				return child

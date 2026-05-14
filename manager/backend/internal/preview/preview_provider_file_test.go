@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"archive/zip"
@@ -14,6 +14,7 @@ import (
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 )
 
 func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
@@ -494,8 +495,8 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 	enginePlugin.content = zipBytesForFilePreviewTest(t, map[string]string{
 		"docs/readme.txt": "hello nested document",
 	})
-	provider := NewContainerChildPreviewProvider(NewObjectContentRegistry())
-	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -554,8 +555,8 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
 		"inner.zip": inner,
 	})
-	provider := NewContainerChildPreviewProvider(NewObjectContentRegistry())
-	LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",

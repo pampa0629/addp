@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -10,7 +10,9 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
 )
 
@@ -18,10 +20,10 @@ import (
 // 使用 CatalogProvider / ItemMetadataProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
-	content      *ObjectContentRegistry
+	content      *objectcontent.ObjectContentRegistry
 }
 
-func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
+func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &fileCatalogPreviewProvider{
 		metadataRepo: metadataRepo,
 		content:      content,
@@ -134,12 +136,12 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	}
 
 	rawContentType := meta.ContentType
-	canonicalContentType := inferContentType(filePath, rawContentType)
+	canonicalContentType := objectcontent.InferContentType(filePath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
 
 	if p.content != nil {
 		dir, name := splitFSPath(filePath)
-		contentReq := &ObjectContentRequest{
+		contentReq := &objectcontent.ObjectContentRequest{
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
@@ -151,8 +153,8 @@ func (p *fileCatalogPreviewProvider) previewFile(
 		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if isContainerObjectContentFormat(contentReq.Format) {
-				if previewJSON := buildContainerPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
+			if objectcontent.IsContainerFormat(contentReq.Format) {
+				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
 					preview.Object.Content = &models.ObjectPreviewContent{
 						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
@@ -166,7 +168,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 					return preview, nil
 				}
 			}
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return openFileCatalogContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)
 				}
@@ -269,9 +271,9 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 		}
 		children = append(children, models.ObjectPreviewChild{
 			Name:        node.Name,
-			Path:        catalogNodePhysicalPath(node),
+			Path:        catalogutil.NodePhysicalPath(node),
 			Type:        childType,
-			SizeBytes:   int64Stat(node.Stats, "size_bytes"),
+			SizeBytes:   catalogutil.Int64Stat(node.Stats, "size_bytes"),
 			ContentType: contentType,
 		})
 	}
@@ -286,40 +288,7 @@ func getFileCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.
 	if err != nil {
 		return nil, err
 	}
-	return itemMetadataToFileMetadata(item, path), nil
-}
-
-func itemMetadataToFileMetadata(item *plugin.ItemMetadata, fallbackPath string) *plugin.FileMetadata {
-	if item == nil {
-		return &plugin.FileMetadata{Name: pathBase(fallbackPath), Path: fallbackPath}
-	}
-	name := stringAttribute(item.Attributes, "name")
-	if name == "" {
-		name = pathBase(fallbackPath)
-	}
-	path := stringAttribute(item.Attributes, "path")
-	if path == "" {
-		path = fallbackPath
-	}
-	updatedAt := time.Time{}
-	if item.UpdatedAt != nil {
-		updatedAt = *item.UpdatedAt
-	}
-	return &plugin.FileMetadata{
-		Name:        name,
-		Path:        path,
-		Size:        int64Stat(item.Stats, "size_bytes"),
-		ModifiedAt:  updatedAt,
-		ContentType: stringAttribute(item.Attributes, "content_type"),
-		ETag:        stringAttribute(item.Attributes, "etag"),
-	}
-}
-
-func catalogNodePhysicalPath(node plugin.CatalogNode) string {
-	if path := stringAttribute(node.Attributes, "path"); path != "" {
-		return path
-	}
-	return node.Path.StringPath()
+	return catalogutil.ItemMetadataToFileMetadata(item, path), nil
 }
 
 func mapAttribute(attrs map[string]interface{}, key string) map[string]interface{} {
@@ -477,38 +446,6 @@ func interfaceToInt64(value interface{}) int64 {
 	}
 }
 
-func int64Stat(stats map[string]interface{}, key string) int64 {
-	if stats == nil {
-		return 0
-	}
-	switch value := stats[key].(type) {
-	case int64:
-		return value
-	case int:
-		return int64(value)
-	case int32:
-		return int64(value)
-	case float64:
-		return int64(value)
-	case float32:
-		return int64(value)
-	default:
-		return 0
-	}
-}
-
-func pathBase(path string) string {
-	trimmed := strings.TrimSuffix(path, "/")
-	if trimmed == "" {
-		return ""
-	}
-	idx := strings.LastIndex(trimmed, "/")
-	if idx < 0 {
-		return trimmed
-	}
-	return trimmed[idx+1:]
-}
-
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径
 // schema = locator path[0]，table = locator path[1:] 的 join
 // 转换规则：NFS物理路径 = "/" + schema + "/" + table
@@ -524,11 +461,6 @@ func nfsPhysicalPath(schema, table string) string {
 		return "/" + schema
 	}
 	return "/" + schema + "/" + table
-}
-
-// buildFSPath 保留供外部调用兼容，内部已改用 nfsPhysicalPath
-func buildFSPath(rootName, filePath string) string {
-	return nfsPhysicalPath(rootName, filePath)
 }
 
 // isDirectoryPath 判断路径是否为目录（以 / 结尾或为空）

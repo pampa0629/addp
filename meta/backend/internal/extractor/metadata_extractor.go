@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	pathpkg "path"
+	"reflect"
 	"strings"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
-	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -46,29 +46,16 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 		return baseAttrs
 	}
 
-	// 如果 S3Scanner 已经提取了元数据，直接使用。
-	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
-		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
-			setExtractionAttribute(baseAttrs, "plain_text_preview", metatext.PreviewText(text, metatext.DocumentPreviewRuneLimit))
-		}
-		applyExtractedMetadataExtensions(baseAttrs, meta.ExtractedMetadata)
-
-		setExtractionAttribute(baseAttrs, "metadata_extracted", true)
-		setExtractionAttribute(baseAttrs, "extracted_metadata", buildExtractedMetadataPayload(meta.ExtractedMetadata))
-		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
-			metaattr.SetStorage(baseAttrs, "content_type", meta.ExtractedMetadata.BasicInfo.ContentType)
-		}
-
-		return baseAttrs
-	}
-
 	contentType := mime.TypeByExtension(pathpkg.Ext(meta.Path))
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	extractor := format.GetExtractor(contentType)
-	if extractor == nil {
+	formatType := format.MIMEToFormat(contentType)
+	if formatType == format.FormatUnknown {
+		formatType = format.DetectFormat(meta.Path, nil)
+	}
+	if _, err := format.GetFormatInfoProvider(formatType); err != nil {
 		return baseAttrs
 	}
 
@@ -83,20 +70,46 @@ func mergeStandardAttributes(dst models.JSONMap, src map[string]interface{}) {
 		return
 	}
 	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
-		values, ok := src[section].(map[string]interface{})
-		if !ok || len(values) == 0 {
+		values := interfaceMap(src[section])
+		if len(values) == 0 {
 			continue
 		}
 		existing := metaattr.Section(dst, section)
 		for namespace, value := range values {
-			if valueMap, ok := value.(map[string]interface{}); ok {
-				metaattr.UpsertNested(dst, section, namespace, valueMap)
+			if valueMap := interfaceMap(value); len(valueMap) > 0 {
+				namespaceAttrs := map[string]interface{}{}
+				for key, existingValue := range interfaceMap(existing[namespace]) {
+					namespaceAttrs[key] = existingValue
+				}
+				for key, newValue := range valueMap {
+					namespaceAttrs[key] = newValue
+				}
+				existing[namespace] = namespaceAttrs
 				continue
 			}
 			existing[namespace] = value
 		}
 		dst[section] = existing
 	}
+}
+
+func interfaceMap(value interface{}) map[string]interface{} {
+	if value == nil {
+		return nil
+	}
+	if typed, ok := value.(map[string]interface{}); ok {
+		return typed
+	}
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Map || rv.Type().Key().Kind() != reflect.String {
+		return nil
+	}
+	result := make(map[string]interface{}, rv.Len())
+	iter := rv.MapRange()
+	for iter.Next() {
+		result[iter.Key().String()] = iter.Value().Interface()
+	}
+	return result
 }
 
 // ExtractEnhancedMetadataWithCache 带缓存检查的元数据提取。
@@ -204,7 +217,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	objectKey string,
 	token string,
 	objectReader io.Reader,
-) (*format.ExtractedMetadata, error) {
+) (map[string]interface{}, error) {
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -231,18 +244,19 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		if enhancedAttrs == nil {
 			enhancedAttrs = make(models.JSONMap)
 		}
-		mergeStandardAttributes(enhancedAttrs, MediaInfoAttributes(mediaInfo))
+		mediaAttrs := MediaInfoAttributes(mediaInfo)
+		mergeStandardAttributes(enhancedAttrs, mediaAttrs)
 		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
 			return nil, err
 		}
-		return nil, nil
+		return mediaAttrs, nil
 	}
 
-	extractor := format.GetExtractor(contentType)
-	if extractor == nil {
-		return nil, fmt.Errorf("no extractor available for content type: %s", contentType)
+	provider, err := format.GetFormatInfoProvider(formatType)
+	if err != nil {
+		return nil, fmt.Errorf("format %s cannot extract metadata: %w", formatType, err)
 	}
 
 	item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
@@ -250,27 +264,12 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		logger.L().Warn("对象元数据不存在，使用默认值", "object_key", objectKey, "error", err)
 	}
 
-	input := format.ExtractInput{
-		ObjectKey:   objectKey,
-		ContentType: contentType,
-		Reader:      objectReader,
-	}
-
-	if item != nil {
-		if item.SizeBytes != nil {
-			input.Size = *item.SizeBytes
-		}
-		if item.DataUpdatedAt != nil {
-			input.LastModified = *item.DataUpdatedAt
-		}
-		if etag := commonJSON.String(item.Attributes, "storage", "etag"); etag != "" {
-			input.ETag = etag
-		}
-	}
-
-	metadata, err := extractor.Extract(context.Background(), input)
+	extractedAttrs, err := provider.DescribeFormat(context.Background(), objectReader, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract metadata: %w", err)
+	}
+	if len(extractedAttrs) == 0 {
+		return nil, fmt.Errorf("format %s did not return metadata", formatType)
 	}
 
 	if item != nil {
@@ -280,11 +279,9 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		}
 
 		setExtractionAttribute(enhancedAttrs, "metadata_extracted", true)
-		setExtractionAttribute(enhancedAttrs, "extracted_metadata", buildExtractedMetadataPayload(metadata))
-		if metadata.SchemaInfo != nil {
-			setExtractionAttribute(enhancedAttrs, "schema_info", metadata.SchemaInfo)
-		}
-		applyExtractedMetadataExtensions(enhancedAttrs, metadata)
+		setExtractionAttribute(enhancedAttrs, "extracted_metadata", extractedAttrs)
+		mergeStandardAttributes(enhancedAttrs, extractedAttrs)
+		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
 		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
@@ -292,7 +289,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		}
 	}
 
-	return metadata, nil
+	return extractedAttrs, nil
 }
 
 func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
@@ -397,69 +394,4 @@ func setExtractionAttribute(attrs models.JSONMap, key string, value interface{})
 		return
 	}
 	metaattr.SetExtension(attrs, "extraction", key, value)
-}
-
-func buildExtractedMetadataPayload(metadata *format.ExtractedMetadata) map[string]interface{} {
-	if metadata == nil {
-		return nil
-	}
-	payload := map[string]interface{}{
-		"basic_info":   metadata.BasicInfo,
-		"custom_attrs": metadata.CustomAttrs,
-	}
-	if metadata.SchemaInfo != nil {
-		payload["schema_info"] = metadata.SchemaInfo
-	}
-	return payload
-}
-
-func applyExtractedMetadataExtensions(attrs models.JSONMap, metadata *format.ExtractedMetadata) {
-	if attrs == nil || metadata == nil {
-		return
-	}
-	if metadata.BasicInfo.FileType != "" || metadata.BasicInfo.Encoding != "" {
-		document := map[string]interface{}{}
-		if metadata.BasicInfo.FileType != "" {
-			document["file_type_friendly"] = metadata.BasicInfo.FileType
-		}
-		if metadata.BasicInfo.Encoding != "" {
-			document["encoding"] = metadata.BasicInfo.Encoding
-		}
-		metaattr.UpsertNested(attrs, "type_info", "document", document)
-	}
-	for key, value := range metadata.CustomAttrs {
-		if key == "plain_text" {
-			continue
-		}
-		switch standardExtensionForMetadataKey(key) {
-		case "document":
-			metaattr.SetExtension(attrs, "document", key, value)
-		case "statistics":
-			metaattr.SetExtension(attrs, "statistics", key, value)
-		case "spatial":
-			if values, ok := value.(map[string]interface{}); ok {
-				metaattr.UpsertNested(attrs, "capabilities", "spatial", values)
-			}
-		default:
-			metaattr.SetExtension(attrs, "unqualified", key, value)
-		}
-	}
-	if metadata.SchemaInfo != nil {
-		metaattr.SetExtension(attrs, "statistics", "row_count", metadata.SchemaInfo.RowCount)
-		metaattr.SetExtension(attrs, "statistics", "column_count", len(metadata.SchemaInfo.Columns))
-	}
-}
-
-func standardExtensionForMetadataKey(key string) string {
-	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "document_type", "title", "author", "keywords", "page_count", "word_count",
-		"char_count", "created_date", "modified_date", "file_type_friendly", "encoding":
-		return "document"
-	case "row_count", "column_count", "feature_count", "object_count", "record_count":
-		return "statistics"
-	case "spatial":
-		return "spatial"
-	default:
-		return ""
-	}
 }

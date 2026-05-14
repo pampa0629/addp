@@ -339,7 +339,7 @@ func shouldHaveChildren(nodeType string, itemCount int) bool {
 func calculateItemCount(itemType string, attributes map[string]interface{}) int {
 	// 对象存储的 directory/prefix 可能包含子对象
 	if itemType == "directory" || itemType == "prefix" {
-		// 从标准 storage 分区中提取 object_count，兼容迁移期平铺字段
+		// 从标准 storage 分区中提取 object_count。
 		if objCount := commonJSON.Int64(attributes, "storage", "object_count"); objCount > 0 {
 			return int(objCount)
 		}

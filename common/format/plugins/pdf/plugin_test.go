@@ -21,9 +21,9 @@ func TestPluginDescribeDocument(t *testing.T) {
 
 func TestPluginExtractRejectsNonPDF(t *testing.T) {
 	plugin := NewPlugin(nil)
-	_, err := plugin.Extract(context.Background(), format.ExtractInput{Reader: strings.NewReader("not pdf")})
+	_, err := plugin.DescribeFormat(context.Background(), strings.NewReader("not pdf"), nil)
 	if err == nil {
-		t.Fatal("Extract() error = nil, want invalid PDF error")
+		t.Fatal("DescribeFormat() error = nil, want invalid PDF error")
 	}
 }
 

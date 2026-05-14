@@ -5,7 +5,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 )
@@ -19,9 +18,8 @@ type MVTService struct {
 }
 
 func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient, maxDBConns int) *MVTService {
-	// 创建 TileGenerator（通过 SystemClient 适配器获取引擎信息）
 	// 传入连接池配置（实时生成瓦片也需要合理的连接池大小）
-	tileGen := mvt.NewTileGenerator(&engineServiceAdapter{systemClient: systemClient}, maxDBConns)
+	tileGen := mvt.NewTileGenerator(systemClient, maxDBConns)
 
 	return &MVTService{
 		metadataRepo:  meta,
@@ -149,23 +147,6 @@ func (s *MVTService) generateTileWithPK(
 // Close 关闭所有连接池 (服务关闭时调用)
 func (s *MVTService) Close() error {
 	return s.tileGenerator.Close()
-}
-
-// ============================================================================
-// 适配器：将 SystemClient 适配为 mvt.ResourceService 接口
-// ============================================================================
-
-type engineServiceAdapter struct {
-	systemClient *commonClient.SystemClient
-}
-
-func (a *engineServiceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
-	if a.systemClient == nil {
-		return nil, ErrEngineAccessDenied
-	}
-
-	// SystemClient.GetEngine 直接返回 *commonModels.Engine
-	return a.systemClient.GetEngine(engineID)
 }
 
 // Note: access policy and ErrEngineAccessDenied are defined in metadata_service.go

@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -9,13 +9,14 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 )
 
 type ComponentFilePreviewProvider struct {
-	content *ObjectContentRegistry
+	content *objectcontent.ObjectContentRegistry
 }
 
-func NewComponentFilePreviewProvider(content *ObjectContentRegistry) PreviewProvider {
+func NewComponentFilePreviewProvider(content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &ComponentFilePreviewProvider{content: content}
 }
 
@@ -40,7 +41,7 @@ func (p *ComponentFilePreviewProvider) Preview(ctx context.Context, req *Preview
 	componentDescriptors := componentPreviewDescriptors(formatType, components)
 	descriptor := componentDescriptorForComponent(formatType, component)
 	preview := previewHintForComponentDescriptor(descriptor, component.Path)
-	contentReq := &ObjectContentRequest{
+	contentReq := &objectcontent.ObjectContentRequest{
 		Bucket:      resourceCtx.bucket,
 		Path:        "",
 		Name:        component.Name,
@@ -79,7 +80,7 @@ func (p *ComponentFilePreviewProvider) Preview(ctx context.Context, req *Preview
 	if p.content != nil {
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, func() (io.ReadCloser, error) {
 					return resourceCtx.reader.Open(ctx, component.ResourceRef)
 				})
@@ -157,7 +158,7 @@ func componentDescriptorForComponent(formatType format.FormatType, component res
 
 func (p *ComponentFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, component resource.ComponentRef, preview format.PreviewHint, components []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
 	if content != nil {
-		decoratePreviewContent(content)
+		objectcontent.DecoratePreviewContent(content)
 		if len(components) > 0 {
 			if content.Metadata == nil {
 				content.Metadata = map[string]interface{}{}

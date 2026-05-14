@@ -11,7 +11,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
@@ -47,13 +46,8 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 	// 创建 MetaClient 用于获取空间元数据（服务间调用）
 	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
 
-	// 创建 ResourceService 适配器
-	resourceService := &resourceServiceAdapter{
-		systemClient: systemClient,
-	}
-
 	// 创建 TileGenerator（传入连接池配置）
-	tileGen := mvt.NewTileGenerator(resourceService, cfg.PreCache.MaxDBConns)
+	tileGen := mvt.NewTileGenerator(systemClient, cfg.PreCache.MaxDBConns)
 
 	// 创建 QuickViewService
 	quickViewService, err := mvt.NewQuickViewService(tileGen, mvt.MinIOConfig{
@@ -88,7 +82,7 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 		quickViewService: quickViewService,
 		cfg:              cfg,
 		redisClient:      redisClient,
-		resourceService:  resourceService,
+		resourceService:  systemClient,
 		metaClient:       metaClient,
 	}
 }
@@ -724,13 +718,4 @@ func (h *TaskHandler) updateQuickViewStatus(
 	}
 
 	return h.db.Model(&qv).Updates(updates).Error
-}
-
-// resourceServiceAdapter 资源服务适配器，将 SystemClient 适配为 ResourceService 接口
-type resourceServiceAdapter struct {
-	systemClient *commonClient.SystemClient
-}
-
-func (a *resourceServiceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
-	return a.systemClient.GetEngine(engineID)
 }

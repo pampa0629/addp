@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 )
 
 var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta item or node")
+var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
 
 // PreviewResolver 数据预览解析器
 // 职责：
@@ -339,7 +340,7 @@ func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, sc
 }
 
 func isContentCatalogEngine(engineType string) bool {
-	return isObjectStorageType(engineType) || isFileSystemType(engineType)
+	return IsContentCatalogEngine(engineType)
 }
 
 func isContentFileItemType(itemType string) bool {

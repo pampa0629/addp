@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -10,13 +10,14 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 )
 
 type ContainerChildPreviewProvider struct {
-	content *ObjectContentRegistry
+	content *objectcontent.ObjectContentRegistry
 }
 
-func NewContainerChildPreviewProvider(content *ObjectContentRegistry) PreviewProvider {
+func NewContainerChildPreviewProvider(content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &ContainerChildPreviewProvider{content: content}
 }
 
@@ -222,8 +223,8 @@ func (p *ContainerChildPreviewProvider) previewContainerChild(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	previewJSON := buildContainerPreviewFromContainerInfo(info, string(child.Format))
-	metadata := buildContainerMetadataMap(info, &ObjectContentRequest{
+	previewJSON := objectcontent.BuildContainerPreviewFromInfo(info, string(child.Format))
+	metadata := objectcontent.BuildContainerMetadata(info, &objectcontent.ObjectContentRequest{
 		Bucket:     bucket,
 		Name:       child.Name,
 		Format:     string(child.Format),
@@ -233,12 +234,12 @@ func (p *ContainerChildPreviewProvider) previewContainerChild(ctx context.Contex
 		Kind:      models.ObjectPreviewKindContainer,
 		JSON:      previewJSON,
 		Metadata:  metadata,
-		Truncated: containerInfoTruncated(info),
+		Truncated: objectcontent.ContainerInfoTruncated(info),
 	}), nil
 }
 
 func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {
-	contentReq := &ObjectContentRequest{
+	contentReq := &objectcontent.ObjectContentRequest{
 		Bucket:      bucket,
 		Path:        "",
 		Name:        child.Name,
@@ -258,7 +259,7 @@ func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, 
 	if p.content != nil {
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, func() (io.ReadCloser, error) {
 					return child.Open(ctx)
 				})
@@ -332,7 +333,7 @@ func contentTypeForChild(child *format.ContainerChildResource) string {
 	if mime := format.FormatToMIME(child.Format); mime != "" {
 		return mime
 	}
-	return inferContentType(child.Name, "")
+	return objectcontent.InferContentType(child.Name, "")
 }
 
 func childObjectAttributes(child *format.ContainerChildResource) map[string]interface{} {

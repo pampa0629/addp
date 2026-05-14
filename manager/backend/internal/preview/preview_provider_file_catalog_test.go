@@ -1,4 +1,4 @@
-package service
+package preview
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 )
 
 func TestNFSPhysicalPath(t *testing.T) {
@@ -49,8 +50,8 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 		plugin.Unregister(enginePlugin.Type())
 	}()
 
-	provider := NewFileCatalogPreviewProvider(nil, NewObjectContentRegistry())
-	LoadObjectContentPlugins(provider.(*fileCatalogPreviewProvider).content, "../../plugins/content")
+	provider := NewFileCatalogPreviewProvider(nil, objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*fileCatalogPreviewProvider).content, "../../plugins/content")
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
 		Engine: &models.Engine{EngineType: "nfs", ID: 7},

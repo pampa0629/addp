@@ -50,15 +50,6 @@ func TestListImageMediaProviders(t *testing.T) {
 	}
 }
 
-func TestImagePluginDoesNotRegisterLegacyExtractor(t *testing.T) {
-	if extractor := format.GetExtractor("image/png"); extractor != nil {
-		t.Fatalf("image/png legacy extractor = %#v, want nil", extractor)
-	}
-	if extractor := format.GetExtractor("image/*"); extractor != nil {
-		t.Fatalf("image/* legacy extractor = %#v, want nil", extractor)
-	}
-}
-
 func containsFormat(values []format.FormatType, target format.FormatType) bool {
 	for _, value := range values {
 		if value == target {

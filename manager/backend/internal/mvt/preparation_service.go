@@ -26,7 +26,7 @@ func NewPreparationService(managerDB *gorm.DB, resourceService ResourceService) 
 
 // getEngineDB 获取引擎数据库连接
 func (ps *PreparationService) getEngineDB(ctx context.Context, engineID, tenantID uint) (*gorm.DB, error) {
-	engine, err := ps.resourceService.GetEngine(engineID, tenantID)
+	engine, err := ps.resourceService.GetEngine(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}

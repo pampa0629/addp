@@ -65,7 +65,6 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 		},
 		Providers: FormatProviderDescriptor{
 			DocumentInfo: true,
-			Metadata:     true,
 			FormatInfo:   true,
 		},
 		ContentReaders: []string{string(ContentReaderDocumentText)},
@@ -77,10 +76,10 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 	if !ok {
 		t.Fatal("expected capability view")
 	}
-	if !view.Providers.DocumentInfo || !view.Providers.Metadata {
-		t.Fatalf("declared providers = %#v, want document info and metadata", view.Providers)
+	if !view.Providers.DocumentInfo || !view.Providers.FormatInfo {
+		t.Fatalf("declared providers = %#v, want document info and format info", view.Providers)
 	}
-	if view.Implementations.DocumentInfoProvider || view.Implementations.DocumentTextReader || view.Implementations.DocumentProvider || view.Implementations.MetadataExtractor {
+	if view.Implementations.DocumentInfoProvider || view.Implementations.DocumentTextReader {
 		t.Fatalf("implementations = %#v, want none before providers are registered", view.Implementations)
 	}
 }
@@ -97,7 +96,6 @@ func TestFormatCapabilityViewReportsContentIndexProviderCapability(t *testing.T)
 
 func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	formatType := FormatType("discovery_implemented_document")
-	mimeType := "application/x-discovery-implemented-document"
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-implemented-document",
 		Format:   formatType,
@@ -105,11 +103,11 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 		Layouts:  []string{FormatLayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".idoc"},
-			MimeTypes:  []string{mimeType},
+			MimeTypes:  []string{"application/x-discovery-implemented-document"},
 		},
 		Providers: FormatProviderDescriptor{
 			DocumentInfo: true,
-			Metadata:     true,
+			FormatInfo:   true,
 		},
 		ContentReaders: []string{string(ContentReaderDocumentText)},
 	}); err != nil {
@@ -121,22 +119,16 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	if err := RegisterFormatPlugin(discoveryDocumentPlugin{formatType: formatType}); err != nil {
 		t.Fatalf("RegisterFormatPlugin() error = %v", err)
 	}
-	if err := RegisterExtractor(discoveryTestExtractor{mimeType: mimeType}); err != nil {
-		t.Fatalf("RegisterExtractor() error = %v", err)
-	}
 
 	view, ok := GetFormatCapabilityView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
-	if !view.Implementations.DocumentInfoProvider || !view.Implementations.DocumentTextReader || !view.Implementations.DocumentProvider {
+	if !view.Implementations.DocumentInfoProvider || !view.Implementations.DocumentTextReader {
 		t.Fatalf("implementations = %#v, want document info/text providers", view.Implementations)
 	}
 	if !view.Implementations.FormatPlugin {
 		t.Fatalf("implementations = %#v, want format plugin", view.Implementations)
-	}
-	if !view.Implementations.MetadataExtractor {
-		t.Fatalf("implementations = %#v, want metadata extractor", view.Implementations)
 	}
 }
 
@@ -168,11 +160,8 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	if !view.Implementations.TableProvider || !view.Implementations.ScopeTableProvider {
 		t.Fatalf("implementations = %#v, want table and scope table providers", view.Implementations)
 	}
-	if !view.Implementations.TableInfoProvider || !view.Implementations.TableSampleProvider {
+	if !view.Implementations.TableInfoProvider || !view.Implementations.TableSampleReader {
 		t.Fatalf("implementations = %#v, want table info and sample providers", view.Implementations)
-	}
-	if !view.Implementations.TableSampleReader {
-		t.Fatalf("implementations = %#v, want table sample reader", view.Implementations)
 	}
 	if view.Implementations.ComponentTableProvider {
 		t.Fatalf("implementations = %#v, did not expect component table provider", view.Implementations)
@@ -204,22 +193,6 @@ func TestFormatCapabilityViewReportsMediaInfoProvider(t *testing.T) {
 	if !view.Implementations.MediaInfoProvider {
 		t.Fatalf("implementations = %#v, want media info provider", view.Implementations)
 	}
-}
-
-type discoveryTestExtractor struct {
-	mimeType string
-}
-
-func (e discoveryTestExtractor) SupportedTypes() []string {
-	return []string{e.mimeType}
-}
-
-func (e discoveryTestExtractor) Extract(context.Context, ExtractInput) (*ExtractedMetadata, error) {
-	return &ExtractedMetadata{}, nil
-}
-
-func (e discoveryTestExtractor) Priority() int {
-	return 1
 }
 
 type discoveryDocumentPlugin struct {

@@ -10,6 +10,7 @@ import (
 	_ "github.com/addp/manager/docs"
 	_ "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -137,7 +138,7 @@ func SetupRouter(
 
 		// 数据探查 API（Manager 核心功能，直接挂在 /api/manager 下）
 		previewRegistry := metadataService.PreviewRegistry()
-		previewResolver := service.NewPreviewResolver(previewRegistry, systemClient, metaClient)
+		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 

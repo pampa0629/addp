@@ -1,11 +1,10 @@
-package service
+package preview
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,25 +15,18 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const (
-	maxTextPreviewBytes      = 256 * 1024        // 256KB
-	maxJSONPreviewBytes      = 512 * 1024        // 512KB
-	maxGeoJSONPreview        = 1024 * 1024       // 1MB
-	maxPDFPreviewBytes       = 20 * 1024 * 1024  // 20MB - PDF 文件预览限制
-	maxDOCXPreviewBytes      = 100 * 1024 * 1024 // 100MB - DOCX 文件预览限制
-	maxWPSPreviewBytes       = 100 * 1024 * 1024 // 100MB - WPS 文件预览限制
-	maxPPTXPreviewBytes      = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
-	maxContainerPreviewBytes = 30 * 1024 * 1024  // 30MB - file-backed container preview limit
-	maxImagePreviewBytes     = 20 * 1024 * 1024  // 20MB - image preview limit when URL material is unavailable
+	maxTextPreviewBytes = 256 * 1024
 )
 
 var reservedObjectSegments = map[string]struct{}{
@@ -69,10 +61,10 @@ type objectCatalogPreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
 	metaClient     *commonClient.MetaClient
 	metaServiceURL string
-	content        *ObjectContentRegistry
+	content        *objectcontent.ObjectContentRegistry
 }
 
-func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) PreviewProvider {
+func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &objectCatalogPreviewProvider{
 		metadataRepo:   metadataRepo,
 		metaClient:     metaClient,
@@ -251,7 +243,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
-	stat, err := getObjectCatalogPreviewMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	stat, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat object %s: %w", objectPath, err)
 	}
@@ -298,13 +290,13 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	if preview.Object.ContentType != "" {
 		rawContentType = preview.Object.ContentType
 	}
-	canonicalContentType := inferContentType(objectPath, rawContentType)
+	canonicalContentType := objectcontent.InferContentType(objectPath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
 
 	if p.content != nil && objectPath != "" {
 		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
 		dir, name := commonModels.SplitObjectPath(objectPath)
-		req := &ObjectContentRequest{
+		req := &objectcontent.ObjectContentRequest{
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
@@ -320,8 +312,8 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		handler := p.content.Resolve(req)
 		if handler != nil {
-			if isContainerObjectContentFormat(req.Format) {
-				if previewJSON := buildContainerPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
+			if objectcontent.IsContainerFormat(req.Format) {
+				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
 					preview.Object.Content = &models.ObjectPreviewContent{
 						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
@@ -335,9 +327,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 					return preview, nil
 				}
 			}
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 
 				content, truncated, err := streamHandler.HandleStream(ctx, req, streamer)
@@ -358,7 +350,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 					if limitBytes <= 0 {
 						limitBytes = maxTextPreviewBytes
 					}
-					reader, err := openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					reader, err := catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 					if err != nil {
 						return nil, false, fmt.Errorf("failed to get object: %w", err)
 					}
@@ -396,7 +388,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 
 		if extractorAvailable && !hasExtracted {
 			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, func() (io.ReadCloser, error) {
-				return openObjectCatalogContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+				return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 			})
 			if extracted != nil {
 				preview.Object.ExtractedMetadata = extracted
@@ -439,7 +431,7 @@ func (p *objectCatalogPreviewProvider) tryExtractMetadataFromMeta(
 	}
 
 	// 创建Meta客户端
-	metaClient := NewMetaClient(metaURL, token)
+	metaClient := commonClient.NewMetaClient(metaURL, token)
 
 	// 下载对象内容（用于提取元数据）
 	objectKey := bucket + "/" + objectPath
@@ -450,7 +442,7 @@ func (p *objectCatalogPreviewProvider) tryExtractMetadataFromMeta(
 	defer objReader.Close()
 
 	// 调用Meta提取
-	extracted, err := metaClient.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
+	extracted, err := metaClient.ExtractObjectMetadata(&commonClient.ObjectMetadataRequest{
 		EngineID:   resourceID,
 		ObjectKey:  objectKey,
 		ObjectData: objReader,
@@ -494,54 +486,8 @@ func (p *objectCatalogPreviewProvider) decryptedConnectionInfo(engine *models.En
 	return plugin.ConnectionInfo(connInfo), nil
 }
 
-func objectCatalogPath(engineID uint, bucket, objectPath string, isContainer bool) plugin.CatalogPath {
-	path := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-	}
-	bucket = strings.Trim(bucket, "/")
-	if bucket == "" {
-		return path
-	}
-	path.Segments = append(path.Segments, plugin.CatalogSegment{
-		Term: plugin.CatalogTermBucket,
-		Kind: plugin.CatalogKindBucket,
-		Name: bucket,
-	})
-	trimmed := strings.Trim(objectPath, "/")
-	if trimmed == "" {
-		return path
-	}
-	parts := strings.Split(trimmed, "/")
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		isLast := i == len(parts)-1
-		segment := plugin.CatalogSegment{
-			Term: plugin.CatalogTermPrefix,
-			Kind: plugin.CatalogKindPrefix,
-			Name: part,
-		}
-		if isLast && !isContainer {
-			segment.Term = plugin.CatalogTermObject
-			segment.Kind = plugin.CatalogKindObject
-		}
-		path.Segments = append(path.Segments, segment)
-	}
-	return path
-}
-
-func objectCatalogDirectoryPath(engineID uint, bucket, prefix string) plugin.CatalogPath {
-	return objectCatalogPath(engineID, bucket, prefix, true)
-}
-
-func objectCatalogItemPath(engineID uint, bucket, objectPath string) plugin.CatalogPath {
-	return objectCatalogPath(engineID, bucket, objectPath, false)
-}
-
 func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, objectCatalogDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, catalogutil.ObjectDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -556,7 +502,7 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 			childType = "prefix"
 			contentType = "application/x-directory"
 		}
-		childPath := strings.TrimPrefix(catalogNodePhysicalPath(node), strings.Trim(bucket, "/")+"/")
+		childPath := strings.TrimPrefix(catalogutil.NodePhysicalPath(node), strings.Trim(bucket, "/")+"/")
 		if childPath == "" {
 			childPath = joinObjectPath(prefix, node.Name)
 		}
@@ -564,8 +510,8 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 			Name:        node.Name,
 			Path:        childPath,
 			Type:        childType,
-			SizeBytes:   int64Stat(node.Stats, "size_bytes"),
-			ContentType: inferContentType(childPath, contentType),
+			SizeBytes:   catalogutil.Int64Stat(node.Stats, "size_bytes"),
+			ContentType: objectcontent.InferContentType(childPath, contentType),
 		}
 		if modifiedAt, ok := node.Attributes["modified_at"].(time.Time); ok && !modifiedAt.IsZero() {
 			mod := modifiedAt
@@ -577,24 +523,6 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 		return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
 	})
 	return children, nil
-}
-
-func getObjectCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
-	if metadataProvider == nil {
-		return nil, fs.ErrNotExist
-	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, objectCatalogItemPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return itemMetadataToFileMetadata(item, bucket+"/"+strings.Trim(objectPath, "/")), nil
-}
-
-func openObjectCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (io.ReadCloser, error) {
-	if contentReader == nil {
-		return nil, fs.ErrNotExist
-	}
-	return contentReader.OpenContent(ctx, connInfo, objectCatalogItemPath(engineID, bucket, objectPath), plugin.ReadOptions{})
 }
 
 func buildObjectStreamURL(engineID uint, objectKey string) string {
@@ -624,42 +552,12 @@ func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {
 	return data, truncated, nil
 }
 
-func inferContentType(objectPath, contentType string) string {
-	ctLower := strings.ToLower(strings.TrimSpace(contentType))
-	if ctLower != "" && !isGenericContentType(ctLower) {
-		return contentType
-	}
-
-	if guessed := format.GuessContentType(objectPath, nil); guessed != "" && !isGenericContentType(guessed) {
-		return guessed
-	}
-
-	if contentType != "" {
-		return contentType
-	}
-	return "application/octet-stream"
-}
-
 func defaultExtension(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext == "" {
 		return ""
 	}
 	return ext
-}
-
-func isGenericContentType(contentType string) bool {
-	switch contentType {
-	case "", "application/octet-stream", "binary/octet-stream", "application/download", "application/force-download":
-		return true
-	}
-	if strings.HasPrefix(contentType, "application/x-msdownload") {
-		return true
-	}
-	if !strings.Contains(contentType, "/") {
-		return true
-	}
-	return false
 }
 
 func isReservedSegment(segment string) bool {

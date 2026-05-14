@@ -1,4 +1,4 @@
-package service
+package objectcontent
 
 import (
 	"encoding/json"

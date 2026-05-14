@@ -23,16 +23,13 @@ type FormatImplementationStatus struct {
 	FormatInfoProvider     bool `json:"format_info_provider,omitempty"`
 	TableInfoProvider      bool `json:"table_info_provider,omitempty"`
 	TableSampleReader      bool `json:"table_sample_reader,omitempty"`
-	TableSampleProvider    bool `json:"table_sample_provider,omitempty"` // legacy alias
 	ComponentTableProvider bool `json:"component_table_provider,omitempty"`
 	ScopeTableProvider     bool `json:"scope_table_provider,omitempty"`
 	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
 	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
-	DocumentProvider       bool `json:"document_provider,omitempty"` // legacy composite
 	MediaInfoProvider      bool `json:"media_info_provider,omitempty"`
 	ContainerInfoProvider  bool `json:"container_info_provider,omitempty"`
 	ContainerChildResolver bool `json:"container_child_resolver,omitempty"`
-	MetadataExtractor      bool `json:"metadata_extractor,omitempty"`
 }
 
 type FormatTransferDescriptor = formatregistry.TransferDescriptor
@@ -96,16 +93,12 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if _, err := GetTableSampleProvider(formatType); err == nil {
 		status.TableSampleReader = true
-		status.TableSampleProvider = true
 	}
 	if _, err := GetDocumentInfoProvider(formatType); err == nil {
 		status.DocumentInfoProvider = true
 	}
 	if _, err := GetDocumentTextReader(formatType); err == nil {
 		status.DocumentTextReader = true
-	}
-	if _, err := GetDocumentProvider(formatType); err == nil {
-		status.DocumentProvider = true
 	}
 	if _, err := GetMediaInfoProvider(formatType); err == nil {
 		status.MediaInfoProvider = true
@@ -116,20 +109,6 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	if _, err := GetContainerChildResolver(formatType); err == nil {
 		status.ContainerChildResolver = true
 	}
-	status.MetadataExtractor = hasMetadataExtractor(formatType, identification)
 
 	return status
-}
-
-func hasMetadataExtractor(formatType FormatType, identification FormatIdentification) bool {
-	mimeTypes := append([]string(nil), identification.MimeTypes...)
-	if primary := FormatToMIME(formatType); primary != "" && primary != "application/octet-stream" {
-		mimeTypes = append(mimeTypes, primary)
-	}
-	for _, mimeType := range mimeTypes {
-		if GetExtractor(mimeType) != nil {
-			return true
-		}
-	}
-	return false
 }

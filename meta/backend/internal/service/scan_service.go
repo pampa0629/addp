@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
-	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
@@ -689,7 +688,7 @@ func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey strin
 }
 
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
-func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*format.ExtractedMetadata, error) {
+func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (map[string]interface{}, error) {
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
 }
 

@@ -1,4 +1,4 @@
-package service
+package objectcontent
 
 import (
 	"bytes"
@@ -85,10 +85,10 @@ func (r *ObjectContentRegistry) Resolve(req *ObjectContentRequest) ObjectContent
 	}
 	tableContent := isTableObjectContentRequest(req)
 	for _, handler := range r.handlers {
+		if tableContent && isGenericObjectContentHandler(handler) {
+			return nil
+		}
 		if handler.Matches(req) {
-			if tableContent && isGenericObjectContentHandler(handler) {
-				return nil
-			}
 			return handler
 		}
 	}
@@ -1060,7 +1060,7 @@ func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	if err != nil {
 		return nil, false, err
 	}
-	text := string(data)
+	text := string(removeUTF8BOM(data))
 	truncated := fetchTruncated
 	if h.formatType != "" {
 		if reader, readerErr := format.GetDocumentTextReader(h.formatType); readerErr == nil {
@@ -1072,6 +1072,7 @@ func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 			truncated = fetchTruncated || readerTruncated
 		}
 	}
+	text = string(removeUTF8BOM([]byte(text)))
 	kind := h.kind
 	if kind == "" {
 		kind = models.ObjectPreviewKindText

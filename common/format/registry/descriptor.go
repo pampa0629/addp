@@ -113,7 +113,6 @@ type ProviderDescriptor struct {
 	DocumentInfo   bool `json:"document_info,omitempty"`
 	MediaInfo      bool `json:"media_info,omitempty"`
 	ContainerInfo  bool `json:"container_info,omitempty"`
-	Metadata       bool `json:"metadata,omitempty"` // legacy: FileMetadataExtractor 兼容状态
 }
 
 type Descriptor struct {
@@ -329,7 +328,6 @@ var builtinDescriptors = []Descriptor{
 		},
 		Providers: ProviderDescriptor{
 			DocumentInfo: true,
-			Metadata:     true,
 		},
 		ContentReaders: []string{ContentReaderRawContent, ContentReaderRangeContent},
 		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},

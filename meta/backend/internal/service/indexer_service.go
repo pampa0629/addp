@@ -105,14 +105,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	}
 
 	plainText := ""
-	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
-		if v, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok {
-			plainText = v
-		}
-	}
-	if plainText == "" {
-		plainText = extractedPlainTextFromAttributes(metadata)
-	}
+	plainText = extractedPlainTextFromAttributes(metadata)
 	delete(metadata, "plain_text")
 
 	// 准备文档内容字段
@@ -150,15 +143,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		assetRecord.Description = desc
 	}
 
-	// 提取文档元数据
-	if meta.ExtractedMetadata != nil {
-		if basic := meta.ExtractedMetadata.BasicInfo; basic.ContentType != "" {
-			assetRecord.ContentType = basic.ContentType
-		}
-	}
-	if assetRecord.ContentType == "" {
-		assetRecord.ContentType = commonJSON.String(metadata, "storage", "content_type")
-	}
+	assetRecord.ContentType = commonJSON.String(metadata, "storage", "content_type")
 
 	if value := stringFromStandardAttributes(metadata, "type_info.document", "document_type"); value != "" {
 		assetRecord.DocumentType = value

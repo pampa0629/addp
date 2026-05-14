@@ -22,10 +22,10 @@ import (
 	_ "github.com/addp/common/format/plugins/text"
 	_ "github.com/addp/common/format/plugins/wps"
 
-	// 导入内置 FileMetadataExtractor，触发 init() 自动注册
+	// 导入内置媒体信息 provider，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/image"
 )
 
-// 此包仅用于自动注册所有内置 TypeMapper、格式 provider / reader 和 FileMetadataExtractor。
+// 此包仅用于自动注册所有内置 TypeMapper、格式 provider / reader。
 // 使用时导入即可：
 //   import _ "github.com/addp/common/format/builtin"
