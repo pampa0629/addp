@@ -18,6 +18,30 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatShapefile,
 		},
 		{
+			name:     "Shapefile index component is not full shapefile format",
+			filename: "data.shx",
+			peek:     nil,
+			want:     FormatUnknown,
+		},
+		{
+			name:     "Shapefile attributes component is not full shapefile format",
+			filename: "data.dbf",
+			peek:     nil,
+			want:     FormatUnknown,
+		},
+		{
+			name:     "Shapefile projection component is plain text fallback only at preview stage",
+			filename: "data.prj",
+			peek:     nil,
+			want:     FormatUnknown,
+		},
+		{
+			name:     "Shapefile encoding component is not full shapefile format",
+			filename: "data.cpg",
+			peek:     nil,
+			want:     FormatUnknown,
+		},
+		{
 			name:     "GeoJSON extension is JSON format",
 			filename: "data.geojson",
 			peek:     nil,

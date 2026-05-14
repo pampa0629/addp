@@ -510,7 +510,7 @@ var builtinDescriptors = []Descriptor{
 		Layouts:       []string{LayoutMulti},
 		ProviderHints: []string{ProviderTable, ProviderSpatial},
 		Identification: Identification{
-			Extensions: []string{".shp", ".shx", ".dbf", ".prj"},
+			Extensions: []string{".shp"},
 			MimeTypes:  []string{"application/x-shapefile", "application/x-esri-shapefile"},
 		},
 		Providers: ProviderDescriptor{

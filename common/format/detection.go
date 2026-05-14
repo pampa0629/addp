@@ -95,11 +95,6 @@ func DetectFormat(filename string, peek []byte) FormatType {
 		}
 	}
 
-	// 3. 特殊处理：Shapefile组合文件
-	if isShapefileComponent(filename) {
-		return FormatShapefile
-	}
-
 	return FormatUnknown
 }
 
@@ -310,17 +305,6 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// isShapefileComponent 判断是否为Shapefile组合文件的一部分
-func isShapefileComponent(filename string) bool {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".shp", ".shx", ".dbf", ".prj", ".sbn", ".sbx", ".cpg":
-		return true
-	default:
-		return false
-	}
 }
 
 // MIMEToFormat 将MIME类型转换为标准格式类型

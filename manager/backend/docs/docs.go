@@ -1960,6 +1960,12 @@ const docTemplate = `{
                         "description": "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet",
                         "name": "child_name",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "multi child 内的组件路径 | Component path inside a multi child",
+                        "name": "component_path",
+                        "in": "query"
                     }
                 ],
                 "responses": {

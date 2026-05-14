@@ -72,10 +72,10 @@
       <div class="tip">{{ t('map.maxRows') }}</div>
     </div>
 
-    <!-- Shapefile 附加属性（可折叠） -->
+    <!-- 格式附加属性（可折叠） -->
     <div v-if="shapefileMetaItems.length > 0" ref="shapefileMetaRef" class="shapefile-meta">
       <div class="shapefile-meta-header" @click="shapefileMetaExpanded = !shapefileMetaExpanded">
-        <span class="shapefile-meta-title">{{ t('map.shapefileAttributes') }}</span>
+        <span class="shapefile-meta-title">{{ t('map.formatAttributes') }}</span>
         <el-icon class="shapefile-meta-icon" :class="{ expanded: shapefileMetaExpanded }">
           <ArrowDown />
         </el-icon>
@@ -279,17 +279,44 @@ const geometryColumns = computed(() => props.data?.geometry_columns || [])
 const renderGeometryColumns = computed(() => props.data?.render_geometry_columns || {})
 const previewSRID = computed(() => Number(props.data?.srid || 0))
 
-// shapefile 附加属性：从 object.content.metadata 提取
+const hiddenMetadataKeys = new Set([
+  'components',
+  'component',
+  'component_descriptors',
+  'organization',
+  'preview_material',
+  'preview_renderer',
+  'frontend_renderer',
+  'required_parts',
+  'optional_parts',
+  'format',
+  'data_type'
+])
+
+const formatMetadataValue = (value) => {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) {
+    const primitiveValues = value.filter(item => item === null || typeof item !== 'object')
+    if (primitiveValues.length !== value.length) return ''
+    return primitiveValues.map(item => String(item)).join(', ')
+  }
+  if (typeof value === 'object') {
+    return ''
+  }
+  return String(value)
+}
+
+// 格式附加属性：只展示可读的标量元数据，结构化组织信息由外层通用控件承载。
 const shapefileMetaItems = computed(() => {
   const meta = props.data?.object?.content?.metadata
   if (!meta || typeof meta !== 'object') return []
-  const skip = new Set(['required_parts', 'optional_parts'])
   return Object.entries(meta)
-    .filter(([k]) => !skip.has(k))
-    .map(([k, v]) => ({
-      key: k,
-      value: Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v))
+    .filter(([key]) => !hiddenMetadataKeys.has(String(key)))
+    .map(([key, value]) => ({
+      key,
+      value: formatMetadataValue(value)
     }))
+    .filter(item => item.value !== '')
 })
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)

@@ -34,6 +34,7 @@ const (
 	maxWPSPreviewBytes       = 100 * 1024 * 1024 // 100MB - WPS 文件预览限制
 	maxPPTXPreviewBytes      = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
 	maxContainerPreviewBytes = 30 * 1024 * 1024  // 30MB - file-backed container preview limit
+	maxImagePreviewBytes     = 20 * 1024 * 1024  // 20MB - image preview limit when URL material is unavailable
 )
 
 var reservedObjectSegments = map[string]struct{}{

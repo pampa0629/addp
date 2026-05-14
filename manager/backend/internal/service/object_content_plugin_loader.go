@@ -115,6 +115,7 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				priority: cfg.priorityOr(70),
 				matcher:  mediaObjectContentMatcher(cfg.Match, "image"),
 			},
+			maxBytes: cfg.maxBytesOr(maxImagePreviewBytes),
 		}
 		return handler, nil
 	},

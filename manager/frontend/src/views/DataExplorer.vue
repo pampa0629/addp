@@ -184,16 +184,19 @@ const handlePageChange = async (page) => {
   if (!store.selectedLocator) return
 
   try {
-    await store.loadPreview(store.selectedLocator, page, store.selectedChildName)
+    await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedComponentPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }
 
-const handleChildChange = async (childName) => {
-  if (!store.selectedLocator || !childName) return
+const handleChildChange = async (payload) => {
+  const childName = typeof payload === 'string' ? payload : payload?.childName
+  const componentPath = typeof payload === 'object' ? payload?.componentPath || '' : ''
+  const componentSwitch = typeof payload === 'object' && payload?.componentSwitch
+  if (!store.selectedLocator || (!childName && !componentPath && !componentSwitch)) return
   try {
-    await store.loadPreview(store.selectedLocator, 1, childName)
+    await store.loadPreview(store.selectedLocator, 1, childName, componentPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }

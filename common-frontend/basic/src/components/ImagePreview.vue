@@ -150,6 +150,11 @@ const withAuthToken = (url) => {
 }
 
 const imageSrc = computed(() => {
+  const rawData = content.value?.data || content.value?.Data || ''
+  const encoding = String(content.value?.encoding || content.value?.Encoding || '').toLowerCase()
+  if (rawData && encoding === 'base64') {
+    return `data:${contentType.value || 'application/octet-stream'};base64,${rawData}`
+  }
   return withAuthToken(imageURL.value)
 })
 

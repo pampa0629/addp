@@ -54,14 +54,26 @@
       name: child?.name || key,
       label: child?.label || child?.name || child?.table || key,
       kind: child?.kind || 'child',
-      dataType: child?.data_type || child?.dataType || 'table',
+      dataType: child?.data_type || child?.dataType || 'unknown',
+      format: child?.format || '',
+      organization: child?.organization || '',
       rowCount: numberOrUndefined(child?.row_count ?? child?.rowCount),
       columnCount: numberOrUndefined(child?.column_count ?? child?.columnCount ?? columns.length),
       hasHeader: child?.has_header ?? child?.hasHeader,
+      components: Array.isArray(child?.components) ? child.components : [],
       columns,
       columnTypes,
       rows: []
     }
+  }
+
+  const childPreviewPlugin = (data) => {
+    const resolve =
+      typeof window.getDataExplorerPreviewComponentExcept === 'function'
+        ? window.getDataExplorerPreviewComponentExcept
+        : null
+    if (!resolve || !data) return null
+    return resolve(data, ['container-preview'])
   }
 
   const component = {
@@ -94,12 +106,24 @@
       emptyText() {
         return '暂无可预览的子项'
       },
+      activeChildPreviewComponent() {
+        return childPreviewPlugin(this.activeChildPreview)?.component || null
+      },
       summaryItems() {
         const summary = this.summary || {}
-        const items = [
-          { label: '子项总数', value: formatNumber(numberOrUndefined(summary.child_count) ?? this.children.length) },
-          { label: '已加载子项', value: formatNumber(numberOrUndefined(summary.sampled_children) ?? this.children.length) }
-        ]
+        const items = []
+        const rawCount = numberOrUndefined(summary.raw_child_count ?? summary.child_count)
+        const visibleCount = numberOrUndefined(summary.visible_child_count ?? summary.sampled_children)
+        const filteredCount = numberOrUndefined(summary.filtered_child_count ?? summary.ignored_child_count)
+        const groupedComponentCount = numberOrUndefined(summary.grouped_component_count)
+        items.push({ label: '原始条目', value: formatNumber(rawCount ?? this.children.length) })
+        items.push({ label: '可预览子项', value: formatNumber(visibleCount ?? this.children.length) })
+        if (filteredCount !== undefined && filteredCount > 0) {
+          items.push({ label: '已过滤', value: formatNumber(filteredCount) })
+        }
+        if (groupedComponentCount !== undefined && groupedComponentCount > 0) {
+          items.push({ label: '已组合组件', value: formatNumber(groupedComponentCount) })
+        }
         const sizeBytes = numberOrUndefined(summary.size_bytes ?? this.data?.object?.size_bytes)
         if (sizeBytes !== undefined) {
           items.push({ label: '文件大小', value: formatBytes(sizeBytes) })
@@ -114,7 +138,10 @@
       handleChildChange(child) {
         const name = child?.name || child?.key
         if (!name) return
-        this.$emit('child-change', name)
+        this.$emit('child-change', {
+          childName: name,
+          componentPath: child?.componentPath || ''
+        })
       },
       handlePageChange(page) {
         this.$emit('page-change', page)
@@ -133,6 +160,7 @@
         selectorLabel: this.selectorLabel,
         activeChildPreview: this.activeChildPreview,
         activeChildLoading: Boolean(this.activeChildLoading),
+        activeChildPreviewComponent: this.activeChildPreviewComponent,
         truncated: this.childrenTruncated,
         emptyText: this.emptyText,
         onChildChange: this.handleChildChange,

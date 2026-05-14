@@ -292,7 +292,14 @@
     "hasHeader": "包含表头",
     "noColumns": "该子项暂无可展示的列",
     "empty": "暂无可预览的子项",
-    "rowCount": "{count} 行"
+    "rowCount": "{count} 行",
+    "components": "组件",
+    "combinedPreview": "组合预览",
+    "componentLabel": "名称",
+    "componentRole": "角色",
+    "componentPath": "路径",
+    "noPreview": "该子项暂无可用预览",
+    "noPreviewForType": "该 {type} 子项暂无可用预览"
   },
   "objectStorage": {
     "bucket": "Bucket",

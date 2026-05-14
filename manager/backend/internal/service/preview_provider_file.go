@@ -84,7 +84,13 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	}
 
 	if componentProvider, ok := provider.(format.ComponentTableProvider); ok {
-		return p.previewComponents(ctx, componentReaderForPreview(resourceReader, fullPath, formatType, req.Attributes), resourceCtx.bucket, formatType, componentProvider, opts, req)
+		componentReader := componentReaderForPreview(resourceReader, fullPath, formatType, req.Attributes)
+		preview, err := p.previewComponents(ctx, componentReader, resourceCtx.bucket, formatType, componentProvider, opts, req)
+		if err != nil {
+			return nil, err
+		}
+		attachMultiComponentPreview(preview, formatType, componentReader.Components())
+		return preview, nil
 	}
 
 	p.ensureContentIndex(ctx, req, resourceReader, resourceCtx.bucket, fullPath, formatType)
@@ -274,7 +280,7 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 }
 
 func containerChildNameMatches(child map[string]interface{}, childName string) bool {
-	for _, key := range []string{"name", "table"} {
+	for _, key := range []string{"name", "table", "key", "path"} {
 		if strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child[key])), childName) {
 			return true
 		}
@@ -656,6 +662,72 @@ func (p *FileTablePreviewProvider) previewComponents(
 	}, nil
 }
 
+func attachMultiComponentPreview(preview *models.TablePreview, formatType format.FormatType, components []resource.ComponentRef) {
+	if preview == nil || preview.Object == nil || len(components) == 0 {
+		return
+	}
+	if preview.Object.Attributes == nil {
+		preview.Object.Attributes = models.JSONMap{}
+	}
+	preview.Object.Attributes["components"] = componentPreviewDescriptors(formatType, components)
+	if preview.Object.Content == nil {
+		preview.Object.Content = &models.ObjectPreviewContent{}
+	}
+	if preview.Object.Content.Metadata == nil {
+		preview.Object.Content.Metadata = map[string]interface{}{}
+	}
+	preview.Object.Content.Metadata["components"] = preview.Object.Attributes["components"]
+	preview.Object.Content.Metadata["organization"] = "multi"
+}
+
+func componentPreviewDescriptors(formatType format.FormatType, components []resource.ComponentRef) []map[string]interface{} {
+	descriptors := format.DescribeComponents(formatType, components)
+	result := make([]map[string]interface{}, 0, len(descriptors))
+	for index, descriptor := range descriptors {
+		key := strings.TrimSpace(descriptor.Key)
+		if key == "" {
+			key = strings.TrimSpace(descriptor.Role)
+		}
+		if key == "" {
+			key = fmt.Sprintf("%d", index)
+		}
+		item := map[string]interface{}{
+			"key":      key,
+			"path":     descriptor.Path,
+			"role":     descriptor.Role,
+			"label":    descriptor.Label,
+			"required": descriptor.Required,
+			"primary":  descriptor.Primary,
+		}
+		if descriptor.DataType != "" {
+			item["data_type"] = descriptor.DataType
+		}
+		if descriptor.Format != "" {
+			item["format"] = string(descriptor.Format)
+		}
+		if descriptor.Extension != "" {
+			item["extension"] = descriptor.Extension
+		}
+		if descriptor.PreviewDataType != "" {
+			item["preview_data_type"] = descriptor.PreviewDataType
+		}
+		if descriptor.PreviewFormat != "" {
+			item["preview_format"] = string(descriptor.PreviewFormat)
+		}
+		if descriptor.PreviewMaterial != "" {
+			item["preview_material"] = descriptor.PreviewMaterial
+		}
+		if descriptor.PreviewRenderer != "" {
+			item["preview_renderer"] = descriptor.PreviewRenderer
+		}
+		if descriptor.Previewable != nil {
+			item["previewable"] = *descriptor.Previewable
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 // buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。
 func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType, req ...*PreviewRequest) *format.ParseOptions {
 	opts := &format.ParseOptions{
@@ -685,12 +757,10 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	if normalizeFileTableFormat(stringAttribute(attrs, "format")) == format.FormatZIP {
-		if resolved := resolveContainerAttributeChildrenForPreview(string(format.FormatZIP), interfaceSlice(containerAttrs["children"])); len(resolved) > 0 {
-			for _, child := range resolved {
-				if len(child) > 0 && containerChildNameMatches(child, childName) {
-					return child
-				}
+	if resolved := resolveContainerAttributeChildrenForPreview(stringAttribute(attrs, "format"), interfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
+		for _, child := range resolved.Children {
+			if len(child) > 0 && containerChildNameMatches(child, childName) {
+				return child
 			}
 		}
 	}

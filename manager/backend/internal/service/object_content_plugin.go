@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -480,9 +481,10 @@ func (h *rawDocumentContentHandler) Handle(ctx context.Context, req *ObjectConte
 
 type imageContentHandler struct {
 	baseContentHandler
+	maxBytes int64
 }
 
-func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	metadata := buildPreviewMetadata(req, 0)
 	if req != nil && strings.TrimSpace(req.PreviewURL) != "" {
 		content := &models.ObjectPreviewContent{
@@ -494,9 +496,39 @@ func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentReques
 		setFrontendRenderer(content, models.ObjectPreviewKindImage)
 		return decoratePreviewContent(content), false, nil
 	}
+	if fetcher != nil {
+		limit := h.maxBytes
+		if limit <= 0 {
+			limit = maxImagePreviewBytes
+		}
+		metadata = buildPreviewMetadata(req, limit)
+		data, truncated, err := fetcher(limit)
+		if err != nil {
+			return nil, false, err
+		}
+		if truncated {
+			return decoratePreviewContent(&models.ObjectPreviewContent{
+				Kind:      models.ObjectPreviewKindImage,
+				Text:      buildLimitExceededMessage(models.ObjectPreviewKindImage, req, limit),
+				Truncated: true,
+				Metadata:  metadata,
+			}), true, nil
+		}
+		if len(data) > 0 {
+			content := &models.ObjectPreviewContent{
+				Kind:            models.ObjectPreviewKindImage,
+				Data:            base64.StdEncoding.EncodeToString(data),
+				Encoding:        "base64",
+				PreviewMaterial: models.PreviewMaterialRawBinary,
+				Metadata:        metadata,
+			}
+			setFrontendRenderer(content, models.ObjectPreviewKindImage)
+			return decoratePreviewContent(content), false, nil
+		}
+	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:     models.ObjectPreviewKindImage,
-		Text:     "图片预览需要对象流地址",
+		Text:     "图片文件内容为空或无法读取",
 		Metadata: metadata,
 	}), false, nil
 }
@@ -658,6 +690,17 @@ func emptyContainerPreview(formatName string) map[string]interface{} {
 	return buildContainerPreview(formatName, "", "", []map[string]interface{}{}, map[string]interface{}{})
 }
 
+type containerPreviewChildren struct {
+	Children              []map[string]interface{}
+	RawCount              int
+	VisibleCount          int
+	IgnoredCount          int
+	GroupedItemCount      int
+	GroupedComponentCount int
+	FilteredCount         int
+	Resolved              bool
+}
+
 func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
 	if len(containerAttrs) == 0 {
@@ -671,11 +714,11 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		return nil
 	}
 
-	if resolved := resolveContainerAttributeChildrenForPreview(formatName, children); len(resolved) > 0 {
+	if resolved := resolveContainerAttributeChildrenForPreview(formatName, children); resolved != nil && len(resolved.Children) > 0 {
 		summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
-		summary["sampled_children"] = len(resolved)
-		defaultChild := containerDefaultChild(formatName, formatAttrs, resolved)
-		return buildContainerPreview(formatName, defaultChild, defaultChild, resolved, summary)
+		applyContainerChildrenSummary(summary, resolved)
+		defaultChild := containerDefaultChild(formatName, formatAttrs, resolved.Children)
+		return buildContainerPreview(formatName, defaultChild, defaultChild, resolved.Children, summary)
 	}
 
 	previewChildren := make([]map[string]interface{}, 0, len(children))
@@ -715,18 +758,35 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	}
 
 	summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
+	applyContainerChildrenSummary(summary, &containerPreviewChildren{
+		Children:      previewChildren,
+		RawCount:      len(children),
+		VisibleCount:  len(previewChildren),
+		FilteredCount: len(children) - len(previewChildren),
+	})
 	defaultChild := containerDefaultChild(formatName, formatAttrs, previewChildren)
 	return buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
 }
 
-func resolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) []map[string]interface{} {
-	if normalizeFileTableFormat(formatName) != format.FormatZIP || len(children) == 0 {
+func resolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {
+	if len(children) == 0 {
 		return nil
 	}
 	candidates := make([]commondataitem.Candidate, 0, len(children))
+	rawCount := len(children)
+	skippedCount := 0
 	for _, item := range children {
 		child := rawMapAttribute(item)
-		if len(child) == 0 || strings.EqualFold(commonJSON.InterfaceString(child["kind"]), "directory") {
+		if len(child) == 0 {
+			skippedCount++
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(child["kind"])))
+		if kind == "directory" {
+			skippedCount++
+			continue
+		}
+		if kind != "" && kind != "file" && kind != "object" && kind != "entry" && kind != "multi" {
 			continue
 		}
 		pathValue := commonJSON.InterfaceString(child["path"])
@@ -749,19 +809,45 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 			Properties: props,
 		})
 	}
+	if len(candidates) == 0 {
+		return nil
+	}
 	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
 		ScopeKind:  commondataitem.ScopeKindContainer,
 		Candidates: candidates,
+		Options: commondataitem.ResolveOptions{
+			IncludeIgnored: true,
+		},
 	})
 	if err != nil || resolved == nil {
 		return nil
 	}
 	previewChildren := make([]map[string]interface{}, 0, len(resolved.Items))
+	groupedItemCount := 0
+	groupedComponentCount := 0
 	for index, item := range resolved.Items {
 		childInfo := commondataitem.ContainerChildInfoFromResolvedItem(item)
+		if item.Organization == commondataitem.OrganizationMulti {
+			groupedItemCount++
+			if len(item.ComponentList) > 1 {
+				groupedComponentCount += len(item.ComponentList) - 1
+			}
+		}
 		previewChildren = append(previewChildren, containerChildPreviewMap(childInfo, index))
 	}
-	return previewChildren
+	if len(previewChildren) == 0 {
+		return nil
+	}
+	return &containerPreviewChildren{
+		Children:              previewChildren,
+		RawCount:              rawCount,
+		VisibleCount:          len(previewChildren),
+		IgnoredCount:          len(resolved.Ignored),
+		GroupedItemCount:      groupedItemCount,
+		GroupedComponentCount: groupedComponentCount,
+		FilteredCount:         skippedCount + len(resolved.Ignored),
+		Resolved:              true,
+	}
 }
 
 func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) map[string]interface{} {
@@ -785,22 +871,75 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 		child["has_header"] = *childInfo.HasHeader
 	}
 	if len(childInfo.Components) > 0 {
-		components := make([]map[string]interface{}, 0, len(childInfo.Components))
-		for _, component := range childInfo.Components {
-			components = append(components, map[string]interface{}{
-				"role":      component.Role,
-				"path":      component.Path,
-				"required":  component.Required,
-				"primary":   component.Primary,
-				"extension": component.Extension,
-			})
-		}
-		child["components"] = components
+		child["components"] = containerChildComponentDescriptors(childInfo)
 	}
 	for key, value := range childInfo.Properties {
 		child[key] = value
 	}
+	if len(childInfo.Components) > 0 {
+		child["components"] = containerChildComponentDescriptors(childInfo)
+	}
 	return child
+}
+
+func containerChildComponentDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
+	refs := make([]resource.ComponentRef, 0, len(childInfo.Components))
+	for _, component := range childInfo.Components {
+		role := resource.ResourceRoleComponent
+		if component.Primary {
+			role = resource.ResourceRoleMain
+		}
+		refs = append(refs, resource.ComponentRef{
+			ResourceRef:   resource.NewResourceRef(component.Path, role),
+			ComponentRole: component.Role,
+			Required:      component.Required,
+		})
+	}
+	descriptors := format.DescribeComponents(childInfo.Format, refs)
+	result := make([]map[string]interface{}, 0, len(descriptors))
+	for index, descriptor := range descriptors {
+		key := strings.TrimSpace(descriptor.Key)
+		if key == "" {
+			key = strings.TrimSpace(descriptor.Role)
+		}
+		if key == "" {
+			key = fmt.Sprintf("%d", index)
+		}
+		item := map[string]interface{}{
+			"key":      key,
+			"path":     descriptor.Path,
+			"role":     descriptor.Role,
+			"label":    descriptor.Label,
+			"required": descriptor.Required,
+			"primary":  descriptor.Primary,
+		}
+		if descriptor.DataType != "" {
+			item["data_type"] = descriptor.DataType
+		}
+		if descriptor.Format != "" {
+			item["format"] = string(descriptor.Format)
+		}
+		if descriptor.Extension != "" {
+			item["extension"] = descriptor.Extension
+		}
+		if descriptor.PreviewDataType != "" {
+			item["preview_data_type"] = descriptor.PreviewDataType
+		}
+		if descriptor.PreviewFormat != "" {
+			item["preview_format"] = string(descriptor.PreviewFormat)
+		}
+		if descriptor.PreviewMaterial != "" {
+			item["preview_material"] = descriptor.PreviewMaterial
+		}
+		if descriptor.PreviewRenderer != "" {
+			item["preview_renderer"] = descriptor.PreviewRenderer
+		}
+		if descriptor.Previewable != nil {
+			item["previewable"] = *descriptor.Previewable
+		}
+		result = append(result, item)
+	}
+	return result
 }
 
 func buildContainerPreview(formatName, defaultChild, activeChild string, children []map[string]interface{}, summary map[string]interface{}) map[string]interface{} {
@@ -828,6 +967,35 @@ func buildContainerSummary(formatName string, containerAttrs, formatAttrs map[st
 		summary["size_bytes"] = sizeBytes
 	}
 	return summary
+}
+
+func applyContainerChildrenSummary(summary map[string]interface{}, resolved *containerPreviewChildren) {
+	if summary == nil || resolved == nil {
+		return
+	}
+	if resolved.RawCount > 0 {
+		summary["raw_child_count"] = resolved.RawCount
+		if _, exists := summary["child_count"]; !exists {
+			summary["child_count"] = resolved.RawCount
+		}
+	}
+	summary["visible_child_count"] = resolved.VisibleCount
+	summary["sampled_children"] = resolved.VisibleCount
+	if resolved.FilteredCount > 0 {
+		summary["filtered_child_count"] = resolved.FilteredCount
+	}
+	if resolved.IgnoredCount > 0 {
+		summary["ignored_child_count"] = resolved.IgnoredCount
+	}
+	if resolved.GroupedItemCount > 0 {
+		summary["grouped_item_count"] = resolved.GroupedItemCount
+	}
+	if resolved.GroupedComponentCount > 0 {
+		summary["grouped_component_count"] = resolved.GroupedComponentCount
+	}
+	if resolved.Resolved {
+		summary["organization_resolved"] = true
+	}
 }
 
 func containerDefaultChild(formatName string, formatAttrs map[string]interface{}, children []map[string]interface{}) string {
@@ -1079,9 +1247,7 @@ func (h *containerContentHandler) parseContainer(ctx context.Context, tmpPath st
 	}
 
 	metadata := buildContainerMetadataMap(info, req, formatType)
-	if formatType == format.FormatZIP {
-		info = resolveContainerChildrenForPreview(info)
-	}
+	info = resolveContainerChildrenForPreview(info)
 	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
 	truncated := containerInfoTruncated(info)
 
@@ -1116,8 +1282,18 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 		return info
 	}
 	candidates := make([]commondataitem.Candidate, 0, len(info.Children))
+	rawCount := info.ChildCount
+	if rawCount <= 0 {
+		rawCount = len(info.Children)
+	}
+	skippedCount := 0
 	for _, child := range info.Children {
-		if strings.EqualFold(child.Kind, "directory") {
+		kind := strings.ToLower(strings.TrimSpace(child.Kind))
+		if kind == "directory" {
+			skippedCount++
+			continue
+		}
+		if kind != "" && kind != "file" && kind != "object" && kind != "entry" && kind != "multi" {
 			continue
 		}
 		pathValue := commonJSON.InterfaceString(child.Properties["path"])
@@ -1142,16 +1318,30 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 			Properties: props,
 		})
 	}
+	if len(candidates) == 0 {
+		return info
+	}
 	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
 		ScopeKind:  commondataitem.ScopeKindContainer,
 		Candidates: candidates,
+		Options: commondataitem.ResolveOptions{
+			IncludeIgnored: true,
+		},
 	})
 	if err != nil || resolved == nil {
 		return info
 	}
 	next := *info
 	next.Children = make([]format.ContainerChildInfo, 0, len(resolved.Items))
+	groupedItemCount := 0
+	groupedComponentCount := 0
 	for _, item := range resolved.Items {
+		if item.Organization == commondataitem.OrganizationMulti {
+			groupedItemCount++
+			if len(item.ComponentList) > 1 {
+				groupedComponentCount += len(item.ComponentList) - 1
+			}
+		}
 		next.Children = append(next.Children, commondataitem.ContainerChildInfoFromResolvedItem(item))
 	}
 	if len(next.Children) > 0 {
@@ -1159,7 +1349,15 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 		if next.FormatInfo == nil {
 			next.FormatInfo = map[string]interface{}{}
 		}
-		next.FormatInfo["sampled_children"] = len(next.Children)
+		applyContainerChildrenSummary(next.FormatInfo, &containerPreviewChildren{
+			RawCount:              rawCount,
+			VisibleCount:          len(next.Children),
+			IgnoredCount:          len(resolved.Ignored),
+			GroupedItemCount:      groupedItemCount,
+			GroupedComponentCount: groupedComponentCount,
+			FilteredCount:         skippedCount + len(resolved.Ignored),
+			Resolved:              true,
+		})
 	}
 	return &next
 }
@@ -1174,42 +1372,7 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 	}
 	children := make([]map[string]interface{}, 0, len(info.Children))
 	for _, childInfo := range info.Children {
-		key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), len(children))
-		child := map[string]interface{}{
-			"key":          key,
-			"name":         childInfo.Name,
-			"label":        childInfo.Name,
-			"kind":         childInfo.Kind,
-			"data_type":    childInfo.DataType,
-			"format":       string(childInfo.Format),
-			"organization": childInfo.Organization,
-		}
-		if childInfo.RowCount != nil {
-			child["row_count"] = *childInfo.RowCount
-		}
-		if childInfo.ColumnCount != nil {
-			child["column_count"] = *childInfo.ColumnCount
-		}
-		if childInfo.HasHeader != nil {
-			child["has_header"] = *childInfo.HasHeader
-		}
-		if len(childInfo.Components) > 0 {
-			components := make([]map[string]interface{}, 0, len(childInfo.Components))
-			for _, component := range childInfo.Components {
-				components = append(components, map[string]interface{}{
-					"role":      component.Role,
-					"path":      component.Path,
-					"required":  component.Required,
-					"primary":   component.Primary,
-					"extension": component.Extension,
-				})
-			}
-			child["components"] = components
-		}
-		for key, value := range childInfo.Properties {
-			child[key] = value
-		}
-		children = append(children, child)
+		children = append(children, containerChildPreviewMap(childInfo, len(children)))
 	}
 
 	summary := map[string]interface{}{
@@ -1219,6 +1382,16 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 	for key, value := range info.FormatInfo {
 		summary[key] = value
 	}
+	applyContainerChildrenSummary(summary, &containerPreviewChildren{
+		RawCount:     info.ChildCount,
+		VisibleCount: len(info.Children),
+		FilteredCount: func() int {
+			if info.ChildCount > len(info.Children) {
+				return info.ChildCount - len(info.Children)
+			}
+			return 0
+		}(),
+	})
 
 	defaultChild := info.DefaultChild
 	if defaultChild == "" && len(children) > 0 {

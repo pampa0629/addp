@@ -1579,6 +1579,10 @@ paths:
         in: query
         name: child_name
         type: string
+      - description: multi child 内的组件路径 | Component path inside a multi child
+        in: query
+        name: component_path
+        type: string
       produces:
       - application/json
       responses:

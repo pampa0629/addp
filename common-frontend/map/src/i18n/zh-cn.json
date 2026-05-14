@@ -20,6 +20,7 @@
     "features": "个要素",
     "noGeometryData": "暂无几何数据",
     "shapefileAttributes": "Shapefile 属性信息",
+    "formatAttributes": "格式属性信息",
     "transformEngine": "转换引擎",
     "mapSuppressedUnknownCRS": "源坐标系未知，已跳过地图渲染",
     "mapSuppressedUnsupportedCRS": "当前无法可靠完成坐标转换，已跳过地图渲染",

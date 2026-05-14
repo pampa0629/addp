@@ -50,15 +50,16 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator      *resource.ResourceLocator // 资源定位符
-	Engine       *commonModels.Engine      // 引擎信息
-	Metadata     *commonModels.MetaNode    // 可选：Meta 节点数据
-	Pagination   *Pagination               // 分页参数
-	TenantID     *uint                     // 租户 ID
-	ItemType     string                    // 数据项类型（如 "table"），来自 MetaItem
-	PhysicalPath string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath    string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName    string                    // 容器内部 child 名称，例如 Excel sheet
+	Locator       *resource.ResourceLocator // 资源定位符
+	Engine        *commonModels.Engine      // 引擎信息
+	Metadata      *commonModels.MetaNode    // 可选：Meta 节点数据
+	Pagination    *Pagination               // 分页参数
+	TenantID      *uint                     // 租户 ID
+	ItemType      string                    // 数据项类型（如 "table"），来自 MetaItem
+	PhysicalPath  string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath     string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName     string                    // 容器内部 child 名称，例如 Excel sheet
+	ComponentPath string                    // multi child 内的单个组件路径，指向容器内原始对象
 }
 
 // Pagination 分页参数
@@ -113,6 +114,9 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 			Metadata:    r.buildMetadata(req),
 		}, nil
 	}
+	if componentProvider := r.resolveComponentPreviewProvider(req, legacyReq); componentProvider != nil {
+		provider = componentProvider
+	}
 
 	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI(), "item_type", req.ItemType)
 
@@ -131,8 +135,28 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	return result, nil
 }
 
+func (r *PreviewResolver) resolveComponentPreviewProvider(req *PreviewResolverRequest, legacyReq *PreviewRequest) PreviewProvider {
+	if r == nil || r.registry == nil || req == nil || legacyReq == nil {
+		return nil
+	}
+	if strings.TrimSpace(req.ChildName) != "" || strings.TrimSpace(req.ComponentPath) == "" {
+		return nil
+	}
+	if !isObjectStorageType(legacyReq.Engine.EngineType) && !isFileSystemType(legacyReq.Engine.EngineType) {
+		return nil
+	}
+	if provider, err := r.registry.GetByName("builtin:component-file"); err == nil {
+		return provider
+	}
+	return nil
+}
+
 // PreviewFromURI 从 URI 执行预览（便捷方法）
 func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, childName string, tenantID *uint) (*PreviewResult, error) {
+	return r.PreviewFromURIWithComponent(ctx, locatorURI, page, pageSize, childName, "", tenantID)
+}
+
+func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath string, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
 	loc, err := resource.ParseURI(locatorURI)
 	if err != nil {
@@ -259,8 +283,9 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 			Page:     page,
 			PageSize: pageSize,
 		},
-		TenantID:  tenantID,
-		ChildName: strings.TrimSpace(childName),
+		TenantID:      tenantID,
+		ChildName:     strings.TrimSpace(childName),
+		ComponentPath: strings.Trim(strings.TrimSpace(componentPath), "/"),
 	}
 
 	locatorType := strings.ToLower(strings.TrimSpace(string(loc.Type)))
@@ -404,18 +429,19 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 	}
 
 	return &PreviewRequest{
-		Engine:       managerEngine,
-		Schema:       schema,
-		Table:        table,
-		Page:         page,
-		PageSize:     pageSize,
-		TenantID:     req.TenantID,
-		ItemType:     req.ItemType,
-		NodeType:     string(req.Locator.Type),
-		PhysicalPath: req.PhysicalPath,
-		ScopePath:    req.ScopePath,
-		ChildName:    req.ChildName,
-		Attributes:   req.MetadataAttributes(),
+		Engine:        managerEngine,
+		Schema:        schema,
+		Table:         table,
+		Page:          page,
+		PageSize:      pageSize,
+		TenantID:      req.TenantID,
+		ItemType:      req.ItemType,
+		NodeType:      string(req.Locator.Type),
+		PhysicalPath:  req.PhysicalPath,
+		ScopePath:     req.ScopePath,
+		ChildName:     req.ChildName,
+		ComponentPath: req.ComponentPath,
+		Attributes:    req.MetadataAttributes(),
 	}
 }
 

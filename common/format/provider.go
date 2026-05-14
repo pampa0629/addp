@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/addp/common/resource"
@@ -143,6 +144,32 @@ type ComponentTableProvider interface {
 type ComponentSpecProvider interface {
 	Provider
 	ComponentSpecs() []resource.ComponentSpec
+}
+
+type ComponentDescriptor struct {
+	Key             string     `json:"key,omitempty"`
+	Path            string     `json:"path"`
+	Role            string     `json:"role,omitempty"`
+	Label           string     `json:"label,omitempty"`
+	Required        bool       `json:"required,omitempty"`
+	Primary         bool       `json:"primary,omitempty"`
+	DataType        string     `json:"data_type,omitempty"`
+	Format          FormatType `json:"format,omitempty"`
+	Extension       string     `json:"extension,omitempty"`
+	PreviewDataType string     `json:"preview_data_type,omitempty"`
+	PreviewFormat   FormatType `json:"preview_format,omitempty"`
+	PreviewMaterial string     `json:"preview_material,omitempty"`
+	PreviewRenderer string     `json:"preview_renderer,omitempty"`
+	Previewable     *bool      `json:"previewable,omitempty"`
+}
+
+// ComponentDescriptorProvider 表示格式能够解释 multi item 的组件。
+//
+// 该接口只提供用户可理解的组件描述，不参与 data item 边界识别；
+// Meta、Manager、前端不得硬编码某个格式的组件语义。
+type ComponentDescriptorProvider interface {
+	Provider
+	DescribeComponents(components []resource.ComponentRef) []ComponentDescriptor
 }
 
 type ScopeTableProvider interface {
@@ -825,6 +852,65 @@ func (r *ProviderRegistry) GetContainerChildResolver(formatType FormatType) (Con
 		return nil, fmt.Errorf("no container child resolver registered for format: %s", formatType)
 	}
 	return resolver, nil
+}
+
+func DescribeComponents(formatType FormatType, components []resource.ComponentRef) []ComponentDescriptor {
+	plugin, err := GetFormatPlugin(formatType)
+	if err == nil {
+		if provider, ok := plugin.(ComponentDescriptorProvider); ok {
+			return provider.DescribeComponents(components)
+		}
+	}
+	return defaultComponentDescriptors(components)
+}
+
+func defaultComponentDescriptors(components []resource.ComponentRef) []ComponentDescriptor {
+	descriptors := make([]ComponentDescriptor, 0, len(components))
+	for _, component := range components {
+		extension := strings.ToLower(strings.TrimSpace(resource.NormalizeExtension(resourceExtension(component.Path))))
+		role := strings.TrimSpace(component.ComponentRole)
+		key := role
+		if key == "" {
+			key = extension
+		}
+		label := role
+		if label == "" {
+			label = component.Name
+		}
+		preview := InferPreviewHint(PreviewHintInput{
+			Name: component.Name,
+			Path: component.Path,
+		})
+		descriptors = append(descriptors, ComponentDescriptor{
+			Key:             key,
+			Path:            component.Path,
+			Role:            role,
+			Label:           label,
+			Required:        component.Required,
+			Primary:         component.Role == resource.ResourceRoleMain,
+			DataType:        FormatDataTypeFile,
+			Format:          FormatUnknown,
+			Extension:       extension,
+			PreviewDataType: preview.DataType,
+			PreviewFormat:   preview.Format,
+			PreviewMaterial: preview.Material,
+			PreviewRenderer: preview.Renderer,
+			Previewable:     &preview.Previewable,
+		})
+	}
+	return descriptors
+}
+
+func resourceExtension(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		switch path[i] {
+		case '.':
+			return path[i:]
+		case '/', '\\':
+			return ""
+		}
+	}
+	return ""
 }
 
 func ListFormatPluginFormats() []FormatType {

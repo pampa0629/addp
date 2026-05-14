@@ -1,0 +1,7 @@
+{
+  "name": "builtin:component-file",
+  "type": "builtin",
+  "builtin": "component-file",
+  "description": "多组件数据项内部单文件预览",
+  "enabled": true
+}

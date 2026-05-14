@@ -292,7 +292,14 @@
     "hasHeader": "Has Header",
     "noColumns": "No displayable columns in this child",
     "empty": "No previewable children",
-    "rowCount": "{count} rows"
+    "rowCount": "{count} rows",
+    "components": "Components",
+    "combinedPreview": "Combined preview",
+    "componentLabel": "Name",
+    "componentRole": "Role",
+    "componentPath": "Path",
+    "noPreview": "No preview available for this child",
+    "noPreviewForType": "No preview available for this {type} child"
   },
   "objectStorage": {
     "bucket": "Bucket",

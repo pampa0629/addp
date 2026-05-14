@@ -49,6 +49,13 @@
       "enabled": true
     },
     {
+      "file": "providers/019_builtin_component_file.json",
+      "name": "builtin:component-file",
+      "description": "多组件数据项内部单文件预览",
+      "type": "builtin",
+      "enabled": true
+    },
+    {
       "file": "providers/019_builtin_file_table.json",
       "name": "builtin:file-table",
       "description": "文件表格预览",

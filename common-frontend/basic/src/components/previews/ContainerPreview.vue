@@ -38,6 +38,20 @@
             :value="child.key"
           />
         </el-select>
+        <el-select
+          v-if="componentOptions.length"
+          v-model="activeComponentPath"
+          size="small"
+          class="component-select"
+          @change="handleComponentSelect"
+        >
+          <el-option
+            v-for="component in componentOptions"
+            :key="component.key"
+            :label="component.label"
+            :value="component.path"
+          />
+        </el-select>
       </div>
 
       <template v-if="activeChild">
@@ -65,8 +79,15 @@
         </div>
 
         <div class="child-preview">
+          <component
+            v-if="activePreviewComponent"
+            :is="activePreviewComponent"
+            :data="activeChildPreviewData"
+            :loading="activeChildLoading"
+            @page-change="handlePageChange"
+          />
           <el-table
-            v-if="activeColumns.length"
+            v-else-if="activeColumns.length"
             v-loading="activeChildLoading"
             :data="activeRows"
             height="420"
@@ -83,9 +104,12 @@
               min-width="140"
             />
           </el-table>
-          <el-empty v-else :description="t('containerPreview.noColumns')" />
+          <el-empty
+            v-else-if="!activeChildLoading"
+            :description="activeChildNoPreviewText"
+          />
 
-          <div v-if="activeTotal > 0" class="child-pagination">
+          <div v-if="showTablePagination" class="child-pagination">
             <el-pagination
               background
               layout="prev, pager, next"
@@ -95,6 +119,11 @@
               @current-change="handlePageChange"
             />
           </div>
+        </div>
+
+        <div v-if="selectedComponent" class="component-hint">
+          <span>{{ selectedComponent.label }}</span>
+          <span class="component-path">{{ selectedComponent.path }}</span>
         </div>
       </template>
     </div>
@@ -134,6 +163,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  activeChildPreviewComponent: {
+    type: [Object, Function],
+    default: null
+  },
   truncated: {
     type: Boolean,
     default: false
@@ -147,6 +180,7 @@ const props = defineProps({
 const emit = defineEmits(['child-change', 'page-change'])
 
 const activeChildKey = ref('')
+const activeComponentPath = ref('')
 
 const normalizedChildren = computed(() => {
   return props.children.filter(child => child && child.key)
@@ -168,9 +202,16 @@ const ensureActiveChild = () => {
 
 watch([children, () => props.defaultChildKey], ensureActiveChild, { immediate: true })
 
+watch(activeChildKey, () => {
+  activeComponentPath.value = ''
+})
+
 const activeChild = computed(() => {
   return children.value.find(child => child.key === activeChildKey.value) || children.value[0] || null
 })
+
+const activeChildPreviewData = computed(() => props.activeChildPreview || null)
+const activePreviewComponent = computed(() => props.activeChildPreviewComponent || null)
 
 const activePreviewRows = computed(() => {
   const rows = props.activeChildPreview?.rows
@@ -198,12 +239,73 @@ const activeTotal = computed(() => Number(props.activeChildPreview?.total || act
 const activePage = computed(() => Number(props.activeChildPreview?.page || 1))
 const activePageSize = computed(() => Number(props.activeChildPreview?.page_size || 20))
 const activeColumnCount = computed(() => Number(activeChild.value?.columnCount || activeColumns.value.length || 0))
+const showTablePagination = computed(() => !activePreviewComponent.value && activeTotal.value > 0)
 
 const activeColumnPairs = computed(() => {
   const child = activeChild.value
   if (!child || !Array.isArray(child.columns)) return []
   const types = Array.isArray(child.columnTypes) ? child.columnTypes : []
   return child.columns.map((header, index) => [header, types[index] || 'string'])
+})
+
+const activeComponents = computed(() => {
+  const components = activeChild.value?.components
+  if (!Array.isArray(components)) return []
+  return components.map((component, index) => ({
+    key: component?.key || component?.role || component?.path || String(index),
+    label: componentOptionLabel(component, index),
+    role: component?.role || '—',
+    path: component?.path || '',
+    previewable: component?.previewable !== false
+  }))
+})
+
+const componentFileName = (path) => {
+  if (!path) return ''
+  const parts = String(path).split(/[\\/]/).filter(Boolean)
+  return parts.pop() || String(path)
+}
+
+const componentOptionLabel = (component, index) => {
+  const path = component?.path || ''
+  const fileName = componentFileName(path)
+  const label = component?.label || component?.role || component?.key || fileName || String(index)
+  if (fileName && !String(label).includes(fileName)) {
+    return `${label} · ${fileName}`
+  }
+  return String(label)
+}
+
+const componentOptions = computed(() => {
+  if (!activeComponents.value.length) return []
+  return [
+    {
+      key: '__combined__',
+      label: t('containerPreview.combinedPreview'),
+      path: ''
+    },
+    ...activeComponents.value
+      .filter(component => component.path)
+      .map(component => ({
+        key: component.key,
+        label: component.label,
+        path: component.path
+      }))
+  ]
+})
+
+const selectedComponent = computed(() => {
+  if (!activeComponentPath.value) return null
+  return activeComponents.value.find(component => component.path === activeComponentPath.value) || null
+})
+
+const activeChildNoPreviewText = computed(() => {
+  if (!activeChild.value) return t('containerPreview.noPreview')
+  const dataType = activeChild.value.dataType || activeChild.value.data_type || ''
+  if (dataType) {
+    return t('containerPreview.noPreviewForType', { type: dataType })
+  }
+  return t('containerPreview.noPreview')
 })
 
 const formatNumber = (value) => {
@@ -222,7 +324,17 @@ const childLabel = (child) => {
 const handleChildSelect = (key) => {
   const child = children.value.find(item => item.key === key)
   if (!child) return
-  emit('child-change', child)
+  activeComponentPath.value = ''
+  emit('child-change', { ...child, componentPath: '' })
+}
+
+const handleComponentSelect = (path) => {
+  activeComponentPath.value = path || ''
+  if (!activeChild.value) return
+  emit('child-change', {
+    ...activeChild.value,
+    componentPath: path || ''
+  })
 }
 
 const handlePageChange = (page) => {
@@ -278,6 +390,7 @@ const handlePageChange = (page) => {
 .child-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 8px;
 }
@@ -290,6 +403,10 @@ const handlePageChange = (page) => {
 
 .child-select {
   width: min(360px, 100%);
+}
+
+.component-select {
+  width: min(280px, 100%);
 }
 
 .child-meta {
@@ -307,6 +424,20 @@ const handlePageChange = (page) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.component-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--addp-text-secondary);
+}
+
+.component-path {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  color: var(--addp-text-tertiary);
 }
 
 .child-pagination {

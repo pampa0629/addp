@@ -384,6 +384,115 @@ active child
 
 这意味着 Manager 可以支持 `shapefile.zip` 中的多组件 child，也可以支持普通 ZIP 中的 PDF、Markdown、图片和嵌套 ZIP，而不写 ZIP 专用 preview handler。
 
+## multi item 组件查看
+
+multi item 的默认展示对象是“组合后的逻辑数据项”，不是组成它的单个文件。无论这个 multi item 来自 Meta 扫描目录 / prefix，还是 Manager 动态解析 container child，都应该具备同一套组件查看能力。
+
+统一语义：
+
+| 层级 | 含义 | 是否默认展示 |
+|---|---|---|
+| data item / child item | 可被平台识别和处理的逻辑数据项，例如一个 Shapefile 表 | 是 |
+| component | 组成 multi item 的原始资源引用，例如同名的一组组件文件 | 否，作为 item 详情展开 |
+| raw entry | 容器内真实存在的条目，例如 ZIP entry | 否，除非未被忽略且未被组合为 component |
+
+原则：
+
+1. Meta 中的 `organization=multi` item 应保存 components 关系，并允许用户查看任一 component 的原始预览。
+2. Manager 动态解析出的 container multi child 也使用同一结构表达 components，并允许查看任一 component。
+3. container child 如果自身还是 container，选中后递归进入同一套 child item / component 查看规则。
+4. 上层不硬编码具体格式的组件语义。例如 `.shx` 是索引、`.prj` 是投影，这些标签只应由 Shapefile format provider 提供；Meta、Manager 和前端只渲染 format 返回的通用 component descriptor。
+5. component preview 不改变默认 item 预览。用户点击 component 时，Manager 根据 component 自身的 data type / format 走通用对象预览分发；无法识别时至少提供文本、二进制信息或下载。
+
+建议在 `common/format` 补充组件描述接口：
+
+```go
+type ComponentDescriptor struct {
+    Key      string
+    Path     string
+    Role     string
+    Label    string
+    Required bool
+    Primary  bool
+    DataType string
+    Format   string
+}
+
+type ComponentDescriptorProvider interface {
+    Provider
+    DescribeComponents(components []resource.ComponentRef) []ComponentDescriptor
+}
+```
+
+说明：
+
+- `ComponentSpecProvider.ComponentSpecs()` 负责“如何识别和组合”。
+- `ComponentDescriptorProvider.DescribeComponents()` 负责“如何向用户解释组件”。
+- 没有实现 descriptor provider 的格式，平台使用通用文件名、扩展名和 `required/primary` 展示，不猜测具体业务含义。
+
+Manager 对外 DTO 中建议把组件结构保持为通用字段：
+
+```json
+{
+  "name": "示例数据.shp",
+  "organization": "multi",
+  "data_type": "table",
+  "format": "shapefile",
+  "components": [
+    {
+      "key": "main",
+      "path": "示例数据.shp",
+      "label": "主文件",
+      "required": true,
+      "primary": true,
+      "data_type": "file",
+      "format": "shapefile"
+    }
+  ]
+}
+```
+
+这里的 `label` 来自 format provider，而不是 Manager 内置。组件点击预览时可以使用：
+
+```text
+child_key=<logic-child-key>
+component_key=<component-key>
+```
+
+或：
+
+```text
+child_key=<logic-child-key>
+component_path=<component-path>
+```
+
+接口最终命名需要结合现有 `child_name` 参数收敛，但语义上必须区分“逻辑 child 预览”和“component 原始预览”。
+
+## container 计数与解释
+
+容器预览需要同时表达“真实条目数”和“可预览逻辑子项数”，否则用户会看到 `child_count=6`、下拉只有 3 个子项而无法理解原因。
+
+建议 summary 至少包含：
+
+| 字段 | 含义 |
+|---|---|
+| `raw_child_count` | 容器原始 entry 数量，来自 container provider |
+| `visible_child_count` | 展示给用户的逻辑 child item 数量 |
+| `ignored_child_count` | 被 IgnorePolicy 过滤的系统噪声数量 |
+| `grouped_component_count` | 被 multi item 组合吸收的 component 数量 |
+| `grouped_item_count` | 产生的 multi item 数量 |
+
+前端文案建议避免“已加载子项”这种含糊表达，改为：
+
+```text
+原始条目 6
+可预览子项 3
+已过滤 2
+已组合 1 组
+```
+
+如果后续需要解释详情，可在 child selector 附近增加“查看组织明细”，列出 ignored 和 grouped 的原因；第一阶段只显示 summary 即可。
+
 ## 和 common/format 的接口缺口
 
 实现前需要检查并补齐以下小接口：

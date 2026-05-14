@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	"github.com/addp/common/format"
@@ -236,6 +237,7 @@ func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build image handler: %v", err)
 	}
+	data := []byte{0xFF, 0xD8, 0xFF}
 	content, _, err := handler.Handle(
 		context.Background(),
 		&ObjectContentRequest{
@@ -248,8 +250,7 @@ func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
 			},
 		},
 		func(limit int64) ([]byte, bool, error) {
-			t.Fatalf("image handler must not read image bytes")
-			return nil, false, nil
+			return data, false, nil
 		},
 	)
 	if err != nil {
@@ -260,6 +261,40 @@ func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
 	}
 	if content.URL != "" || content.PreviewMaterial == "url" {
 		t.Fatalf("image handler trusted attribute URL: %#v", content)
+	}
+	if content.Encoding != "base64" || content.Data != base64.StdEncoding.EncodeToString(data) {
+		t.Fatalf("image handler did not return fetched image bytes: %#v", content)
+	}
+}
+
+func TestImageContentHandlerReturnsRawBinaryMaterialWithoutURL(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	if err != nil {
+		t.Fatalf("build image handler: %v", err)
+	}
+	data := []byte{0x89, 0x50, 0x4E, 0x47}
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{Name: "photo.png", Extension: ".png", ContentType: "image/png", Size: int64(len(data))},
+		func(limit int64) ([]byte, bool, error) {
+			if limit <= 0 {
+				t.Fatalf("expected positive image read limit")
+			}
+			return data, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatalf("truncated = true, want false")
+	}
+	if content.Kind != "image" || content.PreviewMaterial != "raw_binary" || content.FrontendRenderer != "image" {
+		t.Fatalf("content = %#v, want raw image material with image renderer", content)
+	}
+	if content.Encoding != "base64" || content.Data != base64.StdEncoding.EncodeToString(data) {
+		t.Fatalf("unexpected encoded image data: %#v", content)
 	}
 }
 

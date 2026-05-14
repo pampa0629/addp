@@ -80,6 +80,24 @@ export function getPreviewComponent(data) {
   return selected || null
 }
 
+export function getPreviewComponentExcept(data, excludedNames = []) {
+  const excluded = new Set(excludedNames)
+  const handlers = Array.from(previewRegistry.entries())
+    .map(([name, value]) => ({ name, ...value }))
+    .filter(h => !excluded.has(h.name))
+    .filter(h => {
+      try {
+        return typeof h.canHandle === 'function' && h.canHandle(data)
+      } catch (error) {
+        console.error(`⚠️  预览插件 ${h.name} canHandle 抛出异常`, error)
+        return false
+      }
+    })
+    .sort((a, b) => b.priority - a.priority)
+
+  return handlers[0] || null
+}
+
 /**
  * 获取所有已注册的插件名称
  */
@@ -134,11 +152,14 @@ if (typeof window !== 'undefined') {
       console.log(`📦 动态注册 ${registered.join(', ')}`)
     }
   }
+  window.getDataExplorerPreviewComponent = getPreviewComponent
+  window.getDataExplorerPreviewComponentExcept = getPreviewComponentExcept
 }
 
 export default {
   registerPreview,
   getPreviewComponent,
+  getPreviewComponentExcept,
   getRegisteredPlugins,
   unregisterPreview,
   loadCustomPlugins

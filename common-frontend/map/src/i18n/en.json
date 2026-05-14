@@ -20,6 +20,7 @@
     "features": "features",
     "noGeometryData": "No geometry data",
     "shapefileAttributes": "Shapefile Attributes",
+    "formatAttributes": "Format Attributes",
     "transformEngine": "Transform Engine",
     "mapSuppressedUnknownCRS": "Source CRS is unknown, map rendering has been skipped",
     "mapSuppressedUnsupportedCRS": "Coordinate transformation is not reliable for this preview, map rendering has been skipped",

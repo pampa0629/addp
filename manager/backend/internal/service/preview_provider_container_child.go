@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
@@ -36,6 +37,14 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	if err != nil {
 		return nil, err
 	}
+	if componentPath := strings.Trim(strings.TrimSpace(req.ComponentPath), "/"); componentPath != "" {
+		componentChild := childInfoForComponentPath(child, componentPath)
+		resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
+		if err != nil {
+			return nil, err
+		}
+		child = resolved
+	}
 	switch strings.ToLower(strings.TrimSpace(child.DataType)) {
 	case format.FormatDataTypeTable:
 		return p.previewTableChild(ctx, req, resourceCtx.bucket, child)
@@ -46,6 +55,142 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	default:
 		return p.previewObjectChild(ctx, req, resourceCtx.bucket, child)
 	}
+}
+
+func childInfoForComponentPath(parent *format.ContainerChildResource, componentPath string) map[string]interface{} {
+	name := strings.Trim(componentPath, "/")
+	descriptor := componentDescriptorForPath(parent, name)
+	preview := previewHintForComponentDescriptor(descriptor, name)
+	result := map[string]interface{}{
+		"name":         name,
+		"key":          name,
+		"path":         name,
+		"kind":         "file",
+		"data_type":    preview.DataType,
+		"format":       string(preview.Format),
+		"organization": "single",
+		"content_type": previewContentType(preview.Format, name),
+	}
+	if descriptor != nil {
+		result["role"] = descriptor.Role
+		result["label"] = descriptor.Label
+		if descriptor.Extension != "" {
+			result["extension"] = descriptor.Extension
+		}
+		if descriptor.PreviewMaterial != "" {
+			result["preview_material"] = descriptor.PreviewMaterial
+		}
+		if descriptor.PreviewRenderer != "" {
+			result["preview_renderer"] = descriptor.PreviewRenderer
+		}
+		result["previewable"] = preview.Previewable
+		result["component_preview"] = true
+	}
+	if result["content_type"] == "application/octet-stream" {
+		delete(result, "content_type")
+	}
+	return result
+}
+
+func previewContentType(formatType format.FormatType, name string) string {
+	if mime := format.GuessContentType(name, nil); strings.TrimSpace(mime) != "" && mime != "application/octet-stream" {
+		return mime
+	}
+	return format.FormatToMIME(formatType)
+}
+
+func componentDescriptorForPath(parent *format.ContainerChildResource, componentPath string) *format.ComponentDescriptor {
+	if parent == nil || len(parent.Components) == 0 {
+		return nil
+	}
+	descriptors := format.DescribeComponents(parent.Format, parent.Components)
+	for _, descriptor := range descriptors {
+		if componentPathMatches(descriptor.Path, componentPath) {
+			current := descriptor
+			return &current
+		}
+	}
+	return nil
+}
+
+func componentPathMatches(candidate, target string) bool {
+	candidate = strings.Trim(strings.TrimSpace(candidate), "/")
+	target = strings.Trim(strings.TrimSpace(target), "/")
+	if candidate == "" || target == "" {
+		return false
+	}
+	if strings.EqualFold(candidate, target) {
+		return true
+	}
+	if strings.HasSuffix(strings.ToLower(candidate), "/"+strings.ToLower(target)) {
+		return true
+	}
+	return strings.EqualFold(resourceBase(candidate), resourceBase(target))
+}
+
+func resourceBase(path string) string {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			return path[i+1:]
+		}
+	}
+	return path
+}
+
+func previewHintForComponentDescriptor(descriptor *format.ComponentDescriptor, path string) format.PreviewHint {
+	if descriptor == nil {
+		return format.InferPreviewHint(format.PreviewHintInput{
+			Name: path,
+			Path: path,
+		})
+	}
+	formatType := descriptor.PreviewFormat
+	if formatType == "" {
+		formatType = descriptor.Format
+	}
+	dataType := descriptor.PreviewDataType
+	if dataType == "" {
+		dataType = descriptor.DataType
+	}
+	hint := format.InferPreviewHint(format.PreviewHintInput{
+		Name:     descriptor.Path,
+		Path:     descriptor.Path,
+		Format:   formatType,
+		DataType: dataType,
+	})
+	if descriptor.PreviewMaterial != "" {
+		hint.Material = descriptor.PreviewMaterial
+	}
+	if descriptor.PreviewRenderer != "" {
+		hint.Renderer = descriptor.PreviewRenderer
+	}
+	if descriptor.Previewable != nil {
+		hint.Previewable = *descriptor.Previewable
+	}
+	return hint
+}
+
+func previewRequestForComponent(req *PreviewRequest, child map[string]interface{}) *PreviewRequest {
+	next := *req
+	next.ChildName = strings.Trim(strings.TrimSpace(commonJSON.InterfaceString(child["path"])), "/")
+	if next.ChildName == "" {
+		next.ChildName = strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
+	}
+	next.ComponentPath = ""
+	next.Attributes = map[string]interface{}{}
+	for key, value := range req.Attributes {
+		if key == "type_info" {
+			continue
+		}
+		next.Attributes[key] = value
+	}
+	typeInfo := map[string]interface{}{}
+	next.Attributes["type_info"] = typeInfo
+	containerInfo := map[string]interface{}{}
+	typeInfo["container"] = containerInfo
+	containerInfo["children"] = []interface{}{child}
+	return &next
 }
 
 func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {
@@ -101,6 +246,14 @@ func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, 
 		Extension:   defaultExtension(child.Name),
 		ContentType: contentTypeForChild(child),
 		Attributes:  childObjectAttributes(child),
+	}
+	if child.Properties != nil {
+		if previewFormat := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_format"])); previewFormat != "" {
+			contentReq.Format = previewFormat
+		}
+		if contentType := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["content_type"])); contentType != "" {
+			contentReq.ContentType = contentType
+		}
 	}
 	if p.content != nil {
 		handler := p.content.Resolve(contentReq)
@@ -191,6 +344,12 @@ func childObjectAttributes(child *format.ContainerChildResource) map[string]inte
 	}
 	if len(child.Properties) > 0 {
 		attrs["container_child"] = child.Properties
+		if previewMaterial := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_material"])); previewMaterial != "" {
+			attrs["preview_material"] = previewMaterial
+		}
+		if previewRenderer := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_renderer"])); previewRenderer != "" {
+			attrs["frontend_renderer"] = previewRenderer
+		}
 	}
 	return attrs
 }
