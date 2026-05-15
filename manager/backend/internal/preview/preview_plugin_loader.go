@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
@@ -49,30 +48,58 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	},
 }
 
-var builtinProviderFactories = map[string]builtinProviderFactory{
-	"database-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewDatabaseTablePreviewProvider(repo, nil), nil
-	},
-	"doc-collection": func(_ *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewDocCollectionPreviewProvider(), nil
-	},
-	"schema-node": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewSchemaPreviewProvider(repo, nil), nil
-	},
+type PluginManifest struct {
+	DefaultProviders []PluginConfig `json:"default_providers,omitempty"`
+	Providers        []PluginConfig `json:"providers,omitempty"`
 }
 
-func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, dirSpec string) {
+func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, manifestSpec string) {
 	if registry == nil || metadataRepo == nil {
 		return
 	}
 
-	dirs := splitDirectories(dirSpec)
-	for _, dir := range dirs {
-		loadPluginsFromDir(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, dir)
+	paths := splitManifestPaths(manifestSpec)
+	if len(paths) == 0 {
+		registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry)
+		return
+	}
+	for _, path := range paths {
+		loadPluginsFromManifest(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
 	}
 }
 
-func splitDirectories(spec string) []string {
+func registerDefaultBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry) {
+	registerBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, fallbackBuiltinPreviewPlugins())
+}
+
+func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, configs []PluginConfig) {
+	for _, cfg := range configs {
+		provider, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry)
+		if err != nil {
+			logger.L().Warn("数据预览: 默认内置插件初始化失败", "builtin", cfg.Builtin, "error", err)
+			continue
+		}
+		registry.Register(provider)
+	}
+}
+
+func fallbackBuiltinPreviewPlugins() []PluginConfig {
+	return []PluginConfig{
+		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
+		{Name: "builtin:doc-collection", Type: "builtin", Builtin: "doc-collection"},
+		{Name: "builtin:graph-label", Type: "builtin", Builtin: "graph-label"},
+		{Name: "builtin:graph-relationship", Type: "builtin", Builtin: "graph-relationship"},
+		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},
+		{Name: "builtin:container-child", Type: "builtin", Builtin: "container-child"},
+		{Name: "builtin:component-file", Type: "builtin", Builtin: "component-file"},
+		{Name: "builtin:file-table", Type: "builtin", Builtin: "file-table"},
+		{Name: "builtin:object-catalog", Type: "builtin", Builtin: "object-catalog"},
+		{Name: "builtin:file-catalog", Type: "builtin", Builtin: "file-catalog"},
+		{Name: "builtin:schema-node", Type: "builtin", Builtin: "schema-node"},
+	}
+}
+
+func splitManifestPaths(spec string) []string {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil
@@ -88,46 +115,35 @@ func splitDirectories(spec string) []string {
 	return paths
 }
 
-func loadPluginsFromDir(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, dir string) {
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
-		logger.L().Warn("数据预览: 插件目录不可用", "dir", dir, "error", err)
-		return
-	}
-
-	entries, err := os.ReadDir(dir)
+func loadPluginsFromManifest(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, path string) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		logger.L().Warn("数据预览: 读取插件目录失败", "dir", dir, "error", err)
+		logger.L().Warn("数据预览: 读取插件清单失败", "path", path, "error", err)
 		return
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		loadPluginFromFile(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
+	var manifest PluginManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		logger.L().Warn("数据预览: 解析插件清单失败", "path", path, "error", err)
+		return
+	}
+
+	defaultConfigs := manifest.DefaultProviders
+	if len(defaultConfigs) == 0 {
+		defaultConfigs = fallbackBuiltinPreviewPlugins()
+	}
+	registerBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, defaultConfigs)
+	for _, cfg := range manifest.Providers {
+		loadPluginConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, cfg, path)
 	}
 }
 
-func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, path string) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		logger.L().Warn("数据预览: 读取插件配置失败", "path", path, "error", err)
-		return
-	}
-
-	var cfg PluginConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		logger.L().Warn("数据预览: 解析插件配置失败", "path", path, "error", err)
-		return
-	}
-
+func loadPluginConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, cfg PluginConfig, source string) {
 	if !cfg.isEnabled() {
-		logger.L().Info("数据预览: 跳过已禁用插件", "config", path, "name", displayName(cfg))
+		if name := builtinPreviewProviderName(cfg); name != "" {
+			registry.Unregister(name)
+		}
+		logger.L().Info("数据预览: 跳过已禁用插件", "config", source, "name", displayName(cfg))
 		return
 	}
 
@@ -135,41 +151,51 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 
 	switch cfg.pluginType() {
 	case "builtin":
-		factoryWithContent, ok := builtinProviderFactoriesWithContent[strings.TrimSpace(cfg.Builtin)]
-		if ok {
-			p, err := factoryWithContent(metadataRepo, metaClient, metaServiceURL, contentRegistry)
-			if err != nil {
-				logger.L().Warn("数据预览: 内置插件初始化失败", "config", path, "builtin", cfg.Builtin, "error", err)
-				return
-			}
-			provider = wrapProviderForOverrides(p, cfg)
-		} else {
-			factory, ok := builtinProviderFactories[strings.TrimSpace(cfg.Builtin)]
-			if !ok {
-				logger.L().Warn("数据预览: 未知的内置插件", "config", path, "builtin", cfg.Builtin)
-				return
-			}
-			p, err := factory(metadataRepo)
-			if err != nil {
-				logger.L().Warn("数据预览: 内置插件初始化失败", "config", path, "builtin", cfg.Builtin, "error", err)
-				return
-			}
-			provider = wrapProviderForOverrides(p, cfg)
+		p, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry)
+		if err != nil {
+			logger.L().Warn("数据预览: 内置插件初始化失败", "config", source, "builtin", cfg.Builtin, "error", err)
+			return
 		}
+		provider = p
 	case "command":
 		p, err := newCommandPreviewProvider(cfg, metadataRepo)
 		if err != nil {
-			logger.L().Warn("数据预览: 外部命令插件初始化失败", "config", path, "error", err)
+			logger.L().Warn("数据预览: 外部命令插件初始化失败", "config", source, "error", err)
 			return
 		}
 		provider = wrapProviderForOverrides(p, cfg)
 	default:
-		logger.L().Warn("数据预览: 未知插件类型", "config", path, "type", cfg.Type)
+		logger.L().Warn("数据预览: 未知插件类型", "config", source, "type", cfg.Type)
 		return
 	}
 
 	registry.Register(provider)
-	logger.L().Info("数据预览: 注册插件成功", "config", path, "plugin", provider.Name())
+	logger.L().Info("数据预览: 注册插件成功", "config", source, "plugin", provider.Name())
+}
+
+func buildBuiltinPreviewProvider(cfg PluginConfig, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+	builtin := strings.TrimSpace(cfg.Builtin)
+	factory, ok := builtinProviderFactoriesWithContent[builtin]
+	if !ok {
+		return nil, fmt.Errorf("未知的内置插件 %q", cfg.Builtin)
+	}
+	provider, err := factory(metadataRepo, metaClient, metaServiceURL, contentRegistry)
+	if err != nil {
+		return nil, err
+	}
+	return wrapProviderForOverrides(provider, cfg), nil
+}
+
+func builtinPreviewProviderName(cfg PluginConfig) string {
+	name := strings.TrimSpace(cfg.Name)
+	if name != "" {
+		return name
+	}
+	builtin := strings.TrimSpace(cfg.Builtin)
+	if builtin == "" {
+		return ""
+	}
+	return "builtin:" + builtin
 }
 
 func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) error {
@@ -180,10 +206,12 @@ func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) e
 	if factory == nil {
 		return fmt.Errorf("builtin factory for %s is nil", name)
 	}
-	builtinProviderFactories[name] = factory
+	builtinProviderFactoriesWithContent[name] = func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return factory(repo)
+	}
 	return nil
 }
 
 func ParsePluginDirSpec(spec string) []string {
-	return splitDirectories(spec)
+	return splitManifestPaths(spec)
 }

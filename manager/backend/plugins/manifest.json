@@ -1,164 +1,169 @@
 {
   "version": "1.0.0",
   "description": "Manager 模块数据预览插件清单",
-  "plugin_directories": [
-    "providers",
-    "content"
-  ],
-  "providers": [
+  "default_providers": [
     {
-      "file": "providers/010_relational.json",
       "name": "builtin:database-table",
-      "description": "关系型数据库表预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "database-table"
     },
     {
-      "file": "providers/015_nosql_collection.json",
       "name": "builtin:doc-collection",
-      "description": "NoSQL 文档数据库集合预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "doc-collection"
     },
     {
-      "file": "providers/016_builtin_graph_label.json",
       "name": "builtin:graph-label",
-      "description": "图节点预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "graph-label"
     },
     {
-      "file": "providers/017_builtin_graph_relationship.json",
       "name": "builtin:graph-relationship",
-      "description": "图关系预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "graph-relationship"
     },
     {
-      "file": "providers/018_builtin_scope_table.json",
       "name": "builtin:scope-table",
-      "description": "整体型表格预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "scope-table"
     },
     {
-      "file": "providers/019_builtin_container_child.json",
       "name": "builtin:container-child",
-      "description": "容器内部子对象预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "container-child"
     },
     {
-      "file": "providers/019_builtin_component_file.json",
       "name": "builtin:component-file",
-      "description": "多组件数据项内部单文件预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "component-file"
     },
     {
-      "file": "providers/019_builtin_file_table.json",
       "name": "builtin:file-table",
-      "description": "文件表格预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "file-table"
     },
     {
-      "file": "providers/020_builtin_object_catalog.json",
       "name": "builtin:object-catalog",
-      "description": "对象 catalog 预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "object-catalog"
     },
     {
-      "file": "providers/022_builtin_file_catalog.json",
       "name": "builtin:file-catalog",
-      "description": "文件 catalog 预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "file-catalog"
     },
     {
-      "file": "providers/030_builtin_schema_node.json",
       "name": "builtin:schema-node",
-      "description": "Schema 节点预览",
       "type": "builtin",
-      "enabled": true
+      "builtin": "schema-node"
+    }
+  ],
+  "providers": [],
+  "default_content_plugins": [
+    {
+      "name": "builtin:content-pdf",
+      "type": "builtin",
+      "builtin": "pdf",
+      "priority": 80,
+      "max_bytes": 20971520
+    },
+    {
+      "name": "builtin:content-docx",
+      "type": "builtin",
+      "builtin": "docx",
+      "priority": 75,
+      "max_bytes": 104857600
+    },
+    {
+      "name": "builtin:content-pptx",
+      "type": "builtin",
+      "builtin": "pptx",
+      "priority": 74,
+      "max_bytes": 104857600
+    },
+    {
+      "name": "builtin:content-wps",
+      "type": "builtin",
+      "builtin": "wps",
+      "priority": 74,
+      "max_bytes": 104857600
+    },
+    {
+      "name": "builtin:content-image",
+      "type": "builtin",
+      "builtin": "image",
+      "priority": 70,
+      "max_bytes": 20971520
+    },
+    {
+      "name": "builtin:content-video",
+      "type": "builtin",
+      "builtin": "video",
+      "priority": 68
+    },
+    {
+      "name": "builtin:content-parquet",
+      "type": "builtin",
+      "builtin": "parquet",
+      "priority": 63,
+      "max_bytes": 209715200,
+      "metadata": {
+        "row_limit": 50
+      }
+    },
+    {
+      "name": "builtin:content-json",
+      "type": "builtin",
+      "builtin": "json",
+      "priority": 60,
+      "max_bytes": 524288
+    },
+    {
+      "name": "builtin:content-container",
+      "type": "builtin",
+      "builtin": "container",
+      "priority": 58,
+      "max_bytes": 31457280
+    },
+    {
+      "name": "builtin:content-markdown",
+      "type": "builtin",
+      "builtin": "markdown",
+      "priority": 55,
+      "max_bytes": 262144
+    },
+    {
+      "name": "builtin:content-text",
+      "type": "builtin",
+      "builtin": "text",
+      "priority": 0,
+      "max_bytes": 262144
+    },
+    {
+      "name": "builtin:content-unsupported",
+      "type": "builtin",
+      "builtin": "unsupported",
+      "priority": -100,
+      "max_bytes": 262144
     }
   ],
   "content_plugins": [
     {
-      "file": "content/110_content_pdf.json",
-      "name": "content:pdf",
-      "description": "PDF 文件预览",
-      "priority": 110,
-      "enabled": true
+      "name": "builtin:content-image",
+      "type": "builtin",
+      "builtin": "image",
+      "max_bytes": 10485760
     },
     {
-      "file": "content/111_content_docx.json",
-      "name": "content:docx",
-      "description": "Word 文档预览",
-      "priority": 111,
-      "enabled": true
-    },
-    {
-      "file": "content/112_content_pptx.json",
-      "name": "content:pptx",
-      "description": "PowerPoint 文档预览",
-      "priority": 112,
-      "enabled": true
-    },
-    {
-      "file": "content/113_content_wps.json",
-      "name": "content:wps",
-      "description": "WPS 文档预览",
-      "priority": 113,
-      "enabled": true
-    },
-    {
-      "file": "content/120_content_image.json",
-      "name": "content:image",
-      "description": "图片文件预览",
-      "priority": 120,
-      "enabled": true
-    },
-    {
-      "file": "content/125_content_video.json",
-      "name": "content:video",
-      "description": "视频文件预览",
-      "priority": 125,
-      "enabled": true
-    },
-    {
-      "file": "content/140_content_json.json",
-      "name": "content:json",
-      "description": "JSON 文件预览（空间 JSON 由 JSON 处理器输出地图预览材料）",
-      "priority": 140,
-      "enabled": true
-    },
-    {
-      "file": "content/150_content_container.json",
-      "name": "content:container",
-      "description": "容器文件预览",
-      "priority": 150,
-      "enabled": true
-    },
-    {
-      "file": "content/160_content_markdown.json",
-      "name": "content:markdown",
-      "description": "Markdown 文件预览",
-      "priority": 160,
-      "enabled": true
-    },
-    {
-      "file": "content/190_content_text.json",
-      "name": "content:text",
-      "description": "文本文件预览",
-      "priority": 190,
-      "enabled": true
+      "name": "builtin:content-container",
+      "type": "builtin",
+      "builtin": "container",
+      "max_bytes": 1073741824
     }
   ],
   "notes": [
     "主预览 provider 按 Meta 标准属性确定性路由",
-    "内容预览插件按优先级顺序匹配",
+    "default_providers/default_content_plugins 是默认启用策略，providers/content_plugins 是禁用、覆盖或外部 command 扩展",
     "builtin 类型插件使用内置实现",
     "command 类型插件调用外部命令"
   ]

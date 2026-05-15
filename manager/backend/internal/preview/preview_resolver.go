@@ -198,6 +198,13 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 				realItemID := metaID - 100000
 				item, err := r.metaClient.GetMetaItemByID(realItemID)
 				if err == nil && item != nil {
+					if item.ScannedDepth != "deep" {
+						if ensureErr := r.metaClient.EnsureItemDeepScanned(realItemID); ensureErr != nil {
+							logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", realItemID, "error", ensureErr)
+						} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(realItemID); refreshErr == nil && refreshed != nil {
+							item = refreshed
+						}
+					}
 					metaItem = item
 					metaIDResolved = true
 					logger.L().Debug("从 Meta 通过虚拟 ID 获取到 MetaItem",
@@ -240,6 +247,13 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 				objectPath := strings.Join(loc.Path[1:], "/")
 				item, err := r.metaClient.GetItemByPath(loc.EngineID, bucketName, objectPath)
 				if err == nil && item != nil {
+					if item.ScannedDepth != "deep" {
+						if ensureErr := r.metaClient.EnsureItemDeepScanned(item.ID); ensureErr != nil {
+							logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", item.ID, "error", ensureErr)
+						} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(item.ID); refreshErr == nil && refreshed != nil {
+							item = refreshed
+						}
+					}
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到对象元数据",
 						"bucket", bucketName,

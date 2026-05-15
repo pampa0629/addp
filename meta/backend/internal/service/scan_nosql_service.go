@@ -46,6 +46,7 @@ func (s *NoSQLScanService) ScanDatabase(
 	tenantID uint,
 	databaseName string,
 	scanDepth string,
+	force bool,
 ) (int, int, int, error) {
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
@@ -68,7 +69,7 @@ func (s *NoSQLScanService) ScanDatabase(
 
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, samplingProvider, connInfo, resource, tenantID, dbNode, databaseName, scanDepth)
+	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, samplingProvider, connInfo, resource, tenantID, dbNode, databaseName, scanDepth, force)
 
 	if err != nil {
 		s.repo.FinalizeNodeState(dbNode, "pending", 0, 0, err.Error())
@@ -87,7 +88,7 @@ func (s *NoSQLScanService) ScanDatabase(
 		}
 	}
 
-	if err := s.repo.FinalizeNodeState(dbNode, "completed", totalObjects, totalSize, ""); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(dbNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
 		return 0, totalObjects, totalFields, err
 	}
 
@@ -104,6 +105,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 	dbNode *models.MetaNode,
 	databaseName string,
 	scanDepth string,
+	force bool,
 ) (int, int, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
@@ -151,9 +153,12 @@ func (s *NoSQLScanService) scanCatalogItems(
 		scannedByType[itemType][node.Name] = true
 
 		existingItem := existingCollectionMap[collInfo.Name]
-		needsUpdate := scanchange.ShouldUpdateCollection(existingItem, collInfo)
+		needsUpdate := force || scanchange.ShouldUpdateCollection(existingItem, collInfo) || existingItem == nil
+		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
+			needsUpdate = true
+		}
 
-		if !strings.EqualFold(scanDepth, "deep") && existingItem != nil && !needsUpdate {
+		if existingItem != nil && !needsUpdate {
 			totalItems++
 			continue
 		}
@@ -188,7 +193,7 @@ func (s *NoSQLScanService) scanCatalogItems(
 		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
 		rowCount := count
 
-		_, err = s.repo.UpsertItem(tenantID, resource.ID, dbNode, itemType, collInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil)
+		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, dbNode, itemType, collInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
 			s.log.Warn("保存 NoSQL item 元数据失败", "database", databaseName, "item", collInfo.Name, "item_type", itemType, "error", err)
 			continue

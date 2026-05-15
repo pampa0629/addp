@@ -35,6 +35,7 @@ export default {
         node_type: node.node_type,
         path: node.path || node.full_name || node.name,
         scan_status: node.scan_status,
+        scanned_depth: node.scanned_depth,
         scanned_at: node.scanned_at,
         table_count: node.item_count || 0,
         total_size_bytes: node.total_size_bytes || 0
@@ -58,9 +59,12 @@ export default {
   },
 
   // 扫描指定引擎的指定命名空间或对象路径
-  scanEngine(engineId, namespaces, objectPaths) {
+  scanEngine(engineId, namespaces, objectPaths, options = {}) {
     const payload = {
-      engine_id: engineId
+      engine_id: engineId,
+      scan_depth: options.scan_depth || 'deep',
+      force: options.force === true,
+      trigger_type: 'manual'
     }
     if (namespaces && namespaces.length > 0) {
       payload.namespaces = namespaces

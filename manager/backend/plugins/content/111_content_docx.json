@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-docx",
-  "type": "builtin",
-  "builtin": "docx",
-  "priority": 75,
-  "match": {},
-  "max_bytes": 104857600
-}

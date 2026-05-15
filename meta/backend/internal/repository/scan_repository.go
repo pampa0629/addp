@@ -265,6 +265,22 @@ func (r *ScanRepository) ResetNodeState(node *models.MetaNode, status string) er
 	return r.db.Model(node).Updates(update).Error
 }
 
+func mergeScannedDepth(current, requested string) string {
+	if requested == models.ScannedDepthDeep {
+		return models.ScannedDepthDeep
+	}
+	if current == models.ScannedDepthDeep {
+		return models.ScannedDepthDeep
+	}
+	if requested == models.ScannedDepthBasic {
+		return models.ScannedDepthBasic
+	}
+	if current == models.ScannedDepthBasic {
+		return models.ScannedDepthBasic
+	}
+	return models.ScannedDepthNone
+}
+
 // FinalizeNodeState 最终化节点状态（扫描完成）
 func (r *ScanRepository) FinalizeNodeState(
 	node *models.MetaNode,
@@ -272,6 +288,17 @@ func (r *ScanRepository) FinalizeNodeState(
 	itemCount int,
 	totalSize int64,
 	errMsg string,
+) error {
+	return r.FinalizeNodeStateWithDepth(node, status, itemCount, totalSize, errMsg, "")
+}
+
+func (r *ScanRepository) FinalizeNodeStateWithDepth(
+	node *models.MetaNode,
+	status string,
+	itemCount int,
+	totalSize int64,
+	errMsg string,
+	scanDepth string,
 ) error {
 	update := map[string]interface{}{
 		"scan_status":      status,
@@ -282,6 +309,7 @@ func (r *ScanRepository) FinalizeNodeState(
 
 	if status == "completed" {
 		update["scanned_at"] = time.Now()
+		update["scanned_depth"] = mergeScannedDepth(node.ScannedDepth, scanDepth)
 	}
 	return r.db.Model(node).Updates(update).Error
 }
@@ -338,9 +366,24 @@ func (r *ScanRepository) UpsertItem(
 	rowCount, sizeBytes *int64,
 	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
+	return r.UpsertItemWithDepth(
+		tenantID, engineID, node, itemType, name, fullName,
+		attrs, rowCount, sizeBytes, dataUpdated, models.ScannedDepthDeep,
+	)
+}
+
+func (r *ScanRepository) UpsertItemWithDepth(
+	tenantID, engineID uint,
+	node *models.MetaNode,
+	itemType, name, fullName string,
+	attrs models.JSONMap,
+	rowCount, sizeBytes *int64,
+	dataUpdated *time.Time,
+	scanDepth string,
+) (*models.MetaItem, error) {
 	return r.UpsertItemSelective(
 		tenantID, engineID, node, itemType, name, fullName,
-		attrs, rowCount, sizeBytes, dataUpdated,
+		attrs, rowCount, sizeBytes, dataUpdated, scanDepth,
 	)
 }
 
@@ -353,8 +396,10 @@ func (r *ScanRepository) UpsertItemSelective(
 	attrs models.JSONMap,
 	rowCount, sizeBytes *int64,
 	dataUpdated *time.Time,
+	scanDepth string,
 ) (*models.MetaItem, error) {
 	attrs = metaattr.Normalize(attrs)
+	scannedDepth := mergeScannedDepth(models.ScannedDepthNone, scanDepth)
 
 	// 生成数据指纹
 	fingerprint, err := r.generateFingerprint(engineID, node, itemType, name, fullName, attrs)
@@ -382,6 +427,7 @@ func (r *ScanRepository) UpsertItemSelective(
 			SizeBytes:     sizeBytes,
 			DataUpdatedAt: dataUpdated,
 			ScannedAt:     &now,
+			ScannedDepth:  scannedDepth,
 		}
 		if attrs != nil {
 			item.Attributes = attrs
@@ -398,6 +444,7 @@ func (r *ScanRepository) UpsertItemSelective(
 
 	// 更新已有记录（包括恢复软删除的记录）
 	now := time.Now()
+	scannedDepth = mergeScannedDepth(item.ScannedDepth, scanDepth)
 	updates := map[string]interface{}{
 		"node_id":         node.ID, // 允许 node_id 变化（数据移动）
 		"item_type":       itemType,
@@ -407,6 +454,7 @@ func (r *ScanRepository) UpsertItemSelective(
 		"size_bytes":      sizeBytes,
 		"data_updated_at": dataUpdated,
 		"scanned_at":      &now,
+		"scanned_depth":   scannedDepth,
 		"deleted_at":      nil, // 恢复软删除的记录
 	}
 
@@ -429,6 +477,7 @@ func (r *ScanRepository) UpsertItemSelective(
 	item.SizeBytes = sizeBytes
 	item.DataUpdatedAt = dataUpdated
 	item.ScannedAt = &now
+	item.ScannedDepth = scannedDepth
 	item.DeletedAt = gorm.DeletedAt{}
 
 	return &item, nil
@@ -516,6 +565,18 @@ func (r *ScanRepository) GetItemsByNodeAndTypeMap(tenantID, engineID, nodeID uin
 		result[items[i].Name] = &items[i]
 	}
 	return result
+}
+
+func (r *ScanRepository) FindItemByFullName(tenantID, engineID uint, fullName string) (*models.MetaItem, bool, error) {
+	var item models.MetaItem
+	err := r.db.Where("tenant_id = ? AND engine_id = ? AND full_name = ? AND deleted_at IS NULL", tenantID, engineID, fullName).First(&item).Error
+	if err == nil {
+		return &item, true, nil
+	}
+	if err == gorm.ErrRecordNotFound {
+		return nil, false, nil
+	}
+	return nil, false, err
 }
 
 // GetNodeByID 根据 ID 获取节点

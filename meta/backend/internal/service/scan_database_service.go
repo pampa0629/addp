@@ -62,7 +62,7 @@ func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Index
 //   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
 //
 // 返回：(schema数量, 表数量, 字段数量, error)
-func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, schemaName string, scanDepth string) (int, int, int, error) {
+func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, schemaName string, scanDepth string, force bool) (int, int, int, error) {
 	// 1. 获取插件
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth, itemTerm)
+	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth, force, itemTerm)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
@@ -110,7 +110,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 		}
 	}
 
-	if err := s.repo.FinalizeNodeState(schemaNode, "completed", tables, totalSize, ""); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(schemaNode, "completed", tables, totalSize, "", scanDepth); err != nil {
 		return 0, tables, fields, err
 	}
 
@@ -128,6 +128,7 @@ func (s *DatabaseScanService) scanTables(
 	schemaNode *models.MetaNode,
 	schemaName string,
 	scanDepth string,
+	force bool,
 	itemTerm string,
 ) (int, int, error) {
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
@@ -168,10 +169,12 @@ func (s *DatabaseScanService) scanTables(
 
 		// 检查是否需要更新
 		existingItem := existingTableMap[tableInfo.TableName]
-		needsUpdate := scanchange.ShouldUpdateTable(existingItem, tableInfo)
+		needsUpdate := force || scanchange.ShouldUpdateTable(existingItem, tableInfo) || existingItem == nil
+		if isDeepScan && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
+			needsUpdate = true
+		}
 
-		// 浅度扫描且表未变化，跳过
-		if !isDeepScan && existingItem != nil && !needsUpdate {
+		if existingItem != nil && !needsUpdate {
 			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
 				"table", tableInfo.TableName,
@@ -196,7 +199,7 @@ func (s *DatabaseScanService) scanTables(
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, itemTerm, tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, itemTerm, tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified, scanDepth)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,

@@ -51,7 +51,7 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 	}()
 
 	provider := NewFileCatalogPreviewProvider(nil, objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*fileCatalogPreviewProvider).content, "../../plugins/content")
+	objectcontent.LoadObjectContentPlugins(provider.(*fileCatalogPreviewProvider).content, "../../plugins/manifest.json")
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
 		Engine: &models.Engine{EngineType: "nfs", ID: 7},

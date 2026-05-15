@@ -2,11 +2,15 @@ package preview
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
+	"github.com/addp/manager/internal/repository"
 )
 
 type namedPreviewProvider struct {
@@ -16,6 +20,70 @@ type namedPreviewProvider struct {
 func (p namedPreviewProvider) Name() string { return p.name }
 func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models.TablePreview, error) {
 	return nil, nil
+}
+
+func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", "")
+
+	for _, name := range []string{
+		"builtin:database-table",
+		"builtin:doc-collection",
+		"builtin:graph-label",
+		"builtin:graph-relationship",
+		"builtin:scope-table",
+		"builtin:container-child",
+		"builtin:component-file",
+		"builtin:file-table",
+		"builtin:object-catalog",
+		"builtin:file-catalog",
+		"builtin:schema-node",
+	} {
+		if _, err := registry.GetByName(name); err != nil {
+			t.Fatalf("expected default provider %s: %v", name, err)
+		}
+	}
+}
+
+func TestLoadPreviewPluginsUsesManifestDefaultProviders(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	config := []byte(`{"default_providers":[{"name":"builtin:file-table","type":"builtin","builtin":"file-table"}]}`)
+	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
+		t.Fatalf("write provider manifest: %v", err)
+	}
+
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", manifestPath)
+
+	if _, err := registry.GetByName("builtin:file-table"); err != nil {
+		t.Fatalf("expected manifest default file-table: %v", err)
+	}
+	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
+		t.Fatal("expected file-catalog to be absent because manifest defaults only contain file-table")
+	}
+}
+
+func TestLoadPreviewPluginsCanDisableDefaultProvider(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	config := []byte(`{"providers":[{"name":"builtin:file-catalog","type":"builtin","builtin":"file-catalog","enabled":false}]}`)
+	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
+		t.Fatalf("write provider manifest: %v", err)
+	}
+
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", manifestPath)
+
+	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
+		t.Fatal("expected builtin:file-catalog to be disabled")
+	}
+	if _, err := registry.GetByName("builtin:file-table"); err != nil {
+		t.Fatalf("expected other default providers to remain registered: %v", err)
+	}
 }
 
 func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {

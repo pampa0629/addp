@@ -1,7 +1,0 @@
-{
-  "name": "builtin:container-child",
-  "type": "builtin",
-  "builtin": "container-child",
-  "description": "容器内部子对象预览（按 child data_type 分发到表格、文档、媒体或嵌套容器）",
-  "enabled": true
-}

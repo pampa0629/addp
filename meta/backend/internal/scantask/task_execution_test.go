@@ -12,7 +12,7 @@ func TestNewManualExecution(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	exec := NewManualExecution(3, 9, 7, "postgres", []string{"public"}, nil, "basic", "token", now)
+	exec := NewManualExecution(3, 9, 7, "postgres", []string{"public"}, nil, "basic", false, "token", now)
 
 	if exec.TenantID != 3 || exec.Module != commonModels.ModuleMeta || exec.Status != commonModels.ExecutionStatusPending {
 		t.Fatalf("execution basics = %#v", exec)

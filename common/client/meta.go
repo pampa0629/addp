@@ -22,6 +22,19 @@ type MetaClient struct {
 	tenantID    *uint  // Tenant ID (用于服务间调用时指定租户)
 }
 
+type MetaScanOptions struct {
+	EngineID uint
+	NodeID   uint
+	ItemID   uint
+	Targets  []string
+
+	Namespaces  []string
+	ObjectPaths []string
+	ScanDepth   string
+	Force       bool
+	TriggerType string
+}
+
 // NewMetaClient 创建 Meta 客户端（用户认证方式）
 func NewMetaClient(baseURL, authToken string) *MetaClient {
 	return &MetaClient{
@@ -294,17 +307,29 @@ func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
 	return &result, nil
 }
 
-// TriggerScanEngine 触发引擎元数据扫描
-func (c *MetaClient) TriggerScanEngine(engineID uint, namespaces []string) error {
+func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/engine", c.baseURL)
 
 	scanReq := map[string]interface{}{
-		"engine_id":  engineID,
-		"scan_type":  "auto",
-		"scan_depth": "basic",
+		"engine_id":    opts.EngineID,
+		"node_id":      opts.NodeID,
+		"item_id":      opts.ItemID,
+		"targets":      opts.Targets,
+		"scan_depth":   opts.ScanDepth,
+		"force":        opts.Force,
+		"trigger_type": opts.TriggerType,
 	}
-	if len(namespaces) > 0 {
-		scanReq["namespaces"] = namespaces
+	if scanReq["scan_depth"] == "" {
+		scanReq["scan_depth"] = "basic"
+	}
+	if scanReq["trigger_type"] == "" {
+		scanReq["trigger_type"] = "manual"
+	}
+	if len(opts.Namespaces) > 0 {
+		scanReq["namespaces"] = opts.Namespaces
+	}
+	if len(opts.ObjectPaths) > 0 {
+		scanReq["object_paths"] = opts.ObjectPaths
 	}
 
 	body, err := json.Marshal(scanReq)
@@ -332,6 +357,44 @@ func (c *MetaClient) TriggerScanEngine(engineID uint, namespaces []string) error
 	}
 
 	return nil
+}
+
+// TriggerScanEngine 触发引擎元数据扫描。
+func (c *MetaClient) TriggerScanEngine(engineID uint, namespaces []string) error {
+	return c.TriggerScan(MetaScanOptions{
+		EngineID:    engineID,
+		Namespaces:  namespaces,
+		ScanDepth:   "basic",
+		Force:       false,
+		TriggerType: "manual",
+	})
+}
+
+func (c *MetaClient) EnsureItemDeepScanned(itemID uint) error {
+	return c.TriggerScan(MetaScanOptions{
+		ItemID:      itemID,
+		ScanDepth:   "deep",
+		Force:       false,
+		TriggerType: "manual",
+	})
+}
+
+func (c *MetaClient) ForceRefreshItem(itemID uint) error {
+	return c.TriggerScan(MetaScanOptions{
+		ItemID:      itemID,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: "manual",
+	})
+}
+
+func (c *MetaClient) ForceRefreshNode(nodeID uint) error {
+	return c.TriggerScan(MetaScanOptions{
+		NodeID:      nodeID,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: "manual",
+	})
 }
 
 // ListItems 获取引擎的已扫描数据项列表，支持按命名空间过滤。

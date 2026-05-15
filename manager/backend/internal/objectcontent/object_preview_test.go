@@ -3,6 +3,8 @@ package objectcontent
 import (
 	"context"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/addp/common/format"
@@ -112,7 +114,7 @@ func TestObjectContentMatcherWPS(t *testing.T) {
 
 func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 	t.Parallel()
-	wps, err := builtinContentFactories["wps"](ObjectContentPluginConfig{Name: "wps"})
+	wps, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "wps", Builtin: "wps"})
 	if err != nil {
 		t.Fatalf("build wps handler: %v", err)
 	}
@@ -120,7 +122,7 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 		t.Fatalf("expected WPS handler to match descriptor MIME")
 	}
 
-	container, err := builtinContentFactories["container"](ObjectContentPluginConfig{Name: "container"})
+	container, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "container", Builtin: "container"})
 	if err != nil {
 		t.Fatalf("build container handler: %v", err)
 	}
@@ -134,7 +136,7 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 		}
 	}
 
-	image, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	image, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "image", Builtin: "image"})
 	if err != nil {
 		t.Fatalf("build image handler: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 
 func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, "../../plugins/content")
+	LoadObjectContentPlugins(registry, "../../plugins/manifest.json")
 
 	tests := []struct {
 		name string
@@ -205,9 +207,133 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, "")
+
+	tests := []struct {
+		name string
+		req  ObjectContentRequest
+		want string
+	}{
+		{
+			name: "pdf",
+			req:  ObjectContentRequest{Format: "pdf"},
+			want: "builtin:content-pdf",
+		},
+		{
+			name: "docx",
+			req:  ObjectContentRequest{Extension: ".docx", ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+			want: "builtin:content-docx",
+		},
+		{
+			name: "json",
+			req:  ObjectContentRequest{Extension: ".json", ContentType: "application/json"},
+			want: "builtin:content-json",
+		},
+		{
+			name: "video",
+			req:  ObjectContentRequest{Extension: ".mp4", ContentType: "video/mp4"},
+			want: "builtin:content-video",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			handler := registry.Resolve(&tt.req)
+			if handler == nil {
+				t.Fatalf("expected handler %s, got nil", tt.want)
+			}
+			if handler.Name() != tt.want {
+				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadObjectContentPluginsUsesManifestDefaultContentPlugins(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	config := []byte(`{"default_content_plugins":[{"name":"builtin:content-json","type":"builtin","builtin":"json"}]}`)
+	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
+		t.Fatalf("write content manifest: %v", err)
+	}
+
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, manifestPath)
+
+	if handler := registry.Resolve(&ObjectContentRequest{Format: "json"}); handler == nil || handler.Name() != "builtin:content-json" {
+		t.Fatalf("json handler = %#v, want builtin:content-json", handler)
+	}
+	if handler := registry.Resolve(&ObjectContentRequest{Format: "pdf"}); handler != nil {
+		t.Fatalf("pdf handler = %q, want nil because manifest defaults only contain json", handler.Name())
+	}
+}
+
+func TestObjectContentRegistryReplacesHandlerWithSameName(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	low, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "builtin:content-json", Builtin: "json"})
+	if err != nil {
+		t.Fatalf("build low priority handler: %v", err)
+	}
+	priority := 99
+	high, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "builtin:content-json", Builtin: "json", Priority: &priority})
+	if err != nil {
+		t.Fatalf("build high priority handler: %v", err)
+	}
+
+	registry.Register(low)
+	registry.Register(high)
+
+	handler := registry.Resolve(&ObjectContentRequest{Format: "json"})
+	if handler == nil {
+		t.Fatal("expected json handler")
+	}
+	if handler.Priority() != priority {
+		t.Fatalf("priority = %d, want %d", handler.Priority(), priority)
+	}
+	if len(registry.handlers) != 1 {
+		t.Fatalf("handler count = %d, want 1", len(registry.handlers))
+	}
+}
+
+func TestLoadObjectContentPluginsUsesManifestOverrides(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	config := []byte(`{"content_plugins":[{"name":"builtin:content-image","type":"builtin","builtin":"image","max_bytes":4}]}`)
+	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
+		t.Fatalf("write content manifest: %v", err)
+	}
+
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, manifestPath)
+
+	handler := registry.Resolve(&ObjectContentRequest{Extension: ".png", ContentType: "image/png", Size: 8})
+	if handler == nil {
+		t.Fatal("expected image handler")
+	}
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{Name: "photo.png", Extension: ".png", ContentType: "image/png", Size: 8},
+		func(limit int64) ([]byte, bool, error) {
+			if limit != 4 {
+				t.Fatalf("limit = %d, want manifest override 4", limit)
+			}
+			return []byte{0x89, 0x50, 0x4E, 0x47}, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle image: %v", err)
+	}
+	if truncated || content.Kind != "image" {
+		t.Fatalf("content = %#v truncated=%v, want image without truncation", content, truncated)
+	}
+}
+
 func TestVideoContentHandlerReturnsURLMaterial(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["video"](ObjectContentPluginConfig{Name: "video"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "video", Builtin: "video"})
 	if err != nil {
 		t.Fatalf("build video handler: %v", err)
 	}
@@ -237,7 +363,7 @@ func TestVideoContentHandlerReturnsURLMaterial(t *testing.T) {
 
 func TestJSONContentHandlerReturnsMapMaterialForSpatialJSON(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["json"](ObjectContentPluginConfig{Name: "json"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "json", Builtin: "json"})
 	if err != nil {
 		t.Fatalf("build json handler: %v", err)
 	}
@@ -269,7 +395,7 @@ func TestJSONContentHandlerReturnsMapMaterialForSpatialJSON(t *testing.T) {
 
 func TestJSONContentHandlerKeepsPlainJSONRenderer(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["json"](ObjectContentPluginConfig{Name: "json"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "json", Builtin: "json"})
 	if err != nil {
 		t.Fatalf("build json handler: %v", err)
 	}
@@ -298,7 +424,7 @@ func TestJSONContentHandlerKeepsPlainJSONRenderer(t *testing.T) {
 
 func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "image", Builtin: "image"})
 	if err != nil {
 		t.Fatalf("build image handler: %v", err)
 	}
@@ -335,7 +461,7 @@ func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
 
 func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "image", Builtin: "image"})
 	if err != nil {
 		t.Fatalf("build image handler: %v", err)
 	}
@@ -371,7 +497,7 @@ func TestImageContentHandlerDoesNotTrustAttributeURL(t *testing.T) {
 
 func TestImageContentHandlerReturnsRawBinaryMaterialWithoutURL(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["image"](ObjectContentPluginConfig{Name: "image"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "image", Builtin: "image"})
 	if err != nil {
 		t.Fatalf("build image handler: %v", err)
 	}
@@ -532,7 +658,7 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileComponents(t *testing.
 
 func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
 	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, "../../plugins/content")
+	LoadObjectContentPlugins(registry, "../../plugins/manifest.json")
 
 	for _, req := range []ObjectContentRequest{
 		{Format: "csv"},
@@ -583,7 +709,7 @@ func TestObjectContentMatcherIgnoresUnknownFormat(t *testing.T) {
 
 func TestTextContentHandlerUsesExplicitTextMatcher(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["text"](ObjectContentPluginConfig{Name: "text"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "text", Builtin: "text"})
 	if err != nil {
 		t.Fatalf("build text handler: %v", err)
 	}
@@ -601,7 +727,7 @@ func TestTextContentHandlerUsesExplicitTextMatcher(t *testing.T) {
 
 func TestTextContentHandlerUsesDocumentTextReader(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["text"](ObjectContentPluginConfig{Name: "text"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "text", Builtin: "text"})
 	if err != nil {
 		t.Fatalf("build text handler: %v", err)
 	}
@@ -629,7 +755,7 @@ func TestTextContentHandlerUsesDocumentTextReader(t *testing.T) {
 
 func TestUnsupportedContentHandlerProbesText(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["unsupported"](ObjectContentPluginConfig{Name: "unsupported"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "unsupported", Builtin: "unsupported"})
 	if err != nil {
 		t.Fatalf("build unsupported handler: %v", err)
 	}
@@ -660,7 +786,7 @@ func TestUnsupportedContentHandlerProbesText(t *testing.T) {
 
 func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["unsupported"](ObjectContentPluginConfig{Name: "unsupported"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "unsupported", Builtin: "unsupported"})
 	if err != nil {
 		t.Fatalf("build unsupported handler: %v", err)
 	}
@@ -691,7 +817,7 @@ func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
 
 func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["pdf"](ObjectContentPluginConfig{Name: "pdf"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pdf", Builtin: "pdf"})
 	if err != nil {
 		t.Fatalf("build pdf handler: %v", err)
 	}
@@ -731,7 +857,7 @@ func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) 
 
 func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["wps"](ObjectContentPluginConfig{Name: "wps"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "wps", Builtin: "wps"})
 	if err != nil {
 		t.Fatalf("build wps handler: %v", err)
 	}
@@ -765,7 +891,7 @@ func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL
 
 func TestMarkdownHandlerDeclaresMarkdownMaterialAndRenderer(t *testing.T) {
 	t.Parallel()
-	handler, err := builtinContentFactories["markdown"](ObjectContentPluginConfig{Name: "markdown"})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "markdown", Builtin: "markdown"})
 	if err != nil {
 		t.Fatalf("build markdown handler: %v", err)
 	}
@@ -794,7 +920,7 @@ func TestMarkdownHandlerDeclaresMarkdownMaterialAndRenderer(t *testing.T) {
 func TestMarkdownContentHandlerUsesDocumentTextReader(t *testing.T) {
 	t.Parallel()
 	maxBytes := int64(6)
-	handler, err := builtinContentFactories["markdown"](ObjectContentPluginConfig{Name: "markdown", MaxBytes: &maxBytes})
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "markdown", Builtin: "markdown", MaxBytes: &maxBytes})
 	if err != nil {
 		t.Fatalf("build markdown handler: %v", err)
 	}

@@ -1,7 +1,0 @@
-{
-  "name": "builtin:doc-collection",
-  "type": "builtin",
-  "builtin": "doc-collection",
-  "description": "NoSQL文档数据库集合预览 (MongoDB, CouchDB等)",
-  "enabled": true
-}

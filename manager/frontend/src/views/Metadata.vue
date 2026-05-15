@@ -572,8 +572,7 @@ const runDisplayName = (run) => {
 
 const scanDepthOptions = computed(() => [
   { label: t('manager.metadata.scanDepthBasic'), value: 'basic' },
-  { label: t('manager.metadata.scanDepthDeep'), value: 'deep' },
-  { label: t('manager.metadata.scanDepthFull'), value: 'full' }
+  { label: t('manager.metadata.scanDepthDeep'), value: 'deep' }
 ])
 
 let runPollingTimer = null
@@ -924,7 +923,7 @@ const handleManualScan = async () => {
   if (!selectedDataSourceId.value) return
   manualScanning.value = true
   try {
-    await managerAPI.createManualScanRun(selectedDataSourceId.value, { scan_depth: 'deep', scan_type: 'manual' })
+    await managerAPI.createManualScanRun(selectedDataSourceId.value, { scan_depth: 'deep', force: false })
     ElMessage.success(t('manager.metadata.instantScanSubmitted'))
     await loadScanRuns()
     startRunPolling()

@@ -10,7 +10,12 @@ import (
 const (
 	TriggerTypeManual    = "manual"    // 手动触发
 	TriggerTypeScheduled = "scheduled" // 定时触发
-	TriggerTypeAuto      = "auto"      // 自动触发（如 Transfer 完成后）
+)
+
+const (
+	ScannedDepthNone  = "none"
+	ScannedDepthBasic = "basic"
+	ScannedDepthDeep  = "deep"
 )
 
 // ScanTask 定义可复用的元数据扫描任务（手动或定时）

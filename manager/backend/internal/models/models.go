@@ -283,5 +283,5 @@ type MetaManualScanRequest struct {
 	Namespaces  []string `json:"namespaces"`
 	ObjectPaths []string `json:"object_paths"`
 	ScanDepth   string   `json:"scan_depth"`
-	ScanType    string   `json:"scan_type"`
+	Force       bool     `json:"force"`
 }

@@ -9,11 +9,15 @@ type JSONMap = commonModels.JSONMap
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	EngineID    uint     `json:"engine_id" binding:"required"` // 资源ID
-	Namespaces  []string `json:"namespaces"`                   // 要扫描的命名空间列表（空则全部）
-	ObjectPaths []string `json:"object_paths"`                 // 对象存储/文件系统选择的路径
-	ScanDepth   string   `json:"scan_depth"`                   // basic/deep/full
-	ScanType    string   `json:"scan_type"`                    // manual/auto/scheduled
+	EngineID    uint     `json:"engine_id"`    // 资源ID
+	Namespaces  []string `json:"namespaces"`   // 要扫描的命名空间列表（空则全部）
+	ObjectPaths []string `json:"object_paths"` // 对象存储/文件系统选择的路径
+	NodeID      uint     `json:"node_id"`      // 要扫描的节点 ID
+	ItemID      uint     `json:"item_id"`      // 要扫描的数据项 ID
+	Targets     []string `json:"targets"`      // locator 目标列表
+	ScanDepth   string   `json:"scan_depth"`   // basic/deep
+	TriggerType string   `json:"trigger_type"` // manual/scheduled
+	Force       bool     `json:"force"`        // 是否强制重新扫描
 }
 
 // ScanResponse 扫描响应
@@ -53,6 +57,7 @@ type ScanTaskUpsertRequest struct {
 	Namespaces  []string `json:"namespaces"`
 	ObjectPaths []string `json:"object_paths"`
 	ScanDepth   string   `json:"scan_depth"`
+	Force       bool     `json:"force"`
 	Schedule    string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行
 	Enabled     bool     `json:"enabled"`
 }
@@ -76,6 +81,7 @@ type MetaNodeLite struct {
 	Depth          int                    `json:"depth"`
 	Path           string                 `json:"path"`
 	ScanStatus     string                 `json:"scan_status"`
+	ScannedDepth   string                 `json:"scanned_depth"`
 	ScannedAt      *string                `json:"scanned_at,omitempty"`
 	ItemCount      int                    `json:"item_count"`
 	TotalSizeBytes int64                  `json:"total_size_bytes"`
@@ -94,6 +100,8 @@ type MetaItemLite struct {
 	RowCount      *int64                 `json:"row_count,omitempty"`
 	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
 	DataUpdatedAt *string                `json:"data_updated_at,omitempty"`
+	ScannedAt     *string                `json:"scanned_at,omitempty"`
+	ScannedDepth  string                 `json:"scanned_depth"`
 	Attributes    map[string]interface{} `json:"attributes,omitempty"`
 }
 

@@ -112,12 +112,17 @@ func (r *ScanRepository) SoftDeleteObjectCatalogItemsMissingFingerprints(tenantI
 }
 
 func (r *ScanRepository) FinalizeObjectCatalogPrefixNode(node *models.MetaNode, itemCount int, totalSize int64) error {
+	return r.FinalizeObjectCatalogPrefixNodeWithDepth(node, itemCount, totalSize, "")
+}
+
+func (r *ScanRepository) FinalizeObjectCatalogPrefixNodeWithDepth(node *models.MetaNode, itemCount int, totalSize int64, scanDepth string) error {
 	now := time.Now()
 	return r.db.Model(node).Updates(map[string]interface{}{
 		"item_count":       itemCount,
 		"total_size_bytes": totalSize,
 		"scan_status":      "completed",
 		"scanned_at":       now,
+		"scanned_depth":    mergeScannedDepth(node.ScannedDepth, scanDepth),
 	}).Error
 }
 

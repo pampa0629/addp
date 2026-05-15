@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-json",
-  "type": "builtin",
-  "builtin": "json",
-  "priority": 60,
-  "match": {},
-  "max_bytes": 524288
-}

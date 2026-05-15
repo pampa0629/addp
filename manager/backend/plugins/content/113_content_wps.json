@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-wps",
-  "type": "builtin",
-  "builtin": "wps",
-  "priority": 74,
-  "match": {},
-  "max_bytes": 104857600
-}

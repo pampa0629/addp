@@ -287,6 +287,7 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		req.Namespaces,
 		req.ObjectPaths,
 		req.ScanDepth,
+		req.Force,
 		token,
 		time.Now(),
 	)
@@ -345,15 +346,16 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	reporter := scantask.NewExecProgressReporter(s, executionID, exec.TenantID)
 	reporter.Message("任务开始执行")
 
-	resp, scanErr := s.scanService.ScanEngineWithDepth(
-		execConfig.EngineID,
-		uint(exec.TenantID),
-		execConfig.Namespaces,
-		execConfig.ObjectPaths,
-		execConfig.Token,
-		execConfig.ScanDepth,
-		reporter,
-	)
+	resp, scanErr := s.scanService.ScanEngineWithOptions(ScanOptions{
+		EngineID:    execConfig.EngineID,
+		TenantID:    uint(exec.TenantID),
+		Namespaces:  execConfig.Namespaces,
+		ObjectPaths: execConfig.ObjectPaths,
+		Token:       execConfig.Token,
+		ScanDepth:   execConfig.ScanDepth,
+		Force:       execConfig.Force,
+		Reporter:    reporter,
+	})
 	completeTime := time.Now()
 	durationMs := completeTime.Sub(start).Milliseconds()
 

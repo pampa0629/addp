@@ -72,6 +72,7 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 			path TEXT,
 			full_name TEXT,
 			scan_status TEXT,
+			scanned_depth TEXT,
 			scanned_at DATETIME,
 			scan_error TEXT,
 			item_count INTEGER,

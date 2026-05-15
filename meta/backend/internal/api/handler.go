@@ -165,6 +165,10 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.EngineID == 0 && req.NodeID == 0 && req.ItemID == 0 && len(req.Targets) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "engine_id, node_id, item_id or targets is required"})
+		return
+	}
 
 	token, ok := extractBearerToken(c)
 	if !ok {
@@ -537,7 +541,22 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 	// 注意：不强制要求 token，服务间调用通过 X-Internal-API-Key 认证（middleware 已处理）
 	// tenantID 已从 middleware 提取（line 494），用于多租户数据过滤
 
-	result, err := h.scanService.ScanEngine(req.EngineID, tenantID, req.Namespaces, req.ObjectPaths, token)
+	scanDepth := req.ScanDepth
+	if scanDepth == "" {
+		scanDepth = "basic"
+	}
+	result, err := h.scanService.ScanEngineWithOptions(service.ScanOptions{
+		EngineID:    req.EngineID,
+		TenantID:    tenantID,
+		Namespaces:  req.Namespaces,
+		ObjectPaths: req.ObjectPaths,
+		Token:       token,
+		ScanDepth:   scanDepth,
+		Force:       req.Force,
+		NodeID:      req.NodeID,
+		ItemID:      req.ItemID,
+		Targets:     req.Targets,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

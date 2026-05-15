@@ -2750,6 +2750,9 @@
         "github_com_addp_manager_internal_models.MetaManualScanRequest": {
             "type": "object",
             "properties": {
+                "force": {
+                    "type": "boolean"
+                },
                 "namespaces": {
                     "type": "array",
                     "items": {
@@ -2763,9 +2766,6 @@
                     }
                 },
                 "scan_depth": {
-                    "type": "string"
-                },
-                "scan_type": {
                     "type": "string"
                 }
             }

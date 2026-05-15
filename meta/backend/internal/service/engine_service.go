@@ -616,9 +616,10 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 
 	// 构建扫描请求（不限制 namespaces/object_paths，系统自动过滤）
 	req := &models.ScanRequest{
-		EngineID:  resource.ID,
-		ScanDepth: scanDepth,
-		ScanType:  "auto", // 标记为自动扫描
+		EngineID:    resource.ID,
+		ScanDepth:   scanDepth,
+		TriggerType: models.TriggerTypeManual,
+		Force:       false,
 	}
 
 	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）

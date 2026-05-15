@@ -14,11 +14,12 @@ func TestParseExecutionConfig(t *testing.T) {
 		[]string{"public"},
 		[]string{"bucket/path"},
 		"deep",
+		true,
 		"token",
 	)
 
 	parsed := ParseExecutionConfig(config)
-	if parsed.EngineID != 12 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || parsed.Token != "token" {
+	if parsed.EngineID != 12 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Token != "token" {
 		t.Fatalf("parsed scalar config = %#v", parsed)
 	}
 	if !reflect.DeepEqual(parsed.Namespaces, []string{"public"}) {

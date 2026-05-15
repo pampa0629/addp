@@ -118,33 +118,14 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		// 设置租户 ID（用于服务间调用时的租户隔离）
 		s.metaClient.SetTenantID(tenantID)
 
-		// 根据节点类型决定扫描范围
-		var namespaces []string
+		opts := refreshScanOptions(loc)
+		logger.L().Info("触发 Meta 刷新", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
 
-		switch loc.Type {
-		case resource.TypeTable:
-			// 表节点：扫描该表所在的命名空间
-			if len(loc.Path) > 0 {
-				namespaces = []string{loc.Path[0]}
-				logger.L().Info("触发命名空间级扫描（表节点）", "engine_id", loc.EngineID, "namespace", loc.Path[0])
-			}
-		case resource.TypeSchema:
-			// Schema/namespace 节点：扫描该命名空间
-			if len(loc.Path) > 0 {
-				namespaces = []string{loc.Path[0]}
-				logger.L().Info("触发命名空间级扫描（Schema 节点）", "engine_id", loc.EngineID, "namespace", loc.Path[0])
-			}
-		default:
-			// 其他类型（数据库、引擎根节点、对象存储等）：扫描整个引擎
-			logger.L().Info("触发引擎级扫描", "engine_id", loc.EngineID, "type", loc.Type)
-		}
-
-		// 调用 Meta 扫描 API
-		if err := s.metaClient.TriggerScanEngine(loc.EngineID, namespaces); err != nil {
+		if err := s.metaClient.TriggerScan(opts); err != nil {
 			// 扫描失败不中断流程，只记录警告
 			logger.L().Warn("触发 Meta 扫描失败", "error", err)
 		} else {
-			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID, "namespaces", namespaces)
+			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID)
 		}
 	}
 
@@ -181,6 +162,31 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	}
 
 	return nil, fmt.Errorf("node not found: %s", locatorURI)
+}
+
+func refreshScanOptions(loc *resource.ResourceLocator) commonClient.MetaScanOptions {
+	opts := commonClient.MetaScanOptions{
+		EngineID:    loc.EngineID,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: "manual",
+	}
+	if loc.MetaID == nil {
+		return opts
+	}
+	metaID := *loc.MetaID
+	switch loc.Type {
+	case resource.TypeTable, resource.TypeCollection, resource.TypeLabel, resource.TypeRelationship, resource.TypeObject, resource.TypeFile:
+		if metaID >= 100000 {
+			opts.ItemID = metaID - 100000
+			return opts
+		}
+	case resource.TypeSchema, resource.TypeDatabase, resource.TypeBucket, resource.TypeDirectory, resource.TypeRoot, resource.TypeDir:
+		opts.NodeID = metaID
+		return opts
+	}
+	opts.Targets = []string{loc.ToURI()}
+	return opts
 }
 
 // ListEngines 获取引擎列表（用于前端显示）

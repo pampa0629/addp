@@ -314,17 +314,13 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 		if depth := strings.TrimSpace(req.ScanDepth); depth != "" {
 			payload["scan_depth"] = depth
 		}
-		if scanType := strings.TrimSpace(req.ScanType); scanType != "" {
-			payload["scan_type"] = scanType
-		}
+		payload["force"] = req.Force
 	}
 
 	if _, ok := payload["scan_depth"]; !ok {
 		payload["scan_depth"] = "deep"
 	}
-	if _, ok := payload["scan_type"]; !ok {
-		payload["scan_type"] = "manual"
-	}
+	payload["trigger_type"] = "manual"
 
 	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/run/manual", nil, payload, authHeader)
 	if err != nil {

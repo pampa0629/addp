@@ -144,18 +144,15 @@ func main() {
 
 	contentRegistry := objectcontent.NewObjectContentRegistry()
 	pluginDirs := preview.ParsePluginDirSpec(cfg.PreviewPluginDir)
-	contentDirSpec := buildContentDirSpec(pluginDirs)
-	if contentDirSpec != "" {
-		objectcontent.LoadObjectContentPlugins(contentRegistry, contentDirSpec)
+	pluginManifestSpec := buildPluginManifestSpec(pluginDirs)
+	if pluginManifestSpec != "" {
+		objectcontent.LoadObjectContentPlugins(contentRegistry, pluginManifestSpec)
 	}
 	logger.L().Info("数据预览: 已激活内容插件")
 
 	previewRegistry := preview.NewPreviewRegistry()
 
-	// 加载预览插件（从配置目录）
-	// 同时扫描 plugins/ 根目录（向后兼容）和 plugins/providers/ 子目录（新架构）
-	providerDirSpec := buildProviderDirSpec(pluginDirs)
-	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, providerDirSpec)
+	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, pluginManifestSpec)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
@@ -303,37 +300,17 @@ func main() {
 	}
 }
 
-func buildContentDirSpec(dirs []string) string {
+func buildPluginManifestSpec(dirs []string) string {
 	if len(dirs) == 0 {
 		return ""
 	}
-	contentDirs := make([]string, 0, len(dirs))
+	manifestPaths := make([]string, 0, len(dirs))
 	for _, dir := range dirs {
 		trimmed := strings.TrimSpace(dir)
 		if trimmed == "" {
 			continue
 		}
-		contentDirs = append(contentDirs, filepath.Join(trimmed, "content"))
+		manifestPaths = append(manifestPaths, filepath.Join(trimmed, "manifest.json"))
 	}
-	return strings.Join(contentDirs, ",")
-}
-
-// buildProviderDirSpec 构建 Provider 插件目录列表
-// 同时扫描根目录（向后兼容）和 providers/ 子目录（新架构）
-func buildProviderDirSpec(dirs []string) string {
-	if len(dirs) == 0 {
-		return ""
-	}
-	providerDirs := make([]string, 0, len(dirs)*2)
-	for _, dir := range dirs {
-		trimmed := strings.TrimSpace(dir)
-		if trimmed == "" {
-			continue
-		}
-		// 扫描根目录（向后兼容，目前已无文件）
-		providerDirs = append(providerDirs, trimmed)
-		// 扫描 providers/ 子目录（新架构）
-		providerDirs = append(providerDirs, filepath.Join(trimmed, "providers"))
-	}
-	return strings.Join(providerDirs, ",")
+	return strings.Join(manifestPaths, ",")
 }

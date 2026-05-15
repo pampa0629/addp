@@ -20,6 +20,7 @@ func ToMetaNodeLite(node models.MetaNode) models.MetaNodeLite {
 		Depth:          node.Depth,
 		Path:           node.Path,
 		ScanStatus:     node.ScanStatus,
+		ScannedDepth:   node.ScannedDepth,
 		ScannedAt:      scannedAt,
 		ItemCount:      node.ItemCount,
 		TotalSizeBytes: node.TotalSizeBytes,
@@ -33,6 +34,11 @@ func ToMetaItemLite(item models.MetaItem) models.MetaItemLite {
 		formatted := item.DataUpdatedAt.UTC().Format("2006-01-02T15:04:05Z")
 		dataUpdatedAt = &formatted
 	}
+	var scannedAt *string
+	if item.ScannedAt != nil {
+		formatted := item.ScannedAt.UTC().Format("2006-01-02T15:04:05Z")
+		scannedAt = &formatted
+	}
 
 	return models.MetaItemLite{
 		ID:            item.ID,
@@ -45,6 +51,8 @@ func ToMetaItemLite(item models.MetaItem) models.MetaItemLite {
 		RowCount:      item.RowCount,
 		SizeBytes:     item.SizeBytes,
 		DataUpdatedAt: dataUpdatedAt,
+		ScannedAt:     scannedAt,
+		ScannedDepth:  item.ScannedDepth,
 		Attributes:    item.Attributes,
 	}
 }

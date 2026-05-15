@@ -1,7 +1,0 @@
-{
-  "name": "builtin:graph-label",
-  "type": "builtin",
-  "builtin": "graph-label",
-  "description": "Neo4j 节点标签预览（采样节点属性）",
-  "enabled": true
-}

@@ -19,16 +19,18 @@ type ExecutionConfig struct {
 	Namespaces  []string
 	ObjectPaths []string
 	ScanDepth   string
+	Force       bool
 	Token       string
 }
 
-func ManualExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth, token string) commonModels.JSONMap {
+func ManualExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool, token string) commonModels.JSONMap {
 	return commonModels.JSONMap{
 		"engine_id":    engineID,
 		"storage_type": storageType,
 		"namespaces":   namespaces,
 		"object_paths": objectPaths,
 		"scan_depth":   scanDepth,
+		"force":        force,
 		"token":        token,
 	}
 }
@@ -40,16 +42,18 @@ func TaskExecutionConfig(engineID uint, storageType string, params models.JSONMa
 		JSONMapStringSlice(params, "namespaces"),
 		JSONMapStringSlice(params, "object_paths"),
 		JSONMapString(params, "scan_depth", defaultScanDepth),
+		JSONMapBool(params, "force", false),
 	)
 }
 
-func TargetExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string) commonModels.JSONMap {
+func TargetExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool) commonModels.JSONMap {
 	return commonModels.JSONMap{
 		"engine_id":    engineID,
 		"storage_type": storageType,
 		"namespaces":   namespaces,
 		"object_paths": objectPaths,
 		"scan_depth":   scanDepth,
+		"force":        force,
 	}
 }
 
@@ -73,17 +77,19 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	}
 	parsed.StorageType, _ = config["storage_type"].(string)
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
+	parsed.Force = BoolFromInterface(config["force"])
 	parsed.Token, _ = config["token"].(string)
 	parsed.Namespaces = StringSliceFromInterface(config["namespaces"])
 	parsed.ObjectPaths = StringSliceFromInterface(config["object_paths"])
 	return parsed
 }
 
-func TaskParameters(namespaces, objectPaths []string, scanDepth string) models.JSONMap {
+func TaskParameters(namespaces, objectPaths []string, scanDepth string, force bool) models.JSONMap {
 	return models.JSONMap{
 		"namespaces":   namespaces,
 		"object_paths": objectPaths,
 		"scan_depth":   scanDepth,
+		"force":        force,
 	}
 }
 

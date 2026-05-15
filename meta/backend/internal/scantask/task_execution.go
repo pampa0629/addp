@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, namespaces, objectPaths []string, scanDepth, token string, now time.Time) *commonModels.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool, token string, now time.Time) *commonModels.TaskExecution {
 	userIDInt := int(userID)
 	return &commonModels.TaskExecution{
 		TenantID:    int(tenantID),
@@ -25,6 +25,7 @@ func NewManualExecution(tenantID, userID uint, engineID uint, storageType string
 			namespaces,
 			objectPaths,
 			scanDepth,
+			force,
 			token,
 		),
 		StartedAt: &now,
@@ -64,7 +65,7 @@ func NewScheduledExecution(task *metaModels.ScanTask, storageType string, target
 		SourceTaskName:  &task.Name,
 		Status:          commonModels.ExecutionStatusPending,
 		TriggerType:     commonModels.TriggerTypeSchedule,
-		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.Namespaces, targets.ObjectPaths, "deep"),
+		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.Namespaces, targets.ObjectPaths, JSONMapString(task.Parameters, "scan_depth", "deep"), JSONMapBool(task.Parameters, "force", false)),
 		StartedAt:       &now,
 		CreatedAt:       now,
 		UpdatedAt:       now,

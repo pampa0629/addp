@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -68,15 +69,36 @@ func (r *ObjectContentRegistry) Register(handler ObjectContentHandler) {
 	if handler == nil {
 		return
 	}
+	for index, existing := range r.handlers {
+		if existing != nil && existing.Name() == handler.Name() {
+			r.handlers[index] = handler
+			r.sortHandlers()
+			return
+		}
+	}
 	r.handlers = append(r.handlers, handler)
-	// 按优先级排序（大优先）
-	for i := len(r.handlers) - 1; i > 0; i-- {
-		if r.handlers[i].Priority() > r.handlers[i-1].Priority() {
-			r.handlers[i], r.handlers[i-1] = r.handlers[i-1], r.handlers[i]
+	r.sortHandlers()
+}
+
+func (r *ObjectContentRegistry) Unregister(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	filtered := r.handlers[:0]
+	for _, handler := range r.handlers {
+		if handler != nil && handler.Name() == name {
 			continue
 		}
-		break
+		filtered = append(filtered, handler)
 	}
+	r.handlers = filtered
+}
+
+func (r *ObjectContentRegistry) sortHandlers() {
+	sort.SliceStable(r.handlers, func(i, j int) bool {
+		return r.handlers[i].Priority() > r.handlers[j].Priority()
+	})
 }
 
 func (r *ObjectContentRegistry) Resolve(req *ObjectContentRequest) ObjectContentHandler {

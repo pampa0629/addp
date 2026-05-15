@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
@@ -51,6 +52,7 @@ func (s *FileCatalogScanService) ScanPaths(
 	tenantID uint,
 	paths []string,
 	scanDepth string,
+	force bool,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
 	p, err := plugin.Get(resource.EngineType)
@@ -124,12 +126,12 @@ func (s *FileCatalogScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm, strings.EqualFold(scanDepth, "deep"))
+		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm, scanDepth, force)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
 		} else {
-			_ = s.repo.FinalizeNodeState(rootNode, "completed", items, 0, "")
+			_ = s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", items, 0, "", scanDepth)
 		}
 		totalItems += items
 
@@ -154,7 +156,8 @@ func (s *FileCatalogScanService) scanDirectory(
 	parentNode *models.MetaNode,
 	isBucketRoot bool,
 	itemTerm string,
-	includeContentIndex bool,
+	scanDepth string,
+	force bool,
 ) (int, error) {
 	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
@@ -167,7 +170,8 @@ func (s *FileCatalogScanService) scanDirectory(
 
 	// 根目录允许非独占组合识别（如根目录下的 multi 组件 item），但不允许被目录树 whole-scope 识别整体吞掉。
 	// 子目录走完整组合识别入口；只有 whole scope 等明确独占范围时才停止后续探测。
-	if isBucketRoot {
+	isDeepScan := strings.EqualFold(scanDepth, "deep")
+	if isDeepScan && isBucketRoot {
 		detection, err := resolveNonExclusiveScopeItems(ctx, contentReader, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取根目录组合数据项信息失败",
@@ -190,7 +194,7 @@ func (s *FileCatalogScanService) scanDirectory(
 				}
 			}
 		}
-	} else {
+	} else if isDeepScan {
 		detection, err := s.resolveFileCatalogDirectoryItems(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取复合数据项信息失败",
@@ -224,13 +228,22 @@ func (s *FileCatalogScanService) scanDirectory(
 			continue
 		}
 		detected := metaitem.InferSingleResourceItem(file)
-		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, includeContentIndex); err == nil {
-			itemName := file.Name
-			fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
-			_, upsertErr := s.repo.UpsertItem(
+		itemName := file.Name
+		fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
+		existingItem, itemExists, findErr := s.repo.FindItemByFullName(tenantID, resource.ID, fullName)
+		if findErr != nil {
+			s.log.Warn("查询文件对象失败", "path", file.Path, "error", findErr)
+		}
+		if itemExists && !force && !fileItemNeedsScan(existingItem, file, isDeepScan) {
+			totalItems++
+			continue
+		}
+		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, isDeepScan); err == nil {
+			_, upsertErr := s.repo.UpsertItemWithDepth(
 				tenantID, resource.ID, parentNode,
 				itemTerm, itemName, fullName,
-				fileAttrs, nil, &file.Size, nil,
+				fileAttrs, nil, &file.Size, fileModifiedAtPtr(file.ModifiedAt),
+				scanDepth,
 			)
 			if upsertErr != nil {
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
@@ -257,17 +270,43 @@ func (s *FileCatalogScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, includeContentIndex)
+		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
 		} else {
-			_ = s.repo.FinalizeNodeState(subdirNode, "completed", items, 0, "")
+			_ = s.repo.FinalizeNodeStateWithDepth(subdirNode, "completed", items, 0, "", scanDepth)
 		}
 		totalItems += items
 	}
 
 	return totalItems, nil
+}
+
+func fileModifiedAtPtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
+}
+
+func fileItemNeedsScan(existing *models.MetaItem, file plugin.FileEntry, isDeepScan bool) bool {
+	if existing == nil {
+		return true
+	}
+	if isDeepScan && existing.ScannedDepth != models.ScannedDepthDeep {
+		return true
+	}
+	if existing.SizeBytes != nil && *existing.SizeBytes != file.Size {
+		return true
+	}
+	if !file.ModifiedAt.IsZero() && existing.DataUpdatedAt != nil && file.ModifiedAt.After(*existing.DataUpdatedAt) {
+		return true
+	}
+	if existing.DataUpdatedAt == nil && !file.ModifiedAt.IsZero() {
+		return true
+	}
+	return false
 }
 
 func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
@@ -284,10 +323,11 @@ func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
 	}
 
 	itemName, fullName := metacatalog.FileCatalogDetectedItemName(dirPath, detected)
-	_, upsertErr := s.repo.UpsertItem(
+	_, upsertErr := s.repo.UpsertItemWithDepth(
 		tenantID, resource.ID, parentNode,
 		itemTerm, itemName, fullName,
 		attrs, nil, int64Ptr(detected.Size()), nil,
+		models.ScannedDepthDeep,
 	)
 	if upsertErr != nil {
 		s.log.Warn("保存复合数据项失败",

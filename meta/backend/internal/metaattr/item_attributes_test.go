@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/meta/internal/metaitem"
 )
 

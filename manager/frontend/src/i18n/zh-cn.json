@@ -391,8 +391,7 @@
       "instantScanSubmitted": "已提交即时扫描，稍后更新运行状态",
       "instantScanFailed": "提交即时扫描失败：{error}",
       "scanDepthBasic": "基础",
-      "scanDepthDeep": "深入",
-      "scanDepthFull": "全量"
+      "scanDepthDeep": "深入"
     }
   },
   "engine": {

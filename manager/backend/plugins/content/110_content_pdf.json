@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-pdf",
-  "type": "builtin",
-  "builtin": "pdf",
-  "priority": 80,
-  "match": {},
-  "max_bytes": 20971520
-}

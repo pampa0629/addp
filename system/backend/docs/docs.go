@@ -2069,7 +2069,7 @@ const docTemplate = `{
                     ]
                 },
                 "scan_depth": {
-                    "description": "兼容旧版字段：shallow, deep",
+                    "description": "默认扫描深度：basic 或 deep",
                     "type": "string"
                 },
                 "schedule_time": {
@@ -2088,7 +2088,7 @@ const docTemplate = `{
                     }
                 },
                 "scheduled_scan": {
-                    "description": "启用定时扫描（深度固定为 deep）",
+                    "description": "启用定时扫描",
                     "type": "boolean"
                 }
             }
@@ -2945,7 +2945,7 @@ const docTemplate = `{
                     ]
                 },
                 "scan_depth": {
-                    "description": "兼容旧版字段：shallow, deep",
+                    "description": "默认扫描深度：basic 或 deep",
                     "type": "string"
                 },
                 "schedule_time": {
@@ -2964,7 +2964,7 @@ const docTemplate = `{
                     }
                 },
                 "scheduled_scan": {
-                    "description": "启用定时扫描（深度固定为 deep）",
+                    "description": "启用定时扫描",
                     "type": "boolean"
                 }
             }

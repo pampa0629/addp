@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-image",
-  "type": "builtin",
-  "builtin": "image",
-  "priority": 70,
-  "match": {},
-  "max_bytes": 10485760
-}

@@ -2757,6 +2757,9 @@ const docTemplate = `{
         "github_com_addp_manager_internal_models.MetaManualScanRequest": {
             "type": "object",
             "properties": {
+                "force": {
+                    "type": "boolean"
+                },
                 "namespaces": {
                     "type": "array",
                     "items": {
@@ -2770,9 +2773,6 @@ const docTemplate = `{
                     }
                 },
                 "scan_depth": {
-                    "type": "string"
-                },
-                "scan_type": {
                     "type": "string"
                 }
             }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -256,23 +257,70 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 	return scantask.AutoScanResponse(len(scannedResourceIDs), counts, startTime, time.Now()), nil
 }
 
+type ScanOptions struct {
+	EngineID    uint
+	TenantID    uint
+	Namespaces  []string
+	ObjectPaths []string
+	Token       string
+	ScanDepth   string
+	Force       bool
+	Reporter    ScanProgressReporter
+	NodeID      uint
+	ItemID      uint
+	Targets     []string
+}
+
 // ScanEngine 扫描指定引擎
 func (s *ScanService) ScanEngine(engineID, tenantID uint, namespaces, objectPaths []string, token string) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(engineID, tenantID, namespaces, objectPaths, token, "deep", nil)
+	return s.ScanEngineWithOptions(ScanOptions{
+		EngineID:    engineID,
+		TenantID:    tenantID,
+		Namespaces:  namespaces,
+		ObjectPaths: objectPaths,
+		Token:       token,
+		ScanDepth:   "basic",
+	})
 }
 
 // ScanEngineWithProgress 扫描指定引擎，并通过 reporter 汇报进度
 func (s *ScanService) ScanEngineWithProgress(engineID, tenantID uint, namespaces, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(engineID, tenantID, namespaces, objectPaths, token, "deep", reporter)
+	return s.ScanEngineWithOptions(ScanOptions{
+		EngineID:    engineID,
+		TenantID:    tenantID,
+		Namespaces:  namespaces,
+		ObjectPaths: objectPaths,
+		Token:       token,
+		ScanDepth:   "basic",
+		Reporter:    reporter,
+	})
 }
 
 // ScanEngineWithDepth 扫描指定引擎，支持指定扫描深度
 func (s *ScanService) ScanEngineWithDepth(engineID, tenantID uint, namespaces, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(engineID, tenantID, namespaces, objectPaths, token, scanDepth, reporter)
+	return s.ScanEngineWithOptions(ScanOptions{
+		EngineID:    engineID,
+		TenantID:    tenantID,
+		Namespaces:  namespaces,
+		ObjectPaths: objectPaths,
+		Token:       token,
+		ScanDepth:   scanDepth,
+		Reporter:    reporter,
+	})
 }
 
-func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanResponse, error) {
 	startTime := time.Now()
+	tenantID := opts.TenantID
+	namespaces := opts.Namespaces
+	objectPaths := opts.ObjectPaths
+	token := opts.Token
+	scanDepth := opts.ScanDepth
+	reporter := opts.Reporter
+	engineID, err := s.resolveScanEngineID(tenantID, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// 获取资源
 	if reporter != nil {
@@ -287,23 +335,31 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		effectiveTenantID = *resource.TenantID
 	}
 
-	var directExecID string
-	if reporter == nil {
-		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, namespaces, objectPaths, startTime)
-		if createErr != nil {
-			return nil, createErr
-		}
-		directExecID = execID
+	resolvedNamespaces, resolvedObjectPaths, err := s.resolveScanTargets(effectiveTenantID, opts)
+	if err != nil {
+		return nil, err
 	}
+	namespaces = append(namespaces, resolvedNamespaces...)
+	objectPaths = append(objectPaths, resolvedObjectPaths...)
 
 	scanDepth, err = scantask.NormalizeScanDepth(scanDepth, scantask.ScanDepthBasic)
 	if err != nil {
 		return nil, err
 	}
 
+	var directExecID string
+	if reporter == nil {
+		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, namespaces, objectPaths, scanDepth, opts.Force, startTime)
+		if createErr != nil {
+			return nil, createErr
+		}
+		directExecID = execID
+	}
+
 	startFields := append(connectionLogFields(resource),
 		"mode", "manual",
 		"scan_depth", scanDepth,
+		"force", opts.Force,
 	)
 	if len(namespaces) > 0 {
 		startFields = append(startFields, "target_namespaces", namespaces)
@@ -319,6 +375,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 		Namespaces:  namespaces,
 		ObjectPaths: objectPaths,
 		ScanDepth:   scanDepth,
+		Force:       opts.Force,
 		Reporter:    reporter,
 		Mode:        scanDispatchManual,
 	})
@@ -364,6 +421,170 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, namespaces, 
 	), nil
 }
 
+func (s *ScanService) resolveScanEngineID(tenantID uint, opts ScanOptions) (uint, error) {
+	if opts.EngineID > 0 {
+		return opts.EngineID, nil
+	}
+	if opts.NodeID > 0 {
+		var node models.MetaNode
+		if err := s.db.Select("engine_id").Where("tenant_id = ? AND id = ?", tenantID, opts.NodeID).First(&node).Error; err != nil {
+			return 0, fmt.Errorf("node target not found: %w", err)
+		}
+		return node.EngineID, nil
+	}
+	if opts.ItemID > 0 {
+		var item models.MetaItem
+		if err := s.db.Select("engine_id").Where("tenant_id = ? AND id = ?", tenantID, opts.ItemID).First(&item).Error; err != nil {
+			return 0, fmt.Errorf("item target not found: %w", err)
+		}
+		return item.EngineID, nil
+	}
+	for _, target := range opts.Targets {
+		if id, ok := engineIDFromLocator(target); ok {
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("engine_id is required")
+}
+
+func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]string, []string, error) {
+	namespaces := []string{}
+	objectPaths := []string{}
+
+	if opts.NodeID > 0 {
+		var node models.MetaNode
+		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.NodeID).First(&node).Error; err != nil {
+			return nil, nil, fmt.Errorf("node target not found: %w", err)
+		}
+		ns, paths := scanTargetFromNode(node)
+		namespaces = append(namespaces, ns...)
+		objectPaths = append(objectPaths, paths...)
+	}
+
+	if opts.ItemID > 0 {
+		var item models.MetaItem
+		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.ItemID).First(&item).Error; err != nil {
+			return nil, nil, fmt.Errorf("item target not found: %w", err)
+		}
+		ns, paths := scanTargetFromItem(item)
+		namespaces = append(namespaces, ns...)
+		objectPaths = append(objectPaths, paths...)
+	}
+
+	for _, target := range opts.Targets {
+		ns, paths := scanTargetFromLocator(target)
+		namespaces = append(namespaces, ns...)
+		objectPaths = append(objectPaths, paths...)
+	}
+
+	return uniqueNonEmpty(namespaces), uniqueNonEmpty(objectPaths), nil
+}
+
+func scanTargetFromNode(node models.MetaNode) ([]string, []string) {
+	switch node.NodeType {
+	case "schema", "database":
+		if node.FullName != "" {
+			return []string{node.FullName}, nil
+		}
+		return []string{node.Name}, nil
+	case "bucket", "prefix", "root", "dir":
+		if node.FullName != "" {
+			return nil, []string{node.FullName}
+		}
+		if node.Name != "" {
+			return nil, []string{node.Name}
+		}
+	}
+	return nil, nil
+}
+
+func scanTargetFromItem(item models.MetaItem) ([]string, []string) {
+	switch item.ItemType {
+	case "table", "collection", "label", "relationship":
+		if idx := strings.LastIndex(item.FullName, "."); idx > 0 {
+			return []string{item.FullName[:idx]}, nil
+		}
+	case "object", "file":
+		if item.FullName != "" {
+			return nil, []string{item.FullName}
+		}
+	}
+	return nil, nil
+}
+
+func scanTargetFromLocator(locator string) ([]string, []string) {
+	locator = strings.TrimSpace(locator)
+	if locator == "" {
+		return nil, nil
+	}
+	typeIdx := strings.Index(locator, "?type=")
+	pathPart := locator
+	targetType := ""
+	if typeIdx >= 0 {
+		pathPart = locator[:typeIdx]
+		targetType = locator[typeIdx+6:]
+		if amp := strings.Index(targetType, "&"); amp >= 0 {
+			targetType = targetType[:amp]
+		}
+	}
+	pathMarker := "/path/"
+	pathIdx := strings.Index(pathPart, pathMarker)
+	if pathIdx < 0 {
+		return nil, nil
+	}
+	path := strings.Trim(pathPart[pathIdx+len(pathMarker):], "/")
+	if path == "" {
+		return nil, nil
+	}
+	path = strings.ReplaceAll(path, "%2F", "/")
+	path = strings.ReplaceAll(path, "%2f", "/")
+	switch targetType {
+	case "table", "collection", "label", "relationship":
+		parts := strings.Split(path, "/")
+		if len(parts) > 1 {
+			return []string{parts[0]}, nil
+		}
+		return []string{path}, nil
+	case "schema", "database":
+		return []string{strings.Split(path, "/")[0]}, nil
+	case "object", "file", "bucket", "prefix", "directory", "root", "dir":
+		return nil, []string{path}
+	}
+	return nil, []string{path}
+}
+
+func engineIDFromLocator(locator string) (uint, bool) {
+	locator = strings.TrimSpace(locator)
+	const prefix = "addp://engine/"
+	if !strings.HasPrefix(locator, prefix) {
+		return 0, false
+	}
+	rest := strings.TrimPrefix(locator, prefix)
+	idx := strings.Index(rest, "/")
+	if idx < 0 {
+		return 0, false
+	}
+	var id uint
+	if _, err := fmt.Sscanf(rest[:idx], "%d", &id); err != nil {
+		return 0, false
+	}
+	return id, id > 0
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
 	startFields := append(connectionLogFields(resource),
@@ -376,6 +597,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		Resource:  resource,
 		TenantID:  tenantID,
 		ScanDepth: "deep",
+		Force:     false,
 		ScanLogID: scanLogID,
 		Mode:      scanDispatchAuto,
 	})
@@ -391,7 +613,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	return result.Namespaces, result.Items, result.Fields, nil
 }
 
-func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -482,7 +704,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			}
 
 			// 扫描命名空间
-			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schema, scanDepth)
+			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schema, scanDepth, force)
 
 			if err != nil {
 				s.log.Warn("命名空间扫描失败",
@@ -531,6 +753,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 	tenantID uint,
 	databaseNames []string,
 	scanDepth string,
+	force bool,
 	reporter ScanProgressReporter,
 ) (int, int, int, error) {
 
@@ -603,7 +826,7 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 
 		// 扫描数据库
 		databases, collections, fields, err := s.nosqlScanService.ScanDatabase(
-			ctx, enginePlugin, resource, tenantID, databaseName, scanDepth,
+			ctx, enginePlugin, resource, tenantID, databaseName, scanDepth, force,
 		)
 
 		// 扫描完成后清理锁
@@ -648,15 +871,15 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 }
 
 // scanFileCatalogResourceWithReporter 扫描文件 catalog 资源。
-func (s *ScanService) scanFileCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
-	roots, items, err := s.fileCatalogScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, reporter)
+func (s *ScanService) scanFileCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
+	roots, items, err := s.fileCatalogScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, force, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 	return roots, items, 0, nil
 }
 
-func (s *ScanService) scanObjectCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanObjectCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
 	// 标准化 scanDepth
 	if scanDepth == "" {
 		scanDepth = "deep"
@@ -673,6 +896,7 @@ func (s *ScanService) scanObjectCatalogResourceWithReporter(resource *commonMode
 		objectPaths,
 		nil,
 		scanDepth,
+		force,
 		reporter,
 	)
 	if err != nil {

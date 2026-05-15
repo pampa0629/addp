@@ -41,6 +41,42 @@ func JSONMapString(m models.JSONMap, key, defaultVal string) string {
 	return defaultVal
 }
 
+func JSONMapBool(m models.JSONMap, key string, defaultVal bool) bool {
+	if m == nil {
+		return defaultVal
+	}
+	v, ok := m[key]
+	if !ok {
+		return defaultVal
+	}
+	return BoolFromInterfaceWithDefault(v, defaultVal)
+}
+
+func BoolFromInterface(raw interface{}) bool {
+	return BoolFromInterfaceWithDefault(raw, false)
+}
+
+func BoolFromInterfaceWithDefault(raw interface{}, defaultVal bool) bool {
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes", "y":
+			return true
+		case "false", "0", "no", "n":
+			return false
+		}
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	}
+	return defaultVal
+}
+
 // StringSliceFromInterface 从 interface{} 中提取字符串数组。
 func StringSliceFromInterface(raw interface{}) []string {
 	if raw == nil {

@@ -391,8 +391,7 @@
       "instantScanSubmitted": "Instant scan submitted, run status will update shortly",
       "instantScanFailed": "Failed to submit instant scan: {error}",
       "scanDepthBasic": "Basic",
-      "scanDepthDeep": "Deep",
-      "scanDepthFull": "Full"
+      "scanDepthDeep": "Deep"
     }
   },
   "engine": {

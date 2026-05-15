@@ -252,6 +252,7 @@ func (s *ObjectCatalogScanService) ScanPaths(
 	tenantID uint,
 	objectPaths, fallback []string,
 	scanDepth string,
+	force bool,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
 	resourceID := resource.ID
@@ -301,7 +302,7 @@ func (s *ObjectCatalogScanService) ScanPaths(
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, reporter, itemTerm)
+	buckets, objects, err := s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -320,6 +321,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 	catalogProvider plugin.CatalogProvider,
 	paths []string,
 	scanDepth string,
+	force bool,
 	reporter ScanProgressReporter,
 	itemTerm string,
 ) (int, int, error) {
@@ -425,7 +427,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 			"fullBucket", fullBucket,
 			"metasCount", len(metas),
 			"scanDepth", scanDepth)
-		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			s.log.Error("对象 catalog 元数据持久化失败",
 				"engine_id", engineID,
@@ -477,7 +479,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		if err := s.repo.FinalizeNodeState(bucketNode, "completed", agg.ItemCount, agg.TotalSize, ""); err != nil {
+		if err := s.repo.FinalizeNodeStateWithDepth(bucketNode, "completed", agg.ItemCount, agg.TotalSize, "", scanDepth); err != nil {
 			s.log.Warn("完成bucket节点状态更新失败",
 				"bucket", bucketName,
 				"error", err,
@@ -495,7 +497,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 
 		// 更新子目录节点的统计信息和扫描状态
 		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"completed"
-		if err := s.repo.FinalizeObjectCatalogPrefixNode(agg.Node, agg.ItemCount, agg.TotalSize); err != nil {
+		if err := s.repo.FinalizeObjectCatalogPrefixNodeWithDepth(agg.Node, agg.ItemCount, agg.TotalSize, scanDepth); err != nil {
 			s.log.Warn("更新子目录节点统计信息失败",
 				"node_id", nodeID,
 				"node_name", agg.Node.Name,
@@ -549,6 +551,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 	stats map[uint]*objectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanDepth string,
+	force bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
 	itemTerm string,
@@ -581,9 +584,16 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
-	compositeSkipPaths, compositeItems, compositeWarnings := metacatalog.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
-	for _, warning := range compositeWarnings {
-		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
+	var compositeSkipPaths map[string]bool
+	var compositeItems []metacatalog.ObjectCatalogCompositeItem
+	if strings.EqualFold(scanDepth, "deep") {
+		var compositeWarnings []metacatalog.ObjectCatalogCompositeDetectionError
+		compositeSkipPaths, compositeItems, compositeWarnings = metacatalog.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, metas)
+		for _, warning := range compositeWarnings {
+			s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
+		}
+	} else {
+		compositeSkipPaths = map[string]bool{}
 	}
 	compositeCount, err := s.persistObjectCatalogCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
 	if err != nil {
@@ -673,10 +683,12 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 		if err != nil {
 			return objects, err
 		}
-		needsUpdate := scanchange.ShouldUpdateObject(existingItem, meta)
+		needsUpdate := force || scanchange.ShouldUpdateObject(existingItem, meta) || !itemExists
+		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
+			needsUpdate = true
+		}
 
-		// 浅度扫描时，如果对象未变化，跳过更新（保留已有的深度元数据）
-		if !strings.EqualFold(scanDepth, "deep") && itemExists && !needsUpdate {
+		if itemExists && !needsUpdate {
 			s.log.Debug("对象未变化，跳过更新",
 				"bucket", meta.Bucket,
 				"path", meta.Path,
@@ -727,13 +739,15 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		if tableAttrs, err := s.enrichObjectCatalogTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, strings.EqualFold(scanDepth, "deep")); err != nil {
-			s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
-		} else if tableAttrs != nil {
-			metaattr.MergeAttributeMaps(enhancedAttrs, tableAttrs)
+		if strings.EqualFold(scanDepth, "deep") {
+			if tableAttrs, err := s.enrichObjectCatalogTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, meta, itemPlan.DataItem, true); err != nil {
+				s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", meta.Bucket, "path", meta.Path, "error", err)
+			} else if tableAttrs != nil {
+				metaattr.MergeAttributeMaps(enhancedAttrs, tableAttrs)
+			}
 		}
 		metacatalog.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
-		if itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
+		if strings.EqualFold(scanDepth, "deep") && itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
 			reader, err := readableProvider.OpenContent(context.Background(), connInfo, objectCatalogPathForContent(engineID, meta.Bucket, meta.Path), plugin.ReadOptions{})
 			if err != nil {
 				s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", meta.Bucket, "path", meta.Path, "error", err)
@@ -745,7 +759,7 @@ func (s *ObjectCatalogScanService) persistObjectMetas(
 			}
 		}
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, nil, &sizeVal, meta.LastModified)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, nil, &sizeVal, meta.LastModified, scanDepth)
 		if err != nil {
 			return objects, err
 		}
@@ -801,7 +815,7 @@ func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 
 		sizeVal := itemPlan.SizeBytes
-		if _, err := s.repo.UpsertItem(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, nil, &sizeVal, nil); err != nil {
+		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, nil, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
 			return count, err
 		}
 		count++

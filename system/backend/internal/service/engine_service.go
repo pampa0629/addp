@@ -754,9 +754,8 @@ func (s *EngineService) validateScanConfig(config *models.ScanConfig) error {
 		}
 	}
 
-	// 兼容旧版字段验证
-	if config.ScanDepth != "" && config.ScanDepth != "shallow" && config.ScanDepth != "deep" && config.ScanDepth != "basic" {
-		return fmt.Errorf("无效的扫描深度: %s (必须是 shallow, basic 或 deep)", config.ScanDepth)
+	if config.ScanDepth != "" && config.ScanDepth != "deep" && config.ScanDepth != "basic" {
+		return fmt.Errorf("无效的扫描深度: %s (必须是 basic 或 deep)", config.ScanDepth)
 	}
 
 	return nil

@@ -605,7 +605,7 @@ definitions:
         - $ref: '#/definitions/models.PreprocessingConfig'
         description: 预处理配置（可选）
       scan_depth:
-        description: 兼容旧版字段：shallow, deep
+        description: 默认扫描深度：basic 或 deep
         type: string
       schedule_time:
         description: 执行时间 HH:mm（daily/weekly/monthly 时使用）
@@ -619,7 +619,7 @@ definitions:
           type: integer
         type: array
       scheduled_scan:
-        description: 启用定时扫描（深度固定为 deep）
+        description: 启用定时扫描
         type: boolean
     type: object
   plugin.GraphData:

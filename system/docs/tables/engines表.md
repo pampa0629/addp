@@ -301,7 +301,7 @@ type ScanConfig struct {
     CronExpression    string               `json:"cron_expression,omitempty"`
     ScheduleTime      string               `json:"schedule_time,omitempty"`       // HH:mm
     ScheduleValue     []int                `json:"schedule_value,omitempty"`      // 周几或月几
-    ScanDepth         string               `json:"scan_depth"`                    // shallow/deep/basic
+    ScanDepth         string               `json:"scan_depth"`                    // basic/deep
     Preprocessing     *PreprocessingConfig `json:"preprocessing,omitempty"`
 }
 

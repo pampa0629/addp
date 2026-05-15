@@ -79,7 +79,32 @@ func (r *PreviewRegistry) Register(provider PreviewProvider) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	for index, existing := range r.providers {
+		if existing != nil && existing.Name() == provider.Name() {
+			r.providers[index] = provider
+			return
+		}
+	}
 	r.providers = append(r.providers, provider)
+}
+
+func (r *PreviewRegistry) Unregister(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	filtered := r.providers[:0]
+	for _, provider := range r.providers {
+		if provider != nil && provider.Name() == name {
+			continue
+		}
+		filtered = append(filtered, provider)
+	}
+	r.providers = filtered
 }
 
 // GetByName 根据 provider 名称返回插件。

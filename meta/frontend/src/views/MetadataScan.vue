@@ -876,7 +876,7 @@ const handleBatchScan = async () => {
       }
     }, 500)
 
-    const res = await metaApi.scanEngine(selectedResource.value.id, namespaces, objectPaths)
+    const res = await metaApi.scanEngine(selectedResource.value.id, namespaces, objectPaths, { scan_depth: 'deep', force: false })
     clearInterval(progressInterval)
     scanProgress.value = 100
 
@@ -914,6 +914,7 @@ const submitScheduleForm = async () => {
       namespaces: existing?.parameters?.namespaces || deriveAutoTaskSchemas(),
       object_paths: existing?.parameters?.object_paths || [],
       scan_depth: existing?.parameters?.scan_depth || 'deep',
+      force: existing?.parameters?.force === true,
       schedule_type: 'cron',  // 统一使用 cron 类型
       schedule_time: '',
       schedule_value: [],
@@ -945,9 +946,9 @@ const handleScanSchema = async (schema) => {
 
   try {
     if (usesObjectPathTargets(selectedResource.value)) {
-      await metaApi.scanEngine(selectedResource.value.id, [], [schema.path || schemaName])
+      await metaApi.scanEngine(selectedResource.value.id, [], [schema.path || schemaName], { scan_depth: 'deep', force: false })
     } else {
-      await metaApi.scanEngine(selectedResource.value.id, [schemaName])
+      await metaApi.scanEngine(selectedResource.value.id, [schemaName], [], { scan_depth: 'deep', force: false })
     }
     ElMessage.success(t('meta.scan.schemaScanComplete', { name: schemaName }))
 
@@ -1012,6 +1013,7 @@ const submitSchemaSchedule = async () => {
       namespaces: usesPathTargets ? [] : [schemaName],
       object_paths: usesPathTargets ? [currentSchema.value.path || schemaName] : [],
       scan_depth: schemaScheduleDepth.value,
+      force: false,
       schedule_type: 'cron',
       schedule: schemaScheduleCron.value,
       enabled: schemaScheduleEnabled.value

@@ -496,7 +496,7 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 		"docs/readme.txt": "hello nested document",
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -556,7 +556,7 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 		"inner.zip": inner,
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/content")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",

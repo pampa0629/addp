@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-pptx",
-  "type": "builtin",
-  "builtin": "pptx",
-  "priority": 74,
-  "match": {},
-  "max_bytes": 104857600
-}

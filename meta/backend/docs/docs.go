@@ -1713,6 +1713,12 @@ const docTemplate = `{
                 "row_count": {
                     "type": "integer"
                 },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "scanned_depth": {
+                    "type": "string"
+                },
                 "size_bytes": {
                     "type": "integer"
                 },
@@ -1761,6 +1767,9 @@ const docTemplate = `{
                 "scanned_at": {
                     "type": "string"
                 },
+                "scanned_depth": {
+                    "type": "string"
+                },
                 "tenant_id": {
                     "type": "integer"
                 },
@@ -1794,12 +1803,17 @@ const docTemplate = `{
         },
         "github_com_addp_meta_internal_models.ScanRequest": {
             "type": "object",
-            "required": [
-                "engine_id"
-            ],
             "properties": {
                 "engine_id": {
                     "description": "资源ID",
+                    "type": "integer"
+                },
+                "force": {
+                    "description": "是否强制重新扫描",
+                    "type": "boolean"
+                },
+                "item_id": {
+                    "description": "要扫描的数据项 ID",
                     "type": "integer"
                 },
                 "namespaces": {
@@ -1809,6 +1823,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "node_id": {
+                    "description": "要扫描的节点 ID",
+                    "type": "integer"
+                },
                 "object_paths": {
                     "description": "对象存储/文件系统选择的路径",
                     "type": "array",
@@ -1817,11 +1835,18 @@ const docTemplate = `{
                     }
                 },
                 "scan_depth": {
-                    "description": "basic/deep/full",
+                    "description": "basic/deep",
                     "type": "string"
                 },
-                "scan_type": {
-                    "description": "manual/auto/scheduled",
+                "targets": {
+                    "description": "locator 目标列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "trigger_type": {
+                    "description": "manual/scheduled",
                     "type": "string"
                 }
             }
@@ -1868,6 +1893,9 @@ const docTemplate = `{
                 },
                 "engine_id": {
                     "type": "integer"
+                },
+                "force": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"

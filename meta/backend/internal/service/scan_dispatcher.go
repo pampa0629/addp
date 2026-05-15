@@ -25,6 +25,7 @@ type scanDispatchRequest struct {
 	Namespaces  []string
 	ObjectPaths []string
 	ScanDepth   string
+	Force       bool
 	ScanLogID   uint
 	Reporter    ScanProgressReporter
 	Mode        scanDispatchMode
@@ -102,6 +103,7 @@ func (s *ScanService) dispatchNoSQLScan(ctx context.Context, enginePlugin plugin
 		req.TenantID,
 		databaseNames,
 		req.ScanDepth,
+		req.Force,
 		req.Reporter,
 	)
 	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
@@ -115,6 +117,7 @@ func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugi
 		req.TenantID,
 		req.ObjectPaths,
 		req.ScanDepth,
+		req.Force,
 		req.Reporter,
 	)
 	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
@@ -141,6 +144,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		req.TenantID,
 		paths,
 		req.ScanDepth,
+		req.Force,
 		req.Reporter,
 	)
 	return scanDispatchResult{Namespaces: roots, Items: items, Fields: fields}, err
@@ -154,6 +158,7 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 			req.Namespaces,
 			req.ScanLogID,
 			req.ScanDepth,
+			req.Force,
 			req.Reporter,
 		)
 		return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
@@ -184,7 +189,7 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 			continue
 		}
 
-		namespaces, items, fields, err := s.dbScanService.ScanSchema(ctx, req.Resource, req.TenantID, req.Resource.ID, schemaInfo.Name, req.ScanDepth)
+		namespaces, items, fields, err := s.dbScanService.ScanSchema(ctx, req.Resource, req.TenantID, req.Resource.ID, schemaInfo.Name, req.ScanDepth, req.Force)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
 				"engine_id", req.Resource.ID,
