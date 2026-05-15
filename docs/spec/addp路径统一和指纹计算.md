@@ -374,7 +374,7 @@ err := commonModels.ValidateDirectoryPath(path, true)  // true表示对象存储
 **修改内容**:
 - `scan_object_storage_service.go`: 使用两步指纹计算，删除 `RelativePath` 字段和 `relative_path` 属性
 - `scan_repository.go`: 改为两步指纹计算
-- `scan_metadata_extractor.go`: 改为两步指纹计算
+- `extractor/metadata_extractor.go`: 改为两步指纹计算
 - `search/indexer.go`: `DeleteObjects` 参数从 `relativePath` 改为 `path`
 
 **数据库变更**:

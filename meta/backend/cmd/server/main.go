@@ -21,17 +21,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
-	// 导入数据库插件以触发自动注册
-	_ "github.com/addp/common/engine/plugins/clickhouse"
-	_ "github.com/addp/common/engine/plugins/doris"
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mongodb"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/neo4j"
-	_ "github.com/addp/common/engine/plugins/nfs"
-	_ "github.com/addp/common/engine/plugins/postgresql"
-	_ "github.com/addp/common/engine/plugins/s3"
-	_ "github.com/addp/common/engine/plugins/spark_sql"
+	// 导入 general 引擎插件以触发自动注册
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 
 	// 导入 format 解析器以触发自动注册（图片、PDF、CSV 等）
 	_ "github.com/addp/common/format/builtin"

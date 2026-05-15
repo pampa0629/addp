@@ -23,18 +23,21 @@ func (p tableProvider) Format() format.FormatType {
 }
 
 func (p tableProvider) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatShapefile)
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:             "builtin-shapefile",
 		Format:         format.FormatShapefile,
+		I18nKey:        "format.shapefile",
 		DataType:       format.FormatDataTypeTable,
 		Layouts:        []string{format.FormatLayoutMulti},
 		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
+		Identification: format.FormatIdentification{Extensions: []string{".shp"}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
+		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ComponentTable: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderComponentTableSample), string(format.ContentReaderRawContent)},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
 		Spatial:        true,
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

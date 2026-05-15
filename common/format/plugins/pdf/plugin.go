@@ -32,20 +32,23 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.Format())
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:            "builtin-pdf",
 		Format:        p.Format(),
+		I18nKey:       "format.pdf",
 		DataType:      format.FormatDataTypeDocument,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".pdf"},
+			MimeTypes:  []string{"application/pdf"},
+		},
+		Providers: format.FormatProviderDescriptor{DocumentInfo: true},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
 		},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
 	}
 }
 

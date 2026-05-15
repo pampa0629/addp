@@ -194,7 +194,7 @@ transfer/backend/internal/resourceadapter/
 
 ### mode 字段断裂
 
-旧文档 `engine-plugin-transfer后续事项.md` 记录过：
+引擎插件迁移期间记录过：
 
 - 前端任务向导仍可能提交 `mode`。
 - pipeline 有 `ModeBatch`、`ModeStream`、`ModeMicroBatch`。

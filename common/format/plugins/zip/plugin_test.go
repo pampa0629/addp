@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/plugins/csv"
 	"github.com/addp/common/resource"
 )
 

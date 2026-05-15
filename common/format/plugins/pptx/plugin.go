@@ -13,20 +13,22 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.Format())
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:            "builtin-pptx",
 		Format:        p.Format(),
+		I18nKey:       "format.pptx",
 		DataType:      format.FormatDataTypeDocument,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".pptx"},
+			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+		},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
 		},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
 	}
 }
 

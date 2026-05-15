@@ -78,7 +78,7 @@ PreviewResolver 根据 Meta 标准属性选择 Provider（providers/ 目录）
   ↓
 Provider 执行对应预览
   ↓
-如果是对象 catalog，调用 ObjectContentRegistry（content/ 目录）
+如果是对象 catalog，调用 `manager/internal/objectcontent.ObjectContentRegistry`（content/ 目录）
   ↓
 ContentHandler 优先根据 Meta 标准 format 匹配，必要时再使用扩展名和 Content-Type
 ```
@@ -119,12 +119,12 @@ ContentHandler 优先根据 Meta 标准 format 匹配，必要时再使用扩展
 系统从早期的"每种数据库/格式一个独立实现"演进到现在的"通用实现 + 声明式配置 + 工厂模式"：
 
 - **旧方式**: `preview_provider_postgres.go`、`preview_provider_mysql.go` 等独立文件
-- **新方式**: `preview_provider_database.go` 统一实现 + JSON 配置
+- **新方式**: `manager/internal/preview/preview_provider_database.go` 统一实现 + JSON 配置
 
 这种架构提供了更好的可扩展性和维护性。
 
 ## 参考文档
 
-- 代码实现: [internal/service/builtin/init.go](../internal/service/builtin/init.go)
-- 通用数据库预览: [internal/service/preview_provider_database.go](../internal/service/preview_provider_database.go)
-- 插件加载器: [internal/service/preview_plugin_loader.go](../internal/service/preview_plugin_loader.go)
+- 通用数据库预览: [internal/preview/preview_provider_database.go](../internal/preview/preview_provider_database.go)
+- 预览插件加载器: [internal/preview/preview_plugin_loader.go](../internal/preview/preview_plugin_loader.go)
+- 内容插件加载器: [internal/objectcontent/object_content_plugin_loader.go](../internal/objectcontent/object_content_plugin_loader.go)

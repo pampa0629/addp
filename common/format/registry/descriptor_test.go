@@ -2,6 +2,44 @@ package registry
 
 import "testing"
 
+func init() {
+	for _, descriptor := range []Descriptor{
+		{
+			ID:            "builtin-markdown",
+			Format:        FormatMarkdown,
+			DataType:      DataTypeDocument,
+			Layouts:       []string{LayoutSingle},
+			ProviderHints: []string{ProviderDocument},
+			ContentReaders: []string{
+				ContentReaderDocumentText,
+				ContentReaderRawContent,
+			},
+			TransferRead:  true,
+			TransferWrite: true,
+		},
+		mediaDescriptorForTest("builtin-webp", FormatWebP),
+		mediaDescriptorForTest("builtin-svg", FormatSVG),
+		mediaDescriptorForTest("builtin-mp4", FormatMP4),
+		mediaDescriptorForTest("builtin-mp3", FormatMP3),
+	} {
+		mustRegisterDescriptor(descriptor)
+	}
+}
+
+func mediaDescriptorForTest(id string, format Format) Descriptor {
+	return Descriptor{
+		ID:            id,
+		Format:        format,
+		DataType:      DataTypeMedia,
+		Layouts:       []string{LayoutSingle},
+		ProviderHints: []string{ProviderMedia},
+		ContentReaders: []string{
+			ContentReaderRawContent,
+			ContentReaderRangeContent,
+		},
+	}
+}
+
 func TestListDescriptorsReturnsSortedCopies(t *testing.T) {
 	descriptors := ListDescriptors()
 	if len(descriptors) == 0 {

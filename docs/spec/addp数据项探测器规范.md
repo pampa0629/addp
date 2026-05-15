@@ -14,7 +14,7 @@
 | `organization`、主资源、组件资源和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
 | `claims`、`exclusive` 如何合并 | ResourceReader / ComponentReader 的具体接口 |
 | `meta_item.name/full_name/item_type` 的来源规则 | Manager 面向前端的 DTO 或 Transfer plan |
-| `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser / extractor 字段细节 |
+| `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser、provider、reader 字段细节 |
 
 attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
@@ -24,7 +24,7 @@ detector 不能等同于目录 detector，也不能按单一格式局部修补�
 
 detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `organization`、`data_type`、`format`、主资源和组件资源，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。主资源或 whole scope 根范围应成为 `meta_item.full_name`。
 
-detector registry、扫描范围内的 resolver、claims / exclusive 合并、`component_files` 决策和 attributes 落库构造属于 Meta 模块职责。common 层只保留跨模块稳定枚举、格式规则数据结构或 parser / analyzer 等通用能力；跨模块需要 item 结果时应通过 Meta Client 消费已入库 meta item，不直接复用 Meta 的识别流程。
+候选集合组织规则可以进入 `common/dataitem` 复用。Meta 仍拥有扫描调度、detector 编排、claims / exclusive 最终合并、`component_files` 决策、attributes normalizer 和落库裁决。跨模块需要已入库 item 结果时应通过 Meta Client 消费 meta item，不得绕过 Meta 对外部目录、prefix 或 schema 重新落库。
 
 ## 扫描范围不是 item 边界
 
@@ -47,9 +47,25 @@ ResolveItems(scope) (*DetectionResult, error)
 
 `ResolveDirectory` 不再作为新规范接口保留。实现阶段应删除旧调用或改为直接调用 `ResolveItems`，不得继续提供旧扫描语义兜底。
 
-`ResolveItems` 是 Meta 扫描流程内的统一入口，而不是面向所有业务模块的 common API。实现上应位于 Meta 模块内部，例如当前由 `meta/backend/internal/metaitem.ResolveItems` 承载；Manager、Transfer、Asset、Search 等模块不得绕过 Meta 扫描自行调用 detector 重新判断资源组织方式。
+`ResolveItems` 的候选集合组织能力由 `common/dataitem` 承载。Meta 扫描流程必须通过该能力或等价封装识别外部范围内的 data item，并在 Meta 内完成最终裁决和落库。Manager、Transfer、Asset、Search 等模块不得对已入库外部 item 重新做目录级识别。
+
+Manager 可以在容器预览过程中调用 `common/dataitem` 组织容器内部 child。该结果只服务本次动态预览，用完即弃；不得自动升格为外部 `meta_item`，不得写回父容器 attributes，也不得替代 Meta 对外部资源范围的扫描裁决。
 
 detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Meta 应显式组装 detector 列表并校验其 `FormatRule`，以保证 item 识别流程的所有权清晰可追踪。
+
+## common/dataitem 当前落点
+
+`common/dataitem` 是候选集合组织规则的共享实现层，不是 Meta 落库流程的搬迁。
+
+当前实现已经提供：
+
+1. `Candidate`、`ResolveInput`、`ResolvedItem`、`ResolveResult` 等组织解析模型。
+2. `ResolveItems()` 统一执行 multi 组件归并、whole scope 识别和 single fallback。
+3. `BuiltinSingleResourceRules()`、`BuiltinMultiRules()`、`BuiltinWholeScopeRules()` 从 `common/format` capability 派生基础规则。
+4. `DefaultIgnorePolicy` 过滤空名称、目录项、`.DS_Store` 和 `__MACOSX` 等系统噪声。
+5. `ResolvedItem.ResourceComponents()` 将 multi 组件结果转换为资源读取层可消费的 component refs。
+
+`common/dataitem` 不负责扫描调度、递归遍历、任务状态、`meta_item` 落库、fingerprint、node 绑定、attributes normalizer、engine reader 构造、内容读取或 Manager 前端 DTO。Meta 扫描入口负责把 `ResolvedItem` 转成可落库 item；Manager 仅可在容器动态预览中临时消费解析结果。
 
 ```go
 type DetectionResult struct {
@@ -65,7 +81,7 @@ type DetectionResult struct {
 
 ## item 身份规则
 
-detector 必须先确定 data item 边界，再提取类型信息、格式信息和横切能力。`meta_item` 表字段是 item 身份事实源，不得由 parser / extractor 任意覆盖。
+detector 必须先确定 data item 边界，再提取类型信息、格式信息和横切能力。`meta_item` 表字段是 item 身份事实源，不得由 parser、provider、reader 或格式私有逻辑任意覆盖。
 
 | 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 | 说明 |
 |---|---|---|---|
@@ -158,7 +174,7 @@ type FormatRule struct {
 | `whole` | whole scope 根范围和规范要求的关键资源 | 强匹配时可为 `true` |
 | 容器内部对象 | 默认不进入外部扫描 claims | 不影响外层扫描范围 |
 
-`exclusive=true` 只允许用于明确的 whole scope 场景。弱匹配、仅扩展名匹配、范围内存在未认领异类资源等情况不得直接独占扫描范围；相关待确认事项记录在 [ADDP 数据类型与文件格式待规范事项](../next/addp数据类型与文件格式待规范事项.md)。
+`exclusive=true` 只允许用于明确的 whole scope 场景。弱匹配、仅扩展名匹配、范围内存在未认领异类资源等情况不得直接独占扫描范围；whole scope 的 explain / confidence、manifest 规则等尚未定稿内容进入对应计划文档或格式后续事项，不在本规范内展开。
 
 ## Shapefile 校准用例
 

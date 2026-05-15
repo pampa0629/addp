@@ -1,8 +1,11 @@
-package plugin
+package plugin_test
 
 import (
 	"reflect"
 	"testing"
+
+	. "github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func TestCapabilityBuildersUseFormatRegistry(t *testing.T) {

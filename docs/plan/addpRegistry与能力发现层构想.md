@@ -16,7 +16,7 @@ ADDP 存在多个 registry：engine、dataitem、format、preview、object conte
 |---|---|
 | engine registry | 连接、catalog、读取和引擎能力 |
 | dataitem registry | detector、organization 识别、claims |
-| format registry | parser、extractor、type_info、format_info、capabilities |
+| format registry | format plugin、info provider、content reader、type_info、format_info、capabilities |
 | preview registry | 已识别 data item 的展示能力 |
 | transfer registry | 导入、导出、转换和传输能力 |
 
@@ -44,6 +44,6 @@ ADDP 存在多个 registry：engine、dataitem、format、preview、object conte
 
 1. 能力发现结果是否落库，还是运行时查询。
 2. 插件加载顺序和冲突处理如何记录。
-3. 同一插件同时注册 detector、parser、extractor、preview handler 时，是否需要事务式启停。
+3. 同一插件同时注册 detector、format plugin、info provider、content reader、preview handler 时，是否需要事务式启停。
 4. 能力发现视图是否暴露给管理端 UI。
 5. meta 扫描是否记录“当时使用了哪些能力版本”。

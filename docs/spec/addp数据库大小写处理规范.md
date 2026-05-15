@@ -144,7 +144,7 @@ query := fmt.Sprintf(`
    - `manager/backend/internal/api/geojson_handler.go` ✅ 已修复
    - `manager/backend/internal/api/feature_handler.go` ✅ 使用了 pq.QuoteIdentifier
    - `manager/backend/internal/api/mvt_handler.go`
-   - `manager/backend/internal/service/object_preview.go`
+   - `manager/backend/internal/objectcontent/`
    - `manager/backend/internal/service/data_explorer.go`
 
 2. **Meta 模块**

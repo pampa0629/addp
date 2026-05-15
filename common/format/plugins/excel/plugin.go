@@ -29,17 +29,17 @@ func (p *Parser) Format() format.FormatType {
 }
 
 func (p *Parser) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatExcel)
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:             "builtin-excel",
 		Format:         format.FormatExcel,
+		I18nKey:        "format.excel",
 		DataType:       format.FormatDataTypeContainer,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
+		Identification: format.FormatIdentification{Extensions: []string{".xlsx", ".xls", ".xlsm"}, MimeTypes: []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroenabled.12"}},
+		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

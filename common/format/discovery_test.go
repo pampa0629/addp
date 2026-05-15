@@ -1,10 +1,12 @@
-package format
+package format_test
 
 import (
 	"context"
 	"io"
 	"testing"
 
+	. "github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/resource"
 )
 

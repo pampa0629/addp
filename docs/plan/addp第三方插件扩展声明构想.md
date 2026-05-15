@@ -6,7 +6,7 @@
 
 ## 目标
 
-第三方插件可以扩展 detector、parser、extractor 和 preview 能力，但不能直接污染平台核心 attributes。插件输出应显式声明自己写入的 `format_info` 私有命名空间和 `capabilities` 横切能力命名空间。
+第三方插件可以扩展 detector、format plugin、info provider、content reader 和 preview 能力，但不能直接污染平台核心 attributes。插件输出应显式声明自己写入的 `format_info` 私有命名空间和 `capabilities` 横切能力命名空间。
 
 ## 基本原则
 

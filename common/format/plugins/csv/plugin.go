@@ -47,18 +47,28 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.formatType)
-	if ok {
-		return descriptor
+	extensions := []string{".csv"}
+	mimeTypes := []string{"text/csv"}
+	i18nKey := "format.csv"
+	if p.formatType == format.FormatTSV {
+		extensions = []string{".tsv"}
+		mimeTypes = []string{"text/tab-separated-values"}
+		i18nKey = "format.tsv"
 	}
 	return format.FormatDescriptor{
 		ID:             "builtin-" + string(p.formatType),
 		Format:         p.formatType,
+		I18nKey:        i18nKey,
 		DataType:       format.FormatDataTypeTable,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderTable},
+		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
 		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

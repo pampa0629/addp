@@ -13,20 +13,22 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.Format())
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:            "builtin-wps",
 		Format:        p.Format(),
+		I18nKey:       "format.wps",
 		DataType:      format.FormatDataTypeDocument,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".wps"},
+			MimeTypes:  []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"},
+		},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
 		},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
 	}
 }
 

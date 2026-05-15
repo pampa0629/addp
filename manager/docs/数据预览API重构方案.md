@@ -257,7 +257,7 @@ func (c *EngineConnector) GetConnection(engineID uint) (*gorm.DB, error)
 
 ### 后端 (Manager)
 - `manager/backend/internal/service/explorer_service.go` - ExplorerService
-- `manager/backend/internal/service/preview_resolver.go` - PreviewResolver
+- `manager/backend/internal/preview/preview_resolver.go` - PreviewResolver
 - `manager/backend/internal/service/engine_connector.go` - EngineConnector
 - `manager/backend/internal/api/explorer_handler.go` - ExplorerHandler
 - `manager/backend/plugins/manifest.json` - 插件清单

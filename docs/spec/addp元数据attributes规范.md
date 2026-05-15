@@ -72,17 +72,17 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、parser、采样器、extractor、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
-| `format_info` | parser、extractor、plugin、Meta item normalizer | CSV 分隔符、Shapefile 组件、JSON 结构类型、SQLite 版本等具体格式信息 |
-| `content_index` | parser、plugin、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
-| `capabilities` | parser、extractor、plugin、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
+| `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile 组件、JSON 结构类型、SQLite 版本等具体格式信息 |
+| `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
+| `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
 ## 写入规则
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
 2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `organization`。
 3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
-4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、parser / extractor / analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
+4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、format plugin、info provider、content reader 和 analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
 5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
 6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
 7. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
@@ -159,7 +159,7 @@ attributes 分区统一采用以下概念：
 - `format_info.sqlite`
 - `format_info.com.vendor.plugin_name`
 
-`format_info.unqualified` 是 normalizer 的隔离区，不是业务语义命名空间。正常的新 detector、parser、extractor 不应主动写入 `unqualified`。平台级行为不得依赖 `unqualified`。
+`format_info.unqualified` 是 normalizer 的隔离区，不是业务语义命名空间。正常的新 detector、format provider 或 reader 不应主动写入 `unqualified`。平台级行为不得依赖 `unqualified`。
 
 ## capabilities 命名空间
 

@@ -7,12 +7,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
-	_ "github.com/addp/common/engine/plugins/doris"
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/postgresql"
-	_ "github.com/addp/common/engine/plugins/python_workflow"
-	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/builtin/all"
 )
 
 // TestPluginInterfaceImplementation 验证所有插件正确实现了接口

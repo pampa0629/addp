@@ -114,17 +114,20 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatParquet)
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:             "builtin-parquet",
 		Format:         format.FormatParquet,
+		I18nKey:        "format.parquet",
 		DataType:       format.FormatDataTypeTable,
 		Layouts:        []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
 		ProviderHints:  []string{format.FormatProviderTable},
+		Identification: format.FormatIdentification{Extensions: []string{".parquet"}, MimeTypes: []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"}},
+		Providers:      format.FormatProviderDescriptor{TableInfo: true, TableSample: true, Table: true, ScopeTable: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderScopeTableSample), string(format.ContentReaderRawContent)},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

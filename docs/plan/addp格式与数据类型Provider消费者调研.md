@@ -75,11 +75,11 @@ Manager 现在主要依赖两类信号：
 
 典型代码：
 
-- `manager/backend/internal/service/preview_resolver.go`
-- `manager/backend/internal/service/preview_provider_file.go`
-- `manager/backend/internal/service/preview_provider_scope_table.go`
-- `manager/backend/internal/service/preview_provider_graph.go`
-- `manager/backend/internal/service/object_content_plugin.go`
+- `manager/backend/internal/preview/preview_resolver.go`
+- `manager/backend/internal/preview/preview_provider_file.go`
+- `manager/backend/internal/preview/preview_provider_scope_table.go`
+- `manager/backend/internal/preview/preview_provider_graph.go`
+- `manager/backend/internal/objectcontent/object_content_plugin.go`
 
 当前问题是，Manager 仍然保留了不少按 `engine.EngineType`、`format`、`item_type` 的分支。
 
@@ -96,9 +96,9 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 
 当前代码中表预览至少有三条路径：
 
-- `preview_provider_file.go`：文件表，包含 CSV、Excel、JSON、Shapefile、Parquet 等。
-- `preview_provider_scope_table.go`：scope 表，主要处理目录型或单文件 Parquet。
-- `preview_provider_database.go`：数据库原生表。
+- `manager/backend/internal/preview/preview_provider_file.go`：文件表，包含 CSV、Excel、JSON、Shapefile、Parquet 等。
+- `manager/backend/internal/preview/preview_provider_scope_table.go`：scope 表，主要处理目录型或单文件 Parquet。
+- `manager/backend/internal/preview/preview_provider_database.go`：数据库原生表。
 
 这三条路径的读取方式不同，但 Manager 的最终需求高度一致：
 
@@ -247,28 +247,28 @@ target:
 
 #### Manager 侧
 
-1. `manager/backend/internal/service/preview_resolver.go`
+1. `manager/backend/internal/preview/preview_resolver.go`
    - 继续拆分职责。
    - 只负责 Meta 标准结果到 preview 上下文的转换，不再继续累积路由规则。
 
-2. `manager/backend/internal/service/preview_provider_file.go`
+2. `manager/backend/internal/preview/preview_provider_file.go`
    - 拆成资源读取、格式提取、table 组装三层。
    - 现有的 S3/文件/格式混合逻辑应下沉到资源抽象或格式 provider。
 
-3. `manager/backend/internal/service/preview_provider_scope_table.go`
+3. `manager/backend/internal/preview/preview_provider_scope_table.go`
    - 长期应并入统一的 `TableProvider` 路由。
 
-4. `manager/backend/internal/service/preview_provider_database.go`
+4. `manager/backend/internal/preview/preview_provider_database.go`
    - 作为原生表的 `TableProvider` 适配器保留即可，不必独立定义一套表预览语义。
 
-5. `manager/backend/internal/service/preview_provider_doc_collection.go`
+5. `manager/backend/internal/preview/preview_provider_doc_collection.go`
    - 收敛为 `DocumentInfoProvider` / `DocumentTextReader` 或 Manager 内容适配层。
 
-6. `manager/backend/internal/service/object_content_plugin.go`
+6. `manager/backend/internal/objectcontent/object_content_plugin.go`
    - 这里面大量 image/pdf/json/excel/sqlite/parquet/shapefile 的处理，本质是格式内容提取。
    - 后续应尽量下沉到 FormatPlugin、info provider 或 content reader 的中间层。
 
-7. `manager/backend/internal/service/object_preview.go`
+7. `manager/backend/internal/objectcontent/object_content_plugin_loader.go`
    - 保留 Manager 面向前端的 DTO 组装。
    - 不再继续承担格式识别和内容提取的核心逻辑。
 

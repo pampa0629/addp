@@ -42,17 +42,32 @@ func (p *Parser) Format() format.FormatType {
 }
 
 func (p *Parser) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.Format())
-	if ok {
-		return descriptor
+	if p.Format() == format.FormatGeoPackage {
+		return format.FormatDescriptor{
+			ID:             "builtin-geopackage",
+			Format:         format.FormatGeoPackage,
+			I18nKey:        "format.geopackage",
+			DataType:       format.FormatDataTypeContainer,
+			Layouts:        []string{format.FormatLayoutSingle},
+			ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable, format.FormatProviderSpatial},
+			Identification: format.FormatIdentification{Extensions: []string{".gpkg"}, MimeTypes: []string{"application/geopackage+sqlite3"}},
+			Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
+			ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
+			Spatial:        true,
+			EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
+		}
 	}
 	return format.FormatDescriptor{
 		ID:             "builtin-sqlite",
 		Format:         format.FormatSQLite,
+		I18nKey:        "format.sqlite",
 		DataType:       format.FormatDataTypeContainer,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
+		Identification: format.FormatIdentification{Extensions: []string{".sqlite", ".sqlite3", ".db"}, MimeTypes: []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"}},
+		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

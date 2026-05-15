@@ -51,6 +51,18 @@ type EnginePlugin interface {
 | `general` | 用户熟悉的通用现成技术或主流引擎，如 PostgreSQL、MySQL、MinIO、Neo4j。 |
 | `extension` | 按 ADDP 扩展规范实现的引擎或运行时，如 Python Workflow、Math Workflow。 |
 
+### 内置插件加载入口
+
+每个引擎插件仍在自己的包内通过 `init()` 注册，聚合包只负责按 `EngineOrigin()` 口径统一触发 blank import：
+
+| 聚合包 | 覆盖范围 | 典型使用方 |
+|---|---|---|
+| `common/engine/plugins/builtin/general` | `EngineOrigin() == "general"` 的通用引擎 | Meta、Manager、Develop 等只需要通用数据引擎的进程 |
+| `common/engine/plugins/builtin/extension` | `EngineOrigin() == "extension"` 的扩展运行时 | 需要工作流、Notebook、脚本运行时的进程 |
+| `common/engine/plugins/builtin/all` | general + extension 全量内置插件 | 集成测试、诊断工具、需要完整注册表的进程 |
+
+上层模块不应散落 blank import 具体引擎插件包。新增内置引擎插件时，应按插件自己的 `EngineOrigin()` 加入对应聚合包；功能开关和路由判断仍必须基于 `Capabilities()`，不能基于聚合包或 origin 推断能力。
+
 ### DSNProvider
 
 数据库类 driver / 连接池确实需要 DSN 时，实现可选 `DSNProvider`：

@@ -33,20 +33,23 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(p.Format())
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:            "builtin-zip",
 		Format:        p.Format(),
+		I18nKey:       "format.zip",
 		DataType:      format.FormatDataTypeContainer,
 		Layouts:       []string{format.FormatLayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".zip"},
+			MimeTypes:  []string{"application/zip", "application/x-zip-compressed"},
+		},
+		Providers: format.FormatProviderDescriptor{ContainerInfo: true},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderContainerEntry),
 		},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 

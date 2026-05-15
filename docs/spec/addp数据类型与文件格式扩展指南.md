@@ -54,7 +54,7 @@
 
 ## 3. 实现 FormatPlugin
 
-新增文件格式应在 `common/format/plugins/<format>/` 下完成主实现。
+新增文件格式应在 `common/format/plugins/<format>/` 下完成主实现。一个稳定 format ID 对应一个长期维护的格式包，descriptor、provider、reader 和测试都应尽量在该目录闭合。
 
 最小文件结构：
 
@@ -88,6 +88,8 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | `ContentReaders` | 声明内容读取能力 |
 
 `Capabilities()` 表达当前实现实际具备的能力。descriptor 是格式身份声明；capability 是实现能力声明；二者都不是某个 data item 的扫描结果。
+
+如果该格式暂时只有识别、默认 data type、layout、transfer 或 content reader 声明，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()` / `Capabilities()`。不要把新格式补到 `common/format/registry/descriptor.go`；该目录只保留运行时注册表机制。
 
 ## 4. 实现 provider 和 reader
 
@@ -128,7 +130,7 @@ func init() {
 `RegisterFormatPlugin` 会：
 
 1. 校验 `Format()` 与 `Descriptor().Format` 一致。
-2. 在缺少静态 descriptor 时注册 `Descriptor()`。
+2. 在当前进程尚未注册该 format descriptor 时注册 `Descriptor()`。
 3. 根据 plugin 实现的接口自动注册 info provider 和 content reader。
 
 也可以按能力手动注册：
@@ -143,7 +145,23 @@ func init() {
 | `RegisterDocumentTextReader` | 只提供 document text content reader |
 | `RegisterMediaInfoProvider` | 只提供 `type_info.media` |
 
-如果格式是内置稳定能力，还要检查 `common/format/registry/descriptor.go` 中的内置 descriptor 是否补齐。第三方或后续插件化格式可通过 `RegisterFormatDescriptor` / `RegisterFormatPlugin` 注入，不应修改 Manager 的格式 switch。
+内置格式还必须加入统一加载入口：
+
+```go
+// common/format/builtin/init.go
+import _ "github.com/addp/common/format/plugins/<format>"
+```
+
+调用方通过 blank import `github.com/addp/common/format/builtin` 一次性加载内置 descriptor、provider / reader 和 type mapper。Meta、Manager、Transfer 或测试不应分别散落导入多个具体格式包。
+
+新增格式时按以下规则判断注册位置：
+
+| 变更 | 应修改的位置 |
+|---|---|
+| 新增稳定内置 format ID | 新建 `common/format/plugins/<format>/`，实现 `Descriptor()`，并加入 `common/format/builtin/init.go` |
+| 已有 format 补解析、预览、样本、批量读写能力 | 修改已有 `common/format/plugins/<format>/`，必要时更新同目录测试 |
+| 仅第三方或实验格式 | 通过 plugin manifest 或独立包调用 `RegisterFormatPlugin` / `RegisterFormatDescriptor`，不进入内置加载入口 |
+| Manager 需要消费新格式 | 优先消费 capability view、provider / reader 和已入库 attributes，不新增按后缀或引擎类型的 switch |
 
 ## 6. 确认 Meta 是否已有通用消费链路
 

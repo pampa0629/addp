@@ -1,15 +1,21 @@
 package builtin
 
 import (
+	// 导入内置逻辑格式，触发 init() 自动注册
+	_ "github.com/addp/common/format/plugins/document"
+	_ "github.com/addp/common/format/plugins/table"
+
 	// 导入内置类型映射器，触发 init() 自动注册
 	_ "github.com/addp/common/format/mappers/mysql"
 	_ "github.com/addp/common/format/mappers/postgresql"
 	_ "github.com/addp/common/format/mappers/spatialite"
 
 	// 导入内置 TableProvider，触发 init() 自动注册
+	_ "github.com/addp/common/format/plugins/avro"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/excel"
 	_ "github.com/addp/common/format/plugins/json"
+	_ "github.com/addp/common/format/plugins/orc"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/shapefile"
 	_ "github.com/addp/common/format/plugins/sqlite"
@@ -24,6 +30,7 @@ import (
 
 	// 导入内置媒体信息 provider，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/image"
+	_ "github.com/addp/common/format/plugins/media"
 )
 
 // 此包仅用于自动注册所有内置 TypeMapper、格式 provider / reader。

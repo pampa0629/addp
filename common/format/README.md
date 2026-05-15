@@ -13,7 +13,7 @@
 - 提供 `TableInfo`、`FieldInfo`、`Schema`、`Field` 等跨模块可复用的结构化语义模型。
 - 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、兼容期 `TableProvider`、`ComponentTableProvider`、`ScopeTableProvider`。
 - 提供跨数据源的 `TypeMapper`，把原生类型映射到 ADDP 通用字段类型。
-- 保留 legacy `FileMetadataExtractor` 注册表，供迁移完成前的 Meta 旧链路兼容使用。
+- 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
 `common/format` 不负责：
 
@@ -36,7 +36,7 @@
 | `descriptor.go` / `discovery.go` | 顶层 format descriptor 和能力发现 facade |
 | `capability_registry.go` | 顶层 format capability facade |
 | `capability/registry.go` | capability 注册表实现 |
-| `registry/` | format descriptor 共同事实源、能力发现视图和冲突诊断 |
+| `registry/` | format descriptor 运行时注册、能力发现视图和冲突诊断 |
 | `provider.go` | FormatPlugin、info provider、content reader 和兼容 provider 注册表 |
 | `table_info.go` | `TableInfo`、`FieldInfo` 等 data type 语义模型 |
 | `schema.go` | 轻量 schema 与字段类型模型 |
@@ -48,16 +48,26 @@
 
 | 目录 | 职责 |
 | --- | --- |
+| `plugins/table/` | 逻辑表格格式 descriptor |
+| `plugins/document/` | 逻辑文档格式 descriptor |
 | `plugins/csv/` | CSV table provider |
 | `plugins/excel/` | Excel 表格解析 |
 | `plugins/json/` | JSON/GeoJSON 结构解析；顶层格式仍为 `FormatJSON` |
+| `plugins/avro/` | Avro descriptor |
+| `plugins/orc/` | ORC descriptor |
 | `plugins/parquet/` | Parquet table provider 与 scope table 读取 |
 | `plugins/shapefile/` | Shapefile 多组件 table provider、读写和类型映射 |
 | `plugins/image/` | 图像和 GeoTIFF 解析 |
+| `plugins/media/` | 视频、音频和通用媒体 descriptor |
+| `plugins/text/` | 纯文本和 Markdown 文档 reader |
 | `plugins/pdf/` | PDF 文档解析 |
+| `plugins/docx/` | DOCX descriptor |
+| `plugins/pptx/` | PPTX descriptor |
+| `plugins/wps/` | WPS descriptor |
 | `plugins/sqlite/` | SQLite 分析能力 |
+| `plugins/zip/` | ZIP 容器解析 |
 | `mappers/` | PostgreSQL、MySQL、SpatiaLite 等类型映射 |
-| `builtin/` | 内置 provider 注册入口 |
+| `builtin/` | 内置 descriptor、provider / reader 和 type mapper 统一注册入口 |
 
 ## 格式识别
 
@@ -85,7 +95,7 @@ func GuessContentType(filename string, peek []byte) string
 
 - `.json` 和 `.geojson` 都返回 `FormatJSON`。
 - `application/json`、`application/geo+json`、`application/vnd.geo+json` 都返回 `FormatJSON`。
-- Shapefile 的 `.shp`、`.shx`、`.dbf`、`.prj` 等组件扩展名都识别为 `FormatShapefile`，但组件归并由上层基于 format capability 和资源组织规则完成。
+- Shapefile 只有主资源 `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等组件不单独代表完整 Shapefile，组件归并由上层基于 format capability 和资源组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。
 
 ## Format Identity 与 Detection
@@ -100,7 +110,7 @@ Shapefile 这类 multi 格式需要特别区分：`.shp/.dbf/.shx` 的识别不�
 
 `FormatCapability` 用于声明格式在平台中的可消费能力，术语与 engine capability 对齐。
 
-内置 capability 当前由 `common/format/registry` 中的 `FormatDescriptor` 派生，避免 detection、capability、content reader 和 transfer 元信息分散维护。`common/format` 顶层 API 保持 facade 形态，调用方通常不需要直接依赖 `registry` 子包。
+内置 capability 由各格式包自己的 `Descriptor()` 派生。`common/format/registry` 只保存当前进程已注册的 descriptor，负责查询、冲突诊断和能力发现视图；它不是内置格式定义清单。调用方通常通过 `common/format` 顶层 facade 使用能力，不需要直接依赖 `registry` 子包。
 
 ```go
 type FormatCapability struct {
@@ -144,7 +154,15 @@ formats := format.ListTransferFormatsForEngineFamily(format.EngineFamilyObject)
 
 ## Descriptor 与能力发现
 
-`FormatDescriptor` 是格式能力的共同事实源，覆盖识别、默认 data type、layout、provider hints、content readers 和 transfer 能力。`FormatPlugin` 是格式包的代码入口；调用 `RegisterFormatPlugin` 会注册 plugin，并按它实际实现的接口自动挂接对应 info provider / content reader。descriptor 可以先于 plugin 存在，用于表达目标能力和检测规则。
+`FormatDescriptor` 是格式能力的静态事实，覆盖识别、默认 data type、layout、provider hints、content readers 和 transfer 能力。内置 descriptor 由 `common/format/plugins/<format>/` 中的 `Descriptor()` 维护；`FormatPlugin` 是格式包的代码入口。调用 `RegisterFormatPlugin` 会注册 plugin，并按它实际实现的接口自动挂接对应 info provider / content reader。descriptor 可以先于完整 provider / reader 存在，用于表达目标能力和检测规则。
+
+内置格式通过统一聚合包加载：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+```
+
+该入口会导入内置格式包和 type mapper。没有导入它的进程只拥有自己显式注册的 descriptor / provider / reader。
 
 ```go
 descriptor, ok := format.GetFormatDescriptor(format.FormatMarkdown)
@@ -390,19 +408,16 @@ func (m *OracleTypeMapper) ToCommon(nativeType string) format.FieldType
 func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int, int)
 ```
 
-## FileMetadataExtractor
+## 旧 FileMetadataExtractor 已删除
 
-`FileMetadataExtractor` 是早期文件增强元数据提取器，目前仅作为 legacy 兼容入口保留。它的返回结构混合了 storage info、type info、format info、capabilities 和内容数据，新格式不要继续新增该实现。
+早期 `FileMetadataExtractor` 注册表按 MIME 类型提取增强元数据，返回结构混合了 storage info、type info、format info、capabilities 和内容数据。该旁路机制已经删除，不再作为 Meta 按需提取或新增格式扩展入口。
 
-```go
-type FileMetadataExtractor interface {
-    SupportedTypes() []string
-    Extract(ctx context.Context, input ExtractInput) (*ExtractedMetadata, error)
-    Priority() int
-}
-```
+当前写法：
 
-后续应把确定的类型元数据迁移到 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider` 等 info provider，把样本、文本片段、缩略图、raw content、range content 等迁移到独立 content reader。它不是 Meta item detector，也不负责 item 归并。
+- 确定的类型元数据进入 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 等 info provider。
+- 格式私有元信息进入 `FormatInfoProvider`。
+- 样本、文本片段、缩略图、raw content、range content 等进入独立 content reader。
+- Meta 只编排 provider / reader 结果并写入标准 attributes，不通过 MIME extractor 旁路写 attributes。
 
 ## 新增格式的推荐步骤
 
@@ -412,7 +427,7 @@ type FileMetadataExtractor interface {
 2. `Plugin` 必须实现 `FormatPlugin`。
 3. 按需实现 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider` 等能力。
 4. 在格式包 `init()` 中调用一次 `format.RegisterFormatPlugin(NewPlugin(...))`。注册函数会自动挂接 plugin 已实现的 provider / reader。
-5. 如果格式是内置稳定能力，在 `registry/descriptor.go` 确认 descriptor；如果只是第三方或实验插件，可通过 `RegisterFormatDescriptor` / manifest 注入。
+5. 如果格式是内置稳定能力，在 `Plugin.Descriptor()` 中维护完整 descriptor；descriptor-only 阶段也应有独立格式包。
 6. 在 `builtin/init.go` 空白导入该格式包，触发内置 plugin 注册。
 7. 为 descriptor、capability view、provider / reader 和边界情况补测试。
 
@@ -427,7 +442,7 @@ go test ./common/resource
 
 ```bash
 go test ./meta/backend/internal/service ./meta/backend/internal/metaitem ./meta/backend/internal/extractor
-go test ./manager/backend/internal/service
+go test ./manager/backend/internal/preview ./manager/backend/internal/objectcontent ./manager/backend/internal/service
 ```
 
 ## 相关文档

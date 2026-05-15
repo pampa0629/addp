@@ -17,6 +17,8 @@ import (
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/objectcontent"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/addp/manager/internal/worker"
@@ -24,17 +26,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
-	// 导入数据库插件以触发自动注册
-	_ "github.com/addp/common/engine/plugins/clickhouse"
-	_ "github.com/addp/common/engine/plugins/doris"
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mongodb"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/neo4j"
-	_ "github.com/addp/common/engine/plugins/nfs"
-	_ "github.com/addp/common/engine/plugins/postgresql"
-	_ "github.com/addp/common/engine/plugins/s3"
-	_ "github.com/addp/common/engine/plugins/spark_sql"
+	// 导入 general 引擎插件以触发自动注册
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 
 	// 导入格式解析器以触发自动注册
 	_ "github.com/addp/common/format/builtin"
@@ -149,20 +142,20 @@ func main() {
 		logger.L().Warn("Meta 集成未启用或配置不完整，元数据查询功能将不可用")
 	}
 
-	contentRegistry := service.NewObjectContentRegistry()
-	pluginDirs := service.ParsePluginDirSpec(cfg.PreviewPluginDir)
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	pluginDirs := preview.ParsePluginDirSpec(cfg.PreviewPluginDir)
 	contentDirSpec := buildContentDirSpec(pluginDirs)
 	if contentDirSpec != "" {
-		service.LoadObjectContentPlugins(contentRegistry, contentDirSpec)
+		objectcontent.LoadObjectContentPlugins(contentRegistry, contentDirSpec)
 	}
 	logger.L().Info("数据预览: 已激活内容插件")
 
-	previewRegistry := service.NewPreviewRegistry()
+	previewRegistry := preview.NewPreviewRegistry()
 
 	// 加载预览插件（从配置目录）
 	// 同时扫描 plugins/ 根目录（向后兼容）和 plugins/providers/ 子目录（新架构）
 	providerDirSpec := buildProviderDirSpec(pluginDirs)
-	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, providerDirSpec)
+	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, providerDirSpec)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）

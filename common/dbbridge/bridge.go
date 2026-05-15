@@ -13,21 +13,8 @@ import (
 	"github.com/beltran/gohive"
 	"gorm.io/gorm"
 
-	// 导入所有数据库插件，触发 init() 注册
-	_ "github.com/addp/common/engine/plugins/clickhouse"
-	_ "github.com/addp/common/engine/plugins/doris"
-	_ "github.com/addp/common/engine/plugins/jupyter"
-	_ "github.com/addp/common/engine/plugins/math_workflow"
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mongodb"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/neo4j"
-	_ "github.com/addp/common/engine/plugins/nfs"
-	_ "github.com/addp/common/engine/plugins/postgresql"
-	_ "github.com/addp/common/engine/plugins/python_workflow"
-	_ "github.com/addp/common/engine/plugins/s3"
-	_ "github.com/addp/common/engine/plugins/spark_sql"
-	_ "github.com/addp/common/engine/plugins/spark_workflow"
+	// 导入所有内置引擎插件，触发 init() 注册
+	_ "github.com/addp/common/engine/plugins/builtin/all"
 )
 
 // BuildDSN 使用插件系统构建连接字符串

@@ -15,12 +15,47 @@ type Provider struct {
 	formatType format.FormatType
 }
 
-func NewProvider(formatType format.FormatType) format.DocumentProvider {
+func NewProvider(formatType format.FormatType) Provider {
 	return Provider{formatType: formatType}
 }
 
 func (p Provider) Format() format.FormatType {
 	return p.formatType
+}
+
+func (p Provider) Descriptor() format.FormatDescriptor {
+	descriptor := format.FormatDescriptor{
+		ID:            "builtin-" + string(p.formatType),
+		Format:        p.formatType,
+		DataType:      format.FormatDataTypeDocument,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderDocument},
+		Providers:     format.FormatProviderDescriptor{DocumentInfo: true},
+		ContentReaders: []string{
+			string(format.ContentReaderDocumentText),
+			string(format.ContentReaderRawContent),
+		},
+		TransferRead:   true,
+		TransferWrite:  true,
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
+	}
+	switch p.formatType {
+	case format.FormatMarkdown:
+		descriptor.I18nKey = "format.markdown"
+		descriptor.Identification = format.FormatIdentification{
+			Extensions: []string{".md", ".markdown"},
+			MimeTypes:  []string{"text/markdown", "text/x-markdown"},
+		}
+	default:
+		descriptor.I18nKey = "format.text"
+		descriptor.Format = format.FormatText
+		descriptor.ID = "builtin-text"
+		descriptor.Identification = format.FormatIdentification{
+			Extensions: []string{".txt"},
+			MimeTypes:  []string{"text/plain"},
+		}
+	}
+	return descriptor
 }
 
 func (p Provider) Capabilities() format.FormatCapability {
@@ -70,10 +105,10 @@ func (p Provider) ReadDocumentText(ctx context.Context, input io.Reader, limit i
 }
 
 func init() {
-	if err := format.RegisterDocumentProvider(NewProvider(format.FormatText)); err != nil {
+	if err := format.RegisterFormatPlugin(NewProvider(format.FormatText)); err != nil {
 		panic(err)
 	}
-	if err := format.RegisterDocumentProvider(NewProvider(format.FormatMarkdown)); err != nil {
+	if err := format.RegisterFormatPlugin(NewProvider(format.FormatMarkdown)); err != nil {
 		panic(err)
 	}
 }

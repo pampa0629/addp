@@ -1,8 +1,11 @@
-package format
+package format_test
 
 import (
 	"reflect"
 	"testing"
+
+	. "github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func TestListFormatCapabilitiesDelegatesToCapabilityRegistry(t *testing.T) {

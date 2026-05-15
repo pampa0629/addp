@@ -1,6 +1,11 @@
-package format
+package format_test
 
-import "testing"
+import (
+	"testing"
+
+	. "github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
+)
 
 func TestInferPreviewHintUsesTextFallbackForTextBytes(t *testing.T) {
 	hint := InferPreviewHint(PreviewHintInput{

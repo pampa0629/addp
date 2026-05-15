@@ -7,6 +7,110 @@ import (
 	formatregistry "github.com/addp/common/format/registry"
 )
 
+func init() {
+	for _, capability := range []Capability{
+		{
+			Format:         FormatTable,
+			DataType:       DataTypeTable,
+			Layouts:        []string{LayoutWhole},
+			ProviderHints:  []string{ProviderTable},
+			ContentReaders: []string{formatregistry.ContentReaderTableSample},
+			TransferRead:   true,
+			TransferWrite:  true,
+			EngineFamilies: []string{EngineFamilyTabular},
+		},
+		{
+			Format:         FormatDocument,
+			DataType:       DataTypeDocument,
+			Layouts:        []string{LayoutWhole},
+			ProviderHints:  []string{ProviderDocument},
+			ContentReaders: []string{formatregistry.ContentReaderDocumentText, formatregistry.ContentReaderRawContent},
+			TransferRead:   true,
+			TransferWrite:  true,
+			EngineFamilies: []string{EngineFamilyDocument},
+		},
+		tableCapabilityForTest(FormatCSV, []string{".csv"}, []string{EngineFamilyObject, EngineFamilyFile}),
+		tableCapabilityForTest(FormatTSV, []string{".tsv"}, []string{EngineFamilyObject, EngineFamilyFile}),
+		tableCapabilityForTest(FormatORC, []string{".orc"}, []string{EngineFamilyObject, EngineFamilyFile}),
+		tableCapabilityForTest(FormatAvro, []string{".avro"}, []string{EngineFamilyObject, EngineFamilyFile}),
+		tableCapabilityForTest(FormatParquet, []string{".parquet"}, []string{EngineFamilyObject, EngineFamilyFile}),
+		{
+			Format:         FormatShapefile,
+			DataType:       DataTypeTable,
+			Layouts:        []string{LayoutMulti},
+			ProviderHints:  []string{ProviderTable, ProviderSpatial},
+			Extensions:     []string{".shp"},
+			ContentReaders: []string{formatregistry.ContentReaderTableSample, formatregistry.ContentReaderComponentTableSample, formatregistry.ContentReaderRawContent},
+			Spatial:        true,
+			TransferRead:   true,
+			TransferWrite:  true,
+			EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+		},
+		documentCapabilityForTest(FormatText, []string{".txt"}, []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument}),
+		documentCapabilityForTest(FormatMarkdown, []string{".md", ".markdown"}, []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument}),
+		{
+			Format:         FormatJSON,
+			DataType:       DataTypeDocument,
+			Layouts:        []string{LayoutSingle},
+			ProviderHints:  []string{ProviderDocument, ProviderTable, ProviderSpatial},
+			Extensions:     []string{".json", ".geojson"},
+			ContentReaders: []string{formatregistry.ContentReaderDocumentText, formatregistry.ContentReaderTableSample, formatregistry.ContentReaderRawContent},
+			TransferRead:   true,
+			TransferWrite:  true,
+			Parse:          true,
+			EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile, EngineFamilyDocument},
+		},
+		mediaCapabilityForTest(FormatWebP),
+		mediaCapabilityForTest(FormatSVG),
+		mediaCapabilityForTest(FormatMP4),
+		mediaCapabilityForTest(FormatMP3),
+	} {
+		if err := Register(capability); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func tableCapabilityForTest(format Format, extensions []string, families []string) Capability {
+	return Capability{
+		Format:         format,
+		DataType:       DataTypeTable,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderTable},
+		Extensions:     extensions,
+		ContentReaders: []string{formatregistry.ContentReaderTableSample, formatregistry.ContentReaderRawContent},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
+		EngineFamilies: families,
+	}
+}
+
+func documentCapabilityForTest(format Format, extensions []string, families []string) Capability {
+	return Capability{
+		Format:         format,
+		DataType:       DataTypeDocument,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderDocument},
+		Extensions:     extensions,
+		ContentReaders: []string{formatregistry.ContentReaderDocumentText, formatregistry.ContentReaderRawContent},
+		TransferRead:   true,
+		TransferWrite:  true,
+		EngineFamilies: families,
+	}
+}
+
+func mediaCapabilityForTest(format Format) Capability {
+	return Capability{
+		Format:         format,
+		DataType:       DataTypeMedia,
+		Layouts:        []string{LayoutSingle},
+		ProviderHints:  []string{ProviderMedia},
+		ContentReaders: []string{formatregistry.ContentReaderRawContent, formatregistry.ContentReaderRangeContent},
+		EngineFamilies: []string{EngineFamilyObject, EngineFamilyFile},
+	}
+}
+
 func TestListSorted(t *testing.T) {
 	capabilities := List()
 	if len(capabilities) == 0 {

@@ -5,9 +5,7 @@ import (
 
 	"github.com/addp/common/models"
 
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 )
 
 func TestBuildNotebookConnectionForPostgreSQL(t *testing.T) {

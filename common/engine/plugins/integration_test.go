@@ -7,20 +7,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 
 	// 导入所有插件以触发 init() 注册
-	_ "github.com/addp/common/engine/plugins/clickhouse"
-	_ "github.com/addp/common/engine/plugins/doris"
-	_ "github.com/addp/common/engine/plugins/jupyter"
-	_ "github.com/addp/common/engine/plugins/math_workflow"
-	_ "github.com/addp/common/engine/plugins/minio"
-	_ "github.com/addp/common/engine/plugins/mongodb"
-	_ "github.com/addp/common/engine/plugins/mysql"
-	_ "github.com/addp/common/engine/plugins/neo4j"
-	_ "github.com/addp/common/engine/plugins/nfs"
-	_ "github.com/addp/common/engine/plugins/postgresql"
-	_ "github.com/addp/common/engine/plugins/python_workflow"
-	_ "github.com/addp/common/engine/plugins/s3"
-	_ "github.com/addp/common/engine/plugins/spark_sql"
-	_ "github.com/addp/common/engine/plugins/spark_workflow"
+	_ "github.com/addp/common/engine/plugins/builtin/all"
 )
 
 func TestAllPluginsRegistered(t *testing.T) {

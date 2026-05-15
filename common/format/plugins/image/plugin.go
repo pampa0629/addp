@@ -29,7 +29,7 @@ func NewParser(opts *format.ParseOptions) *Parser {
 	return &Parser{options: opts, formatType: format.FormatImage}
 }
 
-func NewProvider(formatType format.FormatType) format.MediaProvider {
+func NewProvider(formatType format.FormatType) *Parser {
 	return &Parser{options: format.DefaultParseOptions(), formatType: formatType}
 }
 
@@ -50,6 +50,34 @@ func (p *Parser) Format() format.FormatType {
 		return format.FormatImage
 	}
 	return p.formatType
+}
+
+func (p *Parser) Descriptor() format.FormatDescriptor {
+	descriptor := format.FormatDescriptor{
+		ID:            "builtin-" + string(p.Format()),
+		Format:        p.Format(),
+		I18nKey:       "format." + string(p.Format()),
+		DataType:      format.FormatDataTypeMedia,
+		Layouts:       []string{format.FormatLayoutSingle},
+		ProviderHints: []string{format.FormatProviderMedia},
+		Providers:     format.FormatProviderDescriptor{MediaInfo: true},
+		ContentReaders: []string{
+			string(format.ContentReaderRawContent),
+			string(format.ContentReaderRangeContent),
+		},
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
+	}
+	switch p.Format() {
+	case format.FormatJPEG:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".jpg", ".jpeg"}, MimeTypes: []string{"image/jpeg"}}
+	case format.FormatPNG:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".png"}, MimeTypes: []string{"image/png"}}
+	case format.FormatGIF:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".gif"}, MimeTypes: []string{"image/gif"}}
+	case format.FormatTIFF:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".tif", ".tiff"}, MimeTypes: []string{"image/tiff"}}
+	}
+	return descriptor
 }
 
 func (p *Parser) Capabilities() format.FormatCapability {
@@ -132,6 +160,6 @@ func init() {
 		format.FormatGIF,
 		format.FormatTIFF,
 	} {
-		_ = format.RegisterMediaProvider(NewProvider(formatType))
+		_ = format.RegisterFormatPlugin(NewProvider(formatType))
 	}
 }

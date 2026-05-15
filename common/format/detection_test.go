@@ -1,7 +1,10 @@
-package format
+package format_test
 
 import (
 	"testing"
+
+	. "github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func TestDetectFormat(t *testing.T) {

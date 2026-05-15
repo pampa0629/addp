@@ -52,18 +52,20 @@ func (p *Plugin) Format() format.FormatType {
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	descriptor, ok := format.GetFormatDescriptor(format.FormatJSON)
-	if ok {
-		return descriptor
-	}
 	return format.FormatDescriptor{
 		ID:             "builtin-json",
 		Format:         format.FormatJSON,
+		I18nKey:        "format.json",
 		DataType:       format.FormatDataTypeDocument,
 		Layouts:        []string{format.FormatLayoutSingle},
 		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
+		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
 		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
 		ContentReaders: []string{string(format.ContentReaderDocumentText), string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
+		TransferRead:   true,
+		TransferWrite:  true,
+		Parse:          true,
+		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
 	}
 }
 

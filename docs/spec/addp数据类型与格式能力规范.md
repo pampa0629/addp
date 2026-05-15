@@ -87,6 +87,8 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 
 `Descriptor()` 描述“这个格式理论和规范上声明了什么能力”；实际 Go 进程里是否已经注册了对应实现，由 provider / reader registry 决定。能力发现视图必须同时呈现声明能力和实现状态，不能把二者混为一谈。
 
+内置格式的 descriptor 由各自格式包维护，代码位置为 `common/format/plugins/<format>/`。`common/format/registry` 只负责运行时注册、查询、冲突诊断和能力发现视图，不再集中保存一份内置格式大清单。即使某个格式当前只有静态声明、暂时没有解析 provider，也应建立对应格式包并实现 `Descriptor()`，例如逻辑格式、文档族、媒体族或 ORC / Avro 这类 descriptor-only 阶段能力。
+
 ### 注册方式
 
 格式实现注册有两层：
@@ -120,6 +122,20 @@ func init() {
 | `MediaInfoProvider` | media info provider |
 
 也可以只注册单一能力，例如 `RegisterTableInfoProvider` 或 `RegisterDocumentTextReader`。这种方式适合临时迁移旧实现；新增格式优先使用 `RegisterFormatPlugin`，让格式身份和实现入口在同一个子目录内闭合。
+
+内置格式通过 `common/format/builtin` 统一 blank import 加载。Meta、Manager 或测试进程如果需要完整内置格式识别、capability view、provider / reader 和 type mapper，应显式导入：
+
+```go
+import _ "github.com/addp/common/format/builtin"
+```
+
+新增内置 format ID 时，必须同时完成：
+
+1. 在 `common/format/plugins/<format>/` 实现 `Descriptor()`。
+2. 在同一格式包内按需实现 provider / reader；没有 Go 解析能力时也保留 descriptor-only plugin。
+3. 在 `common/format/builtin/init.go` 加入 blank import，使内置加载入口能触发注册。
+
+已有 format 补充 provider / reader 能力时，只修改对应格式包，不新增集中 descriptor。
 
 ### 子目录封装要求
 
@@ -270,36 +286,7 @@ Transfer 能力负责批量读写、组件读写和提交边界。
 
 Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。更细的读取抽象和组件定位规则见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
-## 当前能力矩阵
-
-本节记录当前 ADDP 已有的格式能力和 provider 实现状态。它是实现现状说明，不替代内置格式落地规则。
-
-### FormatCapability 声明
-
-当前 `common/format/capability` 已声明：
-
-| 格式 | 默认 `data_type` | layouts | provider hints | content readers | parse | transfer read/write | 说明 |
-|---|---|---|---|---|---|---|---|
-| `table` | `table` | `whole` | table | table_sample | 否 | 是 / 是 | 引擎原生表格逻辑格式 |
-| `document` | `document` | `whole` | document | document_text、raw_content | 否 | 是 / 是 | 引擎原生文档逻辑格式 |
-| `csv` | `table` | `single` | table | table_sample、raw_content | 是 | 是 / 是 | 单文件表 |
-| `docx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | Word 文档；当前后端只声明原始内容读取能力 |
-| `excel` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | Excel 工作簿；当前按容器 / 表格内容读取能力表达 |
-| `image` / `jpeg` / `png` / `gif` / `tiff` | `media` | `single` | media | raw_content、range_content | 否 | 否 / 否 | 图片格式；已有最小 MediaInfoProvider，`image` 是逻辑聚合格式，具体文件格式由子格式识别 |
-| `json` | `document` | `single` | document、table、spatial | table_sample、raw_content | 是 | 是 / 是 | JSON 可按内容识别为文档、表或空间表 |
-| `markdown` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | Markdown 文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
-| `parquet` | `table` | `single`、`whole` | table | table_sample、scope_table_sample、raw_content | 是 | 是 / 是 | 单文件表和 scope 表 |
-| `pdf` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | PDF 文档；旧元数据提取待迁移到 DocumentInfoProvider |
-| `pptx` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | 演示文档；当前后端只声明原始内容读取能力 |
-| `shapefile` | `table` | `multi` | table、spatial | table_sample、component_table_sample、raw_content | 是 | 是 / 是 | 多组件空间表 |
-| `sqlite` | `container` | `single` | container、table | table_sample、raw_content | 否 | 否 / 否 | SQLite 容器；当前按容器 / 表格内容读取能力表达 |
-| `zip` | `container` | `single` | container | raw_content、container_entry | 否 | 否 / 否 | ZIP 压缩包；当前提取 entry 轻量 children，并可按需打开普通文件 entry |
-| `text` | `document` | `single` | document | document_text、raw_content | 否 | 是 / 是 | 纯文本文档；已有最小 DocumentInfoProvider / DocumentTextReader，可提取 UTF-8 文本片段 |
-| `wps` | `document` | `single` | document | raw_content、range_content | 否 | 否 / 否 | WPS 文档；后端不解析正文，由上层按内容读取能力处理 |
-
-注意：此矩阵只表示 capability registry 当前声明，不表示所有格式都已有完整 parser、writer、content reader 和 transfer 端到端实现。
-
-### 能力发现视图
+## 能力发现视图
 
 `common/format.ListFormatCapabilityViews()` 是上层模块查询格式能力的稳定入口。视图中需要明确区分两层含义：
 
@@ -307,48 +294,29 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 |---|---|
 | `providers` | descriptor / capability 的声明能力，表示该格式在规范上属于哪些 info provider 家族 |
 | `content_readers` | descriptor / capability 的内容读取能力声明，表示该格式当前可提供哪些内容数据读取方式 |
-| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider` 等是否已经可调用；其中 `metadata_extractor` 是 legacy 兼容状态字段 |
+| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
 
 上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / WPS 当前声明为文档格式和 raw/range content reader，但后端正文解析实现尚未稳定。
 
-新增或调整内置格式后，应检查能力发现视图：
+能力发现视图不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
+
+新增或调整格式后，应检查能力发现视图：
 
 1. `providers` 是否表达规范上的目标能力。
 2. `implementations` 是否只反映当前已注册的 Go 实现。
 3. `content_readers` 是否只描述内容读取方式，不包含前端渲染器或展示策略。
 4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；兜底展示只属于 Manager / Frontend 协议。
 
-### Provider 实现
+## 旧 FileMetadataExtractor 退出说明
 
-当前内置注册状态：
+早期 `FileMetadataExtractor` 按 MIME 类型提取增强元数据，返回结构混合了 storage info、type info、format info、capabilities 和内容数据，和 `xxx info provider` / content reader 主线存在概念冲突。该旁路机制已从 `common/format` 删除，新增格式不得再引入同类注册表。
 
-| 格式 | FormatInfoProvider | TableInfoProvider | TableSampleReader | 兼容期 TableProvider | DocumentInfoProvider | DocumentTextReader | ComponentTableProvider | ScopeTableProvider | MediaInfoProvider | Legacy FileMetadataExtractor | TypeMapper | 说明 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `csv` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 当前注册为 `format=csv`；TSV 识别规则存在，但独立 `format=tsv` reader 待补 |
-| `excel` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 可提取工作簿 container info；指定 sheet 后可提取该 sheet 的 table info 和分页样本；Meta 规范上外层仍按 container item 表达 |
-| `json` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | records / JSON Lines / 空间 JSON 由 parser 判断结构 |
-| `markdown` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
-| `parquet` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 已实现 | 无 | 无 | 无 | 支持单文件和 scope 表读取 |
-| `shapefile` | 未注册 | 已实现 | 已实现 | 已实现 | 无 | 无 | 已实现 | 无 | 无 | 无 | 已实现 | 支持组件读取和空间字段映射 |
-| `text` | 无 | 无 | 无 | 无 | 已实现最小能力 | 已实现最小能力 | 无 | 无 | 无 | 无 | 无 | 支持 UTF-8 文本片段提取 |
-| `sqlite` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | SpatiaLite mapper 已注册 | 可提取数据库 container info；指定 table 后可提取该 table 的 table info 和分页样本；SQLite 文件自身仍是 container，不写父级 `type_info.table` |
-| `geopackage` | 已实现 | 已实现 | 已实现 | 已实现 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 作为容器格式注册；父级只输出 layer / table 轻量 children，选中 child 后再读取字段、分页样本和 `SpatialInfo` |
-| `zip` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已注册 `ContainerInfoProvider` 和 `ContainerChildResolver`；父级只输出 entry 轻量 children 和容器统计，选中 entry 后再按 child 的 `data_type` / `format` 交给对应 reader |
-| `image` / `jpeg` / `png` / `gif` / `tiff` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 已实现 | 无 | MediaInfoProvider 可返回宽高、编码、MIME，GeoTIFF 可补 spatial facts；旧 extractor 待收敛 |
-| `pdf` | 未注册 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 已实现 | 无 | 旧 FileMetadataExtractor 有 PDF 元数据提取，待收敛为 DocumentInfoProvider |
+当前边界：
 
-当前 provider / reader 家族已包含 `ContainerInfoProvider`、`ContainerChildResolver`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、最小 `DocumentInfoProvider` / `DocumentTextReader` 和最小 `MediaInfoProvider`；`GraphInfoProvider` / `GraphSampleReader` 仍是目标抽象，具体稳定接口和注册表后续随消费场景补齐。
-
-### FileMetadataExtractor 兼容说明
-
-`FileMetadataExtractor` 是早期按 MIME 类型提取增强元数据的旁路机制，当前仍被 Meta 的对象存储扫描和按需提取链路使用。它的问题是返回 `ExtractedMetadata.BasicInfo / SchemaInfo / ContentData / CustomAttrs`，同时混合了 storage info、type info、format info、capabilities 和内容数据，和 `xxx info provider` / content reader 的主线存在概念冲突。
-
-新的格式能力不应继续新增 `FileMetadataExtractor` 实现。已有 image / PDF 相关逻辑应逐步迁移：
-
-1. 可确定的 data type 元数据进入对应 `MediaInfoProvider` / `DocumentInfoProvider`。
-2. 文本片段、缩略图、raw content、range content 等进入 content reader。
-3. Meta 只负责编排 provider 结果并写入标准 attributes 分区。
-4. 旧 `FileMetadataExtractor` 仅作为兼容入口保留到 Meta 调用方完成迁移。
+1. 可确定的 data type 元数据进入对应 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider` 或 `ContainerInfoProvider`。
+2. 格式私有元信息进入 `FormatInfoProvider`，由 Meta normalizer 写入 `format_info.<format>`。
+3. 文本片段、缩略图、raw content、range content 等进入 content reader。
+4. Meta 只负责编排 provider / reader 结果并写入标准 attributes 分区；按需对象元信息提取也必须走 FormatInfoProvider / MediaInfoProvider 等主线能力。
 
 ## Info Provider 与 Content Reader
 

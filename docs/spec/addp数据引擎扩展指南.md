@@ -10,8 +10,10 @@
 2. 实现 `EnginePlugin` 基础接口。
 3. 按引擎能力实现需要的 provider。
 4. 返回结构化 `Capabilities()`。
-5. 在 `common/dbbridge/bridge.go` 中 blank import 插件包。
+5. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
 6. 补充单元测试和必要的 integration 测试。
+
+上层模块通过 `common/engine/plugins/builtin/general`、`common/engine/plugins/builtin/extension` 或 `common/engine/plugins/builtin/all` 统一加载内置插件，不应散落 blank import 具体引擎插件包。`common/dbbridge` 只消费聚合后的插件注册表。
 
 ---
 
