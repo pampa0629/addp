@@ -268,10 +268,10 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindPPTX
 	case models.ObjectPreviewKindImage:
 		return models.ObjectPreviewKindImage
+	case models.ObjectPreviewKindVideo:
+		return models.ObjectPreviewKindVideo
 	case models.ObjectPreviewKindJSON:
 		return models.ObjectPreviewKindJSON
-	case models.ObjectPreviewKindGeoJSON:
-		return "map"
 	case models.ObjectPreviewKindContainer:
 		return models.ObjectPreviewKindContainer
 	case models.ObjectPreviewKindMarkdown:
@@ -299,8 +299,8 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindWPS:         "WPS",
 		models.ObjectPreviewKindPPTX:        "PPTX",
 		models.ObjectPreviewKindImage:       "图片",
+		models.ObjectPreviewKindVideo:       "视频",
 		models.ObjectPreviewKindJSON:        "JSON",
-		models.ObjectPreviewKindGeoJSON:     "GeoJSON",
 		models.ObjectPreviewKindContainer:   "容器",
 		models.ObjectPreviewKindText:        "文本",
 		models.ObjectPreviewKindMarkdown:    "Markdown",
@@ -554,6 +554,30 @@ func (h *imageContentHandler) Handle(_ context.Context, req *ObjectContentReques
 	}), false, nil
 }
 
+type mediaStreamContentHandler struct {
+	baseContentHandler
+	kind string
+}
+
+func (h *mediaStreamContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	metadata := buildPreviewMetadata(req, 0)
+	if req != nil && strings.TrimSpace(req.PreviewURL) != "" {
+		content := &models.ObjectPreviewContent{
+			Kind:            h.kind,
+			URL:             strings.TrimSpace(req.PreviewURL),
+			PreviewMaterial: models.PreviewMaterialURL,
+			Metadata:        metadata,
+		}
+		setFrontendRenderer(content, h.kind)
+		return decoratePreviewContent(content), false, nil
+	}
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:     h.kind,
+		Text:     fmt.Sprintf("%s 文件无法获取在线预览地址，请下载后查看。", contentKindLabel(h.kind)),
+		Metadata: metadata,
+	}), false, nil
+}
+
 type jsonContentHandler struct {
 	baseContentHandler
 	maxBytes int64
@@ -561,9 +585,6 @@ type jsonContentHandler struct {
 }
 
 func (h *jsonContentHandler) Matches(req *ObjectContentRequest) bool {
-	if h.kind == models.ObjectPreviewKindGeoJSON && !looksLikeGeoJSONContentRequest(req) {
-		return false
-	}
 	return h.baseContentHandler.Matches(req)
 }
 
@@ -604,16 +625,9 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 			Truncated: truncated,
 		}), truncated, nil
 	}
-	if h.kind == models.ObjectPreviewKindGeoJSON {
-		if preview, err := buildGeoJSONPreview(ctx, []byte(text), parsed); err == nil {
-			preview.Truncated = truncated
-			return decoratePreviewContent(preview), truncated, nil
-		}
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind: models.ObjectPreviewKindJSON,
-			Text: text,
-			JSON: parsed,
-		}), truncated, nil
+	if preview, ok := buildSpatialJSONPreview(ctx, []byte(text), parsed); ok {
+		preview.Truncated = truncated
+		return decoratePreviewContent(preview), truncated, nil
 	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind: models.ObjectPreviewKindJSON,
@@ -622,89 +636,64 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	}), truncated, nil
 }
 
-func looksLikeGeoJSONContentRequest(req *ObjectContentRequest) bool {
-	if req == nil {
-		return false
-	}
-	formatName := strings.ToLower(strings.TrimSpace(req.Format))
-	if formatName == models.ObjectPreviewKindGeoJSON || formatName == "geo+json" {
-		return true
-	}
-	extension := strings.ToLower(strings.TrimSpace(req.Extension))
-	if extension == ".geojson" {
-		return true
-	}
-	contentType := strings.ToLower(strings.TrimSpace(strings.Split(req.ContentType, ";")[0]))
-	return contentType == "application/geo+json" || contentType == "application/vnd.geo+json"
-}
-
-func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, error) {
+func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, bool) {
 	opts := format.DefaultParseOptions()
 	provider, err := format.GetTableProvider(format.FormatJSON)
 	if err != nil {
-		return nil, err
+		return nil, false
 	}
 
-	// 使用格式解析器提取 table 语义
 	tableInfo, err := provider.DescribeTable(ctx, bytes.NewReader(data), opts)
 	if err != nil {
-		return nil, err
+		return nil, false
+	}
+	if tableInfo == nil || !tableInfo.IsSpatial() {
+		return nil, false
 	}
 
-	// 读取预览数据（前10条记录）
 	sampleRecords, _ := provider.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
 
-	// 构建元数据
 	metadata := make(map[string]interface{})
-
-	// 从 TableInfo 提取元数据
-	if tableInfo != nil {
-		// 添加字段信息
-		columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-		for _, field := range tableInfo.Fields {
-			col := map[string]interface{}{
-				"name":     field.Name,
-				"type":     string(field.Type),
-				"nullable": field.Nullable,
-			}
-			if field.Type == format.FieldTypeGeometry {
-				col["type"] = "geometry"
-			}
-			columns = append(columns, col)
+	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
+		col := map[string]interface{}{
+			"name":     field.Name,
+			"type":     string(field.Type),
+			"nullable": field.Nullable,
 		}
-		metadata["columns"] = columns
-
-		// 添加行数
-		if tableInfo.RowCount != nil {
-			metadata["record_count"] = *tableInfo.RowCount
-			metadata["feature_count"] = *tableInfo.RowCount
+		if field.Type == format.FieldTypeGeometry {
+			col["type"] = "geometry"
 		}
+		columns = append(columns, col)
+	}
+	metadata["columns"] = columns
 
-		// 从 Extensions 中提取空间信息
-		for _, ext := range tableInfo.Extensions {
-			if spatialInfo, ok := ext.(*format.SpatialInfo); ok {
-				metadata["geometry_field"] = spatialInfo.GeometryColumn
-				metadata["geometry_type"] = spatialInfo.GeometryType
-				metadata["geometry_types"] = []string{spatialInfo.GeometryType}
-				if spatialInfo.SRID != 0 {
-					metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", spatialInfo.SRID)
-				}
-				break
-			}
+	if tableInfo.RowCount != nil {
+		metadata["record_count"] = *tableInfo.RowCount
+		metadata["feature_count"] = *tableInfo.RowCount
+	}
+
+	if spatialInfo := tableInfo.GetSpatialInfo(); spatialInfo != nil {
+		metadata["geometry_field"] = spatialInfo.GeometryColumn
+		metadata["geometry_type"] = spatialInfo.GeometryType
+		metadata["geometry_types"] = []string{spatialInfo.GeometryType}
+		if spatialInfo.SRID != 0 {
+			metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", spatialInfo.SRID)
 		}
 	}
 
-	// 添加示例记录
 	if len(sampleRecords) > 0 {
 		metadata["sample_records"] = sampleRecords
 	}
 
 	return decoratePreviewContent(&models.ObjectPreviewContent{
-		Kind:     models.ObjectPreviewKindGeoJSON,
-		Text:     string(data),
-		GeoJSON:  parsed,
-		Metadata: metadata,
-	}), nil
+		Kind:             models.ObjectPreviewKindJSON,
+		PreviewMaterial:  models.PreviewMaterialGeoJSON,
+		FrontendRenderer: "map",
+		Text:             string(data),
+		GeoJSON:          parsed,
+		Metadata:         metadata,
+	}), true
 }
 
 func emptyContainerPreview(formatName string) map[string]interface{} {

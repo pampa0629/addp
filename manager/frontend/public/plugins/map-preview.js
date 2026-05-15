@@ -5,7 +5,7 @@
   const component = components[COMPONENT_KEY]
 
   if (!component) {
-    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 geojson 注册`)
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 map 注册`)
     return
   }
 
@@ -34,17 +34,13 @@
     ).toString().toLowerCase()
 
   register({
-    name: 'geojson',
+    name: 'map',
     component,
     canHandle: (data = {}) => {
-      const kind = (data.object?.content?.kind || '').toLowerCase()
-      if (kind === 'geojson') {
-        return true
-      }
       return frontendRenderer(data) === 'map' && previewMaterial(data) === 'geojson'
     },
     priority: 80
   })
 
-  console.log('📦 GeoJSON 预览插件已注册')
+  console.log('📦 Map 预览插件已注册')
 })()

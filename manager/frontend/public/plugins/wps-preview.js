@@ -15,12 +15,6 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
-  const matchesContentType = (type) => {
-    if (!type) return false
-    const lower = type.toLowerCase()
-    return lower.includes('ms-works') || lower.includes('wps')
-  }
-
   const frontendRenderer = (data = {}) =>
     (
       data.object?.content?.frontend_renderer ||
@@ -30,44 +24,11 @@
       ''
     ).toString().toLowerCase()
 
-  const contentKind = (data = {}) =>
-    (
-      data.object?.content?.kind ||
-      data.object?.content?.Kind ||
-      data.object?.kind ||
-      data.object?.Kind ||
-      ''
-    ).toString().toLowerCase()
-
-  const contentTypeCandidates = (object = {}) => [
-    object.content_type,
-    object.contentType,
-    object.content?.content_type,
-    object.content?.contentType,
-    object.content?.metadata?.content_type,
-    object.content?.metadata?.contentType
-  ]
-
   register({
     name: 'wps',
     component,
     canHandle: (data = {}) => {
-      if (frontendRenderer(data) === 'wps') {
-        return true
-      }
-      if (contentKind(data) === 'wps') {
-        return true
-      }
-      const object = data.object || {}
-      const path = (object.path || '').toLowerCase()
-      if (path.endsWith('.wps')) {
-        return true
-      }
-      const extension = (object.extension || object.Extension || '').toString().toLowerCase()
-      if (extension === '.wps' || extension === 'wps') {
-        return true
-      }
-      return contentTypeCandidates(object).some(matchesContentType)
+      return frontendRenderer(data) === 'wps'
     },
     priority: 63
   })

@@ -1,0 +1,8 @@
+{
+  "name": "builtin:content-video",
+  "type": "builtin",
+  "builtin": "video",
+  "priority": 68,
+  "match": {},
+  "max_bytes": 0
+}

@@ -28,10 +28,7 @@
     name: 'json',
     component,
     canHandle: (data = {}) => {
-      if (frontendRenderer(data) === 'json') {
-        return true
-      }
-      return (data.object?.content?.kind || '').toLowerCase() === 'json'
+      return frontendRenderer(data) === 'json'
     },
     priority: 60
   })

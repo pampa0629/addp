@@ -15,16 +15,6 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
-  const matchesContentType = (type = '') => {
-    const lower = String(type).toLowerCase()
-    return lower.includes('markdown')
-  }
-
-  const matchesExtension = (path = '') => {
-    const lower = String(path).toLowerCase()
-    return lower.endsWith('.md') || lower.endsWith('.markdown')
-  }
-
   const frontendRenderer = (data = {}) =>
     (
       data.object?.content?.frontend_renderer ||
@@ -38,30 +28,7 @@
     name: 'markdown',
     component,
     canHandle: (data = {}) => {
-      if (frontendRenderer(data) === 'markdown') {
-        return true
-      }
-      const object = data.object || {}
-      if (matchesExtension(object.path)) {
-        return true
-      }
-      const extension = (object.extension || object.Extension || '').toString().toLowerCase()
-      if (extension === '.md' || extension === 'md' || extension === '.markdown' || extension === 'markdown') {
-        return true
-      }
-      const kind = (object.content?.kind || object.content?.Kind || '').toString().toLowerCase()
-      if (kind === 'markdown') {
-        return true
-      }
-      const candidates = [
-        object.content_type,
-        object.contentType,
-        object.content?.content_type,
-        object.content?.contentType,
-        object.content?.metadata?.content_type,
-        object.content?.metadata?.contentType
-      ]
-      return candidates.some(matchesContentType)
+      return frontendRenderer(data) === 'markdown'
     },
     priority: 56
   })

@@ -28,16 +28,7 @@
     name: 'image',
     component,
     canHandle: (data = {}) => {
-      if (frontendRenderer(data) === 'image') {
-        return true
-      }
-      const object = data.object || {}
-      const content = object.content || {}
-      const kind = (content.kind || '').toLowerCase()
-      if (kind === 'image') {
-        return true
-      }
-      return false
+      return frontendRenderer(data) === 'image'
     },
     priority: 70
   })

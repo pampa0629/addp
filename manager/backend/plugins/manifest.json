@@ -121,16 +121,16 @@
       "enabled": true
     },
     {
-      "file": "content/130_content_geojson.json",
-      "name": "content:geojson",
-      "description": "GeoJSON 文件预览",
-      "priority": 130,
+      "file": "content/125_content_video.json",
+      "name": "content:video",
+      "description": "视频文件预览",
+      "priority": 125,
       "enabled": true
     },
     {
       "file": "content/140_content_json.json",
       "name": "content:json",
-      "description": "JSON 文件预览",
+      "description": "JSON 文件预览（空间 JSON 由 JSON 处理器输出地图预览材料）",
       "priority": 140,
       "enabled": true
     },

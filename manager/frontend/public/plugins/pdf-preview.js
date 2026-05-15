@@ -24,46 +24,11 @@
       ''
     ).toString().toLowerCase()
 
-  const contentKind = (data = {}) =>
-    (
-      data.object?.content?.kind ||
-      data.object?.content?.Kind ||
-      data.object?.kind ||
-      data.object?.Kind ||
-      ''
-    ).toString().toLowerCase()
-
-  const contentTypeCandidates = (object = {}) => [
-    object.content_type,
-    object.contentType,
-    object.content?.content_type,
-    object.content?.contentType,
-    object.content?.metadata?.content_type,
-    object.content?.metadata?.contentType
-  ]
-
-  const matchesContentType = (type) => {
-    if (!type) return false
-    const lower = type.toLowerCase()
-    return lower.includes('pdf') || lower === 'application/pdf'
-  }
-
   register({
     name: 'pdf',
     component,
     canHandle: (data = {}) => {
-      if (frontendRenderer(data) === 'pdf') {
-        return true
-      }
-      if (contentKind(data) === 'pdf') {
-        return true
-      }
-      const object = data.object || {}
-      const path = (object.path || '').toLowerCase()
-      if (path.endsWith('.pdf')) {
-        return true
-      }
-      return contentTypeCandidates(object).some(matchesContentType)
+      return frontendRenderer(data) === 'pdf'
     },
     priority: 65
   })

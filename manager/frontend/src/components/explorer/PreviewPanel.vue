@@ -285,6 +285,15 @@ const guessExtensionFromMime = (mime) => {
   return map[normalized] || ''
 }
 
+const contentPreviewMaterial = (content = {}) =>
+  (
+    content.preview_material ||
+    content.previewMaterial ||
+    content.metadata?.preview_material ||
+    content.metadata?.previewMaterial ||
+    ''
+  ).toString().toLowerCase()
+
 const guessExtensionFromKind = (kind) => {
   const normalized = (kind || '').toLowerCase()
   switch (normalized) {
@@ -298,8 +307,6 @@ const guessExtensionFromKind = (kind) => {
       return 'pptx'
     case 'json':
       return 'json'
-    case 'geojson':
-      return 'geojson'
     case 'text':
       return 'txt'
     case 'sqlite':
@@ -342,8 +349,6 @@ const guessMimeFromKind = (kind, fallbackMime = '') => {
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     case 'json':
       return 'application/json'
-    case 'geojson':
-      return 'application/geo+json'
     case 'text':
       return 'text/plain'
     case 'sqlite':
@@ -709,14 +714,15 @@ const downloadInfo = computed(() => {
 
   if (content.text) {
     const kind = (content.kind || '').toLowerCase()
+    const material = contentPreviewMaterial(content)
     let mime = 'text/plain;charset=utf-8'
     let extension = '.txt'
-    if (kind === 'json') {
-      mime = 'application/json;charset=utf-8'
-      extension = '.json'
-    } else if (kind === 'geojson') {
+    if (material === 'geojson') {
       mime = 'application/geo+json;charset=utf-8'
       extension = '.geojson'
+    } else if (kind === 'json') {
+      mime = 'application/json;charset=utf-8'
+      extension = '.json'
     }
     return {
       available: true,
@@ -729,10 +735,10 @@ const downloadInfo = computed(() => {
 
   if (content.json || content.JSON || content.geojson || content.GeoJSON) {
     const jsonValue = content.json || content.JSON || content.geojson || content.GeoJSON
-    const kind = (content.kind || '').toLowerCase()
+    const material = contentPreviewMaterial(content)
     let mime = 'application/json;charset=utf-8'
     let extension = '.json'
-    if (kind === 'geojson' || content.geojson || content.GeoJSON) {
+    if (material === 'geojson' || content.geojson || content.GeoJSON) {
       mime = 'application/geo+json;charset=utf-8'
       extension = '.geojson'
     }

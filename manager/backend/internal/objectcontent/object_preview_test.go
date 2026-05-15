@@ -176,9 +176,19 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			want: "builtin:content-image",
 		},
 		{
+			name: "video",
+			req:  ObjectContentRequest{Extension: ".mp4", ContentType: "video/mp4"},
+			want: "builtin:content-video",
+		},
+		{
 			name: "parquet",
 			req:  ObjectContentRequest{Extension: ".parquet", ContentType: "application/vnd.apache.parquet"},
 			want: "builtin:content-parquet",
+		},
+		{
+			name: "spatial_json_uses_json_handler",
+			req:  ObjectContentRequest{Format: "json", Extension: ".geojson", ContentType: "application/geo+json"},
+			want: "builtin:content-json",
 		},
 	}
 	for _, tt := range tests {
@@ -192,6 +202,97 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestVideoContentHandlerReturnsURLMaterial(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["video"](ObjectContentPluginConfig{Name: "video"})
+	if err != nil {
+		t.Fatalf("build video handler: %v", err)
+	}
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{
+			Name:        "clip.mp4",
+			Extension:   ".mp4",
+			ContentType: "video/mp4",
+			PreviewURL:  "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/clip.mp4",
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("video handler must not read video bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatalf("truncated = true, want false")
+	}
+	if content.Kind != "video" || content.PreviewMaterial != "url" || content.FrontendRenderer != "video" || content.URL == "" {
+		t.Fatalf("content = %#v, want URL material with video renderer", content)
+	}
+}
+
+func TestJSONContentHandlerReturnsMapMaterialForSpatialJSON(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["json"](ObjectContentPluginConfig{Name: "json"})
+	if err != nil {
+		t.Fatalf("build json handler: %v", err)
+	}
+	payload := []byte(`{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}}]}`)
+
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{Name: "roads.geojson", Format: "json", ContentType: "application/geo+json", Size: int64(len(payload))},
+		func(limit int64) ([]byte, bool, error) {
+			return payload, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle spatial json: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "json" {
+		t.Fatalf("Kind = %q, want json", content.Kind)
+	}
+	if content.PreviewMaterial != "geojson" || content.FrontendRenderer != "map" {
+		t.Fatalf("content = %#v, want geojson material with map renderer", content)
+	}
+	if content.GeoJSON == nil {
+		t.Fatalf("expected GeoJSON preview payload")
+	}
+}
+
+func TestJSONContentHandlerKeepsPlainJSONRenderer(t *testing.T) {
+	t.Parallel()
+	handler, err := builtinContentFactories["json"](ObjectContentPluginConfig{Name: "json"})
+	if err != nil {
+		t.Fatalf("build json handler: %v", err)
+	}
+	payload := []byte(`{"name":"ADDP","kind":"config"}`)
+
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		&ObjectContentRequest{Name: "config.json", Format: "json", ContentType: "application/json", Size: int64(len(payload))},
+		func(limit int64) ([]byte, bool, error) {
+			return payload, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle plain json: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != "json" || content.PreviewMaterial != "json" || content.FrontendRenderer != "json" {
+		t.Fatalf("content = %#v, want json material with json renderer", content)
+	}
+	if content.GeoJSON != nil {
+		t.Fatalf("plain json must not return GeoJSON payload: %#v", content.GeoJSON)
 	}
 }
 

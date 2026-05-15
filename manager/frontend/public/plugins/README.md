@@ -1,6 +1,6 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`container-preview.js`、`object-catalog-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`container-preview.js`、`object-catalog-preview.js`、`map-preview.js`、`image-preview.js`、`json-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
@@ -14,7 +14,7 @@
     "/plugins/table-preview.js",
     "/plugins/container-preview.js",
     "/plugins/object-catalog-preview.js",
-    "/plugins/geojson-preview.js",
+    "/plugins/map-preview.js",
     "/plugins/image-preview.js",
     "/plugins/json-preview.js",
     "/plugins/pdf-preview.js",
@@ -92,9 +92,7 @@ window.DataExplorerPlugins.push({
     }
   },
   canHandle: (data) => {
-    const path = data.object?.path || ''
-    const type = data.object?.content_type || ''
-    return path.toLowerCase().endsWith('.md') || type.includes('markdown')
+    return data.object?.content?.frontend_renderer === 'markdown'
   },
   priority: 55
 })
@@ -140,9 +138,7 @@ window.DataExplorerPlugins.push({
     }
   },
   canHandle: (data) => {
-    const path = data.object?.path || ''
-    const type = data.object?.content_type || ''
-    return path.toLowerCase().endsWith('.pdf') || type.includes('pdf')
+    return data.object?.content?.frontend_renderer === 'pdf'
   },
   priority: 60
 })
@@ -185,16 +181,16 @@ canHandle: (data) => {
   //     path: '/path/to/file',
   //     content_type: 'text/plain',
   //     content: {
-  //       kind: 'text' | 'json' | 'image' | 'geojson',
+  //       kind: 'text' | 'json' | 'image',
+  //       preview_material: 'text' | 'json' | 'geojson' | 'raw_binary' | 'url',
+  //       frontend_renderer: 'text' | 'json' | 'map' | 'image' | ...
   //       text: '...',
   //       json: {...},
   //       image_data: 'base64...'
   //     }
   //   }
   // }
-
-  const contentType = data.object?.content_type || ''
-  return contentType.includes('csv')
+  return data.object?.content?.frontend_renderer === 'table'
 }
 ```
 
@@ -236,7 +232,9 @@ canHandle: (data) => {
     last_modified: '2025-01-01T00:00:00Z',
     metadata: { 'x-custom': 'value' },
     content: {
-      kind: 'text',  // 'text' | 'json' | 'image' | 'geojson'
+      kind: 'text',  // 内容类别，不等同于文件格式
+      preview_material: 'text',
+      frontend_renderer: 'text',
       text: 'file content...',
       truncated: false
     },
@@ -288,7 +286,7 @@ manager/frontend/
 │       ├── table-preview.js         # 内置表格预览
 │       ├── container-preview.js     # 容器 children 预览
 │       ├── object-catalog-preview.js# 对象 catalog 树/目录
-│       ├── geojson-preview.js       # GeoJSON 预览
+│       ├── map-preview.js           # 地图预览（GeoJSON 作为预览材料）
 │       ├── image-preview.js         # 图片预览（含 BMP）
 │       ├── json-preview.js          # JSON 预览
 │       ├── pdf-preview.js           # PDF 预览

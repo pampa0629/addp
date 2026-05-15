@@ -11,7 +11,6 @@ import (
 const (
 	maxTextPreviewBytes      = 256 * 1024
 	maxJSONPreviewBytes      = 512 * 1024
-	maxGeoJSONPreview        = 1024 * 1024
 	maxPDFPreviewBytes       = 20 * 1024 * 1024
 	maxDOCXPreviewBytes      = 100 * 1024 * 1024
 	maxWPSPreviewBytes       = 100 * 1024 * 1024

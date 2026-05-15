@@ -181,8 +181,7 @@
         content.metadata?.frontendRenderer ||
         ''
       ).toString().toLowerCase()
-      if (renderer === 'container') return true
-      return String(content.kind || '').toLowerCase() === 'container' && Array.isArray(content.json?.children)
+      return renderer === 'container'
     },
     priority: 64
   })

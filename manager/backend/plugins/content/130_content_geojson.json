@@ -1,8 +1,0 @@
-{
-  "name": "builtin:content-geojson",
-  "type": "builtin",
-  "builtin": "geojson",
-  "priority": 65,
-  "match": {},
-  "max_bytes": 1048576
-}

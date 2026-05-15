@@ -46,27 +46,27 @@ plugins/
 
 **位置**: `content/` 目录
 **职责**: 决定**怎么预览**具体的文件内容
-**处理层级**: 文件级别（PDF、Excel、GeoJSON、图片等）
+**处理层级**: 文件级别（PDF、Excel、JSON、图片、视频等）
 
 **配置示例**:
 ```json
 {
-  "name": "builtin:content-geojson",
+  "name": "builtin:content-json",
   "type": "builtin",
-  "builtin": "geojson",
-  "priority": 65,
+  "builtin": "json",
+  "priority": 60,
   "match": {
-    "formats": ["geojson"],
-    "extensions": [".geojson"],
-    "content_types": ["application/geo+json"]
+    "formats": ["json"],
+    "extensions": [".json", ".geojson"],
+    "content_types": ["application/json", "application/geo+json"]
   },
-  "max_bytes": 1048576
+  "max_bytes": 524288
 }
 ```
 
 **特点**:
-- 配置复杂，包含匹配规则（扩展名、MIME 类型）和大小限制
-- 根据文件特征自动选择处理器
+- 配置复杂，包含匹配规则（标准 format、扩展名、MIME 类型）和大小限制
+- 根据 Meta 标准 format 优先选择处理器，扩展名和 MIME 只作为 format 缺失时的兜底
 - 通过 `LoadObjectContentPlugins()` 加载
 
 ## 调用链

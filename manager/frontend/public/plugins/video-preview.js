@@ -15,44 +15,20 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
+  const frontendRenderer = (data = {}) =>
+    (
+      data.object?.content?.frontend_renderer ||
+      data.object?.content?.frontendRenderer ||
+      data.object?.content?.metadata?.frontend_renderer ||
+      data.object?.content?.metadata?.frontendRenderer ||
+      ''
+    ).toString().toLowerCase()
+
   register({
     name: 'video',
     component,
     canHandle: (data = {}) => {
-      const object = data.object || {}
-      const content = object.content || {}
-      const kind = (content.kind || '').toLowerCase()
-      if (kind === 'video') {
-        return true
-      }
-
-      // 检查文件扩展名
-      const path = (object.path || '').toLowerCase()
-      if (path) {
-        const videoExtensions = ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg']
-        if (videoExtensions.some((ext) => path.endsWith(ext))) {
-          return true
-        }
-      }
-
-      // 检查 content_type
-      const contentType = (object.content_type || '').toLowerCase()
-      if (contentType.includes('video')) {
-        return true
-      }
-
-      // 检查标准提取扩展中的 video_metadata
-      const attributes = object.attributes || {}
-      const extracted = attributes.extensions?.extraction?.extracted_metadata
-      if (
-        extracted &&
-        extracted.custom_attrs &&
-        extracted.custom_attrs.video_metadata
-      ) {
-        return true
-      }
-
-      return false
+      return frontendRenderer(data) === 'video'
     },
     priority: 75
   })

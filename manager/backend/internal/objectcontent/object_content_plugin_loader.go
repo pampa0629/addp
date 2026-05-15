@@ -119,6 +119,17 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		}
 		return handler, nil
 	},
+	models.ObjectPreviewKindVideo: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &mediaStreamContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(68),
+				matcher:  mediaObjectContentMatcher(cfg.Match, "video"),
+			},
+			kind: models.ObjectPreviewKindVideo,
+		}
+		return handler, nil
+	},
 	models.ObjectPreviewKindJSON: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &jsonContentHandler{
 			baseContentHandler: baseContentHandler{
@@ -128,22 +139,6 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 			},
 			maxBytes: cfg.maxBytesOr(maxJSONPreviewBytes),
 			kind:     models.ObjectPreviewKindJSON,
-		}
-		return handler, nil
-	},
-	models.ObjectPreviewKindGeoJSON: func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
-		handler := &jsonContentHandler{
-			baseContentHandler: baseContentHandler{
-				name:     cfg.Name,
-				priority: cfg.priorityOr(65),
-				matcher: newObjectContentMatcher(
-					normalizeFormatsOrDefault(cfg.Match.Formats, []string{models.ObjectPreviewKindGeoJSON, "geo+json"}),
-					normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".geojson"}),
-					normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/geo+json", "application/vnd.geo+json"}),
-				),
-			},
-			maxBytes: cfg.maxBytesOr(maxGeoJSONPreview),
-			kind:     models.ObjectPreviewKindGeoJSON,
 		}
 		return handler, nil
 	},
