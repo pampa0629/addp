@@ -246,6 +246,8 @@
       "attributeCount": "{count} items",
       "booleanYes": "Yes",
       "booleanNo": "No",
+      "viewAttributeJson": "View JSON",
+      "attributeJsonTitle": "Full Attributes JSON",
       "attributes": {
         "sections": {
           "item": "Item",
@@ -301,6 +303,14 @@
           "hasPrj": "Has PRJ",
           "contentIndex": "Content Index",
           "schemaVersion": "Schema Version"
+        },
+        "tableColumns": {
+          "name": "Field",
+          "type": "Type",
+          "originalType": "Original Type",
+          "nullable": "Nullable",
+          "primaryKey": "Primary Key",
+          "comment": "Comment"
         }
       },
       "expand": "Expand",

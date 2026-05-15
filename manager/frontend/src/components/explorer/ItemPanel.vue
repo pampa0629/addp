@@ -42,6 +42,12 @@
         class="attributes-tab-pane"
       >
         <div class="attributes-panel">
+          <div class="attributes-toolbar">
+            <el-button size="small" @click="jsonDialogVisible = true">
+              {{ t('manager.explorer.viewAttributeJson') }}
+            </el-button>
+          </div>
+
           <section class="meta-overview">
             <div
               v-for="item in overviewItems"
@@ -97,7 +103,30 @@
                     <span class="attribute-group-title">{{ group.title }}</span>
                     <span class="attribute-group-key">{{ group.key }}</span>
                   </div>
-                  <div class="attribute-items">
+
+                  <div
+                    v-for="table in group.tables"
+                    :key="table.path"
+                    class="attribute-table-wrap"
+                  >
+                    <el-table
+                      :data="table.rows"
+                      size="small"
+                      border
+                      class="attribute-table"
+                    >
+                      <el-table-column
+                        v-for="column in table.columns"
+                        :key="column.key"
+                        :prop="column.key"
+                        :label="column.label"
+                        min-width="120"
+                        show-overflow-tooltip
+                      />
+                    </el-table>
+                  </div>
+
+                  <div v-if="group.entries.length" class="attribute-items">
                     <div
                       v-for="entry in group.entries"
                       :key="entry.path"
@@ -116,6 +145,16 @@
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="jsonDialogVisible"
+      :title="t('manager.explorer.attributeJsonTitle')"
+      width="760px"
+      append-to-body
+      destroy-on-close
+    >
+      <pre class="attribute-json">{{ rawAttributesJson }}</pre>
+    </el-dialog>
   </div>
 </template>
 
@@ -144,9 +183,11 @@ const props = defineProps({
 defineEmits(['page-change', 'navigate', 'child-change'])
 
 const activeTab = ref('preview')
+const jsonDialogVisible = ref(false)
 
 watch(() => props.selectedNode?.locator, () => {
   activeTab.value = 'preview'
+  jsonDialogVisible.value = false
 })
 
 const itemMeta = computed(() => props.previewData?.item_meta)
@@ -268,6 +309,15 @@ const fieldLabelKeys = {
   schema_version: 'manager.explorer.attributes.fields.schemaVersion'
 }
 
+const tableColumnLabelKeys = {
+  name: 'manager.explorer.attributes.tableColumns.name',
+  type: 'manager.explorer.attributes.tableColumns.type',
+  original_type: 'manager.explorer.attributes.tableColumns.originalType',
+  nullable: 'manager.explorer.attributes.tableColumns.nullable',
+  primary_key: 'manager.explorer.attributes.tableColumns.primaryKey',
+  comment: 'manager.explorer.attributes.tableColumns.comment'
+}
+
 const itemTypeLabel = computed(() => {
   const typeI18nKey = itemMeta.value?.item_type_i18n_key
   const itemType = itemMeta.value?.item_type
@@ -299,14 +349,25 @@ const overviewItems = computed(() => {
   ]
 })
 
+const rawAttributesJson = computed(() => {
+  const attrs = {}
+  for (const attr of itemMeta.value?.attributes || []) {
+    attrs[attr.key] = attr.value
+  }
+  return JSON.stringify(attrs, null, 2)
+})
+
 const attributeSections = computed(() => {
   const attrs = itemMeta.value?.attributes || []
   return [...attrs]
     .sort((a, b) => compareKeys(a.key, b.key, sectionOrder))
     .map(buildAttributeSection)
+    .filter(Boolean)
 })
 
 const buildAttributeSection = (attr) => {
+  if (isEmptyAttributeValue(attr.value)) return null
+
   const pathParts = [attr.key]
   const directEntries = []
   const groups = []
@@ -315,8 +376,10 @@ const buildAttributeSection = (attr) => {
     const keys = Object.keys(attr.value).sort((a, b) => compareKeys(a, b, groupOrder))
     keys.forEach(key => {
       const childValue = attr.value[key]
+      if (isEmptyAttributeValue(childValue)) return
       if (isStructuredGroupValue(childValue)) {
-        groups.push(buildAttributeGroup([...pathParts, key], childValue))
+        const group = buildAttributeGroup([...pathParts, key], childValue)
+        if (group.count > 0) groups.push(group)
       } else {
         directEntries.push(...flattenAttributeValue(childValue, [...pathParts, key], pathParts))
       }
@@ -325,11 +388,8 @@ const buildAttributeSection = (attr) => {
     directEntries.push(...flattenAttributeValue(attr.value, pathParts, []))
   }
 
-  if (directEntries.length === 0 && groups.length === 0) {
-    directEntries.push(buildEntry(pathParts, attr.value, []))
-  }
-
-  const count = directEntries.length + groups.reduce((total, group) => total + group.entries.length, 0)
+  const count = directEntries.length + groups.reduce((total, group) => total + group.count, 0)
+  if (count === 0) return null
 
   return {
     key: attr.key,
@@ -341,16 +401,33 @@ const buildAttributeSection = (attr) => {
 }
 
 const buildAttributeGroup = (pathParts, value) => {
-  const entries = flattenAttributeValue(value, pathParts, pathParts)
+  const tables = []
+  let groupValue = value
+
+  if (isPlainObject(value) && isTableRows(value.fields)) {
+    tables.push(buildFieldTable([...pathParts, 'fields'], value.fields))
+    groupValue = { ...value }
+    delete groupValue.fields
+  }
+
+  const entries = flattenAttributeValue(groupValue, pathParts, pathParts)
+  const count = entries.length + tables.reduce((total, table) => total + table.rows.length, 0)
+
   return {
     key: pathParts.join('.'),
     path: pathParts.join('.'),
     title: translateFromMap(groupLabelKeys, pathParts[pathParts.length - 1], humanizeKey(pathParts[pathParts.length - 1])),
-    entries: entries.length > 0 ? entries : [buildEntry(pathParts, value, pathParts.slice(0, -1))]
+    count,
+    entries,
+    tables
   }
 }
 
 const flattenAttributeValue = (value, pathParts = [], groupRoot = []) => {
+  if (isEmptyAttributeValue(value)) {
+    return []
+  }
+
   if (value === null || value === undefined) {
     return pathParts.length ? [buildEntry(pathParts, value, groupRoot)] : []
   }
@@ -390,6 +467,31 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
   }
 }
 
+const buildFieldTable = (pathParts, rows) => {
+  const preferredColumns = ['name', 'type', 'original_type', 'nullable', 'primary_key', 'comment']
+  const rowObjects = rows.filter(isPlainObject)
+  const discoveredColumns = [...new Set(rowObjects.flatMap(row => Object.keys(row)))]
+  const columns = [
+    ...preferredColumns.filter(key => discoveredColumns.includes(key)),
+    ...discoveredColumns.filter(key => !preferredColumns.includes(key)).sort()
+  ]
+
+  return {
+    path: pathParts.join('.'),
+    rows: rowObjects.map(row => {
+      const formatted = {}
+      columns.forEach(column => {
+        formatted[column] = formatScalar(row[column])
+      })
+      return formatted
+    }),
+    columns: columns.map(column => ({
+      key: column,
+      label: translateFromMap(tableColumnLabelKeys, column, formatAttributeSegment(column))
+    }))
+  }
+}
+
 const isPlainObject = (value) => {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -398,8 +500,19 @@ const isStructuredGroupValue = (value) => {
   return isPlainObject(value) || (Array.isArray(value) && value.some(item => item && typeof item === 'object'))
 }
 
+const isTableRows = (value) => {
+  return Array.isArray(value) && value.length > 0 && value.every(isPlainObject)
+}
+
 const isScalar = (value) => {
   return value === null || value === undefined || typeof value !== 'object'
+}
+
+const isEmptyAttributeValue = (value) => {
+  if (value === null || value === undefined || value === '') return true
+  if (Array.isArray(value)) return value.length === 0 || value.every(isEmptyAttributeValue)
+  if (isPlainObject(value)) return Object.keys(value).length === 0 || Object.values(value).every(isEmptyAttributeValue)
+  return false
 }
 
 const formatScalar = (value) => {
@@ -521,6 +634,11 @@ const compareKeys = (a, b, order) => {
   gap: 12px;
 }
 
+.attributes-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .meta-overview {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -609,6 +727,26 @@ const compareKeys = (a, b, order) => {
   gap: 10px;
 }
 
+.attribute-table-wrap {
+  overflow: auto;
+  border-radius: 6px;
+}
+
+.attribute-table {
+  width: 100%;
+  background: var(--addp-bg-primary);
+}
+
+.attribute-table :deep(.el-table__header th),
+.attribute-table :deep(.el-table__body td) {
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
+}
+
+.attribute-table :deep(.el-table__body tr:hover > td) {
+  background: var(--addp-bg-secondary);
+}
+
 .attribute-group-header {
   display: flex;
   align-items: baseline;
@@ -656,5 +794,20 @@ const compareKeys = (a, b, order) => {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.attribute-json {
+  max-height: 62vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-primary);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

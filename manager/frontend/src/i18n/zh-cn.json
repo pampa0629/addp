@@ -246,6 +246,8 @@
       "attributeCount": "{count} 项",
       "booleanYes": "是",
       "booleanNo": "否",
+      "viewAttributeJson": "查看 JSON",
+      "attributeJsonTitle": "完整属性 JSON",
       "attributes": {
         "sections": {
           "item": "数据项",
@@ -301,6 +303,14 @@
           "hasPrj": "包含 PRJ",
           "contentIndex": "内容索引",
           "schemaVersion": "规范版本"
+        },
+        "tableColumns": {
+          "name": "字段名",
+          "type": "类型",
+          "originalType": "原始类型",
+          "nullable": "可为空",
+          "primaryKey": "主键",
+          "comment": "注释"
         }
       },
       "expand": "展开",
