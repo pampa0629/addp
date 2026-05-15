@@ -4,6 +4,7 @@
 
 - [ADDP 数据项体系图](addp数据项体系图.md)
 - [ADDP 数据类型和格式体系图](addp数据类型和格式体系图.md)
+- [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)
 - [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
 - [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
 - [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
@@ -107,6 +108,8 @@ Scanner 不应：
 - 在不同引擎里重复写同一格式的解析逻辑。
 - 绕过 detector 自行拼装 multi / whole item。
 
+Scanner 的扫描深度、覆盖和刷新语义由 `scan_depth`、`scanned_depth`、`force` 和扫描目标共同决定。详细规则见 [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)。
+
 ## Meta Detector
 
 Meta Detector 是 data item 识别的唯一入口。
@@ -194,10 +197,14 @@ sequenceDiagram
 
 | 扫描类型 | 目标 | 典型内容 |
 |---|---|---|
-| 基础扫描 | 快速发现资源树和 data item | node、item 身份、storage、item 分区、轻量格式判断 |
-| 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、media info、document info、spatial、statistics、content_index |
+| 基础扫描 | 快速发现资源树和 data item | node、item 身份、storage、item 分区、轻量格式判断；原则上不读取 file/object 内容 |
+| 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、container children、media info、document info、spatial、statistics、content_index |
 
 基础扫描和深度扫描都必须遵守同一套 data item 与 attributes 规范。深度扫描只是补充事实，不改变 item 身份规则。
+
+`scanned_depth` 表示 node / item 当前已经达到的扫描深度，`scan_status` 表示扫描任务过程状态。二者不能混用：一个 item 可以历史上已经 deep 完成，同时最近一次扫描任务失败。
+
+Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item 执行相应深度扫描，不应判断 Shapefile、CSV、Excel 等格式内部 attributes 是否齐全。
 
 ## 消费边界
 
@@ -222,6 +229,7 @@ sequenceDiagram
 - [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 数据项体系图](addp数据项体系图.md)
 - [ADDP 数据类型和格式体系图](addp数据类型和格式体系图.md)
+- [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)
 - [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
 - [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)
 - [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)

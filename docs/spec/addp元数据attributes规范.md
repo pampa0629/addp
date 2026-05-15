@@ -1,6 +1,6 @@
 # ADDP 元数据 attributes 规范
 
-本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 和 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md) 为准。
+本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 和 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md) 为准。扫描深度和刷新机制见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)。
 
 ## 目标结构
 
@@ -91,6 +91,7 @@ attributes 分区统一采用以下概念：
 10. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
 11. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
 12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。
+13. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
 
 ## content_index 结构约定
 

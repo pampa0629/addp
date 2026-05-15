@@ -27,8 +27,10 @@
 - [概念文档](concepts/)
 - [规范文档](spec/)
 - [术语表](concepts/addp术语表.md)
+- [元数据体系图](concepts/addp元数据体系图.md)
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
+- [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
@@ -48,9 +50,11 @@
 1. [术语表](concepts/addp术语表.md)：先统一 data item、data type、format、detector 等术语。
 2. [数据项体系图](concepts/addp数据项体系图.md)：确认 engine、node、data item 链条和模块职责边界。
 3. [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)：确认数据类型、文件格式、FormatPlugin、provider / reader 矩阵。
-4. [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)：确认 FormatPlugin、info provider、content reader 和注册方式。
-5. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 item 识别、主资源、组件和 claims 规则。
-6. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 attributes 分区和字段归属。
-7. [资源读取抽象规范](spec/addp资源读取抽象规范.md)：确认读取抽象和调用链。
-8. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：对照首批内置格式的落地规则。
-9. [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)：按实现清单落地新 data type / format。
+4. [元数据体系图](concepts/addp元数据体系图.md)：确认 Meta 扫描、detector、normalizer 和消费边界。
+5. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：确认 basic / deep、`scanned_depth`、`force`、扫描目标和跨模块触发规则。
+6. [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)：确认 FormatPlugin、info provider、content reader 和注册方式。
+7. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 item 识别、主资源、组件和 claims 规则。
+8. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 attributes 分区和字段归属。
+9. [资源读取抽象规范](spec/addp资源读取抽象规范.md)：确认读取抽象和调用链。
+10. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：对照首批内置格式的落地规则。
+11. [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)：按实现清单落地新 data type / format。
