@@ -15,7 +15,7 @@ engine.capabilities/v1
 ## 一、基本原则
 
 - capabilities 是模块消费能力的事实来源；Provider 是能力实现承诺。
-- 声明了可调用能力，就必须有对应 Provider、Adapter 或明确的模块执行面。
+- 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
 - Catalog、Metadata、Store、Query、Workflow、Script、Transfer、Preview 是不同能力面，不能混用。
 - 核心结构表达“ADDP 当前可用能力”。引擎本身不具备的能力、ADDP 尚未实现的能力，可由展示模型派生说明，不强行塞入核心结构。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
@@ -306,10 +306,10 @@ Transfer 的 Reader / Writer 由 Transfer 模块实现。capabilities 只声明�
 | `checkpoint` | Transfer 任务是否可利用检查点恢复。 | 可选，有执行面支持时声明。 |
 | `parallel_read` / `parallel_write` | 是否支持并行读写。 | 可选，有真实执行能力时声明。 |
 | `connector_types` | 推荐 Transfer 连接器类型，如 reader=s3、writer=jdbc。 | Transfer 需要消费时建议声明。 |
-| `supported_formats` | Transfer 可处理的数据格式范围。当前由 Format Registry 按引擎家族派生。 | Transfer 涉及文件、对象、表或文档格式时阶段性保留。 |
+| `supported_formats` | 兼容旧展示字段；引擎插件不应主动填写。 | 阶段性保留字段定义，后续由消费层派生或删除。 |
 | `preferred_writer` | 多 writer 可选时的默认写端。 | 可选。 |
 
-`supported_formats` 不应在各引擎 builder 中手写维护。当前第一阶段由 `common/format/capability` 集中声明格式、扩展名、数据类型、Transfer / Preview / Parse 能力和适用引擎家族；后续应继续演进为“引擎访问能力 × Format Registry × Transfer / Preview 实现”的完整推导结果。
+`supported_formats` 不应在各引擎 builder 中手写维护，engine 层也不直接依赖 format registry。需要展示或消费格式范围时，应由 Manager / Transfer / System 等消费层基于 engine family、engine transfer 能力和 format capability registry 派生，避免 engine 与 format 相互感知。
 
 ---
 
@@ -436,7 +436,6 @@ PostgreSQL 示例：
     "bulk_write": true,
     "checkpoint": true,
     "connector_types": {"reader": "jdbc", "writer": "jdbc"},
-    "supported_formats": ["table"],
     "preferred_writer": "jdbc"
   },
   "preview": {"supported": true, "modes": ["tabular_rows"], "max_rows": 1000, "uses_composer": true}
@@ -469,8 +468,7 @@ MinIO 示例：
   "transfer": {
     "read": true,
     "write": true,
-    "connector_types": {"reader": "s3", "writer": "s3"},
-    "supported_formats": ["csv", "geojson", "json", "parquet", "shapefile"]
+    "connector_types": {"reader": "s3", "writer": "s3"}
   },
   "preview": {"supported": true, "modes": ["object_parse", "raw_text", "binary_metadata"], "max_bytes": 10485760, "uses_composer": true}
 }

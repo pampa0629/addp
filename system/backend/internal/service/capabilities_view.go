@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/system/internal/models"
 )
 
@@ -317,9 +319,9 @@ func buildTransferSection(caps *engineplugin.EngineCapabilities) *models.Capabil
 	}
 	section.Items = append(section.Items, write)
 
-	if len(caps.Transfer.SupportedFormats) > 0 {
+	if formats := transferSupportedFormats(caps); len(formats) > 0 {
 		item := capabilityItem("formats", "system.engine.capabilityView.items.formats", capabilityStatusAvailable)
-		item.Tags = valueTags("format", caps.Transfer.SupportedFormats)
+		item.Tags = valueTags("format", formats)
 		section.Items = append(section.Items, item)
 	}
 	if caps.Transfer.Checkpoint {
@@ -328,6 +330,19 @@ func buildTransferSection(caps *engineplugin.EngineCapabilities) *models.Capabil
 
 	section.Status = deriveSectionStatus(section.Items)
 	return section
+}
+
+func transferSupportedFormats(caps *engineplugin.EngineCapabilities) []string {
+	if caps == nil || caps.Transfer == nil {
+		return nil
+	}
+	if len(caps.Transfer.SupportedFormats) > 0 {
+		return append([]string(nil), caps.Transfer.SupportedFormats...)
+	}
+	if caps.EngineFamily == "" {
+		return nil
+	}
+	return format.ListTransferFormatsForEngineFamily(caps.EngineFamily)
 }
 
 func buildPendingTransferSection(caps *engineplugin.EngineCapabilities) *models.CapabilityViewSection {

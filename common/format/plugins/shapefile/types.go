@@ -47,10 +47,6 @@ func ComponentSpecs() []resource.ComponentSpec {
 	}
 }
 
-func (i *Info) ExtensionType() string {
-	return "shapefile"
-}
-
 func (i *Info) FormatAttributes() map[string]interface{} {
 	if i == nil {
 		return nil

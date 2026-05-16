@@ -179,7 +179,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		return nil, err
 	}
 
-	builder := newSchemaBuilder(geometryField)
+	builder := newTableInfoBuilder(geometryField)
 	featureCount := int64(0)
 	index := p.newSparseRowIndex(opts, iter.dataStartOffset)
 
@@ -202,28 +202,16 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 	index.RowCount = featureCount
 
-	schema := builder.Build()
+	tableInfo := builder.Build()
+	tableInfo.RowCount = &featureCount
+	tableInfo.PrimaryKey = nil
 
-	// 转换为 TableInfo
-	fields := make([]format.FieldInfo, len(schema.Fields))
-	for i, field := range schema.Fields {
-		fields[i] = format.FieldInfo{
-			Name:         field.Name,
-			Type:         field.Type,
-			OriginalType: string(field.Type), // GeoJSON没有原始类型
-			Nullable:     field.Nullable,
-			IsPrimaryKey: false,
-			Comment:      field.Comment,
-		}
-	}
-
-	// 仅在实际记录里发现 geometry 结构时构建 SpatialInfo 扩展。
-	var extensions []format.ExtensionInfo
+	// 仅在实际记录里发现 geometry 结构时构建 SpatialInfo。
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
 		spatialGeometryField := geometryField
-		if schema.GeometryField != nil && *schema.GeometryField != "" {
-			spatialGeometryField = *schema.GeometryField
+		if tableInfo.SpatialInfo != nil && tableInfo.SpatialInfo.GeometryColumn != "" {
+			spatialGeometryField = tableInfo.SpatialInfo.GeometryColumn
 		}
 		srid := builder.SRID()
 		if crsSRID := commonSpatial.ParseSRID(iter.meta.CoordinateSystem); crsSRID > 0 {
@@ -232,35 +220,26 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			srid = commonSpatial.SRIDWGS84
 		}
 
-		spatialInfo := &format.SpatialInfo{
+		tableInfo.SpatialInfo = &format.SpatialInfo{
 			GeometryColumn: spatialGeometryField,
 			GeometryType:   geometryType,
 			SRID:           srid,
 			Dimension:      2, // GeoJSON 主要是 2D
 		}
 		if len(iter.meta.BoundingBox) == 4 {
-			spatialInfo.BoundingBox = &[4]float64{
+			tableInfo.SpatialInfo.BoundingBox = &[4]float64{
 				iter.meta.BoundingBox[0],
 				iter.meta.BoundingBox[1],
 				iter.meta.BoundingBox[2],
 				iter.meta.BoundingBox[3],
 			}
 		} else if bbox, ok := builder.BoundingBox(); ok {
-			spatialInfo.BoundingBox = &bbox
+			tableInfo.SpatialInfo.BoundingBox = &bbox
 		}
-		extensions = append(extensions, spatialInfo)
-	}
-	if len(index.Anchors) > 0 {
-		extensions = append(extensions, &format.ContentIndexInfo{Table: index})
 	}
 
-	// 构建 TableInfo
-	tableInfo := &format.TableInfo{
-		Name:       "json_records", // JSON 记录集合没有稳定表名，使用默认值
-		RowCount:   &featureCount,
-		Fields:     fields,
-		PrimaryKey: []string{}, // GeoJSON 没有主键
-		Extensions: extensions,
+	if len(index.Anchors) > 0 {
+		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
 	}
 
 	return tableInfo, nil

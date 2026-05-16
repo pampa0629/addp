@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/addp/transfer/pkg/pipeline"
+	"github.com/addp/transfer/plugins/readers"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -82,7 +83,7 @@ func TestPostGISToShapefile(t *testing.T) {
 		BatchSize: 100,
 	}
 
-	reader, err := NewJDBCReader(readerConfig)
+	reader, err := readers.NewJDBCReader(readerConfig)
 	if err != nil {
 		t.Fatalf("Failed to create JDBC reader: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestPostGISToShapefile(t *testing.T) {
 		BatchSize: 100,
 	}
 
-	verifyReader, err := NewShapefileReader(verifyConfig)
+	verifyReader, err := readers.NewShapefileReader(verifyConfig)
 	if err != nil {
 		t.Fatalf("Failed to create verify reader: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestShapefileToPostGIS(t *testing.T) {
 		BatchSize: 100,
 	}
 
-	reader, err := NewShapefileReader(readerConfig)
+	reader, err := readers.NewShapefileReader(readerConfig)
 	if err != nil {
 		t.Fatalf("Failed to create Shapefile reader: %v", err)
 	}
@@ -409,7 +410,7 @@ func TestGeoPackagePostGISRoundTrip(t *testing.T) {
 		BatchSize: 100,
 	}
 
-	pgReader, err := NewJDBCReader(pgReaderConfig)
+	pgReader, err := readers.NewJDBCReader(pgReaderConfig)
 	if err != nil {
 		t.Fatalf("Failed to create PostgreSQL reader: %v", err)
 	}
@@ -486,7 +487,7 @@ func TestGeoPackagePostGISRoundTrip(t *testing.T) {
 		BatchSize: 100,
 	}
 
-	gpkgReader, err := NewGeoPackageReader(gpkgReaderConfig)
+	gpkgReader, err := readers.NewGeoPackageReader(gpkgReaderConfig)
 	if err != nil {
 		t.Fatalf("Failed to create GeoPackage reader: %v", err)
 	}
@@ -718,11 +719,11 @@ func transferData(ctx context.Context, t *testing.T, sourceType string, sourceCo
 
 	switch sourceType {
 	case "postgresql":
-		reader, err = NewJDBCReader(readerConfig)
+		reader, err = readers.NewJDBCReader(readerConfig)
 	case "shapefile":
-		reader, err = NewShapefileReader(readerConfig)
+		reader, err = readers.NewShapefileReader(readerConfig)
 	case "geopackage":
-		reader, err = NewGeoPackageReader(readerConfig)
+		reader, err = readers.NewGeoPackageReader(readerConfig)
 	default:
 		return fmt.Errorf("unknown source type: %s", sourceType)
 	}

@@ -43,7 +43,7 @@ func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Index
 	}
 }
 
-// ScanSchema 扫描数据库Schema及其所有表
+// ScanNamespace 扫描数据库命名空间及其所有表
 //
 // 职责划分：
 // 1. Schema节点管理：创建/更新Schema节点，管理扫描状态
@@ -58,11 +58,11 @@ func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Index
 //   - resource: 数据源引擎配置
 //   - tenantID: 租户ID
 //   - engineID: 引擎ID
-//   - schemaName: Schema名称
+//   - namespaceName: 命名空间名称
 //   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
 //
 // 返回：(schema数量, 表数量, 字段数量, error)
-func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, schemaName string, scanDepth string, force bool) (int, int, int, error) {
+func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error) {
 	// 1. 获取插件
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	db := s.tryOpenConnectionPool(resource)
 
 	// 2. 创建/更新 Schema/Database 节点
-	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, namespaceTermForPlugin(p), schemaName, nil, nil)
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, namespaceTermForPlugin(p), namespaceName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -92,7 +92,7 @@ func (s *DatabaseScanService) ScanSchema(ctx context.Context, resource *commonMo
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, schemaName, scanDepth, force, itemTerm)
+	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force, itemTerm)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err

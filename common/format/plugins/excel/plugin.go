@@ -266,8 +266,8 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 		}
 	}
 
-	// 创建 ExcelInfo 扩展
-	excelInfo := &format.ExcelInfo{
+	// 创建 Excel 格式私有信息
+	excelInfo := &Info{
 		SheetName:  sheet.Name,
 		SheetIndex: sheet.Index,
 		SheetCount: analysis.SheetCount,
@@ -280,7 +280,7 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 		RowCount:   &rowCount,
 		Fields:     fields,
 		PrimaryKey: []string{},
-		Extensions: []format.ExtensionInfo{excelInfo},
+		FormatInfo: map[string]interface{}{"excel": excelInfo},
 	}
 
 	return tableInfo, nil

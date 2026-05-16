@@ -140,7 +140,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 
 func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
 	if req.Mode == scanDispatchManual {
-		namespaces, items, fields, err := s.scanResourceSchemasWithReporter(
+		namespaces, items, fields, err := s.scanResourceNamespacesWithReporter(
 			req.Resource,
 			req.TenantID,
 			req.Namespaces,
@@ -178,7 +178,7 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 			continue
 		}
 
-		namespaces, items, fields, err := s.dbScanService.ScanSchema(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceInfo.Name, req.ScanDepth, req.Force)
+		namespaces, items, fields, err := s.dbScanService.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceInfo.Name, req.ScanDepth, req.Force)
 		if err != nil {
 			s.log.Warn("namespace 扫描失败",
 				"engine_id", req.Resource.ID,

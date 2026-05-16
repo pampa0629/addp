@@ -10,7 +10,7 @@
 
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 声明格式 capability，例如 data type、layout、info provider、content reader、是否可 parse、是否支持 transfer read/write。
-- 提供 `TableInfo`、`FieldInfo`、`Schema`、`Field` 等跨模块可复用的结构化语义模型。
+- 提供 `TableInfo`、`FieldInfo`、`FieldType` 等跨模块可复用的结构化语义模型。
 - 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、兼容期 `TableProvider`、`ComponentTableProvider`、`ScopeTableProvider`。
 - 提供跨数据源的 `TypeMapper`，把原生类型映射到 ADDP 通用字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
@@ -34,11 +34,11 @@
 | --- | --- | --- |
 | 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示资源编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册。 |
 | 格式身份 descriptor 与能力发现 | `descriptor.go`、`discovery.go`、`registry/` | 运行时注册、查询、冲突诊断和 capability view；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
-| 格式检测 | `detection.go`、`mime.go`、`magic.go`、`classification.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界。 |
+| 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go`、`detection_classification.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
-| provider / reader 注册表 | `provider_registry.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider 和 content reader；`TableProvider`、`DocumentProvider` 仅为兼容期组合接口。 |
-| data type 通用 info 模型 | `table_info.go`、`schema.go`、`container_info.go`、`container_child.go`、`content_index.go` | 表、容器、schema、内容索引等跨模块结构。内容样本不进入这些 info。 |
-| 格式私有 info 与横切事实候选 | `format_info.go`、`spatial_info.go`、`extension.go` | `ExtensionInfo` 是兼容期承载；新 attributes 仍由 Meta 映射到 `format_info.*` 和 `capabilities.*`。 |
+| provider / reader 注册表 | `provider_registry.go`、`provider_register*.go`、`provider_get.go`、`provider_list.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider 和 content reader；`TableProvider`、`DocumentProvider` 仅为兼容期组合接口。 |
+| data type 通用 info 模型 | `table_info.go`、`field_type.go`、`container_info.go`、`container_child.go`、`content_index.go` | 表、字段类型、容器、内容索引等跨模块结构。内容样本不进入这些 info。 |
+| 格式私有 info 与横切事实候选 | `plugins/<format>/`、`spatial_info.go`、`content_index.go` | 具体格式私有结构留在对应插件目录；`TableInfo` 只提供通用 `FormatInfo`、`SpatialInfo`、`ContentIndex` 承载，由 Meta 映射到 `format_info.*`、`capabilities.*`、`content_index.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
 | 类型映射 | `type_mapper.go`、`mappers/` | 把数据库或格式原生字段类型映射到 ADDP 通用字段类型。 |
 | 内置格式加载入口 | `builtin/` | 统一 blank import 内置格式插件和 type mapper。 |
@@ -57,7 +57,6 @@
 | 目录 | 职责 |
 | --- | --- |
 | `registry/` | format descriptor 运行时注册、查询、能力发现和冲突诊断。 |
-| `capability/` | capability 注册表实现；顶层通过 `capability_registry.go` 暴露 facade。 |
 | `plugins/` | 内置文件格式插件。descriptor-only 阶段也必须有独立格式目录。 |
 | `mappers/` | PostgreSQL、MySQL、SpatiaLite 等原生类型映射。 |
 | `builtin/` | 内置 descriptor、provider / reader 和 type mapper 统一注册入口。 |
@@ -352,35 +351,23 @@ type TableInfo struct {
     UpdatedAt  *time.Time
     Fields     []FieldInfo
     PrimaryKey []string
-    Extensions []ExtensionInfo // legacy，新的 attributes 分区不以 ExtensionInfo 为主线
+    FormatInfo   map[string]interface{}
+    SpatialInfo  *SpatialInfo
+    ContentIndex *ContentIndexInfo
 }
 ```
 
-`Extensions` 是兼容期结构。新的 attributes 写入不以 `ExtensionInfo` 为主线；格式私有事实进入 `format_info.<format>`，横切事实进入 `capabilities.<capability>`。旧结构中常见扩展包括：
+`TableInfo` 的补充事实必须按归属写入明确字段，不再通过开放式 extension 机制承载：
 
-- `SpatialInfo`：空间字段、几何类型、坐标系、范围等。
-- `CSVInfo`：分隔符、编码、是否有表头等。
-- `ContentIndexInfo`：读取优化索引，例如 `content_index.table` 的稀疏行索引。
+- `FormatInfo`：格式私有事实，例如 CSV 分隔符、Excel sheet、Shapefile 组件、Parquet 文件行数。
+- `SpatialInfo`：空间字段、几何类型、坐标系、范围等横切事实。
+- `ContentIndex`：读取优化索引，例如 `content_index.table` 的稀疏行索引。
 
 空间判断应基于 `TableInfo.IsSpatial()` 或 `SpatialInfo`，不要通过 `format=geojson` 推断。
 
-## Schema 与类型映射
+## 字段类型与类型映射
 
-`Schema` / `Field` 是轻量结构模型，适合跨模块传递字段定义。
-
-```go
-schema := &format.Schema{
-    Fields: []format.Field{
-        {Name: "id", Type: format.FieldTypeInt, Nullable: false},
-        {Name: "name", Type: format.FieldTypeString, Size: 100},
-    },
-    PrimaryKey: []string{"id"},
-}
-
-if err := schema.Validate(); err != nil {
-    return err
-}
-```
+字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。
 
 `TypeMapper` 负责原生类型和通用字段类型互转：
 

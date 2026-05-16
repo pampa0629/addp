@@ -225,7 +225,7 @@ Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item �
 2. FormatPlugin 只提供格式身份、能力和解析实现，不裁决最终 item。
 3. Info provider 提供元数据，content reader 提供内容数据，二者不能混用。
 4. 旧 `FileMetadataExtractor` 旁路机制已删除；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
-5. `ExtensionInfo` 不再作为 attributes 扩展主线；格式私有事实进入 `format_info`，横切事实进入 `capabilities`。
+5. `TableInfo` 不再通过开放式扩展接口承载补充事实；格式私有事实进入 `format_info`，横切事实进入 `capabilities`，内容读取索引进入 `content_index`。
 6. Manager / Transfer / Asset / Search 只能消费已入库 data item，不复刻 Meta detector。
 
 ## 相关文档

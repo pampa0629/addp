@@ -199,8 +199,8 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 	}
 
-	// 构建 CSVInfo 扩展
-	csvInfo := &format.CSVInfo{
+	// 构建 CSV 格式私有信息
+	csvInfo := &Info{
 		Delimiter:  opts.Delimiter,
 		Encoding:   opts.Encoding,
 		HasHeader:  opts.HasHeader,
@@ -209,18 +209,16 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		LineEnding: "\n",
 	}
 
-	extensions := []format.ExtensionInfo{csvInfo}
-	if len(index.Anchors) > 0 {
-		extensions = append(extensions, &format.ContentIndexInfo{Table: index})
-	}
-
 	// 构建 TableInfo
 	tableInfo := &format.TableInfo{
 		Name:       "csv_data", // CSV 文件没有表名，使用默认值
 		RowCount:   &rowCount,
 		Fields:     fields,
 		PrimaryKey: []string{}, // CSV 没有主键
-		Extensions: extensions,
+		FormatInfo: map[string]interface{}{"csv": csvInfo},
+	}
+	if len(index.Anchors) > 0 {
+		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
 	}
 
 	return tableInfo, nil

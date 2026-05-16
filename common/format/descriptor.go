@@ -69,23 +69,6 @@ func RegisterFormatDescriptor(descriptor FormatDescriptor) error {
 	return RegisterFormatCapability(FormatCapabilityFromDescriptor(fromRegistryDescriptor(registryDescriptor)))
 }
 
-func FormatCapabilityFromDescriptor(descriptor FormatDescriptor) FormatCapability {
-	return FormatCapability{
-		Format:         descriptor.Format,
-		I18nKey:        descriptor.I18nKey,
-		Extensions:     append([]string(nil), descriptor.Identification.Extensions...),
-		DataType:       descriptor.DataType,
-		Layouts:        append([]string(nil), descriptor.Layouts...),
-		ProviderHints:  append([]string(nil), descriptor.ProviderHints...),
-		ContentReaders: append([]string(nil), descriptor.ContentReaders...),
-		Spatial:        descriptor.Spatial,
-		TransferRead:   descriptor.TransferRead,
-		TransferWrite:  descriptor.TransferWrite,
-		Parse:          descriptor.Parse,
-		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
-	}
-}
-
 func toRegistryDescriptor(descriptor FormatDescriptor) formatregistry.Descriptor {
 	return formatregistry.Descriptor{
 		ID:             descriptor.ID,

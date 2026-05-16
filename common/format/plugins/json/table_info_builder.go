@@ -8,7 +8,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-type schemaBuilder struct {
+type tableInfoBuilder struct {
 	geometryField string
 	fieldTypes    map[string]format.FieldType
 	geometryTypes map[string]struct{}
@@ -17,8 +17,8 @@ type schemaBuilder struct {
 	srid          int
 }
 
-func newSchemaBuilder(geometryField string) *schemaBuilder {
-	return &schemaBuilder{
+func newTableInfoBuilder(geometryField string) *tableInfoBuilder {
+	return &tableInfoBuilder{
 		geometryField: geometryField,
 		fieldTypes:    make(map[string]format.FieldType),
 		geometryTypes: make(map[string]struct{}),
@@ -26,11 +26,10 @@ func newSchemaBuilder(geometryField string) *schemaBuilder {
 	}
 }
 
-func (b *schemaBuilder) AddFeature(feature *Feature) {
+func (b *tableInfoBuilder) AddFeature(feature *Feature) {
 	if feature == nil {
 		return
 	}
-
 	if gt := feature.GeometryType(); gt != "" {
 		b.geometryTypes[gt] = struct{}{}
 		if feature.GeometryField != "" {
@@ -41,7 +40,6 @@ func (b *schemaBuilder) AddFeature(feature *Feature) {
 		}
 		b.bounds.AddGeometry(feature.Geometry)
 	}
-
 	for key, val := range feature.Properties {
 		b.propertySet[key] = struct{}{}
 		fieldType := inferFieldType(val)
@@ -49,7 +47,7 @@ func (b *schemaBuilder) AddFeature(feature *Feature) {
 	}
 }
 
-func (b *schemaBuilder) GeometryType() string {
+func (b *tableInfoBuilder) GeometryType() string {
 	if len(b.geometryTypes) == 0 {
 		return ""
 	}
@@ -61,19 +59,19 @@ func (b *schemaBuilder) GeometryType() string {
 	return "Geometry"
 }
 
-func (b *schemaBuilder) HasGeometry() bool {
+func (b *tableInfoBuilder) HasGeometry() bool {
 	return len(b.geometryTypes) > 0
 }
 
-func (b *schemaBuilder) BoundingBox() ([4]float64, bool) {
+func (b *tableInfoBuilder) BoundingBox() ([4]float64, bool) {
 	return b.bounds.BoundingBox()
 }
 
-func (b *schemaBuilder) SRID() int {
+func (b *tableInfoBuilder) SRID() int {
 	return b.srid
 }
 
-func (b *schemaBuilder) Build() *format.Schema {
+func (b *tableInfoBuilder) Build() *format.TableInfo {
 	fieldNames := make([]string, 0, len(b.propertySet))
 	for name := range b.propertySet {
 		if name == "" {
@@ -83,36 +81,40 @@ func (b *schemaBuilder) Build() *format.Schema {
 	}
 	sort.Strings(fieldNames)
 
-	fields := make([]format.Field, 0, len(fieldNames)+1)
+	fields := make([]format.FieldInfo, 0, len(fieldNames)+1)
 	geometryField := b.geometryField
 	if b.HasGeometry() {
-		fields = append(fields, format.Field{
+		fields = append(fields, format.FieldInfo{
 			Name:     geometryField,
 			Type:     format.FieldTypeGeometry,
 			Nullable: false,
 		})
 	}
-
 	for _, name := range fieldNames {
 		fieldType := b.fieldTypes[name]
 		if fieldType == "" {
 			fieldType = format.FieldTypeUnknown
 		}
-		fields = append(fields, format.Field{
+		fields = append(fields, format.FieldInfo{
 			Name:     name,
 			Type:     fieldType,
 			Nullable: true,
 		})
 	}
 
-	schema := &format.Schema{
+	tableInfo := &format.TableInfo{
+		Name:   "json_records",
 		Fields: fields,
 	}
 	if b.HasGeometry() {
-		schema.GeometryField = &geometryField
+		tableInfo.SpatialInfo = &format.SpatialInfo{
+			GeometryColumn: geometryField,
+			GeometryType:   b.GeometryType(),
+			SRID:           b.SRID(),
+			Dimension:      2,
+		}
 	}
-
-	return schema
+	return tableInfo
 }
 
 func inferFieldType(value interface{}) format.FieldType {
@@ -162,7 +164,6 @@ func mergeFieldType(current, next format.FieldType) format.FieldType {
 	if current == next {
 		return current
 	}
-
 	if isNumericType(current) && isNumericType(next) {
 		if current == format.FieldTypeDecimal || next == format.FieldTypeDecimal {
 			return format.FieldTypeDecimal
@@ -178,11 +179,9 @@ func mergeFieldType(current, next format.FieldType) format.FieldType {
 		}
 		return format.FieldTypeInt
 	}
-
 	if isTemporalType(current) && isTemporalType(next) {
 		return format.FieldTypeString
 	}
-
 	return format.FieldTypeString
 }
 

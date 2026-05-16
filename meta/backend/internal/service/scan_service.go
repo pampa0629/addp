@@ -162,7 +162,7 @@ func (s *ScanService) cleanupStaleScanLocks() {
 	cleanedCount := 0
 	for _, node := range staleNodes {
 		// 2. 生成锁的 key
-		lockKey := s.dedupService.GenerateSchemaLockKey(node.TenantID, node.EngineID, node.Name)
+		lockKey := s.dedupService.GenerateNamespaceLockKey(node.TenantID, node.EngineID, node.Name)
 
 		// 3. 清理 Redis 锁
 		if err := s.dedupService.ClearTask(ctx, lockKey); err != nil {
@@ -229,7 +229,7 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 		return nil, err
 	}
 
-	totalSchemas := 0
+	totalNamespaces := 0
 	totalTables := 0
 	totalFields := 0
 	scannedResourceIDs := []uint{}
@@ -247,13 +247,13 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 			continue
 		}
 
-		totalSchemas += schemas
+		totalNamespaces += schemas
 		totalTables += tables
 		totalFields += fields
 		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
 	}
 
-	counts := scantask.ScanCounts{Namespaces: totalSchemas, Items: totalTables, Fields: totalFields}
+	counts := scantask.ScanCounts{Namespaces: totalNamespaces, Items: totalTables, Fields: totalFields}
 	return scantask.AutoScanResponse(len(scannedResourceIDs), counts, startTime, time.Now()), nil
 }
 
@@ -613,7 +613,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	return result.Namespaces, result.Items, result.Fields, nil
 }
 
-func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -651,7 +651,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 		}
 	}
 
-	totalSchemas := 0
+	totalNamespaces := 0
 	totalTables := 0
 	totalFields := 0
 	total := len(namespaces)
@@ -661,89 +661,89 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 	}
 	completed := 0
 
-	for _, schemaName := range namespaces {
+	for _, namespaceName := range namespaces {
 		// 使用匿名函数包装每次循环，确保 defer 在每次循环结束时执行
-		func(schema string) {
+		func(namespace string) {
 			if reporter != nil {
-				reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", schema))
+				reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", namespace))
 			}
 
 			// 检查命名空间级锁
 			ctx := context.Background()
-			var schemaLock string
+			var namespaceLock string
 			lockAcquired := false
 
 			if s.dedupService != nil {
-				schemaLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, schema)
-				if s.dedupService.CheckTaskExists(ctx, schemaLock) {
+				namespaceLock = s.dedupService.GenerateNamespaceLockKey(tenantID, resourceID, namespace)
+				if s.dedupService.CheckTaskExists(ctx, namespaceLock) {
 					s.log.Info("命名空间正在扫描中，跳过",
 						"engine_id", resourceID,
-						"namespace", schema)
+						"namespace", namespace)
 					if reporter != nil {
-						reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", schema))
+						reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", namespace))
 					}
 					completed++
 					return
 				}
 
 				// 加命名空间级锁
-				if err := s.dedupService.MarkTaskRunning(ctx, schemaLock, 2*time.Hour); err != nil {
-					s.log.Warn("加命名空间级锁失败", "namespace", schema, "error", err)
+				if err := s.dedupService.MarkTaskRunning(ctx, namespaceLock, 2*time.Hour); err != nil {
+					s.log.Warn("加命名空间级锁失败", "namespace", namespace, "error", err)
 				} else {
 					lockAcquired = true
 				}
 
 				// 使用 defer 确保锁在任何情况下都会被清理（包括 panic）
 				defer func() {
-					if lockAcquired && schemaLock != "" {
-						if clearErr := s.dedupService.ClearTask(context.Background(), schemaLock); clearErr != nil {
-							s.log.Warn("清除命名空间级锁失败", "namespace", schema, "error", clearErr)
+					if lockAcquired && namespaceLock != "" {
+						if clearErr := s.dedupService.ClearTask(context.Background(), namespaceLock); clearErr != nil {
+							s.log.Warn("清除命名空间级锁失败", "namespace", namespace, "error", clearErr)
 						}
 					}
 				}()
 			}
 
 			// 扫描命名空间
-			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schema, scanDepth, force)
+			schemas, tables, fields, err := s.dbScanService.ScanNamespace(context.Background(), resource, tenantID, resourceID, namespace, scanDepth, force)
 
 			if err != nil {
 				s.log.Warn("命名空间扫描失败",
 					"engine_id", resourceID,
 					"tenant_id", tenantID,
-					"namespace", schema,
+					"namespace", namespace,
 					"error", err,
 				)
 				if reporter != nil {
-					reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", schema, err))
+					reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", namespace, err))
 				}
-				scanErrors = append(scanErrors, fmt.Errorf("%s: %w", schema, err))
+				scanErrors = append(scanErrors, fmt.Errorf("%s: %w", namespace, err))
 				return
 			}
-			totalSchemas += schemas
+			totalNamespaces += schemas
 			totalTables += tables
 			totalFields += fields
 
 			completed++
 			if reporter != nil {
-				reporter.Advance(schema, completed, total, map[string]interface{}{
+				reporter.Advance(namespace, completed, total, map[string]interface{}{
 					"tables": tables,
 					"fields": fields,
 				})
 			}
-		}(schemaName)
+		}(namespaceName)
 	}
 
 	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
-		"namespaces_scanned", totalSchemas,
+		"namespaces_scanned", totalNamespaces,
 		"items_scanned", totalTables,
 		"fields_scanned", totalFields,
 	)...)
 
 	if len(scanErrors) > 0 {
-		return totalSchemas, totalTables, totalFields, fmt.Errorf("failed to scan %d namespace(s): %v", len(scanErrors), scanErrors[0])
+		return totalNamespaces, totalTables, totalFields, fmt.Errorf("failed to scan %d namespace(s): %v", len(scanErrors), scanErrors[0])
 	}
 
-	return totalSchemas, totalTables, totalFields, nil
+	return totalNamespaces, totalTables, totalFields, nil
 }
 
 // scanNamespaceItemsWithReporter 扫描 namespace -> item 型 catalog 的指定 namespace 列表。
@@ -806,7 +806,7 @@ func (s *ScanService) scanNamespaceItemsWithReporter(
 		// 检查 namespace 级锁
 		var dbLock string
 		if s.dedupService != nil {
-			dbLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, namespaceName)
+			dbLock = s.dedupService.GenerateNamespaceLockKey(tenantID, resourceID, namespaceName)
 			if s.dedupService.CheckTaskExists(ctx, dbLock) {
 				s.log.Info("命名空间正在扫描中，跳过",
 					"engine_id", resourceID,

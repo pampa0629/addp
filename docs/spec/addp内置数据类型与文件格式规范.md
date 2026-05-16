@@ -303,7 +303,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | `type_info.container` | 内部表、view、默认入口、对象数量 | 内部 layer、表、默认入口、对象数量 |
 | `format_info.sqlite` | SQLite 版本、内部表数量、表清单、pragma 摘要 | 不适用 |
 | `format_info.geopackage` | 不适用 | gpkg 容器级元数据和 layer / table 统计摘要 |
-| `capabilities.spatial` | 仅 SpatiaLite 等可确认空间能力时写入 | 外层容器不写入；选中具体 layer 后由 child `TableInfo.Extensions.SpatialInfo` 表达空间字段、SRID / CRS、extent 和空间索引 |
+| `capabilities.spatial` | 仅 SpatiaLite 等可确认空间能力时写入 | 外层容器不写入；选中具体 layer 后由 child `TableInfo.SpatialInfo` 表达空间字段、SRID / CRS、extent 和空间索引 |
 
 ### 内部读取
 

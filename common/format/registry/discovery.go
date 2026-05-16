@@ -1,5 +1,10 @@
 package registry
 
+import (
+	"sort"
+	"strings"
+)
+
 type CapabilityView struct {
 	PluginID       string             `json:"plugin_id"`
 	Format         Format             `json:"format"`
@@ -53,4 +58,24 @@ func CapabilityViewFromDescriptor(descriptor Descriptor) CapabilityView {
 		Spatial:        descriptor.Spatial,
 		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
 	}
+}
+
+func ListTransferFormatsForEngineFamily(engineFamily string) []string {
+	engineFamily = strings.ToLower(strings.TrimSpace(engineFamily))
+	if engineFamily == "" {
+		return nil
+	}
+
+	descriptors := ListDescriptors()
+	formats := make([]string, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		if !descriptor.TransferRead && !descriptor.TransferWrite {
+			continue
+		}
+		if containsString(descriptor.EngineFamilies, engineFamily) {
+			formats = append(formats, string(descriptor.Format))
+		}
+	}
+	sort.Strings(formats)
+	return formats
 }

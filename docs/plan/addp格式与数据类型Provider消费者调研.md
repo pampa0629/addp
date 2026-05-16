@@ -381,7 +381,7 @@ TransferPlan
 
 当前既有：
 
-- `common/format/capability`
+- `common/format` 根包 capability registry
 - `attributes.capabilities`
 
 但两者不是一个层级的东西。

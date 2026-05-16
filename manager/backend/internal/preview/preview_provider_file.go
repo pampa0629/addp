@@ -277,7 +277,7 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 		info.RowCount = &rowCount
 	}
 	if spatialInfo := spatialInfoFromAttributes(attrs); spatialInfo != nil {
-		info.Extensions = append(info.Extensions, spatialInfo)
+		info.SpatialInfo = spatialInfo
 	}
 	return info, nil
 }

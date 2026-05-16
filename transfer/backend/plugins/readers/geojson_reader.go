@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/addp/common/format"
@@ -181,14 +179,10 @@ func convertSchemaFromTableInfo(tableInfo *format.TableInfo) *pipeline.Schema {
 	var srid int
 	var geometryField string
 
-	// 从 Extensions 中提取 SpatialInfo
-	for _, ext := range tableInfo.Extensions {
-		if spatialInfo, ok := ext.(*format.SpatialInfo); ok {
-			spatialType = spatialInfo.GeometryType
-			srid = spatialInfo.SRID
-			geometryField = spatialInfo.GeometryColumn
-			break
-		}
+	if spatialInfo := tableInfo.SpatialInfo; spatialInfo != nil {
+		spatialType = spatialInfo.GeometryType
+		srid = spatialInfo.SRID
+		geometryField = spatialInfo.GeometryColumn
 	}
 
 	for _, field := range tableInfo.Fields {
@@ -224,70 +218,6 @@ func convertSchemaFromTableInfo(tableInfo *format.TableInfo) *pipeline.Schema {
 		Fields:   fields,
 		Metadata: metadata,
 	}
-}
-
-func convertSchema(schema *format.Schema) *pipeline.Schema {
-	if schema == nil {
-		return nil
-	}
-
-	fields := make([]pipeline.Field, 0, len(schema.Fields))
-	var spatialType string
-	if schema.GeometryType != nil {
-		spatialType = *schema.GeometryType
-	}
-	srid := parseSRID(schema.SpatialRefSys)
-
-	for _, field := range schema.Fields {
-		pField := pipeline.Field{
-			Name:     field.Name,
-			Type:     string(field.Type),
-			Nullable: field.Nullable,
-		}
-
-		if field.Type == format.FieldTypeGeometry {
-			pField.SpatialType = spatialType
-			pField.SRID = srid
-		}
-
-		fields = append(fields, pField)
-	}
-
-	metadata := make(map[string]interface{})
-	if schema.GeometryField != nil {
-		metadata["geometry_field"] = *schema.GeometryField
-	}
-	if schema.GeometryType != nil {
-		metadata["geometry_type"] = *schema.GeometryType
-	}
-	if schema.SpatialRefSys != nil {
-		metadata["spatial_ref_sys"] = *schema.SpatialRefSys
-	}
-	if schema.RecordCount != nil {
-		metadata["record_count"] = *schema.RecordCount
-	}
-
-	return &pipeline.Schema{
-		Fields:   fields,
-		Metadata: metadata,
-	}
-}
-
-func parseSRID(spatialRef *string) int {
-	if spatialRef == nil || *spatialRef == "" {
-		return 0
-	}
-	value := strings.TrimSpace(*spatialRef)
-	if strings.HasPrefix(strings.ToUpper(value), "EPSG:") {
-		num := strings.TrimPrefix(strings.ToUpper(value), "EPSG:")
-		if srid, err := strconv.Atoi(num); err == nil {
-			return srid
-		}
-	}
-	if srid, err := strconv.Atoi(value); err == nil {
-		return srid
-	}
-	return 0
 }
 
 func contextErr(ctx context.Context) error {

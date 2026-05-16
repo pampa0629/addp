@@ -426,18 +426,14 @@ type formatAttributesProvider interface {
 }
 
 func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInfo) map[string]interface{} {
-	if tableInfo == nil {
+	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	for _, ext := range tableInfo.Extensions {
-		if ext == nil || ext.ExtensionType() != formatName {
-			continue
-		}
-		provider, ok := ext.(formatAttributesProvider)
-		if !ok {
-			continue
-		}
+	if provider, ok := tableInfo.FormatInfo[formatName].(formatAttributesProvider); ok {
 		return provider.FormatAttributes()
+	}
+	if attrs, ok := tableInfo.FormatInfo[formatName].(map[string]interface{}); ok {
+		return attrs
 	}
 	return nil
 }

@@ -32,10 +32,6 @@ type FileInfo struct {
 	RowCount int64  `json:"row_count"`
 }
 
-func (i *Info) ExtensionType() string {
-	return "parquet"
-}
-
 func (i *Info) FormatAttributes() map[string]interface{} {
 	if i == nil || len(i.Files) == 0 {
 		return nil
@@ -46,14 +42,13 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 }
 
 func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
-	if tableInfo == nil {
+	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	ext := tableInfo.GetExtension("parquet")
-	if ext == nil {
-		return nil
+	if info, ok := tableInfo.FormatInfo["parquet"].(Info); ok {
+		return &info
 	}
-	if info, ok := ext.(*Info); ok {
+	if info, ok := tableInfo.FormatInfo["parquet"].(*Info); ok {
 		return info
 	}
 	return nil
@@ -316,7 +311,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.Resourc
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.RowCount = &totalRows
-	merged.Extensions = append(merged.Extensions, &Info{Files: files})
+	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files}}
 	return merged, nil
 }
 

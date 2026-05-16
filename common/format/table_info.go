@@ -47,21 +47,6 @@ func (t *TableInfo) GetSpatialInfo() *SpatialInfo {
 	return t.SpatialInfo
 }
 
-// GetCSVInfo 获取CSV扩展信息（便捷方法）
-func (t *TableInfo) GetCSVInfo() *CSVInfo {
-	if t == nil || len(t.FormatInfo) == 0 {
-		return nil
-	}
-	info, ok := t.FormatInfo["csv"].(CSVInfo)
-	if ok {
-		return &info
-	}
-	if info, ok := t.FormatInfo["csv"].(*CSVInfo); ok {
-		return info
-	}
-	return nil
-}
-
 // IsSpatial 判断是否为空间数据
 func (t *TableInfo) IsSpatial() bool {
 	return t.GetSpatialInfo() != nil

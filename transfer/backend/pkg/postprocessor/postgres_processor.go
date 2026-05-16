@@ -17,13 +17,13 @@ import (
 // - 空间索引创建（GIST/BRIN）
 // - 统计信息更新（ANALYZE）
 type PostgresPostProcessor struct {
-	db              *sql.DB              // 数据库连接
-	ownConnection   bool                 // 是否拥有连接（需要在 Close 时关闭）
-	tableName       string               // 目标表名
-	schema          *pipeline.Schema     // Schema 信息
+	db              *sql.DB                           // 数据库连接
+	ownConnection   bool                              // 是否拥有连接（需要在 Close 时关闭）
+	tableName       string                            // 目标表名
+	schema          *pipeline.Schema                  // Schema 信息
 	geometryColumns map[string]GeometryColumnMetadata // 空间列信息
-	config          PostProcessorConfig  // 配置
-	logger          *slog.Logger         // 日志器
+	config          PostProcessorConfig               // 配置
+	logger          *slog.Logger                      // 日志器
 }
 
 // NewPostgresPostProcessor 创建 PostgreSQL 后处理器
@@ -123,11 +123,11 @@ func (p *PostgresPostProcessor) CreatePrimaryKey(ctx context.Context, pk *Primar
 		if isErrorDuplicateValue(err) {
 			errMsg := fmt.Sprintf("❌ [后处理] 无法创建主键: 列 %v 中存在重复值", pk.Columns)
 			p.logger.Error(errMsg, "error", err)
-			return fmt.Errorf(errMsg)
+			return fmt.Errorf("%s", errMsg)
 		}
 		errMsg := fmt.Sprintf("❌ [后处理] 主键创建失败: %v", err)
 		p.logger.Error(errMsg, "error", err)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	p.logger.Info("✅ [后处理] 主键创建成功",
@@ -215,7 +215,7 @@ func (p *PostgresPostProcessor) UpdateStatistics(ctx context.Context) error {
 	if _, err := p.db.ExecContext(ctx, analyzeSQL); err != nil {
 		errMsg := fmt.Sprintf("❌ [后处理] 统计信息更新失败: %v", err)
 		p.logger.Error(errMsg, "error", err)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	p.logger.Info("✅ [后处理] 统计信息更新成功",

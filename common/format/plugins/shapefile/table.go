@@ -127,7 +127,6 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 			RowCount:   &recordCount,
 			Fields:     fields,
 			PrimaryKey: []string{},
-			Extensions: []format.ExtensionInfo{},
 		}, nil
 	}
 	defer reader2.Close()
@@ -150,7 +149,7 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 		}
 	}
 
-	shapefileInfo := &format.ShapefileInfo{
+	shapefileInfo := &FormatInfo{
 		Encoding:   "",
 		ShapeType:  geomType,
 		HasPRJ:     fileExists(strings.TrimSuffix(shpPath, filepath.Ext(shpPath)) + ".prj"),
@@ -162,11 +161,12 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 	}
 
 	return &format.TableInfo{
-		Name:       "shapefile_data",
-		RowCount:   &recordCount,
-		Fields:     fields,
-		PrimaryKey: []string{},
-		Extensions: []format.ExtensionInfo{spatialInfo, shapefileInfo},
+		Name:        "shapefile_data",
+		RowCount:    &recordCount,
+		Fields:      fields,
+		PrimaryKey:  []string{},
+		SpatialInfo: spatialInfo,
+		FormatInfo:  map[string]interface{}{"shapefile": shapefileInfo},
 	}, nil
 }
 
@@ -220,7 +220,7 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, components [
 			spatialInfo.SRID = srid
 		}
 	}
-	shapefileInfo := &format.ShapefileInfo{
+	shapefileInfo := &FormatInfo{
 		Encoding:   "",
 		ShapeType:  geomType,
 		HasPRJ:     fileExists(basePath + ".prj"),
@@ -231,25 +231,33 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, components [
 		shapefileInfo.Encoding = NormalizeDBFEncoding(opts.Encoding)
 	}
 
+	info := &Info{
+		BaseName:            filepath.Base(basePath),
+		ComponentExtensions: componentExtensions(components),
+		HasPRJ:              shapefileInfo.HasPRJ,
+		HasCPG:              shapefileInfo.HasCPG,
+		ShapeType:           geomType,
+		DBFVersion:          dbfHeader.Version,
+		Encoding:            shapefileInfo.Encoding,
+	}
 	return &format.TableInfo{
-		Name:       "shapefile_data",
-		RowCount:   &rowCount,
-		Fields:     fields,
-		PrimaryKey: []string{},
-		Extensions: []format.ExtensionInfo{
-			spatialInfo,
-			shapefileInfo,
-			&Info{
-				BaseName:            filepath.Base(basePath),
-				ComponentExtensions: componentExtensions(components),
-				HasPRJ:              shapefileInfo.HasPRJ,
-				HasCPG:              shapefileInfo.HasCPG,
-				ShapeType:           geomType,
-				DBFVersion:          dbfHeader.Version,
-				Encoding:            shapefileInfo.Encoding,
-			},
-		},
+		Name:        "shapefile_data",
+		RowCount:    &rowCount,
+		Fields:      fields,
+		PrimaryKey:  []string{},
+		SpatialInfo: spatialInfo,
+		FormatInfo:  map[string]interface{}{"shapefile": mergeFormatInfo(shapefileInfo.FormatAttributes(), info.FormatAttributes())},
 	}, nil
+}
+
+func mergeFormatInfo(values ...map[string]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+	for _, value := range values {
+		for k, v := range value {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func (plugin *Plugin) sampleTableFromPath(ctx context.Context, shpPath string, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, error) {

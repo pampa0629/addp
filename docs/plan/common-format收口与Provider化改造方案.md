@@ -24,10 +24,10 @@
 
 - `DetectFormat`
 - `FormatType`
-- `common/format/capability`
+- 独立 capability 子包
 - 旧 parser 接口
 
-这会导致“这个格式长什么样”和“这个格式能提供什么能力”混在一起。当前旧 parser 接口已经删除，后续继续以 capability registry 和 provider registry 为事实源。
+这会导致“这个格式长什么样”和“这个格式能提供什么能力”混在一起。当前旧 parser 接口和独立 capability 子包已经删除，后续继续以 `common/format` 根包 capability registry 和 provider registry 为事实源。
 
 ### 2. parser 接口曾经直接绑定 engine
 
@@ -80,7 +80,7 @@
 - `common/format.FormatGeoJSON` 不再存在。
 - `.geojson` 扩展名和 `application/geo+json` MIME 统一识别为 `FormatJSON`。
 - 旧 `common/format/geojson` 包已删除，JSON 表格 provider 统一放到 `common/format/plugins/json`。
-- `common/format/capability` 中只保留 `json` 格式，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
+- `common/format` 根包 capability registry 中只保留 `json` 格式能力，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
 - Meta 对 `.geojson` 资源的落库语义调整为 `item.format=json`、`item.data_type=table`、`capabilities.spatial`。
 - 普通 `.json` 仍默认为 `item.data_type=document`。
 
@@ -145,7 +145,7 @@ Manager provider 选择也已经改为看标准 attributes：
 
 ### 第一阶段：能力声明收口
 
-先把 `common/format/capability` 作为事实源收稳：
+先把 `common/format` 根包 capability registry 作为事实源收稳：
 
 - 保留 `FormatCapability`
 - 明确 `Format`、`DataType`、`EngineFamily`
@@ -192,14 +192,15 @@ Manager FileTablePreviewProvider
 
 ### 第四阶段：目录结构清理
 
-建议后续逐步把 `common/format` 收成更清楚的几组：
+当前目录结构已按以下边界收口：
 
-- `capability/`：格式能力声明
-- `detect/` 或保留现有 detection 工具
-- `schema/`：Schema / Field 标准化
-- `mapper/`：类型映射
-- `provider/`：格式解析 / 写出适配
-- `builtin/`：内置能力注册
+- 根包：稳定 facade、格式识别、capability registry、provider / reader 接口与注册表、通用 info 模型。
+- `registry/`：format descriptor 的运行时注册、查询、能力发现和冲突诊断。
+- `plugins/`：具体格式实现。descriptor、provider、reader 和测试尽量在格式目录内闭合。
+- `mappers/`：数据库或格式原生类型到 ADDP 通用字段类型的映射。
+- `builtin/`：内置格式插件和 type mapper 的统一加载入口。
+
+不再恢复独立 capability 子包；格式能力由 descriptor 派生并在根包提供统一消费入口。
 
 ## 关键改造点
 

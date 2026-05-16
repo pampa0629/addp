@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/format"
 	"github.com/addp/common/resource"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -95,9 +94,9 @@ func TestShapefilePluginUsesCPGForComponentSamples(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTableComponents() error = %v", err)
 	}
-	shpInfo, _ := info.GetExtension("shapefile").(*format.ShapefileInfo)
-	if shpInfo == nil || shpInfo.Encoding != "gbk" {
-		t.Fatalf("shapefile encoding = %#v, want gbk", shpInfo)
+	shpAttrs, _ := info.FormatInfo["shapefile"].(map[string]interface{})
+	if shpAttrs["encoding"] != "gbk" {
+		t.Fatalf("shapefile encoding = %#v, want gbk", shpAttrs["encoding"])
 	}
 
 	rows, err := plugin.SampleTableComponents(context.Background(), components, 0, 10, nil)

@@ -9,6 +9,7 @@ import (
 
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonResource "github.com/addp/common/resource"
+	resourceobjectstore "github.com/addp/common/resource/objectstore"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 	"github.com/google/uuid"
@@ -55,7 +56,7 @@ func (r *S3ShapefileReader) Open(ctx context.Context, config pipeline.ConnectorC
 	if _, ok := config.Config["use_ssl"]; ok {
 		connInfo["use_ssl"] = utils.GetBoolConfig(config, "use_ssl", false)
 	}
-	objectReader, err := commonResource.NewObjectStoreReaderFromConnectionInfo(connInfo)
+	objectReader, err := resourceobjectstore.NewReaderFromConnectionInfo(connInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create object store resource reader: %w", err)
 	}

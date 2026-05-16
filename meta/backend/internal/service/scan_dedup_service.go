@@ -68,11 +68,11 @@ func (s *ScanDedupService) UpdateLastScanTime(ctx context.Context, engineID uint
 	return s.redis.Set(ctx, key, time.Now().Format(time.RFC3339), 0).Err()
 }
 
-// GenerateSchemaLockKey 生成Schema级锁key
-// 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:schema:{schema_name}
-func (s *ScanDedupService) GenerateSchemaLockKey(tenantID, engineID uint, schemaName string) string {
-	return fmt.Sprintf("meta:scan:lock:tenant:%d:engine:%d:schema:%s",
-		tenantID, engineID, schemaName)
+// GenerateNamespaceLockKey 生成命名空间级锁key
+// 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:namespace:{namespace_name}
+func (s *ScanDedupService) GenerateNamespaceLockKey(tenantID, engineID uint, namespaceName string) string {
+	return fmt.Sprintf("meta:scan:lock:tenant:%d:engine:%d:namespace:%s",
+		tenantID, engineID, namespaceName)
 }
 
 // GenerateBucketLockKey 生成Bucket级锁key

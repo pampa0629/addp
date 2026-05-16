@@ -68,7 +68,7 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.Ta
 	if bbox, ok := geoPackageLayerBoundingBox(layer); ok {
 		spatial.BoundingBox = &bbox
 	}
-	info.Extensions = append(info.Extensions, spatial)
+	info.SpatialInfo = spatial
 }
 
 func geoPackageLayerBoundingBox(layer geoPackageLayer) ([4]float64, bool) {
