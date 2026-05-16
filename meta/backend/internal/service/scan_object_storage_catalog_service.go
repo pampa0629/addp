@@ -118,9 +118,9 @@ func openObjectCatalogContent(ctx context.Context, resource *commonModels.Engine
 	return contentReader.OpenContent(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucket, key), plugin.ReadOptions{})
 }
 
-// ObjectCatalogScanService 对象 catalog 扫描服务
-// 职责：按插件 catalog 语义扫描 bucket 和 object 项
-type ObjectCatalogScanService struct {
+// ObjectStorageCatalogScanService 对象存储 catalog 扫描服务。
+// 职责：按插件 catalog model 扫描 bucket/prefix/object 层级。
+type ObjectStorageCatalogScanService struct {
 	db                *gorm.DB
 	log               *slog.Logger
 	repo              *metaRepo.ScanRepository     // 数据访问层
@@ -129,15 +129,15 @@ type ObjectCatalogScanService struct {
 	inlineExtractor   *extractor.InlineObjectMetadataExtractor
 }
 
-// NewObjectCatalogScanService 创建对象 catalog 扫描服务
-func NewObjectCatalogScanService(
+// NewObjectStorageCatalogScanService 创建对象存储 catalog 扫描服务。
+func NewObjectStorageCatalogScanService(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
 	metadataExtractor *extractor.MetadataExtractor,
 	indexer *IndexerService,
-) *ObjectCatalogScanService {
-	service := &ObjectCatalogScanService{
+) *ObjectStorageCatalogScanService {
+	service := &ObjectStorageCatalogScanService{
 		db:                db,
 		log:               log,
 		repo:              repo,
@@ -152,11 +152,11 @@ func NewObjectCatalogScanService(
 // 公共接口方法
 // ============================================================================
 
-// ScanPaths 扫描对象 catalog 路径
-func (s *ObjectCatalogScanService) ScanPaths(
+// ScanPaths 扫描对象存储 catalog 路径。
+func (s *ObjectStorageCatalogScanService) ScanPaths(
 	resource *commonModels.Engine,
 	tenantID uint,
-	objectPaths, fallback []string,
+	catalogPaths, fallback []string,
 	scanDepth string,
 	force bool,
 	reporter ScanProgressReporter,
@@ -164,9 +164,7 @@ func (s *ObjectCatalogScanService) ScanPaths(
 	resourceID := resource.ID
 
 	// 标准化 scanDepth
-	if scanDepth == "" {
-		scanDepth = "deep"
-	}
+	scanDepth = scanDepthOrDefault(scanDepth, "deep")
 
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -179,33 +177,26 @@ func (s *ObjectCatalogScanService) ScanPaths(
 	}
 	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermObject)
 
-	// 确定扫描路径
-	paths := objectPaths
-	if len(paths) == 0 {
-		paths = fallback
-	}
-
-	// 如果仍然没有路径，列出所有 buckets
-	if len(paths) == 0 {
-		buckets, err := listObjectCatalogBucketNodes(context.Background(), resource, catalogProvider)
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
-		}
-		for _, b := range buckets {
-			paths = append(paths, b.Name)
-		}
-	}
-
-	if len(paths) == 0 {
-		if reporter != nil {
-			reporter.Message("未检测到可扫描的对象路径")
-			reporter.SetTotal(0)
-		}
-		return 0, 0, nil
-	}
-
-	if reporter != nil {
-		reporter.SetTotal(len(paths))
+	paths, err := resolveCatalogScanPaths(
+		context.Background(),
+		"未检测到可扫描的对象路径",
+		catalogPaths,
+		fallback,
+		func(ctx context.Context) ([]string, error) {
+			buckets, err := listObjectCatalogBucketNodes(ctx, resource, catalogProvider)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list buckets: %w", err)
+			}
+			names := make([]string, 0, len(buckets))
+			for _, b := range buckets {
+				names = append(names, b.Name)
+			}
+			return names, nil
+		},
+		reporter,
+	)
+	if err != nil {
+		return 0, 0, err
 	}
 
 	buckets, objects, err := s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
@@ -220,8 +211,8 @@ func (s *ObjectCatalogScanService) ScanPaths(
 // 核心扫描方法
 // ============================================================================
 
-// scanObjectCatalogPaths 使用 CatalogProvider 扫描对象 catalog 路径
-func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
+// scanObjectCatalogPaths 使用 CatalogProvider 扫描对象存储 catalog 路径。
+func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	catalogProvider plugin.CatalogProvider,
@@ -449,7 +440,7 @@ func (s *ObjectCatalogScanService) scanObjectCatalogPaths(
 //   - scannedFingerprints: 已扫描对象的指纹集合
 //
 // 返回：(持久化对象数量, error)
-func (s *ObjectCatalogScanService) persistObjectResources(
+func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
@@ -691,7 +682,7 @@ func (s *ObjectCatalogScanService) persistObjectResources(
 	return objects, nil
 }
 
-func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
+func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	items []metacatalog.ObjectCatalogCompositeItem,
@@ -741,7 +732,7 @@ func (s *ObjectCatalogScanService) persistObjectCatalogCompositeItems(
 	return count, nil
 }
 
-func (s *ObjectCatalogScanService) ensureObjectCatalogPrefixNodes(
+func (s *ObjectStorageCatalogScanService) ensureObjectCatalogPrefixNodes(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	parentPath string,
@@ -762,7 +753,7 @@ func (s *ObjectCatalogScanService) ensureObjectCatalogPrefixNodes(
 	return parentNode, nil
 }
 
-func (s *ObjectCatalogScanService) enrichObjectCatalogTableFileAttributes(
+func (s *ObjectStorageCatalogScanService) enrichObjectCatalogTableFileAttributes(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,

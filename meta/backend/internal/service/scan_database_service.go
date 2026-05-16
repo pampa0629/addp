@@ -509,10 +509,17 @@ func (s *DatabaseScanService) queryPrimaryKeyName(
 	db *gorm.DB,
 	schema, table string,
 ) (string, error) {
+	schemaPlaceholder := "$1"
+	tablePlaceholder := "$2"
+	if db != nil && db.Dialector.Name() == "mysql" {
+		schemaPlaceholder = "?"
+		tablePlaceholder = "?"
+	}
+
 	query := `
 		SELECT constraint_name
 		FROM information_schema.table_constraints
-		WHERE table_schema = $1 AND table_name = $2
+		WHERE table_schema = ` + schemaPlaceholder + ` AND table_name = ` + tablePlaceholder + `
 		  AND constraint_type = 'PRIMARY KEY'
 		LIMIT 1
 	`

@@ -9,20 +9,20 @@ import (
 )
 
 type ScanCounts struct {
-	Namespaces int
-	Items      int
-	Fields     int
+	CatalogNodes int
+	Items        int
+	Fields       int
 }
 
 func NewScanResponse(status, message string, counts ScanCounts, startTime, completedAt time.Time) *models.ScanResponse {
 	return &models.ScanResponse{
-		Status:            status,
-		Message:           message,
-		NamespacesScanned: counts.Namespaces,
-		ItemsScanned:      counts.Items,
-		FieldsScanned:     counts.Fields,
-		DurationMs:        completedAt.Sub(startTime).Milliseconds(),
-		StartedAt:         startTime.Format("2006-01-02 15:04:05"),
+		Status:              status,
+		Message:             message,
+		CatalogNodesScanned: counts.CatalogNodes,
+		ItemsScanned:        counts.Items,
+		FieldsScanned:       counts.Fields,
+		DurationMs:          completedAt.Sub(startTime).Milliseconds(),
+		StartedAt:           startTime.Format("2006-01-02 15:04:05"),
 	}
 }
 
@@ -32,8 +32,8 @@ func AutoScanResponse(engineCount int, counts ScanCounts, startTime, completedAt
 
 func ScanResultMetadata(counts ScanCounts) commonModels.JSONMap {
 	return commonModels.JSONMap{
-		"namespaces_scanned": counts.Namespaces,
-		"items_scanned":      counts.Items,
-		"fields_scanned":     counts.Fields,
+		"catalog_nodes_scanned": counts.CatalogNodes,
+		"items_scanned":         counts.Items,
+		"fields_scanned":        counts.Fields,
 	}
 }

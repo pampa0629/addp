@@ -28,11 +28,10 @@ type MetaScanOptions struct {
 	ItemID   uint
 	Targets  []string
 
-	Namespaces  []string
-	ObjectPaths []string
-	ScanDepth   string
-	Force       bool
-	TriggerType string
+	CatalogPaths []string
+	ScanDepth    string
+	Force        bool
+	TriggerType  string
 }
 
 // NewMetaClient 创建 Meta 客户端（用户认证方式）
@@ -325,11 +324,8 @@ func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
 	if scanReq["trigger_type"] == "" {
 		scanReq["trigger_type"] = "manual"
 	}
-	if len(opts.Namespaces) > 0 {
-		scanReq["namespaces"] = opts.Namespaces
-	}
-	if len(opts.ObjectPaths) > 0 {
-		scanReq["object_paths"] = opts.ObjectPaths
+	if len(opts.CatalogPaths) > 0 {
+		scanReq["catalog_paths"] = opts.CatalogPaths
 	}
 
 	body, err := json.Marshal(scanReq)
@@ -360,13 +356,13 @@ func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
 }
 
 // TriggerScanEngine 触发引擎元数据扫描。
-func (c *MetaClient) TriggerScanEngine(engineID uint, namespaces []string) error {
+func (c *MetaClient) TriggerScanEngine(engineID uint, catalogPaths []string) error {
 	return c.TriggerScan(MetaScanOptions{
-		EngineID:    engineID,
-		Namespaces:  namespaces,
-		ScanDepth:   "basic",
-		Force:       false,
-		TriggerType: "manual",
+		EngineID:     engineID,
+		CatalogPaths: catalogPaths,
+		ScanDepth:    "basic",
+		Force:        false,
+		TriggerType:  "manual",
 	})
 }
 

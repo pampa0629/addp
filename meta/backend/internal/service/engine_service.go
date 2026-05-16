@@ -402,7 +402,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	}
 	var totals []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
+		Where("engine_id IN ?", engineIDs).
 		Where("parent_node_id IS NULL").
 		Select("engine_id, COUNT(*) AS count").
 		Group("engine_id").
@@ -415,7 +415,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	var scanned []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
+		Where("engine_id IN ?", engineIDs).
 		Where("parent_node_id IS NULL AND scan_status = ?", "completed").
 		Select("engine_id, COUNT(*) AS count").
 		Group("engine_id").
@@ -432,7 +432,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	}
 	var lastScans []lastScanRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
+		Where("engine_id IN ?", engineIDs).
 		Where("scanned_at IS NOT NULL").
 		Select("engine_id, MAX(scanned_at) AS scanned_at").
 		Group("engine_id").
@@ -445,18 +445,21 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	result := make([]*models.ResourceWithStats, 0, len(engines))
 	for _, res := range engines {
-		totalNamespaces := 0
-		scannedNamespaces := 0
+		totalCatalogNodes := 0
+		scannedCatalogNodes := 0
 		lastScanAt := ""
 		engineFamily := ""
 		catalogRootTerm := ""
+		catalogTopTerm := ""
+		catalogTopI18nKey := ""
 		catalogItemTerm := ""
+		catalogItemI18nKey := ""
 
 		if cnt, ok := totalCount[res.ID]; ok {
-			totalNamespaces = int(cnt)
+			totalCatalogNodes = int(cnt)
 		}
 		if cnt, ok := scannedCount[res.ID]; ok {
-			scannedNamespaces = int(cnt)
+			scannedCatalogNodes = int(cnt)
 		}
 		if ts, ok := lastScanByRes[res.ID]; ok && ts != nil {
 			lastScanAt = ts.Format("2006-01-02 15:04:05")
@@ -472,24 +475,35 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 			engineFamily = capabilities.EngineFamily
 			if model := catalogModelForPlugin(enginePlugin); model != nil {
 				catalogRootTerm = model.RootTerm
+				if level, ok := plugin.CatalogNamespaceLevel(*model); ok {
+					catalogTopTerm = level.Term
+					catalogTopI18nKey = level.I18nKey
+					if catalogTopI18nKey == "" {
+						catalogTopI18nKey = plugin.CatalogLevelI18nKey(*model, level.Term)
+					}
+				}
 				catalogItemTerm = plugin.CatalogItemTerm(*model)
+				catalogItemI18nKey = plugin.CatalogLevelI18nKey(*model, catalogItemTerm)
 			}
 		}
 
 		result = append(result, &models.ResourceWithStats{
-			EngineID:            res.ID,
-			ResourceName:        res.Name,
-			ResourceType:        res.EngineType,
-			EngineFamily:        engineFamily,
-			CatalogRootTerm:     catalogRootTerm,
-			CatalogItemTerm:     catalogItemTerm,
-			TotalNamespaces:     totalNamespaces,
-			ScannedNamespaces:   scannedNamespaces,
-			UnscannedNamespaces: totalNamespaces - scannedNamespaces,
-			ScannedAt:           lastScanAt,
-			ConnectionStatus:    res.ConnectionStatus,
-			LastCheckAt:         lastCheckAt,
-			CheckMessage:        res.CheckMessage,
+			EngineID:              res.ID,
+			ResourceName:          res.Name,
+			ResourceType:          res.EngineType,
+			EngineFamily:          engineFamily,
+			CatalogRootTerm:       catalogRootTerm,
+			CatalogTopTerm:        catalogTopTerm,
+			CatalogTopI18nKey:     catalogTopI18nKey,
+			CatalogItemTerm:       catalogItemTerm,
+			CatalogItemI18nKey:    catalogItemI18nKey,
+			TotalCatalogNodes:     totalCatalogNodes,
+			ScannedCatalogNodes:   scannedCatalogNodes,
+			UnscannedCatalogNodes: totalCatalogNodes - scannedCatalogNodes,
+			ScannedAt:             lastScanAt,
+			ConnectionStatus:      res.ConnectionStatus,
+			LastCheckAt:           lastCheckAt,
+			CheckMessage:          res.CheckMessage,
 		})
 	}
 
@@ -614,7 +628,7 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 		scanDepth = "basic" // 默认使用基础扫描
 	}
 
-	// 构建扫描请求（不限制 namespaces/object_paths，系统自动过滤）
+	// 构建扫描请求（不限制 catalog_paths，系统自动过滤）
 	req := &models.ScanRequest{
 		EngineID:    resource.ID,
 		ScanDepth:   scanDepth,

@@ -9,40 +9,42 @@ type JSONMap = commonModels.JSONMap
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	EngineID    uint     `json:"engine_id"`    // 资源ID
-	Namespaces  []string `json:"namespaces"`   // 要扫描的命名空间列表（空则全部）
-	ObjectPaths []string `json:"object_paths"` // 对象存储/文件系统选择的路径
-	NodeID      uint     `json:"node_id"`      // 要扫描的节点 ID
-	ItemID      uint     `json:"item_id"`      // 要扫描的数据项 ID
-	Targets     []string `json:"targets"`      // locator 目标列表
-	ScanDepth   string   `json:"scan_depth"`   // basic/deep
-	TriggerType string   `json:"trigger_type"` // manual/scheduled
-	Force       bool     `json:"force"`        // 是否强制重新扫描
+	EngineID     uint     `json:"engine_id"`     // 资源ID
+	CatalogPaths []string `json:"catalog_paths"` // 要扫描的 catalog 路径列表（空则全部）
+	NodeID       uint     `json:"node_id"`       // 要扫描的节点 ID
+	ItemID       uint     `json:"item_id"`       // 要扫描的数据项 ID
+	Targets      []string `json:"targets"`       // locator 目标列表
+	ScanDepth    string   `json:"scan_depth"`    // basic/deep
+	TriggerType  string   `json:"trigger_type"`  // manual/scheduled
+	Force        bool     `json:"force"`         // 是否强制重新扫描
 }
 
 // ScanResponse 扫描响应
 type ScanResponse struct {
-	Status            string `json:"status"` // success/failed
-	Message           string `json:"message"`
-	NamespacesScanned int    `json:"namespaces_scanned"`
-	ItemsScanned      int    `json:"items_scanned"`
-	FieldsScanned     int    `json:"fields_scanned"`
-	DurationMs        int64  `json:"duration_ms"`
-	StartedAt         string `json:"started_at"`
+	Status              string `json:"status"` // success/failed
+	Message             string `json:"message"`
+	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
+	ItemsScanned        int    `json:"items_scanned"`
+	FieldsScanned       int    `json:"fields_scanned"`
+	DurationMs          int64  `json:"duration_ms"`
+	StartedAt           string `json:"started_at"`
 }
 
 // ResourceWithStats 资源及其扫描统计
 type ResourceWithStats struct {
-	EngineID            uint   `json:"id"`   // 前端期待 id
-	ResourceName        string `json:"name"` // 前端期待 name
-	ResourceType        string `json:"resource_type"`
-	EngineFamily        string `json:"engine_family,omitempty"`
-	CatalogItemTerm     string `json:"catalog_item_term,omitempty"`
-	CatalogRootTerm     string `json:"catalog_root_term,omitempty"`
-	TotalNamespaces     int    `json:"total_namespaces"`
-	ScannedNamespaces   int    `json:"scanned_namespaces"`
-	UnscannedNamespaces int    `json:"unscanned_namespaces"`
-	ScannedAt           string `json:"scanned_at,omitempty"`
+	EngineID              uint   `json:"id"`   // 前端期待 id
+	ResourceName          string `json:"name"` // 前端期待 name
+	ResourceType          string `json:"resource_type"`
+	EngineFamily          string `json:"engine_family,omitempty"`
+	CatalogTopTerm        string `json:"catalog_top_term,omitempty"`
+	CatalogTopI18nKey     string `json:"catalog_top_i18n_key,omitempty"`
+	CatalogItemTerm       string `json:"catalog_item_term,omitempty"`
+	CatalogItemI18nKey    string `json:"catalog_item_i18n_key,omitempty"`
+	CatalogRootTerm       string `json:"catalog_root_term,omitempty"`
+	TotalCatalogNodes     int    `json:"total_catalog_nodes"`
+	ScannedCatalogNodes   int    `json:"scanned_catalog_nodes"`
+	UnscannedCatalogNodes int    `json:"unscanned_catalog_nodes"`
+	ScannedAt             string `json:"scanned_at,omitempty"`
 	// 连接状态相关字段
 	ConnectionStatus string `json:"connection_status,omitempty"` // online/offline/unknown/checking
 	LastCheckAt      string `json:"last_check_at,omitempty"`     // 最后检测时间
@@ -51,15 +53,14 @@ type ResourceWithStats struct {
 
 // ScanTaskUpsertRequest 创建或更新扫描任务的请求
 type ScanTaskUpsertRequest struct {
-	Name        string   `json:"name" binding:"required"`
-	Description string   `json:"description"`
-	EngineID    uint     `json:"engine_id" binding:"required"`
-	Namespaces  []string `json:"namespaces"`
-	ObjectPaths []string `json:"object_paths"`
-	ScanDepth   string   `json:"scan_depth"`
-	Force       bool     `json:"force"`
-	Schedule    string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行
-	Enabled     bool     `json:"enabled"`
+	Name         string   `json:"name" binding:"required"`
+	Description  string   `json:"description"`
+	EngineID     uint     `json:"engine_id" binding:"required"`
+	CatalogPaths []string `json:"catalog_paths"`
+	ScanDepth    string   `json:"scan_depth"`
+	Force        bool     `json:"force"`
+	Schedule     string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行
+	Enabled      bool     `json:"enabled"`
 }
 
 // MetadataTreeResponse 元数据树响应（用于 Manager 查询）

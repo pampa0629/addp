@@ -29,8 +29,8 @@ func FileCatalogModel() CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    CatalogTermRoot,
 		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDirectory, Kinds: []string{CatalogKindDirectory}, Container: true, Optional: true},
-			{Term: CatalogTermFile, Kinds: []string{CatalogKindFile}, Item: true},
+			{Term: CatalogTermDirectory, Kinds: []string{CatalogKindDirectory}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermDirectory)},
+			{Term: CatalogTermFile, Kinds: []string{CatalogKindFile}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermFile)},
 		},
 	}
 }

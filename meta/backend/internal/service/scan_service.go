@@ -24,23 +24,23 @@ import (
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                       *gorm.DB
-	repo                     *metaRepo.ScanRepository  // 数据访问层
-	dbScanService            *DatabaseScanService      // 数据库扫描服务
-	namespaceItemScanService *NamespaceItemScanService // namespace/item 型 catalog 扫描服务
-	objectCatalogScanService *ObjectCatalogScanService // 对象 catalog 扫描服务
-	fileCatalogScanService   *FileCatalogScanService   // 文件 catalog 扫描服务
-	metadataQueryService     *MetadataQueryService     // 元数据查询服务（独立）
-	engineService            *EngineService
-	config                   *config.Config
-	log                      *slog.Logger
-	indexer                  *search.Indexer
-	indexerService           *IndexerService              // 索引服务（独立）
-	spatialService           *SpatialMetadataService      // 空间元数据服务（独立）
-	scanEventPublisher       *events.ScanEventPublisher   // 扫描事件发布器
-	metadataExtractor        *extractor.MetadataExtractor // 元数据提取器
-	dedupService             *ScanDedupService            // 扫描去重服务（可选）
-	immediateRecorder        *scantask.ImmediateExecutionRecorder
+	db                              *gorm.DB
+	repo                            *metaRepo.ScanRepository         // 数据访问层
+	dbScanService                   *DatabaseScanService             // 数据库扫描服务
+	namespaceItemScanService        *NamespaceItemScanService        // namespace/item 型 catalog 扫描服务
+	objectStorageCatalogScanService *ObjectStorageCatalogScanService // 对象存储 catalog 扫描服务
+	filesystemCatalogScanService    *FilesystemCatalogScanService    // 文件系统 catalog 扫描服务
+	metadataQueryService            *MetadataQueryService            // 元数据查询服务（独立）
+	engineService                   *EngineService
+	config                          *config.Config
+	log                             *slog.Logger
+	indexer                         *search.Indexer
+	indexerService                  *IndexerService              // 索引服务（独立）
+	spatialService                  *SpatialMetadataService      // 空间元数据服务（独立）
+	scanEventPublisher              *events.ScanEventPublisher   // 扫描事件发布器
+	metadataExtractor               *extractor.MetadataExtractor // 元数据提取器
+	dedupService                    *ScanDedupService            // 扫描去重服务（可选）
+	immediateRecorder               *scantask.ImmediateExecutionRecorder
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -80,11 +80,11 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 NamespaceItemScanService（使用独立服务，无循环依赖）
 	s.namespaceItemScanService = NewNamespaceItemScanService(db, log, nil, repo, indexerService)
 
-	// 创建 ObjectCatalogScanService（使用独立服务，无循环依赖）
-	s.objectCatalogScanService = NewObjectCatalogScanService(db, log, repo, metadataExtractor, indexerService)
+	// 创建 ObjectStorageCatalogScanService（使用独立服务，无循环依赖）
+	s.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, log, repo, metadataExtractor, indexerService)
 
-	// 创建 FileCatalogScanService
-	s.fileCatalogScanService = NewFileCatalogScanService(db, log, repo, indexerService)
+	// 创建 FilesystemCatalogScanService
+	s.filesystemCatalogScanService = NewFilesystemCatalogScanService(db, log, repo, indexerService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
@@ -236,12 +236,13 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 
 	// 对每个资源进行扫描
 	for _, engine := range engines {
-		schemas, tables, fields, err := s.scanResource(engine, tenantID, 0)
+		effectiveTenantID := tenantIDForResource(engine, tenantID)
+		schemas, tables, fields, err := s.scanResource(engine, effectiveTenantID, 0)
 		if err != nil {
 			s.log.Warn("资源扫描失败",
 				"engine_id", engine.ID,
 				"resource_name", engine.Name,
-				"tenant_id", tenantID,
+				"tenant_id", effectiveTenantID,
 				"error", err,
 			)
 			continue
@@ -253,67 +254,62 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
 	}
 
-	counts := scantask.ScanCounts{Namespaces: totalNamespaces, Items: totalTables, Fields: totalFields}
+	counts := scantask.ScanCounts{CatalogNodes: totalNamespaces, Items: totalTables, Fields: totalFields}
 	return scantask.AutoScanResponse(len(scannedResourceIDs), counts, startTime, time.Now()), nil
 }
 
 type ScanOptions struct {
-	EngineID    uint
-	TenantID    uint
-	Namespaces  []string
-	ObjectPaths []string
-	Token       string
-	ScanDepth   string
-	Force       bool
-	Reporter    ScanProgressReporter
-	NodeID      uint
-	ItemID      uint
-	Targets     []string
+	EngineID     uint
+	TenantID     uint
+	CatalogPaths []string
+	Token        string
+	ScanDepth    string
+	Force        bool
+	Reporter     ScanProgressReporter
+	NodeID       uint
+	ItemID       uint
+	Targets      []string
 }
 
 // ScanEngine 扫描指定引擎
-func (s *ScanService) ScanEngine(engineID, tenantID uint, namespaces, objectPaths []string, token string) (*models.ScanResponse, error) {
+func (s *ScanService) ScanEngine(engineID, tenantID uint, catalogPaths []string, token string) (*models.ScanResponse, error) {
 	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:    engineID,
-		TenantID:    tenantID,
-		Namespaces:  namespaces,
-		ObjectPaths: objectPaths,
-		Token:       token,
-		ScanDepth:   "basic",
+		EngineID:     engineID,
+		TenantID:     tenantID,
+		CatalogPaths: catalogPaths,
+		Token:        token,
+		ScanDepth:    "basic",
 	})
 }
 
 // ScanEngineWithProgress 扫描指定引擎，并通过 reporter 汇报进度
-func (s *ScanService) ScanEngineWithProgress(engineID, tenantID uint, namespaces, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+func (s *ScanService) ScanEngineWithProgress(engineID, tenantID uint, catalogPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
 	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:    engineID,
-		TenantID:    tenantID,
-		Namespaces:  namespaces,
-		ObjectPaths: objectPaths,
-		Token:       token,
-		ScanDepth:   "basic",
-		Reporter:    reporter,
+		EngineID:     engineID,
+		TenantID:     tenantID,
+		CatalogPaths: catalogPaths,
+		Token:        token,
+		ScanDepth:    "basic",
+		Reporter:     reporter,
 	})
 }
 
 // ScanEngineWithDepth 扫描指定引擎，支持指定扫描深度
-func (s *ScanService) ScanEngineWithDepth(engineID, tenantID uint, namespaces, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+func (s *ScanService) ScanEngineWithDepth(engineID, tenantID uint, catalogPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
 	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:    engineID,
-		TenantID:    tenantID,
-		Namespaces:  namespaces,
-		ObjectPaths: objectPaths,
-		Token:       token,
-		ScanDepth:   scanDepth,
-		Reporter:    reporter,
+		EngineID:     engineID,
+		TenantID:     tenantID,
+		CatalogPaths: catalogPaths,
+		Token:        token,
+		ScanDepth:    scanDepth,
+		Reporter:     reporter,
 	})
 }
 
 func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanResponse, error) {
 	startTime := time.Now()
 	tenantID := opts.TenantID
-	namespaces := opts.Namespaces
-	objectPaths := opts.ObjectPaths
+	catalogPaths := opts.CatalogPaths
 	token := opts.Token
 	scanDepth := opts.ScanDepth
 	reporter := opts.Reporter
@@ -330,17 +326,14 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 	if err != nil {
 		return nil, err
 	}
-	effectiveTenantID := tenantID
-	if resource.TenantID != nil && *resource.TenantID > 0 {
-		effectiveTenantID = *resource.TenantID
-	}
+	effectiveTenantID := tenantIDForResource(resource, tenantID)
 
-	resolvedNamespaces, resolvedObjectPaths, err := s.resolveScanTargets(effectiveTenantID, opts)
+	resolvedCatalogPaths, err := s.resolveScanTargets(effectiveTenantID, opts)
 	if err != nil {
 		return nil, err
 	}
-	namespaces = append(namespaces, resolvedNamespaces...)
-	objectPaths = append(objectPaths, resolvedObjectPaths...)
+	catalogPaths = append(catalogPaths, resolvedCatalogPaths...)
+	catalogPaths = uniqueNonEmpty(catalogPaths)
 
 	scanDepth, err = scantask.NormalizeScanDepth(scanDepth, scantask.ScanDepthBasic)
 	if err != nil {
@@ -349,7 +342,7 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 
 	var directExecID string
 	if reporter == nil {
-		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, namespaces, objectPaths, scanDepth, opts.Force, startTime)
+		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, catalogPaths, scanDepth, opts.Force, startTime)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -361,23 +354,19 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 		"scan_depth", scanDepth,
 		"force", opts.Force,
 	)
-	if len(namespaces) > 0 {
-		startFields = append(startFields, "target_namespaces", namespaces)
-	}
-	if len(objectPaths) > 0 {
-		startFields = append(startFields, "target_paths", objectPaths)
+	if len(catalogPaths) > 0 {
+		startFields = append(startFields, "target_paths", catalogPaths)
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
 	result, err := s.dispatchScan(scanDispatchRequest{
-		Resource:    resource,
-		TenantID:    effectiveTenantID,
-		Namespaces:  namespaces,
-		ObjectPaths: objectPaths,
-		ScanDepth:   scanDepth,
-		Force:       opts.Force,
-		Reporter:    reporter,
-		Mode:        scanDispatchManual,
+		Resource:     resource,
+		TenantID:     effectiveTenantID,
+		CatalogPaths: catalogPaths,
+		ScanDepth:    scanDepth,
+		Force:        opts.Force,
+		Reporter:     reporter,
+		Mode:         scanDispatchManual,
 	})
 
 	if err != nil {
@@ -395,7 +384,7 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 
 	finishFields := append(make([]any, 0, len(startFields)+6), startFields...)
 	finishFields = append(finishFields,
-		"namespaces_scanned", result.Namespaces,
+		"catalog_nodes_scanned", result.CatalogNodes,
 		"items_scanned", result.Items,
 		"fields_scanned", result.Fields,
 		"duration_ms", durationMs,
@@ -407,7 +396,7 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 	}
 
 	if directExecID != "" {
-		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{Namespaces: result.Namespaces, Items: result.Items, Fields: result.Fields})
+		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields})
 		s.immediateRecorder.Complete(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
 		s.publishScanCompletedEvent(resource.ID, effectiveTenantID, models.JSONMap(resultMeta))
 	}
@@ -415,7 +404,7 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 	return scantask.NewScanResponse(
 		"success",
 		"Scan completed successfully",
-		scantask.ScanCounts{Namespaces: result.Namespaces, Items: result.Items, Fields: result.Fields},
+		scantask.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields},
 		startTime,
 		completedAt,
 	), nil
@@ -447,66 +436,53 @@ func (s *ScanService) resolveScanEngineID(tenantID uint, opts ScanOptions) (uint
 	return 0, fmt.Errorf("engine_id is required")
 }
 
-func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]string, []string, error) {
-	namespaces := []string{}
-	objectPaths := []string{}
+func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]string, error) {
+	catalogPaths := []string{}
 
 	if opts.NodeID > 0 {
 		var node models.MetaNode
 		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.NodeID).First(&node).Error; err != nil {
-			return nil, nil, fmt.Errorf("node target not found: %w", err)
+			return nil, fmt.Errorf("node target not found: %w", err)
 		}
-		ns, paths := scanTargetFromNode(node)
-		namespaces = append(namespaces, ns...)
-		objectPaths = append(objectPaths, paths...)
+		catalogPaths = append(catalogPaths, scanTargetFromNode(node)...)
 	}
 
 	if opts.ItemID > 0 {
 		var item models.MetaItem
 		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.ItemID).First(&item).Error; err != nil {
-			return nil, nil, fmt.Errorf("item target not found: %w", err)
+			return nil, fmt.Errorf("item target not found: %w", err)
 		}
-		ns, paths := scanTargetFromItem(item)
-		namespaces = append(namespaces, ns...)
-		objectPaths = append(objectPaths, paths...)
+		catalogPaths = append(catalogPaths, scanTargetFromItem(item)...)
 	}
 
 	for _, target := range opts.Targets {
-		ns, paths := scanTargetFromLocator(target)
-		namespaces = append(namespaces, ns...)
-		objectPaths = append(objectPaths, paths...)
+		catalogPaths = append(catalogPaths, scanTargetFromLocator(target)...)
 	}
 
-	return uniqueNonEmpty(namespaces), uniqueNonEmpty(objectPaths), nil
+	return uniqueNonEmpty(catalogPaths), nil
 }
 
-func scanTargetFromNode(node models.MetaNode) ([]string, []string) {
-	if node.ParentNodeID == nil {
-		if target := firstNonEmpty(node.FullName, node.Name); target != "" {
-			return []string{target}, nil
-		}
-		return nil, nil
-	}
+func scanTargetFromNode(node models.MetaNode) []string {
 	if target := firstNonEmpty(node.FullName, node.Name); target != "" {
-		return nil, []string{target}
+		return []string{target}
 	}
-	return nil, nil
+	return nil
 }
 
-func scanTargetFromItem(item models.MetaItem) ([]string, []string) {
+func scanTargetFromItem(item models.MetaItem) []string {
 	if idx := strings.LastIndex(item.FullName, "."); idx > 0 {
-		return []string{item.FullName[:idx]}, nil
+		return []string{item.FullName[:idx]}
 	}
 	if item.FullName != "" {
-		return nil, []string{item.FullName}
+		return []string{item.FullName}
 	}
-	return nil, nil
+	return nil
 }
 
-func scanTargetFromLocator(locator string) ([]string, []string) {
+func scanTargetFromLocator(locator string) []string {
 	locator = strings.TrimSpace(locator)
 	if locator == "" {
-		return nil, nil
+		return nil
 	}
 	typeIdx := strings.Index(locator, "?type=")
 	pathPart := locator
@@ -521,11 +497,11 @@ func scanTargetFromLocator(locator string) ([]string, []string) {
 	pathMarker := "/path/"
 	pathIdx := strings.Index(pathPart, pathMarker)
 	if pathIdx < 0 {
-		return nil, nil
+		return nil
 	}
 	path := strings.Trim(pathPart[pathIdx+len(pathMarker):], "/")
 	if path == "" {
-		return nil, nil
+		return nil
 	}
 	path = strings.ReplaceAll(path, "%2F", "/")
 	path = strings.ReplaceAll(path, "%2f", "/")
@@ -533,15 +509,31 @@ func scanTargetFromLocator(locator string) ([]string, []string) {
 	case "table", "collection", "label", "relationship":
 		parts := strings.Split(path, "/")
 		if len(parts) > 1 {
-			return []string{parts[0]}, nil
+			return []string{parts[0]}
 		}
-		return []string{path}, nil
+		return []string{path}
 	case "schema", "database":
-		return []string{strings.Split(path, "/")[0]}, nil
-	case "object", "file", "bucket", "prefix", "directory", "root", "dir":
-		return nil, []string{path}
+		return []string{strings.Split(path, "/")[0]}
 	}
-	return nil, []string{path}
+	return []string{path}
+}
+
+func topCatalogTargets(paths []string) []string {
+	targets := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.Trim(strings.TrimSpace(path), "/")
+		if path == "" {
+			continue
+		}
+		parts := strings.FieldsFunc(path, func(r rune) bool {
+			return r == '/' || r == '.'
+		})
+		if len(parts) == 0 {
+			continue
+		}
+		targets = append(targets, parts[0])
+	}
+	return uniqueNonEmpty(targets)
 }
 
 func engineIDFromLocator(locator string) (uint, bool) {
@@ -585,8 +577,16 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func tenantIDForResource(resource *commonModels.Engine, fallback uint) uint {
+	if resource != nil && resource.TenantID != nil && *resource.TenantID > 0 {
+		return *resource.TenantID
+	}
+	return fallback
+}
+
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
+	tenantID = tenantIDForResource(resource, tenantID)
 	startFields := append(connectionLogFields(resource),
 		"scan_log_id", scanLogID,
 		"mode", "auto",
@@ -606,11 +606,11 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	}
 
 	s.log.Info("资源扫描完成", cloneLogFields(startFields,
-		"namespaces_scanned", result.Namespaces,
+		"catalog_nodes_scanned", result.CatalogNodes,
 		"items_scanned", result.Items,
 		"fields_scanned", result.Fields,
 	)...)
-	return result.Namespaces, result.Items, result.Fields, nil
+	return result.CatalogNodes, result.Items, result.Fields, nil
 }
 
 func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
@@ -734,7 +734,7 @@ func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.
 	}
 
 	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
-		"namespaces_scanned", totalNamespaces,
+		"catalog_nodes_scanned", totalNamespaces,
 		"items_scanned", totalTables,
 		"fields_scanned", totalFields,
 	)...)
@@ -862,7 +862,7 @@ func (s *ScanService) scanNamespaceItemsWithReporter(
 	}
 
 	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
-		"namespaces_scanned", totalNamespaces,
+		"catalog_nodes_scanned", totalNamespaces,
 		"items_scanned", totalItems,
 		"fields_scanned", totalFields,
 	)...)
@@ -870,30 +870,30 @@ func (s *ScanService) scanNamespaceItemsWithReporter(
 	return totalNamespaces, totalItems, totalFields, nil
 }
 
-// scanFileCatalogResourceWithReporter 扫描文件 catalog 资源。
-func (s *ScanService) scanFileCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
-	roots, items, err := s.fileCatalogScanService.ScanPaths(resource, tenantID, objectPaths, scanDepth, force, reporter)
+// scanFilesystemCatalogResourceWithReporter 扫描文件系统 catalog 资源。
+func (s *ScanService) scanFilesystemCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
+	roots, items, err := s.filesystemCatalogScanService.ScanPaths(resource, tenantID, catalogPaths, scanDepth, force, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 	return roots, items, 0, nil
 }
 
-func (s *ScanService) scanObjectCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanService) scanObjectStorageCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
 	// 标准化 scanDepth
 	if scanDepth == "" {
 		scanDepth = "deep"
 	}
 
-	if reporter != nil && len(objectPaths) > 0 {
-		reporter.SetTotal(len(objectPaths))
+	if reporter != nil && len(catalogPaths) > 0 {
+		reporter.SetTotal(len(catalogPaths))
 	}
 
-	// 调用 ObjectCatalogScanService 进行扫描
-	buckets, objects, err := s.objectCatalogScanService.ScanPaths(
+	// 调用 ObjectStorageCatalogScanService 进行扫描
+	buckets, objects, err := s.objectStorageCatalogScanService.ScanPaths(
 		resource,
 		tenantID,
-		objectPaths,
+		catalogPaths,
 		nil,
 		scanDepth,
 		force,

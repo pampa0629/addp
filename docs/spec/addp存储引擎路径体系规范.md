@@ -99,6 +99,17 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 
 文件系统的 `CatalogPath` 必须继续遵守 `root -> directory* -> file` 模型；内容读取不能因为底层 NFS 需要 `/a/b.csv` 这样的物理路径，就额外发明单段 `path` 语义。对象存储同理，内容读取仍使用 `bucket -> prefix* -> object` 的 item path。物理路径只作为 storage attribute 或插件内部解析结果存在，不成为第二套上层路径模型。
 
+### 扫描请求路径字段
+
+当 Meta、Manager 或其他模块按路径触发扫描时，请求字段统一使用 `catalog_paths`。该字段承载的是本章定义的引擎 catalog path：
+
+| 引擎 | `catalog_paths` 示例 | 含义 |
+|---|---|---|
+| MinIO / S3 | `addp/image/photo.jpg` | bucket `addp` 下的 object |
+| NFS | `/gis-data/sample.csv` 或 `gis-data/sample.csv` | 挂载点内的文件 catalog path |
+
+路径型扫描目标统一使用 `catalog_paths`，不得在新增接口、前端状态名或跨模块客户端中引入存储族专属字段名。
+
 ### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：

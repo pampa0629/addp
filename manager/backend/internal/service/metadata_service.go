@@ -305,11 +305,8 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	}
 
 	if req != nil {
-		if len(req.Namespaces) > 0 {
-			payload["namespaces"] = req.Namespaces
-		}
-		if len(req.ObjectPaths) > 0 {
-			payload["object_paths"] = req.ObjectPaths
+		if len(req.CatalogPaths) > 0 {
+			payload["catalog_paths"] = req.CatalogPaths
 		}
 		if depth := strings.TrimSpace(req.ScanDepth); depth != "" {
 			payload["scan_depth"] = depth

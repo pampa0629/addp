@@ -251,7 +251,6 @@ type ComputeCapability struct {
     {
       "dev_modes": ["workflow"],
       "supported_sources": ["postgresql", "mysql", "minio", "s3"],
-      "supported_formats": ["geojson", "wkt", "csv", "parquet"],
       "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
       "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"
     }
@@ -738,7 +737,6 @@ curl http://localhost:8180/internal/registry/compute-engines
 
 以下字段已从 `ScanConfig` 中删除：
 - ~~`schema_names`~~ - 使用 API 参数传递
-- ~~`object_paths`~~ - 使用 API 参数传递
 
 ### 10.3 内置引擎保护
 

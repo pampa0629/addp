@@ -45,21 +45,21 @@ definitions:
     type: object
   github_com_addp_manager_internal_models.MetaManualScanRequest:
     properties:
+      catalog_paths:
+        items:
+          type: string
+        type: array
       force:
         type: boolean
-      namespaces:
-        items:
-          type: string
-        type: array
-      object_paths:
-        items:
-          type: string
-        type: array
       scan_depth:
         type: string
     type: object
   github_com_addp_manager_internal_models.MetaScanTaskRequest:
     properties:
+      catalog_paths:
+        items:
+          type: string
+        type: array
       description:
         type: string
       enabled:
@@ -68,14 +68,6 @@ definitions:
         type: integer
       name:
         type: string
-      namespaces:
-        items:
-          type: string
-        type: array
-      object_paths:
-        items:
-          type: string
-        type: array
       scan_depth:
         type: string
       schedule:

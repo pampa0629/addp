@@ -25,8 +25,8 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    "server",
 		Levels: []CatalogLevelSpec{
-			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Container: true},
-			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Item: true},
+			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Container: true, I18nKey: CatalogTermI18nKey(namespaceTerm)},
+			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermTable)},
 		},
 	}
 }

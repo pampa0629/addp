@@ -111,7 +111,7 @@ type CatalogLevelSpec struct {
 | `levels.container` | 该层是否可以继续展开子节点。 |
 | `levels.item` | 该层是否是可被描述、预览、读取或写入的数据项。 |
 | `levels.optional` | 该层是否可省略。 |
-| `levels.i18n_key` | 可选国际化 key。 |
+| `levels.i18n_key` | 展示层使用的原生术语国际化 key。内置模型必须声明，推荐格式为 `engine.term.<term>`。 |
 
 推荐层次：
 
@@ -125,6 +125,8 @@ type CatalogLevelSpec struct {
 | NFS | `root -> directory -> file` |
 
 `StorageCapabilities.CatalogModel` 是对外 CatalogModel 事实源。如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
+
+`levels.term` 是机器语义，`levels.i18n_key` 是展示语义。Meta、Manager 等上层模块可以统一消费 `CatalogNode` / `CatalogPath`，但面向用户的 UI 必须优先使用 `i18n_key` 展示引擎原生术语，例如 PostgreSQL 显示 `Schema`，MySQL/MongoDB 显示 `数据库 / Database`，MinIO/S3 显示 `Bucket`，NFS 显示 `目录 / Directory`。不得把平台内部的 `catalog node` 作为用户可见术语。
 
 消费规则：
 
@@ -282,16 +284,15 @@ type ScriptCapability struct {
 
 ```go
 type TransferCapabilities struct {
-    Read             bool              `json:"read"`
-    Write            bool              `json:"write"`
-    BulkWrite        bool              `json:"bulk_write,omitempty"`
-    StreamRead       bool              `json:"stream_read,omitempty"`
-    Checkpoint       bool              `json:"checkpoint,omitempty"`
-    ParallelRead     bool              `json:"parallel_read,omitempty"`
-    ParallelWrite    bool              `json:"parallel_write,omitempty"`
-    ConnectorTypes   map[string]string `json:"connector_types,omitempty"`
-    SupportedFormats []string          `json:"supported_formats,omitempty"`
-    PreferredWriter  string            `json:"preferred_writer,omitempty"`
+    Read            bool              `json:"read"`
+    Write           bool              `json:"write"`
+    BulkWrite       bool              `json:"bulk_write,omitempty"`
+    StreamRead      bool              `json:"stream_read,omitempty"`
+    Checkpoint      bool              `json:"checkpoint,omitempty"`
+    ParallelRead    bool              `json:"parallel_read,omitempty"`
+    ParallelWrite   bool              `json:"parallel_write,omitempty"`
+    ConnectorTypes  map[string]string `json:"connector_types,omitempty"`
+    PreferredWriter string            `json:"preferred_writer,omitempty"`
 }
 ```
 
@@ -306,10 +307,7 @@ Transfer 的 Reader / Writer 由 Transfer 模块实现。capabilities 只声明�
 | `checkpoint` | Transfer 任务是否可利用检查点恢复。 | 可选，有执行面支持时声明。 |
 | `parallel_read` / `parallel_write` | 是否支持并行读写。 | 可选，有真实执行能力时声明。 |
 | `connector_types` | 推荐 Transfer 连接器类型，如 reader=s3、writer=jdbc。 | Transfer 需要消费时建议声明。 |
-| `supported_formats` | 兼容旧展示字段；引擎插件不应主动填写。 | 阶段性保留字段定义，后续由消费层派生或删除。 |
 | `preferred_writer` | 多 writer 可选时的默认写端。 | 可选。 |
-
-`supported_formats` 不应在各引擎 builder 中手写维护，engine 层也不直接依赖 format registry。需要展示或消费格式范围时，应由 Manager / Transfer / System 等消费层基于 engine family、engine transfer 能力和 format capability registry 派生，避免 engine 与 format 相互感知。
 
 ---
 

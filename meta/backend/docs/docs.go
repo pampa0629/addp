@@ -145,8 +145,10 @@ const docTemplate = `{
                     "200": {
                         "description": "引擎列表 | Engine list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_meta_internal_models.ResourceWithStats"
+                            }
                         }
                     },
                     "500": {
@@ -1801,9 +1803,74 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_meta_internal_models.ResourceWithStats": {
+            "type": "object",
+            "properties": {
+                "catalog_item_i18n_key": {
+                    "type": "string"
+                },
+                "catalog_item_term": {
+                    "type": "string"
+                },
+                "catalog_root_term": {
+                    "type": "string"
+                },
+                "catalog_top_i18n_key": {
+                    "type": "string"
+                },
+                "catalog_top_term": {
+                    "type": "string"
+                },
+                "check_message": {
+                    "description": "状态详情",
+                    "type": "string"
+                },
+                "connection_status": {
+                    "description": "连接状态相关字段",
+                    "type": "string"
+                },
+                "engine_family": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "前端期待 id",
+                    "type": "integer"
+                },
+                "last_check_at": {
+                    "description": "最后检测时间",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "前端期待 name",
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "scanned_catalog_nodes": {
+                    "type": "integer"
+                },
+                "total_catalog_nodes": {
+                    "type": "integer"
+                },
+                "unscanned_catalog_nodes": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_meta_internal_models.ScanRequest": {
             "type": "object",
             "properties": {
+                "catalog_paths": {
+                    "description": "要扫描的 catalog 路径列表（空则全部）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "engine_id": {
                     "description": "资源ID",
                     "type": "integer"
@@ -1816,23 +1883,9 @@ const docTemplate = `{
                     "description": "要扫描的数据项 ID",
                     "type": "integer"
                 },
-                "namespaces": {
-                    "description": "要扫描的命名空间列表（空则全部）",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "node_id": {
                     "description": "要扫描的节点 ID",
                     "type": "integer"
-                },
-                "object_paths": {
-                    "description": "对象存储/文件系统选择的路径",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "scan_depth": {
                     "description": "basic/deep",
@@ -1854,6 +1907,9 @@ const docTemplate = `{
         "github_com_addp_meta_internal_models.ScanResponse": {
             "type": "object",
             "properties": {
+                "catalog_nodes_scanned": {
+                    "type": "integer"
+                },
                 "duration_ms": {
                     "type": "integer"
                 },
@@ -1865,9 +1921,6 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
-                },
-                "namespaces_scanned": {
-                    "type": "integer"
                 },
                 "started_at": {
                     "type": "string"
@@ -1885,6 +1938,12 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "catalog_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "description": {
                     "type": "string"
                 },
@@ -1899,18 +1958,6 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
-                },
-                "namespaces": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "object_paths": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "scan_depth": {
                     "type": "string"

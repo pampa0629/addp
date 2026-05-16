@@ -20,21 +20,20 @@ const (
 )
 
 type scanDispatchRequest struct {
-	Resource    *commonModels.Engine
-	TenantID    uint
-	Namespaces  []string
-	ObjectPaths []string
-	ScanDepth   string
-	Force       bool
-	ScanLogID   uint
-	Reporter    ScanProgressReporter
-	Mode        scanDispatchMode
+	Resource     *commonModels.Engine
+	TenantID     uint
+	CatalogPaths []string
+	ScanDepth    string
+	Force        bool
+	ScanLogID    uint
+	Reporter     ScanProgressReporter
+	Mode         scanDispatchMode
 }
 
 type scanDispatchResult struct {
-	Namespaces int
-	Items      int
-	Fields     int
+	CatalogNodes int
+	Items        int
+	Fields       int
 }
 
 type scanDispatchFunc func(context.Context, plugin.EnginePlugin, scanDispatchRequest) (scanDispatchResult, error)
@@ -69,7 +68,7 @@ func (s *ScanService) scanDispatchers() map[catalogScanStrategy]scanDispatchFunc
 }
 
 func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
-	namespaceNames := req.Namespaces
+	namespaceNames := topCatalogTargets(req.CatalogPaths)
 	if req.Mode == scanDispatchAuto && len(namespaceNames) == 0 {
 		catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
 		if !ok {
@@ -94,25 +93,25 @@ func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugi
 		req.Force,
 		req.Reporter,
 	)
-	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
+	return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 }
 
 func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
 	_ = ctx
 	_ = enginePlugin
-	namespaces, items, fields, err := s.scanObjectCatalogResourceWithReporter(
+	namespaces, items, fields, err := s.scanObjectStorageCatalogResourceWithReporter(
 		req.Resource,
 		req.TenantID,
-		req.ObjectPaths,
+		req.CatalogPaths,
 		req.ScanDepth,
 		req.Force,
 		req.Reporter,
 	)
-	return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
+	return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 }
 
 func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
-	paths := req.ObjectPaths
+	paths := req.CatalogPaths
 	if req.Mode == scanDispatchAuto && len(paths) == 0 {
 		var err error
 		paths, err = metacatalog.FileCatalogRootPaths(ctx, req.Resource, enginePlugin)
@@ -127,7 +126,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		s.log.Info("文件 catalog 资源扫描开始", "root_count", len(paths), "roots", paths)
 	}
 
-	roots, items, fields, err := s.scanFileCatalogResourceWithReporter(
+	roots, items, fields, err := s.scanFilesystemCatalogResourceWithReporter(
 		req.Resource,
 		req.TenantID,
 		paths,
@@ -135,7 +134,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		req.Force,
 		req.Reporter,
 	)
-	return scanDispatchResult{Namespaces: roots, Items: items, Fields: fields}, err
+	return scanDispatchResult{CatalogNodes: roots, Items: items, Fields: fields}, err
 }
 
 func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
@@ -143,13 +142,13 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 		namespaces, items, fields, err := s.scanResourceNamespacesWithReporter(
 			req.Resource,
 			req.TenantID,
-			req.Namespaces,
+			topCatalogTargets(req.CatalogPaths),
 			req.ScanLogID,
 			req.ScanDepth,
 			req.Force,
 			req.Reporter,
 		)
-		return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
+		return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 	}
 
 	namespaceInfos, err := metacatalog.NamespaceInfos(ctx, req.Resource, enginePlugin)
@@ -188,7 +187,7 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 			)
 			continue
 		}
-		result.Namespaces += namespaces
+		result.CatalogNodes += namespaces
 		result.Items += items
 		result.Fields += fields
 	}

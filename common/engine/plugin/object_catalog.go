@@ -30,9 +30,9 @@ func ObjectCatalogModel() CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    CatalogTermService,
 		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermBucket, Kinds: []string{CatalogKindBucket}, Container: true},
-			{Term: CatalogTermPrefix, Kinds: []string{CatalogKindPrefix}, Container: true, Optional: true},
-			{Term: CatalogTermObject, Kinds: []string{CatalogKindObject}, Item: true},
+			{Term: CatalogTermBucket, Kinds: []string{CatalogKindBucket}, Container: true, I18nKey: CatalogTermI18nKey(CatalogTermBucket)},
+			{Term: CatalogTermPrefix, Kinds: []string{CatalogKindPrefix}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermPrefix)},
+			{Term: CatalogTermObject, Kinds: []string{CatalogKindObject}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermObject)},
 		},
 	}
 }

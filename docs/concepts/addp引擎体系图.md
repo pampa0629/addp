@@ -183,6 +183,7 @@ classDiagram
 
 - 上层模块优先按 capabilities 判断可用性，不按 `engine_type` 硬编码功能入口。
 - `engine_family` 只保留粗分类意义；涉及 catalog 层级、item 术语和 Meta 扫描编排时，统一以 `CatalogModelSpec` 与 provider 组合为准。
+- Meta 的扫描目标字段使用 `catalog_paths` 表达文件系统、对象存储等 catalog model 下的路径。
 - 目录发现统一走 `CatalogProvider.ListChildren`。
 - 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
 - 查询统一走对应 runtime provider。

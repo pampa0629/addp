@@ -21,7 +21,7 @@ import (
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	t.Parallel()
 
-	svc := &ObjectCatalogScanService{log: slog.Default()}
+	svc := &ObjectStorageCatalogScanService{log: slog.Default()}
 	resource := metacatalog.StorageResource{
 		RootName:  "addp",
 		Path:      "datasets/converted.json",
@@ -57,7 +57,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
-	svc := &ObjectCatalogScanService{
+	svc := &ObjectStorageCatalogScanService{
 		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		repo: repo,
 	}

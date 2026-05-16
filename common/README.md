@@ -16,7 +16,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 ### resource
 平台级资源定位、资源树、单资源读取和多组件资源读取抽象。
 
-对象存储读取通过 `resource.ObjectStoreReader` 适配到 `ResourceReader`，上层应优先依赖 `ResourceReader` / `ComponentReader`，不要绕过引擎和资源抽象直接引入具体存储客户端。
+对象存储读取通过 `resource/objectstore.Reader` 适配到 `ResourceReader`，上层应优先依赖 `ResourceReader` / `ComponentReader`，不要绕过引擎和资源抽象直接引入具体存储客户端。
 
 ### sqldialect
 跨 SQL 引擎的轻量方言工具，用于标识符引用、命名空间表名拼接、基础 SELECT / COUNT 和 LIMIT / OFFSET 分页 SQL 生成。

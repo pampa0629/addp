@@ -20,8 +20,8 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "server",
 				Levels: []CatalogLevelSpec{
-					{Term: namespaceTerm, Kinds: []string{"namespace"}, Container: true},
-					{Term: "table", Kinds: []string{"table", "view", "materialized_view", "external_table"}, Item: true},
+					{Term: namespaceTerm, Kinds: []string{"namespace"}, Container: true, I18nKey: CatalogTermI18nKey(namespaceTerm)},
+					{Term: "table", Kinds: []string{"table", "view", "materialized_view", "external_table"}, Item: true, I18nKey: CatalogTermI18nKey("table")},
 				},
 			},
 			Catalog: &CatalogCapability{
@@ -107,9 +107,9 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "service",
 				Levels: []CatalogLevelSpec{
-					{Term: "bucket", Kinds: []string{"bucket"}, Container: true},
-					{Term: "prefix", Kinds: []string{"prefix"}, Container: true, Optional: true},
-					{Term: "object", Kinds: []string{"object"}, Item: true},
+					{Term: "bucket", Kinds: []string{"bucket"}, Container: true, I18nKey: CatalogTermI18nKey("bucket")},
+					{Term: "prefix", Kinds: []string{"prefix"}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey("prefix")},
+					{Term: "object", Kinds: []string{"object"}, Item: true, I18nKey: CatalogTermI18nKey("object")},
 				},
 			},
 			Catalog: &CatalogCapability{
@@ -155,8 +155,8 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "root",
 				Levels: []CatalogLevelSpec{
-					{Term: "directory", Kinds: []string{"directory"}, Container: true, Optional: true},
-					{Term: "file", Kinds: []string{"file"}, Item: true},
+					{Term: "directory", Kinds: []string{"directory"}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey("directory")},
+					{Term: "file", Kinds: []string{"file"}, Item: true, I18nKey: CatalogTermI18nKey("file")},
 				},
 			},
 			Catalog: &CatalogCapability{

@@ -958,21 +958,21 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask) 
 		return
 	}
 
-	// 提取 namespaces（如果有的话）
-	var namespaces []string
+	// 提取 catalog path（结构化引擎的 schema/database 也是顶层 catalog path）
+	var catalogPaths []string
 	if schema, ok := targetConfig["schema"].(string); ok && schema != "" {
-		namespaces = []string{schema}
+		catalogPaths = []string{schema}
 	} else if database, ok := targetConfig["database"].(string); ok && database != "" {
-		namespaces = []string{database}
+		catalogPaths = []string{database}
 	}
 
 	// 调用 Meta 模块的扫描 API
 	s.logger.Info("triggering metadata scan",
 		"task_id", task.ID,
 		"engine_id", engineID,
-		"namespaces", namespaces)
+		"catalog_paths", catalogPaths)
 
-	if err := s.metaClient.TriggerScanEngine(engineID, namespaces); err != nil {
+	if err := s.metaClient.TriggerScanEngine(engineID, catalogPaths); err != nil {
 		// 元数据扫描失败不影响任务本身的成功状态
 		s.logger.Error("failed to trigger metadata scan",
 			"error", err,

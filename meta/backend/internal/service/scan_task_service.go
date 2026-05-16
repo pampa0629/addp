@@ -284,8 +284,7 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		userID,
 		req.EngineID,
 		scantask.NormalizeStorageType(resource.EngineType),
-		req.Namespaces,
-		req.ObjectPaths,
+		req.CatalogPaths,
 		req.ScanDepth,
 		req.Force,
 		token,
@@ -347,14 +346,13 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	reporter.Message("任务开始执行")
 
 	resp, scanErr := s.scanService.ScanEngineWithOptions(ScanOptions{
-		EngineID:    execConfig.EngineID,
-		TenantID:    uint(exec.TenantID),
-		Namespaces:  execConfig.Namespaces,
-		ObjectPaths: execConfig.ObjectPaths,
-		Token:       execConfig.Token,
-		ScanDepth:   execConfig.ScanDepth,
-		Force:       execConfig.Force,
-		Reporter:    reporter,
+		EngineID:     execConfig.EngineID,
+		TenantID:     uint(exec.TenantID),
+		CatalogPaths: execConfig.CatalogPaths,
+		Token:        execConfig.Token,
+		ScanDepth:    execConfig.ScanDepth,
+		Force:        execConfig.Force,
+		Reporter:     reporter,
 	})
 	completeTime := time.Now()
 	durationMs := completeTime.Sub(start).Milliseconds()
@@ -581,7 +579,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 
 	targets := s.computeInheritedTargets(&task)
 
-	if len(targets.Namespaces) == 0 && len(targets.ObjectPaths) == 0 {
+	if len(targets.CatalogPaths) == 0 {
 		s.log.Info("所有目标均已配置独立调度，跳过引擎级扫描",
 			"task_id", taskID,
 			"engine_id", task.EngineID)
@@ -610,7 +608,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 // computeInheritedTargets 计算继承目标（排除已有独立调度的schema/bucket）
 func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) scantask.TargetSet {
 	if task == nil || task.Parameters == nil {
-		return scantask.TargetSet{Namespaces: []string{}, ObjectPaths: []string{}}
+		return scantask.TargetSet{CatalogPaths: []string{}}
 	}
 
 	var independentTasks []models.ScanTask

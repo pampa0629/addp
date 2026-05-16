@@ -11,7 +11,7 @@ func ScanCompletedEvent(engineID, tenantID uint, summary commonModels.JSONMap, t
 	scannedItemsCount := 0
 	scanType := events.ScanTypeDatabase
 
-	if namespacesScanned, ok := summary["namespaces_scanned"].(int); ok && namespacesScanned > 0 {
+	if catalogNodesScanned, ok := summary["catalog_nodes_scanned"].(int); ok && catalogNodesScanned > 0 {
 		scanType = events.ScanTypeDatabase
 	}
 	if objectsScanned, ok := summary["objects_scanned"].(int); ok && objectsScanned > 0 {

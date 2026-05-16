@@ -43,6 +43,30 @@ type CatalogLevelSpec struct {
 	I18nKey   string   `json:"i18n_key,omitempty"`
 }
 
+func CatalogTermI18nKey(term string) string {
+	if term == "" {
+		return ""
+	}
+	return "engine.term." + term
+}
+
+func CatalogLevelI18nKey(model CatalogModelSpec, term string) string {
+	for _, level := range model.Levels {
+		if level.Term == term {
+			if level.I18nKey != "" {
+				return level.I18nKey
+			}
+			return CatalogTermI18nKey(term)
+		}
+		for _, kind := range level.Kinds {
+			if kind == term {
+				return CatalogTermI18nKey(term)
+			}
+		}
+	}
+	return CatalogTermI18nKey(term)
+}
+
 // CatalogNamespaceLevel 返回 catalog model 中第一层可展开的 namespace/container 定义。
 func CatalogNamespaceLevel(model CatalogModelSpec) (CatalogLevelSpec, bool) {
 	for _, level := range model.Levels {
@@ -122,16 +146,15 @@ type ScriptCapability struct {
 }
 
 type TransferCapabilities struct {
-	Read             bool              `json:"read"`
-	Write            bool              `json:"write"`
-	BulkWrite        bool              `json:"bulk_write,omitempty"`
-	StreamRead       bool              `json:"stream_read,omitempty"`
-	Checkpoint       bool              `json:"checkpoint,omitempty"`
-	ParallelRead     bool              `json:"parallel_read,omitempty"`
-	ParallelWrite    bool              `json:"parallel_write,omitempty"`
-	ConnectorTypes   map[string]string `json:"connector_types,omitempty"`
-	SupportedFormats []string          `json:"supported_formats,omitempty"`
-	PreferredWriter  string            `json:"preferred_writer,omitempty"`
+	Read            bool              `json:"read"`
+	Write           bool              `json:"write"`
+	BulkWrite       bool              `json:"bulk_write,omitempty"`
+	StreamRead      bool              `json:"stream_read,omitempty"`
+	Checkpoint      bool              `json:"checkpoint,omitempty"`
+	ParallelRead    bool              `json:"parallel_read,omitempty"`
+	ParallelWrite   bool              `json:"parallel_write,omitempty"`
+	ConnectorTypes  map[string]string `json:"connector_types,omitempty"`
+	PreferredWriter string            `json:"preferred_writer,omitempty"`
 }
 
 type PreviewCapabilities struct {

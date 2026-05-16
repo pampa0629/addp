@@ -3,35 +3,28 @@ package scantask
 import "github.com/addp/meta/internal/models"
 
 type TargetSet struct {
-	Namespaces  []string
-	ObjectPaths []string
+	CatalogPaths []string
 }
 
 func TargetsFromParameters(params models.JSONMap) TargetSet {
 	return TargetSet{
-		Namespaces:  JSONMapStringSlice(params, "namespaces"),
-		ObjectPaths: JSONMapStringSlice(params, "object_paths"),
+		CatalogPaths: catalogPathsFromParams(params),
 	}
 }
 
 func InheritedTargets(parent models.JSONMap, independent []models.JSONMap) TargetSet {
 	allTargets := TargetsFromParameters(parent)
 
-	scheduledNamespaces := make(map[string]bool)
 	scheduledPaths := make(map[string]bool)
 	for _, params := range independent {
 		targets := TargetsFromParameters(params)
-		for _, namespace := range targets.Namespaces {
-			scheduledNamespaces[namespace] = true
-		}
-		for _, objectPath := range targets.ObjectPaths {
-			scheduledPaths[objectPath] = true
+		for _, catalogPath := range targets.CatalogPaths {
+			scheduledPaths[catalogPath] = true
 		}
 	}
 
 	return TargetSet{
-		Namespaces:  filterUnscheduled(allTargets.Namespaces, scheduledNamespaces),
-		ObjectPaths: filterUnscheduled(allTargets.ObjectPaths, scheduledPaths),
+		CatalogPaths: filterUnscheduled(allTargets.CatalogPaths, scheduledPaths),
 	}
 }
 

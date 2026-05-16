@@ -14,6 +14,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
 	commonResource "github.com/addp/common/resource"
+	resourceobjectstore "github.com/addp/common/resource/objectstore"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"github.com/google/uuid"
@@ -33,7 +34,7 @@ type BuildService struct {
 	graphRepo         *repository.KnowledgeGraphRepository
 	taskExecutionRepo *commonRepo.TaskExecutionRepository
 	neo4jSvc          *Neo4jService
-	materialStore     *commonResource.ObjectStoreReader
+	materialStore     *resourceobjectstore.Reader
 	copilotURL        string
 	httpClient        *http.Client
 
@@ -49,7 +50,7 @@ func NewBuildService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	taskExecutionRepo *commonRepo.TaskExecutionRepository,
 	neo4jSvc *Neo4jService,
-	materialStore *commonResource.ObjectStoreReader,
+	materialStore *resourceobjectstore.Reader,
 	copilotURL string,
 ) *BuildService {
 	return &BuildService{
@@ -379,10 +380,16 @@ func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID
 // 返回：autoWritten, pendingReview, error
 func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]*models.SpatialLayerConfig, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
 	// 从 MinIO 读取文件内容
-	text, err := s.materialStore.ReadText(ctx, commonResource.NewResourceRef(minioBucket+"/"+mat.FilePath, commonResource.ResourceRoleMain))
+	rc, err := s.materialStore.Open(ctx, commonResource.NewResourceRef(minioBucket+"/"+mat.FilePath, commonResource.ResourceRoleMain))
 	if err != nil {
 		return 0, 0, fmt.Errorf("读取文件失败: %w", err)
 	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return 0, 0, fmt.Errorf("读取文件失败: %w", err)
+	}
+	text := string(data)
 
 	// 分块
 	chunks := splitText(text, task.ChunkSize, task.ChunkOverlap)

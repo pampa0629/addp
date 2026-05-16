@@ -53,6 +53,21 @@ Meta 的扫描编排必须分开回答三类问题：
 
 这些 strategy 的差异来自 catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `CatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
 
+## 扫描目标字段
+
+Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_paths`：
+
+```json
+{
+  "engine_id": 1,
+  "catalog_paths": ["bucket/path", "/data"],
+  "scan_depth": "deep",
+  "force": false
+}
+```
+
+`catalog_paths` 表达的是对应引擎 `CatalogModelSpec` 下的 catalog path，不是对象存储专属 object key，也不是文件系统物理路径。MinIO / S3 的路径遵守 `bucket -> prefix -> object`，NFS 的路径遵守 `root -> directory -> file`。新增调用方、前端表单和模块间客户端必须统一使用 `catalog_paths`。
+
 ## Basic / Deep 边界
 
 ### Basic 扫描

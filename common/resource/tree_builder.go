@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	enginePlugin "github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -104,11 +105,12 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 	children := []*TreeNode{} // 引擎根节点在构建时会立即填充子节点，所以这里初始化为空数组
 
 	root := &TreeNode{
-		ID:      rootLocator,
-		Locator: rootLocator,
-		Label:   engine.Name,
-		Type:    "engine",
-		Icon:    EngineIcon(engine),
+		ID:        rootLocator,
+		Locator:   rootLocator,
+		Label:     engine.Name,
+		Type:      "engine",
+		TypeLabel: "engine.term.engine",
+		Icon:      EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":     engine.ID,
 			"engine_type":   engine.EngineType,
@@ -401,9 +403,6 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
 	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
 
-	// 获取 typeLabel（i18n key）
-	typeLabel := "engine.term." + node.NodeType
-
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
 	// 前端会根据 hasChildren=true && children.length=0 判断需要懒加载
@@ -412,7 +411,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		Locator:     locatorURI,
 		Label:       node.Name,
 		Type:        node.NodeType,
-		TypeLabel:   typeLabel,
+		TypeLabel:   catalogTypeLabel(engine, node.NodeType),
 		Icon:        getIconByType(node.NodeType),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
@@ -423,6 +422,17 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 如果 MetaNode 没有 Children，则跳过
 
 	return treeNode
+}
+
+func catalogTypeLabel(engine *models.Engine, nodeType string) string {
+	if engine == nil || engine.Capabilities == nil {
+		return enginePlugin.CatalogTermI18nKey(nodeType)
+	}
+	capabilities, err := enginePlugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil || capabilities == nil || capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
+		return enginePlugin.CatalogTermI18nKey(nodeType)
+	}
+	return enginePlugin.CatalogLevelI18nKey(*capabilities.Storage.CatalogModel, nodeType)
 }
 
 // calculateItemDepth 动态计算 Item 的深度

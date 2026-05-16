@@ -14,24 +14,22 @@ const (
 )
 
 type ExecutionConfig struct {
-	EngineID    uint
-	StorageType string
-	Namespaces  []string
-	ObjectPaths []string
-	ScanDepth   string
-	Force       bool
-	Token       string
+	EngineID     uint
+	StorageType  string
+	CatalogPaths []string
+	ScanDepth    string
+	Force        bool
+	Token        string
 }
 
-func ManualExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool, token string) commonModels.JSONMap {
+func ManualExecutionConfig(engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string) commonModels.JSONMap {
 	return commonModels.JSONMap{
-		"engine_id":    engineID,
-		"storage_type": storageType,
-		"namespaces":   namespaces,
-		"object_paths": objectPaths,
-		"scan_depth":   scanDepth,
-		"force":        force,
-		"token":        token,
+		"engine_id":     engineID,
+		"storage_type":  storageType,
+		"catalog_paths": catalogPaths,
+		"scan_depth":    scanDepth,
+		"force":         force,
+		"token":         token,
 	}
 }
 
@@ -39,21 +37,19 @@ func TaskExecutionConfig(engineID uint, storageType string, params models.JSONMa
 	return TargetExecutionConfig(
 		engineID,
 		storageType,
-		JSONMapStringSlice(params, "namespaces"),
-		JSONMapStringSlice(params, "object_paths"),
+		catalogPathsFromParams(params),
 		JSONMapString(params, "scan_depth", defaultScanDepth),
 		JSONMapBool(params, "force", false),
 	)
 }
 
-func TargetExecutionConfig(engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool) commonModels.JSONMap {
+func TargetExecutionConfig(engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool) commonModels.JSONMap {
 	return commonModels.JSONMap{
-		"engine_id":    engineID,
-		"storage_type": storageType,
-		"namespaces":   namespaces,
-		"object_paths": objectPaths,
-		"scan_depth":   scanDepth,
-		"force":        force,
+		"engine_id":     engineID,
+		"storage_type":  storageType,
+		"catalog_paths": catalogPaths,
+		"scan_depth":    scanDepth,
+		"force":         force,
 	}
 }
 
@@ -79,18 +75,24 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
 	parsed.Force = BoolFromInterface(config["force"])
 	parsed.Token, _ = config["token"].(string)
-	parsed.Namespaces = StringSliceFromInterface(config["namespaces"])
-	parsed.ObjectPaths = StringSliceFromInterface(config["object_paths"])
+	parsed.CatalogPaths = catalogPathsFromCommonConfig(config)
 	return parsed
 }
 
-func TaskParameters(namespaces, objectPaths []string, scanDepth string, force bool) models.JSONMap {
+func TaskParameters(catalogPaths []string, scanDepth string, force bool) models.JSONMap {
 	return models.JSONMap{
-		"namespaces":   namespaces,
-		"object_paths": objectPaths,
-		"scan_depth":   scanDepth,
-		"force":        force,
+		"catalog_paths": catalogPaths,
+		"scan_depth":    scanDepth,
+		"force":         force,
 	}
+}
+
+func catalogPathsFromParams(params models.JSONMap) []string {
+	return JSONMapStringSlice(params, "catalog_paths")
+}
+
+func catalogPathsFromCommonConfig(config commonModels.JSONMap) []string {
+	return StringSliceFromInterface(config["catalog_paths"])
 }
 
 func NormalizeScanDepth(scanDepth, defaultDepth string) (string, error) {

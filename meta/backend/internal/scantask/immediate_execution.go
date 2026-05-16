@@ -21,7 +21,7 @@ func NewImmediateExecutionRecorder(db *gorm.DB) *ImmediateExecutionRecorder {
 	}
 }
 
-func (r *ImmediateExecutionRecorder) Create(resource *commonModels.Engine, tenantID uint, namespaces, objectPaths []string, scanDepth string, force bool, startTime time.Time) (string, error) {
+func (r *ImmediateExecutionRecorder) Create(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, startTime time.Time) (string, error) {
 	if resource == nil {
 		return "", fmt.Errorf("resource is required to create immediate execution")
 	}
@@ -36,11 +36,10 @@ func (r *ImmediateExecutionRecorder) Create(resource *commonModels.Engine, tenan
 		Status:      commonModels.ExecutionStatusRunning,
 		TriggerType: commonModels.TriggerTypeAPI,
 		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":    engineIDInt,
-			"namespaces":   namespaces,
-			"object_paths": objectPaths,
-			"scan_depth":   scanDepth,
-			"force":        force,
+			"engine_id":     engineIDInt,
+			"catalog_paths": catalogPaths,
+			"scan_depth":    scanDepth,
+			"force":         force,
 		},
 		StartedAt: &startTime,
 		CreatedAt: time.Now(),

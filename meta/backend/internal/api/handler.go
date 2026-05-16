@@ -100,7 +100,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 // @Description 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant
 // @Tags Meta
 // @Produce json
-// @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
+// @Success 200 {array} models.ResourceWithStats "引擎列表 | Engine list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /engines [get]
 // @Security BearerAuth
@@ -546,16 +546,15 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 		scanDepth = "basic"
 	}
 	result, err := h.scanService.ScanEngineWithOptions(service.ScanOptions{
-		EngineID:    req.EngineID,
-		TenantID:    tenantID,
-		Namespaces:  req.Namespaces,
-		ObjectPaths: req.ObjectPaths,
-		Token:       token,
-		ScanDepth:   scanDepth,
-		Force:       req.Force,
-		NodeID:      req.NodeID,
-		ItemID:      req.ItemID,
-		Targets:     req.Targets,
+		EngineID:     req.EngineID,
+		TenantID:     tenantID,
+		CatalogPaths: req.CatalogPaths,
+		Token:        token,
+		ScanDepth:    scanDepth,
+		Force:        req.Force,
+		NodeID:       req.NodeID,
+		ItemID:       req.ItemID,
+		Targets:      req.Targets,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

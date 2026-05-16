@@ -22,10 +22,10 @@ func TestJSONMapStringSlice(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{
-		"namespaces": []interface{}{"public", "gis"},
+		"catalog_paths": []interface{}{"public", "gis"},
 	}
-	if got := JSONMapStringSlice(attrs, "namespaces"); !reflect.DeepEqual(got, []string{"public", "gis"}) {
-		t.Fatalf("namespaces = %#v", got)
+	if got := JSONMapStringSlice(attrs, "catalog_paths"); !reflect.DeepEqual(got, []string{"public", "gis"}) {
+		t.Fatalf("catalog_paths = %#v", got)
 	}
 }
 

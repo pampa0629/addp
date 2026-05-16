@@ -408,15 +408,9 @@
             :placeholder="t('manager.metadata.placeholderDescription')"
           />
         </el-form-item>
-        <el-form-item :label="t('manager.metadata.labelSchemaList')">
-          <el-input
-            v-model="taskForm.schemaInput"
-            :placeholder="t('manager.metadata.placeholderSchemaList')"
-          />
-        </el-form-item>
         <el-form-item :label="t('manager.metadata.labelObjectPath')">
           <el-input
-            v-model="taskForm.objectPathInput"
+            v-model="taskForm.catalogPathInput"
             :placeholder="t('manager.metadata.placeholderObjectPath')"
           />
         </el-form-item>
@@ -537,8 +531,7 @@ const taskForm = reactive({
   description: '',
   schedule: '',
   enabled: true,
-  schemaInput: '',
-  objectPathInput: '',
+  catalogPathInput: '',
   scanDepth: 'deep'
 })
 
@@ -769,8 +762,7 @@ const resetTaskForm = () => {
     scheduleValue: [],
     schedule: '',
     enabled: true,
-    schemaInput: '',
-    objectPathInput: '',
+    catalogPathInput: '',
     scanDepth: 'deep'
   })
 }
@@ -781,8 +773,8 @@ const populateTaskForm = (task) => {
   taskForm.description = task.description || ''
   taskForm.schedule = task.schedule || ''
   taskForm.enabled = !!task.enabled
-  taskForm.schemaInput = Array.isArray(params.namespaces) ? params.namespaces.join(', ') : ''
-  taskForm.objectPathInput = Array.isArray(params.object_paths) ? params.object_paths.join(', ') : ''
+  const catalogPaths = Array.isArray(params.catalog_paths) ? params.catalog_paths : []
+  taskForm.catalogPathInput = catalogPaths.join(', ')
   taskForm.scanDepth = typeof params.scan_depth === 'string' ? params.scan_depth : 'deep'
 }
 
@@ -830,14 +822,12 @@ const normalizeListInput = (value) => {
 }
 
 const buildTaskPayloadFromForm = () => {
-  const schemaNames = normalizeListInput(taskForm.schemaInput)
-  const objectPaths = normalizeListInput(taskForm.objectPathInput)
+  const catalogPaths = normalizeListInput(taskForm.catalogPathInput)
 
   return {
     name: taskForm.name,
     description: taskForm.description,
-    namespaces: schemaNames,
-    object_paths: objectPaths,
+    catalog_paths: catalogPaths,
     scan_depth: taskForm.scanDepth || 'deep',
     schedule_type: taskForm.schedule ? 'cron' : 'manual',
     schedule: taskForm.schedule || '',
@@ -851,8 +841,7 @@ const buildTaskPayloadFromTask = (task, overrides = {}) => {
   return {
     name: overrides.name ?? task.name,
     description: overrides.description ?? task.description ?? '',
-    namespaces: Array.isArray(params.namespaces) ? params.namespaces : [],
-    object_paths: Array.isArray(params.object_paths) ? params.object_paths : [],
+    catalog_paths: Array.isArray(params.catalog_paths) ? params.catalog_paths : [],
     scan_depth: typeof params.scan_depth === 'string' ? params.scan_depth : 'deep',
     schedule_type: overrides.schedule !== undefined
       ? (overrides.schedule ? 'cron' : 'manual')

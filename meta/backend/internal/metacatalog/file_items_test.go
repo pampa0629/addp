@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
@@ -41,6 +42,38 @@ func TestFileCatalogDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 	}
 	if fullName != "lake/sales" {
 		t.Fatalf("fullName = %q, want lake/sales", fullName)
+	}
+}
+
+func TestPlanFileCatalogDetectedItemBuildsStablePlan(t *testing.T) {
+	t.Parallel()
+
+	size := int64(42)
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Format:       "csv",
+			DataType:     dataitem.DataTypeTable,
+			Organization: dataitem.OrganizationSingle,
+			EntryPath:    "/tables/sales.csv",
+			SizeBytes:    &size,
+		},
+	}
+
+	plan, ok := PlanFileCatalogDetectedItem(9, "/tables", item, "file")
+	if !ok {
+		t.Fatalf("PlanFileCatalogDetectedItem ok = false")
+	}
+	if plan.ItemName != "sales.csv" || plan.FullName != "tables/sales.csv" {
+		t.Fatalf("plan name/fullName = %q/%q", plan.ItemName, plan.FullName)
+	}
+	if plan.Fingerprint != commonModels.GenerateItemFingerprint(9, "tables/sales.csv") {
+		t.Fatalf("unexpected fingerprint: %s", plan.Fingerprint)
+	}
+	if plan.SizeBytes != 42 {
+		t.Fatalf("SizeBytes = %d, want 42", plan.SizeBytes)
+	}
+	if plan.Attributes == nil {
+		t.Fatalf("Attributes missing")
 	}
 }
 

@@ -9,10 +9,10 @@ func TestExpressionBuilder_BuildFromScheduleConfig(t *testing.T) {
 	builder := NewExpressionBuilder()
 
 	tests := []struct {
-		name       string
-		config     ScheduleConfig
-		wantExpr   string
-		wantErr    bool
+		name        string
+		config      ScheduleConfig
+		wantExpr    string
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -71,13 +71,13 @@ func TestExpressionBuilder_BuildFromScheduleConfig(t *testing.T) {
 			errContains: "小时格式非法",
 		},
 		{
-			name: "empty cron expression",
+			name: "empty cron expression clears schedule",
 			config: ScheduleConfig{
 				Type: "cron",
 				Expr: "",
 			},
-			wantErr:     true,
-			errContains: "不能为空",
+			wantExpr: "",
+			wantErr:  false,
 		},
 	}
 

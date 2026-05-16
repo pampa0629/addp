@@ -16,8 +16,8 @@ func DocumentCatalogModel() CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    "server",
 		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Container: true},
-			{Term: CatalogTermCollection, Kinds: []string{CatalogKindCollection}, Item: true},
+			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Container: true, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
+			{Term: CatalogTermCollection, Kinds: []string{CatalogKindCollection}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermCollection)},
 		},
 	}
 }

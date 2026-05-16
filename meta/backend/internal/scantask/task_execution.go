@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, namespaces, objectPaths []string, scanDepth string, force bool, token string, now time.Time) *commonModels.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string, now time.Time) *commonModels.TaskExecution {
 	userIDInt := int(userID)
 	return &commonModels.TaskExecution{
 		TenantID:    int(tenantID),
@@ -22,8 +22,7 @@ func NewManualExecution(tenantID, userID uint, engineID uint, storageType string
 		ExecutionConfig: ManualExecutionConfig(
 			engineID,
 			storageType,
-			namespaces,
-			objectPaths,
+			catalogPaths,
 			scanDepth,
 			force,
 			token,
@@ -65,7 +64,7 @@ func NewScheduledExecution(task *metaModels.ScanTask, storageType string, target
 		SourceTaskName:  &task.Name,
 		Status:          commonModels.ExecutionStatusPending,
 		TriggerType:     commonModels.TriggerTypeSchedule,
-		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.Namespaces, targets.ObjectPaths, JSONMapString(task.Parameters, "scan_depth", "deep"), JSONMapBool(task.Parameters, "force", false)),
+		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.CatalogPaths, JSONMapString(task.Parameters, "scan_depth", "deep"), JSONMapBool(task.Parameters, "force", false)),
 		StartedAt:       &now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -99,7 +98,7 @@ func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string
 		"storage_type": storageType,
 	}
 	if resp != nil {
-		metadata["namespaces_scanned"] = resp.NamespacesScanned
+		metadata["catalog_nodes_scanned"] = resp.CatalogNodesScanned
 		metadata["items_scanned"] = resp.ItemsScanned
 		metadata["fields_scanned"] = resp.FieldsScanned
 	}

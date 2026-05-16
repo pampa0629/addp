@@ -20,7 +20,7 @@ import (
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonLogger "github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
-	commonResource "github.com/addp/common/resource"
+	resourceobjectstore "github.com/addp/common/resource/objectstore"
 	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"
@@ -63,7 +63,7 @@ func main() {
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
 
 	// 初始化 MinIO 客户端
-	materialStore, err := commonResource.NewObjectStoreReaderFromConnectionInfo(commonPlugin.ConnectionInfo{
+	materialStore, err := resourceobjectstore.NewReaderFromConnectionInfo(commonPlugin.ConnectionInfo{
 		"endpoint":   cfg.MinioEndpoint,
 		"access_key": cfg.MinioAccessKey,
 		"secret_key": cfg.MinioSecretKey,

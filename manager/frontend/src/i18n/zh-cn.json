@@ -166,7 +166,7 @@
       "thisType": "该类型",
       "supportedFormats": "支持：表格、CSV、JSON、GeoJSON、图片、PDF、文档等",
       "missingBase64Data": "缺少 base64 数据",
-      "dirNodeNoDownload": "目录节点不支持下载",
+      "dirNodeNoDownload": "目录不支持下载",
       "noTableDataToExport": "无表格数据可导出",
       "noDownloadSource": "未找到可下载的数据来源",
       "downloadNotSupported": "不支持下载",
@@ -402,15 +402,13 @@
       "taskDialogEdit": "编辑扫描任务",
       "labelTaskName": "任务名称",
       "labelDescription": "描述",
-      "labelSchemaList": "命名空间列表",
-      "labelObjectPath": "对象路径",
+      "labelObjectPath": "扫描范围",
       "labelScanDepth": "扫描深度",
       "labelSchedule": "定时调度",
       "labelEnabled": "是否启用",
       "placeholderTaskName": "请输入任务名称",
       "placeholderDescription": "任务用途，可选",
-      "placeholderSchemaList": "命名空间逗号分隔，例如: public, sales",
-      "placeholderObjectPath": "对象存储路径，逗号分隔",
+      "placeholderObjectPath": "Catalog 路径，逗号分隔，例如: public, sales, bucket/path 或 /data",
       "placeholderSchedule": "选择扫描深度",
       "taskNameRequired": "请输入任务名称",
       "cancelBtn": "取消",
@@ -468,22 +466,23 @@
     }
   },
   "engine": {
-    "term": {
+      "term": {
+      "engine": "引擎",
       "schema": "Schema",
-      "database": "Database",
+      "database": "数据库",
       "bucket": "Bucket",
       "prefix": "Prefix",
-      "directory": "Directory",
-      "dir": "Directory",
-      "root": "Root",
-      "table": "Table",
-      "view": "View",
+      "directory": "目录",
+      "dir": "目录",
+      "root": "根目录",
+      "table": "表",
+      "view": "视图",
       "collection": "Collection",
       "label": "Label",
       "relationship": "Relationship",
-      "file": "File",
-      "object": "Object"
-    }
+      "file": "文件",
+      "object": "对象"
+      }
   },
   "meta": {
     "itemType": "数据项类型",

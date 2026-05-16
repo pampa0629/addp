@@ -402,15 +402,13 @@
       "taskDialogEdit": "Edit Scan Task",
       "labelTaskName": "Task Name",
       "labelDescription": "Description",
-      "labelSchemaList": "Namespace List",
-      "labelObjectPath": "Object Path",
+      "labelObjectPath": "Scan Range",
       "labelScanDepth": "Scan Depth",
       "labelSchedule": "Schedule",
       "labelEnabled": "Enabled",
       "placeholderTaskName": "Enter task name",
       "placeholderDescription": "Task description, optional",
-      "placeholderSchemaList": "Comma-separated namespaces, e.g.: public, sales",
-      "placeholderObjectPath": "Object storage path, comma-separated",
+      "placeholderObjectPath": "Catalog paths, comma-separated, e.g. public, sales, bucket/path or /data",
       "placeholderSchedule": "Select schedule depth",
       "taskNameRequired": "Please enter task name",
       "cancelBtn": "Cancel",
@@ -468,7 +466,8 @@
     }
   },
   "engine": {
-    "term": {
+      "term": {
+      "engine": "Engine",
       "schema": "Schema",
       "database": "Database",
       "bucket": "Bucket",

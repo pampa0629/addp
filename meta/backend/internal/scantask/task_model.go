@@ -18,7 +18,7 @@ func NewTaskFromUpsertRequest(tenantID, userID uint, req *models.ScanTaskUpsertR
 		Description: req.Description,
 		Schedule:    req.Schedule,
 		Enabled:     req.Enabled,
-		Parameters:  TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth, req.Force),
+		Parameters:  TaskParameters(req.CatalogPaths, req.ScanDepth, req.Force),
 		NextRunAt:   nextRunAt,
 		CreatedBy:   userID,
 		UpdatedBy:   userID,
@@ -33,7 +33,7 @@ func ApplyUpsertRequest(task *models.ScanTask, userID uint, req *models.ScanTask
 	task.EngineID = req.EngineID
 	task.Schedule = req.Schedule
 	task.Enabled = req.Enabled
-	task.Parameters = TaskParameters(req.Namespaces, req.ObjectPaths, req.ScanDepth, req.Force)
+	task.Parameters = TaskParameters(req.CatalogPaths, req.ScanDepth, req.Force)
 	task.NextRunAt = nextRunAt
 	task.UpdatedBy = userID
 	task.UpdatedAt = now

@@ -45,9 +45,9 @@ func SplitObjectPath(path string) (string, string) {
 	return bucket, parts[1]
 }
 
-// PrepareObjectPaths 准备对象路径列表（去重、排序）。
+// PrepareCatalogPaths 准备 catalog 路径列表（去重、排序）。
 // 优先级：paths > fallback。
-func PrepareObjectPaths(paths, fallback []string) []string {
+func PrepareCatalogPaths(paths, fallback []string) []string {
 	pathSet := map[string]struct{}{}
 	for _, p := range paths {
 		clean := SanitizeObjectPath(p)

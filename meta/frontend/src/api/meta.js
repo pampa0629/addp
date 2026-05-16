@@ -24,14 +24,13 @@ export default {
     return client.get('/meta/engines')
   },
 
-  // 获取指定引擎已扫描的 catalog 顶层节点
-  getNamespaces(engineId) {
+  // 获取指定引擎已扫描的 catalog 顶层容器
+  getScannedCatalogTopNodes(engineId) {
     return client.get(`/meta/engines/${engineId}/tree`).then(res => {
       const nodes = Array.isArray(res?.top_nodes) ? res.top_nodes : []
       return nodes.map(node => ({
         id: node.id,
         name: node.name,
-        schema_name: node.name,
         node_type: node.node_type,
         path: node.path || node.full_name || node.name,
         scan_status: node.scan_status,
@@ -58,19 +57,16 @@ export default {
     return client.post('/meta/scan/auto')
   },
 
-  // 扫描指定引擎的指定命名空间或对象路径
-  scanEngine(engineId, namespaces, objectPaths, options = {}) {
+  // 扫描指定引擎的指定 catalog 路径
+  scanEngine(engineId, catalogPaths, options = {}) {
     const payload = {
       engine_id: engineId,
       scan_depth: options.scan_depth || 'deep',
       force: options.force === true,
       trigger_type: 'manual'
     }
-    if (namespaces && namespaces.length > 0) {
-      payload.namespaces = namespaces
-    }
-    if (objectPaths && objectPaths.length > 0) {
-      payload.object_paths = objectPaths
+    if (catalogPaths && catalogPaths.length > 0) {
+      payload.catalog_paths = catalogPaths
     }
     return client.post('/meta/scan/engine', payload)
   },

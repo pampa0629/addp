@@ -97,6 +97,8 @@ type CatalogModelProvider interface {
 }
 ```
 
+`CatalogLevelSpec.I18nKey` 是 UI 展示引擎原生术语的事实源。上层模块可以统一按 catalog model 消费目录与路径，但用户界面不应显示内部抽象名，而应使用该 key 翻译成 `Schema`、`数据库`、`Bucket`、`目录` 等原生术语。
+
 示例层级：
 
 | 引擎 | Catalog Model |
@@ -234,6 +236,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
+- Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query，图 label / relationship 可使用 `GraphQueryProvider` 采样后表格化展示，对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。

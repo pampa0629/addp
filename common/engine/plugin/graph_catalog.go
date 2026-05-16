@@ -18,8 +18,8 @@ func GraphCatalogModel() CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    "server",
 		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Container: true},
-			{Term: CatalogTermLabel, Kinds: []string{CatalogKindLabel, CatalogKindRelationship}, Item: true},
+			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Container: true, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
+			{Term: CatalogTermLabel, Kinds: []string{CatalogKindLabel, CatalogKindRelationship}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermLabel)},
 		},
 	}
 }

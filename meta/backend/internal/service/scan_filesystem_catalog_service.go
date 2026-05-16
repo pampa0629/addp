@@ -22,23 +22,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// FileCatalogScanService 文件 catalog 扫描服务
+// FilesystemCatalogScanService 文件系统 catalog 扫描服务。
 // 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别复合数据项。
-type FileCatalogScanService struct {
+type FilesystemCatalogScanService struct {
 	db      *gorm.DB
 	log     *slog.Logger
 	repo    *metaRepo.ScanRepository
 	indexer *IndexerService
 }
 
-// NewFileCatalogScanService 创建文件 catalog 扫描服务
-func NewFileCatalogScanService(
+// NewFilesystemCatalogScanService 创建文件系统 catalog 扫描服务。
+func NewFilesystemCatalogScanService(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
 	indexer *IndexerService,
-) *FileCatalogScanService {
-	return &FileCatalogScanService{
+) *FilesystemCatalogScanService {
+	return &FilesystemCatalogScanService{
 		db:      db,
 		log:     log,
 		repo:    repo,
@@ -46,8 +46,8 @@ func NewFileCatalogScanService(
 	}
 }
 
-// ScanPaths 扫描文件 catalog 路径，识别复合数据项。
-func (s *FileCatalogScanService) ScanPaths(
+// ScanPaths 扫描文件系统 catalog 路径，识别复合数据项。
+func (s *FilesystemCatalogScanService) ScanPaths(
 	resource *commonModels.Engine,
 	tenantID uint,
 	paths []string,
@@ -71,8 +71,6 @@ func (s *FileCatalogScanService) ScanPaths(
 	}
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
-
-	// 始终先获取根节点列表，建立 path→name 映射
 	allRoots, err := s.listRoots(context.Background(), resource, catalogProvider, connInfo)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list roots: %w", err)
@@ -82,24 +80,17 @@ func (s *FileCatalogScanService) ScanPaths(
 		pathToName[r.Path] = r.Name
 	}
 
-	// 如果没有指定路径，扫描所有根节点
 	if len(paths) == 0 {
 		for _, r := range allRoots {
 			paths = append(paths, r.Path)
 		}
 	}
 
-	if len(paths) == 0 {
-		if reporter != nil {
-			reporter.Message("未检测到可扫描的路径")
-			reporter.SetTotal(0)
-		}
-		return 0, 0, nil
+	resolvedPaths, err := resolveCatalogScanPaths(context.Background(), "未检测到可扫描的路径", paths, nil, nil, reporter)
+	if err != nil {
+		return 0, 0, err
 	}
-
-	if reporter != nil {
-		reporter.SetTotal(len(paths))
-	}
+	paths = resolvedPaths
 
 	totalRoots := 0
 	totalItems := 0
@@ -112,7 +103,7 @@ func (s *FileCatalogScanService) ScanPaths(
 		// 使用 catalog 根节点返回的名称；插件返回空名时保持空字符串（如 NFS，挂载点透明）
 		rootName := pathToName[rootPath]
 
-		// 创建根节点（root）。文件 catalog 的根标识由插件连接配置决定，Meta 不再从路径推断。
+		// 创建根节点（root）。文件系统 catalog 的根标识由插件连接配置决定，Meta 不再从路径推断。
 		rootFullName := ""
 		rootAttrs := models.JSONMap{"path": rootPath}
 		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, &rootFullName, rootAttrs)
@@ -145,7 +136,7 @@ func (s *FileCatalogScanService) ScanPaths(
 
 // scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
 // isBucketRoot=true 时跳过独占 whole-scope 识别（bucket 根目录不应被整体识别为一张表）。
-func (s *FileCatalogScanService) scanDirectory(
+func (s *FilesystemCatalogScanService) scanDirectory(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.CatalogProvider,
@@ -309,7 +300,7 @@ func fileItemNeedsScan(existing *models.MetaItem, file plugin.FileEntry, isDeepS
 	return false
 }
 
-func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
+func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 	resource *commonModels.Engine,
 	tenantID uint,
 	parentNode *models.MetaNode,
@@ -317,39 +308,38 @@ func (s *FileCatalogScanService) persistFileCatalogDetectedItem(
 	detected *metaitem.DetectedItem,
 	itemTerm string,
 ) bool {
-	attrs := metaattr.JSONMap(metaattr.BuildAttributes(detected))
-	if len(detected.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
+	itemPlan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, dirPath, detected, itemTerm)
+	if !ok {
+		return false
 	}
-
-	itemName, fullName := metacatalog.FileCatalogDetectedItemName(dirPath, detected)
+	sizeVal := itemPlan.SizeBytes
 	_, upsertErr := s.repo.UpsertItemWithDepth(
 		tenantID, resource.ID, parentNode,
-		itemTerm, itemName, fullName,
-		attrs, nil, int64Ptr(detected.Size()), nil,
+		itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName,
+		itemPlan.Attributes, nil, &sizeVal, nil,
 		models.ScannedDepthDeep,
 	)
 	if upsertErr != nil {
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,
-			"item_type", itemTerm,
-			"full_name", fullName,
+			"item_type", itemPlan.ItemType,
+			"full_name", itemPlan.FullName,
 			"error", upsertErr,
 		)
 		return false
 	}
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
-		"full_name", fullName,
-		"item_type", itemTerm,
+		"full_name", itemPlan.FullName,
+		"item_type", itemPlan.ItemType,
 		"organization", detected.Organization,
 		"data_type", detected.DataType,
-		"name", itemName,
+		"name", itemPlan.ItemName,
 	)
 	return true
 }
 
-func (s *FileCatalogScanService) enrichSingleFileAttributes(
+func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -392,7 +382,7 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 	return attrs, detected.Fields, nil
 }
 
-func (s *FileCatalogScanService) resolveFileCatalogDirectoryItems(
+func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.CatalogProvider,
@@ -445,11 +435,7 @@ func resolveNonExclusiveScopeItems(
 	})
 }
 
-func int64Ptr(value int64) *int64 {
-	return &value
-}
-
-func (s *FileCatalogScanService) listRoots(
+func (s *FilesystemCatalogScanService) listRoots(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
@@ -479,7 +465,7 @@ func (s *FileCatalogScanService) listRoots(
 	return roots, nil
 }
 
-func (s *FileCatalogScanService) listDirectory(
+func (s *FilesystemCatalogScanService) listDirectory(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
@@ -506,7 +492,7 @@ func (s *FileCatalogScanService) listDirectory(
 	return files, subdirs, nil
 }
 
-func (s *FileCatalogScanService) listDirectoryRecursive(
+func (s *FilesystemCatalogScanService) listDirectoryRecursive(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
