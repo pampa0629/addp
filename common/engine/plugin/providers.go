@@ -63,9 +63,30 @@ type BatchReadableProvider interface {
 	ReadBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error)
 }
 
+type TableReadSessionProvider interface {
+	StoreProvider
+	OpenTableReadSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableReadSessionOptions) (TableReadSession, error)
+}
+
+type TableReadSession interface {
+	ReadBatch(ctx context.Context, limit int) (*BatchData, error)
+	Close(ctx context.Context) error
+}
+
 type BatchWritableProvider interface {
 	StoreProvider
 	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts BatchWriteOptions) error
+}
+
+type TableWriteSessionProvider interface {
+	StoreProvider
+	OpenTableWriteSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableWriteSessionOptions) (TableWriteSession, error)
+}
+
+type TableWriteSession interface {
+	WriteBatch(ctx context.Context, batch *BatchData) error
+	Close(ctx context.Context) error
+	Abort(ctx context.Context) error
 }
 
 type TableWritePreparer interface {
@@ -205,9 +226,19 @@ type BatchReadOptions struct {
 	Query  string
 }
 
+type TableReadSessionOptions struct {
+	Query string
+}
+
 type BatchWriteOptions struct {
 	Mode   string
 	Method string
+}
+
+type TableWriteSessionOptions struct {
+	Mode   string
+	Method string
+	Fields []FieldInfo
 }
 
 type TableWriteOptions struct {

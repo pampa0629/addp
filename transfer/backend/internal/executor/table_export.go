@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -32,9 +33,10 @@ type TableExportMetrics struct {
 }
 
 type TableExportExecutor struct {
-	Reader         engineplugin.BatchReadableProvider
-	Writer         engineplugin.ContentWritableProvider
-	FormatProvider format.TableWriterProvider
+	Reader               engineplugin.BatchReadableProvider
+	TableSessionProvider engineplugin.TableReadSessionProvider
+	Writer               engineplugin.ContentWritableProvider
+	FormatProvider       format.TableWriterProvider
 }
 
 func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatType format.FormatType) (*TableExportExecutor, error) {
@@ -46,6 +48,7 @@ func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatTyp
 	if !ok {
 		return nil, fmt.Errorf("source engine %q does not implement batch table read", sourceEngineType)
 	}
+	tableSessionProvider, _ := sourcePlugin.(engineplugin.TableReadSessionProvider)
 
 	targetPlugin, err := engineplugin.Get(targetEngineType)
 	if err != nil {
@@ -62,9 +65,10 @@ func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatTyp
 	}
 
 	return &TableExportExecutor{
-		Reader:         reader,
-		Writer:         writer,
-		FormatProvider: formatProvider,
+		Reader:               reader,
+		TableSessionProvider: tableSessionProvider,
+		Writer:               writer,
+		FormatProvider:       formatProvider,
 	}, nil
 }
 
@@ -97,39 +101,18 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 
 	var tableWriter format.TableWriter
 	metrics := &TableExportMetrics{}
-	offset := int64(0)
-
+	readBatch := e.batchReader(ctx, plan, batchSize)
 	for {
-		batch, err := e.Reader.ReadBatch(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.BatchReadOptions{
-			Limit:  batchSize,
-			Offset: offset,
-			Query:  plan.SourceQuery,
-		})
+		batch, err := readBatch()
 		if err != nil {
-			return metrics, fmt.Errorf("read source batch at offset %d: %w", offset, err)
+			return metrics, err
 		}
 		if batch == nil || len(batch.Rows) == 0 {
 			break
 		}
-
-		if tableWriter == nil {
-			schema := tableInfoFromBatch(batch)
-			opened, err := e.FormatProvider.OpenTableWriter(ctx, output, schema, plan.WriteOptions)
-			if err != nil {
-				return metrics, fmt.Errorf("open table writer: %w", err)
-			}
-			tableWriter = opened
+		if err := writeExportBatch(ctx, e.FormatProvider, output, plan.WriteOptions, &tableWriter, metrics, batch); err != nil {
+			return metrics, err
 		}
-
-		if err := tableWriter.WriteRows(ctx, batch.Rows); err != nil {
-			return metrics, fmt.Errorf("write table rows at offset %d: %w", offset, err)
-		}
-		rowCount := int64(len(batch.Rows))
-		metrics.RecordsRead += rowCount
-		metrics.RecordsWritten += rowCount
-		metrics.Batches++
-		offset += rowCount
-
 		if len(batch.Rows) < batchSize {
 			break
 		}
@@ -146,6 +129,81 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 	outputClosed = true
 
 	return metrics, nil
+}
+
+func (e *TableExportExecutor) batchReader(ctx context.Context, plan TableExportPlan, batchSize int) func() (*engineplugin.BatchData, error) {
+	if e.TableSessionProvider != nil {
+		session, sessionErr := e.TableSessionProvider.OpenTableReadSession(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.TableReadSessionOptions{Query: plan.SourceQuery})
+		if sessionErr == nil {
+			return tableSessionBatchReader(ctx, session, batchSize)
+		}
+		return func() (*engineplugin.BatchData, error) {
+			return nil, fmt.Errorf("open source table read session: %w", sessionErr)
+		}
+	}
+	return offsetBatchReader(ctx, e.Reader, plan, batchSize)
+}
+
+func tableSessionBatchReader(ctx context.Context, session engineplugin.TableReadSession, batchSize int) func() (*engineplugin.BatchData, error) {
+	closed := false
+	return func() (*engineplugin.BatchData, error) {
+		if closed {
+			return &engineplugin.BatchData{}, nil
+		}
+		batch, err := session.ReadBatch(ctx, batchSize)
+		if err != nil {
+			_ = session.Close(ctx)
+			closed = true
+			return nil, err
+		}
+		if batch == nil || len(batch.Rows) == 0 || len(batch.Rows) < batchSize {
+			if closeErr := session.Close(ctx); closeErr != nil {
+				closed = true
+				return batch, closeErr
+			}
+			closed = true
+		}
+		return batch, nil
+	}
+}
+
+func offsetBatchReader(ctx context.Context, reader engineplugin.BatchReadableProvider, plan TableExportPlan, batchSize int) func() (*engineplugin.BatchData, error) {
+	offset := int64(0)
+	return func() (*engineplugin.BatchData, error) {
+		batch, err := reader.ReadBatch(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.BatchReadOptions{
+			Limit:  batchSize,
+			Offset: offset,
+			Query:  plan.SourceQuery,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("read source batch at offset %d: %w", offset, err)
+		}
+		if batch != nil {
+			offset += int64(len(batch.Rows))
+		}
+		return batch, nil
+	}
+}
+
+func writeExportBatch(ctx context.Context, provider format.TableWriterProvider, output io.Writer, opts *format.WriteOptions, tableWriter *format.TableWriter, metrics *TableExportMetrics, batch *engineplugin.BatchData) error {
+	offset := batch.Offset
+	if *tableWriter == nil {
+		schema := tableInfoFromBatch(batch)
+		opened, err := provider.OpenTableWriter(ctx, output, schema, opts)
+		if err != nil {
+			return fmt.Errorf("open table writer: %w", err)
+		}
+		*tableWriter = opened
+	}
+
+	if err := (*tableWriter).WriteRows(ctx, batch.Rows); err != nil {
+		return fmt.Errorf("write table rows at offset %d: %w", offset, err)
+	}
+	rowCount := int64(len(batch.Rows))
+	metrics.RecordsRead += rowCount
+	metrics.RecordsWritten += rowCount
+	metrics.Batches++
+	return nil
 }
 
 func validateTableExportExecutor(e *TableExportExecutor) error {

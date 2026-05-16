@@ -191,7 +191,9 @@ type StoreCapability struct {
     RangeRead         bool `json:"range_read,omitempty"`
     RangeWrite        bool `json:"range_write,omitempty"`
     BatchRead         bool `json:"batch_read,omitempty"`
+    TableReadSession  bool `json:"table_read_session,omitempty"`
     BatchWrite        bool `json:"batch_write,omitempty"`
+    TableWriteSession bool `json:"table_write_session,omitempty"`
     TableWritePrepare bool `json:"table_write_prepare,omitempty"`
 }
 ```
@@ -203,7 +205,9 @@ type StoreCapability struct {
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
 | `batch_read` | 按批次读取结构化 item，如表、集合、图数据。 | `BatchReadableProvider` |
+| `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
+| `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
 | `table_write_prepare` | 执行表级写入前准备动作，如 `truncate_insert` 的清表。该能力不写入数据行。 | `TableWritePreparer` |
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
@@ -398,7 +402,9 @@ type CapabilitiesView struct {
 - 声明 `storage.store.range_read=true` 的插件必须实现 `RangeReadableProvider`，或在 `ContentReadableProvider.OpenContent()` 中明确支持 offset / length。
 - 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
 - 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
+- 声明 `storage.store.table_read_session=true` 的插件必须实现 `TableReadSessionProvider`。
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
+- 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。

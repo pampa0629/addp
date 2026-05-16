@@ -53,7 +53,9 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
 		Write:             true,
 		BulkWrite:         true,
+		TableReadSession:  true,
 		BatchWrite:        true,
+		TableWriteSession: true,
 		TableWritePrepare: true,
 		SpatialMetadata:   true,
 		SupportsExplain:   true,

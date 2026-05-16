@@ -12,6 +12,12 @@ func TestPostgreSQLCapabilitiesDeclareTableWritePrepare(t *testing.T) {
 	if caps.Storage == nil || caps.Storage.Store == nil || !caps.Storage.Store.TableWritePrepare {
 		t.Fatalf("postgresql capabilities do not declare table_write_prepare: %#v", caps.Storage)
 	}
+	if !caps.Storage.Store.TableReadSession {
+		t.Fatalf("postgresql capabilities do not declare table_read_session: %#v", caps.Storage.Store)
+	}
+	if !caps.Storage.Store.TableWriteSession {
+		t.Fatalf("postgresql capabilities do not declare table_write_session: %#v", caps.Storage.Store)
+	}
 	if err := plugin.ValidatePluginCapabilities(&PostgreSQLPlugin{}); err != nil {
 		t.Fatalf("ValidatePluginCapabilities failed: %v", err)
 	}

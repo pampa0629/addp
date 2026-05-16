@@ -31,12 +31,13 @@ type TableImportMetrics struct {
 }
 
 type TableImportExecutor struct {
-	Reader            engineplugin.ContentReadableProvider
-	Preparer          engineplugin.TableWritePreparer
-	InfoProvider      format.TableInfoProvider
-	Writer            engineplugin.BatchWritableProvider
-	FormatProvider    format.TableSampleReader
-	TableReadProvider format.TableReaderProvider
+	Reader               engineplugin.ContentReadableProvider
+	Preparer             engineplugin.TableWritePreparer
+	InfoProvider         format.TableInfoProvider
+	Writer               engineplugin.BatchWritableProvider
+	TableSessionProvider engineplugin.TableWriteSessionProvider
+	FormatProvider       format.TableSampleReader
+	TableReadProvider    format.TableReaderProvider
 }
 
 func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatType format.FormatType) (*TableImportExecutor, error) {
@@ -58,6 +59,7 @@ func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatTyp
 		return nil, fmt.Errorf("target engine %q does not implement batch table write", targetEngineType)
 	}
 	preparer, _ := targetPlugin.(engineplugin.TableWritePreparer)
+	tableSessionProvider, _ := targetPlugin.(engineplugin.TableWriteSessionProvider)
 
 	formatProvider, err := format.GetTableSampleProvider(formatType)
 	if err != nil {
@@ -67,12 +69,13 @@ func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatTyp
 	tableReadProvider, _ := format.GetTableReaderProvider(formatType)
 
 	return &TableImportExecutor{
-		Reader:            reader,
-		Preparer:          preparer,
-		InfoProvider:      infoProvider,
-		Writer:            writer,
-		FormatProvider:    formatProvider,
-		TableReadProvider: tableReadProvider,
+		Reader:               reader,
+		Preparer:             preparer,
+		InfoProvider:         infoProvider,
+		Writer:               writer,
+		TableSessionProvider: tableSessionProvider,
+		FormatProvider:       formatProvider,
+		TableReadProvider:    tableReadProvider,
 	}, nil
 }
 
@@ -86,8 +89,12 @@ func (e *TableImportExecutor) Execute(ctx context.Context, plan TableImportPlan)
 	if plan.Format != "" && plan.Format != e.FormatProvider.Format() {
 		return nil, fmt.Errorf("table import format %q does not match table reader format %q", plan.Format, e.FormatProvider.Format())
 	}
-	if err := e.prepareTargetTable(ctx, plan); err != nil {
+	preparedFields, err := e.prepareTargetTable(ctx, plan)
+	if err != nil {
 		return nil, err
+	}
+	if len(preparedFields) > 0 {
+		plan.TargetPrepare.Fields = preparedFields
 	}
 
 	batchSize := plan.BatchSize
@@ -95,13 +102,14 @@ func (e *TableImportExecutor) Execute(ctx context.Context, plan TableImportPlan)
 		batchSize = defaultBatchSize
 	}
 
+	batchWriter := e.importBatchWriter(ctx, plan)
 	if e.TableReadProvider != nil {
-		return e.executeWithTableReader(ctx, plan, batchSize)
+		return e.executeWithTableReader(ctx, plan, batchSize, batchWriter)
 	}
-	return e.executeWithSampleReader(ctx, plan, batchSize)
+	return e.executeWithSampleReader(ctx, plan, batchSize, batchWriter)
 }
 
-func (e *TableImportExecutor) executeWithTableReader(ctx context.Context, plan TableImportPlan, batchSize int) (*TableImportMetrics, error) {
+func (e *TableImportExecutor) executeWithTableReader(ctx context.Context, plan TableImportPlan, batchSize int, batchWriter importBatchWriter) (*TableImportMetrics, error) {
 	metrics := &TableImportMetrics{}
 	input, err := e.Reader.OpenContent(ctx, plan.SourceConnInfo, plan.SourcePath, plan.SourceRead)
 	if err != nil {
@@ -124,15 +132,18 @@ func (e *TableImportExecutor) executeWithTableReader(ctx context.Context, plan T
 		if len(rows) == 0 {
 			break
 		}
-		if err := e.writeImportBatch(ctx, plan, metrics, rows, offset); err != nil {
+		if err := batchWriter.write(ctx, e, plan, metrics, rows, offset); err != nil {
 			return metrics, err
 		}
 		offset += int64(len(rows))
 	}
+	if err := batchWriter.close(ctx); err != nil {
+		return metrics, err
+	}
 	return metrics, nil
 }
 
-func (e *TableImportExecutor) executeWithSampleReader(ctx context.Context, plan TableImportPlan, batchSize int) (*TableImportMetrics, error) {
+func (e *TableImportExecutor) executeWithSampleReader(ctx context.Context, plan TableImportPlan, batchSize int, batchWriter importBatchWriter) (*TableImportMetrics, error) {
 	metrics := &TableImportMetrics{}
 	offset := int64(0)
 	for {
@@ -151,7 +162,7 @@ func (e *TableImportExecutor) executeWithSampleReader(ctx context.Context, plan 
 		if len(rows) == 0 {
 			break
 		}
-		if err := e.writeImportBatch(ctx, plan, metrics, rows, offset); err != nil {
+		if err := batchWriter.write(ctx, e, plan, metrics, rows, offset); err != nil {
 			return metrics, err
 		}
 		offset += int64(len(rows))
@@ -160,7 +171,77 @@ func (e *TableImportExecutor) executeWithSampleReader(ctx context.Context, plan 
 			break
 		}
 	}
+	if err := batchWriter.close(ctx); err != nil {
+		return metrics, err
+	}
 	return metrics, nil
+}
+
+type importBatchWriter interface {
+	write(ctx context.Context, e *TableImportExecutor, plan TableImportPlan, metrics *TableImportMetrics, rows []map[string]interface{}, offset int64) error
+	close(ctx context.Context) error
+}
+
+func (e *TableImportExecutor) importBatchWriter(ctx context.Context, plan TableImportPlan) importBatchWriter {
+	if e.TableSessionProvider == nil || !isCopyWriteMethod(plan.TargetWrite.Method) {
+		return directImportBatchWriter{}
+	}
+	return &sessionImportBatchWriter{}
+}
+
+type directImportBatchWriter struct{}
+
+func (w directImportBatchWriter) write(ctx context.Context, e *TableImportExecutor, plan TableImportPlan, metrics *TableImportMetrics, rows []map[string]interface{}, offset int64) error {
+	return e.writeImportBatch(ctx, plan, metrics, rows, offset)
+}
+
+func (w directImportBatchWriter) close(context.Context) error {
+	return nil
+}
+
+type sessionImportBatchWriter struct {
+	session engineplugin.TableWriteSession
+	fields  []engineplugin.FieldInfo
+}
+
+func (w *sessionImportBatchWriter) write(ctx context.Context, e *TableImportExecutor, plan TableImportPlan, metrics *TableImportMetrics, rows []map[string]interface{}, offset int64) error {
+	if w.session == nil {
+		fields := importSessionFields(plan, rows)
+		session, err := e.TableSessionProvider.OpenTableWriteSession(ctx, plan.TargetConnInfo, plan.TargetPath, engineplugin.TableWriteSessionOptions{
+			Mode:   plan.TargetWrite.Mode,
+			Method: plan.TargetWrite.Method,
+			Fields: fields,
+		})
+		if err != nil {
+			return fmt.Errorf("open target table write session: %w", err)
+		}
+		w.session = session
+		w.fields = fields
+	}
+	batch := &engineplugin.BatchData{
+		Rows:   rows,
+		Fields: w.fields,
+		Offset: offset,
+	}
+	if err := w.session.WriteBatch(ctx, batch); err != nil {
+		_ = w.session.Abort(ctx)
+		return fmt.Errorf("write target table session batch at offset %d: %w", offset, err)
+	}
+	rowCount := int64(len(rows))
+	metrics.RecordsRead += rowCount
+	metrics.RecordsWritten += rowCount
+	metrics.Batches++
+	return nil
+}
+
+func (w *sessionImportBatchWriter) close(ctx context.Context) error {
+	if w.session == nil {
+		return nil
+	}
+	if err := w.session.Close(ctx); err != nil {
+		return fmt.Errorf("close target table write session: %w", err)
+	}
+	return nil
 }
 
 func (e *TableImportExecutor) writeImportBatch(ctx context.Context, plan TableImportPlan, metrics *TableImportMetrics, rows []map[string]interface{}, offset int64) error {
@@ -180,26 +261,42 @@ func (e *TableImportExecutor) writeImportBatch(ctx context.Context, plan TableIm
 	return nil
 }
 
-func (e *TableImportExecutor) prepareTargetTable(ctx context.Context, plan TableImportPlan) error {
+func importSessionFields(plan TableImportPlan, rows []map[string]interface{}) []engineplugin.FieldInfo {
+	if len(plan.TargetPrepare.Fields) > 0 {
+		return append([]engineplugin.FieldInfo(nil), plan.TargetPrepare.Fields...)
+	}
+	return fieldsFromRows(rows)
+}
+
+func isCopyWriteMethod(method string) bool {
+	switch method {
+	case "copy", "postgres_copy":
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *TableImportExecutor) prepareTargetTable(ctx context.Context, plan TableImportPlan) ([]engineplugin.FieldInfo, error) {
 	mode := normalizeImportPrepareMode(plan.TargetPrepare.Mode)
 	if mode == "" {
-		return nil
+		return nil, nil
 	}
 	if e.Preparer == nil {
-		return fmt.Errorf("target engine does not implement table write prepare for mode %q", mode)
+		return nil, fmt.Errorf("target engine does not implement table write prepare for mode %q", mode)
 	}
 	opts := engineplugin.TableWriteOptions{Mode: mode}
 	if mode == "create_if_not_exists" {
 		fields, err := e.describeSourceFields(ctx, plan)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opts.Fields = fields
 	}
 	if err := e.Preparer.PrepareTableWrite(ctx, plan.TargetConnInfo, plan.TargetPath, opts); err != nil {
-		return fmt.Errorf("prepare target table write: %w", err)
+		return nil, fmt.Errorf("prepare target table write: %w", err)
 	}
-	return nil
+	return opts.Fields, nil
 }
 
 func (e *TableImportExecutor) describeSourceFields(ctx context.Context, plan TableImportPlan) ([]engineplugin.FieldInfo, error) {

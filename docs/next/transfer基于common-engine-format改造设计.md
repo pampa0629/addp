@@ -156,7 +156,7 @@ Transfer task
 
 ```text
 PostgreSQL native table
-  -> common/engine BatchReadableProvider.ReadBatch(limit, offset)
+  -> common/engine TableReadSessionProvider cursor session
   -> common/format CSV TableWriterProvider
   -> common/engine NFS ContentWritableProvider.CreateContent
   -> Transfer execution metrics / status
@@ -187,6 +187,7 @@ PostgreSQL native table
 | 问题 | 处理 |
 |---|---|
 | PostgreSQL 批次读取重复读取第一页 | `ReadSQLBatch` 使用 `opts.Offset`。 |
+| 大表 `LIMIT/OFFSET` 翻页退化 | PostgreSQL 已补 `TableReadSessionProvider`，Transfer export 优先使用 cursor session 连续读取。 |
 | worker 自动重试导致目标文件被反复覆盖 | Transfer queue 默认 `asynq.MaxRetry(0)`，失败重试后续应由任务 policy 显式表达。 |
 | NFS 每批次写入时覆盖目标文件 | NFS `CreateContent()` 尊重 `WriteOptions.Overwrite`，同一次 writer 会话只打开一次目标。 |
 | 成功 execution 保留旧 `error_details` | 成功完成时清空错误详情。 |
@@ -195,7 +196,8 @@ PostgreSQL native table
 
 - progress / checkpoint / batch-level logs 还只是最小状态。
 - JSON / Parquet / Shapefile 等写侧 provider 还未补。
-- PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert 或 COPY 写入；`TableWritePreparer` 已支持 `create_if_not_exists` 和 `truncate_insert`；drop-create、schema evolution 和跨批次 COPY 会话仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 第一版已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY 方法。
+- PostgreSQL 读侧已补 cursor session 第一版；分区并行读取、schema 快照、稳定 checkpoint 和失败恢复仍未补。
+- PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert、单批 COPY 和跨批次 COPY session；`TableWritePreparer` 已支持 `create_if_not_exists` 和 `truncate_insert`；drop-create、schema evolution 仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY session。
 - CSV / TSV 已补 `TableReaderProvider`，Transfer import 优先使用连续 reader，不再通过 `TableSampleReader` 每批重新打开并重扫源文件；其他格式仍按需要逐步补。
 - S3 / MinIO `ContentWritableProvider.CreateContent()` 已补第一版：先写 OS 临时文件，`Close()` 时 `PutObject`，后续需要升级为 multipart streaming。
 
@@ -207,7 +209,7 @@ PostgreSQL native table
 
 | 层 | 已有能力 | 当前可用于 Transfer 的部分 |
 |---|---|---|
-| `common/engine` | `BatchReadableProvider.ReadBatch()` | PostgreSQL、MySQL、ClickHouse、Doris、Spark SQL、MongoDB、Neo4j 已有读取实现，可先用 limit / offset 方式跑通 table batch read。 |
+| `common/engine` | `BatchReadableProvider.ReadBatch()`、`TableReadSessionProvider.OpenTableReadSession()` | PostgreSQL 已有 cursor session 连续读取；MySQL、ClickHouse、Doris、Spark SQL、MongoDB、Neo4j 已有 batch read，可先用 limit / offset 方式跑通 table batch read。 |
 | `common/engine` | `ContentReadableProvider.OpenContent()`、`RangeReadableProvider.OpenRange()` | S3、MinIO、NFS 已有对象 / 文件读取，可作为 format provider 的输入。 |
 | `common/engine` | `ContentWritableProvider.CreateContent()` | NFS、S3、MinIO 已有写入实现；S3 / MinIO 当前第一版为临时文件缓冲 + Close PutObject，后续升级 multipart streaming。 |
 | `common/format` | `TableInfoProvider`、`TableReaderProvider`、`TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` | CSV / TSV 已有连续 table reader；CSV、JSON、Parquet、Shapefile 等已有表信息和样本读取能力，可用于预览、验证、小批读取和部分迁移。 |
@@ -220,8 +222,8 @@ PostgreSQL native table
 
 | 需求 | 现有能力不足 |
 |---|---|
-| 连续批量读取表 | `BatchReadableProvider.ReadBatch()` 是单次 batch 调用，可以循环 offset / limit 跑通第一步，但缺少 server-side cursor、分区计划、稳定 checkpoint、schema 快照和高性能流式游标语义。 |
-| 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 第一版，写入方法可选 ordinary insert 或 COPY；并通过 `TableWritePreparer` 支持 `create_if_not_exists` 和 `truncate_insert`。drop-create、schema evolution 和跨批次 COPY 会话仍待补。 |
+| 连续批量读取表 | PostgreSQL 已补 server-side cursor session；其他引擎仍主要依赖 `BatchReadableProvider.ReadBatch()` 单次 batch 调用，缺少分区计划、稳定 checkpoint、schema 快照和通用高性能游标语义。 |
+| 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 和 `TableWriteSessionProvider` 第一版，写入方法可选 ordinary insert、单批 COPY 或跨批次 COPY session；并通过 `TableWritePreparer` 支持 `create_if_not_exists` 和 `truncate_insert`。drop-create、schema evolution 仍待补。 |
 | 写入对象存储 | S3 / MinIO 已有第一版 common 写 provider，但大文件场景仍需 multipart streaming、失败清理和更细的提交语义。 |
 | data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / Parquet / Shapefile 等格式还没有 table writer provider。 |
 | planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
@@ -231,7 +233,7 @@ PostgreSQL native table
 
 因此，第一阶段不新增“统一传输数据流”大框架，而是先补三个明确缺口：
 
-1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已补第一版；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，后续补 drop-create、schema evolution 和跨批次 COPY 会话。
+1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已补第一版；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，后续补 drop-create 和 schema evolution。
 2. **common format table 读写侧**：CSV / TSV `TableReaderProvider` 和 `TableWriterProvider` 已补；后续按链路需要继续补 JSON / Parquet / Shapefile。
 3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
@@ -377,8 +379,8 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 | 阶段 | 当前不足 | 最小增强 | 受益模块 |
 |---|---|---|---|
 | 第一阶段 | 数据库写入无 common 实现 | PostgreSQL `BatchWritableProvider` 已补普通 batch insert / COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert` | Transfer、Service、Manager 导出回写 |
-| 第二阶段 | PostgreSQL COPY 仍是逐 transfer batch 建立会话 | 增加跨批次 COPY 写入会话或批量 writer 生命周期 | Transfer、数据导入、批量服务 |
-| 第三阶段 | `ReadBatch(limit, offset)` 大表性能一般 | 增加 cursor / partition read options | Transfer、Manager 大表预览、Service 批量读取 |
+| 第二阶段 | PostgreSQL COPY 曾是逐 transfer batch 建立会话 | 跨批次 COPY 写入会话已补第一版；后续补错误恢复和更细提交策略 | Transfer、数据导入、批量服务 |
+| 第三阶段 | `ReadBatch(limit, offset)` 大表性能一般 | PostgreSQL cursor session 已补第一版；后续增加 partition read options | Transfer、Manager 大表预览、Service 批量读取 |
 | 第四阶段 | 对象写入大文件内存压力 | S3 multipart `ContentWritableProvider` | Transfer、Manager 导出、文件生成任务 |
 | 第五阶段 | 部分文件格式全量读取仍靠 sample 循环 | 针对确有需要的格式补 `TableReaderProvider` 或专用高性能 reader，例如 Parquet row group reader | Transfer、Manager 大文件预览 |
 
@@ -457,7 +459,7 @@ sequenceDiagram
 缺失的是：
 
 - 更完整的执行日志、checkpoint、progress 回写。
-- PostgreSQL 跨批次 COPY 写入会话、drop-create、schema evolution；MySQL 等其他数据库写侧 common writer。
+- PostgreSQL drop-create、schema evolution；MySQL 等其他数据库写侧 common writer。
 - JSON / Parquet / Shapefile 等更多 `TableWriterProvider`。
 
 ## TransferPlanner 设计
@@ -710,20 +712,20 @@ Transfer planner 根据目标 policy 决定：
 3. 不新增通用 `RecordBatch`，第一阶段沿用 `common/engine/plugin.BatchData`。
 4. `common/format` 最小 `TableWriterProvider` / `TableWriter` 和 writer implementation status 已补，先覆盖 CSV / TSV。
 5. 在 `common/engine/plugins/s3` 和 `minio` 中补 `CreateContent()` 第一版；后续升级 multipart streaming。
-6. 明确 PostgreSQL `BatchReadableProvider` 的第一阶段循环读取方式。
+6. PostgreSQL 已补 `TableReadSessionProvider` cursor session；`BatchReadableProvider` 仍作为其他引擎和兜底路径。
 
 ### 阶段二：补 common 第一条链路能力
 
-1. 复用 PostgreSQL `ReadBatch()` 作为 table batch reader。
+1. PostgreSQL export 优先使用 `TableReadSessionProvider` cursor session，`ReadBatch()` 作为兜底 table batch reader。
 2. CSV / TSV 插件已实现 `TableWriterProvider` / `TableWriter`。
 3. NFS、S3、MinIO `CreateContent()`。
 4. 必要的 schema / type mapper 转换。
-5. PostgreSQL `BatchWritableProvider` 已补普通 append / insert 和 COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，CSV / TSV file/object -> PostgreSQL native table 已接入第一版 import；drop-create、跨批次 COPY 会话后续补。
+5. PostgreSQL `BatchWritableProvider` 已补普通 append / insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，CSV / TSV file/object -> PostgreSQL native table 已接入第一版 import；drop-create 后续补。
 
 ### 阶段三：搭 Transfer 新框架
 
 1. `internal/planner` 已有最小 table export planner，先只覆盖 `source=data_type:table, representation:native` 到 `target=data_type:table, representation:encoded, format:csv/tsv`。
-2. `internal/executor` 已有最小 table export executor，使用 common engine `BatchReadableProvider` / `ContentWritableProvider` 和 common format `TableWriterProvider`。
+2. `internal/executor` 已有最小 table export executor，优先使用 common engine `TableReadSessionProvider`，兜底使用 `BatchReadableProvider`，写侧使用 `ContentWritableProvider` 和 common format `TableWriterProvider`。
 3. System engine resolver 已补，新任务 JSON 入库、更新和启动前校验已补。
 4. worker / `ExecutionEngineService` 已接入 planner + executor，并回写基础 records metrics；待补 checkpoint、progress 和更完整日志。
 5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，前端创建 / 编辑 / 详情页已切到新规范；S3 / MinIO 写侧第一版、PostgreSQL 普通 batch writer、CSV/TSV -> PostgreSQL import 第一版和旧本地引擎 / pipeline / plugins 删除也已完成。

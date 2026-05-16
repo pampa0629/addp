@@ -155,7 +155,9 @@ type StoreProvider interface {
 - `RangeReadableProvider.OpenRange()`：按 byte range 读取对象或文件内容。
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：批量读取表、集合或图数据。
+- `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
 - `BatchWritableProvider.WriteBatch()`：批量写入表、集合或图数据。
+- `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
 
 对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 

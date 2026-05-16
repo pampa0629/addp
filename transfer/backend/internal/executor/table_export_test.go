@@ -83,6 +83,48 @@ func TestTableExportExecutorExecuteNoRowsCreatesEmptyTarget(t *testing.T) {
 	}
 }
 
+func TestTableExportExecutorPrefersTableReadSession(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{{Name: "id"}, {Name: "name"}},
+				Rows: []map[string]interface{}{
+					{"id": 1, "name": "Alice"},
+					{"id": 2, "name": "Bob"},
+				},
+			},
+			{
+				Fields: []engineplugin.FieldInfo{{Name: "id"}, {Name: "name"}},
+				Rows:   []map[string]interface{}{{"id": 3, "name": "Carol"}},
+			},
+		},
+	}
+	writer := &fakeContentWriter{}
+	exec := &TableExportExecutor{
+		Reader:               &fakeBatchReader{},
+		TableSessionProvider: reader,
+		Writer:               writer,
+		FormatProvider:       csvformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableExportPlan{BatchSize: 2, Format: format.FormatCSV})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if got, want := writer.buf.String(), "id,name\n1,Alice\n2,Bob\n3,Carol\n"; got != want {
+		t.Fatalf("csv output = %q, want %q", got, want)
+	}
+	if metrics.Batches != 2 || metrics.RecordsRead != 3 {
+		t.Fatalf("metrics = %#v, want 2 batches and 3 rows", metrics)
+	}
+	if len(reader.sessionLimits) != 2 || reader.sessionLimits[0] != 2 || reader.sessionLimits[1] != 2 {
+		t.Fatalf("session limits = %#v, want [2 2]", reader.sessionLimits)
+	}
+	if !reader.sessionClosed {
+		t.Fatal("table read session was not closed")
+	}
+}
+
 func TestTableExportExecutorRejectsMismatchedFormat(t *testing.T) {
 	exec := &TableExportExecutor{
 		Reader:         &fakeBatchReader{},
@@ -141,9 +183,12 @@ func TestNewTableExportExecutorRejectsMissingCapability(t *testing.T) {
 }
 
 type fakeBatchReader struct {
-	engineType string
-	batches    []*engineplugin.BatchData
-	offsets    []int64
+	engineType     string
+	batches        []*engineplugin.BatchData
+	offsets        []int64
+	sessionLimits  []int
+	sessionClosed  bool
+	sessionOptions engineplugin.TableReadSessionOptions
 }
 
 func (r *fakeBatchReader) Type() string {
@@ -185,6 +230,30 @@ func (r *fakeBatchReader) ReadBatch(_ context.Context, _ engineplugin.Connection
 	batch := r.batches[0]
 	r.batches = r.batches[1:]
 	return batch, nil
+}
+
+func (r *fakeBatchReader) OpenTableReadSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableReadSessionOptions) (engineplugin.TableReadSession, error) {
+	r.sessionOptions = opts
+	return &fakeTableReadSession{reader: r}, nil
+}
+
+type fakeTableReadSession struct {
+	reader *fakeBatchReader
+}
+
+func (s *fakeTableReadSession) ReadBatch(_ context.Context, limit int) (*engineplugin.BatchData, error) {
+	s.reader.sessionLimits = append(s.reader.sessionLimits, limit)
+	if len(s.reader.batches) == 0 {
+		return &engineplugin.BatchData{}, nil
+	}
+	batch := s.reader.batches[0]
+	s.reader.batches = s.reader.batches[1:]
+	return batch, nil
+}
+
+func (s *fakeTableReadSession) Close(context.Context) error {
+	s.reader.sessionClosed = true
+	return nil
 }
 
 type fakeContentWriter struct {

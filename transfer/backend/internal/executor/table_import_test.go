@@ -105,6 +105,49 @@ func TestTableImportExecutorPrepareCreateIfNotExistsUsesTableInfo(t *testing.T) 
 	}
 }
 
+func TestTableImportExecutorPrefersTableWriteSessionForCopy(t *testing.T) {
+	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
+	writer := &fakeBatchWriter{}
+	preparer := &fakeTableWritePreparer{}
+	exec := &TableImportExecutor{
+		Reader:               reader,
+		Preparer:             preparer,
+		InfoProvider:         csvformat.NewPlugin(nil),
+		Writer:               writer,
+		TableSessionProvider: writer,
+		FormatProvider:       csvformat.NewPlugin(nil),
+		TableReadProvider:    csvformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableImportPlan{
+		BatchSize:     2,
+		Format:        format.FormatCSV,
+		TargetPrepare: engineplugin.TableWriteOptions{Mode: "create_if_not_exists"},
+		TargetWrite:   engineplugin.BatchWriteOptions{Mode: "append", Method: "copy"},
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 3 || metrics.RecordsWritten != 3 || metrics.Batches != 2 {
+		t.Fatalf("metrics = %#v, want 3 read/written and 2 batches", metrics)
+	}
+	if len(writer.batches) != 0 {
+		t.Fatalf("direct batches = %d, want 0 when session is used", len(writer.batches))
+	}
+	if len(writer.sessionBatches) != 2 {
+		t.Fatalf("session batches = %d, want 2", len(writer.sessionBatches))
+	}
+	if !writer.sessionClosed || writer.sessionAborted {
+		t.Fatalf("session closed=%v aborted=%v, want closed only", writer.sessionClosed, writer.sessionAborted)
+	}
+	if writer.sessionOptions.Method != "copy" {
+		t.Fatalf("session method = %q, want copy", writer.sessionOptions.Method)
+	}
+	if len(writer.sessionOptions.Fields) != 2 || writer.sessionOptions.Fields[0].Name != "id" {
+		t.Fatalf("session fields = %#v, want prepared fields", writer.sessionOptions.Fields)
+	}
+}
+
 func TestTableImportExecutorRequiresPreparerForPrepareMode(t *testing.T) {
 	exec := &TableImportExecutor{
 		Reader:         &fakeContentReader{},
@@ -211,8 +254,12 @@ func (r *fakeContentReader) OpenContent(_ context.Context, _ engineplugin.Connec
 }
 
 type fakeBatchWriter struct {
-	engineType string
-	batches    []*engineplugin.BatchData
+	engineType     string
+	batches        []*engineplugin.BatchData
+	sessionOptions engineplugin.TableWriteSessionOptions
+	sessionBatches []*engineplugin.BatchData
+	sessionClosed  bool
+	sessionAborted bool
 }
 
 func (w *fakeBatchWriter) Type() string {
@@ -248,6 +295,30 @@ func (w *fakeBatchWriter) StoreSemantics() engineplugin.StoreSemantics {
 
 func (w *fakeBatchWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
 	w.batches = append(w.batches, batch)
+	return nil
+}
+
+func (w *fakeBatchWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
+	w.sessionOptions = opts
+	return &fakeTableWriteSession{writer: w}, nil
+}
+
+type fakeTableWriteSession struct {
+	writer *fakeBatchWriter
+}
+
+func (s *fakeTableWriteSession) WriteBatch(_ context.Context, batch *engineplugin.BatchData) error {
+	s.writer.sessionBatches = append(s.writer.sessionBatches, batch)
+	return nil
+}
+
+func (s *fakeTableWriteSession) Close(context.Context) error {
+	s.writer.sessionClosed = true
+	return nil
+}
+
+func (s *fakeTableWriteSession) Abort(context.Context) error {
+	s.writer.sessionAborted = true
 	return nil
 }
 

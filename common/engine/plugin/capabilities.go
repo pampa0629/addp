@@ -113,7 +113,9 @@ type StoreCapability struct {
 	RangeRead         bool `json:"range_read,omitempty"`
 	RangeWrite        bool `json:"range_write,omitempty"`
 	BatchRead         bool `json:"batch_read,omitempty"`
+	TableReadSession  bool `json:"table_read_session,omitempty"`
 	BatchWrite        bool `json:"batch_write,omitempty"`
+	TableWriteSession bool `json:"table_write_session,omitempty"`
 	TableWritePrepare bool `json:"table_write_prepare,omitempty"`
 }
 

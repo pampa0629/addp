@@ -62,7 +62,9 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - `storage.store.range_read=true` 时必须实现 `RangeReadableProvider` 或在 `OpenContent` 中明确支持 offset / length。
 - `storage.store.range_write=true` 时必须实现 `RangeWritableProvider`。
 - `storage.store.batch_read=true` 时必须实现 `BatchReadableProvider`。
+- `storage.store.table_read_session=true` 时必须实现 `TableReadSessionProvider`，用于大表连续批量读取。
 - `storage.store.batch_write=true` 时必须实现 `BatchWritableProvider`。
+- `storage.store.table_write_session=true` 时必须实现 `TableWriteSessionProvider`，用于跨批次 bulk load / COPY 写入。
 - `storage.store.table_write_prepare=true` 时必须实现 `TableWritePreparer`。
 - `compute.query.supported=true` 时必须实现对应 query runtime provider。
 

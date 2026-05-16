@@ -40,7 +40,8 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				NativeMetadata:  true,
 			},
 			Store: &StoreCapability{
-				BatchRead: true,
+				BatchRead:        true,
+				TableReadSession: opts.TableReadSession,
 			},
 		},
 		Compute: &ComputeCapabilities{
@@ -85,6 +86,9 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 	if opts.BatchWrite {
 		caps.Storage.Store.BatchWrite = true
 	}
+	if opts.TableWriteSession {
+		caps.Storage.Store.TableWriteSession = true
+	}
 	if opts.TableWritePrepare {
 		caps.Storage.Store.TableWritePrepare = true
 	}
@@ -95,7 +99,9 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 type TabularCapabilityOptions struct {
 	Write             bool
 	BulkWrite         bool
+	TableReadSession  bool
 	BatchWrite        bool
+	TableWriteSession bool
 	TableWritePrepare bool
 	SpatialMetadata   bool
 	SupportsExplain   bool
@@ -338,8 +344,14 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	if store.BatchRead {
 		semantics = append(semantics, "batch_read")
 	}
+	if store.TableReadSession {
+		semantics = append(semantics, "table_read_session")
+	}
 	if store.BatchWrite {
 		semantics = append(semantics, "batch_write")
+	}
+	if store.TableWriteSession {
+		semantics = append(semantics, "table_write_session")
 	}
 	if store.TableWritePrepare {
 		semantics = append(semantics, "table_write_prepare")

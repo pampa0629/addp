@@ -90,9 +90,19 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares batch_read but does not implement BatchReadableProvider", p.Type())
 		}
 	}
+	if store.TableReadSession {
+		if _, ok := p.(TableReadSessionProvider); !ok {
+			return fmt.Errorf("%s declares table_read_session but does not implement TableReadSessionProvider", p.Type())
+		}
+	}
 	if store.BatchWrite {
 		if _, ok := p.(BatchWritableProvider); !ok {
 			return fmt.Errorf("%s declares batch_write but does not implement BatchWritableProvider", p.Type())
+		}
+	}
+	if store.TableWriteSession {
+		if _, ok := p.(TableWriteSessionProvider); !ok {
+			return fmt.Errorf("%s declares table_write_session but does not implement TableWriteSessionProvider", p.Type())
 		}
 	}
 	if store.TableWritePrepare {
