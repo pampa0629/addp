@@ -101,48 +101,58 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 
 func postgresSQLTypeForField(field plugin.FieldInfo) string {
 	if nativeType := strings.TrimSpace(field.NativeType); nativeType != "" {
+		if sqlType, ok := postgresSQLTypeForCommonType(nativeType); ok {
+			return sqlType
+		}
 		return nativeType
 	}
-	switch strings.ToLower(strings.TrimSpace(field.Type)) {
+	if sqlType, ok := postgresSQLTypeForCommonType(field.Type); ok {
+		return sqlType
+	}
+	return "TEXT"
+}
+
+func postgresSQLTypeForCommonType(fieldType string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(fieldType)) {
 	case "string", "":
-		return "TEXT"
+		return "TEXT", true
 	case "int":
-		return "INTEGER"
+		return "INTEGER", true
 	case "bigint":
-		return "BIGINT"
+		return "BIGINT", true
 	case "float":
-		return "REAL"
+		return "REAL", true
 	case "double":
-		return "DOUBLE PRECISION"
+		return "DOUBLE PRECISION", true
 	case "decimal":
-		return "NUMERIC"
+		return "NUMERIC", true
 	case "bool", "boolean":
-		return "BOOLEAN"
+		return "BOOLEAN", true
 	case "date":
-		return "DATE"
+		return "DATE", true
 	case "time":
-		return "TIME"
+		return "TIME", true
 	case "timestamp", "datetime":
-		return "TIMESTAMP"
+		return "TIMESTAMP", true
 	case "bytes", "binary":
-		return "BYTEA"
+		return "BYTEA", true
 	case "geometry":
-		return "GEOMETRY"
+		return "GEOMETRY", true
 	case "point":
-		return "GEOMETRY(Point)"
+		return "GEOMETRY(Point)", true
 	case "linestring":
-		return "GEOMETRY(LineString)"
+		return "GEOMETRY(LineString)", true
 	case "polygon":
-		return "GEOMETRY(Polygon)"
+		return "GEOMETRY(Polygon)", true
 	case "multipoint":
-		return "GEOMETRY(MultiPoint)"
+		return "GEOMETRY(MultiPoint)", true
 	case "json":
-		return "JSONB"
+		return "JSONB", true
 	case "uuid":
-		return "UUID"
+		return "UUID", true
 	case "array":
-		return "TEXT[]"
+		return "TEXT[]", true
 	default:
-		return "TEXT"
+		return "", false
 	}
 }

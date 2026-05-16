@@ -16,11 +16,12 @@ func TestTableImportExecutorExecuteWritesBatches(t *testing.T) {
 	writer := &fakeBatchWriter{}
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableImportExecutor{
-		Reader:         reader,
-		Preparer:       preparer,
-		InfoProvider:   csvformat.NewPlugin(nil),
-		Writer:         writer,
-		FormatProvider: csvformat.NewPlugin(nil),
+		Reader:            reader,
+		Preparer:          preparer,
+		InfoProvider:      csvformat.NewPlugin(nil),
+		Writer:            writer,
+		FormatProvider:    csvformat.NewPlugin(nil),
+		TableReadProvider: csvformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableImportPlan{
@@ -40,8 +41,8 @@ func TestTableImportExecutorExecuteWritesBatches(t *testing.T) {
 	if got := writer.batches[0].Rows[0]["name"]; got != "Alice" {
 		t.Fatalf("first row name = %#v, want Alice", got)
 	}
-	if len(reader.opens) != 2 || reader.opens[0] != 0 || reader.opens[1] != 0 {
-		t.Fatalf("source open offsets = %#v, want two full reads", reader.opens)
+	if len(reader.opens) != 1 || reader.opens[0] != 0 {
+		t.Fatalf("source open offsets = %#v, want one full read", reader.opens)
 	}
 	if len(preparer.modes) != 0 {
 		t.Fatalf("prepare modes = %#v, want no prepare for append", preparer.modes)
@@ -52,11 +53,12 @@ func TestTableImportExecutorPreparesTargetOnce(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableImportExecutor{
-		Reader:         reader,
-		Preparer:       preparer,
-		InfoProvider:   csvformat.NewPlugin(nil),
-		Writer:         &fakeBatchWriter{},
-		FormatProvider: csvformat.NewPlugin(nil),
+		Reader:            reader,
+		Preparer:          preparer,
+		InfoProvider:      csvformat.NewPlugin(nil),
+		Writer:            &fakeBatchWriter{},
+		FormatProvider:    csvformat.NewPlugin(nil),
+		TableReadProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableImportPlan{
@@ -76,11 +78,12 @@ func TestTableImportExecutorPrepareCreateIfNotExistsUsesTableInfo(t *testing.T) 
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableImportExecutor{
-		Reader:         reader,
-		Preparer:       preparer,
-		InfoProvider:   csvformat.NewPlugin(nil),
-		Writer:         &fakeBatchWriter{},
-		FormatProvider: csvformat.NewPlugin(nil),
+		Reader:            reader,
+		Preparer:          preparer,
+		InfoProvider:      csvformat.NewPlugin(nil),
+		Writer:            &fakeBatchWriter{},
+		FormatProvider:    csvformat.NewPlugin(nil),
+		TableReadProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableImportPlan{
@@ -97,8 +100,8 @@ func TestTableImportExecutorPrepareCreateIfNotExistsUsesTableInfo(t *testing.T) 
 	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" || preparer.fields[0].Type != "int" {
 		t.Fatalf("prepare fields = %#v, want CSV inferred fields", preparer.fields)
 	}
-	if len(reader.opens) != 3 {
-		t.Fatalf("source open count = %d, want one describe open, one data sample open, and one EOF probe open", len(reader.opens))
+	if len(reader.opens) != 2 {
+		t.Fatalf("source open count = %d, want one describe open and one data reader open", len(reader.opens))
 	}
 }
 
@@ -132,7 +135,7 @@ func TestTableImportExecutorRejectsMismatchedFormat(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute succeeded, want format mismatch error")
 	}
-	if !strings.Contains(err.Error(), "does not match table sample provider format") {
+	if !strings.Contains(err.Error(), "does not match table reader format") {
 		t.Fatalf("error = %q, want format mismatch", err)
 	}
 }
@@ -159,6 +162,9 @@ func TestNewTableImportExecutorFromRegistry(t *testing.T) {
 	}
 	if exec.FormatProvider.Format() != format.FormatCSV {
 		t.Fatalf("format provider = %q, want csv", exec.FormatProvider.Format())
+	}
+	if exec.TableReadProvider == nil || exec.TableReadProvider.Format() != format.FormatCSV {
+		t.Fatalf("table read provider = %#v, want csv", exec.TableReadProvider)
 	}
 }
 

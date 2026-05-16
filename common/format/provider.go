@@ -64,6 +64,21 @@ type TableSampleReader interface {
 // TableSampleProvider 是旧命名兼容别名，新代码应使用 TableSampleReader。
 type TableSampleProvider = TableSampleReader
 
+// TableReaderProvider 表示格式能够从外部提供的资源流中打开连续 table 行读取会话。
+//
+// 它面向 Transfer 等全量读取场景；与 TableSampleReader 的逻辑窗口读取不同，
+// TableReader 持有一次输入流的读取状态，调用方循环 ReadRows 直到返回空结果。
+type TableReaderProvider interface {
+	ContentReader
+	OpenTableReader(ctx context.Context, input io.Reader, options *ParseOptions) (TableReader, error)
+}
+
+type TableReader interface {
+	Schema() *TableInfo
+	ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error)
+	Close(ctx context.Context) error
+}
+
 // TableProvider 是兼容旧调用方的组合接口。
 //
 // 新代码优先按 TableInfoProvider / TableSampleReader 分别表达调用意图；

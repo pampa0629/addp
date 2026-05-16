@@ -13,6 +13,7 @@ type ProviderRegistry struct {
 	formatInfoProviders     map[FormatType]FormatInfoProvider
 	tableInfoProviders      map[FormatType]TableInfoProvider
 	tableSampleProviders    map[FormatType]TableSampleProvider
+	tableReaderProviders    map[FormatType]TableReaderProvider
 	tableWriterProviders    map[FormatType]TableWriterProvider
 	documentProviders       map[FormatType]DocumentProvider
 	documentInfoProviders   map[FormatType]DocumentInfoProvider
@@ -31,6 +32,7 @@ func NewProviderRegistry() *ProviderRegistry {
 		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
 		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
 		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
+		tableReaderProviders:    make(map[FormatType]TableReaderProvider),
 		tableWriterProviders:    make(map[FormatType]TableWriterProvider),
 		documentProviders:       make(map[FormatType]DocumentProvider),
 		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
@@ -79,6 +81,14 @@ func GetTableSampleProvider(formatType FormatType) (TableSampleProvider, error) 
 
 func (r *ProviderRegistry) GetTableSampleProvider(formatType FormatType) (TableSampleProvider, error) {
 	return providerFromMap(r, r.tableSampleProviders, formatType, "table sample provider")
+}
+
+func GetTableReaderProvider(formatType FormatType) (TableReaderProvider, error) {
+	return globalProviderRegistry.GetTableReaderProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetTableReaderProvider(formatType FormatType) (TableReaderProvider, error) {
+	return providerFromMap(r, r.tableReaderProviders, formatType, "table reader provider")
 }
 
 func GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) {
@@ -195,6 +205,14 @@ func ListTableSampleProviderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListTableSampleProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableSampleProviders)
+}
+
+func ListTableReaderProviderFormats() []FormatType {
+	return globalProviderRegistry.ListTableReaderProviderFormats()
+}
+
+func (r *ProviderRegistry) ListTableReaderProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.tableReaderProviders)
 }
 
 func ListTableWriterProviderFormats() []FormatType {

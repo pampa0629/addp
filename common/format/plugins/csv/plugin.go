@@ -315,7 +315,110 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *
 	return tableWriter, nil
 }
 
+func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if input == nil {
+		return nil, fmt.Errorf("csv table reader requires input")
+	}
+	opts := p.effectiveOptions(options)
+	reader := csv.NewReader(input)
+	p.configureReaderWithOptions(reader, opts)
+
+	headers, _, err := p.sampleHeadersAndLocalSkip(reader, 0, opts)
+	if err != nil {
+		return nil, err
+	}
+	fields := make([]format.FieldInfo, 0, len(headers))
+	for _, header := range headers {
+		name := strings.TrimSpace(header)
+		if name == "" {
+			continue
+		}
+		fields = append(fields, format.FieldInfo{
+			Name:         name,
+			Type:         format.FieldTypeString,
+			OriginalType: string(format.FieldTypeString),
+			Nullable:     true,
+		})
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("csv table reader requires at least one field")
+	}
+
+	return &tableReader{
+		reader:  reader,
+		plugin:  p,
+		headers: fieldNames(fields),
+		schema:  &format.TableInfo{Name: "csv_data", Fields: fields},
+	}, nil
+}
+
 // ============ 辅助方法 ============
+
+type tableReader struct {
+	reader  *csv.Reader
+	plugin  *Plugin
+	headers []string
+	schema  *format.TableInfo
+	closed  bool
+}
+
+func (r *tableReader) Schema() *format.TableInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	copied := *r.schema
+	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
+	return &copied
+}
+
+func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	if r.closed {
+		return nil, fmt.Errorf("csv table reader is closed")
+	}
+	if limit < 0 {
+		return nil, fmt.Errorf("csv table reader limit cannot be negative")
+	}
+	if limit == 0 {
+		limit = 1
+	}
+	rows := make([]map[string]interface{}, 0, limit)
+	for len(rows) < limit {
+		if err := ctx.Err(); err != nil {
+			return rows, err
+		}
+		record, err := r.reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue
+		}
+		row := make(map[string]interface{}, len(r.headers))
+		for i, header := range r.headers {
+			if i >= len(record) {
+				row[header] = nil
+				continue
+			}
+			row[header] = r.plugin.convertValue(record[i])
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func (r *tableReader) Close(ctx context.Context) error {
+	if r.closed {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.closed = true
+	return nil
+}
 
 type tableWriter struct {
 	writer     *csv.Writer

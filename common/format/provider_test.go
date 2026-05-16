@@ -157,6 +157,34 @@ func TestRegisterTableSampleProvider(t *testing.T) {
 	}
 }
 
+type providerTestTableReaderProvider struct {
+	formatType FormatType
+}
+
+func (p providerTestTableReaderProvider) Format() FormatType {
+	return p.formatType
+}
+
+func (p providerTestTableReaderProvider) Capabilities() FormatCapability {
+	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+}
+
+func (p providerTestTableReaderProvider) OpenTableReader(context.Context, io.Reader, *ParseOptions) (TableReader, error) {
+	return nil, nil
+}
+
+func TestRegisterTableReaderProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("table_reader_only")
+
+	if err := registry.RegisterTableReaderProvider(providerTestTableReaderProvider{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterTableReaderProvider() error = %v", err)
+	}
+	if got, err := registry.GetTableReaderProvider(formatType); err != nil || got.Format() != formatType {
+		t.Fatalf("GetTableReaderProvider() = %#v, %v; want table_reader_only", got, err)
+	}
+}
+
 func TestListTableProviderFormatsSorted(t *testing.T) {
 	registry := NewProviderRegistry()
 	if err := registry.RegisterTableProvider(NewTableProvider(FormatType("zeta"), providerTestDescribe, providerTestSample)); err != nil {
@@ -218,6 +246,22 @@ func TestListTableSampleProviderFormatsSorted(t *testing.T) {
 	want := []FormatType{"alpha", "zeta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTableSampleProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListTableReaderProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterTableReaderProvider(providerTestTableReaderProvider{formatType: FormatType("zeta")}); err != nil {
+		t.Fatalf("RegisterTableReaderProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterTableReaderProvider(providerTestTableReaderProvider{formatType: FormatType("alpha")}); err != nil {
+		t.Fatalf("RegisterTableReaderProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListTableReaderProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListTableReaderProviderFormats() = %#v, want %#v", got, want)
 	}
 }
 

@@ -98,9 +98,49 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.FormatInfoProvider = plugin
 	var _ format.TableInfoProvider = plugin
 	var _ format.TableSampleReader = plugin
+	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
 	if !format.SupportsContentIndex(plugin.Format()) {
 		t.Fatalf("SupportsContentIndex(%q) = false, want true", plugin.Format())
+	}
+}
+
+func TestCSVPlugin_OpenTableReader(t *testing.T) {
+	plugin := NewPlugin(nil)
+	reader, err := plugin.OpenTableReader(context.Background(), strings.NewReader("id,name,active\n1,Alice,true\n2,Bob,false\n"), nil)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	schema := reader.Schema()
+	if schema == nil || len(schema.Fields) != 3 || schema.Fields[1].Name != "name" {
+		t.Fatalf("schema = %#v", schema)
+	}
+
+	rows, err := reader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows first batch failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "Alice" {
+		t.Fatalf("first rows = %#v", rows)
+	}
+
+	rows, err = reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows second batch failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["active"] != false {
+		t.Fatalf("second rows = %#v", rows)
+	}
+
+	rows, err = reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows EOF batch failed: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("EOF rows = %#v, want empty", rows)
+	}
+	if err := reader.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
 	}
 }
 

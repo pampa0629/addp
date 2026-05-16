@@ -61,6 +61,25 @@ func (r *ProviderRegistry) RegisterTableSampleProvider(provider TableSampleProvi
 	return nil
 }
 
+func RegisterTableReaderProvider(provider TableReaderProvider) error {
+	return globalProviderRegistry.RegisterTableReaderProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterTableReaderProvider(provider TableReaderProvider) error {
+	if provider == nil {
+		return fmt.Errorf("table reader provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "table reader provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tableReaderProviders[formatType] = provider
+	return nil
+}
+
 func RegisterTableWriterProvider(provider TableWriterProvider) error {
 	return globalProviderRegistry.RegisterTableWriterProvider(provider)
 }

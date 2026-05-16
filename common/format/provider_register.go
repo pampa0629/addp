@@ -61,6 +61,11 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			}
 		}
 	}
+	if reader, ok := plugin.(TableReaderProvider); ok {
+		if err := r.RegisterTableReaderProvider(reader); err != nil {
+			return err
+		}
+	}
 	if writer, ok := plugin.(TableWriterProvider); ok {
 		if err := r.RegisterTableWriterProvider(writer); err != nil {
 			return err

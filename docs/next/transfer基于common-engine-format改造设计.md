@@ -40,7 +40,7 @@ Transfer 原先通过自己的 `plugins/readers`、`plugins/writers` 和 `pipeli
 `common/format` 当前已经有 `FormatPlugin -> FormatDescriptor -> FormatCapabilityView` 主线。Transfer planner 应消费这条主线，但必须区分两类事实：
 
 - `TransferRead` / `TransferWrite` 是 descriptor 中的传输适配声明，表示该格式适合作为 Transfer 的读入或写出格式。
-- 实际能否执行，还要看当前进程是否加载了对应 data type reader / writer 实现，例如 `TableSampleReader`、`ScopeTableProvider`、未来的 `TableWriterProvider`。
+- 实际能否执行，还要看当前进程是否加载了对应 data type reader / writer 实现，例如 `TableReaderProvider`、`TableSampleReader`、`ScopeTableProvider`、`TableWriterProvider`。
 
 因此 planner 不能只看到 `TransferWrite=true` 就生成可执行计划。
 
@@ -196,6 +196,7 @@ PostgreSQL native table
 - progress / checkpoint / batch-level logs 还只是最小状态。
 - JSON / Parquet / Shapefile 等写侧 provider 还未补。
 - PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert 或 COPY 写入；`TableWritePreparer` 已支持 `create_if_not_exists` 和 `truncate_insert`；drop-create、schema evolution 和跨批次 COPY 会话仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 第一版已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY 方法。
+- CSV / TSV 已补 `TableReaderProvider`，Transfer import 优先使用连续 reader，不再通过 `TableSampleReader` 每批重新打开并重扫源文件；其他格式仍按需要逐步补。
 - S3 / MinIO `ContentWritableProvider.CreateContent()` 已补第一版：先写 OS 临时文件，`Close()` 时 `PutObject`，后续需要升级为 multipart streaming。
 
 ## 已有 common 能力能否支撑第一步
@@ -209,7 +210,7 @@ PostgreSQL native table
 | `common/engine` | `BatchReadableProvider.ReadBatch()` | PostgreSQL、MySQL、ClickHouse、Doris、Spark SQL、MongoDB、Neo4j 已有读取实现，可先用 limit / offset 方式跑通 table batch read。 |
 | `common/engine` | `ContentReadableProvider.OpenContent()`、`RangeReadableProvider.OpenRange()` | S3、MinIO、NFS 已有对象 / 文件读取，可作为 format provider 的输入。 |
 | `common/engine` | `ContentWritableProvider.CreateContent()` | NFS、S3、MinIO 已有写入实现；S3 / MinIO 当前第一版为临时文件缓冲 + Close PutObject，后续升级 multipart streaming。 |
-| `common/format` | `TableInfoProvider`、`TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` | CSV、JSON、Parquet、Shapefile 等已有表信息和样本读取能力，可用于预览、验证、小批读取和部分迁移。 |
+| `common/format` | `TableInfoProvider`、`TableReaderProvider`、`TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` | CSV / TSV 已有连续 table reader；CSV、JSON、Parquet、Shapefile 等已有表信息和样本读取能力，可用于预览、验证、小批读取和部分迁移。 |
 | `common/format` | `FormatDescriptor`、`FormatCapabilityView`、`TransferRead`、`TransferWrite`、implementation status | 可用于 planner 判断格式身份、默认 data type、layout、transfer 声明和当前进程已加载的 reader / provider 实现。 |
 | `common/format` | `TableWriterProvider`、`TableWriter` | CSV / TSV 已有最小写出实现，可把 table rows 按 schema 字段顺序写成分隔文本。 |
 | `common/format` | `DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider` | 可支撑 document / media / container 的信息和内容片段读取，但还不是完整传输执行能力。 |
@@ -224,14 +225,14 @@ PostgreSQL native table
 | 写入对象存储 | S3 / MinIO 已有第一版 common 写 provider，但大文件场景仍需 multipart streaming、失败清理和更细的提交语义。 |
 | data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / Parquet / Shapefile 等格式还没有 table writer provider。 |
 | planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
-| 全量读取文件格式 | `TableSampleReader.SampleTable()` 语义是样本 / 窗口读取，不是长期持有状态的 reader。它可用于第一步的简单循环或验证，但对大文件连续传输、checkpoint、错误恢复不够清晰。 |
+| 全量读取文件格式 | CSV / TSV 已补最小 `TableReaderProvider`；JSON / Parquet / Shapefile 等仍主要依赖 `TableSampleReader.SampleTable()` 或 component / scope sample，后续需要按真实链路补连续 reader 或更高性能 reader。 |
 | 多组件写出 | `common/resource` 有 `ComponentReader`，但没有 `ComponentWriter`；Shapefile 这类 multi component 输出缺提交边界。 |
 | stream / CDC | common engine 尚无 `StreamReadableProvider`、`CDCReadableProvider` 和 change event / offset 标准。 |
 
 因此，第一阶段不新增“统一传输数据流”大框架，而是先补三个明确缺口：
 
 1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已补第一版；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，后续补 drop-create、schema evolution 和跨批次 COPY 会话。
-2. **common format 写侧**：CSV / TSV `TableWriterProvider` 已补；后续按链路需要继续补 JSON / Parquet / Shapefile。
+2. **common format table 读写侧**：CSV / TSV `TableReaderProvider` 和 `TableWriterProvider` 已补；后续按链路需要继续补 JSON / Parquet / Shapefile。
 3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
 ## 第一阶段最小增强
@@ -272,15 +273,32 @@ engine BatchReadableProvider
 ```text
 engine ContentReadableProvider / RangeReadableProvider
   -> common/resource ResourceReader
-  -> common/format TableSampleReader / ScopeTableProvider / ComponentTableProvider
+  -> common/format TableReaderProvider / TableSampleReader / ScopeTableProvider / ComponentTableProvider
   -> BatchData adapter
 ```
 
-这说明 `range reader` 和 `sample reader` 有价值，但它们不是完整替代品：
+当前已经把“连续读取 table rows”沉淀为最小 common format 接口：
+
+```go
+type TableReaderProvider interface {
+    Provider
+    OpenTableReader(ctx context.Context, input io.Reader, options *ParseOptions) (TableReader, error)
+}
+
+type TableReader interface {
+    Schema() *TableInfo
+    ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error)
+    Close(ctx context.Context) error
+}
+```
+
+`TableReaderProvider` 是面向 data type 的格式能力，不是 format 泛化 record reader；它只解决 table encoded content 的连续读取。CSV / TSV 已实现，Transfer import 优先使用该接口；provider 不存在时才退回 `TableSampleReader` 窗口读取。
+
+这说明 `range reader` 和 `sample reader` 仍有价值，但它们不是完整替代品：
 
 - range reader 只负责字节读取，不理解 table row。
 - sample reader 只负责给定 offset / limit 的逻辑行窗口，不负责持久 reader 状态。
-- Transfer executor 可以先封装一个轻量 adapter 循环调用它们；若性能和 checkpoint 不够，再沉淀为 common 格式批量 reader。
+- Transfer executor 可以在缺少 `TableReaderProvider` 的格式上临时循环调用 sample reader；若某个格式进入正式导入链路，应优先给该格式补连续 reader 或更高性能 reader。
 
 ### 三、只补明确缺失的写侧接口
 
@@ -362,13 +380,13 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 | 第二阶段 | PostgreSQL COPY 仍是逐 transfer batch 建立会话 | 增加跨批次 COPY 写入会话或批量 writer 生命周期 | Transfer、数据导入、批量服务 |
 | 第三阶段 | `ReadBatch(limit, offset)` 大表性能一般 | 增加 cursor / partition read options | Transfer、Manager 大表预览、Service 批量读取 |
 | 第四阶段 | 对象写入大文件内存压力 | S3 multipart `ContentWritableProvider` | Transfer、Manager 导出、文件生成任务 |
-| 第五阶段 | 文件格式全量读取靠 sample 循环不优雅 | 针对确有需要的格式补批量 reader，例如 Parquet row group reader | Transfer、Manager 大文件预览 |
+| 第五阶段 | 部分文件格式全量读取仍靠 sample 循环 | 针对确有需要的格式补 `TableReaderProvider` 或专用高性能 reader，例如 Parquet row group reader | Transfer、Manager 大文件预览 |
 
 优先补齐的格式能力：
 
 | 格式 | Reader | Writer | 说明 |
 |---|---|---|---|
-| CSV / TSV | 现有 `TableSampleReader` 可读窗口 | 已有最小 `TableWriterProvider` | 第一条链路。 |
+| CSV / TSV | 已有 `TableReaderProvider`，`TableSampleReader` 保留用于预览 / 窗口读取 | 已有最小 `TableWriterProvider` | 第一条链路。 |
 | JSON / JSONL / GeoJSON encoding | 现有 `TableSampleReader` / `DocumentTextReader` | 第二阶段由插件补 `TableWriterProvider`，GeoJSON 作为 spatial encoding | 空间表导出。 |
 | Parquet | 现有 table / scope sample | 后续由插件补 `TableWriterProvider` 和必要的批量 reader | 大数据传输核心格式。 |
 | Shapefile | 现有 component sample | 后续由插件补 table / component 写出能力 | multi component 输出。 |
@@ -492,7 +510,7 @@ Planner 规则：
 2. 根据 `data_item_id` 或 `resource` 获取 Meta item attributes；有 Meta item 时优先使用已入库事实。
 3. 根据 `representation` 分流：`native` endpoint 只校验 engine native 能力，`encoded` endpoint 必须校验 `format`。
 4. 对 `encoded` endpoint 读取 `FormatCapabilityView`，校验 descriptor 的 `data_type`、layout、`TransferRead` / `TransferWrite`、engine family 是否满足任务。
-5. 再校验 implementation status：读取侧需要对应 `TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` 或其他 data type reader；写出侧需要未来的 `TableWriterProvider` 等实际 writer provider。
+5. 再校验 implementation status：读取侧优先需要对应 `TableReaderProvider`，预览 / 局部场景可用 `TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` 或其他 data type reader；写出侧需要 `TableWriterProvider` 等实际 writer provider。
 6. 校验 engine 是否具备对应 read / write / stream / cdc / batch 能力。
 7. 根据 `mode` 选择 batch、stream、micro-batch 或 cdc 执行链。
 8. 根据 `policy` 生成提交、覆盖、失败回滚、checkpoint 策略。
@@ -677,7 +695,7 @@ Transfer planner 根据目标 policy 决定：
 | Postgres COPY Writer | `common/engine/plugins/postgresql` 高性能 batch writer |
 | S3 Reader / Writer | `common/engine/plugins/s3` content/resource reader / writer |
 | NFS Writer | `common/engine/plugins/nfs` content/resource writer |
-| CSV Reader / Writer | `common/format/plugins/csv` 实现 `TableSampleReader` / `TableWriterProvider` |
+| CSV Reader / Writer | `common/format/plugins/csv` 实现 `TableReaderProvider` / `TableSampleReader` / `TableWriterProvider` |
 | JSON / JSONL / GeoJSON Reader / Writer | `common/format/plugins/json` 实现 table / document 相关 data type 能力，GeoJSON 作为 spatial encoding |
 | Parquet Reader / Writer | `common/format/plugins/parquet` 实现 table 相关 data type 能力 |
 | Shapefile Reader / Writer | `common/format/plugins/shapefile` 实现 table 相关 data type 能力，并配合 component 写出能力 |
@@ -713,7 +731,7 @@ Transfer planner 根据目标 policy 决定：
 ### 阶段四：扩展格式和空间链路
 
 1. JSON writer 支持 `spatial.target_encoding=geojson`。
-2. Parquet writer 迁入 common；Parquet reader 先复用现有 sample / scope provider，性能不足时再补批量 reader。
+2. Parquet writer 迁入 common；Parquet reader 先复用现有 sample / scope provider，进入正式导入链路时补 `TableReaderProvider` 或 row group reader。
 3. Shapefile component writer 迁入 common。
 4. 删除对应 Transfer 私有插件。
 
