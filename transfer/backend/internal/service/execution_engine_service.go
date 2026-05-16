@@ -12,7 +12,9 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/pkg/postprocessor"
@@ -95,6 +97,10 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	task, err := s.taskRepo.GetByID(taskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	if isCommonEngineFormatTask(task.Config) {
+		return s.executeCommonTableExportTask(ctx, task, executionID)
 	}
 
 	// 获取字段映射
@@ -189,6 +195,73 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		s.triggerMetadataScan(task)
 	}
 
+	return nil
+}
+
+func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
+	if s.systemClient == nil {
+		err := fmt.Errorf("system client is required for common engine/format transfer task")
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+
+	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
+		s.logger.Warn("failed to update execution status", "error", err)
+	}
+
+	var spec planner.TableExportTaskSpec
+	configBytes, err := json.Marshal(task.Config)
+	if err != nil {
+		wrapped := fmt.Errorf("marshal common transfer task config: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	if err := json.Unmarshal(configBytes, &spec); err != nil {
+		wrapped := fmt.Errorf("parse common transfer task config: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	if spec.BatchSize <= 0 {
+		spec.BatchSize = task.BatchSize
+	}
+
+	buildResult, err := planner.BuildTableExportPlan(spec, planner.NewSystemEngineResolver(s.systemClient))
+	if err != nil {
+		wrapped := fmt.Errorf("build common transfer plan: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+
+	tableExecutor, err := executor.NewTableExportExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType, buildResult.Format)
+	if err != nil {
+		wrapped := fmt.Errorf("create common transfer executor: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+
+	metrics, err := tableExecutor.Execute(ctx, buildResult.Plan)
+	if err != nil {
+		wrapped := fmt.Errorf("execute common transfer plan: %w", err)
+		if metrics != nil {
+			s.updateTableExportMetrics(executionID, metrics)
+		}
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	s.updateTableExportMetrics(executionID, metrics)
+
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		s.logger.Warn("failed to finish execution", "error", err)
+	}
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":   models.TaskStatusIdle,
+		"progress": 100.0,
+	}); err != nil {
+		s.logger.Warn("failed to update task after successful execution", "error", err, "task_id", task.ID)
+	}
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task)
+	}
 	return nil
 }
 
@@ -498,6 +571,21 @@ func (s *ExecutionEngineService) updateExecutionMetrics(executionID uint, metric
 	}
 }
 
+func (s *ExecutionEngineService) updateTableExportMetrics(executionID uint, metrics *executor.TableExportMetrics) {
+	if metrics == nil {
+		return
+	}
+
+	ctx := context.Background()
+	metricsMap := map[string]interface{}{
+		"records_read":    metrics.RecordsRead,
+		"records_written": metrics.RecordsWritten,
+	}
+	if err := s.executionService.UpdateMetrics(ctx, executionID, metricsMap); err != nil {
+		s.logger.Error("failed to update common transfer execution metrics", "error", err, "execution_id", executionID)
+	}
+}
+
 // GetResourceConfig 从 System 模块获取资源配置
 func (s *ExecutionEngineService) GetResourceConfig(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
 	if s.systemClient == nil {
@@ -777,6 +865,23 @@ func (s *ExecutionEngineService) resourceToConnectorConfig(resource *commonModel
 }
 
 // ========== 辅助函数 ==========
+
+func isCommonEngineFormatTask(config map[string]interface{}) bool {
+	if config == nil {
+		return false
+	}
+	source, ok := config["source"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	target, ok := config["target"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, sourceHasRepresentation := source["representation"].(string)
+	_, targetHasRepresentation := target["representation"].(string)
+	return sourceHasRepresentation && targetHasRepresentation
+}
 
 func hasSpatialTransform(transforms []pipeline.Transform) bool {
 	for _, t := range transforms {

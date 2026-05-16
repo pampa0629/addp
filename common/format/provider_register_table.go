@@ -60,3 +60,22 @@ func (r *ProviderRegistry) RegisterTableSampleProvider(provider TableSampleProvi
 	r.tableSampleProviders[formatType] = provider
 	return nil
 }
+
+func RegisterTableWriterProvider(provider TableWriterProvider) error {
+	return globalProviderRegistry.RegisterTableWriterProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterTableWriterProvider(provider TableWriterProvider) error {
+	if provider == nil {
+		return fmt.Errorf("table writer provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "table writer provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tableWriterProviders[formatType] = provider
+	return nil
+}

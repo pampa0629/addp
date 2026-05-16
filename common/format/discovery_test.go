@@ -96,6 +96,19 @@ func TestFormatCapabilityViewReportsContentIndexProviderCapability(t *testing.T)
 	}
 }
 
+func TestFormatCapabilityViewReportsTableWriterProvider(t *testing.T) {
+	view, ok := GetFormatCapabilityView(FormatCSV)
+	if !ok {
+		t.Fatal("expected csv capability view")
+	}
+	if !view.Transfer.Write {
+		t.Fatalf("transfer = %#v, want write declared", view.Transfer)
+	}
+	if !view.Implementations.TableWriterProvider {
+		t.Fatalf("implementations = %#v, want table writer provider", view.Implementations)
+	}
+}
+
 func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	formatType := FormatType("discovery_implemented_document")
 	if err := RegisterFormatDescriptor(FormatDescriptor{

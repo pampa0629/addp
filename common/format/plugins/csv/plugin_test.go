@@ -1,6 +1,7 @@
 package csv
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -97,8 +98,59 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.FormatInfoProvider = plugin
 	var _ format.TableInfoProvider = plugin
 	var _ format.TableSampleReader = plugin
+	var _ format.TableWriterProvider = plugin
 	if !format.SupportsContentIndex(plugin.Format()) {
 		t.Fatalf("SupportsContentIndex(%q) = false, want true", plugin.Format())
+	}
+}
+
+func TestCSVPlugin_OpenTableWriter(t *testing.T) {
+	plugin := NewPlugin(nil)
+	schema := &format.TableInfo{Fields: []format.FieldInfo{
+		{Name: "id", Type: format.FieldTypeInt},
+		{Name: "name", Type: format.FieldTypeString},
+		{Name: "note", Type: format.FieldTypeString},
+	}}
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	err = writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": int64(1), "name": "Alice", "note": "hello, csv"},
+		{"id": int64(2), "name": "Bob", "note": nil},
+	})
+	if err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	want := "id,name,note\n1,Alice,\"hello, csv\"\n2,Bob,\n"
+	if buf.String() != want {
+		t.Fatalf("csv output = %q, want %q", buf.String(), want)
+	}
+}
+
+func TestCSVPlugin_OpenTableWriterWithoutHeader(t *testing.T) {
+	plugin := NewPlugin(nil)
+	schema := &format.TableInfo{Fields: []format.FieldInfo{{Name: "id"}, {Name: "name"}}}
+	opts := format.DefaultWriteOptions()
+	opts.OmitHeader = true
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{{"id": 1, "name": "Alice"}}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	if got, want := buf.String(), "1,Alice\n"; got != want {
+		t.Fatalf("csv output = %q, want %q", got, want)
 	}
 }
 
@@ -133,6 +185,32 @@ func TestTSVPluginRegisteredAsTableProvider(t *testing.T) {
 	}
 	if provider.Format() != format.FormatTSV {
 		t.Fatalf("provider format = %q, want tsv", provider.Format())
+	}
+	writerProvider, err := format.GetTableWriterProvider(format.FormatTSV)
+	if err != nil {
+		t.Fatalf("GetTableWriterProvider(tsv) failed: %v", err)
+	}
+	if writerProvider.Format() != format.FormatTSV {
+		t.Fatalf("writer provider format = %q, want tsv", writerProvider.Format())
+	}
+}
+
+func TestTSVPlugin_OpenTableWriter(t *testing.T) {
+	plugin := NewTSVPlugin(nil)
+	schema := &format.TableInfo{Fields: []format.FieldInfo{{Name: "id"}, {Name: "name"}}}
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{{"id": 1, "name": "Alice"}}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	if got, want := buf.String(), "id\tname\n1\tAlice\n"; got != want {
+		t.Fatalf("tsv output = %q, want %q", got, want)
 	}
 }
 

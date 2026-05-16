@@ -9,6 +9,8 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"

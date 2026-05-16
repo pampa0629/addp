@@ -73,6 +73,20 @@ type TableProvider interface {
 	TableSampleReader
 }
 
+// TableWriterProvider 表示格式能够把 table 数据写出为该格式编码。
+//
+// Provider 是可注册的无状态能力入口；TableWriter 是一次输出会话的状态对象。
+// 调用方负责基于 engine/resource 打开 io.Writer，再交给格式 writer 编码。
+type TableWriterProvider interface {
+	Provider
+	OpenTableWriter(ctx context.Context, output io.Writer, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+}
+
+type TableWriter interface {
+	WriteRows(ctx context.Context, rows []map[string]interface{}) error
+	Close(ctx context.Context) error
+}
+
 type DocumentInfo struct {
 	Format    FormatType
 	Title     string

@@ -285,7 +285,114 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return records, nil
 }
 
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if output == nil {
+		return nil, fmt.Errorf("csv table writer requires output")
+	}
+	fields := schemaFields(schema)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("csv table writer requires schema fields")
+	}
+	opts := p.effectiveWriteOptions(options)
+	writer := csv.NewWriter(output)
+	writer.Comma = opts.Delimiter
+	if writer.Comma == 0 {
+		writer.Comma = ','
+	}
+	tableWriter := &tableWriter{
+		writer:     writer,
+		fields:     fields,
+		omitHeader: opts.OmitHeader,
+	}
+	if !tableWriter.omitHeader {
+		if err := tableWriter.writer.Write(fields); err != nil {
+			return nil, fmt.Errorf("failed to write CSV header: %w", err)
+		}
+	}
+	return tableWriter, nil
+}
+
 // ============ 辅助方法 ============
+
+type tableWriter struct {
+	writer     *csv.Writer
+	fields     []string
+	omitHeader bool
+	closed     bool
+}
+
+func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
+	if w.closed {
+		return fmt.Errorf("csv table writer is closed")
+	}
+	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		record := make([]string, len(w.fields))
+		for i, field := range w.fields {
+			record[i] = csvValue(row[field])
+		}
+		if err := w.writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
+	}
+	return w.writer.Error()
+}
+
+func (w *tableWriter) Close(ctx context.Context) error {
+	if w.closed {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	w.writer.Flush()
+	w.closed = true
+	return w.writer.Error()
+}
+
+func (p *Plugin) effectiveWriteOptions(options *format.WriteOptions) *format.WriteOptions {
+	opts := format.DefaultWriteOptions()
+	if p != nil && p.formatType == format.FormatTSV {
+		opts.Delimiter = '\t'
+	}
+	if options == nil {
+		return opts
+	}
+	opts.Encoding = options.Encoding
+	opts.ExtraParams = options.ExtraParams
+	opts.OmitHeader = options.OmitHeader
+	if options.Delimiter != 0 {
+		opts.Delimiter = options.Delimiter
+	}
+	return opts
+}
+
+func schemaFields(schema *format.TableInfo) []string {
+	if schema == nil {
+		return nil
+	}
+	fields := make([]string, 0, len(schema.Fields))
+	for _, field := range schema.Fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		fields = append(fields, name)
+	}
+	return fields
+}
+
+func csvValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
+}
 
 // configureReader 配置 CSV reader（使用默认 options）
 func (p *Plugin) configureReader(reader *csv.Reader) {

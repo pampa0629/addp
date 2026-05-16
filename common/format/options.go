@@ -31,6 +31,25 @@ type TableSampleOptions struct {
 	InputIsPositioned bool
 }
 
+// WriteOptions 描述 data type writer 的通用写出选项。
+//
+// 具体格式可以通过 ExtraParams 扩展格式私有选项；通用字段只放跨格式稳定语义。
+type WriteOptions struct {
+	Encoding    string
+	ExtraParams map[string]interface{}
+
+	Delimiter  rune
+	OmitHeader bool
+}
+
+// DefaultWriteOptions 返回默认写出选项。
+func DefaultWriteOptions() *WriteOptions {
+	return &WriteOptions{
+		Encoding:  "utf-8",
+		Delimiter: ',',
+	}
+}
+
 // DefaultParseOptions 返回默认解析选项。
 func DefaultParseOptions() *ParseOptions {
 	return &ParseOptions{
