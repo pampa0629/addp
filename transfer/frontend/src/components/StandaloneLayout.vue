@@ -62,7 +62,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import { useI18n } from 'vue-i18n'
-import { ArrowDown, UserFilled, Connection, List, Timer, Upload, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, List, Timer, Upload, SwitchButton } from '@element-plus/icons-vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -76,8 +76,7 @@ if (typeof window !== 'undefined') {
 
 const menuItems = computed(() => [
   { index: '/tasks', label: t('transfer.layout.transferTasks'), icon: List },
-  { index: '/executions', label: t('transfer.layout.executionRecords'), icon: Timer },
-  { index: '/local-engines', label: t('transfer.layout.localStorageEngines'), icon: Connection }
+  { index: '/executions', label: t('transfer.layout.executionRecords'), icon: Timer }
 ])
 
 const activeMenu = computed(() => {
@@ -93,7 +92,6 @@ const currentPageTitle = computed(() => {
   }
   if (match.index === '/tasks') {
     if (route.name === 'TaskCreate') return t('transfer.layout.createTask')
-    if (route.name === 'TaskCreateSimple') return t('transfer.layout.quickCreate')
     if (route.name === 'TaskEdit') return t('transfer.layout.editTask')
     if (route.name === 'TaskDetail') return t('transfer.layout.taskDetail')
     return t('transfer.layout.transferTasks')

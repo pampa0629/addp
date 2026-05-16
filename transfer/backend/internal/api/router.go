@@ -40,7 +40,6 @@ func extractAuthToken(c *gin.Context) string {
 func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
-	localEngineService *service.LocalEngineService,
 	objectStorageService *service.ObjectStorageService,
 	systemURL string,
 	metaURL string,
@@ -92,9 +91,8 @@ func SetupRouter(
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService)
-	localEngineHandler := NewLocalEngineHandler(localEngineService)
 	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
-	transformHandler := NewTransformHandler()
+	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	// DataSourceHandler 需要在请求处理时创建（因为需要 JWT token）
 	// 这里先不初始化，在路由中动态创建
 
@@ -120,6 +118,7 @@ func SetupRouter(
 		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
 		dataSourceHandler.DetectTableMetadata(c)
 	})
+	protected.GET("/system-engines", systemEngineHandler.List)
 
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
@@ -145,23 +144,6 @@ func SetupRouter(
 		mappings.DELETE("/:id", taskHandler.DeleteFieldMapping) // 删除字段映射
 	}
 
-	// 本地存储引擎路由
-	protected.GET("/system-engines", localEngineHandler.ListSystemEngines)
-
-	localEngines := protected.Group("/local-engines")
-	{
-		localEngines.GET("", localEngineHandler.List)
-		localEngines.POST("", localEngineHandler.Create)
-		localEngines.PUT("/:id", localEngineHandler.Update)
-		localEngines.DELETE("/:id", localEngineHandler.Delete)
-		localEngines.POST("/test-connection", localEngineHandler.TestBeforeCreate)
-		localEngines.POST("/:id/test", localEngineHandler.TestExisting)
-		localEngines.POST("/:id/sync", localEngineHandler.Sync)
-		// 元数据扫描（本地引擎）
-		localEngines.GET("/:id/tables", localEngineHandler.ListTables)
-		localEngines.GET("/:id/fields", localEngineHandler.ListFields)
-	}
-
 	// 对象存储辅助接口
 	objectStorage := protected.Group("/object-storage")
 	{
@@ -179,16 +161,6 @@ func SetupRouter(
 		executions.POST("/:id/retry", executionHandler.RetryExecution)         // 重试执行
 		executions.GET("/:id/progress", executionHandler.GetExecutionProgress) // 获取执行进度
 		executions.GET("/:id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
-	}
-
-	// 转换器路由（数据转换插件管理）
-	transforms := protected.Group("/transforms")
-	{
-		transforms.GET("", transformHandler.ListTransforms)                          // 列出所有可用转换器
-		transforms.GET("/stats", transformHandler.GetTransformStats)                 // 获取转换器统计
-		transforms.GET("/:name", transformHandler.GetTransformCapability)            // 获取转换器能力描述
-		transforms.POST("/:name/validate", transformHandler.ValidateTransformConfig) // 验证转换器配置
-		transforms.POST("/:name/test", transformHandler.TestTransform)               // 测试转换器
 	}
 
 	return router

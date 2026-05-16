@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,11 +19,7 @@ import (
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
-	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
-	"github.com/addp/transfer/pkg/pipeline"
-	"github.com/addp/transfer/pkg/plugin_loader"
-	_ "github.com/addp/transfer/plugins" // ✅ 新增：触发 plugins 包的 init() 函数（注册 PostProcessor）
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
@@ -70,32 +65,6 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	// 初始化 Pipeline 组件
-	registry := pipeline.NewConnectorRegistry()
-
-	// 动态加载插件（替换硬编码的 init() 注册）
-	// Worker 从项目根目录启动，所以路径相对于 addp/
-	pluginConfigPath := filepath.Join("transfer", "backend", "config", "plugins.yaml")
-	loader, err := plugin_loader.NewPluginLoader(pluginConfigPath)
-	if err != nil {
-		log.Fatalf("❌ 插件加载器初始化失败: %v", err)
-	}
-
-	if err := loader.LoadPlugins(registry); err != nil {
-		log.Fatalf("❌ 插件加载失败: %v", err)
-	}
-
-	readers, writers := loader.ListEnabledPlugins()
-	log.Printf("✅ 已动态加载插件 - Readers: %v, Writers: %v", readers, writers)
-
-	// 创建 logger 和 engine config
-	// TODO: 重构 DBLogHandler 以使用 ExecutionService
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	engineConfig := pipeline.DefaultEngineConfig()
-
-	stateManager := pipeline.NewStateManager(db)
-	engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
-
 	// 创建任务队列
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
@@ -103,8 +72,6 @@ func main() {
 
 	// 创建 Repository 层
 	taskRepo := repository.NewTaskRepository(db)
-	mappingRepo := repository.NewMappingRepository(db)
-	localEngineRepo := repository.NewLocalEngineRepository(db)
 
 	// 创建统一执行服务
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
@@ -141,19 +108,11 @@ func main() {
 	// 初始化 Service 层
 	// 1. 创建 ExecutionEngineService (负责任务执行)
 	executionEngineService := service.NewExecutionEngineService(
-		engine,
 		taskRepo,
 		executionService,
-		mappingRepo,
-		localEngineRepo,
 		systemClient,
 		metaClient,
-		cfg,
 	)
-
-	// 设置引擎组件以启用并行执行支持
-	executionEngineService.SetEngineComponents(registry, stateManager)
-	log.Printf("✅ 并行执行引擎已启用（支持多 Writer 并行）")
 
 	// 2. 创建 TaskService (负责任务 CRUD，传入 executionEngineService)
 	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)

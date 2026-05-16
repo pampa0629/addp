@@ -186,12 +186,13 @@ type MetadataCapability struct {
 
 ```go
 type StoreCapability struct {
-    StreamRead  bool `json:"stream_read,omitempty"`
-    StreamWrite bool `json:"stream_write,omitempty"`
-    RangeRead   bool `json:"range_read,omitempty"`
-    RangeWrite  bool `json:"range_write,omitempty"`
-    BatchRead   bool `json:"batch_read,omitempty"`
-    BatchWrite  bool `json:"batch_write,omitempty"`
+    StreamRead        bool `json:"stream_read,omitempty"`
+    StreamWrite       bool `json:"stream_write,omitempty"`
+    RangeRead         bool `json:"range_read,omitempty"`
+    RangeWrite        bool `json:"range_write,omitempty"`
+    BatchRead         bool `json:"batch_read,omitempty"`
+    BatchWrite        bool `json:"batch_write,omitempty"`
+    TableWritePrepare bool `json:"table_write_prepare,omitempty"`
 }
 ```
 
@@ -203,6 +204,7 @@ type StoreCapability struct {
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
 | `batch_read` | 按批次读取结构化 item，如表、集合、图数据。 | `BatchReadableProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
+| `table_write_prepare` | 执行表级写入前准备动作，如 `truncate_insert` 的清表。该能力不写入数据行。 | `TableWritePreparer` |
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 
@@ -397,6 +399,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
 - 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
+- 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。

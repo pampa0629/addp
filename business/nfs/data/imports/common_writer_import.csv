@@ -1,0 +1,4 @@
+id,name,score,active
+1,Alice,98.5,true
+2,Bob,87.25,false
+3,Carol,91,true

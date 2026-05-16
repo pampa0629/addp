@@ -3,8 +3,10 @@ package objectstore
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -172,4 +174,105 @@ func SplitBucketDirectory(path string) (bucket, prefix string) {
 		prefix += "/"
 	}
 	return bucket, prefix
+}
+
+func CreateContent(ctx context.Context, client *miniogo.Client, path string, opts plugin.WriteOptions) (io.WriteCloser, error) {
+	if client == nil {
+		return nil, fmt.Errorf("object store client is required")
+	}
+	bucket, key := SplitBucketPrefix(path)
+	if bucket == "" || key == "" {
+		return nil, fmt.Errorf("invalid path: %s (expected bucket/key)", path)
+	}
+	if !opts.Overwrite {
+		if _, err := client.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{}); err == nil {
+			return nil, fmt.Errorf("object already exists: %s", path)
+		} else {
+			resp := miniogo.ToErrorResponse(err)
+			if resp.Code != "NoSuchKey" && resp.Code != "NoSuchBucket" && resp.StatusCode != 404 {
+				return nil, fmt.Errorf("check object existence %s: %w", path, err)
+			}
+		}
+	}
+	exists, err := client.BucketExists(ctx, bucket)
+	if err != nil {
+		return nil, fmt.Errorf("check bucket %q: %w", bucket, err)
+	}
+	if !exists {
+		if err := client.MakeBucket(ctx, bucket, miniogo.MakeBucketOptions{}); err != nil {
+			return nil, fmt.Errorf("create bucket %q: %w", bucket, err)
+		}
+	}
+
+	file, err := os.CreateTemp("", "addp-object-write-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary object buffer: %w", err)
+	}
+	contentType := opts.ContentType
+	if contentType == "" {
+		contentType = InferContentType(key)
+	}
+	return &contentWriter{
+		ctx:         ctx,
+		client:      client,
+		file:        file,
+		path:        path,
+		bucket:      bucket,
+		key:         key,
+		contentType: contentType,
+		metadata:    opts.Metadata,
+	}, nil
+}
+
+type contentWriter struct {
+	ctx         context.Context
+	client      *miniogo.Client
+	file        *os.File
+	path        string
+	bucket      string
+	key         string
+	contentType string
+	metadata    map[string]string
+	closed      bool
+}
+
+func (w *contentWriter) Write(p []byte) (int, error) {
+	if w == nil || w.file == nil {
+		return 0, fmt.Errorf("object writer is not initialized")
+	}
+	if w.closed {
+		return 0, fmt.Errorf("object writer is already closed")
+	}
+	return w.file.Write(p)
+}
+
+func (w *contentWriter) Close() error {
+	if w == nil || w.file == nil {
+		return nil
+	}
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+	defer os.Remove(w.file.Name())
+
+	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
+		_ = w.file.Close()
+		return fmt.Errorf("rewind temporary object buffer: %w", err)
+	}
+	info, err := w.file.Stat()
+	if err != nil {
+		_ = w.file.Close()
+		return fmt.Errorf("stat temporary object buffer: %w", err)
+	}
+	defer w.file.Close()
+
+	_, err = w.client.PutObject(w.ctx, w.bucket, w.key, w.file, info.Size(), miniogo.PutObjectOptions{
+		ContentType:  w.contentType,
+		UserMetadata: w.metadata,
+	})
+	if err != nil {
+		return fmt.Errorf("write object %s: %w", w.path, err)
+	}
+	return nil
 }

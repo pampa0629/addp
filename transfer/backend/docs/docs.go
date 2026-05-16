@@ -484,461 +484,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/local-engines": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "获取本地引擎列表 | List local engines",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎类型 | Engine type",
-                        "name": "engine_type",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_transfer_internal_models.LocalEngine"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "创建本地引擎 | Create local engine",
-                "parameters": [
-                    {
-                        "description": "本地引擎请求 | Local engine request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.LocalEngineRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.LocalEngine"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/test-connection": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "创建前测试本地引擎连接 | Test local engine before create",
-                "parameters": [
-                    {
-                        "description": "本地引擎请求 | Local engine request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.LocalEngineRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/{id}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "更新本地引擎 | Update local engine",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "本地引擎更新请求 | Local engine update request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.LocalEngineUpdateRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.LocalEngine"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "删除本地引擎 | Delete local engine",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/{id}/fields": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "列出本地引擎字段 | List local engine fields",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table name",
-                        "name": "table",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/{id}/sync": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "同步本地引擎到 System | Sync local engine to System",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/{id}/tables": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "列出本地引擎表 | List local engine tables",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/local-engines/{id}/test": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本地引擎 | Local Engines"
-                ],
-                "summary": "测试已有本地引擎 | Test existing local engine",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "本地引擎ID | Local engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/mappings/{id}": {
             "delete": {
                 "security": [
@@ -1218,13 +763,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System engines visible to the current tenant for Transfer task configuration",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "本地引擎 | Local Engines"
+                    "系统引擎 | System Engines"
                 ],
-                "summary": "获取 System 引擎列表 | List system engines",
+                "summary": "列出系统引擎 | List system engines",
                 "parameters": [
                     {
                         "type": "string",
@@ -1239,8 +785,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "object",
-                                "additionalProperties": true
+                                "$ref": "#/definitions/models.Engine"
                             }
                         }
                     },
@@ -2061,209 +1606,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/transforms": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "转换器 | Transforms"
-                ],
-                "summary": "列出转换器 | List transforms",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/transforms/stats": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "转换器 | Transforms"
-                ],
-                "summary": "获取转换器统计 | Get transform stats",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/transforms/{name}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "转换器 | Transforms"
-                ],
-                "summary": "获取转换器能力 | Get transform capability",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "转换器名称 | Transform name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/transforms/{name}/test": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "转换器 | Transforms"
-                ],
-                "summary": "测试转换器 | Test transform",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "转换器名称 | Transform name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "测试请求 | Test request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.TestTransformRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.TestTransformResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.TestTransformResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/transforms/{name}/validate": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "转换器 | Transforms"
-                ],
-                "summary": "验证转换器配置 | Validate transform config",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "转换器名称 | Transform name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "验证请求 | Validation request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ValidateTransformConfigRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ValidateTransformConfigResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -2413,41 +1755,6 @@ const docTemplate = `{
         "github_com_addp_transfer_internal_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
-        },
-        "github_com_addp_transfer_internal_models.LocalEngine": {
-            "type": "object",
-            "properties": {
-                "connection_info": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "engine_type": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
         },
         "github_com_addp_transfer_internal_models.LocalTime": {
             "type": "object",
@@ -2682,117 +1989,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.LocalEngineRequest": {
-            "type": "object",
-            "required": [
-                "connection_info",
-                "engine_type",
-                "name"
-            ],
-            "properties": {
-                "connection_info": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "engine_type": {
-                    "type": "string"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.LocalEngineUpdateRequest": {
-            "type": "object",
-            "properties": {
-                "connection_info": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.TestTransformRequest": {
-            "type": "object",
-            "required": [
-                "config",
-                "sample"
-            ],
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "sample": {
-                    "description": "样本数据",
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                }
-            }
-        },
-        "internal_api.TestTransformResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "input": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "output": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api.ValidateTransformConfigRequest": {
-            "type": "object",
-            "required": [
-                "config"
-            ],
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "additionalProperties": true
-                }
-            }
-        },
-        "internal_api.ValidateTransformConfigResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
         "internal_api.objectStorageBrowseRequest": {
             "type": "object",
             "required": [
@@ -2809,9 +2005,184 @@ const docTemplate = `{
                 "scope": {
                     "type": "string",
                     "enum": [
-                        "system",
-                        "local"
+                        "system"
                     ]
+                }
+            }
+        },
+        "models.ConnectionInfo": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "models.Engine": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "description": "能力声明（JSONB）",
+                    "type": "string"
+                },
+                "check_message": {
+                    "description": "检测结果消息（错误信息等）",
+                    "type": "string"
+                },
+                "connection_info": {
+                    "$ref": "#/definitions/models.ConnectionInfo"
+                },
+                "connection_status": {
+                    "description": "连接状态缓存（优化扫描性能）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "时间戳字段",
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_origin": {
+                    "description": "引擎来源：general 或 extension",
+                    "type": "string"
+                },
+                "engine_type": {
+                    "description": "引擎类型（postgresql, mysql, python_workflow等）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_builtin": {
+                    "description": "扩展引擎字段",
+                    "type": "boolean"
+                },
+                "last_check_at": {
+                    "description": "上次检测时间",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "显示名称（原 display_name）",
+                    "type": "string"
+                },
+                "scan_config": {
+                    "description": "元数据扫描配置（可选）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.ScanConfig"
+                        }
+                    ]
+                },
+                "tenant_id": {
+                    "description": "租户ID，SuperAdmin创建的引擎为null",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.MVTPreprocessConfig": {
+            "type": "object",
+            "properties": {
+                "concurrency": {
+                    "description": "并发生成数 (1-20, 默认 10)",
+                    "type": "integer"
+                },
+                "max_zoom": {
+                    "description": "最大缩放级别 (0-18, 默认 18)",
+                    "type": "integer"
+                },
+                "stop_threshold_kb": {
+                    "description": "自适应停止阈值：平均瓦片大小（KB）\u003c 该值则停止（默认 50.0）",
+                    "type": "number"
+                },
+                "stop_threshold_sec": {
+                    "description": "自适应停止阈值：平均生成时间（秒）\u003c 该值则停止（默认 3.0）",
+                    "type": "number"
+                }
+            }
+        },
+        "models.PreprocessingConfig": {
+            "type": "object",
+            "properties": {
+                "auto_trigger": {
+                    "description": "扫描完成后自动触发预处理",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "description": "是否启用预处理",
+                    "type": "boolean"
+                },
+                "mvt_config": {
+                    "description": "MVT 瓦片预处理配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.MVTPreprocessConfig"
+                        }
+                    ]
+                },
+                "types": {
+                    "description": "预处理类型列表 [\"mvt_tiles\", \"vector_embedding\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.ScanConfig": {
+            "type": "object",
+            "properties": {
+                "cron_expression": {
+                    "description": "Cron 表达式（schedule_type=cron 时使用）",
+                    "type": "string"
+                },
+                "enabled": {
+                    "description": "是否启用扫描（总开关，兼容旧版）",
+                    "type": "boolean"
+                },
+                "immediate_depth": {
+                    "description": "立即扫描深度：basic（基础）或 deep（深度）",
+                    "type": "string"
+                },
+                "immediate_scan": {
+                    "description": "注册后立即扫描",
+                    "type": "boolean"
+                },
+                "preprocessing": {
+                    "description": "预处理配置（可选）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.PreprocessingConfig"
+                        }
+                    ]
+                },
+                "scan_depth": {
+                    "description": "默认扫描深度：basic 或 deep",
+                    "type": "string"
+                },
+                "schedule_time": {
+                    "description": "执行时间 HH:mm（daily/weekly/monthly 时使用）",
+                    "type": "string"
+                },
+                "schedule_type": {
+                    "description": "daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）",
+                    "type": "string"
+                },
+                "schedule_value": {
+                    "description": "周几（0-6）或月几（1-31）",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "scheduled_scan": {
+                    "description": "启用定时扫描",
+                    "type": "boolean"
                 }
             }
         }

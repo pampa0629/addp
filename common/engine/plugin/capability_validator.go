@@ -95,6 +95,11 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares batch_write but does not implement BatchWritableProvider", p.Type())
 		}
 	}
+	if store.TableWritePrepare {
+		if _, ok := p.(TableWritePreparer); !ok {
+			return fmt.Errorf("%s declares table_write_prepare but does not implement TableWritePreparer", p.Type())
+		}
+	}
 	return nil
 }
 

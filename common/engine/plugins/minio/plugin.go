@@ -90,6 +90,14 @@ func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionI
 	return p.readFile(ctx, connInfo, path.StringPath(), opts)
 }
 
+func (p *MinIOPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return nil, err
+	}
+	return objectstore.CreateContent(ctx, client, path.StringPath(), opts)
+}
+
 func (p *MinIOPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }

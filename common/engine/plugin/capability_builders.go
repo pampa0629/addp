@@ -82,19 +82,27 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 		caps.Transfer.PreferredWriter = ""
 		delete(caps.Transfer.ConnectorTypes, "writer")
 	}
+	if opts.BatchWrite {
+		caps.Storage.Store.BatchWrite = true
+	}
+	if opts.TableWritePrepare {
+		caps.Storage.Store.TableWritePrepare = true
+	}
 
 	return caps
 }
 
 type TabularCapabilityOptions struct {
-	Write           bool
-	BulkWrite       bool
-	SpatialMetadata bool
-	SupportsExplain bool
-	SupportsCancel  bool
-	DefaultLanguage string
-	Description     string
-	WriterConnector string
+	Write             bool
+	BulkWrite         bool
+	BatchWrite        bool
+	TableWritePrepare bool
+	SpatialMetadata   bool
+	SupportsExplain   bool
+	SupportsCancel    bool
+	DefaultLanguage   string
+	Description       string
+	WriterConnector   string
 }
 
 func NewObjectCapabilities(engineType string) EngineCapabilities {
@@ -122,10 +130,11 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				NativeMetadata: true,
 			},
 			Store: &StoreCapability{
-				StreamRead: true,
-				RangeRead:  true,
+				StreamRead:  true,
+				RangeRead:   true,
+				StreamWrite: true,
 			},
-			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read"},
+			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read", "stream_write"},
 			NotSupported: []string{"range_write", "real_directory"},
 		},
 		Transfer: &TransferCapabilities{
@@ -300,10 +309,42 @@ func StoreSemanticsFromCapabilities(caps EngineCapabilities) StoreSemantics {
 	if caps.Storage == nil {
 		return StoreSemantics{}
 	}
+	if len(caps.Storage.Semantics) == 0 && caps.Storage.Store != nil {
+		return StoreSemantics{Semantics: storeCapabilitySemantics(caps.Storage.Store), NotSupported: caps.Storage.NotSupported}
+	}
 	return StoreSemantics{
 		Semantics:    caps.Storage.Semantics,
 		NotSupported: caps.Storage.NotSupported,
 	}
+}
+
+func storeCapabilitySemantics(store *StoreCapability) []string {
+	if store == nil {
+		return nil
+	}
+	semantics := make([]string, 0, 7)
+	if store.StreamRead {
+		semantics = append(semantics, "stream_read")
+	}
+	if store.StreamWrite {
+		semantics = append(semantics, "stream_write")
+	}
+	if store.RangeRead {
+		semantics = append(semantics, "range_read")
+	}
+	if store.RangeWrite {
+		semantics = append(semantics, "range_write")
+	}
+	if store.BatchRead {
+		semantics = append(semantics, "batch_read")
+	}
+	if store.BatchWrite {
+		semantics = append(semantics, "batch_write")
+	}
+	if store.TableWritePrepare {
+		semantics = append(semantics, "table_write_prepare")
+	}
+	return semantics
 }
 
 func NewScriptCapabilities(engineType string, modes, languages []string) EngineCapabilities {

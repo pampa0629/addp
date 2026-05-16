@@ -5,7 +5,6 @@ import (
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
-	"github.com/addp/transfer/pkg/pipeline"
 	"gorm.io/gorm"
 )
 
@@ -295,49 +294,4 @@ func (r *MappingRepository) UpdateBatch(taskID uint, mappings []models.FieldMapp
 
 		return nil
 	})
-}
-
-// CheckpointRepository Checkpoint 数据访问层
-type CheckpointRepository struct {
-	db *gorm.DB
-}
-
-// NewCheckpointRepository 创建 Checkpoint 仓库
-func NewCheckpointRepository(db *gorm.DB) *CheckpointRepository {
-	return &CheckpointRepository{db: db}
-}
-
-// Save 保存 Checkpoint
-func (r *CheckpointRepository) Save(checkpoint *pipeline.Checkpoint) error {
-	return r.db.Save(checkpoint).Error
-}
-
-// GetLatest 获取最新的 Checkpoint
-func (r *CheckpointRepository) GetLatest(taskID, executionID uint) (*pipeline.Checkpoint, error) {
-	var checkpoint pipeline.Checkpoint
-	err := r.db.Where("task_id = ? AND execution_id = ?", taskID, executionID).
-		Order("created_at DESC").
-		First(&checkpoint).Error
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return &checkpoint, nil
-}
-
-// GetByPartition 获取指定分区的最新 Checkpoint
-func (r *CheckpointRepository) GetByPartition(taskID, executionID uint, partitionID string) (*pipeline.Checkpoint, error) {
-	var checkpoint pipeline.Checkpoint
-	err := r.db.Where("task_id = ? AND execution_id = ? AND partition_id = ?", taskID, executionID, partitionID).
-		Order("created_at DESC").
-		First(&checkpoint).Error
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return &checkpoint, nil
-}
-
-// DeleteByExecution 删除执行的所有 Checkpoint
-func (r *CheckpointRepository) DeleteByExecution(executionID uint) error {
-	return r.db.Where("execution_id = ?", executionID).
-		Delete(&pipeline.Checkpoint{}).Error
 }

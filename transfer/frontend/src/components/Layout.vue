@@ -50,11 +50,6 @@
             <el-icon><Monitor /></el-icon>
             <span>{{ t('transfer.layout.dashboard') }}</span>
           </el-menu-item>
-
-          <el-menu-item index="/local-engines">
-            <el-icon><Cpu /></el-icon>
-            <span>{{ t('transfer.layout.localEngines') }}</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -76,8 +71,7 @@ import {
   SwitchButton,
   List,
   DocumentCopy,
-  Monitor,
-  Cpu
+  Monitor
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

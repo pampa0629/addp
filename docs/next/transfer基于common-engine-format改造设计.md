@@ -16,7 +16,7 @@
 - `common/format` 负责 format identity、descriptor、capability view、provider / reader、data type 信息、横切能力和内置格式注册。
 - `common/resource` 已经有 `ResourceRef`、`ResourceReader`、`ComponentReader` 等最小资源读取抽象。
 
-Transfer 目前仍通过自己的 `plugins/readers`、`plugins/writers` 和 `pipeline.ConnectorRegistry` 运行。这个体系在早期支撑了功能验证，但长期看会造成事实源分裂：
+Transfer 原先通过自己的 `plugins/readers`、`plugins/writers` 和 `pipeline.ConnectorRegistry` 运行。这个体系在早期支撑了功能验证，但长期看会造成事实源分裂：
 
 - engine 能力和 Transfer connector 能力重复表达。
 - `common/format` 中面向 data type 的 provider / reader 与 Transfer 文件 reader / writer 重复实现。
@@ -91,7 +91,7 @@ Transfer task
 
 旧任务 JSON 不再兼容。新的任务配置以 source / target endpoint 为核心，显式表达 data item、engine、resource、data type、representation、format、mode 和 policy。
 
-示例：PostgreSQL 表导出为 GeoJSON 对象。
+示例：PostgreSQL 表导出为 CSV 对象。
 
 ```json
 {
@@ -118,35 +118,30 @@ Transfer task
     },
     "resource": {
       "kind": "object",
-      "path": "exports/roads.geojson"
+      "path": {
+        "bucket": "exports",
+        "path": "roads.csv"
+      }
     },
     "data_type": "table",
     "representation": "encoded",
-    "format": "json",
-    "spatial": {
-      "geometry_fields": ["geom"],
-      "target_encoding": "geojson"
+    "format": "csv",
+    "options": {
+      "header": true,
+      "delimiter": ","
     },
     "policy": {
       "write_mode": "overwrite"
     }
   },
-  "transforms": [
-    {
-      "type": "field_mapping",
-      "mappings": [
-        {"source": "id", "target": "id"},
-        {"source": "geom", "target": "geom"}
-      ]
-    }
-  ]
+  "batch_size": 10000
 }
 ```
 
 关键规则：
 
 1. `source` / `target` 必须显式声明 endpoint。
-2. `engine.id` 指向 System engine；`local_engines` 不再作为新架构入口，后续应统一迁入 System。
+2. `engine.id` 指向 System engine；`local_engines` 不再作为新架构入口，已从 Transfer 运行面删除。
 3. `resource.kind` 表示资源形态，例如 `native_table`、`object`、`file`、`component_set`、`scope`、`topic`、`cdc_stream`。
 4. `data_type` 表示平台数据类型，例如 `table`、`document`、`media`、`container`、`graph`。
 5. `representation` 表示 endpoint 的内容表示方式：`native` 表示引擎原生表示，`encoded` 表示由某种文件 / 消息 / 内容格式编码。
@@ -183,7 +178,9 @@ PostgreSQL native table
 2. `mode` 必填，当前只支持 `batch`。
 3. `source.engine.scope` / `target.engine.scope` 必须为 `system`，`local_engines` 不再作为新入口。
 4. 顶层或 endpoint 内出现旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、`engine_id` 时直接拒绝。
-5. `ExecutionEngineService` 不再对旧 pipeline 做执行兜底；旧 pipeline / plugins 代码只作为待迁移、待删除存量代码存在。
+5. `ExecutionEngineService` 不再对旧 pipeline 做执行兜底；当前执行服务只走 common planner + executor。
+6. 前端任务创建、编辑和详情页已切到新 endpoint JSON；旧快速创建表单、旧 TaskWizard 和本地引擎管理页已删除。
+7. Transfer 后端本地引擎 API、旧 transform API、私有 plugins、plugin loader、旧 pipeline connector registry 已删除；`/system-engines` 仅保留为只读 System engine 列表代理，用于前端选择系统引擎。
 
 已修复的第一条链路问题：
 
@@ -197,9 +194,9 @@ PostgreSQL native table
 仍未完成：
 
 - progress / checkpoint / batch-level logs 还只是最小状态。
-- S3 / MinIO `ContentWritableProvider.CreateContent()` 还未补。
 - JSON / Parquet / Shapefile 等写侧 provider 还未补。
-- 旧 pipeline / plugins 尚未删除，需在新链路覆盖对应能力后分步清理。
+- PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert 或 COPY 写入；`TableWritePreparer` 已支持 `create_if_not_exists` 和 `truncate_insert`；drop-create、schema evolution 和跨批次 COPY 会话仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 第一版已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY 方法。
+- S3 / MinIO `ContentWritableProvider.CreateContent()` 已补第一版：先写 OS 临时文件，`Close()` 时 `PutObject`，后续需要升级为 multipart streaming。
 
 ## 已有 common 能力能否支撑第一步
 
@@ -211,7 +208,7 @@ PostgreSQL native table
 |---|---|---|
 | `common/engine` | `BatchReadableProvider.ReadBatch()` | PostgreSQL、MySQL、ClickHouse、Doris、Spark SQL、MongoDB、Neo4j 已有读取实现，可先用 limit / offset 方式跑通 table batch read。 |
 | `common/engine` | `ContentReadableProvider.OpenContent()`、`RangeReadableProvider.OpenRange()` | S3、MinIO、NFS 已有对象 / 文件读取，可作为 format provider 的输入。 |
-| `common/engine` | `ContentWritableProvider.CreateContent()` | NFS 已有写入实现；S3 / MinIO 写入侧目前缺 common provider。 |
+| `common/engine` | `ContentWritableProvider.CreateContent()` | NFS、S3、MinIO 已有写入实现；S3 / MinIO 当前第一版为临时文件缓冲 + Close PutObject，后续升级 multipart streaming。 |
 | `common/format` | `TableInfoProvider`、`TableSampleReader`、`ComponentTableProvider`、`ScopeTableProvider` | CSV、JSON、Parquet、Shapefile 等已有表信息和样本读取能力，可用于预览、验证、小批读取和部分迁移。 |
 | `common/format` | `FormatDescriptor`、`FormatCapabilityView`、`TransferRead`、`TransferWrite`、implementation status | 可用于 planner 判断格式身份、默认 data type、layout、transfer 声明和当前进程已加载的 reader / provider 实现。 |
 | `common/format` | `TableWriterProvider`、`TableWriter` | CSV / TSV 已有最小写出实现，可把 table rows 按 schema 字段顺序写成分隔文本。 |
@@ -223,8 +220,8 @@ PostgreSQL native table
 | 需求 | 现有能力不足 |
 |---|---|
 | 连续批量读取表 | `BatchReadableProvider.ReadBatch()` 是单次 batch 调用，可以循环 offset / limit 跑通第一步，但缺少 server-side cursor、分区计划、稳定 checkpoint、schema 快照和高性能流式游标语义。 |
-| 写入数据库表 | `BatchWritableProvider` 接口已有，但当前没有实际实现；PostgreSQL COPY writer 仍在 Transfer 私有插件里。 |
-| 写入对象存储 | `ContentWritableProvider` 只有 NFS 实现；S3 / MinIO 目前没有 common 写 provider。 |
+| 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 第一版，写入方法可选 ordinary insert 或 COPY；并通过 `TableWritePreparer` 支持 `create_if_not_exists` 和 `truncate_insert`。drop-create、schema evolution 和跨批次 COPY 会话仍待补。 |
+| 写入对象存储 | S3 / MinIO 已有第一版 common 写 provider，但大文件场景仍需 multipart streaming、失败清理和更细的提交语义。 |
 | data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / Parquet / Shapefile 等格式还没有 table writer provider。 |
 | planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
 | 全量读取文件格式 | `TableSampleReader.SampleTable()` 语义是样本 / 窗口读取，不是长期持有状态的 reader。它可用于第一步的简单循环或验证，但对大文件连续传输、checkpoint、错误恢复不够清晰。 |
@@ -233,7 +230,7 @@ PostgreSQL native table
 
 因此，第一阶段不新增“统一传输数据流”大框架，而是先补三个明确缺口：
 
-1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider`，PostgreSQL `BatchWritableProvider` 或 COPY batch writer。
+1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已补第一版；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，后续补 drop-create、schema evolution 和跨批次 COPY 会话。
 2. **common format 写侧**：CSV / TSV `TableWriterProvider` 已补；后续按链路需要继续补 JSON / Parquet / Shapefile。
 3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
@@ -345,15 +342,15 @@ common/format TableWriterProvider / TableWriter
 当前：
 
 - NFS 已有 `CreateContent()`。
-- S3 / MinIO 缺 `CreateContent()`。
+- S3 / MinIO 已补 `CreateContent()` 第一版。
 
-所以第一阶段补：
+当前 S3 / MinIO 写入签名：
 
 ```go
 func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error)
 ```
 
-实现可以先用临时缓冲 + Close 时 PutObject，后续再升级 multipart streaming writer。
+实现暂时采用临时文件缓冲 + Close 时 PutObject，后续再升级 multipart streaming writer。
 
 ### 五、高性能能力按需要演进
 
@@ -361,8 +358,8 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 
 | 阶段 | 当前不足 | 最小增强 | 受益模块 |
 |---|---|---|---|
-| 第一阶段 | 数据库写入无 common 实现 | PostgreSQL `BatchWritableProvider`，可先普通 batch insert | Transfer、Service、Manager 导出回写 |
-| 第二阶段 | PostgreSQL 高性能 COPY 在 Transfer 私有插件 | 把 COPY writer 迁入 `common/engine/plugins/postgresql` | Transfer、数据导入、批量服务 |
+| 第一阶段 | 数据库写入无 common 实现 | PostgreSQL `BatchWritableProvider` 已补普通 batch insert / COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert` | Transfer、Service、Manager 导出回写 |
+| 第二阶段 | PostgreSQL COPY 仍是逐 transfer batch 建立会话 | 增加跨批次 COPY 写入会话或批量 writer 生命周期 | Transfer、数据导入、批量服务 |
 | 第三阶段 | `ReadBatch(limit, offset)` 大表性能一般 | 增加 cursor / partition read options | Transfer、Manager 大表预览、Service 批量读取 |
 | 第四阶段 | 对象写入大文件内存压力 | S3 multipart `ContentWritableProvider` | Transfer、Manager 导出、文件生成任务 |
 | 第五阶段 | 文件格式全量读取靠 sample 循环不优雅 | 针对确有需要的格式补批量 reader，例如 Parquet row group reader | Transfer、Manager 大文件预览 |
@@ -409,7 +406,7 @@ sequenceDiagram
     participant PG as common/engine PostgreSQL
     participant EX as TransferExecutor
     participant CSV as common/format CSV
-    participant FS as common/engine NFS or S3
+    participant FS as common/engine NFS / S3 / MinIO
 
     W->>P: task_id / execution_id
     P->>PG: inspect capabilities
@@ -441,9 +438,9 @@ sequenceDiagram
 
 缺失的是：
 
-- S3 / MinIO `CreateContent()`。
 - 更完整的执行日志、checkpoint、progress 回写。
-- 前端配置仍需继续清理为新规范，不再围绕旧任务 JSON 做适配。
+- PostgreSQL 跨批次 COPY 写入会话、drop-create、schema evolution；MySQL 等其他数据库写侧 common writer。
+- JSON / Parquet / Shapefile 等更多 `TableWriterProvider`。
 
 ## TransferPlanner 设计
 
@@ -668,8 +665,8 @@ Transfer planner 根据目标 policy 决定：
 
 1. 能迁入 `common/engine` 的迁入 `common/engine`。
 2. 能迁入 `common/format` 的迁入 `common/format`。
-3. 只属于任务编排的留在 Transfer，例如 transform、checkpoint、postprocessor、execution metrics。
-4. 迁移完成后删除 `transfer/backend/plugins/readers`、`transfer/backend/plugins/writers` 和 `pkg/plugin_loader`。
+3. 只属于任务编排的留在 Transfer，例如任务、planner、executor、checkpoint、execution metrics；旧 pipeline transform / postprocessor 不再作为新主路径保留。
+4. `transfer/backend/plugins/readers`、`transfer/backend/plugins/writers`、`pkg/plugin_loader`、旧 `pkg/pipeline` 已删除。
 5. 不再新增 Transfer 私有 reader / writer。
 
 归属建议：
@@ -694,16 +691,16 @@ Transfer planner 根据目标 policy 决定：
 2. 定义新任务 JSON。
 3. 不新增通用 `RecordBatch`，第一阶段沿用 `common/engine/plugin.BatchData`。
 4. `common/format` 最小 `TableWriterProvider` / `TableWriter` 和 writer implementation status 已补，先覆盖 CSV / TSV。
-5. 在 `common/engine/plugins/s3` 和 `minio` 中补 `CreateContent()`，或第一条链路先选择 NFS 避开对象写缺口。
+5. 在 `common/engine/plugins/s3` 和 `minio` 中补 `CreateContent()` 第一版；后续升级 multipart streaming。
 6. 明确 PostgreSQL `BatchReadableProvider` 的第一阶段循环读取方式。
 
 ### 阶段二：补 common 第一条链路能力
 
 1. 复用 PostgreSQL `ReadBatch()` 作为 table batch reader。
 2. CSV / TSV 插件已实现 `TableWriterProvider` / `TableWriter`。
-3. NFS `CreateContent()` 或 S3 / MinIO `CreateContent()`。
+3. NFS、S3、MinIO `CreateContent()`。
 4. 必要的 schema / type mapper 转换。
-5. 暂不补 PostgreSQL 写入，除非第一条链路选择导入到数据库。
+5. PostgreSQL `BatchWritableProvider` 已补普通 append / insert 和 COPY batch write，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，CSV / TSV file/object -> PostgreSQL native table 已接入第一版 import；drop-create、跨批次 COPY 会话后续补。
 
 ### 阶段三：搭 Transfer 新框架
 
@@ -711,7 +708,7 @@ Transfer planner 根据目标 policy 决定：
 2. `internal/executor` 已有最小 table export executor，使用 common engine `BatchReadableProvider` / `ContentWritableProvider` 和 common format `TableWriterProvider`。
 3. System engine resolver 已补，新任务 JSON 入库、更新和启动前校验已补。
 4. worker / `ExecutionEngineService` 已接入 planner + executor，并回写基础 records metrics；待补 checkpoint、progress 和更完整日志。
-5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，下一步可在补前端新规范和补 S3 / MinIO `CreateContent()` 之间选择。
+5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，前端创建 / 编辑 / 详情页已切到新规范；S3 / MinIO 写侧第一版、PostgreSQL 普通 batch writer、CSV/TSV -> PostgreSQL import 第一版和旧本地引擎 / pipeline / plugins 删除也已完成。
 
 ### 阶段四：扩展格式和空间链路
 
@@ -729,21 +726,25 @@ Transfer planner 根据目标 policy 决定：
 
 ### 阶段六：删除旧实现
 
-1. 删除旧任务 JSON 字段。
-2. 删除 TaskDetail 的 worker config 复制逻辑。
-3. 删除 Transfer plugins、plugin loader、旧 pipeline connector registry。
-4. 更新 `transfer/docs/` 和稳定 spec。
+已完成：
+
+1. 删除 TaskDetail 的 worker config 复制逻辑。
+2. 删除 Transfer 本地引擎管理前端入口和后端 local engine API。
+3. 删除 Transfer plugins、plugin loader、旧 pipeline connector registry、旧 transform API。
+4. 旧任务 JSON 字段不作为入口支持，仅在 planner 中保留显式拒绝列表和测试。
+
+后续：
+
+1. 根据新主路径继续清理不再需要的字段映射 UI / API，或将字段映射改造成新 planner transform。
+2. 更新 `transfer/docs/` 和稳定 spec。
 
 ## 待讨论问题
 
-1. 第一阶段是否直接选 NFS 作为输出，避免同时补 S3 / MinIO 写入？
-2. `TableWriterProvider` / `TableWriter` 放在 `common/format` 根接口，还是单独 `common/format/write` 子包？
-3. `local_engines` 是否直接废弃并迁入 System？
-4. 第一条链路选择 PostgreSQL -> CSV -> S3，还是 PostgreSQL -> CSV -> NFS？
-5. Shapefile 输出到对象存储应落 multi component，还是落 zip 容器？从 data item 规范看更推荐 multi component，但对象存储用户体验可能偏向 zip。
-6. CDC 的 change event 是新 data type，还是 table 的 stream event 表达？初步倾向不新增 data type，作为 stream payload / capability 表达。
-7. `TransferPlan` 是否写入 execution snapshot？初步建议写入，便于排障和复现。
-8. 何时引入更通用的 `RecordBatch` / `common/transferio`？建议等第二个 data type 或 CDC 实施时再定。
+1. 字段映射是否继续作为独立 UI / API 保留，还是改造成新 planner 的显式 transform？
+2. Shapefile 输出到对象存储应落 multi component，还是落 zip 容器？从 data item 规范看更推荐 multi component，但对象存储用户体验可能偏向 zip。
+3. CDC 的 change event 是新 data type，还是 table 的 stream event 表达？初步倾向不新增 data type，作为 stream payload / capability 表达。
+4. `TransferPlan` 是否写入 execution snapshot？初步建议写入，便于排障和复现。
+5. 何时引入更通用的 `RecordBatch` / `common/transferio`？建议等第二个 data type 或 CDC 实施时再定。
 
 ## 与现有 next 文档的关系
 

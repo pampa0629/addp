@@ -11,12 +11,17 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonLogger "github.com/addp/common/logger"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var (
+	// ErrSystemIntegrationDisabled 表示 Transfer 未配置 System 集成。
+	ErrSystemIntegrationDisabled = errors.New("system integration not available")
+	// ErrEngineAccessDenied 表示当前租户不能访问指定引擎。
+	ErrEngineAccessDenied = errors.New("engine not accessible")
 	// ErrObjectStorageNotSupported 指定资源不是对象存储
 	ErrObjectStorageNotSupported = errors.New("resource is not object storage")
 )
@@ -43,22 +48,22 @@ type ObjectStorageBrowseResult struct {
 
 // ObjectStorageListFilesResult 文件列表结果
 type ObjectStorageListFilesResult struct {
-	Bucket string                `json:"bucket"`
-	Prefix string                `json:"prefix"`
-	Files  []ObjectStorageFile   `json:"files"`
+	Bucket string              `json:"bucket"`
+	Prefix string              `json:"prefix"`
+	Files  []ObjectStorageFile `json:"files"`
 }
 
 // ObjectStorageService 提供对象存储的辅助能力
 type ObjectStorageService struct {
-	localResourceService *LocalEngineService
-	logger               *slog.Logger
+	systemClient *commonClient.SystemClient
+	logger       *slog.Logger
 }
 
 // NewObjectStorageService 构造函数
-func NewObjectStorageService(localResourceService *LocalEngineService) *ObjectStorageService {
+func NewObjectStorageService(systemClient *commonClient.SystemClient) *ObjectStorageService {
 	return &ObjectStorageService{
-		localResourceService: localResourceService,
-		logger:               commonLogger.With("component", "object_storage_service"),
+		systemClient: systemClient,
+		logger:       commonLogger.With("component", "object_storage_service"),
 	}
 }
 
@@ -284,20 +289,16 @@ func buildMinIOClient(connInfo map[string]interface{}) (*minio.Client, error) {
 func (s *ObjectStorageService) resolveConnectionInfo(scope string, engineID, tenantID uint) (map[string]interface{}, string, error) {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	switch scope {
-	case "local":
-		resource, err := s.localResourceService.Get(engineID, tenantID)
-		if err != nil {
-			return nil, "", err
-		}
-		if !isObjectStorageType(resource.EngineType) {
-			return nil, "", ErrObjectStorageNotSupported
-		}
-		return map[string]interface{}(resource.ConnectionInfo), getStringFromConn(map[string]interface{}(resource.ConnectionInfo), "bucket"), nil
-
 	case "system":
-		systemRes, err := s.localResourceService.GetSystemResource(engineID, tenantID)
+		if s.systemClient == nil {
+			return nil, "", ErrSystemIntegrationDisabled
+		}
+		systemRes, err := s.systemClient.GetEngine(engineID)
 		if err != nil {
 			return nil, "", err
+		}
+		if systemRes.TenantID != nil && *systemRes.TenantID != 0 && *systemRes.TenantID != tenantID {
+			return nil, "", ErrEngineAccessDenied
 		}
 		if !isObjectStorageType(systemRes.EngineType) {
 			return nil, "", ErrObjectStorageNotSupported

@@ -78,6 +78,54 @@ func TestBuildTableExportPlanForObjectTarget(t *testing.T) {
 	}
 }
 
+func TestBuildTableImportPlanForCSVFileToNativeTable(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Mode: modeBatch,
+		Source: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 1},
+			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
+			DataType:       dataTypeTable,
+			Representation: representationEncoded,
+			Format:         format.FormatCSV,
+			Options:        map[string]interface{}{"header": true, "delimiter": ","},
+		},
+		Target: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 2},
+			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"write_mode": "append"},
+		},
+		BatchSize: 500,
+	}
+
+	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableImportPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "nfs" || result.TargetEngineType != "postgresql" {
+		t.Fatalf("engine types = %q -> %q, want nfs -> postgresql", result.SourceEngineType, result.TargetEngineType)
+	}
+	if result.Format != format.FormatCSV || result.Plan.Format != format.FormatCSV {
+		t.Fatalf("format = %q / %q, want csv", result.Format, result.Plan.Format)
+	}
+	if got := result.Plan.SourcePath.StringPath(); got != "imports/roads.csv" {
+		t.Fatalf("source path = %q, want imports/roads.csv", got)
+	}
+	if got := result.Plan.TargetPath.StringPath(); got != "public/roads" {
+		t.Fatalf("target path = %q, want public/roads", got)
+	}
+	if result.Plan.TargetWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append", result.Plan.TargetWrite.Mode)
+	}
+	if result.Plan.TargetWrite.Method != "copy" {
+		t.Fatalf("write method = %q, want postgresql import default copy", result.Plan.TargetWrite.Method)
+	}
+}
+
 func TestBuildTableExportPlanRejectsNonTableFormat(t *testing.T) {
 	spec := minimalTableExportSpec()
 	spec.Target.Format = format.FormatPDF
@@ -105,8 +153,49 @@ func TestBuildTableExportPlanRejectsEncodedSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("BuildTableExportPlan succeeded, want representation error")
 	}
-	if !strings.Contains(err.Error(), "source representation") {
-		t.Fatalf("error = %q, want source representation error", err)
+	if !strings.Contains(err.Error(), "source encoded endpoint resource kind") {
+		t.Fatalf("error = %q, want encoded source resource kind error", err)
+	}
+}
+
+func TestBuildTableImportPlanSplitsTruncateInsertPolicy(t *testing.T) {
+	spec := minimalTableImportSpec()
+	spec.Target.Policy = map[string]interface{}{"write_mode": "truncate_insert"}
+
+	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableImportPlan failed: %v", err)
+	}
+	if result.Plan.TargetPrepare.Mode != "truncate_insert" {
+		t.Fatalf("prepare mode = %q, want truncate_insert", result.Plan.TargetPrepare.Mode)
+	}
+	if result.Plan.TargetWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append after truncate", result.Plan.TargetWrite.Mode)
+	}
+}
+
+func TestBuildTableImportPlanKeepsCreateIfNotExistsPolicy(t *testing.T) {
+	spec := minimalTableImportSpec()
+	spec.Target.Policy = map[string]interface{}{"write_mode": "create_if_not_exists", "write_method": "insert"}
+
+	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableImportPlan failed: %v", err)
+	}
+	if result.Plan.TargetPrepare.Mode != "create_if_not_exists" {
+		t.Fatalf("prepare mode = %q, want create_if_not_exists", result.Plan.TargetPrepare.Mode)
+	}
+	if result.Plan.TargetWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append after create_if_not_exists", result.Plan.TargetWrite.Mode)
+	}
+	if result.Plan.TargetWrite.Method != "insert" {
+		t.Fatalf("write method = %q, want explicit insert", result.Plan.TargetWrite.Method)
 	}
 }
 
@@ -189,6 +278,25 @@ func minimalTableExportSpec() TableExportTaskSpec {
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,
+		},
+	}
+}
+
+func minimalTableImportSpec() TableExportTaskSpec {
+	return TableExportTaskSpec{
+		Mode: modeBatch,
+		Source: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 1},
+			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
+			DataType:       dataTypeTable,
+			Representation: representationEncoded,
+			Format:         format.FormatCSV,
+		},
+		Target: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 2},
+			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:       dataTypeTable,
+			Representation: representationNative,
 		},
 	}
 }

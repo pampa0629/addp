@@ -21,7 +21,6 @@ export function useTaskWizardState() {
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
   const sourceEngineType = ref('')
-  const sourceScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const sourceSchema = ref('')
   const sourceTable = ref('')
   const sourceType = ref('postgresql')
@@ -30,7 +29,6 @@ export function useTaskWizardState() {
   const targetConfig = ref({})
   const targetEngineID = ref(null)
   const targetEngineType = ref('')
-  const targetScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const targetSchema = ref('')
   const targetTable = ref('')
   const targetType = ref('nfs')
@@ -89,7 +87,7 @@ export function useTaskWizardState() {
   function buildNativeTableSource() {
     return {
       engine: {
-        scope: sourceScope.value,
+        scope: 'system',
         id: Number(sourceEngineID.value),
         type: sourceEngineType.value || sourceType.value
       },
@@ -110,7 +108,7 @@ export function useTaskWizardState() {
     const format = fileConfig.format || 'csv'
     const endpoint = {
       engine: {
-        scope: targetScope.value,
+        scope: 'system',
         id: Number(targetEngineID.value),
         type: targetEngineType.value || targetType.value
       },
@@ -182,7 +180,6 @@ export function useTaskWizardState() {
   function updateSource(config) {
     sourceEngineID.value = config.engineID
     sourceEngineType.value = config.engineType || ''
-    sourceScope.value = config.scope || 'system'
     sourceSchema.value = config.schema || ''
     sourceTable.value = config.table || ''
     sourceType.value = config.sourceType || 'postgresql'
@@ -201,7 +198,6 @@ export function useTaskWizardState() {
   function updateTarget(config) {
     targetEngineID.value = config.engineID
     targetEngineType.value = config.engineType || ''
-    targetScope.value = config.scope || 'system'
     targetSchema.value = config.schema || ''
     targetTable.value = config.table || ''
       targetType.value = config.targetType || 'nfs'
@@ -262,7 +258,7 @@ export function useTaskWizardState() {
       ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
       return true
     } catch (error) {
-      const message = error.response?.data?.message || error.message || t('transfer.taskWizard.taskCreateFailed')
+      const message = error.response?.data?.error || error.response?.data?.message || error.message || t('transfer.taskWizard.taskCreateFailed')
       ElMessage.error(message)
       return false
     }
@@ -284,7 +280,6 @@ export function useTaskWizardState() {
       const source = task.config.source
       sourceEngineID.value = source.engine?.id || null
       sourceEngineType.value = source.engine?.type || ''
-      sourceScope.value = source.engine?.scope || 'system'
       sourceSchema.value = source.resource?.path?.schema || ''
       sourceTable.value = source.resource?.path?.table || source.resource?.path?.name || ''
       sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
@@ -296,7 +291,6 @@ export function useTaskWizardState() {
       const target = task.config.target
       targetEngineID.value = target.engine?.id || null
       targetEngineType.value = target.engine?.type || ''
-      targetScope.value = target.engine?.scope || 'system'
       targetSchema.value = target.resource?.path?.schema || ''
       targetTable.value = target.resource?.path?.table || target.resource?.path?.name || ''
       targetType.value = normalizeTargetType(target)
@@ -320,16 +314,14 @@ export function useTaskWizardState() {
     const type = String(engineType || '').toLowerCase()
     if (type.includes('postgres')) return 'postgresql'
     if (type.includes('mysql')) return 'mysql'
-    if (type.includes('spatialite') || type.includes('sqlite')) return 'spatialite'
     if (type.includes('s3') || type.includes('minio')) return 's3'
     return type || 'postgresql'
   }
 
   function normalizeTargetType(target) {
-    const engineType = normalizeEngineType(target.engine?.type || '')
     if (target.resource?.kind === 'file') return 'nfs'
     if (target.resource?.kind === 'object') return 's3'
-    return engineType || 'postgresql'
+    return 'nfs'
   }
 
   function extractTargetFileConfig(target) {
@@ -369,7 +361,7 @@ export function useTaskWizardState() {
       ElMessage.success(t('transfer.taskWizard.taskUpdateSuccess'))
       return true
     } catch (error) {
-      const message = error.response?.data?.message || error.message || t('transfer.taskWizard.taskUpdateFailed')
+      const message = error.response?.data?.error || error.response?.data?.message || error.message || t('transfer.taskWizard.taskUpdateFailed')
       ElMessage.error(message)
       return false
     }
@@ -385,14 +377,12 @@ export function useTaskWizardState() {
     batchSize.value = 1000
     sourceEngineID.value = null
     sourceEngineType.value = ''
-    sourceScope.value = 'system'
     sourceSchema.value = ''
     sourceTable.value = ''
     sourceType.value = 'postgresql'
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
-    targetScope.value = 'system'
     targetSchema.value = ''
     targetTable.value = ''
     targetType.value = 'nfs'
@@ -414,14 +404,12 @@ export function useTaskWizardState() {
     sourceConfig,
     sourceEngineID,
     sourceEngineType,
-    sourceScope,
     sourceSchema,
     sourceTable,
     sourceType,
     targetConfig,
     targetEngineID,
     targetEngineType,
-    targetScope,
     targetSchema,
     targetTable,
     targetType,

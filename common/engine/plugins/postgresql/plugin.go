@@ -51,12 +51,14 @@ func (p *PostgreSQLPlugin) SensitiveFields() []string {
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
-		Write:           true,
-		BulkWrite:       true,
-		SpatialMetadata: true,
-		SupportsExplain: true,
-		SupportsCancel:  true,
-		WriterConnector: "postgres_copy",
+		Write:             true,
+		BulkWrite:         true,
+		BatchWrite:        true,
+		TableWritePrepare: true,
+		SpatialMetadata:   true,
+		SupportsExplain:   true,
+		SupportsCancel:    true,
+		WriterConnector:   "postgres_copy",
 	})
 }
 

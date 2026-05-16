@@ -63,6 +63,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - `storage.store.range_write=true` 时必须实现 `RangeWritableProvider`。
 - `storage.store.batch_read=true` 时必须实现 `BatchReadableProvider`。
 - `storage.store.batch_write=true` 时必须实现 `BatchWritableProvider`。
+- `storage.store.table_write_prepare=true` 时必须实现 `TableWritePreparer`。
 - `compute.query.supported=true` 时必须实现对应 query runtime provider。
 
 `storage.families`、`store.read`、`store.write`、`store.random_write`、`store.atomic_rename`、`store.transactions`、`store.formats` 不再作为新增插件能力声明字段。

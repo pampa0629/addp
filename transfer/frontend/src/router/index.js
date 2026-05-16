@@ -41,12 +41,6 @@ const routes = [
         meta: { requiresAuth: true, title: '创建任务-数据传输' }
       },
       {
-        path: 'tasks/create-simple',
-        name: 'TaskCreateSimple',
-        component: () => import('@/views/TaskForm.vue'),
-        meta: { requiresAuth: true, title: '快速创建-数据传输' }
-      },
-      {
         path: 'tasks/:id/edit',
         name: 'TaskEdit',
         component: () => import('@/views/TaskWizard/TaskWizard.vue'),
@@ -76,12 +70,6 @@ const routes = [
         component: () => import('@/views/Dashboard.vue'),
         meta: { requiresAuth: true, title: '监控面板-数据传输' }
       },
-      {
-        path: 'local-engines',
-        name: 'LocalEngines',
-        component: () => import('@/views/LocalEngines.vue'),
-        meta: { requiresAuth: true, title: '本地存储引擎-数据传输' }
-      }
     ]
   }
 ]

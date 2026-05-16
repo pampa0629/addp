@@ -68,6 +68,11 @@ type BatchWritableProvider interface {
 	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts BatchWriteOptions) error
 }
 
+type TableWritePreparer interface {
+	StoreProvider
+	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableWriteOptions) error
+}
+
 type QueryRuntimeProvider interface {
 	EnginePlugin
 	QueryLanguages() []string
@@ -201,7 +206,13 @@ type BatchReadOptions struct {
 }
 
 type BatchWriteOptions struct {
-	Mode string
+	Mode   string
+	Method string
+}
+
+type TableWriteOptions struct {
+	Mode   string
+	Fields []FieldInfo
 }
 
 type BatchData struct {

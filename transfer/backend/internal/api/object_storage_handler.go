@@ -21,7 +21,7 @@ func NewObjectStorageHandler(service *service.ObjectStorageService) *ObjectStora
 
 // objectStorageBrowseRequest 请求体
 type objectStorageBrowseRequest struct {
-	Scope    string `json:"scope" binding:"required,oneof=system local"`
+	Scope    string `json:"scope" binding:"required,oneof=system"`
 	EngineID uint   `json:"engine_id" binding:"required"`
 	Prefix   string `json:"prefix"`
 }

@@ -20,9 +20,7 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
-	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
-	_ "github.com/addp/transfer/plugins" // ✅ 新增：触发 plugins 包的 init() 函数（注册 PostProcessor）
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -113,8 +111,6 @@ func main() {
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue)         // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
 	taskService.SetExecutionService(executionService)                      // 注入执行服务（避免循环依赖）
-	localEngineService := service.NewLocalEngineService(db, cfg, redisClient)
-	objectStorageService := service.NewObjectStorageService(localEngineService)
 
 	// 初始化 System 客户端（用于审计日志和服务间调用）
 	var systemClient *commonClient.SystemClient
@@ -122,9 +118,10 @@ func main() {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
 	}
+	objectStorageService := service.NewObjectStorageService(systemClient)
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localEngineService, objectStorageService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(taskService, executionService, objectStorageService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
@@ -198,7 +195,6 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// &models.TaskExecution{}, // 【已废弃】改用统一执行表
 		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 		&models.FieldMapping{},
-		&models.LocalEngine{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)
 	if err != nil {

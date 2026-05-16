@@ -108,12 +108,13 @@ type MetadataCapability struct {
 }
 
 type StoreCapability struct {
-	StreamRead  bool `json:"stream_read,omitempty"`
-	StreamWrite bool `json:"stream_write,omitempty"`
-	RangeRead   bool `json:"range_read,omitempty"`
-	RangeWrite  bool `json:"range_write,omitempty"`
-	BatchRead   bool `json:"batch_read,omitempty"`
-	BatchWrite  bool `json:"batch_write,omitempty"`
+	StreamRead        bool `json:"stream_read,omitempty"`
+	StreamWrite       bool `json:"stream_write,omitempty"`
+	RangeRead         bool `json:"range_read,omitempty"`
+	RangeWrite        bool `json:"range_write,omitempty"`
+	BatchRead         bool `json:"batch_read,omitempty"`
+	BatchWrite        bool `json:"batch_write,omitempty"`
+	TableWritePrepare bool `json:"table_write_prepare,omitempty"`
 }
 
 type ComputeCapabilities struct {
