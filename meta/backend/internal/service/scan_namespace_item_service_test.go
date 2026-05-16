@@ -6,7 +6,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestNoSQLItemType(t *testing.T) {
+func TestNamespaceItemType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -40,8 +40,8 @@ func TestNoSQLItemType(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := noSQLItemType(tt.node); got != tt.want {
-				t.Fatalf("noSQLItemType() = %q, want %q", got, tt.want)
+			if got := namespaceItemType(tt.node); got != tt.want {
+				t.Fatalf("namespaceItemType() = %q, want %q", got, tt.want)
 			}
 		})
 	}

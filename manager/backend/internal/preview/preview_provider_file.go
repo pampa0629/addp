@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resource"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -428,7 +427,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	}
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	if previewRequestCatalogItemTerm(req) == "file" {
-		reader, err := rangeReader.OpenRange(ctx, connInfo, fileCatalogPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
+		reader, err := rangeReader.OpenRange(ctx, connInfo, plugin.FileItemPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
 			Offset: anchor.ByteOffset,
 			Length: length,
 		})
@@ -446,7 +445,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		bucket = resolved
 	}
 	objectPath := objectKeyFromPreviewRequest(req, bucket)
-	reader, err := rangeReader.OpenRange(ctx, connInfo, catalogutil.ObjectItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
+	reader, err := rangeReader.OpenRange(ctx, connInfo, plugin.ObjectItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
 		Offset: anchor.ByteOffset,
 		Length: length,
 	})
@@ -712,21 +711,12 @@ func componentPreviewDescriptors(formatType format.FormatType, components []reso
 		if descriptor.Extension != "" {
 			item["extension"] = descriptor.Extension
 		}
-		if descriptor.PreviewDataType != "" {
-			item["preview_data_type"] = descriptor.PreviewDataType
-		}
-		if descriptor.PreviewFormat != "" {
-			item["preview_format"] = string(descriptor.PreviewFormat)
-		}
-		if descriptor.PreviewMaterial != "" {
-			item["preview_material"] = descriptor.PreviewMaterial
-		}
-		if descriptor.PreviewRenderer != "" {
-			item["preview_renderer"] = descriptor.PreviewRenderer
-		}
-		if descriptor.Previewable != nil {
-			item["previewable"] = *descriptor.Previewable
-		}
+		hint := previewHintForComponentDescriptor(&descriptor, descriptor.Path)
+		item["preview_data_type"] = hint.DataType
+		item["preview_format"] = string(hint.Format)
+		item["preview_material"] = hint.Material
+		item["preview_renderer"] = hint.Renderer
+		item["previewable"] = hint.Previewable
 		result = append(result, item)
 	}
 	return result

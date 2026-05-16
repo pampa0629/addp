@@ -954,21 +954,6 @@ func containerChildComponentDescriptors(childInfo format.ContainerChildInfo) []m
 		if descriptor.Extension != "" {
 			item["extension"] = descriptor.Extension
 		}
-		if descriptor.PreviewDataType != "" {
-			item["preview_data_type"] = descriptor.PreviewDataType
-		}
-		if descriptor.PreviewFormat != "" {
-			item["preview_format"] = string(descriptor.PreviewFormat)
-		}
-		if descriptor.PreviewMaterial != "" {
-			item["preview_material"] = descriptor.PreviewMaterial
-		}
-		if descriptor.PreviewRenderer != "" {
-			item["preview_renderer"] = descriptor.PreviewRenderer
-		}
-		if descriptor.Previewable != nil {
-			item["previewable"] = *descriptor.Previewable
-		}
 		result = append(result, item)
 	}
 	return result
@@ -1619,7 +1604,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
 
-	// 重新打开文件读取预览数据（ParseTableInfo 已消耗了 reader）
+	// 重新打开文件读取预览数据（DescribeTable 已消耗 reader）
 	f2, err := os.Open(tmpPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("重新打开表格临时文件失败: %w", err)

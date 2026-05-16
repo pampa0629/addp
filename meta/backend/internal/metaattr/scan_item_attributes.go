@@ -209,7 +209,7 @@ func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{}
 	return result
 }
 
-func ApplyNoSQLDataItemAttributes(attrs models.JSONMap, itemType string) {
+func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {
 	SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
 	switch itemType {
 	case "collection":

@@ -1,8 +1,6 @@
 package shapefile
 
 import (
-	"context"
-	"io"
 	"path/filepath"
 	"strings"
 
@@ -10,19 +8,11 @@ import (
 	"github.com/addp/common/resource"
 )
 
-type tableProvider struct {
-	parser *Parser
-}
-
-func newTableProvider(parser *Parser) tableProvider {
-	return tableProvider{parser: parser}
-}
-
-func (p tableProvider) Format() format.FormatType {
+func (plugin *Plugin) Format() format.FormatType {
 	return format.FormatShapefile
 }
 
-func (p tableProvider) Descriptor() format.FormatDescriptor {
+func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
 		ID:             "builtin-shapefile",
 		Format:         format.FormatShapefile,
@@ -41,33 +31,17 @@ func (p tableProvider) Descriptor() format.FormatDescriptor {
 	}
 }
 
-func (p tableProvider) Capabilities() format.FormatCapability {
+func (plugin *Plugin) Capabilities() format.FormatCapability {
 	capability, _ := format.GetFormatCapability(format.FormatShapefile)
 	return capability
 }
 
-func (p tableProvider) ComponentSpecs() []resource.ComponentSpec {
+func (plugin *Plugin) ComponentSpecs() []resource.ComponentSpec {
 	return ComponentSpecs()
 }
 
-func (p tableProvider) DescribeComponents(components []resource.ComponentRef) []format.ComponentDescriptor {
+func (plugin *Plugin) DescribeComponents(components []resource.ComponentRef) []format.ComponentDescriptor {
 	return DescribeComponents(components)
-}
-
-func (p tableProvider) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	return p.parser.ParseTableInfo(ctx, input, options)
-}
-
-func (p tableProvider) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	return p.parser.SampleTable(ctx, input, offset, limit, options)
-}
-
-func (p tableProvider) DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *format.ParseOptions) (*format.TableInfo, error) {
-	return p.parser.DescribeTableComponents(ctx, components, options)
-}
-
-func (p tableProvider) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	return p.parser.SampleTableComponents(ctx, components, offset, limit, options)
 }
 
 func DescribeComponents(components []resource.ComponentRef) []format.ComponentDescriptor {
@@ -78,44 +52,28 @@ func DescribeComponents(components []resource.ComponentRef) []format.ComponentDe
 		if role == "" {
 			role = roleForExtension(ext)
 		}
-		preview := previewHintForComponent(component, role)
+		dataType, formatType := componentTypeForRole(role)
 		descriptors = append(descriptors, format.ComponentDescriptor{
-			Key:             role,
-			Path:            component.Path,
-			Role:            role,
-			Label:           labelForRole(role, ext),
-			Required:        component.Required,
-			Primary:         component.Role == resource.ResourceRoleMain,
-			DataType:        preview.DataType,
-			Format:          preview.Format,
-			Extension:       ext,
-			PreviewDataType: preview.DataType,
-			PreviewFormat:   preview.Format,
-			PreviewMaterial: preview.Material,
-			PreviewRenderer: preview.Renderer,
-			Previewable:     &preview.Previewable,
+			Key:       role,
+			Path:      component.Path,
+			Role:      role,
+			Label:     labelForRole(role, ext),
+			Required:  component.Required,
+			Primary:   component.Role == resource.ResourceRoleMain,
+			DataType:  dataType,
+			Format:    formatType,
+			Extension: ext,
 		})
 	}
 	return descriptors
 }
 
-func previewHintForComponent(component resource.ComponentRef, role string) format.PreviewHint {
+func componentTypeForRole(role string) (string, format.FormatType) {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "projection", "encoding":
-		return format.InferPreviewHint(format.PreviewHintInput{
-			Name:     component.Name,
-			Path:     component.Path,
-			Format:   format.FormatText,
-			DataType: format.FormatDataTypeDocument,
-		})
+		return format.FormatDataTypeDocument, format.FormatText
 	default:
-		return format.PreviewHint{
-			DataType:    format.FormatDataTypeFile,
-			Format:      format.FormatUnknown,
-			Material:    format.PreviewMaterialRawBinary,
-			Renderer:    "text",
-			Previewable: false,
-		}
+		return format.FormatDataTypeFile, format.FormatUnknown
 	}
 }
 

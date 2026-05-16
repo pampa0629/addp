@@ -246,11 +246,8 @@ func (s *MetadataQueryService) queryFieldsFromMetadataProvider(
 }
 
 func namespaceTermForPlugin(p plugin.EnginePlugin) string {
-	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
-		model := modelProvider.CatalogModel()
-		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
-			return model.Levels[0].Term
-		}
+	if level, ok := namespaceLevelForPlugin(p); ok && level.Term != "" {
+		return level.Term
 	}
 	return plugin.CatalogTermDatabase
 }

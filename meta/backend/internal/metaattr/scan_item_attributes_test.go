@@ -86,18 +86,18 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 	}
 }
 
-func TestApplyNoSQLDataItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
+func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyNoSQLDataItemAttributes(attrs, "collection")
+	ApplyNamespaceItemAttributes(attrs, "collection")
 
 	item := attrs["item"].(map[string]interface{})
 	if item["organization"] != "single" || item["data_type"] != "table" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if item["format"] != nil {
-		t.Fatalf("native NoSQL item should not write item.format: %#v", item)
+		t.Fatalf("native namespace item should not write item.format: %#v", item)
 	}
 }
 

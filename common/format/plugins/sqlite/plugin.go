@@ -13,35 +13,35 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Parser 实现 SQLite 格式的解析器
-type Parser struct {
+// Plugin 实现 SQLite / GeoPackage 格式插件。
+type Plugin struct {
 	formatType format.FormatType
 	options    *format.ParseOptions
 }
 
-// NewParser 创建 SQLite 解析器
-func NewParser(opts *format.ParseOptions) *Parser {
+// NewPlugin 创建 SQLite 插件。
+func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{formatType: format.FormatSQLite, options: opts}
+	return &Plugin{formatType: format.FormatSQLite, options: opts}
 }
 
-func NewGeoPackageParser(opts *format.ParseOptions) *Parser {
+func NewGeoPackagePlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{formatType: format.FormatGeoPackage, options: opts}
+	return &Plugin{formatType: format.FormatGeoPackage, options: opts}
 }
 
-func (p *Parser) Format() format.FormatType {
+func (p *Plugin) Format() format.FormatType {
 	if p.formatType == "" {
 		return format.FormatSQLite
 	}
 	return p.formatType
 }
 
-func (p *Parser) Descriptor() format.FormatDescriptor {
+func (p *Plugin) Descriptor() format.FormatDescriptor {
 	if p.Format() == format.FormatGeoPackage {
 		return format.FormatDescriptor{
 			ID:             "builtin-geopackage",
@@ -71,7 +71,7 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 	}
 }
 
-func (p *Parser) Capabilities() format.FormatCapability {
+func (p *Plugin) Capabilities() format.FormatCapability {
 	capability, ok := format.GetFormatCapability(p.Format())
 	if ok {
 		return capability
@@ -90,7 +90,7 @@ func (p *Parser) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Parser) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err
@@ -111,11 +111,11 @@ func (p *Parser) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}, nil
 }
 
-func (p *Parser) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+func (p *Plugin) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
 	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
 }
 
-func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
-func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	tableName := tableNameFromOptions(options)
 	if tableName == "" {
 		return nil, fmt.Errorf("sqlite table preview requires table option")
@@ -210,7 +210,7 @@ func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	return info, nil
 }
 
-func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err
@@ -232,7 +232,7 @@ func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return sampleSQLiteTableWindow(ctx, db, tableName, offset, limit)
 }
 
-func (p *Parser) openDatabase(input io.Reader) (*sql.DB, func(), error) {
+func (p *Plugin) openDatabase(input io.Reader) (*sql.DB, func(), error) {
 	tempPath, cleanupFile, err := p.saveToTempFile(input)
 	if err != nil {
 		return nil, nil, err
@@ -249,7 +249,7 @@ func (p *Parser) openDatabase(input io.Reader) (*sql.DB, func(), error) {
 	return db, cleanup, nil
 }
 
-func (p *Parser) analysisOptions(options *format.ParseOptions) *Options {
+func (p *Plugin) analysisOptions(options *format.ParseOptions) *Options {
 	result := DefaultOptions()
 	if options == nil {
 		options = p.options
@@ -436,7 +436,7 @@ func indexOf(s, substr string) int {
 }
 
 // saveToTempFile 将 io.Reader 保存到临时文件
-func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
+func (p *Plugin) saveToTempFile(input io.Reader) (string, func(), error) {
 	// 创建临时文件
 	tempFile, err := os.CreateTemp("", "sqlite-*.db")
 	if err != nil {
@@ -465,6 +465,6 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 }
 
 func init() {
-	_ = format.RegisterFormatPlugin(NewParser(nil))
-	_ = format.RegisterFormatPlugin(NewGeoPackageParser(nil))
+	_ = format.RegisterFormatPlugin(NewPlugin(nil))
+	_ = format.RegisterFormatPlugin(NewGeoPackagePlugin(nil))
 }

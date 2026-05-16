@@ -97,12 +97,13 @@ func ComponentRefsFromPaths(paths []string) []dataitem.ComponentRef {
 
 // DirectoryResolveInput 是 Meta 扫描范围 item 识别的输入。
 type DirectoryResolveInput struct {
-	ContentReader plugin.ContentReadableProvider
-	ConnInfo      plugin.ConnectionInfo
-	EngineID      uint
-	DirPath       string
-	Files         []plugin.FileEntry
-	Subdirs       []plugin.DirEntry
+	ContentReader  plugin.ContentReadableProvider
+	ConnInfo       plugin.ConnectionInfo
+	EngineID       uint
+	CatalogPathFor func(path string) plugin.CatalogPath
+	DirPath        string
+	Files          []plugin.FileEntry
+	Subdirs        []plugin.DirEntry
 	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 whole scope 时提供。
 	// resolver 只消费观察资源，不自行遍历存储引擎。
 	RecursiveFiles   []plugin.FileEntry

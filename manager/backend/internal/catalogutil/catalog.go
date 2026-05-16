@@ -29,57 +29,11 @@ func ItemTermMatches(engineType, term string) bool {
 	return plugin.CatalogItemTerm(*capabilities.Storage.CatalogModel) == term
 }
 
-func ObjectDirectoryPath(engineID uint, bucket, prefix string) plugin.CatalogPath {
-	return buildObjectPath(engineID, bucket, prefix, true)
-}
-
-func ObjectItemPath(engineID uint, bucket, path string) plugin.CatalogPath {
-	return buildObjectPath(engineID, bucket, path, false)
-}
-
-func buildObjectPath(engineID uint, bucket, objectPath string, isContainer bool) plugin.CatalogPath {
-	path := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-	}
-	bucket = strings.Trim(bucket, "/")
-	if bucket == "" {
-		return path
-	}
-	path.Segments = append(path.Segments, plugin.CatalogSegment{
-		Term: plugin.CatalogTermBucket,
-		Kind: plugin.CatalogKindBucket,
-		Name: bucket,
-	})
-	trimmed := strings.Trim(objectPath, "/")
-	if trimmed == "" {
-		return path
-	}
-	parts := strings.Split(trimmed, "/")
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		isLast := i == len(parts)-1
-		segment := plugin.CatalogSegment{
-			Term: plugin.CatalogTermPrefix,
-			Kind: plugin.CatalogKindPrefix,
-			Name: part,
-		}
-		if isLast && !isContainer {
-			segment.Term = plugin.CatalogTermObject
-			segment.Kind = plugin.CatalogKindObject
-		}
-		path.Segments = append(path.Segments, segment)
-	}
-	return path
-}
-
 func ObjectMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
 	if metadataProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, ObjectItemPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, plugin.ObjectItemPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +44,7 @@ func OpenObjectContent(ctx context.Context, contentReader plugin.ContentReadable
 	if contentReader == nil {
 		return nil, fs.ErrNotExist
 	}
-	return contentReader.OpenContent(ctx, connInfo, ObjectItemPath(engineID, bucket, objectPath), plugin.ReadOptions{})
+	return contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(engineID, bucket, objectPath), plugin.ReadOptions{})
 }
 
 func NodePhysicalPath(node plugin.CatalogNode) string {

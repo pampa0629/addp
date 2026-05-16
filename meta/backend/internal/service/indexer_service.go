@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
@@ -88,7 +89,7 @@ func tableTypeForIndex(tableInfo plugin.TableInfo) string {
 }
 
 // IndexObjectAsset 索引对象资产到 Meilisearch（统一索引）
-func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta format.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
+func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -112,9 +113,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	truncatedContent := metatext.TruncateRunes(plainText, metatext.DocumentContentRuneLimit)
 	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
-	// 拆分meta.Path为目录和文件名
-	// meta.Path 是完整路径（如 "image/开会.jpg"）
-	dir, _ := commonModels.SplitObjectPath(meta.Path)
+	dir, _ := commonModels.SplitObjectPath(catalogResource.Path)
 
 	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
@@ -126,11 +125,11 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		AssetType:     "object",
 		Name:          item.Name,
 		FullName:      fullName,
-		Bucket:        meta.Bucket,
+		Bucket:        catalogResource.RootName,
 		Path:          dir, // 只存储目录路径（如 "image/"）
 		Metadata:      metadata,
 		SizeBytes:     item.SizeBytes,
-		DataUpdatedAt: meta.LastModified,
+		DataUpdatedAt: catalogResource.LastModified,
 		// 文档内容字段（深度扫描才有）
 		Content:        truncatedContent,
 		ContentPreview: contentPreview,
@@ -172,7 +171,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 
 	// 统一索引（包含基础资产信息和文档内容）
 	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
-		s.log.Warn("索引对象资产失败", "fingerprint", item.Fingerprint, "bucket", meta.Bucket, "path", meta.Path, "error", err)
+		s.log.Warn("索引对象资产失败", "fingerprint", item.Fingerprint, "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
 	}
 }
 

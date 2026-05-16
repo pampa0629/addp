@@ -53,11 +53,11 @@ func TestDecodeDBFTextGB18030(t *testing.T) {
 func TestShapefileSingleStreamTableProviderIsRejected(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(nil)
-	if _, err := parser.ParseTableInfo(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
-		t.Fatalf("ParseTableInfo() error = %v, want component input error", err)
+	plugin := NewPlugin(nil)
+	if _, err := plugin.DescribeTable(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
+		t.Fatalf("DescribeTable() error = %v, want component input error", err)
 	}
-	if _, err := parser.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
+	if _, err := plugin.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
 		t.Fatalf("SampleTable() error = %v, want component input error", err)
 	}
 }
@@ -84,14 +84,14 @@ func TestShapefileReaderUsesCPGForDBFAttributes(t *testing.T) {
 	}
 }
 
-func TestShapefileParserUsesCPGForComponentSamples(t *testing.T) {
+func TestShapefilePluginUsesCPGForComponentSamples(t *testing.T) {
 	t.Parallel()
 
 	base := createEncodedPointShapefile(t, "GBK", "北京")
 	components := newLocalComponentReader(base)
-	parser := NewParser(nil)
+	plugin := NewPlugin(nil)
 
-	info, err := parser.DescribeTableComponents(context.Background(), components, nil)
+	info, err := plugin.DescribeTableComponents(context.Background(), components, nil)
 	if err != nil {
 		t.Fatalf("DescribeTableComponents() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestShapefileParserUsesCPGForComponentSamples(t *testing.T) {
 		t.Fatalf("shapefile encoding = %#v, want gbk", shpInfo)
 	}
 
-	rows, err := parser.SampleTableComponents(context.Background(), components, 0, 10, nil)
+	rows, err := plugin.SampleTableComponents(context.Background(), components, 0, 10, nil)
 	if err != nil {
 		t.Fatalf("SampleTableComponents() error = %v", err)
 	}
@@ -220,14 +220,14 @@ func (r *localComponentReader) OpenComponentRole(ctx context.Context, role strin
 	return nil, resource.ErrComponentNotFound
 }
 
-func TestShapefileParserUsesSHXIndexedComponentSample(t *testing.T) {
+func TestShapefilePluginUsesSHXIndexedComponentSample(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b", "c"})
 	components := newLocalComponentReader(base)
-	parser := NewParser(nil)
+	plugin := NewPlugin(nil)
 
-	rows, err := parser.SampleTableComponents(context.Background(), components, 2, 1, nil)
+	rows, err := plugin.SampleTableComponents(context.Background(), components, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("SampleTableComponents() error = %v", err)
 	}
@@ -251,14 +251,14 @@ func TestShapefileParserUsesSHXIndexedComponentSample(t *testing.T) {
 	}
 }
 
-func TestShapefileParserDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *testing.T) {
+func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b"})
 	components := newFailingRangeComponentReader(base, ".dbf")
-	parser := NewParser(nil)
+	plugin := NewPlugin(nil)
 
-	if _, err := parser.SampleTableComponents(context.Background(), components, 0, 1, nil); err == nil {
+	if _, err := plugin.SampleTableComponents(context.Background(), components, 0, 1, nil); err == nil {
 		t.Fatal("SampleTableComponents() error = nil, want indexed read error")
 	}
 	if components.openReads != 0 {
@@ -266,14 +266,14 @@ func TestShapefileParserDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *
 	}
 }
 
-func TestShapefileParserReportsMissingRequiredComponent(t *testing.T) {
+func TestShapefilePluginReportsMissingRequiredComponent(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a"})
 	components := newMissingComponentReader(base, ".dbf")
-	parser := NewParser(nil)
+	plugin := NewPlugin(nil)
 
-	_, err := parser.DescribeTableComponents(context.Background(), components, nil)
+	_, err := plugin.DescribeTableComponents(context.Background(), components, nil)
 	if err == nil {
 		t.Fatal("DescribeTableComponents() error = nil, want missing required component error")
 	}

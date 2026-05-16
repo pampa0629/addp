@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -38,22 +39,25 @@ func NewMetadataExtractor(db *gorm.DB) *MetadataExtractor {
 // ExtractEnhancedMetadata 使用插件提取增强的元数据。
 func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	engineID uint,
-	meta format.ObjectMetadata,
+	resource metacatalog.StorageResource,
 	baseAttrs models.JSONMap,
 ) models.JSONMap {
-	if len(meta.ExtractedAttributes) > 0 {
-		mergeStandardAttributes(baseAttrs, meta.ExtractedAttributes)
+	if len(resource.ExtractedAttributes) > 0 {
+		mergeStandardAttributes(baseAttrs, resource.ExtractedAttributes)
 		return baseAttrs
 	}
 
-	contentType := mime.TypeByExtension(pathpkg.Ext(meta.Path))
+	contentType := resource.ContentType
+	if contentType == "" {
+		contentType = mime.TypeByExtension(pathpkg.Ext(resource.Path))
+	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
 	formatType := format.MIMEToFormat(contentType)
 	if formatType == format.FormatUnknown {
-		formatType = format.DetectFormat(meta.Path, nil)
+		formatType = format.DetectFormat(resource.Path, nil)
 	}
 	if _, err := format.GetFormatInfoProvider(formatType); err != nil {
 		return baseAttrs
@@ -117,7 +121,7 @@ func interfaceMap(value interface{}) map[string]interface{} {
 // fullPath: 文件在 bucket 中的完整路径（用于 fingerprint 生成）。
 func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 	engineID uint,
-	meta format.ObjectMetadata,
+	resource metacatalog.StorageResource,
 	baseAttrs models.JSONMap,
 	fullPath string,
 ) models.JSONMap {
@@ -129,9 +133,9 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 	var existingItem models.MetaItem
 	err := e.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error
 
-	if err == nil && existingItem.DataUpdatedAt != nil && meta.LastModified != nil {
+	if err == nil && existingItem.DataUpdatedAt != nil && resource.LastModified != nil {
 		existingTime := existingItem.DataUpdatedAt.Truncate(time.Second)
-		newTime := meta.LastModified.Truncate(time.Second)
+		newTime := resource.LastModified.Truncate(time.Second)
 
 		if existingTime.Equal(newTime) {
 			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
@@ -149,7 +153,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 		}
 	}
 
-	return e.ExtractEnhancedMetadata(engineID, meta, baseAttrs)
+	return e.ExtractEnhancedMetadata(engineID, resource, baseAttrs)
 }
 
 // GetObjectMetadata 获取指定对象的元数据。

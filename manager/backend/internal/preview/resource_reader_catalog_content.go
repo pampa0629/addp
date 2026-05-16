@@ -39,7 +39,7 @@ func (r *objectCatalogResourceReader) OpenRange(ctx context.Context, ref resourc
 	if !ok {
 		return nil, resource.ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, r.connInfo, catalogutil.ObjectItemPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
+	return rangeReader.OpenRange(ctx, r.connInfo, plugin.ObjectItemPath(r.engineID, r.bucket, r.objectKey(ref.Path)), plugin.ReadOptions{
 		Offset: offset,
 		Length: length,
 	})
@@ -54,7 +54,7 @@ func (r *objectCatalogResourceReader) List(ctx context.Context, scope resource.R
 		return nil, resource.ErrResourceNotFound
 	}
 	scopePath := r.objectKey(scope.Path)
-	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, catalogutil.ObjectDirectoryPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
+	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, plugin.ObjectDirectoryPath(r.engineID, r.bucket, scopePath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (r *fileCatalogResourceReader) OpenRange(ctx context.Context, ref resource.
 	if !ok {
 		return nil, resource.ErrResourceNotFound
 	}
-	return rangeReader.OpenRange(ctx, r.connInfo, fileCatalogPath(r.engineID, ref.Path), plugin.ReadOptions{
+	return rangeReader.OpenRange(ctx, r.connInfo, plugin.FileItemPath(r.engineID, ref.Path), plugin.ReadOptions{
 		Offset: offset,
 		Length: length,
 	})
@@ -121,7 +121,7 @@ func (r *fileCatalogResourceReader) List(ctx context.Context, scope resource.Res
 	if r.catalog == nil {
 		return nil, resource.ErrResourceNotFound
 	}
-	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, fileCatalogDirectoryPath(r.engineID, scope.Path), plugin.ListOptions{})
+	nodes, err := r.catalog.ListChildren(ctx, r.connInfo, plugin.FileDirectoryPath(r.engineID, scope.Path), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

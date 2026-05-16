@@ -17,8 +17,11 @@ type TableInfo struct {
 	Fields     []FieldInfo // 字段列表
 	PrimaryKey []string    // 主键字段名列表
 
-	// 扩展信息（灵活扩展机制）
-	Extensions []ExtensionInfo
+	// 可选补充事实。FormatInfo 写入 attributes.format_info.<format>，
+	// SpatialInfo 写入 capabilities.spatial，ContentIndex 写入 content_index.table。
+	FormatInfo   map[string]interface{}
+	SpatialInfo  *SpatialInfo
+	ContentIndex *ContentIndexInfo
 }
 
 // FieldInfo 字段信息
@@ -36,60 +39,32 @@ type FieldInfo struct {
 	OccurrenceRate float64 // 字段出现率（0.0-1.0），仅用于文档数据库采样推断
 }
 
-// GetExtension 获取指定类型的扩展信息
-func (t *TableInfo) GetExtension(extensionType string) ExtensionInfo {
-	for _, ext := range t.Extensions {
-		if ext.ExtensionType() == extensionType {
-			return ext
-		}
-	}
-	return nil
-}
-
-// HasExtension 检查是否存在指定类型的扩展
-func (t *TableInfo) HasExtension(extensionType string) bool {
-	return t.GetExtension(extensionType) != nil
-}
-
 // GetSpatialInfo 获取空间扩展信息（便捷方法）
 func (t *TableInfo) GetSpatialInfo() *SpatialInfo {
-	ext := t.GetExtension("spatial")
-	if ext == nil {
+	if t == nil {
 		return nil
 	}
-	if spatial, ok := ext.(*SpatialInfo); ok {
-		return spatial
-	}
-	return nil
+	return t.SpatialInfo
 }
 
 // GetCSVInfo 获取CSV扩展信息（便捷方法）
 func (t *TableInfo) GetCSVInfo() *CSVInfo {
-	ext := t.GetExtension("csv")
-	if ext == nil {
+	if t == nil || len(t.FormatInfo) == 0 {
 		return nil
 	}
-	if csv, ok := ext.(*CSVInfo); ok {
-		return csv
+	info, ok := t.FormatInfo["csv"].(CSVInfo)
+	if ok {
+		return &info
 	}
-	return nil
-}
-
-// GetDocCollectionInfo 获取文档集合扩展信息（便捷方法）
-func (t *TableInfo) GetDocCollectionInfo() *DocCollectionInfo {
-	ext := t.GetExtension("document_collection")
-	if ext == nil {
-		return nil
-	}
-	if doc, ok := ext.(*DocCollectionInfo); ok {
-		return doc
+	if info, ok := t.FormatInfo["csv"].(*CSVInfo); ok {
+		return info
 	}
 	return nil
 }
 
 // IsSpatial 判断是否为空间数据
 func (t *TableInfo) IsSpatial() bool {
-	return t.HasExtension("spatial")
+	return t.GetSpatialInfo() != nil
 }
 
 // FieldNames 返回所有字段名

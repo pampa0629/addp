@@ -502,9 +502,9 @@ func (s *MetadataService) StreamObject(
 	// 获取对象流
 	var reader io.ReadCloser
 	if readOptions.Length > 0 && rangeReader != nil {
-		reader, err = rangeReader.OpenRange(ctx, connInfo, catalogutil.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = rangeReader.OpenRange(ctx, connInfo, plugin.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
 	} else {
-		reader, err = contentReader.OpenContent(ctx, connInfo, catalogutil.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
 	}
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)

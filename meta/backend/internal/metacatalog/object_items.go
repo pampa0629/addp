@@ -6,11 +6,9 @@ import (
 	"path"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	_ "github.com/addp/meta/internal/metaenrich"
@@ -36,14 +34,14 @@ func DetectObjectCatalogCompositeItems(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	metas []format.ObjectMetadata,
+	resources []StorageResource,
 ) (map[string]bool, []ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
 	if contentReader == nil {
 		return skipPaths, nil, nil
 	}
 
-	groups := objectMetasByParentPrefix(metas)
+	groups := objectResourcesByParentPrefix(resources)
 	items := make([]ObjectCatalogCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	groupKeys := make([]string, 0, len(groups))
@@ -62,7 +60,7 @@ func DetectObjectCatalogCompositeItems(
 	})
 
 	for _, groupKey := range groupKeys {
-		group := unclaimedObjectMetas(groups[groupKey], skipPaths)
+		group := unclaimedObjectResources(groups[groupKey], skipPaths)
 		if len(group) < 2 {
 			continue
 		}
@@ -70,13 +68,14 @@ func DetectObjectCatalogCompositeItems(
 		if prefix == "" {
 			continue
 		}
-		files := objectMetasToFileEntries(bucket, group)
+		files := storageResourcesToFileEntries(group)
 		detection, err := metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
-			ContentReader: contentReader,
-			ConnInfo:      connInfo,
-			EngineID:      engineID,
-			DirPath:       bucket + "/" + prefix,
-			Files:         files,
+			ContentReader:  contentReader,
+			ConnInfo:       connInfo,
+			EngineID:       engineID,
+			CatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
+			DirPath:        bucket + "/" + prefix,
+			Files:          files,
 		})
 		if err != nil {
 			warnings = append(warnings, ObjectCatalogCompositeDetectionError{
@@ -109,13 +108,13 @@ func DetectObjectCatalogCompositeItems(
 	return skipPaths, items, warnings
 }
 
-func InferObjectCatalogDataItem(meta format.ObjectMetadata, objectName string) *metaitem.DetectedItem {
-	physicalPath := meta.Bucket + "/" + meta.Path
+func InferObjectCatalogDataItem(resource StorageResource, objectName string) *metaitem.DetectedItem {
+	physicalPath := resource.FullPath
 	return metaitem.InferSingleResource(metaitem.SingleResourceInput{
 		Name:   objectName,
 		Path:   physicalPath,
-		Size:   meta.SizeBytes,
-		Format: meta.FileType,
+		Size:   resource.SizeBytes,
+		Format: resource.Format,
 	})
 }
 
@@ -210,38 +209,38 @@ func PlanObjectCatalogRelativePath(trimmedPath, scanPathPrefix string) ObjectCat
 	}
 }
 
-func PlanObjectCatalogSingleItem(engineID uint, meta format.ObjectMetadata, trimmedPath string, itemType string) ObjectCatalogSingleItemPlan {
-	objectName := path.Base(strings.Trim(meta.Path, "/"))
+func PlanObjectCatalogSingleItem(engineID uint, resource StorageResource, trimmedPath string, itemType string) ObjectCatalogSingleItemPlan {
+	objectName := path.Base(strings.Trim(resource.Path, "/"))
 	if objectName == "" {
 		objectName = strings.Trim(trimmedPath, "/")
 	}
 	objectName = strings.Trim(objectName, "/")
 	if objectName == "" {
-		objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
+		objectName = fmt.Sprintf("object_%d", resource.SizeBytes)
 	}
 
-	dataItem := InferObjectCatalogDataItem(meta, objectName)
+	dataItem := InferObjectCatalogDataItem(resource, objectName)
 
-	dir, name := commonModels.SplitObjectPath(meta.Path)
+	dir, name := commonModels.SplitObjectPath(resource.Path)
 	attrs := models.JSONMap{
 		"storage": map[string]interface{}{
-			"bucket":       meta.Bucket,
+			"bucket":       resource.RootName,
 			"path":         dir,
 			"name":         name,
-			"total_size":   meta.SizeBytes,
-			"object_count": meta.ObjectCount,
+			"total_size":   resource.SizeBytes,
+			"object_count": resource.ObjectCount,
 		},
 	}
-	if meta.FileType != "" {
-		metaattr.SetStorage(attrs, "file_type", meta.FileType)
+	if resource.Format != "" {
+		metaattr.SetStorage(attrs, "file_type", resource.Format)
 	}
-	if meta.LastModified != nil {
-		metaattr.SetStorage(attrs, "last_modified_at", meta.LastModified)
+	if resource.LastModified != nil {
+		metaattr.SetStorage(attrs, "last_modified_at", resource.LastModified)
 	}
 	metaattr.MergeDataItemAttributes(attrs, dataItem)
 	ApplyContainerSummary(attrs, dataItem)
 
-	fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
+	fullName := commonModels.JoinObjectPath(resource.RootName, dir, name)
 	return ObjectCatalogSingleItemPlan{
 		ItemType:    itemType,
 		ItemName:    objectName,
@@ -283,12 +282,12 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 	}, true
 }
 
-func UnclaimedObjectMetas(group []format.ObjectMetadata, skipPaths map[string]bool) []format.ObjectMetadata {
-	return unclaimedObjectMetas(group, skipPaths)
+func UnclaimedObjectResources(group []StorageResource, skipPaths map[string]bool) []StorageResource {
+	return unclaimedObjectResources(group, skipPaths)
 }
 
-func ObjectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]format.ObjectMetadata {
-	return objectMetasByParentPrefix(metas)
+func ObjectResourcesByParentPrefix(resources []StorageResource) map[string][]StorageResource {
+	return objectResourcesByParentPrefix(resources)
 }
 
 func ParentObjectPath(pathValue string) string {
@@ -305,51 +304,42 @@ func ObjectPathFromClaim(bucket, claimPath string) string {
 	return strings.TrimPrefix(trimmed, prefix)
 }
 
-func objectMetasByParentPrefix(metas []format.ObjectMetadata) map[string][]format.ObjectMetadata {
-	groups := map[string][]format.ObjectMetadata{}
-	for _, meta := range metas {
-		if meta.NodeType != "object" {
+func objectResourcesByParentPrefix(resources []StorageResource) map[string][]StorageResource {
+	groups := map[string][]StorageResource{}
+	for _, resource := range resources {
+		if resource.NodeType != plugin.CatalogKindObject {
 			continue
 		}
-		parent := strings.Trim(ParentObjectPath(meta.Path), "/")
+		parent := strings.Trim(ParentObjectPath(resource.Path), "/")
 		if parent == "" {
 			continue
 		}
-		key := meta.Bucket + "\x00" + parent
-		groups[key] = append(groups[key], meta)
+		key := resource.RootName + "\x00" + parent
+		groups[key] = append(groups[key], resource)
 	}
 	return groups
 }
 
-func unclaimedObjectMetas(group []format.ObjectMetadata, skipPaths map[string]bool) []format.ObjectMetadata {
+func unclaimedObjectResources(group []StorageResource, skipPaths map[string]bool) []StorageResource {
 	if len(group) == 0 || len(skipPaths) == 0 {
 		return group
 	}
-	filtered := make([]format.ObjectMetadata, 0, len(group))
-	for _, meta := range group {
-		if !skipPaths[meta.Path] {
-			filtered = append(filtered, meta)
+	filtered := make([]StorageResource, 0, len(group))
+	for _, resource := range group {
+		if !skipPaths[resource.Path] {
+			filtered = append(filtered, resource)
 		}
 	}
 	return filtered
 }
 
-func objectMetasToFileEntries(bucket string, metas []format.ObjectMetadata) []plugin.FileEntry {
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].Path < metas[j].Path
+func storageResourcesToFileEntries(resources []StorageResource) []plugin.FileEntry {
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].Path < resources[j].Path
 	})
-	files := make([]plugin.FileEntry, 0, len(metas))
-	for _, meta := range metas {
-		modifiedAt := time.Time{}
-		if meta.LastModified != nil {
-			modifiedAt = *meta.LastModified
-		}
-		files = append(files, plugin.FileEntry{
-			Name:       path.Base(meta.Path),
-			Path:       bucket + "/" + meta.Path,
-			Size:       meta.SizeBytes,
-			ModifiedAt: modifiedAt,
-		})
+	files := make([]plugin.FileEntry, 0, len(resources))
+	for _, resource := range resources {
+		files = append(files, resource.FileEntry())
 	}
 	return files
 }

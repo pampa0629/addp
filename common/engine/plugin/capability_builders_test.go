@@ -17,7 +17,7 @@ func TestCapabilityBuildersUseFormatRegistry(t *testing.T) {
 		{
 			name: "tabular",
 			caps: NewTabularCapabilities("postgresql", "schema", TabularCapabilityOptions{}),
-			want: []string{"table"},
+			want: []string{},
 		},
 		{
 			name: "object",
@@ -32,7 +32,7 @@ func TestCapabilityBuildersUseFormatRegistry(t *testing.T) {
 		{
 			name: "document",
 			caps: NewDocumentCapabilities("mongodb"),
-			want: []string{"document", "json", "markdown", "text"},
+			want: []string{"json", "markdown", "text"},
 		},
 	}
 

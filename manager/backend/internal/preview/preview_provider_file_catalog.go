@@ -215,49 +215,13 @@ func (p *fileCatalogPreviewProvider) previewFile(
 
 func openFileCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {
 	if contentReader != nil {
-		return contentReader.OpenContent(ctx, connInfo, fileCatalogPath(engineID, path), plugin.ReadOptions{})
+		return contentReader.OpenContent(ctx, connInfo, plugin.FileItemPath(engineID, path), plugin.ReadOptions{})
 	}
 	return nil, fs.ErrNotExist
 }
 
-func fileCatalogPath(engineID uint, path string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindFile,
-			Name: path,
-		}},
-	}
-}
-
-func fileCatalogDirectoryPath(engineID uint, path string) plugin.CatalogPath {
-	trimmed := strings.Trim(path, "/")
-	if trimmed == "" || trimmed == "." {
-		return plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
-			EngineID: engineID,
-			Segments: []plugin.CatalogSegment{{
-				Term: plugin.CatalogTermRoot,
-				Kind: plugin.CatalogKindRoot,
-				Name: "/",
-			}},
-		}
-	}
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindPrefix,
-			Name: trimmed,
-		}},
-	}
-}
-
 func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, fileCatalogDirectoryPath(engine.ID, dirPath), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(engine.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +248,7 @@ func getFileCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.
 	if metadataProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, fileCatalogPath(engine.ID, path), plugin.MetadataOptions{})
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, plugin.FileItemPath(engine.ID, path), plugin.MetadataOptions{})
 	if err != nil {
 		return nil, err
 	}

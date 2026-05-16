@@ -35,6 +35,24 @@ Meta 扫描只保留四个核心维度：
 
 如果使用 locator，locator 本身已经能表达目标对象，不需要额外 `target_type`。
 
+## 扫描编排依据
+
+Meta 的扫描编排必须分开回答三类问题：
+
+| 问题 | 事实源 |
+|---|---|
+| 目录层级如何组织、各层叫什么、哪一层是 item | `CatalogModelSpec` |
+| 能否列目录、描述 item、采样字段、读取内容 | 已实现的 provider 组合 |
+| Meta 需要怎样执行和落库 | Meta 自己的 scan strategy |
+
+`engine_family` 只保留粗分类意义，不能单独决定扫描流程。Meta 可以因为执行语义不同而保留多种 strategy，例如：
+
+- namespace/item 型：表格、文档、图等先扫描 namespace，再扫描 item。
+- object catalog 型：对象存储按 bucket / prefix / object 模型扫描，可做复合对象聚合。
+- file catalog 型：文件系统按 root / directory / file 模型扫描，可做复合文件聚合。
+
+这些 strategy 的差异来自 catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `CatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
+
 ## Basic / Deep 边界
 
 ### Basic 扫描

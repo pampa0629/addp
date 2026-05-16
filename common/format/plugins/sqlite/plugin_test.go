@@ -14,8 +14,8 @@ import (
 func TestDescribeTableRequiresExplicitTableOption(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(nil)
-	_, err := parser.DescribeTable(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), nil)
+	plugin := NewPlugin(nil)
+	_, err := plugin.DescribeTable(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), nil)
 	if err == nil {
 		t.Fatal("DescribeTable() error = nil, want explicit table option error")
 	}
@@ -24,8 +24,8 @@ func TestDescribeTableRequiresExplicitTableOption(t *testing.T) {
 func TestDescribeTableUsesSelectedTable(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(nil)
-	info, err := parser.DescribeTable(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeTable(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{format.ChildTableParam: "cities"},
 	})
 	if err != nil {
@@ -42,8 +42,8 @@ func TestDescribeTableUsesSelectedTable(t *testing.T) {
 func TestDescribeContainerReturnsLightweightChildren(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(nil)
-	info, err := parser.DescribeContainer(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeContainer(context.Background(), bytes.NewReader(sqliteTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{
 			format.ContainerChildLimitParam: 0,
 			format.ContainerRowLimitParam:   0,
@@ -66,8 +66,8 @@ func TestDescribeContainerReturnsLightweightChildren(t *testing.T) {
 func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 	t.Parallel()
 
-	parser := NewGeoPackageParser(nil)
-	info, err := parser.DescribeContainer(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
+	plugin := NewGeoPackagePlugin(nil)
+	info, err := plugin.DescribeContainer(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{
 			format.ContainerChildLimitParam: 0,
 			format.ContainerRowLimitParam:   0,
@@ -106,8 +106,8 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 func TestDescribeGeoPackageTableCarriesChildSpatialInfo(t *testing.T) {
 	t.Parallel()
 
-	parser := NewGeoPackageParser(nil)
-	info, err := parser.DescribeTable(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
+	plugin := NewGeoPackagePlugin(nil)
+	info, err := plugin.DescribeTable(context.Background(), bytes.NewReader(geoPackageTestDatabaseBytes(t)), &format.ParseOptions{
 		ExtraParams: map[string]interface{}{format.ChildTableParam: "roads"},
 	})
 	if err != nil {

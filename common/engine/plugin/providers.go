@@ -117,7 +117,10 @@ func (p CatalogPath) StringPath() string {
 	parts := make([]string, 0, len(p.Segments))
 	for _, segment := range p.Segments {
 		if segment.Name != "" {
-			parts = append(parts, strings.Trim(segment.Name, "/"))
+			part := strings.Trim(segment.Name, "/")
+			if part != "" {
+				parts = append(parts, part)
+			}
 		}
 	}
 	return strings.Join(parts, "/")

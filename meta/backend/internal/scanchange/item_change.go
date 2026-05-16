@@ -2,7 +2,7 @@ package scanchange
 
 import (
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -41,18 +41,18 @@ func ShouldUpdateCollection(existingItem *models.MetaItem, newInfo plugin.Collec
 	return false
 }
 
-func ShouldUpdateObject(existingItem *models.MetaItem, objectInfo format.ObjectMetadata) bool {
+func ShouldUpdateStorageResource(existingItem *models.MetaItem, resource metacatalog.StorageResource) bool {
 	if existingItem == nil {
 		return true
 	}
-	if existingItem.DataUpdatedAt != nil && objectInfo.LastModified != nil && !existingItem.DataUpdatedAt.Equal(*objectInfo.LastModified) {
+	if existingItem.DataUpdatedAt != nil && resource.LastModified != nil && !existingItem.DataUpdatedAt.Equal(*resource.LastModified) {
 		return true
 	}
-	if existingItem.SizeBytes != nil && *existingItem.SizeBytes != objectInfo.SizeBytes {
+	if existingItem.SizeBytes != nil && *existingItem.SizeBytes != resource.SizeBytes {
 		return true
 	}
-	return (existingItem.DataUpdatedAt == nil && objectInfo.LastModified != nil) ||
-		(existingItem.SizeBytes == nil && objectInfo.SizeBytes != 0)
+	return (existingItem.DataUpdatedAt == nil && resource.LastModified != nil) ||
+		(existingItem.SizeBytes == nil && resource.SizeBytes != 0)
 }
 
 func abs64(n int64) int64 {

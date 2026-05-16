@@ -78,12 +78,8 @@ func childInfoForComponentPath(parent *format.ContainerChildResource, componentP
 		if descriptor.Extension != "" {
 			result["extension"] = descriptor.Extension
 		}
-		if descriptor.PreviewMaterial != "" {
-			result["preview_material"] = descriptor.PreviewMaterial
-		}
-		if descriptor.PreviewRenderer != "" {
-			result["preview_renderer"] = descriptor.PreviewRenderer
-		}
+		result["preview_material"] = preview.Material
+		result["preview_renderer"] = preview.Renderer
 		result["previewable"] = preview.Previewable
 		result["component_preview"] = true
 	}
@@ -139,36 +135,19 @@ func resourceBase(path string) string {
 	return path
 }
 
-func previewHintForComponentDescriptor(descriptor *format.ComponentDescriptor, path string) format.PreviewHint {
+func previewHintForComponentDescriptor(descriptor *format.ComponentDescriptor, path string) previewHint {
 	if descriptor == nil {
-		return format.InferPreviewHint(format.PreviewHintInput{
+		return inferPreviewHint(previewHintInput{
 			Name: path,
 			Path: path,
 		})
 	}
-	formatType := descriptor.PreviewFormat
-	if formatType == "" {
-		formatType = descriptor.Format
-	}
-	dataType := descriptor.PreviewDataType
-	if dataType == "" {
-		dataType = descriptor.DataType
-	}
-	hint := format.InferPreviewHint(format.PreviewHintInput{
+	hint := inferPreviewHint(previewHintInput{
 		Name:     descriptor.Path,
 		Path:     descriptor.Path,
-		Format:   formatType,
-		DataType: dataType,
+		Format:   descriptor.Format,
+		DataType: descriptor.DataType,
 	})
-	if descriptor.PreviewMaterial != "" {
-		hint.Material = descriptor.PreviewMaterial
-	}
-	if descriptor.PreviewRenderer != "" {
-		hint.Renderer = descriptor.PreviewRenderer
-	}
-	if descriptor.Previewable != nil {
-		hint.Previewable = *descriptor.Previewable
-	}
 	return hint
 }
 

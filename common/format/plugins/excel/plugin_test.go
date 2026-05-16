@@ -9,7 +9,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func TestParserDescribeContainer(t *testing.T) {
+func TestPluginDescribeContainer(t *testing.T) {
 	t.Parallel()
 
 	workbook := excelize.NewFile()
@@ -38,7 +38,7 @@ func TestParserDescribeContainer(t *testing.T) {
 		format.ContainerRowLimitParam:   20,
 	}
 
-	info, err := NewParser(nil).DescribeContainer(context.Background(), bytes.NewReader(buf.Bytes()), opts)
+	info, err := NewPlugin(nil).DescribeContainer(context.Background(), bytes.NewReader(buf.Bytes()), opts)
 	if err != nil {
 		t.Fatalf("DescribeContainer() error = %v", err)
 	}

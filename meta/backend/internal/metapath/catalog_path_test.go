@@ -3,13 +3,13 @@ package metapath
 import (
 	"testing"
 
-	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metacatalog"
 )
 
-func TestFilterObjectMetasForDepthKeepsDirectChildren(t *testing.T) {
+func TestFilterObjectResourcesForDepthKeepsDirectChildren(t *testing.T) {
 	t.Parallel()
 
-	metas := []format.ObjectMetadata{
+	resources := []metacatalog.StorageResource{
 		{NodeType: "prefix", Path: "a"},
 		{NodeType: "prefix", Path: "a/b"},
 		{NodeType: "object", Path: "file.csv"},
@@ -17,22 +17,22 @@ func TestFilterObjectMetasForDepthKeepsDirectChildren(t *testing.T) {
 		{NodeType: "bucket", Path: ""},
 	}
 
-	filtered := FilterObjectMetasForDepth(metas, "")
+	filtered := FilterObjectResourcesForDepth(resources, "")
 	if len(filtered) != 3 {
 		t.Fatalf("filtered len = %d, want 3: %#v", len(filtered), filtered)
 	}
 }
 
-func TestFilterObjectMetasForDepthUsesBasePath(t *testing.T) {
+func TestFilterObjectResourcesForDepthUsesBasePath(t *testing.T) {
 	t.Parallel()
 
-	metas := []format.ObjectMetadata{
+	resources := []metacatalog.StorageResource{
 		{NodeType: "prefix", Path: "lake/table"},
 		{NodeType: "object", Path: "lake/table/data.parquet"},
 		{NodeType: "object", Path: "lake/table/nested/data.parquet"},
 	}
 
-	filtered := FilterObjectMetasForDepth(metas, "lake/table")
+	filtered := FilterObjectResourcesForDepth(resources, "lake/table")
 	if len(filtered) != 2 {
 		t.Fatalf("filtered len = %d, want 2: %#v", len(filtered), filtered)
 	}

@@ -1,10 +1,6 @@
 package builtin
 
 import (
-	// 导入内置逻辑格式，触发 init() 自动注册
-	_ "github.com/addp/common/format/plugins/document"
-	_ "github.com/addp/common/format/plugins/table"
-
 	// 导入内置类型映射器，触发 init() 自动注册
 	_ "github.com/addp/common/format/mappers/mysql"
 	_ "github.com/addp/common/format/mappers/postgresql"

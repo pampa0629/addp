@@ -11,24 +11,24 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// Parser 实现 Excel 格式的解析器
-type Parser struct {
+// Plugin 实现 Excel 格式插件。
+type Plugin struct {
 	options *format.ParseOptions
 }
 
-// NewParser 创建 Excel 解析器
-func NewParser(opts *format.ParseOptions) *Parser {
+// NewPlugin 创建 Excel 插件。
+func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{options: opts}
+	return &Plugin{options: opts}
 }
 
-func (p *Parser) Format() format.FormatType {
+func (p *Plugin) Format() format.FormatType {
 	return format.FormatExcel
 }
 
-func (p *Parser) Descriptor() format.FormatDescriptor {
+func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
 		ID:             "builtin-excel",
 		Format:         format.FormatExcel,
@@ -43,7 +43,7 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 	}
 }
 
-func (p *Parser) Capabilities() format.FormatCapability {
+func (p *Plugin) Capabilities() format.FormatCapability {
 	capability, ok := format.GetFormatCapability(format.FormatExcel)
 	if ok {
 		return capability
@@ -62,16 +62,12 @@ func (p *Parser) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Parser) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	return p.ParseTableInfo(ctx, input, options)
-}
-
-func (p *Parser) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+func (p *Plugin) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
 	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
 }
 
 // DescribeContainer 从 Excel 文件中提取 workbook / sheet 容器信息。
-func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
 	opts := p.options
 	if options != nil {
 		opts = options
@@ -99,8 +95,8 @@ func (p *Parser) DescribeContainer(ctx context.Context, input io.Reader, options
 	return p.convertToContainerInfo(analysis), nil
 }
 
-// ParseTableInfo 从 Excel 文件中提取 TableInfo
-func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+// DescribeTable 从 Excel 文件中提取 TableInfo。
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -145,7 +141,7 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 }
 
 // SampleTable 读取 Excel 表格样本。
-func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -241,7 +237,7 @@ func (p *Parser) SampleTable(ctx context.Context, input io.Reader, offset, limit
 }
 
 // convertToTableInfo 将 WorkbookAnalysis 转换为 TableInfo
-func (p *Parser) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*format.TableInfo, error) {
 	if len(analysis.Sheets) == 0 {
 		return &format.TableInfo{
 			Name:       "excel_data",
@@ -290,7 +286,7 @@ func (p *Parser) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 	return tableInfo, nil
 }
 
-func (p *Parser) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {
+func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {
 	if analysis == nil {
 		return &format.ContainerInfo{
 			Format:        format.FormatExcel,
@@ -351,7 +347,7 @@ func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
 }
 
 // buildAnalyzeOptionsFromParseOptions 根据通用 ParseOptions 构建 Analyze 选项。
-func (p *Parser) buildAnalyzeOptionsFromParseOptions(opts *format.ParseOptions) *Options {
+func (p *Plugin) buildAnalyzeOptionsFromParseOptions(opts *format.ParseOptions) *Options {
 	analyzeOpts := &Options{
 		SheetLimit:      1, // 默认只分析一个工作表
 		RowLimit:        int(opts.SampleSize),
@@ -373,7 +369,7 @@ func (p *Parser) buildAnalyzeOptionsFromParseOptions(opts *format.ParseOptions) 
 }
 
 // getTargetSheetNameFromOptions 根据 ParseOptions 获取目标工作表名称
-func (p *Parser) getTargetSheetNameFromOptions(workbook *excelize.File, opts *format.ParseOptions) string {
+func (p *Plugin) getTargetSheetNameFromOptions(workbook *excelize.File, opts *format.ParseOptions) string {
 	// 优先使用指定的工作表名称
 	if opts.SheetName != "" {
 		return opts.SheetName
@@ -404,7 +400,7 @@ func (p *Parser) getTargetSheetNameFromOptions(workbook *excelize.File, opts *fo
 	return sheetList[0]
 }
 
-func (p *Parser) hasExplicitSheetSelection(opts *format.ParseOptions) bool {
+func (p *Plugin) hasExplicitSheetSelection(opts *format.ParseOptions) bool {
 	if opts == nil {
 		return false
 	}
@@ -414,7 +410,7 @@ func (p *Parser) hasExplicitSheetSelection(opts *format.ParseOptions) bool {
 	return opts.SheetIndex > 0
 }
 
-func (p *Parser) sheetIndex(workbook *excelize.File, sheetName string) int {
+func (p *Plugin) sheetIndex(workbook *excelize.File, sheetName string) int {
 	for i, name := range workbook.GetSheetList() {
 		if name == sheetName {
 			return i
@@ -449,5 +445,5 @@ func trimValue(s string) interface{} {
 }
 
 func init() {
-	_ = format.RegisterFormatPlugin(NewParser(nil))
+	_ = format.RegisterFormatPlugin(NewPlugin(nil))
 }

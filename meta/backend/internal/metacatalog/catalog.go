@@ -31,7 +31,7 @@ func FileCatalogRootPaths(ctx context.Context, resource *commonModels.Engine, p 
 	return paths, nil
 }
 
-func SchemaInfos(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.SchemaInfo, error) {
+func NamespaceInfos(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.SchemaInfo, error) {
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
@@ -56,7 +56,7 @@ func SchemaInfos(ctx context.Context, resource *commonModels.Engine, p plugin.En
 	return schemas, nil
 }
 
-func NoSQLDatabases(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {
+func NamespaceDatabaseInfos(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootCatalogPath(resource.ID), plugin.ListOptions{})
 	if err != nil {
 		return nil, err

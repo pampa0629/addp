@@ -4,18 +4,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/dataitem"
+	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaitem"
 )
 
-func TestObjectMetasByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t *testing.T) {
+func TestObjectResourcesByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t *testing.T) {
 	t.Parallel()
 
-	groups := objectMetasByParentPrefix([]format.ObjectMetadata{
-		{Bucket: "addp", Path: "datasets/roads/roads.shp", NodeType: "object"},
-		{Bucket: "addp", Path: "datasets/roads/roads.shx", NodeType: "object"},
-		{Bucket: "addp", Path: "datasets/roads/attributes/roads.dbf", NodeType: "object"},
+	groups := objectResourcesByParentPrefix([]StorageResource{
+		{RootName: "addp", Path: "datasets/roads/roads.shp", NodeType: "object"},
+		{RootName: "addp", Path: "datasets/roads/roads.shx", NodeType: "object"},
+		{RootName: "addp", Path: "datasets/roads/attributes/roads.dbf", NodeType: "object"},
 	})
 
 	if got := len(groups["addp\x00datasets/roads"]); got != 2 {
@@ -26,15 +26,15 @@ func TestObjectMetasByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t *tes
 	}
 }
 
-func TestUnclaimedObjectMetasFiltersAlreadyClaimedComponents(t *testing.T) {
+func TestUnclaimedObjectResourcesFiltersAlreadyClaimedComponents(t *testing.T) {
 	t.Parallel()
 
-	group := []format.ObjectMetadata{
+	group := []StorageResource{
 		{Path: "datasets/roads/roads.shp"},
 		{Path: "datasets/roads/roads.shx"},
 		{Path: "datasets/roads/roads.dbf"},
 	}
-	filtered := unclaimedObjectMetas(group, map[string]bool{
+	filtered := unclaimedObjectResources(group, map[string]bool{
 		"datasets/roads/roads.shp": true,
 	})
 
@@ -53,8 +53,8 @@ func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 		Bucket: "addp",
 		Prefix: "lake",
 		Item: &metaitem.DetectedItem{
-			ResolvedItem: dataitem.ResolvedItem{
-				Organization: dataitem.OrganizationSingle,
+			ResolvedItem: commondataitem.ResolvedItem{
+				Organization: commondataitem.OrganizationSingle,
 				EntryPath:    "addp/lake/sales.parquet",
 			},
 		},
@@ -96,11 +96,12 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 	t.Parallel()
 
 	modifiedAt := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	plan := PlanObjectCatalogSingleItem(7, format.ObjectMetadata{
-		Bucket:       "addp",
+	plan := PlanObjectCatalogSingleItem(7, StorageResource{
+		RootName:     "addp",
 		Path:         "datasets/roads.geojson",
+		FullPath:     "addp/datasets/roads.geojson",
 		NodeType:     "object",
-		FileType:     "json",
+		Format:       "json",
 		SizeBytes:    128,
 		LastModified: &modifiedAt,
 	}, "datasets/roads.geojson", "object")
@@ -112,7 +113,7 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
 	}
 	item := plan.Attributes["item"].(map[string]interface{})
-	if item["data_type"] != string(dataitem.DataTypeDocument) || item["format"] != "json" {
+	if item["data_type"] != string(commondataitem.DataTypeDocument) || item["format"] != "json" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if capabilities, ok := plan.Attributes["capabilities"].(map[string]interface{}); ok {
@@ -133,9 +134,9 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 		Bucket: "addp",
 		Prefix: "datasets/roads",
 		Item: &metaitem.DetectedItem{
-			ResolvedItem: dataitem.ResolvedItem{
-				DataType:     dataitem.DataTypeTable,
-				Organization: dataitem.OrganizationMulti,
+			ResolvedItem: commondataitem.ResolvedItem{
+				DataType:     commondataitem.DataTypeTable,
+				Organization: commondataitem.OrganizationMulti,
 				EntryPath:    "addp/datasets/roads/roads.shp",
 				SizeBytes:    int64PtrForTest(256),
 			},

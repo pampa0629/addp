@@ -15,22 +15,22 @@ import (
 	_ "golang.org/x/image/tiff"
 )
 
-// Parser 实现 Image 格式的解析器
-type Parser struct {
+// Plugin 实现 Image 格式插件。
+type Plugin struct {
 	options    *format.ParseOptions
 	formatType format.FormatType
 }
 
-// NewParser 创建 Image 解析器
-func NewParser(opts *format.ParseOptions) *Parser {
+// NewPlugin 创建 Image 插件。
+func NewPlugin(opts *format.ParseOptions) *Plugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
 	}
-	return &Parser{options: opts, formatType: format.FormatImage}
+	return &Plugin{options: opts, formatType: format.FormatImage}
 }
 
-func NewProvider(formatType format.FormatType) *Parser {
-	return &Parser{options: format.DefaultParseOptions(), formatType: formatType}
+func NewProvider(formatType format.FormatType) *Plugin {
+	return &Plugin{options: format.DefaultParseOptions(), formatType: formatType}
 }
 
 // inferColorModel 推断颜色模型
@@ -45,14 +45,14 @@ func inferColorModel(cfg image.Config) string {
 	return "RGB"
 }
 
-func (p *Parser) Format() format.FormatType {
+func (p *Plugin) Format() format.FormatType {
 	if p.formatType == "" {
 		return format.FormatImage
 	}
 	return p.formatType
 }
 
-func (p *Parser) Descriptor() format.FormatDescriptor {
+func (p *Plugin) Descriptor() format.FormatDescriptor {
 	descriptor := format.FormatDescriptor{
 		ID:            "builtin-" + string(p.Format()),
 		Format:        p.Format(),
@@ -80,7 +80,7 @@ func (p *Parser) Descriptor() format.FormatDescriptor {
 	return descriptor
 }
 
-func (p *Parser) Capabilities() format.FormatCapability {
+func (p *Plugin) Capabilities() format.FormatCapability {
 	capability, ok := format.GetFormatCapability(p.Format())
 	if ok {
 		return capability
@@ -93,7 +93,7 @@ func (p *Parser) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Parser) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*format.MediaInfo, error) {
+func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*format.MediaInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

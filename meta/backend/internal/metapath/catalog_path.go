@@ -4,8 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -85,34 +84,6 @@ func ComposeNodeFullName(name string, parent *models.MetaNode, separator string)
 	return parent.FullName + separator + name
 }
 
-// FileCatalogPath 将文件系统路径转换为统一 CatalogPath。
-func FileCatalogPath(engineID uint, rawPath string) plugin.CatalogPath {
-	path := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermRoot,
-			Kind: plugin.CatalogKindRoot,
-			Name: "/",
-		}},
-	}
-	trimmed := strings.Trim(rawPath, "/")
-	if trimmed == "" || trimmed == "." {
-		return path
-	}
-	for _, part := range strings.Split(trimmed, "/") {
-		if part == "" {
-			continue
-		}
-		path.Segments = append(path.Segments, plugin.CatalogSegment{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindPrefix,
-			Name: part,
-		})
-	}
-	return path
-}
-
 // JoinFSPath 拼接文件系统 full_name。
 func JoinFSPath(parent, name string) string {
 	if parent == "" {
@@ -121,20 +92,20 @@ func JoinFSPath(parent, name string) string {
 	return parent + "/" + name
 }
 
-func FilterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {
+func FilterObjectResourcesForDepth(resources []metacatalog.StorageResource, basePath string) []metacatalog.StorageResource {
 	base := SanitizeObjectPath(basePath)
-	if len(metas) == 0 {
-		return metas
+	if len(resources) == 0 {
+		return resources
 	}
 
-	filtered := make([]format.ObjectMetadata, 0, len(metas))
-	for _, meta := range metas {
-		if meta.NodeType == "bucket" {
-			filtered = append(filtered, meta)
+	filtered := make([]metacatalog.StorageResource, 0, len(resources))
+	for _, resource := range resources {
+		if resource.NodeType == "bucket" {
+			filtered = append(filtered, resource)
 			continue
 		}
 
-		relative := SanitizeObjectPath(meta.Path)
+		relative := SanitizeObjectPath(resource.Path)
 		trimmed := relative
 		if base != "" {
 			switch {
@@ -145,18 +116,18 @@ func FilterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) [
 			}
 		}
 
-		switch strings.ToLower(meta.NodeType) {
+		switch strings.ToLower(resource.NodeType) {
 		case "prefix":
 			if trimmed == "" || !strings.Contains(trimmed, "/") {
-				filtered = append(filtered, meta)
+				filtered = append(filtered, resource)
 			}
 		case "object":
 			if trimmed != "" && strings.Contains(trimmed, "/") {
 				continue
 			}
-			filtered = append(filtered, meta)
+			filtered = append(filtered, resource)
 		default:
-			filtered = append(filtered, meta)
+			filtered = append(filtered, resource)
 		}
 	}
 	return filtered

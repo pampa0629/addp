@@ -12,6 +12,13 @@ import (
 	"github.com/addp/common/resource"
 )
 
+func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
+	if catalogPathFor != nil {
+		return catalogPathFor(path)
+	}
+	return plugin.FileItemPath(engineID, path)
+}
+
 type commonDataItemResolver struct{}
 
 func (d *commonDataItemResolver) Priority() int {
@@ -43,7 +50,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 			continue
 		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
-		enrichComponentTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, item, detected)
+		enrichComponentTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
 		result.Items = append(result.Items, detected)
 		for _, path := range detected.ComponentFilePaths() {
 			result.Claims[path] = true
@@ -82,6 +89,7 @@ func enrichComponentTableInfo(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
+	catalogPathFor func(path string) plugin.CatalogPath,
 	item dataitem.ResolvedItem,
 	detected *DetectedItem,
 ) {
@@ -96,7 +104,7 @@ func enrichComponentTableInfo(
 	if !ok {
 		return
 	}
-	tableInfo, err := componentProvider.DescribeTableComponents(ctx, newMetaComponentReader(contentReader, connInfo, engineID, item.ResourceComponents()), nil)
+	tableInfo, err := componentProvider.DescribeTableComponents(ctx, newMetaComponentReader(contentReader, connInfo, engineID, catalogPathFor, item.ResourceComponents()), nil)
 	if err != nil {
 		return
 	}
@@ -105,18 +113,20 @@ func enrichComponentTableInfo(
 }
 
 type metaComponentReader struct {
-	contentReader plugin.ContentReadableProvider
-	connInfo      plugin.ConnectionInfo
-	engineID      uint
-	components    []resource.ComponentRef
+	contentReader  plugin.ContentReadableProvider
+	connInfo       plugin.ConnectionInfo
+	engineID       uint
+	catalogPathFor func(path string) plugin.CatalogPath
+	components     []resource.ComponentRef
 }
 
-func newMetaComponentReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, components []resource.ComponentRef) *metaComponentReader {
+func newMetaComponentReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath, components []resource.ComponentRef) *metaComponentReader {
 	return &metaComponentReader{
-		contentReader: contentReader,
-		connInfo:      connInfo,
-		engineID:      engineID,
-		components:    append([]resource.ComponentRef(nil), components...),
+		contentReader:  contentReader,
+		connInfo:       connInfo,
+		engineID:       engineID,
+		catalogPathFor: catalogPathFor,
+		components:     append([]resource.ComponentRef(nil), components...),
 	}
 }
 
@@ -125,7 +135,7 @@ func (r *metaComponentReader) Components() []resource.ComponentRef {
 }
 
 func (r *metaComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
-	return r.contentReader.OpenContent(ctx, r.connInfo, catalogPathForContent(r.engineID, component.Path), plugin.ReadOptions{})
+	return r.contentReader.OpenContent(ctx, r.connInfo, resolveCatalogPath(r.engineID, component.Path, r.catalogPathFor), plugin.ReadOptions{})
 }
 
 func (r *metaComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {
@@ -135,18 +145,6 @@ func (r *metaComponentReader) OpenComponentRole(ctx context.Context, role string
 		}
 	}
 	return nil, resource.ErrComponentNotFound
-}
-
-func catalogPathForContent(engineID uint, path string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindFile,
-			Name: path,
-		}},
-	}
 }
 
 func upsertComponentTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {

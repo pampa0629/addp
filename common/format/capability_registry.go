@@ -3,13 +3,6 @@ package format
 import formatcap "github.com/addp/common/format/capability"
 
 const (
-	// FormatTable 是 ADDP 内部用于描述表格型引擎传输能力的逻辑格式。
-	FormatTable FormatType = FormatType(formatcap.FormatTable)
-	// FormatDocument 是 ADDP 内部用于描述文档型引擎传输能力的逻辑格式。
-	FormatDocument FormatType = FormatType(formatcap.FormatDocument)
-)
-
-const (
 	FormatDataTypeTable     = formatcap.DataTypeTable
 	FormatDataTypeDocument  = formatcap.DataTypeDocument
 	FormatDataTypeMedia     = formatcap.DataTypeMedia

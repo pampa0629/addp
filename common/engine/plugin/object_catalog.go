@@ -96,9 +96,10 @@ func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallb
 		}
 	}
 	for _, object := range objects {
+		objectPath := appendCatalogSegment(parent, engineID, CatalogTermObject, CatalogKindObject, object.Name)
 		nodes = append(nodes, CatalogNode{
 			Name:   object.Name,
-			Path:   appendCatalogSegment(parent, engineID, CatalogTermObject, CatalogKindObject, object.Name),
+			Path:   objectPath,
 			Term:   CatalogTermObject,
 			Kind:   CatalogKindObject,
 			IsItem: true,
@@ -187,6 +188,31 @@ func objectKindFromPath(path CatalogPath) string {
 		return last.Kind
 	}
 	return CatalogKindObject
+}
+
+func ObjectCatalogEntryFromNode(node CatalogNode) (FileEntry, bool) {
+	if !node.IsItem {
+		return FileEntry{}, false
+	}
+	return FileEntry{
+		Name:        node.Name,
+		Path:        catalogNodePath(node),
+		CatalogPath: node.Path,
+		Size:        catalogNodeInt64Stat(node.Stats, "size_bytes"),
+		ModifiedAt:  catalogNodeTimeAttribute(node.Attributes, "modified_at"),
+		ContentType: catalogNodeStringAttribute(node.Attributes, "content_type"),
+	}, true
+}
+
+func ObjectCatalogDirectoryFromNode(node CatalogNode) (DirEntry, bool) {
+	if !node.IsContainer {
+		return DirEntry{}, false
+	}
+	return DirEntry{
+		Name:        node.Name,
+		Path:        catalogNodePath(node),
+		CatalogPath: node.Path,
+	}, true
 }
 
 func objectMetadataCatalogNode(engineID uint, path CatalogPath, meta *FileMetadata) *CatalogNode {

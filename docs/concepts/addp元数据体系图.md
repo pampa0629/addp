@@ -95,18 +95,22 @@ Meta Scanner 负责调度扫描，不直接定义格式语义。
 
 它主要做：
 
-1. 调用 engine capability 获取资源树和基础元信息。
-2. 把扫描范围交给 Meta detector。
-3. 根据 detector 结果构造必要的读取抽象。
-4. 调用 FormatPlugin、info provider 或 content reader 获取候选事实。
-5. 调用 normalizer 生成 `meta_item` 和标准 attributes。
-6. 写入数据库，并触发搜索或资产侧消费。
+1. 读取 engine 的 `CatalogModelSpec`，结合 provider 组合选择扫描策略。
+2. 调用 engine capability 获取资源树和基础元信息。
+3. 把扫描范围交给 Meta detector。
+4. 根据 detector 结果构造必要的读取抽象。
+5. 调用 FormatPlugin、info provider 或 content reader 获取候选事实。
+6. 调用 normalizer 生成 `meta_item` 和标准 attributes。
+7. 写入数据库，并触发搜索或资产侧消费。
 
 Scanner 不应：
 
 - 按 Manager 需求拼前端 DTO。
 - 在不同引擎里重复写同一格式的解析逻辑。
 - 绕过 detector 自行拼装 multi / whole item。
+- 只根据 `engine_family` 推断 catalog 层级、item 术语或读取路径。
+
+`engine_family` 只适合做粗分类。Meta 对引擎的统一，不是把 MinIO / S3 和 NFS 视为同一种“文件树”，而是把它们都视为“具备 `CatalogModelSpec` 的存储层级”：差异留在 catalog model 与插件实现里，Meta 只按 `CatalogNode`、`CatalogPath`、`ItemMetadata` 和 provider 契约消费。
 
 Scanner 的扫描深度、覆盖和刷新语义由 `scan_depth`、`scanned_depth`、`force` 和扫描目标共同决定。详细规则见 [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)。
 

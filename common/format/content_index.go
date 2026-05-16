@@ -35,20 +35,9 @@ type ContentIndexInfo struct {
 	Table *ContentIndex
 }
 
-func (c *ContentIndexInfo) ExtensionType() string {
-	return "content_index"
-}
-
 func (t *TableInfo) GetContentIndexInfo() *ContentIndexInfo {
 	if t == nil {
 		return nil
 	}
-	ext := t.GetExtension("content_index")
-	if ext == nil {
-		return nil
-	}
-	if index, ok := ext.(*ContentIndexInfo); ok {
-		return index
-	}
-	return nil
+	return t.ContentIndex
 }

@@ -5,7 +5,8 @@ import "time"
 // FileEntry describes a file-like leaf in file systems or object storage.
 type FileEntry struct {
 	Name        string
-	Path        string // Complete path for ContentReadableProvider, e.g. bucket/prefix/file.parquet.
+	Path        string // Complete physical path, e.g. bucket/prefix/file.parquet.
+	CatalogPath CatalogPath
 	Size        int64
 	ModifiedAt  time.Time
 	ContentType string
@@ -13,8 +14,9 @@ type FileEntry struct {
 
 // DirEntry describes a directory-like container or object storage prefix.
 type DirEntry struct {
-	Name string
-	Path string // Complete path, e.g. bucket/prefix/subdir/.
+	Name        string
+	Path        string // Complete physical path, e.g. bucket/prefix/subdir/.
+	CatalogPath CatalogPath
 }
 
 // FileMetadata describes a file-like object in file systems or object storage.

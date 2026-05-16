@@ -9,26 +9,6 @@ import (
 
 func init() {
 	for _, capability := range []Capability{
-		{
-			Format:         FormatTable,
-			DataType:       DataTypeTable,
-			Layouts:        []string{LayoutWhole},
-			ProviderHints:  []string{ProviderTable},
-			ContentReaders: []string{formatregistry.ContentReaderTableSample},
-			TransferRead:   true,
-			TransferWrite:  true,
-			EngineFamilies: []string{EngineFamilyTabular},
-		},
-		{
-			Format:         FormatDocument,
-			DataType:       DataTypeDocument,
-			Layouts:        []string{LayoutWhole},
-			ProviderHints:  []string{ProviderDocument},
-			ContentReaders: []string{formatregistry.ContentReaderDocumentText, formatregistry.ContentReaderRawContent},
-			TransferRead:   true,
-			TransferWrite:  true,
-			EngineFamilies: []string{EngineFamilyDocument},
-		},
 		tableCapabilityForTest(FormatCSV, []string{".csv"}, []string{EngineFamilyObject, EngineFamilyFile}),
 		tableCapabilityForTest(FormatTSV, []string{".tsv"}, []string{EngineFamilyObject, EngineFamilyFile}),
 		tableCapabilityForTest(FormatORC, []string{".orc"}, []string{EngineFamilyObject, EngineFamilyFile}),
@@ -133,7 +113,7 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "tabular",
 			engineFamily: EngineFamilyTabular,
-			want:         []string{"table"},
+			want:         []string{},
 		},
 		{
 			name:         "object",
@@ -148,7 +128,7 @@ func TestListTransferFormatsForEngineFamily(t *testing.T) {
 		{
 			name:         "document",
 			engineFamily: EngineFamilyDocument,
-			want:         []string{"document", "json", "markdown", "text"},
+			want:         []string{"json", "markdown", "text"},
 		},
 	}
 

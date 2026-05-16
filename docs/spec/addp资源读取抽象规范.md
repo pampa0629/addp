@@ -65,6 +65,8 @@ Meta / Manager / Transfer 编排层
 - `attributes.storage.physical_path`
 - engine-native catalog path
 
+当资源来自 engine catalog 时，编排层应尽量保留其原始 `CatalogPath`。扫描候选如果还要再次用于内容读取，必须一并携带对应的 item path，避免后续只拿字符串物理路径再反推 catalog model。
+
 为了服务内容读取和批量读取，`ResourceRef` 还应能表达最少的角色信息：
 
 - `main`：主资源。

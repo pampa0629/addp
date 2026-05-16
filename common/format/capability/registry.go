@@ -9,50 +9,54 @@ import (
 	formatregistry "github.com/addp/common/format/registry"
 )
 
-type Format string
+type Format = formatregistry.Format
 
 const (
-	FormatTable      Format = Format(formatregistry.FormatTable)
-	FormatDocument   Format = Format(formatregistry.FormatDocument)
-	FormatCSV        Format = Format(formatregistry.FormatCSV)
-	FormatDOCX       Format = Format(formatregistry.FormatDOCX)
-	FormatExcel      Format = Format(formatregistry.FormatExcel)
-	FormatGIF        Format = Format(formatregistry.FormatGIF)
-	FormatAAC        Format = Format(formatregistry.FormatAAC)
-	FormatAVI        Format = Format(formatregistry.FormatAVI)
-	FormatAVIF       Format = Format(formatregistry.FormatAVIF)
-	FormatAudio      Format = Format(formatregistry.FormatAudio)
-	FormatBMP        Format = Format(formatregistry.FormatBMP)
-	FormatFLAC       Format = Format(formatregistry.FormatFLAC)
-	FormatHEIC       Format = Format(formatregistry.FormatHEIC)
-	FormatImage      Format = Format(formatregistry.FormatImage)
-	FormatJPEG       Format = Format(formatregistry.FormatJPEG)
-	FormatJSON       Format = Format(formatregistry.FormatJSON)
-	FormatMarkdown   Format = Format(formatregistry.FormatMarkdown)
-	FormatMKV        Format = Format(formatregistry.FormatMKV)
-	FormatMOV        Format = Format(formatregistry.FormatMOV)
-	FormatMP3        Format = Format(formatregistry.FormatMP3)
-	FormatMP4        Format = Format(formatregistry.FormatMP4)
-	FormatORC        Format = Format(formatregistry.FormatORC)
-	FormatOGG        Format = Format(formatregistry.FormatOGG)
-	FormatParquet    Format = Format(formatregistry.FormatParquet)
-	FormatPDF        Format = Format(formatregistry.FormatPDF)
-	FormatPNG        Format = Format(formatregistry.FormatPNG)
-	FormatPPTX       Format = Format(formatregistry.FormatPPTX)
-	FormatShapefile  Format = Format(formatregistry.FormatShapefile)
-	FormatSQLite     Format = Format(formatregistry.FormatSQLite)
-	FormatGeoPackage Format = Format(formatregistry.FormatGeoPackage)
-	FormatText       Format = Format(formatregistry.FormatText)
-	FormatTIFF       Format = Format(formatregistry.FormatTIFF)
-	FormatTSV        Format = Format(formatregistry.FormatTSV)
-	FormatSVG        Format = Format(formatregistry.FormatSVG)
-	FormatVideo      Format = Format(formatregistry.FormatVideo)
-	FormatWAV        Format = Format(formatregistry.FormatWAV)
-	FormatWebM       Format = Format(formatregistry.FormatWebM)
-	FormatWebP       Format = Format(formatregistry.FormatWebP)
-	FormatWPS        Format = Format(formatregistry.FormatWPS)
-	FormatZIP        Format = Format(formatregistry.FormatZIP)
-	FormatAvro       Format = Format(formatregistry.FormatAvro)
+	FormatUnknown    = formatregistry.FormatUnknown
+	FormatCSV        = formatregistry.FormatCSV
+	FormatDOCX       = formatregistry.FormatDOCX
+	FormatExcel      = formatregistry.FormatExcel
+	FormatGIF        = formatregistry.FormatGIF
+	FormatAAC        = formatregistry.FormatAAC
+	FormatAVI        = formatregistry.FormatAVI
+	FormatAVIF       = formatregistry.FormatAVIF
+	FormatAudio      = formatregistry.FormatAudio
+	FormatBMP        = formatregistry.FormatBMP
+	FormatFLAC       = formatregistry.FormatFLAC
+	FormatHEIC       = formatregistry.FormatHEIC
+	FormatImage      = formatregistry.FormatImage
+	FormatJPEG       = formatregistry.FormatJPEG
+	FormatJSON       = formatregistry.FormatJSON
+	FormatMarkdown   = formatregistry.FormatMarkdown
+	FormatMKV        = formatregistry.FormatMKV
+	FormatMOV        = formatregistry.FormatMOV
+	FormatMP3        = formatregistry.FormatMP3
+	FormatMP4        = formatregistry.FormatMP4
+	FormatORC        = formatregistry.FormatORC
+	FormatOGG        = formatregistry.FormatOGG
+	FormatParquet    = formatregistry.FormatParquet
+	FormatPDF        = formatregistry.FormatPDF
+	FormatPNG        = formatregistry.FormatPNG
+	FormatPPTX       = formatregistry.FormatPPTX
+	FormatShapefile  = formatregistry.FormatShapefile
+	FormatSQLite     = formatregistry.FormatSQLite
+	FormatGeoPackage = formatregistry.FormatGeoPackage
+	FormatKML        = formatregistry.FormatKML
+	FormatKMZ        = formatregistry.FormatKMZ
+	FormatText       = formatregistry.FormatText
+	FormatTIFF       = formatregistry.FormatTIFF
+	FormatTSV        = formatregistry.FormatTSV
+	FormatSVG        = formatregistry.FormatSVG
+	FormatVideo      = formatregistry.FormatVideo
+	FormatWAV        = formatregistry.FormatWAV
+	FormatWebM       = formatregistry.FormatWebM
+	FormatWebP       = formatregistry.FormatWebP
+	FormatWPS        = formatregistry.FormatWPS
+	FormatZIP        = formatregistry.FormatZIP
+	FormatAvro       = formatregistry.FormatAvro
+	FormatPostgres   = formatregistry.FormatPostgres
+	FormatMySQL      = formatregistry.FormatMySQL
+	FormatXML        = formatregistry.FormatXML
 )
 
 const (

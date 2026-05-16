@@ -27,7 +27,7 @@ type ScanService struct {
 	db                       *gorm.DB
 	repo                     *metaRepo.ScanRepository  // 数据访问层
 	dbScanService            *DatabaseScanService      // 数据库扫描服务
-	nosqlScanService         *NoSQLScanService         // NoSQL 数据库扫描服务
+	namespaceItemScanService *NamespaceItemScanService // namespace/item 型 catalog 扫描服务
 	objectCatalogScanService *ObjectCatalogScanService // 对象 catalog 扫描服务
 	fileCatalogScanService   *FileCatalogScanService   // 文件 catalog 扫描服务
 	metadataQueryService     *MetadataQueryService     // 元数据查询服务（独立）
@@ -77,8 +77,8 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
 	s.dbScanService = NewDatabaseScanService(db, log, nil, repo, spatialService, indexerService)
 
-	// 创建 NoSQLScanService（使用独立服务，无循环依赖）
-	s.nosqlScanService = NewNoSQLScanService(db, log, nil, repo, indexerService)
+	// 创建 NamespaceItemScanService（使用独立服务，无循环依赖）
+	s.namespaceItemScanService = NewNamespaceItemScanService(db, log, nil, repo, indexerService)
 
 	// 创建 ObjectCatalogScanService（使用独立服务，无循环依赖）
 	s.objectCatalogScanService = NewObjectCatalogScanService(db, log, repo, metadataExtractor, indexerService)
@@ -481,33 +481,24 @@ func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]str
 }
 
 func scanTargetFromNode(node models.MetaNode) ([]string, []string) {
-	switch node.NodeType {
-	case "schema", "database":
-		if node.FullName != "" {
-			return []string{node.FullName}, nil
+	if node.ParentNodeID == nil {
+		if target := firstNonEmpty(node.FullName, node.Name); target != "" {
+			return []string{target}, nil
 		}
-		return []string{node.Name}, nil
-	case "bucket", "prefix", "root", "dir":
-		if node.FullName != "" {
-			return nil, []string{node.FullName}
-		}
-		if node.Name != "" {
-			return nil, []string{node.Name}
-		}
+		return nil, nil
+	}
+	if target := firstNonEmpty(node.FullName, node.Name); target != "" {
+		return nil, []string{target}
 	}
 	return nil, nil
 }
 
 func scanTargetFromItem(item models.MetaItem) ([]string, []string) {
-	switch item.ItemType {
-	case "table", "collection", "label", "relationship":
-		if idx := strings.LastIndex(item.FullName, "."); idx > 0 {
-			return []string{item.FullName[:idx]}, nil
-		}
-	case "object", "file":
-		if item.FullName != "" {
-			return nil, []string{item.FullName}
-		}
+	if idx := strings.LastIndex(item.FullName, "."); idx > 0 {
+		return []string{item.FullName[:idx]}, nil
+	}
+	if item.FullName != "" {
+		return nil, []string{item.FullName}
 	}
 	return nil, nil
 }
@@ -585,6 +576,15 @@ func uniqueNonEmpty(values []string) []string {
 	return result
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
 	startFields := append(connectionLogFields(resource),
@@ -637,7 +637,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 
-		schemasInfo, err := metacatalog.SchemaInfos(context.Background(), resource, p)
+		schemasInfo, err := metacatalog.NamespaceInfos(context.Background(), resource, p)
 		if err != nil {
 			return 0, 0, 0, err
 		}
@@ -746,12 +746,12 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 	return totalSchemas, totalTables, totalFields, nil
 }
 
-// scanNoSQLResourceWithReporter 扫描 NoSQL 资源的指定数据库列表（带进度报告）
-func (s *ScanService) scanNoSQLResourceWithReporter(
+// scanNamespaceItemsWithReporter 扫描 namespace -> item 型 catalog 的指定 namespace 列表。
+func (s *ScanService) scanNamespaceItemsWithReporter(
 	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
-	databaseNames []string,
+	namespaceNames []string,
 	scanDepth string,
 	force bool,
 	reporter ScanProgressReporter,
@@ -769,105 +769,105 @@ func (s *ScanService) scanNoSQLResourceWithReporter(
 		"scan_depth", scanDepth,
 	)
 
-	// 如果未指定数据库，列出所有数据库
-	if len(databaseNames) == 0 {
+	// 如果未指定 namespace，列出所有 namespace
+	if len(namespaceNames) == 0 {
 		if reporter != nil {
-			reporter.Message("列出所有数据库...")
+			reporter.Message("列出所有命名空间...")
 		}
 
-		databasesInfo, err := metacatalog.NoSQLDatabases(ctx, resource, catalogProvider)
+		databasesInfo, err := metacatalog.NamespaceDatabaseInfos(ctx, resource, catalogProvider)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
 		for _, info := range databasesInfo {
-			databaseNames = append(databaseNames, info.Name)
+			namespaceNames = append(namespaceNames, info.Name)
 		}
 
 		if reporter != nil {
-			reporter.Message(fmt.Sprintf("已过滤系统数据库，待扫描 %d 个用户数据库", len(databaseNames)))
+			reporter.Message(fmt.Sprintf("已过滤系统命名空间，待扫描 %d 个用户命名空间", len(namespaceNames)))
 		}
 	}
 
-	totalDatabases := 0
-	totalCollections := 0
+	totalNamespaces := 0
+	totalItems := 0
 	totalFields := 0
-	total := len(databaseNames)
+	total := len(namespaceNames)
 	if reporter != nil {
 		reporter.SetTotal(total)
 	}
 	completed := 0
 
-	for _, databaseName := range databaseNames {
+	for _, namespaceName := range namespaceNames {
 		if reporter != nil {
-			reporter.Message(fmt.Sprintf("开始扫描数据库 %s", databaseName))
+			reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", namespaceName))
 		}
 
-		// 检查数据库级锁
+		// 检查 namespace 级锁
 		var dbLock string
 		if s.dedupService != nil {
-			dbLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, databaseName)
+			dbLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, namespaceName)
 			if s.dedupService.CheckTaskExists(ctx, dbLock) {
-				s.log.Info("数据库正在扫描中，跳过",
+				s.log.Info("命名空间正在扫描中，跳过",
 					"engine_id", resourceID,
-					"database", databaseName)
+					"namespace", namespaceName)
 				if reporter != nil {
-					reporter.Message(fmt.Sprintf("数据库 %s 正在扫描中，跳过", databaseName))
+					reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", namespaceName))
 				}
 				completed++
 				continue
 			}
 
-			// 加数据库级锁
+			// 加 namespace 级锁
 			if err := s.dedupService.MarkTaskRunning(ctx, dbLock, 2*time.Hour); err != nil {
-				s.log.Warn("加数据库级锁失败", "database", databaseName, "error", err)
+				s.log.Warn("加命名空间级锁失败", "namespace", namespaceName, "error", err)
 			}
 		}
 
-		// 扫描数据库
-		databases, collections, fields, err := s.nosqlScanService.ScanDatabase(
-			ctx, enginePlugin, resource, tenantID, databaseName, scanDepth, force,
+		// 扫描 namespace
+		namespaces, items, fields, err := s.namespaceItemScanService.ScanNamespace(
+			ctx, enginePlugin, resource, tenantID, namespaceName, scanDepth, force,
 		)
 
 		// 扫描完成后清理锁
 		if s.dedupService != nil && dbLock != "" {
 			if clearErr := s.dedupService.ClearTask(ctx, dbLock); clearErr != nil {
-				s.log.Warn("清除数据库级锁失败", "database", databaseName, "error", clearErr)
+				s.log.Warn("清除命名空间级锁失败", "namespace", namespaceName, "error", clearErr)
 			}
 		}
 
 		if err != nil {
-			s.log.Warn("数据库扫描失败",
+			s.log.Warn("命名空间扫描失败",
 				"engine_id", resourceID,
 				"tenant_id", tenantID,
-				"database", databaseName,
+				"namespace", namespaceName,
 				"error", err,
 			)
 			if reporter != nil {
-				reporter.Message(fmt.Sprintf("数据库 %s 扫描失败: %v", databaseName, err))
+				reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", namespaceName, err))
 			}
 			continue
 		}
-		totalDatabases += databases
-		totalCollections += collections
+		totalNamespaces += namespaces
+		totalItems += items
 		totalFields += fields
 
 		completed++
 		if reporter != nil {
-			reporter.Advance(databaseName, completed, total, map[string]interface{}{
-				"collections": collections,
-				"fields":      fields,
+			reporter.Advance(namespaceName, completed, total, map[string]interface{}{
+				"items":  items,
+				"fields": fields,
 			})
 		}
 	}
 
-	s.log.Info("指定数据库扫描完成", cloneLogFields(startFields,
-		"databases_scanned", totalDatabases,
-		"collections_scanned", totalCollections,
+	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
+		"namespaces_scanned", totalNamespaces,
+		"items_scanned", totalItems,
 		"fields_scanned", totalFields,
 	)...)
 
-	return totalDatabases, totalCollections, totalFields, nil
+	return totalNamespaces, totalItems, totalFields, nil
 }
 
 // scanFileCatalogResourceWithReporter 扫描文件 catalog 资源。

@@ -26,48 +26,42 @@
 
 上层模块应先基于 engine capability 或本地文件系统能力构造 `common/resource` 读取抽象，再把 `io.Reader`、`ComponentReader` 或 `ResourceReader + scope` 交给 FormatPlugin、info provider 或 content reader。
 
-## 目录结构
+## 职责清单与目录归位
 
-核心文件：
+`common/format` 的代码按以下职责归位：
 
-| 文件 | 职责 |
-| --- | --- |
-| `detection.go` | `FormatType`、扩展名/MIME/magic bytes 检测 |
-| `descriptor.go` / `discovery.go` | 顶层 format descriptor 和能力发现 facade |
-| `capability_registry.go` | 顶层 format capability facade |
-| `capability/registry.go` | capability 注册表实现 |
-| `registry/` | format descriptor 运行时注册、能力发现视图和冲突诊断 |
-| `provider.go` | FormatPlugin、info provider、content reader 和兼容 provider 注册表 |
-| `table_info.go` | `TableInfo`、`FieldInfo` 等 data type 语义模型 |
-| `schema.go` | 轻量 schema 与字段类型模型 |
-| `type_mapper.go` | 类型映射注册表 |
-| `metadata.go` | 对象基础元数据、文件增强元数据提取器注册表 |
-| `extension_info.go` | legacy 扩展信息结构；新 attributes 扩展不以它为主线 |
+| 职责 | 代码位置 | 说明 |
+| --- | --- | --- |
+| 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示资源编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册。 |
+| 格式身份 descriptor 与能力发现 | `descriptor.go`、`discovery.go`、`registry/` | 运行时注册、查询、冲突诊断和 capability view；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
+| 格式检测 | `detection.go`、`mime.go`、`magic.go`、`classification.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界。 |
+| FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
+| provider / reader 注册表 | `provider_registry.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider 和 content reader；`TableProvider`、`DocumentProvider` 仅为兼容期组合接口。 |
+| data type 通用 info 模型 | `table_info.go`、`schema.go`、`container_info.go`、`container_child.go`、`content_index.go` | 表、容器、schema、内容索引等跨模块结构。内容样本不进入这些 info。 |
+| 格式私有 info 与横切事实候选 | `format_info.go`、`spatial_info.go`、`extension.go` | `ExtensionInfo` 是兼容期承载；新 attributes 仍由 Meta 映射到 `format_info.*` 和 `capabilities.*`。 |
+| 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
+| 类型映射 | `type_mapper.go`、`mappers/` | 把数据库或格式原生字段类型映射到 ADDP 通用字段类型。 |
+| 内置格式加载入口 | `builtin/` | 统一 blank import 内置格式插件和 type mapper。 |
+| 具体格式实现 | `plugins/<format>/` | 一个稳定文件格式一个目录；descriptor、provider、reader 和测试尽量在目录内闭合。 |
 
-具体格式 plugin：
+不属于 `common/format` 的职责：
+
+- Meta item 归并、claims 合并、component_files 写入。
+- Manager / Frontend 预览 hint、渲染器或 DTO。
+- engine 连接、engine reader 构造、连接池、鉴权和审计。
+- Transfer planner、任务提交边界、并发策略。
+- 泛用字符串 / 配置工具函数；没有明确格式语义的 helper 不应放在本包下。
+
+当前子目录含义：
 
 | 目录 | 职责 |
 | --- | --- |
-| `plugins/table/` | 逻辑表格格式 descriptor |
-| `plugins/document/` | 逻辑文档格式 descriptor |
-| `plugins/csv/` | CSV table provider |
-| `plugins/excel/` | Excel 表格解析 |
-| `plugins/json/` | JSON/GeoJSON 结构解析；顶层格式仍为 `FormatJSON` |
-| `plugins/avro/` | Avro descriptor |
-| `plugins/orc/` | ORC descriptor |
-| `plugins/parquet/` | Parquet table provider 与 scope table 读取 |
-| `plugins/shapefile/` | Shapefile 多组件 table provider、读写和类型映射 |
-| `plugins/image/` | 图像和 GeoTIFF 解析 |
-| `plugins/media/` | 视频、音频和通用媒体 descriptor |
-| `plugins/text/` | 纯文本和 Markdown 文档 reader |
-| `plugins/pdf/` | PDF 文档解析 |
-| `plugins/docx/` | DOCX descriptor |
-| `plugins/pptx/` | PPTX descriptor |
-| `plugins/wps/` | WPS descriptor |
-| `plugins/sqlite/` | SQLite 分析能力 |
-| `plugins/zip/` | ZIP 容器解析 |
-| `mappers/` | PostgreSQL、MySQL、SpatiaLite 等类型映射 |
-| `builtin/` | 内置 descriptor、provider / reader 和 type mapper 统一注册入口 |
+| `registry/` | format descriptor 运行时注册、查询、能力发现和冲突诊断。 |
+| `capability/` | capability 注册表实现；顶层通过 `capability_registry.go` 暴露 facade。 |
+| `plugins/` | 内置文件格式插件。descriptor-only 阶段也必须有独立格式目录。 |
+| `mappers/` | PostgreSQL、MySQL、SpatiaLite 等原生类型映射。 |
+| `builtin/` | 内置 descriptor、provider / reader 和 type mapper 统一注册入口。 |
+| `integration_test/` | 跨包集成验证。 |
 
 ## 格式识别
 
@@ -366,7 +360,6 @@ type TableInfo struct {
 
 - `SpatialInfo`：空间字段、几何类型、坐标系、范围等。
 - `CSVInfo`：分隔符、编码、是否有表头等。
-- `DocCollectionInfo`：文档集合结构信息。
 - `ContentIndexInfo`：读取优化索引，例如 `content_index.table` 的稀疏行索引。
 
 空间判断应基于 `TableInfo.IsSpatial()` 或 `SpatialInfo`，不要通过 `format=geojson` 推断。

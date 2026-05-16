@@ -157,6 +157,8 @@ type StoreProvider interface {
 
 对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 
+`OpenContent()`、`OpenRange()`、`CreateContent()` 等 store 能力接收的仍是**引擎自身 catalog model 下的 item `CatalogPath`**，不是另起一套只为底层 IO 服务的“物理路径 DTO”。调用方不得自行伪造脱离 `CatalogModelSpec` 的快捷路径；如果从物理路径、对象 key 或扫描候选重新定位 item，应使用 engine 公共层提供的路径构造规则，或直接复用 `CatalogNode.Path` / `FileEntry.CatalogPath`。物理路径可作为 node/item attribute 暴露给底层实现，但不能替代统一 catalog path 契约。
+
 ```go
 type RangeReadableProvider interface {
     StoreProvider
@@ -231,7 +233,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 ## 五、上层消费规则
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
-- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
+- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query，图 label / relationship 可使用 `GraphQueryProvider` 采样后表格化展示，对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。

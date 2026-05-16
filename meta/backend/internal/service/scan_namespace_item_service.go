@@ -16,9 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// NoSQLScanService NoSQL 数据库扫描服务
-// 职责：扫描文档型数据库（MongoDB等）的Database、Collection、Field
-type NoSQLScanService struct {
+// NamespaceItemScanService 扫描 namespace -> item 型 catalog。
+// 文档型与图型引擎共享这一层级，但 item 事实仍由插件和 catalog model 决定。
+type NamespaceItemScanService struct {
 	db             *gorm.DB
 	log            *slog.Logger
 	indexer        *search.Indexer
@@ -26,9 +26,8 @@ type NoSQLScanService struct {
 	indexerService *IndexerService          // 索引服务
 }
 
-// NewNoSQLScanService 创建 NoSQL 扫描服务
-func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, indexerService *IndexerService) *NoSQLScanService {
-	return &NoSQLScanService{
+func NewNamespaceItemScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, indexerService *IndexerService) *NamespaceItemScanService {
+	return &NamespaceItemScanService{
 		db:             db,
 		log:            log,
 		indexer:        indexer,
@@ -37,14 +36,14 @@ func NewNoSQLScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer,
 	}
 }
 
-// ScanDatabase 扫描 NoSQL 数据库及其所有对象。
+// ScanNamespace 扫描 namespace 及其所有 item。
 // CatalogProvider 负责列出真实数据库、集合、标签和关系；DocumentMetadataSamplingProvider 用于文档 schema 深度推断。
-func (s *NoSQLScanService) ScanDatabase(
+func (s *NamespaceItemScanService) ScanNamespace(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
-	databaseName string,
+	namespaceName string,
 	scanDepth string,
 	force bool,
 ) (int, int, int, error) {
@@ -54,31 +53,30 @@ func (s *NoSQLScanService) ScanDatabase(
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	itemTerm := catalogItemTermForPlugin(enginePlugin, plugin.CatalogTermCollection)
 	samplingProvider, _ := enginePlugin.(plugin.DocumentMetadataSamplingProvider)
 
-	// 1. 创建/更新 Database 节点
-	dbNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, namespaceTermForPlugin(enginePlugin), databaseName, nil, nil)
+	// 1. 创建/更新 namespace 节点
+	namespaceNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, namespaceTermForPlugin(enginePlugin), namespaceName, nil, nil)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create database node: %w", err)
+		return 0, 0, 0, fmt.Errorf("failed to create namespace node: %w", err)
 	}
 
-	if err := s.repo.ResetNodeState(dbNode, "running"); err != nil {
+	if err := s.repo.ResetNodeState(namespaceNode, "running"); err != nil {
 		return 0, 0, 0, err
 	}
 
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogItems(ctx, catalogProvider, samplingProvider, connInfo, resource, tenantID, dbNode, databaseName, scanDepth, force)
+	totalObjects, totalFields, err = s.scanCatalogItems(ctx, enginePlugin, catalogProvider, samplingProvider, connInfo, resource, tenantID, namespaceNode, namespaceName, scanDepth, force)
 
 	if err != nil {
-		s.repo.FinalizeNodeState(dbNode, "pending", 0, 0, err.Error())
+		s.repo.FinalizeNodeState(namespaceNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
 	}
 
 	// 3. 完成扫描
 	var totalSize int64
-	collectionItems, err := s.repo.GetItemsByNodeAndType(tenantID, resource.ID, dbNode.ID, itemTerm)
+	collectionItems, err := s.repo.GetItemsByNode(namespaceNode.ID)
 	if err != nil {
 		return 0, totalObjects, totalFields, err
 	}
@@ -88,22 +86,23 @@ func (s *NoSQLScanService) ScanDatabase(
 		}
 	}
 
-	if err := s.repo.FinalizeNodeStateWithDepth(dbNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(namespaceNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
 		return 0, totalObjects, totalFields, err
 	}
 
 	return 1, totalObjects, totalFields, nil
 }
 
-func (s *NoSQLScanService) scanCatalogItems(
+func (s *NamespaceItemScanService) scanCatalogItems(
 	ctx context.Context,
+	enginePlugin plugin.EnginePlugin,
 	catalogProvider plugin.CatalogProvider,
 	samplingProvider plugin.DocumentMetadataSamplingProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	tenantID uint,
-	dbNode *models.MetaNode,
-	databaseName string,
+	namespaceNode *models.MetaNode,
+	namespaceName string,
 	scanDepth string,
 	force bool,
 ) (int, int, error) {
@@ -111,28 +110,31 @@ func (s *NoSQLScanService) scanCatalogItems(
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
 		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermDatabase,
+			Term: namespaceTermForPlugin(enginePlugin),
 			Kind: plugin.CatalogKindNamespace,
-			Name: databaseName,
+			Name: namespaceName,
 		}},
 	}, plugin.ListOptions{})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list catalog items: %w", err)
 	}
 
-	s.log.Info("扫描到的 NoSQL catalog item", "database", databaseName, "item_count", len(nodes))
+	s.log.Info("扫描到的 namespace catalog item", "namespace", namespaceName, "item_count", len(nodes))
 
-	existingCollectionMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, resource.ID, dbNode.ID, "collection")
-	scannedByType := map[string]map[string]bool{
-		"collection":   {},
-		"label":        {},
-		"relationship": {},
+	existingItems, err := s.repo.GetItemsByNode(namespaceNode.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	existingItemMap := make(map[string]*models.MetaItem, len(existingItems))
+	scannedByType := map[string]map[string]bool{}
+	for _, item := range existingItems {
+		existingItemMap[item.ItemType+"\x00"+item.Name] = item
 	}
 	totalItems := 0
 	totalFields := 0
 
 	for i, node := range nodes {
-		itemType := noSQLItemType(node)
+		itemType := namespaceItemType(node)
 		if itemType == "" {
 			continue
 		}
@@ -144,15 +146,18 @@ func (s *NoSQLScanService) scanCatalogItems(
 			SizeBytes:     sizeBytes,
 		}
 
-		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 NoSQL catalog item", i+1, len(nodes)),
+		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 namespace catalog item", i+1, len(nodes)),
 			"item_name", node.Name,
 			"item_type", itemType,
 			"count", count,
 		)
 
+		if scannedByType[itemType] == nil {
+			scannedByType[itemType] = map[string]bool{}
+		}
 		scannedByType[itemType][node.Name] = true
 
-		existingItem := existingCollectionMap[collInfo.Name]
+		existingItem := existingItemMap[itemType+"\x00"+collInfo.Name]
 		needsUpdate := force || scanchange.ShouldUpdateCollection(existingItem, collInfo) || existingItem == nil
 		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
 			needsUpdate = true
@@ -166,14 +171,14 @@ func (s *NoSQLScanService) scanCatalogItems(
 		var attrs models.JSONMap
 
 		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && samplingProvider != nil {
-			itemMetadata, err := samplingProvider.SampleDocumentMetadata(ctx, connInfo, documentCollectionCatalogPath(resource.ID, databaseName, collInfo.Name), plugin.MetadataOptions{
+			itemMetadata, err := samplingProvider.SampleDocumentMetadata(ctx, connInfo, itemCatalogPath(resource.ID, namespaceTermForPlugin(enginePlugin), namespaceName, node.Term, node.Kind, collInfo.Name), plugin.MetadataOptions{
 				IncludeSamples:    true,
 				IncludeStatistics: true,
 				IncludeIndexes:    true,
 				SampleSize:        100,
 			})
 			if err != nil {
-				s.log.Warn("文档集合 Schema 采样失败", "database", databaseName, "collection", collInfo.Name, "error", err)
+				s.log.Warn("文档集合 Schema 采样失败", "namespace", namespaceName, "collection", collInfo.Name, "error", err)
 			} else {
 				attrs = metaattr.BuildDocumentCollectionAttributes(itemMetadata)
 				totalFields += len(itemMetadata.Fields)
@@ -188,14 +193,14 @@ func (s *NoSQLScanService) scanCatalogItems(
 		} else {
 			metaattr.ApplyGraphItemAttributes(attrs, itemType, count, node.Attributes)
 		}
-		metaattr.ApplyNoSQLDataItemAttributes(attrs, itemType)
+		metaattr.ApplyNamespaceItemAttributes(attrs, itemType)
 
-		fullName := fmt.Sprintf("%s.%s", databaseName, collInfo.Name)
+		fullName := fmt.Sprintf("%s.%s", namespaceName, collInfo.Name)
 		rowCount := count
 
-		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, dbNode, itemType, collInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
+		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, namespaceNode, itemType, collInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
-			s.log.Warn("保存 NoSQL item 元数据失败", "database", databaseName, "item", collInfo.Name, "item_type", itemType, "error", err)
+			s.log.Warn("保存 namespace item 元数据失败", "namespace", namespaceName, "item", collInfo.Name, "item_type", itemType, "error", err)
 			continue
 		}
 
@@ -206,27 +211,33 @@ func (s *NoSQLScanService) scanCatalogItems(
 		if len(scanned) == 0 {
 			continue
 		}
-		s.softDeleteMissingItemsByType(tenantID, resource.ID, dbNode.ID, itemType, scanned)
+		s.softDeleteMissingItemsByType(tenantID, resource.ID, namespaceNode.ID, itemType, scanned)
+	}
+	for itemType := range itemTypes(existingItems) {
+		if _, ok := scannedByType[itemType]; ok {
+			continue
+		}
+		s.softDeleteMissingItemsByType(tenantID, resource.ID, namespaceNode.ID, itemType, map[string]bool{})
 	}
 	return totalItems, totalFields, nil
 }
 
-func documentCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
+func itemCatalogPath(engineID uint, namespaceTerm, namespace, itemTerm, itemKind, itemName string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
 		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: collection},
+			{Term: namespaceTerm, Kind: plugin.CatalogKindNamespace, Name: namespace},
+			{Term: itemTerm, Kind: itemKind, Name: itemName},
 		},
 	}
 }
 
 // softDeleteMissingItemsByType 按 item_type 软删除不存在的数据项
-func (s *NoSQLScanService) softDeleteMissingItemsByType(tenantID, engineID, dbNodeID uint, itemType string, scanned map[string]bool) {
+func (s *NamespaceItemScanService) softDeleteMissingItemsByType(tenantID, engineID, namespaceNodeID uint, itemType string, scanned map[string]bool) {
 	var items []models.MetaItem
 	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, dbNodeID, itemType).Find(&items)
+		tenantID, engineID, namespaceNodeID, itemType).Find(&items)
 
 	for _, item := range items {
 		if !scanned[item.Name] {
@@ -241,7 +252,7 @@ func (s *NoSQLScanService) softDeleteMissingItemsByType(tenantID, engineID, dbNo
 	}
 }
 
-func noSQLItemType(node plugin.CatalogNode) string {
+func namespaceItemType(node plugin.CatalogNode) string {
 	if !node.IsItem {
 		return ""
 	}
@@ -249,6 +260,14 @@ func noSQLItemType(node plugin.CatalogNode) string {
 		return node.Term
 	}
 	return node.Kind
+}
+
+func itemTypes(items []*models.MetaItem) map[string]struct{} {
+	result := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		result[item.ItemType] = struct{}{}
+	}
+	return result
 }
 
 func countStatKey(itemType string) string {

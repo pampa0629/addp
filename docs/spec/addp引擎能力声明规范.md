@@ -53,6 +53,8 @@ type EngineCapabilities struct {
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
+`engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/item catalog、是否需要内容读取、是否可做文档采样，必须由 `CatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
+
 ---
 
 ## 三、StorageCapabilities
@@ -123,6 +125,12 @@ type CatalogLevelSpec struct {
 | NFS | `root -> directory -> file` |
 
 `StorageCapabilities.CatalogModel` 是对外 CatalogModel 事实源。如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
+
+消费规则：
+
+- `CatalogModelSpec` 负责回答“目录怎么分层、各层叫什么、谁是 item”。
+- provider 组合负责回答“哪些动作真的可做”，例如是否能列目录、描述 item、采样字段、读取内容。
+- 上层模块可以基于二者形成自己的执行策略，但不得绕过 catalog model 再维护第二套 family 专属目录规则。
 
 ### 3.2 CatalogCapability
 

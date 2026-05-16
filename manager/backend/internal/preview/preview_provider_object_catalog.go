@@ -487,7 +487,7 @@ func (p *objectCatalogPreviewProvider) decryptedConnectionInfo(engine *models.En
 }
 
 func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, catalogutil.ObjectDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.ObjectDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

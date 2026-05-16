@@ -10,7 +10,6 @@ import (
 const (
 	CatalogTermRoot      = "root"
 	CatalogTermDirectory = "directory"
-	CatalogTermPath      = "path"
 	CatalogTermFile      = "file"
 
 	CatalogKindRoot      = "root"
@@ -95,9 +94,10 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 		}
 	}
 	for _, file := range files {
+		filePath := appendCatalogSegment(parent, engineID, CatalogTermFile, CatalogKindFile, file.Name)
 		nodes = append(nodes, CatalogNode{
 			Name:   file.Name,
-			Path:   appendCatalogSegment(parent, engineID, CatalogTermFile, CatalogKindFile, file.Name),
+			Path:   filePath,
 			Term:   CatalogTermFile,
 			Kind:   CatalogKindFile,
 			IsItem: true,
@@ -182,6 +182,31 @@ func fileCatalogListPath(path CatalogPath) string {
 		return "/"
 	}
 	return path.StringPath()
+}
+
+func FileCatalogEntryFromNode(node CatalogNode) (FileEntry, bool) {
+	if !node.IsItem {
+		return FileEntry{}, false
+	}
+	return FileEntry{
+		Name:        node.Name,
+		Path:        catalogNodePath(node),
+		CatalogPath: node.Path,
+		Size:        catalogNodeInt64Stat(node.Stats, "size_bytes"),
+		ModifiedAt:  catalogNodeTimeAttribute(node.Attributes, "modified_at"),
+		ContentType: catalogNodeStringAttribute(node.Attributes, "content_type"),
+	}, true
+}
+
+func FileCatalogDirectoryFromNode(node CatalogNode) (DirEntry, bool) {
+	if !node.IsContainer {
+		return DirEntry{}, false
+	}
+	return DirEntry{
+		Name:        node.Name,
+		Path:        catalogNodePath(node),
+		CatalogPath: node.Path,
+	}, true
 }
 
 func fileKindFromPath(path CatalogPath) string {

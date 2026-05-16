@@ -36,7 +36,7 @@
 
 ### 根节点的性质差异
 
-| | 对象存储（MinIO/S3） | 文件系统（NFS） | 关系型数据库 | NoSQL（MongoDB/Neo4j） |
+| | 对象存储（MinIO/S3） | 文件系统（NFS） | 关系型数据库 | Namespace/Item 型引擎（MongoDB/Neo4j） |
 |---|---------|--------------|------------|----------------|
 | 根的名称 | bucket 名（有业务含义） | 无（挂载点透明） | PostgreSQL 为 schema 名；MySQL/Doris/ClickHouse 为 database 名 | database 名 |
 | 根的数量 | 多个（一个引擎多个 bucket） | 一个（一个引擎一个挂载点） | 多个（一个引擎多个 schema/database） | 多个（一个引擎多个 database） |
@@ -97,6 +97,8 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 | `gis-data/sample.csv` | `/gis-data/sample.csv` |
 | `README.md` | `/README.md` |
 
+文件系统的 `CatalogPath` 必须继续遵守 `root -> directory* -> file` 模型；内容读取不能因为底层 NFS 需要 `/a/b.csv` 这样的物理路径，就额外发明单段 `path` 语义。对象存储同理，内容读取仍使用 `bucket -> prefix* -> object` 的 item path。物理路径只作为 storage attribute 或插件内部解析结果存在，不成为第二套上层路径模型。
+
 ### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：
@@ -113,7 +115,7 @@ full_name 使用引擎原生术语：
 
 **full_name 自动计算**：schema 或 database 节点传入 `nil`，由 `UpsertNode` 自动计算为 `parent.full_name + "." + name`。
 
-### NoSQL（MongoDB / Neo4j）
+### Namespace/Item 型引擎（MongoDB / Neo4j）
 
 full_name 由 `database.collection` 两段组成，使用 `.` 分隔：
 
@@ -193,7 +195,7 @@ Engine (MySQL)
 schema/database 节点对用户可见；术语按引擎原生语义展示。
 系统 schema/database（如 `pg_catalog`、`information_schema`、`mysql`）由插件过滤，不进入元数据树。
 
-### NoSQL（MongoDB / Neo4j）
+### Namespace/Item 型引擎（MongoDB / Neo4j）
 
 ```
 Engine (MongoDB)
@@ -221,7 +223,7 @@ addp://engine/{engine_id}/path/{segments}?type={type}
 ```
 
 `path segments` 由 `full_name` 按 `/` 分割得到。
-注意：数据库与 NoSQL 的 `full_name` 使用 `.` 分隔（如 `public.users`、`mydb.orders`），
+注意：数据库与 namespace/item 型引擎的 `full_name` 使用 `.` 分隔（如 `public.users`、`mydb.orders`），
 在 Locator 中应先按业务语义转换为路径段（如 `public/users`、`mydb/orders`）。
 
 | 引擎类型 | full_name | path segments | 示例 URI |
@@ -234,7 +236,7 @@ addp://engine/{engine_id}/path/{segments}?type={type}
 | Neo4j label | `neo4j.Person` | `["neo4j","Person"]` | `.../path/neo4j/Person?type=label` |
 | Neo4j relationship | `neo4j.WORKS_FOR` | `["neo4j","WORKS_FOR"]` | `.../path/neo4j/WORKS_FOR?type=relationship` |
 
-数据库/NoSQL/Graph 的解析语义：`schema_or_db = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
+数据库与 namespace/item 型引擎的解析语义：`namespace = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
 Neo4j 的节点标签必须使用 `type=label`，关系类型必须使用 `type=relationship`，不得折叠为 `type=collection`。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
@@ -249,7 +251,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 | 对象存储（MinIO/S3） | bucket / path | 可按 bucket 或指定路径触发扫描 |
 | NFS | 挂载根 `/` | 只有一个扫描入口，扫描整个挂载点 |
 | 关系型数据库（PostgreSQL/MySQL/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/Doris/ClickHouse 选 database） |
-| NoSQL（MongoDB/Neo4j） | database | 用户选择一个或多个 database 触发扫描 |
+| Namespace/Item 型引擎（MongoDB/Neo4j） | database | 用户选择一个或多个 database 触发扫描 |
 
 ### NFS 扫描流程
 
@@ -290,10 +292,10 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 `UpsertNode` 写入节点时，`fullName` 参数：
 
-- 传入 `nil`：由系统自动计算，规则为 `parent.full_name + "." + name`（用于关系型数据库 schema/database 节点、NoSQL database 节点）
+- 传入 `nil`：由系统自动计算，规则为 `parent.full_name + "." + name`（用于关系型数据库 schema/database 节点、MongoDB/Neo4j database 节点）
 - 传入具体值（含空字符串）：直接使用，不覆盖（用于对象存储和文件系统，full_name 由扫描服务显式计算）
 
-关系型数据库表和 NoSQL collection/label 的 `full_name` 由扫描服务显式拼接：
+关系型数据库表和 namespace/item 型 collection/label 的 `full_name` 由扫描服务显式拼接：
 
 - 关系型数据库：`schema + "." + table`（PostgreSQL）或 `database + "." + table`（MySQL/Doris/ClickHouse）
 - MongoDB：`database + "." + collection`

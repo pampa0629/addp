@@ -26,7 +26,7 @@ func isIndexedSampleFallbackError(err error) bool {
 	return errors.Is(err, errUnsupportedIndexedShapeType)
 }
 
-func (p *Parser) sampleTableComponentsIndexed(ctx context.Context, components resource.ComponentReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
+func (plugin *Plugin) sampleTableComponentsIndexed(ctx context.Context, components resource.ComponentReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
 	rangeReader, ok := components.(resource.ComponentRangeReader)
 	if !ok {
 		return nil, false, nil
@@ -80,7 +80,7 @@ func (p *Parser) sampleTableComponentsIndexed(ctx context.Context, components re
 		return nil, true, err
 	}
 
-	geometryField := p.getGeometryFieldName()
+	geometryField := plugin.getGeometryFieldName()
 	for i := range entries {
 		select {
 		case <-ctx.Done():

@@ -43,6 +43,16 @@ type CatalogLevelSpec struct {
 	I18nKey   string   `json:"i18n_key,omitempty"`
 }
 
+// CatalogNamespaceLevel 返回 catalog model 中第一层可展开的 namespace/container 定义。
+func CatalogNamespaceLevel(model CatalogModelSpec) (CatalogLevelSpec, bool) {
+	for _, level := range model.Levels {
+		if level.Container {
+			return level, true
+		}
+	}
+	return CatalogLevelSpec{}, false
+}
+
 // CatalogItemTerm 返回 catalog model 中声明的 item 层术语。
 func CatalogItemTerm(model CatalogModelSpec) string {
 	for _, level := range model.Levels {

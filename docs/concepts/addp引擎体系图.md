@@ -157,7 +157,7 @@ classDiagram
 | 模块 | 消费方式 |
 | --- | --- |
 | System | 调用 `EnginePlugin` 做连接测试、连接信息校验和 capabilities 刷新；连接信息统一保存为 `connection_info` map。 |
-| Meta | 调用 `CatalogProvider` 和 `ItemMetadataProvider` 扫描真实目录与叶子元数据。 |
+| Meta | 调用 `CatalogProvider` 和 `ItemMetadataProvider` 扫描真实目录与叶子元数据；先按 `CatalogModelSpec` 理解目录层级，再结合 provider 组合选择扫描策略。 |
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
@@ -182,6 +182,7 @@ classDiagram
 ## 六、调用原则
 
 - 上层模块优先按 capabilities 判断可用性，不按 `engine_type` 硬编码功能入口。
+- `engine_family` 只保留粗分类意义；涉及 catalog 层级、item 术语和 Meta 扫描编排时，统一以 `CatalogModelSpec` 与 provider 组合为准。
 - 目录发现统一走 `CatalogProvider.ListChildren`。
 - 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
 - 查询统一走对应 runtime provider。

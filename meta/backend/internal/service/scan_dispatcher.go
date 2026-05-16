@@ -48,60 +48,48 @@ func (s *ScanService) dispatchScan(req scanDispatchRequest) (scanDispatchResult,
 		return scanDispatchResult{}, fmt.Errorf("unsupported engine type: %s", req.Resource.EngineType)
 	}
 
-	dispatch, ok := s.scanDispatchers()[storageFamily(enginePlugin)]
+	strategy, ok := catalogScanStrategyForPlugin(enginePlugin)
+	if !ok {
+		return scanDispatchResult{}, fmt.Errorf("plugin does not expose a supported catalog scan strategy")
+	}
+	dispatch, ok := s.scanDispatchers()[strategy]
 	if !ok {
 		return scanDispatchResult{}, fmt.Errorf("plugin does not support metadata query")
 	}
 	return dispatch(context.Background(), enginePlugin, req)
 }
 
-func storageFamily(p plugin.EnginePlugin) string {
-	if p == nil {
-		return ""
-	}
-	caps := p.Capabilities()
-	if caps.Storage == nil {
-		return ""
-	}
-	switch caps.EngineFamily {
-	case "object", "file", "tabular", "document", "graph":
-		return caps.EngineFamily
-	}
-	return ""
-}
-
-func (s *ScanService) scanDispatchers() map[string]scanDispatchFunc {
-	return map[string]scanDispatchFunc{
-		"tabular":  s.dispatchTabularScan,
-		"document": s.dispatchNoSQLScan,
-		"graph":    s.dispatchNoSQLScan,
-		"object":   s.dispatchObjectCatalogScan,
-		"file":     s.dispatchFileCatalogScan,
+func (s *ScanService) scanDispatchers() map[catalogScanStrategy]scanDispatchFunc {
+	return map[catalogScanStrategy]scanDispatchFunc{
+		catalogScanTabular:        s.dispatchTabularScan,
+		catalogScanNamespaceItems: s.dispatchNamespaceItemScan,
+		catalogScanObject:         s.dispatchObjectCatalogScan,
+		catalogScanFile:           s.dispatchFileCatalogScan,
 	}
 }
 
-func (s *ScanService) dispatchNoSQLScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
-	databaseNames := req.Namespaces
-	if req.Mode == scanDispatchAuto && len(databaseNames) == 0 {
+func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+	namespaceNames := req.Namespaces
+	if req.Mode == scanDispatchAuto && len(namespaceNames) == 0 {
 		catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
 		if !ok {
 			return scanDispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", req.Resource.EngineType)
 		}
-		databasesInfo, err := metacatalog.NoSQLDatabases(ctx, req.Resource, catalogProvider)
+		databasesInfo, err := metacatalog.NamespaceDatabaseInfos(ctx, req.Resource, catalogProvider)
 		if err != nil {
 			return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
 		}
-		databaseNames = make([]string, 0, len(databasesInfo))
+		namespaceNames = make([]string, 0, len(databasesInfo))
 		for _, info := range databasesInfo {
-			databaseNames = append(databaseNames, info.Name)
+			namespaceNames = append(namespaceNames, info.Name)
 		}
 	}
 
-	namespaces, items, fields, err := s.scanNoSQLResourceWithReporter(
+	namespaces, items, fields, err := s.scanNamespaceItemsWithReporter(
 		enginePlugin,
 		req.Resource,
 		req.TenantID,
-		databaseNames,
+		namespaceNames,
 		req.ScanDepth,
 		req.Force,
 		req.Reporter,
@@ -164,37 +152,38 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 		return scanDispatchResult{Namespaces: namespaces, Items: items, Fields: fields}, err
 	}
 
-	schemasInfo, err := metacatalog.SchemaInfos(ctx, req.Resource, enginePlugin)
+	namespaceInfos, err := metacatalog.NamespaceInfos(ctx, req.Resource, enginePlugin)
 	if err != nil {
-		return scanDispatchResult{}, fmt.Errorf("failed to list schemas: %w", err)
+		return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
-	s.log.Info("数据库资源扫描开始", "schema_total", len(schemasInfo))
-	scannedSchemas := make(map[string]bool)
+	namespaceTerm := namespaceTermForPlugin(enginePlugin)
+	s.log.Info("数据库资源扫描开始", "namespace_total", len(namespaceInfos), "namespace_term", namespaceTerm)
+	scannedNamespaces := make(map[string]bool)
 	result := scanDispatchResult{}
 
-	for _, schemaInfo := range schemasInfo {
-		scannedSchemas[schemaInfo.Name] = true
+	for _, namespaceInfo := range namespaceInfos {
+		scannedNamespaces[namespaceInfo.Name] = true
 
 		var node models.MetaNode
 		err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-			req.TenantID, req.Resource.ID, "schema", schemaInfo.Name).First(&node).Error
+			req.TenantID, req.Resource.ID, namespaceTerm, namespaceInfo.Name).First(&node).Error
 		if err != gorm.ErrRecordNotFound && err != nil {
-			s.log.Warn("查询 Schema 节点失败",
+			s.log.Warn("查询 namespace 节点失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"schema", schemaInfo.Name,
+				"namespace", namespaceInfo.Name,
 				"error", err,
 			)
 			continue
 		}
 
-		namespaces, items, fields, err := s.dbScanService.ScanSchema(ctx, req.Resource, req.TenantID, req.Resource.ID, schemaInfo.Name, req.ScanDepth, req.Force)
+		namespaces, items, fields, err := s.dbScanService.ScanSchema(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceInfo.Name, req.ScanDepth, req.Force)
 		if err != nil {
-			s.log.Warn("Schema 扫描失败",
+			s.log.Warn("namespace 扫描失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"schema", schemaInfo.Name,
+				"namespace", namespaceInfo.Name,
 				"error", err,
 			)
 			continue
@@ -204,41 +193,42 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 		result.Fields += fields
 	}
 
-	s.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, scannedSchemas)
+	s.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, namespaceTerm, scannedNamespaces)
 	return result, nil
 }
 
-func (s *ScanService) softDeleteMissingTabularNamespaces(resource *commonModels.Engine, tenantID uint, scannedSchemas map[string]bool) {
-	var existingSchemas []models.MetaNode
+func (s *ScanService) softDeleteMissingTabularNamespaces(resource *commonModels.Engine, tenantID uint, namespaceTerm string, scannedNamespaces map[string]bool) {
+	var existingNamespaces []models.MetaNode
 	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ?",
-		tenantID, resource.ID, "schema").Find(&existingSchemas).Error; err != nil {
-		s.log.Warn("查询已存在 schema 节点失败", "error", err)
+		tenantID, resource.ID, namespaceTerm).Find(&existingNamespaces).Error; err != nil {
+		s.log.Warn("查询已存在 namespace 节点失败", "namespace_term", namespaceTerm, "error", err)
 		return
 	}
 
-	s.log.Info("开始检查需要清理的 schema",
+	s.log.Info("开始检查需要清理的 namespace",
 		"engine_id", resource.ID,
-		"existing_count", len(existingSchemas),
-		"scanned_count", len(scannedSchemas),
+		"namespace_term", namespaceTerm,
+		"existing_count", len(existingNamespaces),
+		"scanned_count", len(scannedNamespaces),
 	)
-	for _, schemaNode := range existingSchemas {
-		if scannedSchemas[schemaNode.Name] {
+	for _, namespaceNode := range existingNamespaces {
+		if scannedNamespaces[namespaceNode.Name] {
 			continue
 		}
-		s.log.Info("Schema 已不存在，标记删除",
+		s.log.Info("namespace 已不存在，标记删除",
 			"engine_id", resource.ID,
-			"schema", schemaNode.Name,
+			"namespace", namespaceNode.Name,
 		)
-		if err := s.db.Delete(&schemaNode).Error; err != nil {
-			s.log.Warn("软删除 schema 节点失败",
-				"schema", schemaNode.Name,
+		if err := s.db.Delete(&namespaceNode).Error; err != nil {
+			s.log.Warn("软删除 namespace 节点失败",
+				"namespace", namespaceNode.Name,
 				"error", err,
 			)
 			continue
 		}
-		if err := s.db.Where("node_id = ?", schemaNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
-			s.log.Warn("软删除 schema 下的表失败",
-				"schema", schemaNode.Name,
+		if err := s.db.Where("node_id = ?", namespaceNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
+			s.log.Warn("软删除 namespace 下的 item 失败",
+				"namespace", namespaceNode.Name,
 				"error", err,
 			)
 		}

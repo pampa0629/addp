@@ -362,7 +362,9 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 		detected = metaitem.InferSingleResourceItem(file)
 	}
 	if detected.Organization == dataitem.OrganizationSingle {
-		enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex)
+		enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex, func(string) plugin.CatalogPath {
+			return file.CatalogPath
+		})
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
 			return metaattr.JSONMap(metaattr.BuildAttributes(detected)), nil, nil
@@ -377,7 +379,7 @@ func (s *FileCatalogScanService) enrichSingleFileAttributes(
 	}
 	metacatalog.ApplyContainerSummary(attrs, detected)
 	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {
-		reader, err := contentReader.OpenContent(ctx, connInfo, metapath.FileCatalogPath(resource.ID, file.Path), plugin.ReadOptions{})
+		reader, err := contentReader.OpenContent(ctx, connInfo, file.CatalogPath, plugin.ReadOptions{})
 		if err != nil {
 			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
 			return attrs, detected.Fields, nil
@@ -414,6 +416,7 @@ func (s *FileCatalogScanService) resolveFileCatalogDirectoryItems(
 		ContentReader:    contentReader,
 		ConnInfo:         connInfo,
 		EngineID:         resource.ID,
+		CatalogPathFor:   plugin.FileItemPathForEngine(resource.ID),
 		DirPath:          dirPath,
 		Files:            files,
 		Subdirs:          subdirs,
@@ -432,12 +435,13 @@ func resolveNonExclusiveScopeItems(
 	subdirs []plugin.DirEntry,
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveNonExclusiveItems(ctx, metaitem.DirectoryResolveInput{
-		ContentReader: contentReader,
-		ConnInfo:      connInfo,
-		EngineID:      resource.ID,
-		DirPath:       dirPath,
-		Files:         files,
-		Subdirs:       subdirs,
+		ContentReader:  contentReader,
+		ConnInfo:       connInfo,
+		EngineID:       resource.ID,
+		CatalogPathFor: plugin.FileItemPathForEngine(resource.ID),
+		DirPath:        dirPath,
+		Files:          files,
+		Subdirs:        subdirs,
 	})
 }
 
@@ -482,35 +486,22 @@ func (s *FileCatalogScanService) listDirectory(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]plugin.FileEntry, []plugin.DirEntry, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, metapath.FileCatalogPath(resource.ID, dirPath), plugin.ListOptions{})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
 	files := make([]plugin.FileEntry, 0, len(nodes))
 	subdirs := make([]plugin.DirEntry, 0, len(nodes))
 	for _, node := range nodes {
-		nodePath := node.Path.StringPath()
-		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			nodePath = raw
-		}
 		if node.IsContainer {
-			subdirs = append(subdirs, plugin.DirEntry{
-				Name: node.Name,
-				Path: nodePath,
-			})
+			if dir, ok := plugin.FileCatalogDirectoryFromNode(node); ok {
+				subdirs = append(subdirs, dir)
+			}
 			continue
 		}
-		if !node.IsItem {
-			continue
+		if file, ok := plugin.FileCatalogEntryFromNode(node); ok {
+			files = append(files, file)
 		}
-		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType := commonJSON.String(node.Attributes, "storage", "content_type")
-		files = append(files, plugin.FileEntry{
-			Name:        node.Name,
-			Path:        nodePath,
-			Size:        size,
-			ContentType: contentType,
-		})
 	}
 	return files, subdirs, nil
 }
@@ -522,35 +513,22 @@ func (s *FileCatalogScanService) listDirectoryRecursive(
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]plugin.FileEntry, []plugin.DirEntry, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, metapath.FileCatalogPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
 	if err != nil {
 		return nil, nil, err
 	}
 	files := make([]plugin.FileEntry, 0, len(nodes))
 	subdirs := make([]plugin.DirEntry, 0)
 	for _, node := range nodes {
-		nodePath := node.Path.StringPath()
-		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			nodePath = raw
-		}
 		if node.IsContainer {
-			subdirs = append(subdirs, plugin.DirEntry{
-				Name: node.Name,
-				Path: nodePath,
-			})
+			if dir, ok := plugin.FileCatalogDirectoryFromNode(node); ok {
+				subdirs = append(subdirs, dir)
+			}
 			continue
 		}
-		if !node.IsItem {
-			continue
+		if file, ok := plugin.FileCatalogEntryFromNode(node); ok {
+			files = append(files, file)
 		}
-		size, _ := int64Stat(node.Stats, "size_bytes")
-		contentType := commonJSON.String(node.Attributes, "storage", "content_type")
-		files = append(files, plugin.FileEntry{
-			Name:        node.Name,
-			Path:        nodePath,
-			Size:        size,
-			ContentType: contentType,
-		})
 	}
 	return files, subdirs, nil
 }

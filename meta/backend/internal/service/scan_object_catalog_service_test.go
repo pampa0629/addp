@@ -22,20 +22,21 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	t.Parallel()
 
 	svc := &ObjectCatalogScanService{log: slog.Default()}
-	meta := format.ObjectMetadata{
-		Bucket:    "addp",
+	resource := metacatalog.StorageResource{
+		RootName:  "addp",
 		Path:      "datasets/converted.json",
+		FullPath:  "addp/datasets/converted.json",
 		SizeBytes: 64,
-		FileType:  string(format.FormatJSON),
+		Format:    string(format.FormatJSON),
 	}
-	item := metaitemForJSONDocument(meta)
+	item := metaitemForJSONDocument(resource)
 
 	attrs, err := svc.enrichObjectCatalogTableFileAttributes(
 		context.Background(),
 		staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
 		nil,
 		7,
-		meta,
+		resource,
 		item,
 		false,
 	)
@@ -83,8 +84,8 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 	}
 }
 
-func metaitemForJSONDocument(meta format.ObjectMetadata) *metaitem.DetectedItem {
-	return metacatalog.InferObjectCatalogDataItem(meta, "converted.json")
+func metaitemForJSONDocument(resource metacatalog.StorageResource) *metaitem.DetectedItem {
+	return metacatalog.InferObjectCatalogDataItem(resource, "converted.json")
 }
 
 func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {

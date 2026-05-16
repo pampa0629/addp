@@ -171,7 +171,7 @@ func (d *tableFileItemResolver) ResolveItems(
 	if !d.Detect(ctx, files, subdirs) {
 		return nil, nil
 	}
-	info, err := d.extractTableFileInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs)
+	info, err := d.extractTableFileInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs, input.CatalogPathFor)
 	if err != nil {
 		return nil, err
 	}
@@ -488,18 +488,19 @@ func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEn
 }
 
 type tableFileResourceReader struct {
-	contentReader plugin.ContentReadableProvider
-	connInfo      plugin.ConnectionInfo
-	engineID      uint
-	files         []plugin.FileEntry
-	subdirs       []plugin.DirEntry
+	contentReader  plugin.ContentReadableProvider
+	connInfo       plugin.ConnectionInfo
+	engineID       uint
+	catalogPathFor func(path string) plugin.CatalogPath
+	files          []plugin.FileEntry
+	subdirs        []plugin.DirEntry
 }
 
 func (r tableFileResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
 	if r.contentReader == nil {
 		return nil, resource.ErrResourceNotFound
 	}
-	return r.contentReader.OpenContent(ctx, r.connInfo, tableFileCatalogPath(r.engineID, ref.Path), plugin.ReadOptions{})
+	return r.contentReader.OpenContent(ctx, r.connInfo, resolveTableFileCatalogPath(r.engineID, ref.Path, r.catalogPathFor), plugin.ReadOptions{})
 }
 
 func (r tableFileResourceReader) Stat(_ context.Context, ref resource.ResourceRef) (*resource.ResourceMetadata, error) {
@@ -566,6 +567,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
+	catalogPathFor func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	files, err := validateTableFiles(files, dirPath)
 	if err != nil {
@@ -582,15 +584,16 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 
 	formatName := detectFormat(files)
 	reader := tableFileResourceReader{
-		contentReader: contentReader,
-		connInfo:      connInfo,
-		engineID:      engineID,
-		files:         files,
-		subdirs:       subdirs,
+		contentReader:  contentReader,
+		connInfo:       connInfo,
+		engineID:       engineID,
+		catalogPathFor: catalogPathFor,
+		files:          files,
+		subdirs:        subdirs,
 	}
 	tableInfo, err := describeTableFileScope(ctx, formatName, reader, dirPath)
 	if err != nil {
-		rc, openErr := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, firstReadableFile.Path), plugin.ReadOptions{})
+		rc, openErr := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, firstReadableFile.Path, catalogPathFor), plugin.ReadOptions{})
 		if openErr != nil {
 			return nil, fmt.Errorf("failed to read table file %s: %w", firstReadableFile.Path, openErr)
 		}
@@ -649,12 +652,13 @@ func extractTableFileWholeScopeInfo(
 	dirPath string,
 	files []plugin.FileEntry,
 	subdirs []plugin.DirEntry,
+	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	resolver := &tableFileItemResolver{}
 	if !resolver.Detect(ctx, files, subdirs) {
 		return nil, fmt.Errorf("directory is not a table file dataset: %s", dirPath)
 	}
-	return resolver.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs)
+	return resolver.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs, firstCatalogPathResolver(catalogPathFor))
 }
 
 // ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）。
@@ -666,6 +670,7 @@ func ExtractTableFileSingleFileInfo(
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
+	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 
@@ -682,7 +687,7 @@ func ExtractTableFileSingleFileInfo(
 		}, nil
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, filePath, firstCatalogPathResolver(catalogPathFor)), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read table file %s: %w", filePath, err)
 	}
@@ -734,6 +739,7 @@ func ExtractTableFileSingleFileInfoStrict(
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
+	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 	provider, providerErr := format.GetTableProvider(format.FormatType(formatName))
@@ -741,7 +747,7 @@ func ExtractTableFileSingleFileInfoStrict(
 		return nil, providerErr
 	}
 
-	rc, err := contentReader.OpenContent(ctx, connInfo, tableFileCatalogPath(engineID, filePath), plugin.ReadOptions{})
+	rc, err := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, filePath, firstCatalogPathResolver(catalogPathFor)), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read table file %s: %w", filePath, err)
 	}
@@ -774,6 +780,7 @@ func EnrichSingleTableFileItem(
 	filePath string,
 	fileSize int64,
 	includeContentIndex bool,
+	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Organization != dataitem.OrganizationSingle || !hasTableProvider(item.Format) {
 		return item, false, nil
@@ -782,7 +789,7 @@ func EnrichSingleTableFileItem(
 	if item.DataType != dataitem.DataTypeTable {
 		extract = ExtractTableFileSingleFileInfoStrict
 	}
-	info, err := extract(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex)
+	info, err := extract(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
 	if err != nil || info == nil {
 		return item, false, err
 	}
@@ -846,14 +853,16 @@ func filePaths(files []plugin.FileEntry) []string {
 	return paths
 }
 
-func tableFileCatalogPath(engineID uint, path string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{{
-			Term: plugin.CatalogTermPath,
-			Kind: plugin.CatalogKindFile,
-			Name: path,
-		}},
+func resolveTableFileCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
+	if catalogPathFor != nil {
+		return catalogPathFor(path)
 	}
+	return plugin.FileItemPath(engineID, path)
+}
+
+func firstCatalogPathResolver(resolvers []func(path string) plugin.CatalogPath) func(path string) plugin.CatalogPath {
+	if len(resolvers) == 0 {
+		return nil
+	}
+	return resolvers[0]
 }

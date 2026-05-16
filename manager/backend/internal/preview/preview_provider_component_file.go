@@ -63,11 +63,11 @@ func (p *ComponentFilePreviewProvider) Preview(ctx context.Context, req *Preview
 			"required": descriptor.Required,
 			"primary":  descriptor.Primary,
 		}
-		if descriptor.PreviewMaterial != "" {
-			contentReq.Attributes["preview_material"] = descriptor.PreviewMaterial
+		if preview.Material != "" {
+			contentReq.Attributes["preview_material"] = preview.Material
 		}
-		if descriptor.PreviewRenderer != "" {
-			contentReq.Attributes["frontend_renderer"] = descriptor.PreviewRenderer
+		if preview.Renderer != "" {
+			contentReq.Attributes["frontend_renderer"] = preview.Renderer
 		}
 	}
 	if len(componentDescriptors) > 0 {
@@ -156,7 +156,7 @@ func componentDescriptorForComponent(formatType format.FormatType, component res
 	return nil
 }
 
-func (p *ComponentFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, component resource.ComponentRef, preview format.PreviewHint, components []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
+func (p *ComponentFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, component resource.ComponentRef, preview previewHint, components []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
 	if content != nil {
 		objectcontent.DecoratePreviewContent(content)
 		if len(components) > 0 {
