@@ -37,8 +37,11 @@ type MetaClient interface {
 	// GetMetadataTree 获取引擎的完整元数据树
 	GetMetadataTree(engineID uint) (*models.MetadataTree, error)
 
-	// GetNodeByPath 按路径查询节点
-	GetNodeByPath(engineID uint, nodePath string) (*models.MetaNode, error)
+	// GetNodeByCatalogPath 按 catalog path 查询节点。
+	GetNodeByCatalogPath(engineID uint, catalogPath string) (*models.MetaNode, error)
+
+	// GetItemByCatalogPath 按 catalog path 查询数据项。
+	GetItemByCatalogPath(engineID uint, catalogPath string) (*models.MetaItem, error)
 
 	// GetNodeChildren 获取节点的子节点
 	GetNodeChildren(nodeID uint) ([]models.MetaNode, error)

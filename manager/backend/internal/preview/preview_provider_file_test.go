@@ -609,7 +609,7 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 	}
 }
 
-func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByComponentPath(t *testing.T) {
+func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByNestedChildPath(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
 	plugin.Register(enginePlugin)
@@ -630,15 +630,15 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByComponentPath(t *t
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
 	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
 	req := &PreviewRequest{
-		Engine:        &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
-		ItemType:      "file",
-		Schema:        "datasets",
-		Table:         "outer.zip",
-		PhysicalPath:  "/datasets/outer.zip",
-		ChildName:     "inner.zip",
-		ComponentPath: "data/cities.csv",
-		Page:          1,
-		PageSize:      10,
+		Engine:          &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:        "file",
+		Schema:          "datasets",
+		Table:           "outer.zip",
+		PhysicalPath:    "/datasets/outer.zip",
+		ChildName:       "inner.zip",
+		NestedChildPath: "data/cities.csv",
+		Page:            1,
+		PageSize:        10,
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"format":    string(format.FormatZIP),
@@ -671,6 +671,75 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByComponentPath(t *t
 		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
 	}
 	if len(preview.Rows) != 2 || preview.Rows[0]["name"] != "Hangzhou" {
+		t.Fatalf("Rows = %#v, want cities rows", preview.Rows)
+	}
+}
+
+func TestContainerChildPreviewProviderPreviewsDeepNestedZIPEntryByNestedChildPath(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	middle := zipBytesForFilePreviewTest(t, map[string]string{
+		"data/cities.csv": "id,name\n1,Hangzhou\n2,Shanghai\n",
+	})
+	inner := zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"middle.zip": middle,
+	})
+	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"inner.zip": inner,
+	})
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	req := &PreviewRequest{
+		Engine:          &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:        "file",
+		Schema:          "datasets",
+		Table:           "outer.zip",
+		PhysicalPath:    "/datasets/outer.zip",
+		ChildName:       "inner.zip",
+		NestedChildPath: "middle.zip/data/cities.csv",
+		Page:            1,
+		PageSize:        10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":      "inner.zip",
+							"kind":      "file",
+							"data_type": "container",
+							"format":    string(format.FormatZIP),
+							"path":      "inner.zip",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "name"}) {
+		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
+	}
+	if len(preview.Rows) != 2 || preview.Rows[1]["name"] != "Shanghai" {
 		t.Fatalf("Rows = %#v, want cities rows", preview.Rows)
 	}
 }

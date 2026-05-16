@@ -140,7 +140,8 @@
         if (!name) return
         this.$emit('child-change', {
           childName: name,
-          componentPath: child?.componentPath || ''
+          componentPath: child?.componentPath || '',
+          nestedChildPath: child?.nestedChildPath || ''
         })
       },
       handlePageChange(page) {

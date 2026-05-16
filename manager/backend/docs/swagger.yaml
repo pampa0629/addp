@@ -1575,6 +1575,10 @@ paths:
         in: query
         name: component_path
         type: string
+      - description: 嵌套容器内部 child 相对路径 | Relative child path inside a nested container
+        in: query
+        name: nested_child_path
+        type: string
       produces:
       - application/json
       responses:

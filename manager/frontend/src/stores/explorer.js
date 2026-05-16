@@ -22,6 +22,7 @@ export const useExplorerStore = defineStore('explorer', {
     selectedLocator: null,
     selectedChildName: '',
     selectedComponentPath: '',
+    selectedNestedChildPath: '',
 
     // 展开的节点（使用 locator URI 作为 key）
     expandedLocators: new Set(),
@@ -221,13 +222,15 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1, childName = '', componentPath = '') {
+    async loadPreview(locator, page = 1, childName = '', componentPath = '', nestedChildPath = '') {
       this.selectedLocator = locator
       this.pagination.page = page
       const normalizedChildName = childName || ''
       const normalizedComponentPath = componentPath || ''
+      const normalizedNestedChildPath = nestedChildPath || ''
       this.selectedChildName = normalizedChildName
       this.selectedComponentPath = normalizedComponentPath
+      this.selectedNestedChildPath = normalizedNestedChildPath
       if (normalizedChildName) {
         this.activeChildPreviewData = null
         this.childPreviewLoading = true
@@ -247,6 +250,9 @@ export const useExplorerStore = defineStore('explorer', {
         }
         if (normalizedComponentPath) {
           params.component_path = normalizedComponentPath
+        }
+        if (normalizedNestedChildPath) {
+          params.nested_child_path = normalizedNestedChildPath
         }
         const response = await client.get('/manager/preview', {
           params
@@ -358,6 +364,7 @@ export const useExplorerStore = defineStore('explorer', {
       this.selectedLocator = null
       this.selectedChildName = ''
       this.selectedComponentPath = ''
+      this.selectedNestedChildPath = ''
       this.previewData = null
       this.activeChildPreviewData = null
       this.pagination.page = 1

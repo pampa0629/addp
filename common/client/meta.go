@@ -118,10 +118,10 @@ func (c *MetaClient) GetMetadataTree(engineID uint) (*models.MetadataTree, error
 	return &result, nil
 }
 
-// GetNodeByPath 按路径查询节点（支持 Schema/Bucket/Prefix）
-func (c *MetaClient) GetNodeByPath(engineID uint, nodePath string) (*models.MetaNode, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/nodes/by-path?engine_id=%d&path=%s",
-		c.baseURL, engineID, url.QueryEscape(nodePath))
+// GetNodeByCatalogPath 按 catalog path 查询节点。
+func (c *MetaClient) GetNodeByCatalogPath(engineID uint, catalogPath string) (*models.MetaNode, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/nodes/by-catalog-path?engine_id=%d&catalog_path=%s",
+		c.baseURL, engineID, url.QueryEscape(catalogPath))
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
@@ -150,10 +150,10 @@ func (c *MetaClient) GetNodeByPath(engineID uint, nodePath string) (*models.Meta
 	return &result, nil
 }
 
-// GetItemByPath 按路径查询项目（对象存储）
-func (c *MetaClient) GetItemByPath(engineID uint, bucketName, objectPath string) (*models.MetaItem, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/items/by-path?engine_id=%d&bucket=%s&path=%s",
-		c.baseURL, engineID, url.QueryEscape(bucketName), url.QueryEscape(objectPath))
+// GetItemByCatalogPath 按 catalog path 查询数据项。
+func (c *MetaClient) GetItemByCatalogPath(engineID uint, catalogPath string) (*models.MetaItem, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/by-catalog-path?engine_id=%d&catalog_path=%s",
+		c.baseURL, engineID, url.QueryEscape(catalogPath))
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
@@ -427,15 +427,20 @@ func (c *MetaClient) ListItems(engineID uint, namespace string) ([]models.MetaIt
 	return result, nil
 }
 
-// GetItemFields 获取数据项字段列表。
-func (c *MetaClient) GetItemFields(engineID uint, namespace, itemName string, includeDetails bool) ([]models.FieldInfo, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items/fields?name=%s",
-		c.baseURL, engineID, url.QueryEscape(itemName))
-	if namespace != "" {
-		urlStr += "&namespace=" + url.QueryEscape(namespace)
+// GetItemFieldsByCatalogPath 获取指定 catalog path 数据项的字段列表。
+func (c *MetaClient) GetItemFieldsByCatalogPath(engineID uint, catalogPath string, includeDetails bool) ([]models.FieldInfo, error) {
+	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
+	if err != nil {
+		return nil, err
 	}
+	return c.GetItemFieldsByID(item.ID, includeDetails)
+}
+
+// GetItemFieldsByID 获取指定 item_id 数据项的字段列表。
+func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]models.FieldInfo, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/fields", c.baseURL, itemID)
 	if includeDetails {
-		urlStr += "&include_details=true"
+		urlStr += "?include_details=true"
 	}
 
 	req, err := http.NewRequest("GET", urlStr, nil)
@@ -465,13 +470,18 @@ func (c *MetaClient) GetItemFields(engineID uint, namespace, itemName string, in
 	return result, nil
 }
 
-// GetItemSpatialMetadata 获取数据项空间元数据。
-func (c *MetaClient) GetItemSpatialMetadata(engineID uint, namespace, itemName string) (*models.SpatialMetadata, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items/spatial?name=%s",
-		c.baseURL, engineID, url.QueryEscape(itemName))
-	if namespace != "" {
-		urlStr += "&namespace=" + url.QueryEscape(namespace)
+// GetItemSpatialMetadataByCatalogPath 获取指定 catalog path 数据项的空间元数据。
+func (c *MetaClient) GetItemSpatialMetadataByCatalogPath(engineID uint, catalogPath string) (*models.SpatialMetadata, error) {
+	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
+	if err != nil {
+		return nil, err
 	}
+	return c.GetItemSpatialMetadataByID(item.ID)
+}
+
+// GetItemSpatialMetadataByID 获取指定 item_id 数据项的空间元数据。
+func (c *MetaClient) GetItemSpatialMetadataByID(itemID uint) (*models.SpatialMetadata, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/spatial", c.baseURL, itemID)
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {

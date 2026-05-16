@@ -184,7 +184,7 @@ const handlePageChange = async (page) => {
   if (!store.selectedLocator) return
 
   try {
-    await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedComponentPath)
+    await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedComponentPath, store.selectedNestedChildPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
@@ -193,10 +193,11 @@ const handlePageChange = async (page) => {
 const handleChildChange = async (payload) => {
   const childName = typeof payload === 'string' ? payload : payload?.childName
   const componentPath = typeof payload === 'object' ? payload?.componentPath || '' : ''
+  const nestedChildPath = typeof payload === 'object' ? payload?.nestedChildPath || '' : ''
   const componentSwitch = typeof payload === 'object' && payload?.componentSwitch
-  if (!store.selectedLocator || (!childName && !componentPath && !componentSwitch)) return
+  if (!store.selectedLocator || (!childName && !componentPath && !nestedChildPath && !componentSwitch)) return
   try {
-    await store.loadPreview(store.selectedLocator, 1, childName, componentPath)
+    await store.loadPreview(store.selectedLocator, 1, childName, componentPath, nestedChildPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }

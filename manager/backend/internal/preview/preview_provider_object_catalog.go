@@ -313,17 +313,8 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		handler := p.content.Resolve(req)
 		if handler != nil {
 			if objectcontent.IsContainerFormat(req.Format) {
-				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
-					preview.Object.Content = objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
-						Kind: models.ObjectPreviewKindContainer,
-						JSON: previewJSON,
-						Metadata: map[string]interface{}{
-							"size_bytes": stat.Size,
-							"path":       req.Path,
-							"name":       req.Name,
-							"source":     "meta",
-						},
-					})
+				if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, stat.Size, req.Path, req.Name); content != nil {
+					preview.Object.Content = content
 					return preview, nil
 				}
 			}

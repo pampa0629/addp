@@ -369,7 +369,7 @@ func (h *TaskHandler) HandlePrepareForCreateMVTTask(ctx context.Context, task *a
 
 			// 获取空间元数据（从 Meta 模块）
 			h.metaClient.SetTenantID(&payload.TenantID)
-			spatialMeta, err := h.metaClient.GetItemSpatialMetadata(payload.EngineID, payload.SchemaName, payload.TableName)
+			spatialMeta, err := h.metaClient.GetItemSpatialMetadataByCatalogPath(payload.EngineID, fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName))
 			if err != nil {
 				logger.L().Error("Failed to get spatial metadata from Meta",
 					"engine_id", payload.EngineID,

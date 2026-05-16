@@ -161,7 +161,7 @@ Response:
 
 #### 数据预览
 ```
-GET /api/explorer/preview?locator={uri}&page=1&page_size=20
+GET /api/v1/manager/preview?locator={uri}&page=1&page_size=20
 Authorization: Bearer {token}
 
 Response:
@@ -173,6 +173,21 @@ Response:
     "metadata": {...}
   }
 }
+```
+
+容器和多组件格式的选择参数必须保持语义独立：
+
+| 参数 | 语义 | 示例 |
+|---|---|---|
+| `child_name` | 当前容器第一层 child | `Sheet1`、`cities`、`inner.zip` |
+| `component_path` | multi 格式 child 的组件路径 | `roads.shp`、`roads.dbf` |
+| `nested_child_path` | 当前 child 是容器时，其内部 child 相对路径 | `data/cities.csv`、`middle.zip/data/cities.csv` |
+
+示例：
+
+```text
+GET /api/v1/manager/preview?locator={zip-uri}&child_name=inner.zip&nested_child_path=data/cities.csv
+GET /api/v1/manager/preview?locator={zip-uri}&child_name=roads.shp&component_path=roads.dbf
 ```
 
 ### 3. 前端 Pinia Store
@@ -188,9 +203,12 @@ Response:
   selectedLocator: null,    // 选中的 ResourceLocator URI
   expandedLocators: Set,    // 展开的节点
   refreshingLocators: Set,  // 正在刷新的节点
-  previewData: null,        // 预览数据
-  previewLoading: false,    // 预览加载状态
-  pagination: {...}         // 分页信息
+  selectedChildName: '',       // 当前容器第一层 child
+  selectedComponentPath: '',   // multi 格式组件路径
+  selectedNestedChildPath: '', // 嵌套容器内部 child 路径
+  previewData: null,           // 预览数据
+  previewLoading: false,       // 预览加载状态
+  pagination: {...}            // 分页信息
 }
 ```
 
@@ -199,7 +217,7 @@ Response:
 loadEngines()              // 加载引擎列表
 loadTree(engineId)         // 加载资源树
 refreshNode(locator)       // 刷新节点
-loadPreview(locator, page) // 加载预览
+loadPreview(locator, page, childName, componentPath, nestedChildPath) // 加载预览
 selectNode(locator)        // 选择节点
 expandNode(locator)        // 展开节点
 ```
@@ -231,8 +249,8 @@ type PreviewResolver struct {
     engineConnector *EngineConnector
 }
 
-// 根据 locator URI 预览数据
-func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, tenantID *uint) (*PreviewResult, error)
+// 根据 locator URI 和可选 child/component/nested child 选择预览数据
+func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error)
 ```
 
 #### EngineConnector (连接管理)

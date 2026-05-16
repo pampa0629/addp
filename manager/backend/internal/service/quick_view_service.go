@@ -232,7 +232,7 @@ func (s *QuickViewService) GetSpatialMetadataFromMeta(
 	s.metaClient.SetTenantID(&tenantID)
 
 	// 通过 Meta API 查询空间元数据
-	spatialMeta, err := s.metaClient.GetItemSpatialMetadata(engineID, schema, table)
+	spatialMeta, err := s.metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}

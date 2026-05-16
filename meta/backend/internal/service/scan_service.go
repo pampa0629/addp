@@ -935,16 +935,6 @@ func (s *ScanService) ListItemsByNamespace(engineID, tenantID uint, namespace st
 	return s.metadataQueryService.ListItemsByNamespace(engineID, tenantID, namespace)
 }
 
-// GetItemFieldNames 获取数据项字段名列表。
-func (s *ScanService) GetItemFieldNames(engineID uint, namespace, itemName string, tenantID uint) ([]string, error) {
-	return s.metadataQueryService.GetItemFieldNames(engineID, namespace, itemName, tenantID)
-}
-
-// GetItemFieldDetailsByName 获取数据项字段详细信息（支持空间字段识别）。
-func (s *ScanService) GetItemFieldDetailsByName(engineID uint, namespace, itemName string, tenantID uint) ([]commonModels.FieldInfo, error) {
-	return s.metadataQueryService.GetItemFieldDetailsByName(engineID, namespace, itemName, tenantID)
-}
-
 // GetItemFieldDetailsByID 按 item_id 获取数据项字段详细信息。
 func (s *ScanService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
 	return s.metadataQueryService.GetItemFieldDetailsByID(tenantID, itemID)
@@ -955,14 +945,14 @@ func (s *ScanService) GetMetadataTree(tenantID, engineID uint) (*models.Metadata
 	return s.metadataQueryService.GetMetadataTree(tenantID, engineID)
 }
 
-// GetNodeByPath 按路径查询节点（用于Manager模块）
-func (s *ScanService) GetNodeByPath(tenantID, engineID uint, nodePath string) (*models.MetaNodeLite, error) {
-	return s.metadataQueryService.GetNodeByPath(tenantID, engineID, nodePath)
+// GetNodeByCatalogPath 按 catalog path 查询节点（用于 Manager 模块）
+func (s *ScanService) GetNodeByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaNodeLite, error) {
+	return s.metadataQueryService.GetNodeByCatalogPath(tenantID, engineID, catalogPath)
 }
 
-// GetItemByPath 按路径查询项目（用于Manager模块）
-func (s *ScanService) GetItemByPath(tenantID, engineID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
-	return s.metadataQueryService.GetItemByPath(tenantID, engineID, bucketName, objectPath)
+// GetItemByCatalogPath 按 catalog path 查询数据项（用于 Manager 模块）
+func (s *ScanService) GetItemByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaItemLite, error) {
+	return s.metadataQueryService.GetItemByCatalogPath(tenantID, engineID, catalogPath)
 }
 
 // GetNodeChildren 获取节点的子节点（用于Manager模块）
@@ -973,11 +963,6 @@ func (s *ScanService) GetNodeChildren(tenantID, nodeID uint) ([]models.MetaNodeL
 // GetNodeItems 获取节点下的项目（用于Manager模块）
 func (s *ScanService) GetNodeItems(tenantID, nodeID uint) ([]models.MetaItemLite, error) {
 	return s.metadataQueryService.GetNodeItems(tenantID, nodeID)
-}
-
-// GetItemSpatialMetadataByName 获取数据项空间元数据（用于 Manager/Service）。
-func (s *ScanService) GetItemSpatialMetadataByName(tenantID, engineID uint, namespace, itemName string) (*models.SpatialMetadataResponse, error) {
-	return s.metadataQueryService.GetItemSpatialMetadataByName(tenantID, engineID, namespace, itemName)
 }
 
 // GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。

@@ -231,11 +231,9 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 		}, nil
 	}
 
-	// 构建表的完整路径
+	// 表在 Meta catalog 中是数据项，不是节点。
 	tablePath := fmt.Sprintf("%s.%s", schema, table)
-
-	// 通过 Meta 获取表节点
-	tableNode, err := s.metaClient.GetNodeByPath(engineID, tablePath)
+	tableItem, err := s.metaClient.GetItemByCatalogPath(engineID, tablePath)
 	if err != nil {
 		// 如果 Meta 中没有该表，返回基础元数据
 		log.Printf("[DataSourceService] DetectTableMetadata: table not found in meta (non-fatal): %v", err)
@@ -249,8 +247,8 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 		HasGeometry: false,
 	}
 
-	if tableNode.Attributes != nil {
-		spatial := commonJSON.Section(tableNode.Attributes, "capabilities.spatial")
+	if tableItem.Attributes != nil {
+		spatial := commonJSON.Section(tableItem.Attributes, "capabilities.spatial")
 		if spatial != nil {
 			metadata.GeometryColumn = commonJSON.InterfaceString(spatial["primary_geometry_column"])
 			if columns, ok := spatial["geometry_columns"].([]interface{}); ok && len(columns) > 0 {

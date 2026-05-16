@@ -592,7 +592,7 @@ const componentKey = computed(() => {
   const contentKind = props.previewData?.object?.content?.kind || ''
   const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
 
-  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedComponentPath}-${contentType}-${contentKind}`
+  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedComponentPath}-${store.selectedNestedChildPath}-${contentType}-${contentKind}`
 })
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())

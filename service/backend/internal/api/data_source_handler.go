@@ -255,7 +255,7 @@ func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
 
 	// 调用 Meta API 获取字段信息
-	fields, err := metaClient.GetItemFields(uint(engineID), schema, table, true)
+	fields, err := metaClient.GetItemFieldsByCatalogPath(uint(engineID), fmt.Sprintf("%s.%s", schema, table), true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get table fields: " + err.Error()})
 		return
@@ -338,7 +338,7 @@ func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
 	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
 
 	// 调用 Meta API 获取空间元数据
-	spatialMeta, err := metaClient.GetItemSpatialMetadata(uint(engineID), schema, table)
+	spatialMeta, err := metaClient.GetItemSpatialMetadataByCatalogPath(uint(engineID), fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		// 如果表不是空间表，返回空结果而不是错误
 		c.JSON(http.StatusOK, gin.H{

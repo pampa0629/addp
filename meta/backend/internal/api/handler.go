@@ -732,61 +732,6 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// GetItemFieldsByName 按 engine/namespace/name 获取数据项字段。
-// @Summary 按名称获取数据项字段 | Get item fields by name
-// @Description 按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and item name
-// @Tags Meta Query
-// @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param namespace query string false "命名空间 | Namespace"
-// @Param name query string true "数据项名称 | Item name"
-// @Param include_details query bool false "是否返回详细字段 | Include details"
-// @Success 200 {object} map[string]interface{} "字段信息 | Fields"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{engine_id}/items/fields [get]
-// @Security BearerAuth
-func (h *Handler) GetItemFieldsByName(c *gin.Context) {
-	engineIDStr := c.Param("engine_id")
-	namespace := c.Query("namespace")
-	itemName := c.Query("name")
-	includeDetails := c.Query("include_details")
-
-	if itemName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing name"})
-		return
-	}
-
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if includeDetails == "true" || includeDetails == "1" {
-		fields, err := h.scanService.GetItemFieldDetailsByName(uint(engineID), namespace, itemName, tenantID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, fields)
-		return
-	}
-
-	names, err := h.scanService.GetItemFieldNames(uint(engineID), namespace, itemName, tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, names)
-}
-
 // GetItemFieldsByID 按 item_id 获取数据项字段。
 // @Summary 按 ID 获取数据项字段 | Get item fields by ID
 // @Description 按数据项 ID 获取字段详情 | Get item field details by item ID
@@ -998,19 +943,19 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// QueryNodeByPath 按路径查询节点
-// @Summary 按路径查询节点 | Query node by path
-// @Description 按引擎和路径查询元数据节点 | Query metadata node by engine and path
+// QueryNodeByCatalogPath 按 catalog path 查询节点
+// @Summary 按 catalog path 查询节点 | Query node by catalog path
+// @Description 按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog path
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param path query string true "节点路径 | Node path"
+// @Param catalog_path query string true "Catalog path"
 // @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
-// @Router /nodes/by-path [get]
+// @Router /nodes/by-catalog-path [get]
 // @Security BearerAuth
-func (h *Handler) QueryNodeByPath(c *gin.Context) {
+func (h *Handler) QueryNodeByCatalogPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
 	engineIDStr := c.Query("engine_id")
@@ -1020,13 +965,13 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 		return
 	}
 
-	path := c.Query("path")
-	if path == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing path parameter"})
+	catalogPath, ok := c.GetQuery("catalog_path")
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing catalog_path parameter"})
 		return
 	}
 
-	node, err := h.scanService.GetNodeByPath(tenantID, uint(engineID), path)
+	node, err := h.scanService.GetNodeByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -1035,20 +980,19 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 	c.JSON(http.StatusOK, node)
 }
 
-// QueryItemByPath 按路径查询数据项
-// @Summary 按路径查询数据项 | Query item by path
-// @Description 按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and path
+// QueryItemByCatalogPath 按 catalog path 查询数据项
+// @Summary 按 catalog path 查询数据项 | Query item by catalog path
+// @Description 按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog path
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param bucket query string true "Bucket或顶层命名空间 | Bucket or namespace"
-// @Param path query string false "数据项路径 | Item path"
+// @Param catalog_path query string true "Catalog path"
 // @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
-// @Router /items/by-path [get]
+// @Router /items/by-catalog-path [get]
 // @Security BearerAuth
-func (h *Handler) QueryItemByPath(c *gin.Context) {
+func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
 	engineIDStr := c.Query("engine_id")
@@ -1058,15 +1002,13 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 		return
 	}
 
-	bucket := c.Query("bucket")
-	if bucket == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing bucket parameter"})
+	catalogPath := c.Query("catalog_path")
+	if catalogPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing catalog_path parameter"})
 		return
 	}
 
-	path := c.Query("path")
-
-	item, err := h.scanService.GetItemByPath(tenantID, uint(engineID), bucket, path)
+	item, err := h.scanService.GetItemByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -1103,49 +1045,6 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, item)
-}
-
-// GetItemSpatialMetadataByName 按 engine/namespace/name 获取数据项空间元数据。
-// @Summary 按名称获取空间元数据 | Get spatial metadata by name
-// @Description 按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace and item name
-// @Tags Meta Query
-// @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param namespace query string false "命名空间 | Namespace"
-// @Param name query string true "数据项名称 | Item name"
-// @Success 200 {object} models.SpatialMetadataResponse "空间元数据 | Spatial metadata"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "空间元数据不存在 | Spatial metadata not found"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{engine_id}/items/spatial [get]
-// @Security BearerAuth
-func (h *Handler) GetItemSpatialMetadataByName(c *gin.Context) {
-	engineIDStr := c.Param("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-	tenantID, err := h.effectiveTenantIDForEngine(c, uint(engineID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	namespace := c.Query("namespace")
-	itemName := c.Query("name")
-	if itemName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing name parameter"})
-		return
-	}
-
-	spatialMeta, err := h.scanService.GetItemSpatialMetadataByName(tenantID, uint(engineID), namespace, itemName)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, spatialMeta)
 }
 
 // GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。

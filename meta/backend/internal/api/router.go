@@ -82,16 +82,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
 		api.POST("/metadata/content-index", handler.BuildObjectContentIndex)
 		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
-		api.GET("/engines/:engine_id/items/fields", handler.GetItemFieldsByName)
-		api.GET("/engines/:engine_id/items/spatial", handler.GetItemSpatialMetadataByName)
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", handler.GetMetadataTree)
 		api.GET("/nodes/:node_id", handler.GetMetaNodeByID)
 		api.GET("/nodes/:node_id/children", handler.GetNodeChildren)
 		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
-		api.GET("/nodes/by-path", handler.QueryNodeByPath)
-		api.GET("/items/by-path", handler.QueryItemByPath)
+		api.GET("/nodes/by-catalog-path", handler.QueryNodeByCatalogPath)
+		api.GET("/items/by-catalog-path", handler.QueryItemByCatalogPath)
 		api.GET("/items/:item_id/fields", handler.GetItemFieldsByID)
 		api.GET("/items/:item_id/spatial", handler.GetItemSpatialMetadataByID)
 		api.GET("/items/:item_id", handler.GetItemByID)

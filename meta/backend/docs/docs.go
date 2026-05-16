@@ -218,142 +218,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/engines/{engine_id}/items/fields": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and item name",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Query"
-                ],
-                "summary": "按名称获取数据项字段 | Get item fields by name",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "命名空间 | Namespace",
-                        "name": "namespace",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据项名称 | Item name",
-                        "name": "name",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "是否返回详细字段 | Include details",
-                        "name": "include_details",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "字段信息 | Fields",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/engines/{engine_id}/items/spatial": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace and item name",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Query"
-                ],
-                "summary": "按名称获取空间元数据 | Get spatial metadata by name",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "命名空间 | Namespace",
-                        "name": "namespace",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据项名称 | Item name",
-                        "name": "name",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "空间元数据 | Spatial metadata",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "空间元数据不存在 | Spatial metadata not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/engines/{engine_id}/tree": {
             "get": {
                 "security": [
@@ -402,21 +266,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/items/by-path": {
+        "/items/by-catalog-path": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and path",
+                "description": "按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog path",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta Query"
                 ],
-                "summary": "按路径查询数据项 | Query item by path",
+                "summary": "按 catalog path 查询数据项 | Query item by catalog path",
                 "parameters": [
                     {
                         "type": "integer",
@@ -427,16 +291,10 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Bucket或顶层命名空间 | Bucket or namespace",
-                        "name": "bucket",
+                        "description": "Catalog path",
+                        "name": "catalog_path",
                         "in": "query",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据项路径 | Item path",
-                        "name": "path",
-                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -796,21 +654,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/nodes/by-path": {
+        "/nodes/by-catalog-path": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按引擎和路径查询元数据节点 | Query metadata node by engine and path",
+                "description": "按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog path",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta Query"
                 ],
-                "summary": "按路径查询节点 | Query node by path",
+                "summary": "按 catalog path 查询节点 | Query node by catalog path",
                 "parameters": [
                     {
                         "type": "integer",
@@ -821,8 +679,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "节点路径 | Node path",
-                        "name": "path",
+                        "description": "Catalog path",
+                        "name": "catalog_path",
                         "in": "query",
                         "required": true
                     }

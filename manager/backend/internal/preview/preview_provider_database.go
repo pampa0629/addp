@@ -426,7 +426,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	p.metaClient.SetTenantID(tenantID)
 
 	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
-	spatialMeta, err := p.metaClient.GetItemSpatialMetadata(engineID, schema, table)
+	spatialMeta, err := p.metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		return nil, nil, 0, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
 	}

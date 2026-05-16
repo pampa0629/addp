@@ -76,8 +76,8 @@ func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, ob
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	// 通过 Meta API 查询对象元数据
-	item, err := metaClient.GetItemByPath(engineID, bucketName, objectPath)
+	catalogPath := catalogPathFromParts(bucketName, objectPath)
+	item, err := metaClient.GetItemByCatalogPath(engineID, catalogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get item metadata from Meta API: %w", err)
 	}
@@ -95,14 +95,8 @@ func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, re
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	// 构建节点路径
-	nodePath := bucketName
-	if relativePath != "" {
-		nodePath = bucketName + "/" + strings.TrimLeft(relativePath, "/")
-	}
-
-	// 通过 Meta API 查询节点
-	node, err := metaClient.GetNodeByPath(engineID, nodePath)
+	catalogPath := catalogPathFromParts(bucketName, relativePath)
+	node, err := metaClient.GetNodeByCatalogPath(engineID, catalogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node metadata from Meta API: %w", err)
 	}
@@ -152,14 +146,24 @@ func (r *MetadataRepository) GetNodeByName(engineID uint, nodeName string, metaC
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	// 通过 Meta API 按名称查询节点
-	node, err := metaClient.GetNodeByPath(engineID, nodeName)
+	node, err := metaClient.GetNodeByCatalogPath(engineID, nodeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node by name from Meta API: %w", err)
 	}
 
 	lite := convertMetaNodeToLite(*node)
 	return &lite, nil
+}
+
+func catalogPathFromParts(parts ...string) string {
+	trimmed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part != "" {
+			trimmed = append(trimmed, part)
+		}
+	}
+	return strings.Join(trimmed, "/")
 }
 
 // GetChildNodes 获取节点的直接子节点
@@ -236,4 +240,3 @@ func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
 		Attributes:      item.Attributes,
 	}
 }
-

@@ -240,6 +240,14 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 
 容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
 
+容器 child、组件和嵌套容器路径必须区分：
+
+- `child_name` 表示当前容器第一层可寻址子对象，例如 Excel sheet、SQLite table、ZIP entry 或已归并的 Shapefile child。
+- `component_path` 只表示 multi 组织格式的组件路径，例如 Shapefile 的 `.shp`、`.dbf`、`.shx`。它不表示容器内部继续下钻的路径。
+- `nested_child_path` 表示当前 child 本身还是容器时继续寻址其内部对象的相对路径，例如 `data/cities.csv` 或 `inner.zip/data/cities.csv`。
+
+Manager 可以把这三个概念暴露为预览请求参数，但 `common/format` 只负责提供 `ContainerChildResolver`、组件描述和 content reader 能力，不定义 Manager 的 HTTP DTO。
+
 ### Content Reader
 
 content reader 负责提供上层可继续组装的数据，不直接负责展示协议，也不等于最终 attributes。

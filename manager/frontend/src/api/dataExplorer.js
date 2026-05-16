@@ -33,7 +33,7 @@ export const dataExplorerAPI = {
   refreshNode(engineId, locator) {
     return client.post(`/manager/tree/${engineId}/refresh`, { locator })
   },
-  getPreview(locator, page = 1, pageSize = 50, childName = '', componentPath = '') {
+  getPreview(locator, page = 1, pageSize = 50, childName = '', componentPath = '', nestedChildPath = '') {
     // 取消之前未完成的预览请求
     if (previewAbortController) {
       previewAbortController.abort()
@@ -48,6 +48,9 @@ export const dataExplorerAPI = {
     }
     if (componentPath) {
       params.component_path = componentPath
+    }
+    if (nestedChildPath) {
+      params.nested_child_path = nestedChildPath
     }
 
     return client.get('/manager/preview', {

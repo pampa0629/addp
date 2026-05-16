@@ -1966,6 +1966,12 @@ const docTemplate = `{
                         "description": "multi child 内的组件路径 | Component path inside a multi child",
                         "name": "component_path",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "嵌套容器内部 child 相对路径 | Relative child path inside a nested container",
+                        "name": "nested_child_path",
+                        "in": "query"
                     }
                 ],
                 "responses": {

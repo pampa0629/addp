@@ -62,10 +62,16 @@ export const getTables = async (engineId, schema = null) => {
  * @param {string} tableName - 表名
  */
 export const getTableFields = async (engineId, schema, tableName) => {
-  const response = await apiRequest('get', `/meta/engines/${engineId}/items/fields`, {
+  const catalogPath = schema ? `${schema}.${tableName}` : tableName
+  const itemResponse = await apiRequest('get', '/meta/items/by-catalog-path', {
     params: {
-      namespace: schema,
-      name: tableName,
+      engine_id: engineId,
+      catalog_path: catalogPath
+    }
+  })
+  const item = itemResponse.data?.data || itemResponse.data
+  const response = await apiRequest('get', `/meta/items/${item.id}/fields`, {
+    params: {
       include_details: true
     }
   })

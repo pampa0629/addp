@@ -51,16 +51,17 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator       *resource.ResourceLocator // 资源定位符
-	Engine        *commonModels.Engine      // 引擎信息
-	Metadata      *commonModels.MetaNode    // 可选：Meta 节点数据
-	Pagination    *Pagination               // 分页参数
-	TenantID      *uint                     // 租户 ID
-	ItemType      string                    // 数据项类型（如 "table"），来自 MetaItem
-	PhysicalPath  string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath     string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName     string                    // 容器内部 child 名称，例如 Excel sheet
-	ComponentPath string                    // multi child 内的单个组件路径，指向容器内原始对象
+	Locator         *resource.ResourceLocator // 资源定位符
+	Engine          *commonModels.Engine      // 引擎信息
+	Metadata        *commonModels.MetaNode    // 可选：Meta 节点数据
+	Pagination      *Pagination               // 分页参数
+	TenantID        *uint                     // 租户 ID
+	ItemType        string                    // 数据项类型（如 "table"），来自 MetaItem
+	PhysicalPath    string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath       string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName       string                    // 容器内部 child 名称，例如 Excel sheet
+	ComponentPath   string                    // multi child 内的单个组件路径，指向容器内原始对象
+	NestedChildPath string                    // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 }
 
 // Pagination 分页参数
@@ -154,10 +155,10 @@ func (r *PreviewResolver) resolveComponentPreviewProvider(req *PreviewResolverRe
 
 // PreviewFromURI 从 URI 执行预览（便捷方法）
 func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, childName string, tenantID *uint) (*PreviewResult, error) {
-	return r.PreviewFromURIWithComponent(ctx, locatorURI, page, pageSize, childName, "", tenantID)
+	return r.PreviewFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, "", "", tenantID)
 }
 
-func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath string, tenantID *uint) (*PreviewResult, error) {
+func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
 	loc, err := resource.ParseURI(locatorURI)
 	if err != nil {
@@ -240,12 +241,9 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 		r.metaClient.SetTenantID(tenantID)
 
 		if !metaIDResolved && len(loc.Path) > 0 {
-			// 回退到路径查找
-			bucketName := loc.Path[0]
+			catalogPath := strings.Join(loc.Path, "/")
 			if len(loc.Path) > 1 {
-				// 对象路径：bucket/path/to/file.ext
-				objectPath := strings.Join(loc.Path[1:], "/")
-				item, err := r.metaClient.GetItemByPath(loc.EngineID, bucketName, objectPath)
+				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && item != nil {
 					if item.ScannedDepth != "deep" {
 						if ensureErr := r.metaClient.EnsureItemDeepScanned(item.ID); ensureErr != nil {
@@ -256,22 +254,20 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 					}
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到对象元数据",
-						"bucket", bucketName,
-						"path", objectPath,
+						"catalog_path", catalogPath,
 						"size_bytes", item.SizeBytes)
 				} else {
 					logger.L().Debug("未从 Meta 获取到对象元数据",
-						"bucket", bucketName,
-						"path", objectPath,
+						"catalog_path", catalogPath,
 						"error", err)
 				}
 			} else {
 				// Bucket 或 Prefix 路径
-				node, err := r.metaClient.GetNodeByPath(loc.EngineID, bucketName)
+				node, err := r.metaClient.GetNodeByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && node != nil {
 					metaNode = node
 					logger.L().Debug("从 Meta 获取到节点元数据",
-						"path", bucketName,
+						"catalog_path", catalogPath,
 						"total_size_bytes", node.TotalSizeBytes)
 				}
 			}
@@ -298,9 +294,10 @@ func (r *PreviewResolver) PreviewFromURIWithComponent(ctx context.Context, locat
 			Page:     page,
 			PageSize: pageSize,
 		},
-		TenantID:      tenantID,
-		ChildName:     strings.TrimSpace(childName),
-		ComponentPath: strings.Trim(strings.TrimSpace(componentPath), "/"),
+		TenantID:        tenantID,
+		ChildName:       strings.TrimSpace(childName),
+		ComponentPath:   strings.Trim(strings.TrimSpace(componentPath), "/"),
+		NestedChildPath: strings.Trim(strings.TrimSpace(nestedChildPath), "/"),
 	}
 
 	locatorType := strings.ToLower(strings.TrimSpace(string(loc.Type)))
@@ -457,19 +454,20 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 	}
 
 	return &PreviewRequest{
-		Engine:        managerEngine,
-		Schema:        schema,
-		Table:         table,
-		Page:          page,
-		PageSize:      pageSize,
-		TenantID:      req.TenantID,
-		ItemType:      req.ItemType,
-		NodeType:      string(req.Locator.Type),
-		PhysicalPath:  req.PhysicalPath,
-		ScopePath:     req.ScopePath,
-		ChildName:     req.ChildName,
-		ComponentPath: req.ComponentPath,
-		Attributes:    req.MetadataAttributes(),
+		Engine:          managerEngine,
+		Schema:          schema,
+		Table:           table,
+		Page:            page,
+		PageSize:        pageSize,
+		TenantID:        req.TenantID,
+		ItemType:        req.ItemType,
+		NodeType:        string(req.Locator.Type),
+		PhysicalPath:    req.PhysicalPath,
+		ScopePath:       req.ScopePath,
+		ChildName:       req.ChildName,
+		ComponentPath:   req.ComponentPath,
+		NestedChildPath: req.NestedChildPath,
+		Attributes:      req.MetadataAttributes(),
 	}
 }
 

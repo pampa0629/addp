@@ -326,7 +326,7 @@ const handleChildSelect = (key) => {
   const child = children.value.find(item => item.key === key)
   if (!child) return
   activeComponentPath.value = ''
-  emit('child-change', { ...child, componentPath: '' })
+  emit('child-change', { ...child, componentPath: '', nestedChildPath: '' })
 }
 
 const handleComponentSelect = (path) => {
@@ -334,22 +334,24 @@ const handleComponentSelect = (path) => {
   if (!activeChild.value) return
   emit('child-change', {
     ...activeChild.value,
-    componentPath: path || ''
+    componentPath: path || '',
+    nestedChildPath: ''
   })
 }
 
 const handleNestedChildChange = (payload) => {
   if (!activeChild.value) return
-  const childName = typeof payload === 'string' ? payload : payload?.childName
-  const componentPath = typeof payload === 'object' ? payload?.componentPath || '' : ''
-  const nestedPath = [childName, componentPath]
+  const childName = typeof payload === 'string' ? payload : payload?.childName || payload?.name || payload?.key
+  const childPath = typeof payload === 'object' ? payload?.nestedChildPath || payload?.componentPath || '' : ''
+  const nestedPath = [childName, childPath]
     .map(value => String(value || '').replace(/^\/+|\/+$/g, ''))
     .filter(Boolean)
     .join('/')
   if (!nestedPath) return
   emit('child-change', {
     ...activeChild.value,
-    componentPath: nestedPath
+    componentPath: '',
+    nestedChildPath: nestedPath
   })
 }
 

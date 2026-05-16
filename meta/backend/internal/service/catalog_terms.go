@@ -19,6 +19,13 @@ func namespaceLevelForPlugin(p plugin.EnginePlugin) (plugin.CatalogLevelSpec, bo
 	return plugin.CatalogNamespaceLevel(*model)
 }
 
+func namespaceTermForPlugin(p plugin.EnginePlugin) string {
+	if level, ok := namespaceLevelForPlugin(p); ok && level.Term != "" {
+		return level.Term
+	}
+	return plugin.CatalogTermDatabase
+}
+
 func catalogModelForPlugin(p plugin.EnginePlugin) *plugin.CatalogModelSpec {
 	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
 		model := modelProvider.CatalogModel()

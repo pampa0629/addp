@@ -38,22 +38,23 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	if err != nil {
 		return nil, err
 	}
-	if componentPath := strings.Trim(strings.TrimSpace(req.ComponentPath), "/"); componentPath != "" {
-		if strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
-			componentChild := childInfoForNestedContainerPath(componentPath)
-			resolved, err := resolvePreviewContainerChildFromResource(ctx, child.Reader, child.Ref, child.Format, previewRequestForComponent(req, componentChild))
-			if err != nil {
-				return nil, err
-			}
-			child = resolved
-		} else {
-			componentChild := childInfoForComponentPath(child, componentPath)
-			resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
-			if err != nil {
-				return nil, err
-			}
-			child = resolved
+	if nestedChildPath := strings.Trim(strings.TrimSpace(req.NestedChildPath), "/"); nestedChildPath != "" {
+		if !strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
+			return nil, fmt.Errorf("nested_child_path requires container child %s", req.ChildName)
 		}
+		resolved, err := resolveNestedPreviewContainerChild(ctx, child, nestedChildPath, req)
+		if err != nil {
+			return nil, err
+		}
+		child = resolved
+	}
+	if componentPath := strings.Trim(strings.TrimSpace(req.ComponentPath), "/"); componentPath != "" {
+		componentChild := childInfoForComponentPath(child, componentPath)
+		resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
+		if err != nil {
+			return nil, err
+		}
+		child = resolved
 	}
 	switch strings.ToLower(strings.TrimSpace(child.DataType)) {
 	case format.FormatDataTypeTable:
@@ -65,6 +66,69 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	default:
 		return p.previewObjectChild(ctx, req, resourceCtx.bucket, child)
 	}
+}
+
+func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.ContainerChildResource, nestedPath string, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	nestedPath = strings.Trim(strings.TrimSpace(nestedPath), "/")
+	if nestedPath == "" {
+		return parent, nil
+	}
+	childInfo := childInfoForNestedContainerPath(nestedPath)
+	resolved, directErr := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForComponent(req, childInfo))
+	if directErr == nil {
+		return resolved, nil
+	}
+	for _, index := range nestedPathSplitIndexes(nestedPath) {
+		prefix := strings.Trim(nestedPath[:index], "/")
+		rest := strings.Trim(nestedPath[index+1:], "/")
+		if prefix == "" || rest == "" {
+			continue
+		}
+		prefixInfo := childInfoForNestedContainerPath(prefix)
+		prefixChild, err := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForComponent(req, prefixInfo))
+		if err != nil || !isContainerChildResource(prefixChild) {
+			continue
+		}
+		return resolveNestedPreviewContainerChild(ctx, prefixChild, rest, req)
+	}
+	return nil, directErr
+}
+
+func resolveOpenablePreviewContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	child, err := resolvePreviewContainerChildFromResource(ctx, parent, parentRef, parentFormat, req)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := child.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reader.Close()
+	return child, nil
+}
+
+func nestedPathSplitIndexes(path string) []int {
+	indexes := []int{}
+	for index, char := range path {
+		if char == '/' {
+			indexes = append(indexes, index)
+		}
+	}
+	for left, right := 0, len(indexes)-1; left < right; left, right = left+1, right-1 {
+		indexes[left], indexes[right] = indexes[right], indexes[left]
+	}
+	return indexes
+}
+
+func isContainerChildResource(child *format.ContainerChildResource) bool {
+	if child == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
+		return true
+	}
+	descriptor, ok := format.GetFormatDescriptor(child.Format)
+	return ok && descriptor.DataType == format.FormatDataTypeContainer
 }
 
 func childInfoForNestedContainerPath(componentPath string) map[string]interface{} {
@@ -186,6 +250,7 @@ func previewRequestForComponent(req *PreviewRequest, child map[string]interface{
 		next.ChildName = strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	}
 	next.ComponentPath = ""
+	next.NestedChildPath = ""
 	next.Attributes = map[string]interface{}{}
 	for key, value := range req.Attributes {
 		if key == "type_info" {

@@ -328,14 +328,23 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
 export async function detectTableMetadata(apiBaseUrl, params) {
   try {
     // 根据 API 基础 URL 选择正确的端点
-    // Meta 模块: /api/v1/meta/engines/:engine_id/items/spatial
+    // Meta 模块先按 catalog path 定位 item，再按 item_id 查询空间元数据。
     // Service 模块: /api/service/tables/spatial-metadata
     const isMeta = apiBaseUrl.includes('/meta')
-    const endpoint = isMeta ? `/engines/${params.engine_id}/items/spatial` : '/tables/spatial-metadata'
-    const url = `${apiBaseUrl}${endpoint}`
-    const requestParams = isMeta
-      ? { namespace: params.schema, name: params.table }
-      : params
+    const catalogPath = params.schema ? `${params.schema}.${params.table}` : params.table
+    let url = `${apiBaseUrl}/tables/spatial-metadata`
+    let requestParams = params
+    if (isMeta) {
+      const itemResponse = await authenticatedAxios.get(`${apiBaseUrl}/items/by-catalog-path`, {
+        params: {
+          engine_id: params.engine_id,
+          catalog_path: catalogPath
+        }
+      })
+      const item = itemResponse.data.data || itemResponse.data
+      url = `${apiBaseUrl}/items/${item.id}/spatial`
+      requestParams = {}
+    }
 
     const response = await authenticatedAxios.get(url, { params: requestParams })
 

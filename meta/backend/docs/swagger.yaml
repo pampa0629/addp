@@ -368,98 +368,6 @@ paths:
       summary: 列出引擎数据项 | List engine items
       tags:
       - Meta Query
-  /engines/{engine_id}/items/fields:
-    get:
-      description: 按引擎、命名空间和数据项名称获取字段信息 | Get item fields by engine, namespace and
-        item name
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: 命名空间 | Namespace
-        in: query
-        name: namespace
-        type: string
-      - description: 数据项名称 | Item name
-        in: query
-        name: name
-        required: true
-        type: string
-      - description: 是否返回详细字段 | Include details
-        in: query
-        name: include_details
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 字段信息 | Fields
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 按名称获取数据项字段 | Get item fields by name
-      tags:
-      - Meta Query
-  /engines/{engine_id}/items/spatial:
-    get:
-      description: 按引擎、命名空间和数据项名称获取空间元数据 | Get spatial metadata by engine, namespace
-        and item name
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: 命名空间 | Namespace
-        in: query
-        name: namespace
-        type: string
-      - description: 数据项名称 | Item name
-        in: query
-        name: name
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 空间元数据 | Spatial metadata
-          schema:
-            $ref: '#/definitions/github_com_addp_meta_internal_models.SpatialMetadataResponse'
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 空间元数据不存在 | Spatial metadata not found
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 按名称获取空间元数据 | Get spatial metadata by name
-      tags:
-      - Meta Query
   /engines/{engine_id}/tree:
     get:
       description: 获取指定引擎的完整元数据树 | Get metadata tree for an engine
@@ -585,9 +493,9 @@ paths:
       summary: 按 ID 获取空间元数据 | Get spatial metadata by ID
       tags:
       - Meta Query
-  /items/by-path:
+  /items/by-catalog-path:
     get:
-      description: 按引擎、bucket 和路径查询数据项 | Query metadata item by engine, bucket and
+      description: 按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog
         path
       parameters:
       - description: 存储引擎ID | Engine ID
@@ -595,14 +503,10 @@ paths:
         name: engine_id
         required: true
         type: integer
-      - description: Bucket或顶层命名空间 | Bucket or namespace
+      - description: Catalog path
         in: query
-        name: bucket
+        name: catalog_path
         required: true
-        type: string
-      - description: 数据项路径 | Item path
-        in: query
-        name: path
         type: string
       produces:
       - application/json
@@ -623,7 +527,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 按路径查询数据项 | Query item by path
+      summary: 按 catalog path 查询数据项 | Query item by catalog path
       tags:
       - Meta Query
   /metadata/content-index:
@@ -849,18 +753,19 @@ paths:
       summary: 获取节点数据项 | Get node items
       tags:
       - Meta Query
-  /nodes/by-path:
+  /nodes/by-catalog-path:
     get:
-      description: 按引擎和路径查询元数据节点 | Query metadata node by engine and path
+      description: 按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog
+        path
       parameters:
       - description: 存储引擎ID | Engine ID
         in: query
         name: engine_id
         required: true
         type: integer
-      - description: 节点路径 | Node path
+      - description: Catalog path
         in: query
-        name: path
+        name: catalog_path
         required: true
         type: string
       produces:
@@ -882,7 +787,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 按路径查询节点 | Query node by path
+      summary: 按 catalog path 查询节点 | Query node by catalog path
       tags:
       - Meta Query
   /scan/auto:

@@ -154,17 +154,8 @@ func (p *fileCatalogPreviewProvider) previewFile(
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
 			if objectcontent.IsContainerFormat(contentReq.Format) {
-				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
-					preview.Object.Content = objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
-						Kind: models.ObjectPreviewKindContainer,
-						JSON: previewJSON,
-						Metadata: map[string]interface{}{
-							"size_bytes": meta.Size,
-							"path":       contentReq.Path,
-							"name":       contentReq.Name,
-							"source":     "meta",
-						},
-					})
+				if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, meta.Size, contentReq.Path, contentReq.Name); content != nil {
+					preview.Object.Content = content
 					return preview, nil
 				}
 			}
