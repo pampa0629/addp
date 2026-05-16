@@ -128,23 +128,24 @@ async function loadSourceFieldsForEdit(task) {
   if (!task.config?.source) return
 
   const source = task.config.source
-  const engineId = source.engine_id
-  const scope = source.scope || 'system'
+  const engineId = source.engine?.id
+  const scope = source.engine?.scope || 'system'
+  const path = source.resource?.path || {}
 
   try {
     let fieldList = []
 
     if (scope === 'system') {
       // 系统引擎：从 Meta 模块获取字段
-      const schema = source.schema || ''
-      const table = source.table || ''
+      const schema = path.schema || ''
+      const table = path.table || ''
       if (table) {
         const response = await getTableFields(engineId, schema, table)
         fieldList = Array.isArray(response?.data) ? response.data : (response || [])
       }
     } else if (scope === 'local') {
       // 本地引擎：通过 Transfer 模块自己的 API 实时扫描字段
-      const table = source.table || ''
+      const table = path.table || ''
       if (table) {
         const res = await localEnginesAPI.listFields(engineId, table)
         fieldList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
@@ -163,23 +164,26 @@ async function loadTargetFieldsForEdit(task) {
   if (!task.config?.target) return
 
   const target = task.config.target
-  const engineId = target.engine_id
-  const scope = target.scope || 'system'
+  if (target.representation !== 'native') return
+
+  const engineId = target.engine?.id
+  const scope = target.engine?.scope || 'system'
+  const path = target.resource?.path || {}
 
   try {
     let fieldList = []
 
     if (scope === 'system') {
       // 系统引擎：从 Meta 模块获取字段
-      const schema = target.schema || ''
-      const table = target.table || ''
+      const schema = path.schema || ''
+      const table = path.table || ''
       if (table) {
         const response = await getTableFields(engineId, schema, table)
         fieldList = Array.isArray(response?.data) ? response.data : (response || [])
       }
     } else if (scope === 'local') {
       // 本地引擎：通过 Transfer 模块自己的 API 实时扫描字段
-      const table = target.table || ''
+      const table = path.table || ''
       if (table) {
         const res = await localEnginesAPI.listFields(engineId, table)
         fieldList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])

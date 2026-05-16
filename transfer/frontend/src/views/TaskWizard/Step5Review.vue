@@ -73,11 +73,11 @@
         <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.targetEngineID.value }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewSchema')">
-          {{ wizardState.targetSchema.value }}
+        <el-descriptions-item label="格式">
+          {{ wizardState.targetConfig.value.format || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewTable')" :span="2">
-          {{ wizardState.targetTable.value }}
+        <el-descriptions-item label="资源路径" :span="2">
+          {{ targetResourcePath }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -187,6 +187,11 @@ const warnings = computed(() => {
 })
 
 const hasWarnings = computed(() => warnings.value.length > 0)
+
+const targetResourcePath = computed(() => {
+  const config = props.wizardState.targetConfig.value || {}
+  return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
+})
 
 function copyConfig() {
   const config = JSON.stringify(props.wizardState.taskConfig.value, null, 2)

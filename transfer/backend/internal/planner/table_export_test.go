@@ -14,13 +14,13 @@ func TestBuildTableExportPlanForNativeTableToCSVFile(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{ID: 1},
+			Engine:         EngineRef{Scope: "system", ID: 1},
 			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
 			DataType:       dataTypeTable,
 			Representation: representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{ID: 2},
+			Engine:         EngineRef{Scope: "system", ID: 2},
 			Resource:       ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.csv"},
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
@@ -110,17 +110,81 @@ func TestBuildTableExportPlanRejectsEncodedSource(t *testing.T) {
 	}
 }
 
+func TestParseTableExportTaskSpecRejectsLegacyConfig(t *testing.T) {
+	_, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"connector_type": "postgresql",
+		"source_config":  map[string]interface{}{"table": "roads"},
+	}, 1000)
+	if err == nil {
+		t.Fatal("ParseTableExportTaskSpec succeeded, want legacy config error")
+	}
+	if !strings.Contains(err.Error(), "legacy transfer task config") {
+		t.Fatalf("error = %q, want legacy config error", err)
+	}
+}
+
+func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
+	config := map[string]interface{}{
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"data_type":      "table",
+			"representation": "native",
+		},
+		"target": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
+			"data_type":      "table",
+			"representation": "encoded",
+			"format":         "csv",
+		},
+	}
+
+	_, err := ParseTableExportTaskSpec(config, 1000)
+	if err == nil {
+		t.Fatal("ParseTableExportTaskSpec succeeded, want mode error")
+	}
+	if !strings.Contains(err.Error(), "mode is required") {
+		t.Fatalf("error = %q, want mode error", err)
+	}
+}
+
+func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
+	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"mode": "batch",
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"data_type":      "table",
+			"representation": "native",
+		},
+		"target": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
+			"data_type":      "table",
+			"representation": "encoded",
+			"format":         "csv",
+		},
+	}, 2048)
+	if err != nil {
+		t.Fatalf("ParseTableExportTaskSpec failed: %v", err)
+	}
+	if spec.BatchSize != 2048 {
+		t.Fatalf("batch size = %d, want 2048", spec.BatchSize)
+	}
+}
+
 func minimalTableExportSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{ID: 1},
+			Engine:         EngineRef{Scope: "system", ID: 1},
 			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"name": "public.roads"}},
 			DataType:       dataTypeTable,
 			Representation: representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{ID: 2},
+			Engine:         EngineRef{Scope: "system", ID: 2},
 			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "exports/roads.csv"}},
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,

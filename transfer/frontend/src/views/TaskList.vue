@@ -87,6 +87,7 @@
         <el-table-column :label="t('transfer.taskList.actions')" width="360" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleDetail(row.id)">{{ t('transfer.taskList.detail') }}</el-button>
+            <el-button size="small" @click="handleEdit(row)" :disabled="isRunning(row)">{{ t('transfer.taskList.edit') }}</el-button>
             <template v-if="isManualTask(row)">
               <el-button size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.execute') }}
@@ -222,6 +223,10 @@ const handleCreate = () => {
 // 查看详情
 const handleDetail = (id) => {
   router.push(`/tasks/${id}/detail`)
+}
+
+const handleEdit = (task) => {
+  router.push(`/tasks/${task.id}/edit`)
 }
 
 // 任务执行（手动或单次执行）

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -37,6 +38,7 @@ type EndpointSpec struct {
 	DataType       string                 `json:"data_type"`
 	Representation string                 `json:"representation"`
 	Format         format.FormatType      `json:"format,omitempty"`
+	Options        map[string]interface{} `json:"options,omitempty"`
 	Policy         map[string]interface{} `json:"policy,omitempty"`
 }
 
@@ -79,6 +81,31 @@ type TableExportBuildResult struct {
 	TargetEngineType string
 	Format           format.FormatType
 	Plan             executor.TableExportPlan
+}
+
+func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize int) (TableExportTaskSpec, error) {
+	if config == nil {
+		return TableExportTaskSpec{}, fmt.Errorf("transfer task config is required")
+	}
+	if hasLegacyTaskConfigFields(config) {
+		return TableExportTaskSpec{}, fmt.Errorf("legacy transfer task config is not supported; use source/target endpoint config")
+	}
+
+	var spec TableExportTaskSpec
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return TableExportTaskSpec{}, fmt.Errorf("marshal transfer task config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &spec); err != nil {
+		return TableExportTaskSpec{}, fmt.Errorf("parse transfer task config: %w", err)
+	}
+	if spec.BatchSize <= 0 {
+		spec.BatchSize = fallbackBatchSize
+	}
+	if err := validateTableExportSpec(spec); err != nil {
+		return TableExportTaskSpec{}, err
+	}
+	return spec, nil
 }
 
 func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*TableExportBuildResult, error) {
@@ -133,6 +160,8 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 		return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
 	}
 
+	writeOptions := tableWriteOptions(spec.Target.Options, formatType)
+
 	return &TableExportBuildResult{
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
@@ -147,13 +176,16 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 			},
 			Format:       formatType,
 			BatchSize:    spec.BatchSize,
-			WriteOptions: format.DefaultWriteOptions(),
+			WriteOptions: writeOptions,
 		},
 	}, nil
 }
 
 func validateTableExportSpec(spec TableExportTaskSpec) error {
-	if spec.Mode != "" && spec.Mode != modeBatch {
+	if spec.Mode == "" {
+		return fmt.Errorf("transfer task mode is required")
+	}
+	if spec.Mode != modeBatch {
 		return fmt.Errorf("only batch mode is supported by table export planner, got %q", spec.Mode)
 	}
 	if err := validateEndpoint(spec.Source, "source", representationNative, dataTypeTable); err != nil {
@@ -175,6 +207,9 @@ func validateEndpoint(endpoint EndpointSpec, role, representation, dataType stri
 	if endpoint.Engine.ID == 0 {
 		return fmt.Errorf("%s engine id is required", role)
 	}
+	if endpoint.Engine.Scope != "system" {
+		return fmt.Errorf("%s engine scope must be %q, got %q", role, "system", endpoint.Engine.Scope)
+	}
 	if endpoint.DataType != dataType {
 		return fmt.Errorf("%s data type must be %q, got %q", role, dataType, endpoint.DataType)
 	}
@@ -182,6 +217,43 @@ func validateEndpoint(endpoint EndpointSpec, role, representation, dataType stri
 		return fmt.Errorf("%s representation must be %q, got %q", role, representation, endpoint.Representation)
 	}
 	return nil
+}
+
+func hasLegacyTaskConfigFields(config map[string]interface{}) bool {
+	legacyKeys := []string{
+		"source_config",
+		"target_config",
+		"connector_type",
+		"output_format",
+		"file_type",
+	}
+	for _, key := range legacyKeys {
+		if _, ok := config[key]; ok {
+			return true
+		}
+	}
+	return endpointHasLegacyFields(config["source"]) || endpointHasLegacyFields(config["target"])
+}
+
+func endpointHasLegacyFields(raw interface{}) bool {
+	endpoint, ok := raw.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	legacyKeys := []string{
+		"connector_type",
+		"engine_id",
+		"output_format",
+		"file_type",
+		"source_config",
+		"target_config",
+	}
+	for _, key := range legacyKeys {
+		if _, ok := endpoint[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func effectiveEngineType(binding EngineBinding, ref EngineRef) string {
@@ -248,6 +320,26 @@ func writeMode(policy map[string]interface{}) string {
 		return defaultWriteMode
 	}
 	return strings.ToLower(value)
+}
+
+func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType) *format.WriteOptions {
+	opts := format.DefaultWriteOptions()
+	if formatType == format.FormatTSV {
+		opts.Delimiter = '\t'
+	}
+	if raw == nil {
+		return opts
+	}
+	if header, ok := raw["header"].(bool); ok {
+		opts.OmitHeader = !header
+	}
+	if delimiter := stringValue(raw, "delimiter"); delimiter != "" {
+		runes := []rune(delimiter)
+		if len(runes) > 0 {
+			opts.Delimiter = runes[0]
+		}
+	}
+	return opts
 }
 
 func contentPathString(raw interface{}, alternateKey string) string {

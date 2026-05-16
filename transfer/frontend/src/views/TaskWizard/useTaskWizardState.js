@@ -18,25 +18,22 @@ export function useTaskWizardState() {
   const enabled = ref(false) // 定时任务启用状态
   const batchSize = ref(1000) // 批大小，默认 1000
 
-  // Source 配置
-  const sourceObjectPath = ref('') // S3/Parquet 路径
-  const sourceObjectFile = ref('') // S3/Parquet 文件（可选）
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
+  const sourceEngineType = ref('')
   const sourceScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const sourceSchema = ref('')
   const sourceTable = ref('')
-  const sourceType = ref('postgresql') // postgresql, mysql, spatialite, s3, parquet
-  const sourceQueryMode = ref('table') // table, sql
-  const sourceSQLQuery = ref('') // SQL 查询语句
+  const sourceType = ref('postgresql')
 
   // Target 配置
   const targetConfig = ref({})
   const targetEngineID = ref(null)
+  const targetEngineType = ref('')
   const targetScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const targetSchema = ref('')
   const targetTable = ref('')
-  const targetType = ref('postgresql') // postgresql, mysql, s3
+  const targetType = ref('nfs')
 
   // 字段映射
   const fieldMappings = ref([])
@@ -52,10 +49,10 @@ export function useTaskWizardState() {
       case 0: // 选择Source
         return sourceEngineID.value && sourceTable.value
       case 1: // 选择Target
-        if (targetType.value === 's3' || targetType.value === 'nfs') {
-          return !!(targetEngineID.value && targetConfig.value?.output_path && targetConfig.value?.output_file_name)
+        if (targetType.value === 's3') {
+          return !!(targetEngineID.value && targetConfig.value?.resourcePath && targetConfig.value?.resourceFile)
         }
-        return targetEngineID.value && targetTable.value
+        return !!(targetEngineID.value && targetConfig.value?.resourceFile)
       case 2: // 字段映射
         return fieldMappings.value.length > 0
       case 3: // 配置
@@ -66,80 +63,99 @@ export function useTaskWizardState() {
   })
 
   const taskConfig = computed(() => {
-    // 构建 source 配置
-    const sourceConfigObj = {
-      scope: sourceScope.value,
-      engine_id: sourceEngineID.value,
-      connector_type: sourceType.value,
-      ...sourceConfig.value
-    }
+    const sourceEndpoint = buildNativeTableSource()
+    const targetEndpoint = buildTargetEndpoint()
 
-    // 构建 target 配置
-    const targetConfigObj = {
-      scope: targetScope.value,
-      engine_id: targetEngineID.value,
-      connector_type: targetType.value,
-      ...targetConfig.value
-    }
-
-    // 根据后端 CreateTaskRequest 结构构建请求
     const config = {
       name: taskName.value,
       description: taskDescription.value,
+      task_type: 'export',
       config: {
-        source: sourceConfigObj,
-        target: targetConfigObj
+        mode: 'batch',
+        source: sourceEndpoint,
+        target: targetEndpoint,
+        batch_size: batchSize.value
       },
       schedule: schedule.value,
       enabled: schedule.value ? enabled.value : false, // 只有设置了定时任务才考虑 enabled
       batch_size: batchSize.value,
       mappings: fieldMappings.value,
-      auto_scan_metadata: true // 默认自动扫描元数据
-    }
-
-    // Source 配置：根据查询模式添加不同字段
-    if (sourceType.value === 'parquet') {
-      // Parquet 数据源：指定路径（目录或单文件）
-      config.config.source.connector_type = 'parquet'
-      // prefix 为目录路径，file_name 为具体文件（可选）
-      const path = sourceObjectFile.value || sourceObjectPath.value
-      config.config.source.prefix = sourceObjectPath.value
-      if (sourceObjectFile.value) {
-        config.config.source.file_name = sourceObjectFile.value
-      }
-      config.config.source.path = path
-    } else if (sourceQueryMode.value === 'sql') {
-      config.config.source.query_type = 'sql'
-      config.config.source.query = sourceSQLQuery.value
-    } else {
-      config.config.source.query_type = 'table'
-      config.config.source.schema = sourceSchema.value
-      config.config.source.table = sourceTable.value
-    }
-
-    // Target 配置：根据目标类型添加不同字段
-    if (targetType.value === 's3' || targetType.value === 'nfs') {
-      const fileConfig = targetConfig.value || {}
-      config.config.target.output_format = fileConfig.output_format || 'csv'
-      config.config.target.output_path = fileConfig.output_path || ''
-      config.config.target.output_file_name = fileConfig.output_file_name || ''
-
-      if (fileConfig.output_format === 'csv') {
-        config.config.target.csv_headers = fileConfig.csv_headers !== false
-        config.config.target.csv_delimiter = fileConfig.csv_delimiter || ','
-      }
-
-      if (['geojson', 'shapefile'].includes(fileConfig.output_format) && fileConfig.geometry_field) {
-        config.config.target.geometry_field = fileConfig.geometry_field
-      }
-    } else {
-      // 数据库配置
-      config.config.target.schema = targetSchema.value
-      config.config.target.table = targetTable.value
+      auto_scan_metadata: false
     }
 
     return config
   })
+
+  function buildNativeTableSource() {
+    return {
+      engine: {
+        scope: sourceScope.value,
+        id: Number(sourceEngineID.value),
+        type: sourceEngineType.value || sourceType.value
+      },
+      resource: {
+        kind: 'native_table',
+        path: {
+          schema: sourceSchema.value,
+          table: sourceTable.value
+        }
+      },
+      data_type: 'table',
+      representation: 'native'
+    }
+  }
+
+  function buildTargetEndpoint() {
+    const fileConfig = targetConfig.value || {}
+    const format = fileConfig.format || 'csv'
+    const endpoint = {
+      engine: {
+        scope: targetScope.value,
+        id: Number(targetEngineID.value),
+        type: targetEngineType.value || targetType.value
+      },
+      resource: buildEncodedTargetResource(fileConfig),
+      data_type: 'table',
+      representation: 'encoded',
+      format,
+      policy: {
+        write_mode: fileConfig.writeMode || 'overwrite'
+      },
+      options: {
+        header: fileConfig.includeHeader !== false,
+        delimiter: format === 'tsv' ? '\t' : (fileConfig.delimiter || ',')
+      }
+    }
+    return endpoint
+  }
+
+  function buildEncodedTargetResource(fileConfig) {
+    const outputPath = trimSlashes(fileConfig.resourcePath || '')
+    const outputFileName = trimSlashes(fileConfig.resourceFile || '')
+    const fullPath = [outputPath, outputFileName].filter(Boolean).join('/')
+
+    if (targetType.value === 's3') {
+      const parts = fullPath.split('/').filter(Boolean)
+      return {
+        kind: 'object',
+        path: {
+          bucket: parts.shift() || '',
+          path: parts.join('/')
+        }
+      }
+    }
+
+    return {
+      kind: 'file',
+      path: {
+        path: fullPath
+      }
+    }
+  }
+
+  function trimSlashes(value) {
+    return String(value || '').trim().replace(/^\/+|\/+$/g, '')
+  }
 
   // ===== 方法 =====
 
@@ -165,14 +181,11 @@ export function useTaskWizardState() {
   // Source 配置
   function updateSource(config) {
     sourceEngineID.value = config.engineID
+    sourceEngineType.value = config.engineType || ''
     sourceScope.value = config.scope || 'system'
     sourceSchema.value = config.schema || ''
     sourceTable.value = config.table || ''
     sourceType.value = config.sourceType || 'postgresql'
-    sourceQueryMode.value = config.queryMode || 'table'
-    sourceSQLQuery.value = config.sqlQuery || ''
-    sourceObjectPath.value = config.objectPath || ''
-    sourceObjectFile.value = config.objectFile || ''
     sourceConfig.value = config.extra || {}
   }
 
@@ -187,10 +200,11 @@ export function useTaskWizardState() {
   // Target 配置
   function updateTarget(config) {
     targetEngineID.value = config.engineID
+    targetEngineType.value = config.engineType || ''
     targetScope.value = config.scope || 'system'
     targetSchema.value = config.schema || ''
     targetTable.value = config.table || ''
-    targetType.value = config.targetType || 'postgresql'
+      targetType.value = config.targetType || 'nfs'
     targetConfig.value = config.extra || {}
   }
 
@@ -268,43 +282,25 @@ export function useTaskWizardState() {
     // Source 配置
     if (task.config?.source) {
       const source = task.config.source
-      sourceEngineID.value = source.engine_id || null
-      sourceScope.value = source.scope || 'system'
-      sourceSchema.value = source.schema || ''
-      sourceTable.value = source.table || ''
-      sourceType.value = source.connector_type || 'postgresql'
-      sourceQueryMode.value = source.query_type || 'table'
-      sourceSQLQuery.value = source.query || ''
-
-      // 额外的 source 配置
-      const extraSourceFields = { ...source }
-      delete extraSourceFields.scope
-      delete extraSourceFields.engine_id
-      delete extraSourceFields.connector_type
-      delete extraSourceFields.schema
-      delete extraSourceFields.table
-      delete extraSourceFields.query_type
-      delete extraSourceFields.query
-      sourceConfig.value = extraSourceFields
+      sourceEngineID.value = source.engine?.id || null
+      sourceEngineType.value = source.engine?.type || ''
+      sourceScope.value = source.engine?.scope || 'system'
+      sourceSchema.value = source.resource?.path?.schema || ''
+      sourceTable.value = source.resource?.path?.table || source.resource?.path?.name || ''
+      sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
+      sourceConfig.value = {}
     }
 
     // Target 配置
     if (task.config?.target) {
       const target = task.config.target
-      targetEngineID.value = target.engine_id || null
-      targetScope.value = target.scope || 'system'
-      targetSchema.value = target.schema || ''
-      targetTable.value = target.table || ''
-      targetType.value = target.connector_type || 'postgresql'
-
-      // 额外的 target 配置
-      const extraTargetFields = { ...target }
-      delete extraTargetFields.scope
-      delete extraTargetFields.engine_id
-      delete extraTargetFields.connector_type
-      delete extraTargetFields.schema
-      delete extraTargetFields.table
-      targetConfig.value = extraTargetFields
+      targetEngineID.value = target.engine?.id || null
+      targetEngineType.value = target.engine?.type || ''
+      targetScope.value = target.engine?.scope || 'system'
+      targetSchema.value = target.resource?.path?.schema || ''
+      targetTable.value = target.resource?.path?.table || target.resource?.path?.name || ''
+      targetType.value = normalizeTargetType(target)
+      targetConfig.value = extractTargetFileConfig(target)
     }
 
     // 字段映射
@@ -318,6 +314,51 @@ export function useTaskWizardState() {
         nullable: m.nullable !== false
       }))
     }
+  }
+
+  function normalizeEngineType(engineType) {
+    const type = String(engineType || '').toLowerCase()
+    if (type.includes('postgres')) return 'postgresql'
+    if (type.includes('mysql')) return 'mysql'
+    if (type.includes('spatialite') || type.includes('sqlite')) return 'spatialite'
+    if (type.includes('s3') || type.includes('minio')) return 's3'
+    return type || 'postgresql'
+  }
+
+  function normalizeTargetType(target) {
+    const engineType = normalizeEngineType(target.engine?.type || '')
+    if (target.resource?.kind === 'file') return 'nfs'
+    if (target.resource?.kind === 'object') return 's3'
+    return engineType || 'postgresql'
+  }
+
+  function extractTargetFileConfig(target) {
+    if (target.resource?.kind !== 'file' && target.resource?.kind !== 'object') {
+      return {}
+    }
+
+    const rawPath = target.resource?.path || {}
+    const path = target.resource.kind === 'object'
+      ? [rawPath.bucket, rawPath.path].filter(Boolean).join('/')
+      : rawPath.path || ''
+    const { dir, file } = splitPath(path)
+
+    return {
+      format: target.format || 'csv',
+      resourcePath: dir,
+      resourceFile: file,
+      includeHeader: target.options?.header !== false,
+      delimiter: target.options?.delimiter || ',',
+      writeMode: target.policy?.write_mode || 'overwrite'
+    }
+  }
+
+  function splitPath(path) {
+    const cleaned = trimSlashes(path)
+    if (!cleaned) return { dir: '', file: '' }
+    const parts = cleaned.split('/')
+    const file = parts.pop() || ''
+    return { dir: parts.join('/'), file }
   }
 
   // 更新任务
@@ -343,20 +384,18 @@ export function useTaskWizardState() {
     enabled.value = false
     batchSize.value = 1000
     sourceEngineID.value = null
+    sourceEngineType.value = ''
     sourceScope.value = 'system'
     sourceSchema.value = ''
     sourceTable.value = ''
     sourceType.value = 'postgresql'
-    sourceQueryMode.value = 'table'
-    sourceSQLQuery.value = ''
-    sourceObjectPath.value = ''
-    sourceObjectFile.value = ''
     sourceConfig.value = {}
     targetEngineID.value = null
+    targetEngineType.value = ''
     targetScope.value = 'system'
     targetSchema.value = ''
     targetTable.value = ''
-    targetType.value = 'postgresql'
+    targetType.value = 'nfs'
     targetConfig.value = {}
     fieldMappings.value = []
     sourceFields.value = []
@@ -374,16 +413,14 @@ export function useTaskWizardState() {
     batchSize,
     sourceConfig,
     sourceEngineID,
+    sourceEngineType,
     sourceScope,
     sourceSchema,
     sourceTable,
     sourceType,
-    sourceQueryMode,
-    sourceSQLQuery,
-    sourceObjectPath,
-    sourceObjectFile,
     targetConfig,
     targetEngineID,
+    targetEngineType,
     targetScope,
     targetSchema,
     targetTable,

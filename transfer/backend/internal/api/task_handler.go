@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	commonAPI "github.com/addp/common/api"
@@ -47,7 +48,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	task, err := h.taskService.CreateTask(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -155,7 +156,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	// 修正参数顺序：id, tenantID, req
 	task, err := h.taskService.UpdateTask(c.Request.Context(), id, tenantID, &req)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -213,7 +214,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 
 	execution, err := h.taskService.StartTask(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -410,4 +411,12 @@ func (h *TaskHandler) DeleteFieldMapping(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Mapping deleted successfully"})
+}
+
+func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrInvalidTaskConfig) {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.InternalServerError(c, err.Error())
 }

@@ -99,103 +99,7 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	if isCommonEngineFormatTask(task.Config) {
-		return s.executeCommonTableExportTask(ctx, task, executionID)
-	}
-
-	// 获取字段映射
-	mappings, err := s.mappingRepo.GetByTaskID(taskID)
-	if err != nil {
-		s.logger.Warn("failed to get mappings", "error", err)
-	}
-
-	// 构建执行任务
-	execTask, err := s.buildExecutionTask(task, executionID, mappings)
-	if err != nil {
-		s.updateExecutionError(task, executionID, err)
-		return err
-	}
-
-	// 更新执行状态为运行中
-	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
-		s.logger.Warn("failed to update execution status", "error", err)
-	}
-
-	// 选择执行引擎：暂时禁用并行引擎（MaxParallelism 字段已删除）
-	var executeErr error
-	var metrics *pipeline.Metrics
-	useParallel := false // 暂时禁用并行引擎
-
-	if useParallel {
-		// 并行引擎逻辑（暂时不使用）
-		// 使用并行引擎执行
-		executeErr = s.parallelEngine.Execute(ctx, execTask)
-
-		// 并行引擎完成后，获取指标和日志（从基础引擎）
-		if s.parallelEngine.ExecutionEngine != nil {
-			metrics = s.parallelEngine.ExecutionEngine.GetMetrics()
-			logs := s.parallelEngine.ExecutionEngine.GetLogs()
-			s.updateExecutionMetricsWithLogs(executionID, logs, metrics)
-		}
-	} else {
-		s.logger.Info("using serial execution engine", "task_id", taskID)
-
-		// 设置进度回调以定期更新日志和指标
-		s.engine.SetProgressCallback(func(logs string, metrics *pipeline.Metrics) {
-			s.updateExecutionMetricsWithLogs(executionID, logs, metrics)
-		})
-
-		// ✅ 设置后处理回调（在 Writer Close 前执行）
-		s.engine.SetPostProcessCallback(func(ctx context.Context, execTaskInner *pipeline.ExecutionTask, writer pipeline.Writer) error {
-			return s.executePostProcessing(ctx, task, execTaskInner, executionID)
-		})
-
-		// 使用串行引擎执行
-		executeErr = s.engine.Execute(ctx, execTask)
-
-		// 获取执行指标并更新（不更新日志，因为日志已通过 AppendLog 实时追加）
-		metrics = s.engine.GetMetrics()
-		s.updateExecutionMetrics(executionID, metrics)
-	}
-
-	// 检查执行错误
-	if executeErr != nil {
-		s.logger.Error("task execution failed", "error", executeErr, "task_id", taskID)
-
-		if useParallel && s.parallelEngine.ExecutionEngine != nil {
-			s.updateExecutionMetricsWithLogs(executionID, s.parallelEngine.ExecutionEngine.GetLogs(), nil)
-		} else {
-			s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), nil)
-		}
-
-		s.updateExecutionError(task, executionID, executeErr)
-		return executeErr
-	}
-
-	// 完成执行
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
-		s.logger.Warn("failed to finish execution", "error", err)
-	}
-
-	// 任务执行完成，恢复为空闲状态
-	if err := s.taskRepo.UpdateFields(taskID, map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 100.0,
-	}); err != nil {
-		s.logger.Warn("failed to update task after successful execution", "error", err, "task_id", taskID)
-	}
-
-	s.logger.Info("task executed successfully", "task_id", taskID, "records", metrics.RecordsWritten)
-
-	// 后处理已通过回调机制在 Execute() 内部执行（Writer.Flush() 之后、Writer.Close() 之前）
-	// 不再需要在此处调用 executePostProcessing
-
-	// 如果任务配置了自动扫描元数据，触发 Meta 模块扫描
-	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task)
-	}
-
-	return nil
+	return s.executeCommonTableExportTask(ctx, task, executionID)
 }
 
 func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
@@ -209,20 +113,11 @@ func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Contex
 		s.logger.Warn("failed to update execution status", "error", err)
 	}
 
-	var spec planner.TableExportTaskSpec
-	configBytes, err := json.Marshal(task.Config)
+	spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize)
 	if err != nil {
-		wrapped := fmt.Errorf("marshal common transfer task config: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
-		return wrapped
-	}
-	if err := json.Unmarshal(configBytes, &spec); err != nil {
 		wrapped := fmt.Errorf("parse common transfer task config: %w", err)
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
-	}
-	if spec.BatchSize <= 0 {
-		spec.BatchSize = task.BatchSize
 	}
 
 	buildResult, err := planner.BuildTableExportPlan(spec, planner.NewSystemEngineResolver(s.systemClient))
@@ -865,23 +760,6 @@ func (s *ExecutionEngineService) resourceToConnectorConfig(resource *commonModel
 }
 
 // ========== 辅助函数 ==========
-
-func isCommonEngineFormatTask(config map[string]interface{}) bool {
-	if config == nil {
-		return false
-	}
-	source, ok := config["source"].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	target, ok := config["target"].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	_, sourceHasRepresentation := source["representation"].(string)
-	_, targetHasRepresentation := target["representation"].(string)
-	return sourceHasRepresentation && targetHasRepresentation
-}
 
 func hasSpatialTransform(transforms []pipeline.Transform) bool {
 	for _, t := range transforms {

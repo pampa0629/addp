@@ -63,6 +63,7 @@
       "createdAt": "Created At",
       "actions": "Actions",
       "detail": "Detail",
+      "edit": "Edit",
       "execute": "Execute",
       "stop": "Stop",
       "delete": "Delete",

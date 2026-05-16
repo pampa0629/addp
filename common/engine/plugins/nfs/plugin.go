@@ -151,7 +151,7 @@ func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInf
 }
 
 func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
-	return p.OpenFileForWrite(ctx, connInfo, path.StringPath())
+	return p.openFileForWrite(ctx, connInfo, path.StringPath(), opts.Overwrite)
 }
 
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -318,6 +318,10 @@ func (p *NFSPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Connect
 
 // OpenFileForWrite 打开 NFS 文件用于写入（文件不存在则创建，存在则覆盖）
 func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.WriteCloser, error) {
+	return p.openFileForWrite(ctx, connInfo, path, true)
+}
+
+func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path string, overwrite bool) (io.WriteCloser, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -332,8 +336,12 @@ func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.Connec
 	filePath := normalizePath(path)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	// 先删除已有文件（模拟 truncate，OpenFile 不会自动截断）
-	_ = entry.target.Remove(filePath)
+	if overwrite {
+		// go-nfs-client 的 OpenFile 不会自动截断，覆盖写必须先删除旧文件。
+		_ = entry.target.Remove(filePath)
+	} else if _, _, err := entry.target.Lookup(filePath); err == nil {
+		return nil, fmt.Errorf("NFS file %s already exists", filePath)
+	}
 
 	f, err := entry.target.OpenFile(filePath, 0644)
 	if err != nil {

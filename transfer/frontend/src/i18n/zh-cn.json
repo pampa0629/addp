@@ -63,6 +63,7 @@
       "createdAt": "创建时间",
       "actions": "操作",
       "detail": "详情",
+      "edit": "编辑",
       "execute": "执行",
       "stop": "停止",
       "delete": "删除",

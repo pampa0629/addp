@@ -2,15 +2,19 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"gorm.io/gorm"
 )
+
+var ErrInvalidTaskConfig = errors.New("invalid transfer task config")
 
 // TaskQueue 任务队列接口（避免循环依赖）
 type TaskQueue interface {
@@ -57,13 +61,22 @@ func (s *TaskService) SetExecutionService(executionService *ExecutionService) {
 func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequest, tenantID, userID uint) (*models.TransferTask, error) {
 	s.logger.Info("creating task", "name", req.Name, "tenant_id", tenantID)
 
+	batchSize := req.BatchSize
+	if batchSize == 0 {
+		batchSize = 1000
+	}
+	if err := validateNewTaskConfig(req.Config, batchSize); err != nil {
+		return nil, err
+	}
+
 	// 构建任务对象
 	task := &models.TransferTask{
 		Name:        req.Name,
 		Description: req.Description,
+		TaskType:    req.TaskType,
 		Config:      req.Config,
 		Schedule:    req.Schedule,
-		BatchSize:   req.BatchSize,
+		BatchSize:   batchSize,
 		Status:      models.TaskStatusIdle,
 		Progress:    0,
 		Enabled:     req.Schedule != "", // 有 schedule 的任务默认不启用，需要用户手动启动
@@ -79,34 +92,8 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	}
 
 	// 设置默认值
-	if task.BatchSize == 0 {
-		task.BatchSize = 1000
-	}
-
-	// ✅ 确保 config.target 中包含后处理配置（显式化）
-	if targetConfig, ok := task.Config["target"].(map[string]interface{}); ok {
-		// 主键创建配置
-		if _, exists := targetConfig["create_primary_key"]; !exists {
-			targetConfig["create_primary_key"] = true // 默认启用
-		}
-		if _, exists := targetConfig["force_primary_key"]; !exists {
-			targetConfig["force_primary_key"] = []string{} // 空数组表示自动检测
-		}
-		if _, exists := targetConfig["primary_key_name"]; !exists {
-			targetConfig["primary_key_name"] = "" // 空字符串表示自动生成
-		}
-
-		// 空间索引配置
-		if _, exists := targetConfig["create_spatial_index"]; !exists {
-			targetConfig["create_spatial_index"] = true // 默认启用
-		}
-
-		// 统计信息更新配置
-		if _, exists := targetConfig["update_statistics"]; !exists {
-			targetConfig["update_statistics"] = true // 默认启用
-		}
-
-		task.Config["target"] = targetConfig
+	if task.TaskType == "" {
+		task.TaskType = "export"
 	}
 
 	// 创建任务
@@ -156,6 +143,18 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, fmt.Errorf("cannot update task in %s status", task.Status)
 	}
 
+	effectiveConfig := task.Config
+	if req.Config != nil {
+		effectiveConfig = req.Config
+	}
+	effectiveBatchSize := task.BatchSize
+	if req.BatchSize != nil {
+		effectiveBatchSize = *req.BatchSize
+	}
+	if err := validateNewTaskConfig(effectiveConfig, effectiveBatchSize); err != nil {
+		return nil, err
+	}
+
 	// 更新字段
 	if req.Name != nil {
 		task.Name = *req.Name
@@ -163,34 +162,11 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if req.Description != nil {
 		task.Description = *req.Description
 	}
+	if req.TaskType != nil {
+		task.TaskType = *req.TaskType
+	}
 	if req.Config != nil {
 		task.Config = req.Config
-
-		// ✅ 确保更新后的 config.target 也包含后处理配置
-		if targetConfig, ok := task.Config["target"].(map[string]interface{}); ok {
-			// 主键创建配置
-			if _, exists := targetConfig["create_primary_key"]; !exists {
-				targetConfig["create_primary_key"] = true
-			}
-			if _, exists := targetConfig["force_primary_key"]; !exists {
-				targetConfig["force_primary_key"] = []string{}
-			}
-			if _, exists := targetConfig["primary_key_name"]; !exists {
-				targetConfig["primary_key_name"] = ""
-			}
-
-			// 空间索引配置
-			if _, exists := targetConfig["create_spatial_index"]; !exists {
-				targetConfig["create_spatial_index"] = true
-			}
-
-			// 统计信息更新配置
-			if _, exists := targetConfig["update_statistics"]; !exists {
-				targetConfig["update_statistics"] = true
-			}
-
-			task.Config["target"] = targetConfig
-		}
 	}
 	if req.Schedule != nil {
 		task.Schedule = *req.Schedule
@@ -211,6 +187,14 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 
 	s.logger.Info("task updated", "task_id", id)
 	return task, nil
+}
+
+func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
+	_, err := planner.ParseTableExportTaskSpec(config, batchSize)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	return nil
 }
 
 // DeleteTask 删除任务
@@ -276,14 +260,19 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 		return nil, fmt.Errorf("task is already running")
 	}
 
-	// 3. 使用统一执行服务创建执行记录
+	// 3. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
+	if err := validateNewTaskConfig(task.Config, task.BatchSize); err != nil {
+		return nil, err
+	}
+
+	// 4. 使用统一执行服务创建执行记录
 	execution, err := s.executionService.CreateExecution(ctx, id, "manual", &userID)
 	if err != nil {
 		s.logger.Error("failed to create execution", "error", err, "task_id", id)
 		return nil, fmt.Errorf("failed to create execution: %w", err)
 	}
 
-	// 4. 更新任务状态为运行中
+	// 5. 更新任务状态为运行中
 	updates := map[string]interface{}{
 		"status":   models.TaskStatusRunning,
 		"progress": 0,
@@ -297,7 +286,7 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 		return nil, fmt.Errorf("failed to update task state: %w", err)
 	}
 
-	// 5. 将任务提交到队列（Asynq）
+	// 6. 将任务提交到队列（Asynq）
 	if s.taskQueue != nil {
 		if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
 			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)

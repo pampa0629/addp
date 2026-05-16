@@ -373,6 +373,8 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		updates["error_details"] = commonModels.JSONMap{
 			"message": errorMsg,
 		}
+	} else if status == models.ExecutionStatusSuccess {
+		updates["error_details"] = commonModels.JSONMap{}
 	}
 
 	// 获取执行记录

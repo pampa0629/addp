@@ -65,6 +65,7 @@ func (q *TaskQueue) EnqueueExecuteTaskWithOptions(ctx context.Context, taskID, e
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
+	opts = append([]asynq.Option{asynq.MaxRetry(0)}, opts...)
 	task := asynq.NewTask(TypeExecuteTask, payload, opts...)
 
 	info, err := q.client.EnqueueContext(ctx, task)
@@ -110,33 +111,33 @@ func (q *TaskQueue) GetQueueStats(queueName string) (*QueueStats, error) {
 	}
 
 	return &QueueStats{
-		Queue:      queueName,
-		Active:     info.Active,
-		Pending:    info.Pending,
-		Scheduled:  info.Scheduled,
-		Retry:      info.Retry,
-		Archived:   info.Archived,
-		Completed:  info.Completed,
-		Processed:  info.Processed,
-		Failed:     info.Failed,
-		Size:       info.Size,
-		Latency:    info.Latency,
+		Queue:     queueName,
+		Active:    info.Active,
+		Pending:   info.Pending,
+		Scheduled: info.Scheduled,
+		Retry:     info.Retry,
+		Archived:  info.Archived,
+		Completed: info.Completed,
+		Processed: info.Processed,
+		Failed:    info.Failed,
+		Size:      info.Size,
+		Latency:   info.Latency,
 	}, nil
 }
 
 // QueueStats 队列统计信息
 type QueueStats struct {
-	Queue      string
-	Active     int
-	Pending    int
-	Scheduled  int
-	Retry      int
-	Archived   int
-	Completed  int
-	Processed  int
-	Failed     int
-	Size       int
-	Latency    time.Duration
+	Queue     string
+	Active    int
+	Pending   int
+	Scheduled int
+	Retry     int
+	Archived  int
+	Completed int
+	Processed int
+	Failed    int
+	Size      int
+	Latency   time.Duration
 }
 
 // CancelTask 取消队列中的任务

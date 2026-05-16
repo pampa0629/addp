@@ -93,7 +93,9 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 		}
 		namespace := path.Segments[len(path.Segments)-2].Name
 		item := path.Segments[len(path.Segments)-1].Name
-		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit)
+		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit, opts.Offset)
+	} else if opts.Limit > 0 {
+		query = sqldialect.PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
 	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit})
 	if err != nil {
@@ -102,11 +104,11 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 	return QueryResultToBatchData(result, opts.Offset), nil
 }
 
-func sampleSQLForEngine(engineType, namespace, item string, limit int) string {
+func sampleSQLForEngine(engineType, namespace, item string, limit int, offset int64) string {
 	if limit <= 0 {
 		limit = 1000
 	}
-	return sqldialect.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, 0)
+	return sqldialect.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
 }
 
 func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {

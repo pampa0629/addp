@@ -155,6 +155,52 @@ Transfer task
 8. Shapefile 表达为 `format=shapefile`，resource / writer 必须处理 multi component 提交。
 9. `policy` 只表达任务策略，不表达 engine 或 format 能力。
 
+## 当前实测状态
+
+第一条链路已经作为 Transfer worker 的新主路径跑通：
+
+```text
+PostgreSQL native table
+  -> common/engine BatchReadableProvider.ReadBatch(limit, offset)
+  -> common/format CSV TableWriterProvider
+  -> common/engine NFS ContentWritableProvider.CreateContent
+  -> Transfer execution metrics / status
+```
+
+实测任务：
+
+| 项 | 值 |
+|---|---|
+| source | System engine PostgreSQL，`public.yanshi` |
+| target | System engine NFS，`yanshi_export_from_task.csv` |
+| source rows | 73090 |
+| output rows | 73091，含 CSV header |
+| 输出文件 | `business/nfs/data/yanshi_export_from_task.csv` |
+
+当前后端执行口径：
+
+1. 新任务 JSON 是创建、更新、启动和 worker 执行的唯一入口。
+2. `mode` 必填，当前只支持 `batch`。
+3. `source.engine.scope` / `target.engine.scope` 必须为 `system`，`local_engines` 不再作为新入口。
+4. 顶层或 endpoint 内出现旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、`engine_id` 时直接拒绝。
+5. `ExecutionEngineService` 不再对旧 pipeline 做执行兜底；旧 pipeline / plugins 代码只作为待迁移、待删除存量代码存在。
+
+已修复的第一条链路问题：
+
+| 问题 | 处理 |
+|---|---|
+| PostgreSQL 批次读取重复读取第一页 | `ReadSQLBatch` 使用 `opts.Offset`。 |
+| worker 自动重试导致目标文件被反复覆盖 | Transfer queue 默认 `asynq.MaxRetry(0)`，失败重试后续应由任务 policy 显式表达。 |
+| NFS 每批次写入时覆盖目标文件 | NFS `CreateContent()` 尊重 `WriteOptions.Overwrite`，同一次 writer 会话只打开一次目标。 |
+| 成功 execution 保留旧 `error_details` | 成功完成时清空错误详情。 |
+
+仍未完成：
+
+- progress / checkpoint / batch-level logs 还只是最小状态。
+- S3 / MinIO `ContentWritableProvider.CreateContent()` 还未补。
+- JSON / Parquet / Shapefile 等写侧 provider 还未补。
+- 旧 pipeline / plugins 尚未删除，需在新链路覆盖对应能力后分步清理。
+
 ## 已有 common 能力能否支撑第一步
 
 结论：**不能完全支撑，但读侧可复用较多；第一步不应新增大而全的统一数据流框架，而应围绕“PostgreSQL table -> CSV -> NFS / S3”补最小缺口。**
@@ -180,7 +226,7 @@ Transfer task
 | 写入数据库表 | `BatchWritableProvider` 接口已有，但当前没有实际实现；PostgreSQL COPY writer 仍在 Transfer 私有插件里。 |
 | 写入对象存储 | `ContentWritableProvider` 只有 NFS 实现；S3 / MinIO 目前没有 common 写 provider。 |
 | data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / Parquet / Shapefile 等格式还没有 table writer provider。 |
-| planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，尚未接入 System engine resolver、worker 和完整能力矩阵。 |
+| planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
 | 全量读取文件格式 | `TableSampleReader.SampleTable()` 语义是样本 / 窗口读取，不是长期持有状态的 reader。它可用于第一步的简单循环或验证，但对大文件连续传输、checkpoint、错误恢复不够清晰。 |
 | 多组件写出 | `common/resource` 有 `ComponentReader`，但没有 `ComponentWriter`；Shapefile 这类 multi component 输出缺提交边界。 |
 | stream / CDC | common engine 尚无 `StreamReadableProvider`、`CDCReadableProvider` 和 change event / offset 标准。 |
@@ -189,7 +235,7 @@ Transfer task
 
 1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider`，PostgreSQL `BatchWritableProvider` 或 COPY batch writer。
 2. **common format 写侧**：CSV / TSV `TableWriterProvider` 已补；后续按链路需要继续补 JSON / Parquet / Shapefile。
-3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路；尚未接入 worker 和真实任务入库。
+3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
 ## 第一阶段最小增强
 
@@ -391,14 +437,13 @@ sequenceDiagram
 - CSV descriptor、capability view、table schema / sample parser。
 - `transfer/backend/internal/planner` 已有第一条链路的最小 `BuildTableExportPlan()`，支持 native table -> encoded table file/object，并提供 System engine resolver。
 - `transfer/backend/internal/executor` 已有最小 `TableExportExecutor`，支持 registry 构造和注入式单测。
-- `ExecutionEngineService` 已有新任务 JSON 的窄入口：识别 `source.representation` + `target.representation` 后走 common planner + executor。
+- `ExecutionEngineService` 已有新任务 JSON 的唯一执行入口：直接走 common planner + executor。
 
 缺失的是：
 
 - S3 / MinIO `CreateContent()`。
-- 真实 PostgreSQL -> NFS 环境验证。
 - 更完整的执行日志、checkpoint、progress 回写。
-- 将新任务 JSON 的 API 校验、前端配置和任务入库流程切到新规范。
+- 前端配置仍需继续清理为新规范，不再围绕旧任务 JSON 做适配。
 
 ## TransferPlanner 设计
 
@@ -664,9 +709,9 @@ Transfer planner 根据目标 policy 决定：
 
 1. `internal/planner` 已有最小 table export planner，先只覆盖 `source=data_type:table, representation:native` 到 `target=data_type:table, representation:encoded, format:csv/tsv`。
 2. `internal/executor` 已有最小 table export executor，使用 common engine `BatchReadableProvider` / `ContentWritableProvider` 和 common format `TableWriterProvider`。
-3. System engine resolver 已补，待补新任务 JSON 入库校验。
-4. worker / `ExecutionEngineService` 已有窄入口接入 planner + executor，并回写基础 records metrics；待补 checkpoint、progress 和更完整日志。
-5. 待在真实环境跑通 PostgreSQL table -> CSV -> NFS file，再决定是否优先补 S3 / MinIO `CreateContent()`。
+3. System engine resolver 已补，新任务 JSON 入库、更新和启动前校验已补。
+4. worker / `ExecutionEngineService` 已接入 planner + executor，并回写基础 records metrics；待补 checkpoint、progress 和更完整日志。
+5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，下一步可在补前端新规范和补 S3 / MinIO `CreateContent()` 之间选择。
 
 ### 阶段四：扩展格式和空间链路
 
