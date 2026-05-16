@@ -67,60 +67,6 @@ func maskString(value interface{}) string {
 	return "****"
 }
 
-// NamespaceInfo 表示 catalog 第一层命名空间。
-type NamespaceInfo struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
-// CatalogItemInfo 表示 catalog 叶子数据项。
-type CatalogItemInfo struct {
-	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
-	Type        string `json:"type,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
-// ListNamespaces 列出指定资源的 catalog 命名空间。
-func (s *StorageEngineService) ListNamespaces(resource *models.Engine) ([]NamespaceInfo, error) {
-	nodes, err := dbbridge.ListNamespaces(context.Background(), resource)
-	if err != nil {
-		return nil, err
-	}
-	namespaces := make([]NamespaceInfo, 0, len(nodes))
-	for _, node := range nodes {
-		if !node.IsContainer {
-			continue
-		}
-		namespaces = append(namespaces, NamespaceInfo{
-			Name:        node.Name,
-			Description: stringAttribute(node.Attributes, "description"),
-		})
-	}
-	return namespaces, nil
-}
-
-// ListCatalogItems 列出指定命名空间下的 catalog 叶子数据项。
-func (s *StorageEngineService) ListCatalogItems(resource *models.Engine, namespace string) ([]CatalogItemInfo, error) {
-	nodes, err := dbbridge.ListItems(context.Background(), resource, namespace)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]CatalogItemInfo, 0, len(nodes))
-	for _, node := range nodes {
-		if !node.IsItem {
-			continue
-		}
-		items = append(items, CatalogItemInfo{
-			Name:        node.Name,
-			Namespace:   namespace,
-			Type:        node.Kind,
-			Description: stringAttribute(node.Attributes, "description"),
-		})
-	}
-	return items, nil
-}
-
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
 func (s *StorageEngineService) ListCatalogChildren(resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogNode, error) {
 	nodes, err := dbbridge.ListCatalogChildren(context.Background(), resource, toPluginCatalogPath(req.Path), plugin.ListOptions{

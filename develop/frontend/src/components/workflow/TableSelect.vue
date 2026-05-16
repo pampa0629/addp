@@ -26,7 +26,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listCatalogItems } from '@/api/engines'
+import { listCatalogChildren } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -58,8 +58,21 @@ const loadTables = async (engineId, schema) => {
 
   loading.value = true
   try {
-    const data = await listCatalogItems(engineId, schema)
-    tables.value = data || []
+    const data = await listCatalogChildren(engineId, {
+      segments: [{
+        term: 'namespace',
+        kind: 'namespace',
+        name: schema
+      }]
+    })
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : []
+    tables.value = nodes
+      .filter(node => node.is_item)
+      .map(node => ({
+        name: node.name,
+        type: node.kind || node.term,
+        description: node.attributes?.description || node.attributes?.catalog?.description || ''
+      }))
   } catch (error) {
     console.error('获取表列表失败:', error)
     ElMessage.error('获取表列表失败')

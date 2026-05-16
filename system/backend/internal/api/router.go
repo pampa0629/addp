@@ -151,8 +151,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				engines.DELETE("/:id", engineHandler.Delete)
 				engines.POST("/:id/test", engineHandler.TestConnection)                    // 测试已有引擎连接
 				engines.POST("/test-connection", engineHandler.TestConnectionBeforeCreate) // 创建前测试连接
-				engines.GET("/:id/namespaces", engineHandler.ListNamespaces)               // 列出 catalog 命名空间
-				engines.GET("/:id/items", engineHandler.ListCatalogItems)                  // 列出 catalog 数据项
 				engines.POST("/:id/catalog/children", engineHandler.ListCatalogChildren)   // 列出实时 catalog 子节点
 			}
 

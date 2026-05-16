@@ -29,7 +29,6 @@ ADDP 中容易混淆的三个概念需要明确区分：
 - System 负责引擎控制面和实时 catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。
 - Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
 - Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
-- `/api/v1/system/engines/:id/namespaces` 和 `/api/v1/system/engines/:id/items` 仅作为浅层快捷封装，长期抽象应以 `catalog/children` 为准。
 
 ---
 

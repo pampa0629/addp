@@ -77,14 +77,16 @@ func (h *EngineHandler) ListNfsEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListNamespaces 获取指定引擎的 catalog 命名空间列表。
-// @Summary 获取命名空间列表 | List namespaces
+// ListCatalogChildren 获取指定引擎的实时 catalog 子节点。
+// @Summary 获取实时 catalog 子节点 | List live catalog children
 // @Tags Engines
+// @Accept json
 // @Produce json
 // @Param id path int true "引擎ID | Engine ID"
-// @Success 200 {object} map[string]interface{} "命名空间列表 | Namespace list"
-// @Router /engines/:id/namespaces [get]
-func (h *EngineHandler) ListNamespaces(c *gin.Context) {
+// @Param request body commonClient.EngineCatalogListChildrenRequest true "Catalog 路径请求 | Catalog path request"
+// @Success 200 {object} commonClient.EngineCatalogListChildrenResponse "Catalog 子节点 | Catalog children"
+// @Router /engines/{id}/catalog/children [post]
+func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
@@ -92,51 +94,22 @@ func (h *EngineHandler) ListNamespaces(c *gin.Context) {
 		return
 	}
 
-	namespaces, err := h.systemClient.ListNamespacesWithToken(uint(engineID), bearerToken(c))
+	var req commonClient.EngineCatalogListChildrenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	nodes, err := h.systemClient.ListCatalogChildrenWithToken(uint(engineID), req, bearerToken(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取命名空间列表失败",
+			"error":   "获取 catalog 子节点失败",
 			"details": err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":     "success",
-		"namespaces": namespaces,
-	})
-}
-
-// ListCatalogItems 获取指定命名空间下的 catalog 数据项列表。
-// @Summary 获取数据项列表 | List catalog items
-// @Tags Engines
-// @Produce json
-// @Param id path int true "引擎ID | Engine ID"
-// @Param namespace query string false "命名空间名称 | Namespace name"
-// @Success 200 {object} map[string]interface{} "数据项列表 | Catalog item list"
-// @Router /engines/:id/items [get]
-func (h *EngineHandler) ListCatalogItems(c *gin.Context) {
-	engineIDStr := c.Param("id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的引擎ID"})
-		return
-	}
-
-	namespace := c.Query("namespace")
-	items, err := h.systemClient.ListCatalogItemsWithToken(uint(engineID), namespace, bearerToken(c))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取数据项列表失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"items":  items,
-	})
+	c.JSON(http.StatusOK, commonClient.EngineCatalogListChildrenResponse{Nodes: nodes})
 }
 
 func bearerToken(c *gin.Context) string {

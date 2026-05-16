@@ -164,70 +164,6 @@
                 }
             }
         },
-        "/engines/:id/items": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Engines"
-                ],
-                "summary": "获取数据项列表 | List catalog items",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "命名空间名称 | Namespace name",
-                        "name": "namespace",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "数据项列表 | Catalog item list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/engines/:id/namespaces": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Engines"
-                ],
-                "summary": "获取命名空间列表 | List namespaces",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "命名空间列表 | Namespace list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/engines/nfs": {
             "get": {
                 "produces": [
@@ -245,6 +181,46 @@
                             "items": {
                                 "$ref": "#/definitions/models.Engine"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{id}/catalog/children": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Engines"
+                ],
+                "summary": "获取实时 catalog 子节点 | List live catalog children",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Catalog 路径请求 | Catalog path request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.EngineCatalogListChildrenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Catalog 子节点 | Catalog children",
+                        "schema": {
+                            "$ref": "#/definitions/client.EngineCatalogListChildrenResponse"
                         }
                     }
                 }
@@ -1925,6 +1901,114 @@
         }
     },
     "definitions": {
+        "client.EngineCatalogListChildrenRequest": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "options": {
+                    "$ref": "#/definitions/client.EngineCatalogListOptions"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                }
+            }
+        },
+        "client.EngineCatalogListChildrenResponse": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.EngineCatalogNode"
+                    }
+                }
+            }
+        },
+        "client.EngineCatalogListOptions": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "recursive": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "client.EngineCatalogNode": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "is_container": {
+                    "type": "boolean"
+                },
+                "is_item": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "stats": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.CreateDevTaskRequest": {
             "type": "object",
             "required": [

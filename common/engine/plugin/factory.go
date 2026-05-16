@@ -147,55 +147,6 @@ func GetOrCreatePoolFromFactory(engine *Engine, config *PoolConfig) (*gorm.DB, e
 
 // === Catalog / metadata 查询相关方法 ===
 
-// ListNamespaces 列出引擎 catalog 的第一层命名空间。
-func ListNamespaces(ctx context.Context, resource *Engine) ([]CatalogNode, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource cannot be nil")
-	}
-
-	enginePlugin, err := Get(resource.EngineType)
-	if err != nil {
-		return nil, err
-	}
-
-	catalogProvider, ok := enginePlugin.(CatalogProvider)
-	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", resource.EngineType)
-	}
-
-	return catalogProvider.ListChildren(ctx, resource.ConnectionInfo, CatalogPath{
-		Version:  CatalogPathVersion,
-		EngineID: resource.ID,
-	}, ListOptions{})
-}
-
-// ListItems 列出指定命名空间下的叶子数据项。
-func ListItems(ctx context.Context, resource *Engine, namespace string) ([]CatalogNode, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource cannot be nil")
-	}
-
-	enginePlugin, err := Get(resource.EngineType)
-	if err != nil {
-		return nil, err
-	}
-
-	catalogProvider, ok := enginePlugin.(CatalogProvider)
-	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", resource.EngineType)
-	}
-
-	return catalogProvider.ListChildren(ctx, resource.ConnectionInfo, CatalogPath{
-		Version:  CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []CatalogSegment{{
-			Term: namespaceTermForPlugin(enginePlugin),
-			Kind: CatalogKindNamespace,
-			Name: namespace,
-		}},
-	}, ListOptions{})
-}
-
 // DescribeItem 描述 catalog 叶子数据项。
 func DescribeItem(ctx context.Context, resource *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
 	if resource == nil {

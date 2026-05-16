@@ -368,8 +368,6 @@ frontend/src/
 - `POST /api/v1/system/engines/:id/test` - 测试已有引擎连接
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
 - `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现
-- `GET /api/v1/system/engines/:id/namespaces` - 列出 catalog 命名空间（`catalog/children` 的浅层快捷封装）
-- `GET /api/v1/system/engines/:id/items?namespace=public` - 列出指定命名空间下的 catalog 数据项（`catalog/children` 的浅层快捷封装）
 
 ### 应用管理（需认证）
 - `POST /api/v1/system/applications` - 创建应用

@@ -1,5 +1,76 @@
 basePath: /api/v1/develop
 definitions:
+  client.EngineCatalogListChildrenRequest:
+    properties:
+      filter:
+        additionalProperties: true
+        type: object
+      options:
+        $ref: '#/definitions/client.EngineCatalogListOptions'
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+    type: object
+  client.EngineCatalogListChildrenResponse:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/client.EngineCatalogNode'
+        type: array
+    type: object
+  client.EngineCatalogListOptions:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      recursive:
+        type: boolean
+    type: object
+  client.EngineCatalogNode:
+    properties:
+      actions:
+        items:
+          type: string
+        type: array
+      attributes:
+        additionalProperties: true
+        type: object
+      is_container:
+        type: boolean
+      is_item:
+        type: boolean
+      kind:
+        type: string
+      name:
+        type: string
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      stats:
+        additionalProperties: true
+        type: object
+      term:
+        type: string
+    type: object
+  client.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/client.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  client.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.CreateDevTaskRequest:
     properties:
       content:
@@ -766,46 +837,30 @@ paths:
       summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
       tags:
       - Engines
-  /engines/:id/items:
-    get:
+  /engines/{id}/catalog/children:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 引擎ID | Engine ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 命名空间名称 | Namespace name
-        in: query
-        name: namespace
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 数据项列表 | Catalog item list
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 获取数据项列表 | List catalog items
-      tags:
-      - Engines
-  /engines/:id/namespaces:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: path
-        name: id
+      - description: Catalog 路径请求 | Catalog path request
+        in: body
+        name: request
         required: true
-        type: integer
+        schema:
+          $ref: '#/definitions/client.EngineCatalogListChildrenRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 命名空间列表 | Namespace list
+          description: Catalog 子节点 | Catalog children
           schema:
-            additionalProperties: true
-            type: object
-      summary: 获取命名空间列表 | List namespaces
+            $ref: '#/definitions/client.EngineCatalogListChildrenResponse'
+      summary: 获取实时 catalog 子节点 | List live catalog children
       tags:
       - Engines
   /engines/{id}/sample-query:

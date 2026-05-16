@@ -23,7 +23,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listNamespaces } from '@/api/engines'
+import { listCatalogChildren } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -51,8 +51,14 @@ const loadSchemas = async (engineId) => {
 
   loading.value = true
   try {
-    const data = await listNamespaces(engineId)
-    schemas.value = data || []
+    const data = await listCatalogChildren(engineId)
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : []
+    schemas.value = nodes
+      .filter(node => node.is_container)
+      .map(node => ({
+        name: node.name,
+        description: node.attributes?.description || node.attributes?.catalog?.description || ''
+      }))
   } catch (error) {
     console.error('获取 Schema 列表失败:', error)
     ElMessage.error('获取 Schema 列表失败')

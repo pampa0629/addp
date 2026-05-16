@@ -122,16 +122,6 @@ func toPluginEngine(engine *models.Engine) *plugin.Engine {
 	return pluginEngine
 }
 
-// ListNamespaces 列出引擎 catalog 的第一层命名空间。
-func ListNamespaces(ctx context.Context, engine *models.Engine) ([]plugin.CatalogNode, error) {
-	return plugin.ListNamespaces(ctx, toPluginEngine(engine))
-}
-
-// ListItems 列出指定命名空间下的叶子数据项。
-func ListItems(ctx context.Context, engine *models.Engine, namespace string) ([]plugin.CatalogNode, error) {
-	return plugin.ListItems(ctx, toPluginEngine(engine), namespace)
-}
-
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
 func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
 	pluginEngine := toPluginEngine(engine)

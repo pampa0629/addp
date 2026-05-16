@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -472,20 +471,6 @@ func (c *SystemClient) GetTaskProvider(moduleName string) (*models.TaskProvider,
 
 // ================ Catalog 相关方法 ================
 
-// NamespaceInfo 表示 catalog 第一层命名空间。
-type NamespaceInfo struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
-// CatalogItemInfo 表示 catalog 叶子数据项。
-type CatalogItemInfo struct {
-	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
-	Type        string `json:"type,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
 // EngineCatalogListChildrenRequest 表示实时 catalog 子节点浏览请求。
 type EngineCatalogListChildrenRequest struct {
 	Path    EngineCatalogPath        `json:"path"`
@@ -530,97 +515,6 @@ type EngineCatalogListOptions struct {
 	Recursive bool `json:"recursive,omitempty"`
 	Limit     int  `json:"limit,omitempty"`
 	Offset    int  `json:"offset,omitempty"`
-}
-
-// ListNamespaces 列出指定引擎的 catalog 命名空间。
-func (c *SystemClient) ListNamespaces(engineID uint) ([]NamespaceInfo, error) {
-	return c.ListNamespacesWithToken(engineID, "")
-}
-
-// ListNamespacesWithToken 使用指定用户 JWT 列出 catalog 命名空间。
-// token 为空时使用客户端自身认证配置。
-func (c *SystemClient) ListNamespacesWithToken(engineID uint, token string) ([]NamespaceInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/system/engines/%d/namespaces", c.baseURL, engineID)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else {
-		c.addAuth(req)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result struct {
-		Status     string          `json:"status"`
-		Namespaces []NamespaceInfo `json:"namespaces"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return result.Namespaces, nil
-}
-
-// ListCatalogItems 列出指定命名空间下的 catalog 叶子数据项。
-func (c *SystemClient) ListCatalogItems(engineID uint, namespace string) ([]CatalogItemInfo, error) {
-	return c.ListCatalogItemsWithToken(engineID, namespace, "")
-}
-
-// ListCatalogItemsWithToken 使用指定用户 JWT 列出 catalog 叶子数据项。
-// token 为空时使用客户端自身认证配置。
-func (c *SystemClient) ListCatalogItemsWithToken(engineID uint, namespace string, token string) ([]CatalogItemInfo, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/system/engines/%d/items", c.baseURL, engineID)
-	if namespace != "" {
-		endpoint += "?namespace=" + url.QueryEscape(namespace)
-	}
-
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else {
-		c.addAuth(req)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result struct {
-		Status string            `json:"status"`
-		Items  []CatalogItemInfo `json:"items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return result.Items, nil
 }
 
 // ListCatalogChildren 列出指定引擎的实时 catalog 子节点。

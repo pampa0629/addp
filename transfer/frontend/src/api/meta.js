@@ -23,13 +23,18 @@ const apiRequest = (method, url, options = {}) => {
 }
 
 /**
- * 获取引擎的命名空间列表
+ * 获取引擎的顶层 catalog 节点列表
  * @param {number} engineId - 引擎ID
  */
 export const getSchemas = async (engineId) => {
-  const response = await apiRequest('get', `/system/engines/${engineId}/namespaces`)
-  const namespaces = response.data?.namespaces || response.data?.data?.namespaces || response.data || []
-  return namespaces.map(item => ({
+  const response = await apiRequest('post', `/system/engines/${engineId}/catalog/children`, {
+    data: {
+      path: { segments: [] },
+      options: {}
+    }
+  })
+  const nodes = response.data?.nodes || response.data?.data?.nodes || []
+  return nodes.filter(item => item.is_container).map(item => ({
     ...item,
     schema_name: item.name || item.schema_name,
     name: item.name || item.schema_name

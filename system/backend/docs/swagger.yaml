@@ -1325,48 +1325,6 @@ paths:
       summary: 创建引擎 | Create engine
       tags:
       - 引擎管理 | Engine Management
-  /engines/:id/items:
-    get:
-      parameters:
-      - description: 资源ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 命名空间名称 | Namespace name
-        in: query
-        name: namespace
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 列出数据项列表 | List catalog items
-      tags:
-      - Resources
-  /engines/:id/namespaces:
-    get:
-      parameters:
-      - description: 资源ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 列出命名空间列表 | List namespaces
-      tags:
-      - Resources
   /engines/{id}:
     delete:
       parameters:
