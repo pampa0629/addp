@@ -88,6 +88,12 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 	if preview.Object.Content.Kind != models.ObjectPreviewKindContainer {
 		t.Fatalf("content kind = %q, want container", preview.Object.Content.Kind)
 	}
+	if preview.Object.Content.FrontendRenderer != models.ObjectPreviewKindContainer {
+		t.Fatalf("frontend renderer = %q, want container", preview.Object.Content.FrontendRenderer)
+	}
+	if preview.Object.Content.Metadata["frontend_renderer"] != models.ObjectPreviewKindContainer {
+		t.Fatalf("metadata frontend renderer = %#v, want container", preview.Object.Content.Metadata["frontend_renderer"])
+	}
 	jsonMap, ok := preview.Object.Content.JSON.(map[string]interface{})
 	if !ok {
 		t.Fatalf("content json = %#v, want map", preview.Object.Content.JSON)

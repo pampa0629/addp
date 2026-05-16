@@ -85,6 +85,7 @@
             :data="activeChildPreviewData"
             :loading="activeChildLoading"
             @page-change="handlePageChange"
+            @child-change="handleNestedChildChange"
           />
           <el-table
             v-else-if="activeColumns.length"
@@ -334,6 +335,21 @@ const handleComponentSelect = (path) => {
   emit('child-change', {
     ...activeChild.value,
     componentPath: path || ''
+  })
+}
+
+const handleNestedChildChange = (payload) => {
+  if (!activeChild.value) return
+  const childName = typeof payload === 'string' ? payload : payload?.childName
+  const componentPath = typeof payload === 'object' ? payload?.componentPath || '' : ''
+  const nestedPath = [childName, componentPath]
+    .map(value => String(value || '').replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .join('/')
+  if (!nestedPath) return
+  emit('child-change', {
+    ...activeChild.value,
+    componentPath: nestedPath
   })
 }
 

@@ -314,7 +314,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		if handler != nil {
 			if objectcontent.IsContainerFormat(req.Format) {
 				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, stat.Size); previewJSON != nil {
-					preview.Object.Content = &models.ObjectPreviewContent{
+					preview.Object.Content = objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
 						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
 						Metadata: map[string]interface{}{
@@ -323,7 +323,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 							"name":       req.Name,
 							"source":     "meta",
 						},
-					}
+					})
 					return preview, nil
 				}
 			}

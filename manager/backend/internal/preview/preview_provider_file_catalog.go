@@ -155,7 +155,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 		if handler != nil {
 			if objectcontent.IsContainerFormat(contentReq.Format) {
 				if previewJSON := objectcontent.BuildContainerPreviewFromAttributes(preview.Object.Attributes, meta.Size); previewJSON != nil {
-					preview.Object.Content = &models.ObjectPreviewContent{
+					preview.Object.Content = objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
 						Kind: models.ObjectPreviewKindContainer,
 						JSON: previewJSON,
 						Metadata: map[string]interface{}{
@@ -164,7 +164,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 							"name":       contentReq.Name,
 							"source":     "meta",
 						},
-					}
+					})
 					return preview, nil
 				}
 			}

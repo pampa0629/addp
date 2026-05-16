@@ -39,12 +39,21 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		return nil, err
 	}
 	if componentPath := strings.Trim(strings.TrimSpace(req.ComponentPath), "/"); componentPath != "" {
-		componentChild := childInfoForComponentPath(child, componentPath)
-		resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
-		if err != nil {
-			return nil, err
+		if strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
+			componentChild := childInfoForNestedContainerPath(componentPath)
+			resolved, err := resolvePreviewContainerChildFromResource(ctx, child.Reader, child.Ref, child.Format, previewRequestForComponent(req, componentChild))
+			if err != nil {
+				return nil, err
+			}
+			child = resolved
+		} else {
+			componentChild := childInfoForComponentPath(child, componentPath)
+			resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
+			if err != nil {
+				return nil, err
+			}
+			child = resolved
 		}
-		child = resolved
 	}
 	switch strings.ToLower(strings.TrimSpace(child.DataType)) {
 	case format.FormatDataTypeTable:
@@ -56,6 +65,25 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	default:
 		return p.previewObjectChild(ctx, req, resourceCtx.bucket, child)
 	}
+}
+
+func childInfoForNestedContainerPath(componentPath string) map[string]interface{} {
+	name := strings.Trim(componentPath, "/")
+	preview := previewHintForComponentDescriptor(nil, name)
+	result := map[string]interface{}{
+		"name":         name,
+		"key":          name,
+		"path":         name,
+		"kind":         "file",
+		"data_type":    preview.DataType,
+		"format":       string(preview.Format),
+		"organization": "single",
+		"content_type": previewContentType(preview.Format, name),
+	}
+	if result["content_type"] == "application/octet-stream" {
+		delete(result, "content_type")
+	}
+	return result
 }
 
 func childInfoForComponentPath(parent *format.ContainerChildResource, componentPath string) map[string]interface{} {
@@ -209,12 +237,12 @@ func (p *ContainerChildPreviewProvider) previewContainerChild(ctx context.Contex
 		Format:     string(child.Format),
 		Attributes: req.Attributes,
 	}, child.Format)
-	return p.objectPreview(req, bucket, child, &models.ObjectPreviewContent{
+	return p.objectPreview(req, bucket, child, objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:      models.ObjectPreviewKindContainer,
 		JSON:      previewJSON,
 		Metadata:  metadata,
 		Truncated: objectcontent.ContainerInfoTruncated(info),
-	}), nil
+	})), nil
 }
 
 func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {

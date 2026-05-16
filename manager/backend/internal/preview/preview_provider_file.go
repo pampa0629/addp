@@ -102,12 +102,16 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 }
 
 func resolvePreviewContainerChild(ctx context.Context, parent resource.ResourceReader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	return resolvePreviewContainerChildFromResource(ctx, parent, resource.NewResourceRef(parentPath, resource.ResourceRoleMain), parentFormat, req)
+}
+
+func resolvePreviewContainerChildFromResource(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
 	child := containerChildForRequest(req.Attributes, req.ChildName)
 	resolver, err := format.GetContainerChildResolver(parentFormat)
 	if err != nil {
 		return nil, fmt.Errorf("no container child resolver for format %s: %w", parentFormat, err)
 	}
-	resolved, err := resolver.ResolveContainerChild(ctx, parent, resource.NewResourceRef(parentPath, resource.ResourceRoleMain), mapToContainerChildInfo(child), format.ChildTableParseOptions(req.ChildName, child))
+	resolved, err := resolver.ResolveContainerChild(ctx, parent, parentRef, mapToContainerChildInfo(child), format.ChildTableParseOptions(req.ChildName, child))
 	if err != nil {
 		return nil, err
 	}
