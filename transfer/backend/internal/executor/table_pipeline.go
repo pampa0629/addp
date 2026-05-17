@@ -366,7 +366,7 @@ type encodedContentTableSource struct {
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
 	if s.componentProvider != nil {
-		resourceReader := newEngineResourceReader(s.reader, s.connInfo, s.path, s.readOptions)
+		resourceReader := resource.NewEngineContentReader(s.reader, s.connInfo, s.path, s.readOptions)
 		components := resource.SameBasenameComponents(s.path.StringPath(), s.componentProvider.ComponentSpecs())
 		componentReader := resource.NewStaticComponentReader(resourceReader, components)
 		schema, err := s.componentProvider.DescribeTableComponents(ctx, componentReader, s.parseOptions)
@@ -693,7 +693,8 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 		return &emptyContentBatchWriter{output: output}, nil
 	}
 	if t.componentProvider != nil {
-		componentWriter := newContentComponentWriter(t.writer, t.connInfo, t.path, t.writeOptions, t.componentProvider.ComponentSpecs())
+		resourceWriter := resource.NewEngineContentWriter(t.writer, t.connInfo, t.path, t.writeOptions)
+		componentWriter := resource.NewStaticComponentWriter(resourceWriter, resource.SameBasenameComponents(t.path.StringPath(), t.componentProvider.ComponentSpecs()))
 		tableWriter, err := t.componentProvider.OpenComponentTableWriter(ctx, componentWriter, resourceRefFromCatalogPath(t.path), schema, t.formatOptions)
 		if err != nil {
 			_ = componentWriter.AbortComponents(ctx)

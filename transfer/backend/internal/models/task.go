@@ -79,19 +79,19 @@ type JSONMap = commonModels.JSONMap
 
 // TransferTask 传输任务定义
 type TransferTask struct {
-	ID               uint           `gorm:"primaryKey" json:"id"`
-	TenantID         uint           `gorm:"not null;index" json:"tenant_id"`
-	Name             string         `gorm:"type:varchar(255);not null" json:"name"`
-	Description      string         `gorm:"type:text" json:"description"`
-	TaskType         string         `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // import | export | sync
-	Config           JSONMap        `gorm:"type:jsonb;not null" json:"config"`                                 // Reader-Transform-Writer 管道配置
-	Schedule         string         `gorm:"type:varchar(100)" json:"schedule"`                                 // Cron 表达式
-	BatchSize        int            `gorm:"default:1000" json:"batch_size"`
-	Enabled          bool           `gorm:"default:false;index" json:"enabled"`
-	AutoScanMetadata bool           `gorm:"default:true" json:"auto_scan_metadata"`
-	Status           TaskStatus     `gorm:"type:varchar(20);default:'idle';index" json:"status"`
-	Progress         float64        `gorm:"type:numeric(5,2);default:0" json:"progress"`
-	CreatedBy        *uint          `json:"created_by,omitempty"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
+	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description      string     `gorm:"type:text" json:"description"`
+	TaskType         string     `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // import | export | sync
+	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"`                                 // Reader-Transform-Writer 管道配置
+	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"`                                 // Cron 表达式
+	BatchSize        int        `gorm:"default:1000" json:"batch_size"`
+	Enabled          bool       `gorm:"default:false;index" json:"enabled"`
+	AutoScanMetadata bool       `json:"auto_scan_metadata"`
+	Status           TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	Progress         float64    `gorm:"type:numeric(5,2);default:0" json:"progress"`
+	CreatedBy        *uint      `json:"created_by,omitempty"`
 	// BaseTask 基类字段
 	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
@@ -166,8 +166,8 @@ func (FieldMapping) TableName() string {
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
-	TaskType         string                 `json:"task_type"`                     // import | export | sync
-	Config           map[string]interface{} `json:"config" binding:"required"`     // 包含 source 和 target 配置
+	TaskType         string                 `json:"task_type"`                 // import | export | sync
+	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target 配置
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`

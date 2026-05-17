@@ -10,6 +10,7 @@ import (
 	csvformat "github.com/addp/common/format/plugins/csv"
 	jsonformat "github.com/addp/common/format/plugins/json"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/resource"
 )
 
 func TestEncodedTableTransferExecutorConvertsCSVToJSONL(t *testing.T) {
@@ -59,7 +60,8 @@ func TestEncodedTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
-	componentWriter := newContentComponentWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true}, shapefilePlugin.ComponentSpecs())
+	resourceWriter := resource.NewEngineContentWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
+	componentWriter := resource.NewStaticComponentWriter(resourceWriter, resource.SameBasenameComponents(target.StringPath(), shapefilePlugin.ComponentSpecs()))
 	tableWriter, err := shapefilePlugin.OpenComponentTableWriter(context.Background(), componentWriter, resourceRefFromCatalogPath(target), &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},

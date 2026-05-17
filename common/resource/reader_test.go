@@ -152,3 +152,41 @@ func TestStaticComponentReaderOpenComponentRangeFallsBackToStream(t *testing.T) 
 		t.Fatalf("range data = %q, want 2345", data)
 	}
 }
+
+type memoryResourceWriter struct {
+	created []ResourceRef
+}
+
+func (w *memoryResourceWriter) Create(_ context.Context, ref ResourceRef) (io.WriteCloser, error) {
+	w.created = append(w.created, ref)
+	return nopWriteCloser{Writer: io.Discard}, nil
+}
+
+type nopWriteCloser struct {
+	io.Writer
+}
+
+func (w nopWriteCloser) Close() error {
+	return nil
+}
+
+func TestStaticComponentWriterCreatesComponentResource(t *testing.T) {
+	backing := &memoryResourceWriter{}
+	writer := NewStaticComponentWriter(backing, []ComponentRef{
+		{ResourceRef: NewResourceRef("roads.dbf", ResourceRoleComponent), ComponentRole: "attributes", Required: true},
+	})
+	components := writer.Components()
+	if len(components) != 1 {
+		t.Fatalf("component count = %d, want 1", len(components))
+	}
+	if _, err := writer.CreateComponent(context.Background(), components[0]); err != nil {
+		t.Fatalf("CreateComponent() error = %v", err)
+	}
+	if got, want := backing.created[0].Path, "roads.dbf"; got != want {
+		t.Fatalf("created path = %q, want %q", got, want)
+	}
+	components[0].Path = "mutated.dbf"
+	if got, want := writer.Components()[0].Path, "roads.dbf"; got != want {
+		t.Fatalf("component slice was mutated: got %q, want %q", got, want)
+	}
+}

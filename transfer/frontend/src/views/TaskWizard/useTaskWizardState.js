@@ -151,7 +151,7 @@ export function useTaskWizardState() {
   }
 
   function supportedEncodedSourceFormat(format) {
-    return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet'].includes(String(format || '').toLowerCase())
+    return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile'].includes(String(format || '').toLowerCase())
   }
 
   function buildTargetEndpoint() {

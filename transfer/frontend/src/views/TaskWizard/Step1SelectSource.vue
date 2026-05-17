@@ -121,7 +121,7 @@ const selectedSourceSupported = computed(() => {
   return false
 })
 
-const supportedEncodedSourceFormats = ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet']
+const supportedEncodedSourceFormats = ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']
 
 watch(selectedNode, (node) => {
   if (node) {

@@ -51,6 +51,10 @@ type ResourceReader interface {
 	List(ctx context.Context, scope ResourceRef) ([]ResourceRef, error)
 }
 
+type ResourceWriter interface {
+	Create(ctx context.Context, ref ResourceRef) (io.WriteCloser, error)
+}
+
 type RangeReader interface {
 	ResourceReader
 	OpenRange(ctx context.Context, ref ResourceRef, offset, length int64) (io.ReadCloser, error)
@@ -115,6 +119,41 @@ type ComponentWriter interface {
 	CreateComponent(ctx context.Context, component ComponentRef) (io.WriteCloser, error)
 	CommitComponents(ctx context.Context) error
 	AbortComponents(ctx context.Context) error
+}
+
+type StaticComponentWriter struct {
+	resourceWriter ResourceWriter
+	components     []ComponentRef
+}
+
+func NewStaticComponentWriter(resourceWriter ResourceWriter, components []ComponentRef) *StaticComponentWriter {
+	copied := append([]ComponentRef(nil), components...)
+	return &StaticComponentWriter{
+		resourceWriter: resourceWriter,
+		components:     copied,
+	}
+}
+
+func (w *StaticComponentWriter) Components() []ComponentRef {
+	if w == nil {
+		return nil
+	}
+	return append([]ComponentRef(nil), w.components...)
+}
+
+func (w *StaticComponentWriter) CreateComponent(ctx context.Context, component ComponentRef) (io.WriteCloser, error) {
+	if w == nil || w.resourceWriter == nil {
+		return nil, ErrComponentNotFound
+	}
+	return w.resourceWriter.Create(ctx, component.ResourceRef)
+}
+
+func (w *StaticComponentWriter) CommitComponents(context.Context) error {
+	return nil
+}
+
+func (w *StaticComponentWriter) AbortComponents(context.Context) error {
+	return nil
 }
 
 type StaticComponentReader struct {
