@@ -173,6 +173,26 @@ func (p providerTestTableReaderProvider) OpenTableReader(context.Context, io.Rea
 	return nil, nil
 }
 
+type providerTestComponentTableWriterProvider struct {
+	formatType FormatType
+}
+
+func (p providerTestComponentTableWriterProvider) Format() FormatType {
+	return p.formatType
+}
+
+func (p providerTestComponentTableWriterProvider) Capabilities() FormatCapability {
+	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+}
+
+func (p providerTestComponentTableWriterProvider) ComponentSpecs() []resource.ComponentSpec {
+	return []resource.ComponentSpec{{Extension: ".main", Role: "main", Required: true}}
+}
+
+func (p providerTestComponentTableWriterProvider) OpenComponentTableWriter(context.Context, resource.ComponentWriter, resource.ResourceRef, *TableInfo, *WriteOptions) (TableWriter, error) {
+	return nil, nil
+}
+
 func TestRegisterTableReaderProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	formatType := FormatType("table_reader_only")
@@ -182,6 +202,18 @@ func TestRegisterTableReaderProvider(t *testing.T) {
 	}
 	if got, err := registry.GetTableReaderProvider(formatType); err != nil || got.Format() != formatType {
 		t.Fatalf("GetTableReaderProvider() = %#v, %v; want table_reader_only", got, err)
+	}
+}
+
+func TestRegisterComponentTableWriterProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("component_table_writer_only")
+
+	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterComponentTableWriterProvider() error = %v", err)
+	}
+	if got, err := registry.GetComponentTableWriterProvider(formatType); err != nil || got.Format() != formatType {
+		t.Fatalf("GetComponentTableWriterProvider() = %#v, %v; want component_table_writer_only", got, err)
 	}
 }
 
@@ -262,6 +294,22 @@ func TestListTableReaderProviderFormatsSorted(t *testing.T) {
 	want := []FormatType{"alpha", "zeta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTableReaderProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListComponentTableWriterProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: FormatType("zeta")}); err != nil {
+		t.Fatalf("RegisterComponentTableWriterProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: FormatType("alpha")}); err != nil {
+		t.Fatalf("RegisterComponentTableWriterProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListComponentTableWriterProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListComponentTableWriterProviderFormats() = %#v, want %#v", got, want)
 	}
 }
 

@@ -25,6 +25,7 @@ type FormatImplementationStatus struct {
 	TableSampleReader      bool `json:"table_sample_reader,omitempty"`
 	TableReaderProvider    bool `json:"table_reader_provider,omitempty"`
 	TableWriterProvider    bool `json:"table_writer_provider,omitempty"`
+	ComponentTableWriter   bool `json:"component_table_writer_provider,omitempty"`
 	ComponentTableProvider bool `json:"component_table_provider,omitempty"`
 	ScopeTableProvider     bool `json:"scope_table_provider,omitempty"`
 	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
@@ -101,6 +102,9 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if _, err := GetTableWriterProvider(formatType); err == nil {
 		status.TableWriterProvider = true
+	}
+	if _, err := GetComponentTableWriterProvider(formatType); err == nil {
+		status.ComponentTableWriter = true
 	}
 	if _, err := GetDocumentInfoProvider(formatType); err == nil {
 		status.DocumentInfoProvider = true

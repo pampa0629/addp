@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/json"
+	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/pdf"
 )
 
@@ -118,6 +119,26 @@ func TestBuildTableExportPlanPassesGeoJSONReadOptions(t *testing.T) {
 	}
 	if result.Plan.ReadOptions["spatial.target_encoding"] != "geojson" || result.Plan.ReadOptions["geometry_field"] != "geom" {
 		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.ReadOptions)
+	}
+}
+
+func TestBuildTableExportPlanAllowsParquetTableWriter(t *testing.T) {
+	spec := minimalTableExportSpec()
+	spec.Target.Format = format.FormatParquet
+	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.parquet"}
+
+	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableExportPlan failed: %v", err)
+	}
+	if result.Format != format.FormatParquet || result.Plan.Format != format.FormatParquet {
+		t.Fatalf("format = %q / %q, want parquet", result.Format, result.Plan.Format)
+	}
+	if result.Plan.WriteOptions == nil {
+		t.Fatal("write options is nil")
 	}
 }
 

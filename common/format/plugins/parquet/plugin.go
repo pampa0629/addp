@@ -6,10 +6,13 @@ package parquet
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -142,6 +145,56 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if output == nil {
+		return nil, fmt.Errorf("parquet table writer requires output")
+	}
+	fields := parquetWriterFields(schema)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("parquet table writer requires schema fields")
+	}
+
+	group := parquetgo.Group{}
+	for _, field := range fields {
+		group[field.Name] = parquetNodeForField(field)
+	}
+	writer := parquetgo.NewGenericWriter[any](output, parquetgo.NewSchema("", group))
+	return &tableWriter{
+		writer: writer,
+		fields: fields,
+	}, nil
+}
+
+func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if input == nil {
+		return nil, fmt.Errorf("parquet table reader requires input")
+	}
+	data, err := io.ReadAll(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read parquet data: %w", err)
+	}
+	file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open parquet file: %w", err)
+	}
+	rowCount := file.NumRows()
+	schema := &format.TableInfo{
+		Fields:   extractFields(file.Schema()),
+		RowCount: &rowCount,
+	}
+	return &tableReader{
+		file:       file,
+		fieldNames: extractLeafColumnNames(file.Schema()),
+		schema:     schema,
+	}, nil
+}
+
 // DescribeTable 从 Parquet 文件中提取 TableInfo（Schema + 行数）
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
 	data, err := io.ReadAll(input)
@@ -264,6 +317,357 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 		}
 	}
 	return nil
+}
+
+type tableReader struct {
+	file          *parquetgo.File
+	fieldNames    []string
+	schema        *format.TableInfo
+	rowGroupIndex int
+	rows          parquetgo.Rows
+	closed        bool
+}
+
+func (r *tableReader) Schema() *format.TableInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	copied := *r.schema
+	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
+	copied.PrimaryKey = append([]string(nil), r.schema.PrimaryKey...)
+	return &copied
+}
+
+func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	if r.closed {
+		return nil, fmt.Errorf("parquet table reader is closed")
+	}
+	if limit < 0 {
+		return nil, fmt.Errorf("parquet table reader limit cannot be negative")
+	}
+	if limit == 0 {
+		limit = 1
+	}
+	result := make([]map[string]interface{}, 0, limit)
+	for len(result) < limit {
+		if err := contextErr(ctx); err != nil {
+			return result, err
+		}
+		if r.rows == nil {
+			if !r.openNextRowGroup() {
+				break
+			}
+		}
+		before := len(result)
+		if err := appendRows(ctx, r.rows, r.fieldNames, int64(limit), &result); err != nil {
+			return result, err
+		}
+		if len(result) >= limit {
+			break
+		}
+		if len(result) == before {
+			if err := r.closeCurrentRows(); err != nil {
+				return result, err
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *tableReader) Close(ctx context.Context) error {
+	if r.closed {
+		return nil
+	}
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	r.closed = true
+	return r.closeCurrentRows()
+}
+
+func (r *tableReader) openNextRowGroup() bool {
+	if r.file == nil || r.rowGroupIndex >= len(r.file.RowGroups()) {
+		return false
+	}
+	r.rows = r.file.RowGroups()[r.rowGroupIndex].Rows()
+	r.rowGroupIndex++
+	return true
+}
+
+func (r *tableReader) closeCurrentRows() error {
+	if r.rows == nil {
+		return nil
+	}
+	err := r.rows.Close()
+	r.rows = nil
+	if err != nil {
+		return fmt.Errorf("failed to close parquet rows: %w", err)
+	}
+	return nil
+}
+
+type tableWriter struct {
+	writer *parquetgo.GenericWriter[any]
+	fields []format.FieldInfo
+	closed bool
+}
+
+func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
+	if w.closed {
+		return fmt.Errorf("parquet table writer is closed")
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	values := make([]any, 0, len(rows))
+	for _, row := range rows {
+		if err := contextErr(ctx); err != nil {
+			return err
+		}
+		values = append(values, parquetWriterRow(row, w.fields))
+	}
+	if _, err := w.writer.Write(values); err != nil {
+		return fmt.Errorf("failed to write parquet rows: %w", err)
+	}
+	return nil
+}
+
+func (w *tableWriter) Close(ctx context.Context) error {
+	if w.closed {
+		return nil
+	}
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	w.closed = true
+	if err := w.writer.Close(); err != nil {
+		return fmt.Errorf("failed to close parquet writer: %w", err)
+	}
+	return nil
+}
+
+func parquetWriterFields(schema *format.TableInfo) []format.FieldInfo {
+	if schema == nil {
+		return nil
+	}
+	fields := make([]format.FieldInfo, 0, len(schema.Fields))
+	seen := map[string]struct{}{}
+	for _, field := range schema.Fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		field.Name = name
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func parquetNodeForField(field format.FieldInfo) parquetgo.Node {
+	var node parquetgo.Node
+	switch field.Type {
+	case format.FieldTypeBool:
+		node = parquetgo.Leaf(parquetgo.BooleanType)
+	case format.FieldTypeInt:
+		node = parquetgo.Int(32)
+	case format.FieldTypeBigInt:
+		node = parquetgo.Int(64)
+	case format.FieldTypeFloat:
+		node = parquetgo.Leaf(parquetgo.FloatType)
+	case format.FieldTypeDouble, format.FieldTypeDecimal:
+		node = parquetgo.Leaf(parquetgo.DoubleType)
+	case format.FieldTypeBytes:
+		node = parquetgo.Leaf(parquetgo.ByteArrayType)
+	case format.FieldTypeDate:
+		node = parquetgo.Date()
+	case format.FieldTypeTimestamp, format.FieldTypeTime:
+		node = parquetgo.String()
+	case format.FieldTypeJSON, format.FieldTypeArray,
+		format.FieldTypeGeometry, format.FieldTypePoint, format.FieldTypeLineString,
+		format.FieldTypePolygon, format.FieldTypeMultiPoint:
+		node = parquetgo.String()
+	case format.FieldTypeUUID:
+		node = parquetgo.UUID()
+	default:
+		node = parquetgo.String()
+	}
+	if field.Nullable {
+		return parquetgo.Optional(node)
+	}
+	return node
+}
+
+func parquetWriterRow(row map[string]interface{}, fields []format.FieldInfo) map[string]any {
+	out := make(map[string]any, len(fields))
+	for _, field := range fields {
+		out[field.Name] = parquetWriterValue(row[field.Name], field.Type)
+	}
+	return out
+}
+
+func parquetWriterValue(value interface{}, fieldType format.FieldType) any {
+	if value == nil {
+		return nil
+	}
+	switch fieldType {
+	case format.FieldTypeBool:
+		return boolValue(value)
+	case format.FieldTypeInt:
+		return int32(int64Value(value))
+	case format.FieldTypeBigInt:
+		return int64Value(value)
+	case format.FieldTypeFloat:
+		return float32(float64Value(value))
+	case format.FieldTypeDouble, format.FieldTypeDecimal:
+		return float64Value(value)
+	case format.FieldTypeBytes:
+		if bytes, ok := value.([]byte); ok {
+			return bytes
+		}
+		return []byte(fmt.Sprint(value))
+	case format.FieldTypeDate:
+		return dateValue(value)
+	case format.FieldTypeTimestamp, format.FieldTypeTime:
+		return temporalString(value)
+	case format.FieldTypeJSON, format.FieldTypeArray,
+		format.FieldTypeGeometry, format.FieldTypePoint, format.FieldTypeLineString,
+		format.FieldTypePolygon, format.FieldTypeMultiPoint:
+		return jsonString(value)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+func boolValue(value interface{}) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		parsed, _ := strconv.ParseBool(strings.TrimSpace(typed))
+		return parsed
+	default:
+		return fmt.Sprint(value) == "true"
+	}
+}
+
+func int64Value(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int8:
+		return int64(typed)
+	case int16:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case int64:
+		return typed
+	case uint:
+		return int64(typed)
+	case uint8:
+		return int64(typed)
+	case uint16:
+		return int64(typed)
+	case uint32:
+		return int64(typed)
+	case uint64:
+		if typed > math.MaxInt64 {
+			return math.MaxInt64
+		}
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return parsed
+	case string:
+		parsed, _ := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		return parsed
+	default:
+		parsed, _ := strconv.ParseInt(fmt.Sprint(value), 10, 64)
+		return parsed
+	}
+}
+
+func float64Value(value interface{}) float64 {
+	switch typed := value.(type) {
+	case float32:
+		return float64(typed)
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	case int8:
+		return float64(typed)
+	case int16:
+		return float64(typed)
+	case int32:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case uint:
+		return float64(typed)
+	case uint8:
+		return float64(typed)
+	case uint16:
+		return float64(typed)
+	case uint32:
+		return float64(typed)
+	case uint64:
+		return float64(typed)
+	case json.Number:
+		parsed, _ := typed.Float64()
+		return parsed
+	case string:
+		parsed, _ := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return parsed
+	default:
+		parsed, _ := strconv.ParseFloat(fmt.Sprint(value), 64)
+		return parsed
+	}
+}
+
+func dateValue(value interface{}) any {
+	switch typed := value.(type) {
+	case time.Time:
+		return typed
+	case string:
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+func temporalString(value interface{}) string {
+	if typed, ok := value.(time.Time); ok {
+		return typed.Format(time.RFC3339Nano)
+	}
+	return fmt.Sprint(value)
+}
+
+func jsonString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return string(data)
+	}
 }
 
 func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {

@@ -110,6 +110,13 @@ type ComponentRangeReader interface {
 	OpenComponentRange(ctx context.Context, component ComponentRef, offset, length int64) (io.ReadCloser, error)
 }
 
+type ComponentWriter interface {
+	Components() []ComponentRef
+	CreateComponent(ctx context.Context, component ComponentRef) (io.WriteCloser, error)
+	CommitComponents(ctx context.Context) error
+	AbortComponents(ctx context.Context) error
+}
+
 type StaticComponentReader struct {
 	resourceReader ResourceReader
 	components     []ComponentRef

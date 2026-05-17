@@ -23,6 +23,8 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.FormatPlugin = plugin
 	var _ format.TableProvider = plugin
 	var _ format.ScopeTableProvider = plugin
+	var _ format.TableReaderProvider = plugin
+	var _ format.TableWriterProvider = plugin
 }
 
 func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
@@ -63,6 +65,116 @@ func TestParquetPluginSampleTableSeeksDeepOffset(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0]["id"] != int64(200) || rows[1]["id"] != int64(201) {
 		t.Fatalf("rows = %#v, want ids 200 and 201", rows)
+	}
+}
+
+func TestParquetPluginOpenTableReader(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRows(t,
+		testParquetRow{ID: 1, Name: "Alice"},
+		testParquetRow{ID: 2, Name: "Bob"},
+		testParquetRow{ID: 3, Name: "Carol"},
+	)
+
+	reader, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+
+	schema := reader.Schema()
+	if schema == nil || schema.RowCount == nil || *schema.RowCount != 3 {
+		t.Fatalf("schema = %#v, want row count 3", schema)
+	}
+	first, err := reader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows first batch failed: %v", err)
+	}
+	if len(first) != 2 || first[0]["name"] != "Alice" || first[1]["name"] != "Bob" {
+		t.Fatalf("first batch = %#v, want Alice/Bob", first)
+	}
+	second, err := reader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows second batch failed: %v", err)
+	}
+	if len(second) != 1 || second[0]["name"] != "Carol" {
+		t.Fatalf("second batch = %#v, want Carol", second)
+	}
+	empty, err := reader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows EOF batch failed: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("EOF rows = %#v, want empty", empty)
+	}
+}
+
+func TestParquetPluginOpenTableWriter(t *testing.T) {
+	plugin := NewPlugin()
+	schema := &format.TableInfo{Fields: []format.FieldInfo{
+		{Name: "id", Type: format.FieldTypeBigInt},
+		{Name: "name", Type: format.FieldTypeString, Nullable: true},
+		{Name: "score", Type: format.FieldTypeDouble, Nullable: true},
+		{Name: "active", Type: format.FieldTypeBool, Nullable: true},
+	}}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": int64(1), "name": "Alice", "score": 9.5, "active": true},
+		{"id": int64(2), "name": "Bob", "score": 8.25, "active": false},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	info, err := plugin.DescribeTable(context.Background(), bytes.NewReader(buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if info.RowCount == nil || *info.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.RowCount)
+	}
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(buf.Bytes()), 0, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["name"] != "Alice" || rows[1]["active"] != false {
+		t.Fatalf("rows = %#v, want Alice/Bob", rows)
+	}
+}
+
+func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
+	plugin := NewPlugin()
+	schema := &format.TableInfo{Fields: []format.FieldInfo{
+		{Name: "id", Type: format.FieldTypeInt},
+		{Name: "payload", Type: format.FieldTypeJSON, Nullable: true},
+	}}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "payload": map[string]interface{}{"kind": "demo"}},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(buf.Bytes()), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 1 || !strings.Contains(rows[0]["payload"].(string), `"kind":"demo"`) {
+		t.Fatalf("rows = %#v, want JSON payload string", rows)
 	}
 }
 

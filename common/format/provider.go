@@ -97,6 +97,17 @@ type TableWriterProvider interface {
 	OpenTableWriter(ctx context.Context, output io.Writer, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
+// ComponentTableWriterProvider 表示格式能够把 table 数据写出为多组件资源。
+//
+// 典型场景是 Shapefile 这类天然由 .shp/.shx/.dbf 等组件共同构成的格式。
+// target 表示目标主资源，provider 基于它和 ComponentSpecs 派生组件路径；
+// output 负责把组件写入具体 engine/resource。
+type ComponentTableWriterProvider interface {
+	Provider
+	ComponentSpecs() []resource.ComponentSpec
+	OpenComponentTableWriter(ctx context.Context, output resource.ComponentWriter, target resource.ResourceRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+}
+
 type TableWriter interface {
 	WriteRows(ctx context.Context, rows []map[string]interface{}) error
 	Close(ctx context.Context) error

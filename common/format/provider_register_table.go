@@ -98,3 +98,22 @@ func (r *ProviderRegistry) RegisterTableWriterProvider(provider TableWriterProvi
 	r.tableWriterProviders[formatType] = provider
 	return nil
 }
+
+func RegisterComponentTableWriterProvider(provider ComponentTableWriterProvider) error {
+	return globalProviderRegistry.RegisterComponentTableWriterProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterComponentTableWriterProvider(provider ComponentTableWriterProvider) error {
+	if provider == nil {
+		return fmt.Errorf("component table writer provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "component table writer provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.componentTableWriters[formatType] = provider
+	return nil
+}

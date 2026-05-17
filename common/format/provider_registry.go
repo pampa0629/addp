@@ -15,6 +15,7 @@ type ProviderRegistry struct {
 	tableSampleProviders    map[FormatType]TableSampleProvider
 	tableReaderProviders    map[FormatType]TableReaderProvider
 	tableWriterProviders    map[FormatType]TableWriterProvider
+	componentTableWriters   map[FormatType]ComponentTableWriterProvider
 	documentProviders       map[FormatType]DocumentProvider
 	documentInfoProviders   map[FormatType]DocumentInfoProvider
 	documentTextReaders     map[FormatType]DocumentTextReader
@@ -34,6 +35,7 @@ func NewProviderRegistry() *ProviderRegistry {
 		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
 		tableReaderProviders:    make(map[FormatType]TableReaderProvider),
 		tableWriterProviders:    make(map[FormatType]TableWriterProvider),
+		componentTableWriters:   make(map[FormatType]ComponentTableWriterProvider),
 		documentProviders:       make(map[FormatType]DocumentProvider),
 		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
 		documentTextReaders:     make(map[FormatType]DocumentTextReader),
@@ -97,6 +99,14 @@ func GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) 
 
 func (r *ProviderRegistry) GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) {
 	return providerFromMap(r, r.tableWriterProviders, formatType, "table writer provider")
+}
+
+func GetComponentTableWriterProvider(formatType FormatType) (ComponentTableWriterProvider, error) {
+	return globalProviderRegistry.GetComponentTableWriterProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetComponentTableWriterProvider(formatType FormatType) (ComponentTableWriterProvider, error) {
+	return providerFromMap(r, r.componentTableWriters, formatType, "component table writer provider")
 }
 
 func GetDocumentProvider(formatType FormatType) (DocumentProvider, error) {
@@ -221,6 +231,14 @@ func ListTableWriterProviderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListTableWriterProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableWriterProviders)
+}
+
+func ListComponentTableWriterProviderFormats() []FormatType {
+	return globalProviderRegistry.ListComponentTableWriterProviderFormats()
+}
+
+func (r *ProviderRegistry) ListComponentTableWriterProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.componentTableWriters)
 }
 
 func ListDocumentProviderFormats() []FormatType {
