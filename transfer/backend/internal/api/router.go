@@ -93,6 +93,7 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(executionService)
 	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	systemEngineHandler := NewSystemEngineHandler(systemClient)
+	capabilityHandler := NewTransferCapabilityHandler()
 	// DataSourceHandler 需要在请求处理时创建（因为需要 JWT token）
 	// 这里先不初始化，在路由中动态创建
 
@@ -119,6 +120,7 @@ func SetupRouter(
 		dataSourceHandler.DetectTableMetadata(c)
 	})
 	protected.GET("/system-engines", systemEngineHandler.List)
+	protected.GET("/capabilities", capabilityHandler.Get)
 
 	// 任务管理路由
 	tasks := protected.Group("/tasks")

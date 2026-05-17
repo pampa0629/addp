@@ -167,9 +167,9 @@ func validateTableImportPlan(plan TableImportPlan) error {
 
 func normalizeImportPrepareMode(mode string) string {
 	switch mode {
-	case "append", "create_if_not_exists":
+	case "append":
 		return "append"
-	case "overwrite", "truncate_insert":
+	case "overwrite":
 		return "overwrite"
 	case "":
 		return ""

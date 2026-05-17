@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -206,6 +207,78 @@ func TestBuildFromMeta(t *testing.T) {
 		if itemCount, ok := child.Metadata["item_count"].(int); !ok || itemCount != 10 {
 			t.Errorf("child.Metadata[item_count] = %v, want 10", child.Metadata["item_count"])
 		}
+	}
+}
+
+func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
+	builder := NewTreeBuilder(nil)
+	engine := &models.Engine{
+		ID:         7,
+		Name:       "PostgreSQL 主库",
+		EngineType: "postgresql",
+	}
+	schemaID := uint(11)
+	rowCount := int64(42)
+	sizeBytes := int64(2048)
+	tree, err := builder.BuildFromMetadataTree(engine, &models.MetadataTree{
+		TopNodes: []models.MetaNode{
+			{
+				ID:         schemaID,
+				EngineID:   7,
+				NodeType:   "schema",
+				Name:       "public",
+				FullName:   "public",
+				Depth:      1,
+				ItemCount:  1,
+				ScanStatus: "completed",
+			},
+		},
+		Items: []models.MetaItem{
+			{
+				ID:        21,
+				EngineID:  7,
+				NodeID:    schemaID,
+				ItemType:  "table",
+				Name:      "roads",
+				FullName:  "public.roads",
+				RowCount:  &rowCount,
+				SizeBytes: &sizeBytes,
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "table",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildFromMetadataTree() error = %v", err)
+	}
+	if len(tree.Children) != 1 {
+		t.Fatalf("len(tree.Children) = %d, want 1", len(tree.Children))
+	}
+	schema := tree.Children[0]
+	if len(schema.Children) != 1 {
+		t.Fatalf("len(schema.Children) = %d, want 1: %#v", len(schema.Children), schema.Children)
+	}
+	item := schema.Children[0]
+	if item.Label != "roads" || item.Type != "table" {
+		t.Fatalf("item = %s/%s, want roads/table", item.Label, item.Type)
+	}
+	if !strings.Contains(item.Locator, "public/roads") || !strings.Contains(item.Locator, "meta_id=100021") {
+		t.Fatalf("item locator = %q, want virtual item locator", item.Locator)
+	}
+	if got := item.Metadata["size_bytes"]; got != sizeBytes {
+		t.Fatalf("item size_bytes = %#v, want %d", got, sizeBytes)
+	}
+	if got := item.Metadata["row_count"]; got != rowCount {
+		t.Fatalf("item row_count = %#v, want %d", got, rowCount)
+	}
+	if got := commonJSON.Int64(item.Metadata, "type_info.table", "row_count"); got != rowCount {
+		t.Fatalf("item type_info.table.row_count = %d, want %d", got, rowCount)
+	}
+	if got := commonJSON.Int64(item.Metadata, "capabilities.statistics", "row_count"); got != rowCount {
+		t.Fatalf("item capabilities.statistics.row_count = %d, want %d", got, rowCount)
 	}
 }
 

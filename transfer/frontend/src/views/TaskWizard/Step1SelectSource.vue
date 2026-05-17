@@ -73,7 +73,8 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTree } from '@addp/common-frontend'
-import { getItemFieldsByCatalogPath, getTableFields, listCatalogChildren } from '@/api/meta'
+import { capabilitiesAPI } from '@/api/capabilities'
+import { getItemFieldsByCatalogPath, getTableFields, getTransferEngineTree, getTransferNodeChildren } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import {
   dataTypeLabel,
@@ -105,6 +106,7 @@ const selectedNode = ref(null)
 
 const loadingEngines = ref(false)
 const loadingNodes = ref(false)
+const supportedEncodedSourceFormats = ref(new Set(['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']))
 
 const selectedEngine = computed(() => {
   return engines.value.find(engine => engine.id === formData.engineID) || null
@@ -117,11 +119,9 @@ const selectedSourceLabel = computed(() => catalogPathForNode(selectedNode.value
 const selectedSourceSupported = computed(() => {
   if (selectedDataType.value !== 'table') return false
   if (selectedRepresentation.value === 'native') return true
-  if (selectedRepresentation.value === 'encoded') return supportedEncodedSourceFormats.includes(selectedFormat.value)
+  if (selectedRepresentation.value === 'encoded') return supportedEncodedSourceFormats.value.has(selectedFormat.value)
   return false
 })
-
-const supportedEncodedSourceFormats = ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']
 
 watch(selectedNode, (node) => {
   if (node) {
@@ -145,6 +145,21 @@ async function loadEngines() {
   }
 }
 
+async function loadCapabilities() {
+  try {
+    const data = await capabilitiesAPI.get()
+    const formats = (data?.table_formats || data?.tableFormats || [])
+      .filter(format => format?.read)
+      .map(format => String(format.value || '').toLowerCase())
+      .filter(Boolean)
+    if (formats.length > 0) {
+      supportedEncodedSourceFormats.value = new Set(formats)
+    }
+  } catch (error) {
+    ElMessage.warning(t('transfer.taskWizard.loadCapabilitiesFailedMsg'))
+  }
+}
+
 async function handleEngineChange() {
   sourceTreeData.value = []
   expandedNodeKeys.value = []
@@ -160,20 +175,7 @@ async function loadSourceTreeRoot() {
   if (!formData.engineID || !selectedEngine.value) return
   loadingNodes.value = true
   try {
-    const root = {
-      id: engineRootNodeKey(),
-      label: selectedEngine.value.name || selectedEngine.value.display_name || `#${formData.engineID}`,
-      type: 'engine',
-      hasChildren: true,
-      children: [],
-      metadata: {
-        engineId: formData.engineID,
-        engineType: selectedEngine.value.engine_type,
-        catalogNode: null,
-        childrenLoaded: true
-      }
-    }
-    root.children = (await fetchCatalogChildren([])).map(catalogNodeToTreeNode)
+    const root = normalizeTreeNode(await getTransferEngineTree(formData.engineID, 1))
     sourceTreeData.value = [root]
     expandedNodeKeys.value = [root.id]
   } catch (error) {
@@ -184,34 +186,94 @@ async function loadSourceTreeRoot() {
   }
 }
 
-async function fetchCatalogChildren(segments) {
-  const normalizedSegments = Array.isArray(segments) ? segments : []
-  const nodes = await listCatalogChildren(formData.engineID, { segments: normalizedSegments })
-  return nodes
-    .map(node => normalizeNode(node, normalizedSegments))
-    .filter(visibleSourceCatalogNode)
+function normalizeTreeNode(node) {
+  const normalized = {
+    ...node,
+    id: node.id || node.locator,
+    label: node.label || node.name || displayPath(pathSegmentsFromTreeNode(node)),
+    type: treeNodeType(node),
+    hasChildren: Boolean(node.hasChildren || node.has_children),
+    children: Array.isArray(node.children) ? node.children.map(normalizeTreeNode).filter(visibleSourceTreeNode) : [],
+    metadata: {
+      ...(node.metadata || {}),
+      childrenLoaded: Array.isArray(node.children) && node.children.length > 0
+    }
+  }
+  normalized.metadata.catalogNode = treeNodeToCatalogNode(normalized)
+  normalized.metadata.selectable = isSelectableSourceItem(normalized.metadata.catalogNode)
+  normalized.metadata.dataType = nodeDataType(normalized.metadata.catalogNode)
+  normalized.metadata.format = nodeFormat(normalized.metadata.catalogNode)
+  return normalized
 }
 
-function normalizeNode(node, parentSegments = []) {
-  const segments = Array.isArray(node.path?.segments) && node.path.segments.length > 0
-    ? node.path.segments
-    : [...parentSegments, segmentForNode(node)]
+function treeNodeToCatalogNode(node) {
+  const metadata = node.metadata || {}
+  const attributes = {
+    ...(metadata.attributes || {}),
+    ...standardAttributeSections(metadata)
+  }
+  const segments = pathSegmentsFromTreeNode(node)
   return {
-    ...node,
+    name: node.label,
+    kind: node.type,
+    term: node.type,
+    is_item: isItemTreeNode(node),
+    is_container: !isItemTreeNode(node) && Boolean(node.hasChildren),
     path: {
-      ...(node.path || {}),
       segments
     },
-    nodeKey: displayPath(segments)
+    attributes,
+    meta_id: metadata.meta_id,
+    full_name: metadata.full_name
   }
 }
 
-function segmentForNode(node) {
-  return {
-    name: node.name,
-    term: node.term || node.kind || 'item',
-    kind: node.kind || node.term || 'item'
+function standardAttributeSections(metadata) {
+  const sections = {}
+  for (const key of ['item', 'type_info', 'format_info', 'capabilities']) {
+    if (metadata[key] && typeof metadata[key] === 'object') {
+      sections[key] = metadata[key]
+    }
   }
+  return sections
+}
+
+function pathSegmentsFromTreeNode(node) {
+  const locatorPath = parseLocatorPath(node.locator || node.id || '')
+  if (locatorPath.length > 0) {
+    return locatorPath.map((name, index) => ({
+      name,
+      kind: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index),
+      term: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index)
+    }))
+  }
+  return String(node.metadata?.full_name || node.label || '')
+    .split(pathSeparatorForNode(node))
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map((name, index, parts) => ({
+      name,
+      kind: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index),
+      term: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index)
+    }))
+}
+
+function parseLocatorPath(locator) {
+  const match = String(locator || '').match(/^addp:\/\/engine\/[^/]+\/path\/([^?]*)/)
+  if (!match) return []
+  return match[1]
+    .split('/')
+    .map(part => decodeURIComponent(part).trim())
+    .filter(Boolean)
+}
+
+function pathSeparatorForNode(node) {
+  return isContentEngine(selectedEngine.value) || ['object', 'file', 'directory', 'dir', 'prefix', 'bucket'].includes(treeNodeType(node)) ? '/' : '.'
+}
+
+function containerKindForPath(index) {
+  if (isObjectStorageEngine(selectedEngine.value?.engine_type) && index === 0) return 'bucket'
+  return isContentEngine(selectedEngine.value) ? 'directory' : 'schema'
 }
 
 async function selectNode(node) {
@@ -330,12 +392,11 @@ function nodeFormat(node) {
 function nodeAttribute(node, key) {
   if (!node?.attributes) return ''
   const attrs = node.attributes
-  return String(attrs[key] || attrs.item?.[key] || attrs.type_info?.[key] || '').trim()
+  return String(attrs[key] || attrs.item?.[key] || attrs.type_info?.[key] || node?.[key] || '').trim()
 }
 
-function visibleSourceCatalogNode(node) {
-  if (node?.is_container) return true
-  return isSelectableSourceItem(node)
+function visibleSourceTreeNode(node) {
+  return node?.type === 'engine' || node?.hasChildren || isSelectableSourceItem(node.metadata?.catalogNode)
 }
 
 function isSelectableSourceItem(node) {
@@ -346,7 +407,7 @@ function isSelectableSourceItem(node) {
 function inferDataTypeFromKind(node) {
   const kind = String(node?.kind || node?.term || '').toLowerCase()
   if (['table', 'relation', 'collection'].includes(kind)) return 'table'
-  if (['file', 'object'].includes(kind) && tableFormatFromName(node?.name)) return 'table'
+  if (['file', 'object'].includes(kind) && node?.is_item && tableFormatFromName(node?.name)) return 'table'
   return ''
 }
 
@@ -417,7 +478,7 @@ async function restoreState() {
   await loadSourceTreeRoot()
   const restoredNode = restoreSourceNodeFromState(state)
   if (restoredNode) {
-    selectedNode.value = normalizeNode(restoredNode)
+    selectedNode.value = restoredNode
     await expandAndSelectTreePath(selectedNode.value.path?.segments || [])
     await loadFieldsForNode(selectedNode.value)
   }
@@ -514,45 +575,15 @@ function restoreSourceAttributes(state, savedAttributes = {}) {
   }
 }
 
-function engineRootNodeKey() {
-  return `engine:${formData.engineID}`
-}
-
-function catalogNodeToTreeNode(node) {
-  const dataType = nodeDataType(node)
-  const nodeFormatValue = nodeFormat(node)
-  return {
-    id: catalogTreeNodeKey(node),
-    label: node.name || displayPath(node.path?.segments),
-    type: treeNodeType(node),
-    hasChildren: Boolean(node.is_container),
-    children: node.is_container ? [] : undefined,
-    metadata: {
-      catalogNode: node,
-      selectable: isSelectableSourceItem(node),
-      dataType,
-      format: nodeFormatValue,
-      childrenLoaded: false
-    }
-  }
-}
-
 function treeNodeType(node) {
-  const kind = String(node?.kind || node?.term || '').toLowerCase()
+  const kind = String(node?.type || node?.kind || node?.term || '').toLowerCase()
   if (kind === 'namespace') return 'schema'
   if (kind === 'root') return 'directory'
   return kind || (node?.is_container ? 'directory' : 'object')
 }
 
 function catalogTreeNodeKey(node) {
-  return catalogTreeNodeKeyFromSegments(node?.path?.segments || [])
-}
-
-function catalogTreeNodeKeyFromSegments(segments) {
-  const path = (segments || [])
-    .map(segment => `${segment.kind || segment.term || 'node'}:${segment.name}`)
-    .join('/')
-  return `catalog:${formData.engineID}:${path}`
+  return node?.locator || node?.id || `catalog:${formData.engineID}:${displayPath(node?.path?.segments || [])}`
 }
 
 function findTreeNodeById(id, nodes = sourceTreeData.value) {
@@ -589,7 +620,8 @@ async function loadTreeNodeChildren(treeNode) {
 
   loadingNodes.value = true
   try {
-    target.children = (await fetchCatalogChildren(catalogNode.path?.segments || [])).map(catalogNodeToTreeNode)
+    const metaID = target.metadata?.meta_id
+    target.children = metaID ? (await getTransferNodeChildren(metaID)).map(normalizeTreeNode).filter(visibleSourceTreeNode) : []
     target.metadata.childrenLoaded = true
     sourceTreeData.value = [...sourceTreeData.value]
   } catch (error) {
@@ -644,6 +676,10 @@ function findChildTreeNodeBySegment(parent, segment) {
   }) || children.find(child => String(child.metadata?.catalogNode?.name || child.label || '').trim() === wantedName) || null
 }
 
+function isItemTreeNode(node) {
+  return ['table', 'collection', 'label', 'relationship', 'object', 'file'].includes(treeNodeType(node)) && !node.hasChildren
+}
+
 function compatibleCatalogKinds(actual, wanted) {
   const groups = [
     ['bucket', 'root', 'schema', 'namespace'],
@@ -655,6 +691,7 @@ function compatibleCatalogKinds(actual, wanted) {
 }
 
 onMounted(async () => {
+  await loadCapabilities()
   await loadEngines()
   await restoreState()
 })

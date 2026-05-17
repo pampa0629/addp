@@ -632,9 +632,9 @@ func importWriteMethod(policy map[string]interface{}, targetEngineType string) s
 func importPrepareMode(policy map[string]interface{}) string {
 	value := strings.ToLower(stringValue(policy, "write_mode"))
 	switch value {
-	case "append", "insert", "create_if_not_exists":
+	case "append":
 		return "append"
-	case "overwrite", "truncate_insert", "":
+	case "overwrite", "":
 		return "overwrite"
 	default:
 		return value

@@ -83,6 +83,8 @@ func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree 
 	for i := range metadataTree.ChildNodes {
 		allNodes = append(allNodes, &metadataTree.ChildNodes[i])
 	}
+	itemNodes := b.ConvertMetaItems(metadataTree.Items)
+	allNodes = append(allNodes, itemNodes...)
 
 	// 使用现有的 BuildFromMeta 方法
 	return b.BuildFromMeta(engine, allNodes, -1)
@@ -272,8 +274,12 @@ func (b *TreeBuilder) ConvertMetaItems(items []models.MetaItem) []*models.MetaNo
 			Path:           item.FullName,
 			ScanStatus:     "completed",
 			ItemCount:      calculateItemCount(item.ItemType, item.Attributes),
-			TotalSizeBytes: 0,
+			TotalSizeBytes: metaItemSizeBytes(item),
 			Attributes:     item.Attributes,
+		}
+		node.Attributes = withMetaItemFacts(node.Attributes, item)
+		if item.ScannedAt != nil {
+			node.LastScanAt = item.ScannedAt
 		}
 
 		// 注意：
@@ -285,6 +291,60 @@ func (b *TreeBuilder) ConvertMetaItems(items []models.MetaItem) []*models.MetaNo
 	}
 
 	return nodes
+}
+
+func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[string]interface{} {
+	next := make(map[string]interface{}, len(attrs)+4)
+	for key, value := range attrs {
+		next[key] = value
+	}
+	next["item_id"] = item.ID
+	if item.RowCount != nil {
+		next["row_count"] = *item.RowCount
+		if commonJSON.Int64(next, "type_info.table", "row_count") == 0 {
+			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
+		}
+		if commonJSON.Int64(next, "capabilities.statistics", "row_count") == 0 {
+			upsertTreeMetadataSection(next, "capabilities", "statistics", map[string]interface{}{"row_count": *item.RowCount})
+		}
+	}
+	if item.SizeBytes != nil {
+		next["size_bytes"] = *item.SizeBytes
+	} else if item.ObjectSizeBytes != nil {
+		next["object_size_bytes"] = *item.ObjectSizeBytes
+	}
+	return next
+}
+
+func upsertTreeMetadataSection(attrs map[string]interface{}, section, namespace string, values map[string]interface{}) {
+	sectionMap, _ := attrs[section].(map[string]interface{})
+	if sectionMap == nil {
+		sectionMap = map[string]interface{}{}
+		attrs[section] = sectionMap
+	}
+	namespaceMap, _ := sectionMap[namespace].(map[string]interface{})
+	if namespaceMap == nil {
+		namespaceMap = map[string]interface{}{}
+		sectionMap[namespace] = namespaceMap
+	}
+	for key, value := range values {
+		if _, exists := namespaceMap[key]; !exists {
+			namespaceMap[key] = value
+		}
+	}
+}
+
+func metaItemSizeBytes(item *models.MetaItem) int64 {
+	if item == nil {
+		return 0
+	}
+	if item.SizeBytes != nil {
+		return *item.SizeBytes
+	}
+	if item.ObjectSizeBytes != nil {
+		return *item.ObjectSizeBytes
+	}
+	return 0
 }
 
 // BuildFromEngine 从引擎直接构建树（不依赖 Meta）

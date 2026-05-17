@@ -52,6 +52,7 @@ export {
   listCatalogBrowserNodes,
   browserPathToCatalogPath,
   catalogPathToString,
+  catalogNodesFromResponse,
   toCatalogBrowserNode,
   catalogNodeBrowserType
 } from './api/catalog'

@@ -15,6 +15,31 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与 provider registry | Returns table transfer format capabilities backed by common format descriptors and providers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "传输能力 | Capabilities"
+                ],
+                "summary": "获取传输能力 | Get transfer capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TransferCapabilitiesResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -1985,6 +2010,62 @@ const docTemplate = `{
                 },
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.TransferCapabilitiesResponse": {
+            "type": "object",
+            "properties": {
+                "table_formats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.TransferTableFormatCapability"
+                    }
+                }
+            }
+        },
+        "internal_api.TransferTableFormatCapability": {
+            "type": "object",
+            "properties": {
+                "backend_type": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "group": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "layouts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "multi_file": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "provider_kind": {
+                    "type": "string"
+                },
+                "read": {
+                    "type": "boolean"
+                },
+                "spatial": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "write": {
                     "type": "boolean"
                 }
             }

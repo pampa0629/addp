@@ -3,6 +3,8 @@
  * Transfer 模块调用 Meta 模块获取元数据信息
  */
 import axios from 'axios'
+import { listCatalogChildren as listSystemCatalogChildren } from '@addp/common-frontend'
+import client from './client'
 
 const API_BASE_URL = '/api/v1'
 
@@ -40,13 +42,19 @@ export const getSchemas = async (engineId) => {
 }
 
 export const listCatalogChildren = async (engineId, path = { segments: [] }, options = {}) => {
-  const response = await apiRequest('post', `/system/engines/${engineId}/catalog/children`, {
-    data: {
-      path,
-      options
+  return listSystemCatalogChildren(client, engineId, path, options)
+}
+
+export const getTransferEngineTree = async (engineId, expandDepth = 1) => {
+  return client.get(`/transfer/engines/${engineId}/tree`, {
+    params: {
+      expand_depth: expandDepth
     }
   })
-  return response.data?.nodes || response.data?.data?.nodes || []
+}
+
+export const getTransferNodeChildren = async (nodeId) => {
+  return client.get(`/transfer/nodes/${nodeId}/children`)
 }
 
 export const getItemByCatalogPath = async (engineId, catalogPath) => {

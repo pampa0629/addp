@@ -22,7 +22,7 @@ export async function listCatalogChildren(client, engineId, path = { segments: [
     path: catalogPath,
     options
   })
-  return Array.isArray(res?.nodes) ? res.nodes : []
+  return catalogNodesFromResponse(res)
 }
 
 export async function listCatalogBrowserNodes(client, engineId, path = { segments: [] }, options = {}) {
@@ -46,6 +46,13 @@ export function browserPathToCatalogPath(path = '') {
 export function catalogPathToString(path) {
   const segments = Array.isArray(path?.segments) ? path.segments : []
   return segments.map(segment => segment.name).filter(Boolean).join('/')
+}
+
+export function catalogNodesFromResponse(response) {
+  if (Array.isArray(response?.nodes)) return response.nodes
+  if (Array.isArray(response?.data?.nodes)) return response.data.nodes
+  if (Array.isArray(response)) return response
+  return []
 }
 
 function catalogAttributeValue(attributes = {}, section, key) {

@@ -100,7 +100,7 @@
             <el-option
               v-for="format in group.formats"
               :key="format.value"
-              :label="t(format.labelKey)"
+              :label="format.labelKey ? t(format.labelKey) : format.label"
               :value="format.value"
             />
           </el-option-group>
@@ -164,6 +164,7 @@
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { capabilitiesAPI } from '@/api/capabilities'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { getSchemas, getTables } from '@/api/meta'
 import CatalogDirectoryPicker from '@/components/CatalogDirectoryPicker.vue'
@@ -209,30 +210,22 @@ const engines = ref([])
 const loadingEngines = ref(false)
 const loadingNamespaces = ref(false)
 const loadingTables = ref(false)
+const supportedEncodedSourceFormats = ref(new Set(['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']))
+const writableOutputFormats = ref(defaultOutputFormats())
 
-const outputFormatGroups = [
-  {
-    key: 'table',
-    labelKey: 'transfer.taskWizard.formatGroupTable',
-    formats: [
-      { labelKey: 'transfer.taskWizard.formatCsv', value: 'csv', extension: 'csv' },
-      { labelKey: 'transfer.taskWizard.formatTsv', value: 'tsv', extension: 'tsv' },
-      { labelKey: 'transfer.taskWizard.formatJsonl', value: 'jsonl', extension: 'jsonl', hintKey: 'transfer.taskWizard.jsonlFormatHint' },
-      { labelKey: 'transfer.taskWizard.formatJson', value: 'json', extension: 'json', hintKey: 'transfer.taskWizard.jsonFormatHint' },
-      { labelKey: 'transfer.taskWizard.formatParquet', value: 'parquet', extension: 'parquet' }
-    ]
-  },
-  {
-    key: 'spatial',
-    labelKey: 'transfer.taskWizard.formatGroupSpatial',
-    formats: [
-      { labelKey: 'transfer.taskWizard.formatGeojson', value: 'geojson', extension: 'geojson', spatial: true, hintKey: 'transfer.taskWizard.geojsonFormatHint' },
-      { labelKey: 'transfer.taskWizard.formatShapefile', value: 'shapefile', extension: 'shp', spatial: true, hintKey: 'transfer.taskWizard.shapefileFormatHint' }
-    ]
-  }
-]
+const outputFormatGroups = computed(() => {
+  const groups = [
+    { key: 'table', labelKey: 'transfer.taskWizard.formatGroupTable', formats: [] },
+    { key: 'spatial', labelKey: 'transfer.taskWizard.formatGroupSpatial', formats: [] }
+  ]
+  writableOutputFormats.value.forEach(format => {
+    const group = format.spatial ? groups[1] : groups[0]
+    group.formats.push(format)
+  })
+  return groups.filter(group => group.formats.length > 0)
+})
 
-const outputFormats = outputFormatGroups.flatMap(group => group.formats)
+const outputFormats = computed(() => outputFormatGroups.value.flatMap(group => group.formats))
 const geometryTypes = ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon']
 
 const selectedEngine = computed(() => {
@@ -284,7 +277,7 @@ const canProceed = computed(() => {
 })
 
 const selectedOutputFormat = computed(() => {
-  return outputFormats.find(format => format.value === outputFormat.value) || outputFormats[0]
+  return outputFormats.value.find(format => format.value === outputFormat.value) || outputFormats.value[0] || defaultOutputFormat('csv')
 })
 
 const outputFileNamePlaceholder = computed(() => {
@@ -353,12 +346,14 @@ function syncTarget() {
       }
     : {
         format: outputFormat.value,
+        backendFormat: selectedOutputFormat.value.backendType,
         resourcePath: outputPath.value,
         resourceFile: outputFileName.value,
         includeHeader: csvHeaders.value,
         delimiter: outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value,
         geometryField: primaryGeometryFieldName.value,
         geometryType: primaryGeometryType.value,
+        backendOptions: selectedOutputFormat.value.options || {},
         writeMode: 'overwrite'
       }
 
@@ -438,7 +433,34 @@ function isAllowedTargetEngine(engine) {
 }
 
 function supportedEncodedSourceFormat(format) {
-  return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile'].includes(String(format || '').toLowerCase())
+  return supportedEncodedSourceFormats.value.has(String(format || '').toLowerCase())
+}
+
+async function loadCapabilities() {
+  try {
+    const data = await capabilitiesAPI.get()
+    const formats = data?.table_formats || data?.tableFormats || []
+    const readable = formats
+      .filter(format => format?.read)
+      .map(format => String(format.value || '').toLowerCase())
+      .filter(Boolean)
+    const writable = formats
+      .filter(format => format?.write)
+      .map(normalizeOutputFormatCapability)
+      .filter(Boolean)
+    if (readable.length > 0) {
+      supportedEncodedSourceFormats.value = new Set(readable)
+    }
+    if (writable.length > 0) {
+      writableOutputFormats.value = writable
+    }
+    if (!writableOutputFormats.value.some(format => format.value === outputFormat.value)) {
+      outputFormat.value = writableOutputFormats.value[0]?.value || 'csv'
+    }
+  } catch (error) {
+    writableOutputFormats.value = defaultOutputFormats()
+    ElMessage.warning(t('transfer.taskWizard.loadCapabilitiesFailedMsg'))
+  }
 }
 
 async function loadNamespaces() {
@@ -503,7 +525,7 @@ function applyOutputFileExtension() {
   const current = outputFileName.value.trim()
   if (!current) return
 
-  const knownExtensions = outputFormats.map(format => format.extension)
+  const knownExtensions = outputFormats.value.map(format => format.extension)
   const parts = current.split('/')
   const file = parts.pop() || ''
   const dotIndex = file.lastIndexOf('.')
@@ -561,11 +583,43 @@ function normalizeGeometryType(value) {
 
 function normalizeTableWriteMode(value) {
   const mode = String(value || '').toLowerCase()
-  if (mode === 'append' || mode === 'create_if_not_exists') return 'append'
+  if (mode === 'append') return 'append'
   return 'overwrite'
 }
 
+function normalizeOutputFormatCapability(item) {
+  const value = String(item?.value || '').toLowerCase()
+  if (!value) return null
+  const fallback = defaultOutputFormat(value)
+  return {
+    ...fallback,
+    value,
+    extension: item.extension || fallback.extension,
+    spatial: item.spatial === true || value === 'geojson' || value === 'shapefile',
+    backendType: item.backend_type || item.backendType || value,
+    options: item.options || {}
+  }
+}
+
+function defaultOutputFormat(value) {
+  const defaults = {
+    csv: { labelKey: 'transfer.taskWizard.formatCsv', value: 'csv', extension: 'csv' },
+    tsv: { labelKey: 'transfer.taskWizard.formatTsv', value: 'tsv', extension: 'tsv' },
+    jsonl: { labelKey: 'transfer.taskWizard.formatJsonl', value: 'jsonl', extension: 'jsonl', hintKey: 'transfer.taskWizard.jsonlFormatHint' },
+    json: { labelKey: 'transfer.taskWizard.formatJson', value: 'json', extension: 'json', hintKey: 'transfer.taskWizard.jsonFormatHint' },
+    parquet: { labelKey: 'transfer.taskWizard.formatParquet', value: 'parquet', extension: 'parquet' },
+    geojson: { labelKey: 'transfer.taskWizard.formatGeojson', value: 'geojson', extension: 'geojson', spatial: true, hintKey: 'transfer.taskWizard.geojsonFormatHint' },
+    shapefile: { labelKey: 'transfer.taskWizard.formatShapefile', value: 'shapefile', extension: 'shp', spatial: true, hintKey: 'transfer.taskWizard.shapefileFormatHint' }
+  }
+  return defaults[value] || { label: value, value, extension: value }
+}
+
+function defaultOutputFormats() {
+  return ['csv', 'tsv', 'jsonl', 'json', 'parquet', 'geojson', 'shapefile'].map(defaultOutputFormat)
+}
+
 onMounted(async () => {
+  await loadCapabilities()
   await loadEngines()
   await restoreState()
 })

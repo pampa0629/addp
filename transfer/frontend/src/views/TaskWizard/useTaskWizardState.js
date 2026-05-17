@@ -198,44 +198,54 @@ export function useTaskWizardState() {
   }
 
   function targetBackendFormat(fileConfig) {
+    if (fileConfig.backendFormat) {
+      return String(fileConfig.backendFormat).toLowerCase()
+    }
     const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
     if (uiFormat === 'jsonl' || uiFormat === 'geojson') return 'json'
     return uiFormat
   }
 
   function targetBackendOptions(fileConfig) {
+    const backendOptions = compactOptions(fileConfig.backendOptions || {})
     const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
     switch (uiFormat) {
       case 'csv':
         return {
+          ...backendOptions,
           header: fileConfig.includeHeader !== false,
           delimiter: fileConfig.delimiter || ','
         }
       case 'tsv':
         return {
+          ...backendOptions,
           header: fileConfig.includeHeader !== false,
           delimiter: '\t'
         }
       case 'jsonl':
         return {
+          ...backendOptions,
           json_mode: 'jsonl'
         }
       case 'json':
         return {
+          ...backendOptions,
           json_mode: 'array'
         }
       case 'geojson':
         return compactOptions({
+          ...backendOptions,
           'spatial.target_encoding': 'geojson',
           geometry_field: fileConfig.geometryField
         })
       case 'shapefile':
         return compactOptions({
+          ...backendOptions,
           geometry_field: fileConfig.geometryField,
           geometry_type: fileConfig.geometryType
         })
       default:
-        return {}
+        return backendOptions
     }
   }
 
@@ -559,7 +569,7 @@ export function useTaskWizardState() {
 
   function normalizeTableWriteMode(value) {
     const mode = String(value || '').toLowerCase()
-    if (mode === 'append' || mode === 'create_if_not_exists') return 'append'
+    if (mode === 'append') return 'append'
     return 'overwrite'
   }
 

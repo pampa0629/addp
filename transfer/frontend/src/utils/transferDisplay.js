@@ -130,9 +130,7 @@ export function formatLabel(value) {
 export function writeModeLabel(value) {
   const key = String(value || '').toLowerCase()
   const labels = {
-    create_if_not_exists: '追加',
     append: '追加',
-    truncate_insert: '覆盖',
     overwrite: '覆盖'
   }
   return labels[key] || value || '-'
@@ -141,9 +139,7 @@ export function writeModeLabel(value) {
 export function writeModeDescription(value) {
   const key = String(value || '').toLowerCase()
   const descriptions = {
-    create_if_not_exists: '目标不存在时自动创建；目标已存在时保留原有数据，把本次数据追加进去。',
     append: '目标不存在时自动创建；目标已存在时保留原有数据，把本次数据追加进去。',
-    truncate_insert: '目标不存在时自动创建；目标已存在时先清空，再写入本次数据。',
     overwrite: '目标不存在时自动创建；目标已存在时先清空或覆盖，再写入本次数据。'
   }
   return descriptions[key] || ''
