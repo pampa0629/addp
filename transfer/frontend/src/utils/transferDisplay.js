@@ -130,10 +130,10 @@ export function formatLabel(value) {
 export function writeModeLabel(value) {
   const key = String(value || '').toLowerCase()
   const labels = {
-    create_if_not_exists: '没有表就创建',
-    append: '追加到已有数据后面',
-    truncate_insert: '先清空再写入',
-    overwrite: '覆盖原文件'
+    create_if_not_exists: '追加',
+    append: '追加',
+    truncate_insert: '覆盖',
+    overwrite: '覆盖'
   }
   return labels[key] || value || '-'
 }
@@ -141,10 +141,10 @@ export function writeModeLabel(value) {
 export function writeModeDescription(value) {
   const key = String(value || '').toLowerCase()
   const descriptions = {
-    create_if_not_exists: '目标表不存在时自动创建；如果表已存在，就按字段写入，不主动清空旧数据。',
-    append: '保留目标表已有数据，把本次传输结果继续追加进去。',
-    truncate_insert: '先清空目标表已有数据，再写入本次传输结果，适合全量刷新。',
-    overwrite: '目标文件已存在时先删除旧文件，再写入新文件。'
+    create_if_not_exists: '目标不存在时自动创建；目标已存在时保留原有数据，把本次数据追加进去。',
+    append: '目标不存在时自动创建；目标已存在时保留原有数据，把本次数据追加进去。',
+    truncate_insert: '目标不存在时自动创建；目标已存在时先清空，再写入本次数据。',
+    overwrite: '目标不存在时自动创建；目标已存在时先清空或覆盖，再写入本次数据。'
   }
   return descriptions[key] || ''
 }

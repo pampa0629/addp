@@ -24,7 +24,7 @@ func TestPostgreSQLCapabilitiesDeclareTableWritePrepare(t *testing.T) {
 }
 
 func TestPrepareTableWriteRejectsUnsupportedModeBeforeConnection(t *testing.T) {
-	err := (&PostgreSQLPlugin{}).PrepareTableWrite(nil, nil, plugin.CatalogPath{}, plugin.TableWriteOptions{Mode: "overwrite"})
+	err := (&PostgreSQLPlugin{}).PrepareTableWrite(nil, nil, plugin.CatalogPath{}, plugin.TableWriteOptions{Mode: "replace"})
 	if err == nil {
 		t.Fatal("PrepareTableWrite succeeded, want unsupported mode error")
 	}

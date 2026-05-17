@@ -202,8 +202,8 @@ const targetSchema = ref('')
 const targetTable = ref('')
 const targetTables = ref([])
 const namespaces = ref([])
-const tableWriteMode = ref('create_if_not_exists')
-const tableWriteModeOptions = ['create_if_not_exists', 'append', 'truncate_insert']
+const tableWriteMode = ref('overwrite')
+const tableWriteModeOptions = ['overwrite', 'append']
 
 const engines = ref([])
 const loadingEngines = ref(false)
@@ -478,9 +478,9 @@ async function restoreState() {
   outputFileName.value = config.resourceFile || ''
   csvHeaders.value = config.includeHeader !== false
   csvDelimiter.value = config.delimiter || ','
-  targetSchema.value = config.schema || ''
-  targetTable.value = config.table || ''
-  tableWriteMode.value = config.writeMode || 'create_if_not_exists'
+  targetSchema.value = config.schema || state.targetSchema?.value || ''
+  targetTable.value = config.table || state.targetTable?.value || ''
+  tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
   if (isSpatialFormat.value) {
     applyDefaultGeometryConfig()
   }
@@ -557,6 +557,12 @@ function inferGeometryType(field) {
 function normalizeGeometryType(value) {
   const normalized = String(value || '').toLowerCase().replace(/[_\s-]/g, '')
   return geometryTypes.find(type => type.toLowerCase().replace(/[_\s-]/g, '') === normalized) || ''
+}
+
+function normalizeTableWriteMode(value) {
+  const mode = String(value || '').toLowerCase()
+  if (mode === 'append' || mode === 'create_if_not_exists') return 'append'
+  return 'overwrite'
 }
 
 onMounted(async () => {

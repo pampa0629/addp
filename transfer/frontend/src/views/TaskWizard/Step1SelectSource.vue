@@ -22,101 +22,35 @@
       </el-form-item>
 
       <el-form-item v-if="formData.engineID" :label="t('transfer.taskWizard.sourceItemLabel')">
-        <div class="catalog-browser">
-          <el-breadcrumb separator="/" class="catalog-breadcrumb">
-            <el-breadcrumb-item>
-              <el-link type="primary" @click="openPath([])">
-                {{ t('transfer.catalogDirectory.root') }}
-              </el-link>
-            </el-breadcrumb-item>
-            <el-breadcrumb-item
-              v-for="(segment, index) in currentSegments"
-              :key="`${segment.kind}:${segment.name}:${index}`"
-            >
-              <el-link type="primary" @click="openPath(currentSegments.slice(0, index + 1))">
-                {{ segment.name }}
-              </el-link>
-            </el-breadcrumb-item>
-          </el-breadcrumb>
-
-          <div class="current-path">
-            {{ t('transfer.taskWizard.sourceCatalogCurrentPath', { path: displayPath(currentSegments) }) }}
-          </div>
-
-          <el-skeleton v-if="loadingNodes" :rows="5" animated />
-
-          <el-empty
-            v-else-if="catalogNodes.length === 0"
-            :description="t('transfer.taskWizard.sourceNoCatalogItems')"
-          />
-
-          <el-table
-            v-else
-            :data="catalogNodes"
-            border
-            row-key="nodeKey"
-            class="catalog-table"
-            @row-dblclick="handleRowDoubleClick"
-          >
-            <el-table-column :label="t('transfer.taskWizard.catalogNameColumn')" min-width="260">
-              <template #default="{ row }">
-                <span class="catalog-name">
-                  <el-icon :size="16">
-                    <component :is="nodeIcon(row)" />
-                  </el-icon>
-                  <span>{{ row.name }}</span>
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('transfer.taskWizard.catalogKindColumn')" width="120">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.is_item ? 'success' : 'info'">
-                  {{ nodeKindLabel(row) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('transfer.taskWizard.catalogDataTypeColumn')" width="130">
-              <template #default="{ row }">
-                {{ dataTypeLabel(nodeDataType(row)) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('transfer.taskWizard.catalogFormatColumn')" width="120">
-              <template #default="{ row }">
-                {{ formatLabel(nodeFormat(row)) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('transfer.taskWizard.catalogActionColumn')" width="180" align="right">
-              <template #default="{ row }">
-                <el-button
-                  v-if="row.is_container"
-                  type="primary"
-                  link
-                  size="small"
-                  @click.stop="enterNode(row)"
-                >
-                  {{ t('transfer.taskWizard.openCatalogNode') }}
-                </el-button>
-                <el-button
-                  v-if="row.is_item"
-                  link
-                  size="small"
-                  @click.stop="selectNode(row)"
-                >
-                  {{ t('transfer.taskWizard.selectCatalogItem') }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-form-item>
-
-      <el-form-item v-if="selectedNode" :label="t('transfer.taskWizard.tableInfoLabel')">
-        <div class="source-info">
-          <p><strong>{{ t('transfer.taskWizard.selectedSourceItemLabel') }}：</strong>{{ selectedSourceLabel }}</p>
-          <p><strong>{{ t('transfer.taskWizard.dataType') }}：</strong>{{ dataTypeLabel(selectedDataType) }}</p>
-          <p><strong>{{ t('transfer.taskWizard.representation') }}：</strong>{{ representationLabel(selectedRepresentation) }}</p>
-          <p v-if="selectedFormat"><strong>{{ t('transfer.taskWizard.format') }}：</strong>{{ formatLabel(selectedFormat) }}</p>
-        </div>
+        <ResourceTree
+          :tree-data="sourceTreeData"
+          :loading="loadingNodes"
+          :show-refresh-button="false"
+          :show-count="false"
+          :default-expand-root="true"
+          :expand-on-click-node="true"
+          :expanded-keys="expandedNodeKeys"
+          :current-node-key="currentNodeKey"
+          title=""
+          height="360px"
+          class="source-resource-tree"
+          @node-click="handleTreeNodeClick"
+          @node-expand="handleTreeNodeExpand"
+          @update:expanded-keys="expandedNodeKeys = $event"
+          @update:current-node-key="currentNodeKey = $event"
+        >
+          <template #node-label="{ data }">
+            <span class="tree-node-label">
+              <span>{{ data.label }}</span>
+              <el-tag v-if="data.metadata?.selectable" size="small" type="success">
+                {{ dataTypeLabel(data.metadata.dataType) }}
+              </el-tag>
+              <el-tag v-if="data.metadata?.format" size="small" type="info">
+                {{ formatLabel(data.metadata.format) }}
+              </el-tag>
+            </span>
+          </template>
+        </ResourceTree>
       </el-form-item>
 
       <el-alert
@@ -138,15 +72,15 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Document, Folder } from '@element-plus/icons-vue'
+import { ResourceTree } from '@addp/common-frontend'
 import { getItemFieldsByCatalogPath, getTableFields, listCatalogChildren } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import {
-  catalogKindLabel,
   dataTypeLabel,
   engineOptionLabel,
   formatLabel,
   hasStorageCapability,
+  isContentEngine,
   representationLabel
 } from '@/utils/transferDisplay'
 
@@ -164,8 +98,9 @@ const formData = reactive({
 })
 
 const engines = ref([])
-const currentSegments = ref([])
-const catalogNodes = ref([])
+const sourceTreeData = ref([])
+const expandedNodeKeys = ref([])
+const currentNodeKey = ref('')
 const selectedNode = ref(null)
 
 const loadingEngines = ref(false)
@@ -211,33 +146,54 @@ async function loadEngines() {
 }
 
 async function handleEngineChange() {
-  currentSegments.value = []
-  catalogNodes.value = []
+  sourceTreeData.value = []
+  expandedNodeKeys.value = []
+  currentNodeKey.value = ''
   selectedNode.value = null
   props.wizardState.loadSourceFields([])
   if (formData.engineID) {
-    await openPath([])
+    await loadSourceTreeRoot()
   }
 }
 
-async function openPath(segments) {
-  currentSegments.value = Array.isArray(segments) ? segments : []
+async function loadSourceTreeRoot() {
+  if (!formData.engineID || !selectedEngine.value) return
   loadingNodes.value = true
   try {
-    const nodes = await listCatalogChildren(formData.engineID, { segments: currentSegments.value })
-    catalogNodes.value = nodes.map(normalizeNode)
+    const root = {
+      id: engineRootNodeKey(),
+      label: selectedEngine.value.name || selectedEngine.value.display_name || `#${formData.engineID}`,
+      type: 'engine',
+      hasChildren: true,
+      children: [],
+      metadata: {
+        engineId: formData.engineID,
+        engineType: selectedEngine.value.engine_type,
+        catalogNode: null,
+        childrenLoaded: true
+      }
+    }
+    root.children = (await fetchCatalogChildren([])).map(catalogNodeToTreeNode)
+    sourceTreeData.value = [root]
+    expandedNodeKeys.value = [root.id]
   } catch (error) {
-    catalogNodes.value = []
+    sourceTreeData.value = []
     ElMessage.error(t('transfer.taskWizard.loadCatalogFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     loadingNodes.value = false
   }
 }
 
-function normalizeNode(node) {
+async function fetchCatalogChildren(segments) {
+  const normalizedSegments = Array.isArray(segments) ? segments : []
+  const nodes = await listCatalogChildren(formData.engineID, { segments: normalizedSegments })
+  return nodes.map(node => normalizeNode(node, normalizedSegments))
+}
+
+function normalizeNode(node, parentSegments = []) {
   const segments = Array.isArray(node.path?.segments) && node.path.segments.length > 0
     ? node.path.segments
-    : [...currentSegments.value, segmentForNode(node)]
+    : [...parentSegments, segmentForNode(node)]
   return {
     ...node,
     path: {
@@ -256,21 +212,9 @@ function segmentForNode(node) {
   }
 }
 
-function enterNode(node) {
-  if (!node?.path?.segments) return
-  openPath(node.path.segments)
-}
-
-function handleRowDoubleClick(row) {
-  if (row?.is_container) {
-    enterNode(row)
-  } else if (row?.is_item) {
-    selectNode(row)
-  }
-}
-
 async function selectNode(node) {
   selectedNode.value = node
+  currentNodeKey.value = catalogTreeNodeKey(node)
   await loadFieldsForNode(node)
 }
 
@@ -442,14 +386,6 @@ function displayPath(segments) {
   return names.length > 0 ? names.join('/') : '/'
 }
 
-function nodeIcon(node) {
-  return node?.is_container ? Folder : Document
-}
-
-function nodeKindLabel(node) {
-  return catalogKindLabel(node?.kind || node?.term)
-}
-
 function isObjectStorageEngine(engineType) {
   const type = String(engineType || '').toLowerCase()
   return type.includes('s3') || type.includes('minio') || type.includes('oss')
@@ -466,11 +402,244 @@ async function restoreState() {
   if (!state.sourceEngineID.value) return
 
   formData.engineID = state.sourceEngineID.value
-  const savedItem = state.sourceConfig.value?.sourceItem
-  if (savedItem) {
-    selectedNode.value = normalizeNode(savedItem)
+  await loadSourceTreeRoot()
+  const restoredNode = restoreSourceNodeFromState(state)
+  if (restoredNode) {
+    selectedNode.value = normalizeNode(restoredNode)
+    await expandAndSelectTreePath(selectedNode.value.path?.segments || [])
+    await loadFieldsForNode(selectedNode.value)
   }
-  await openPath([])
+}
+
+function restoreSourceNodeFromState(state) {
+  const config = state.sourceConfig.value || {}
+  const savedItem = config.sourceItem
+  if (savedItem) {
+    return {
+      ...savedItem,
+      is_item: savedItem.is_item !== false,
+      is_container: false,
+      attributes: restoreSourceAttributes(state, savedItem.attributes)
+    }
+  }
+
+  const resource = state.sourceResource.value || config.resource
+  if (!resource?.kind) return null
+
+  if (resource.kind === 'native_table') {
+    const schema = resource.path?.schema || state.sourceSchema.value || ''
+    const table = resource.path?.table || resource.path?.name || state.sourceTable.value || ''
+    return {
+      name: table,
+      kind: 'table',
+      term: 'table',
+      is_item: true,
+      is_container: false,
+      path: {
+        segments: [
+          schema ? { name: schema, kind: 'schema', term: 'schema' } : null,
+          table ? { name: table, kind: 'table', term: 'table' } : null
+        ].filter(Boolean)
+      },
+      attributes: restoreSourceAttributes(state)
+    }
+  }
+
+  if (resource.kind === 'object') {
+    const bucket = resource.path?.bucket || ''
+    const objectPath = resource.path?.path || ''
+    const objectParts = objectPath.split('/').filter(Boolean)
+    const name = objectParts[objectParts.length - 1] || bucket
+    return {
+      name,
+      kind: 'object',
+      term: 'object',
+      is_item: true,
+      is_container: false,
+      path: {
+        segments: [
+          bucket ? { name: bucket, kind: 'bucket', term: 'bucket' } : null,
+          ...objectParts.map((part, index) => ({
+            name: part,
+            kind: index === objectParts.length - 1 ? 'object' : 'prefix',
+            term: index === objectParts.length - 1 ? 'object' : 'prefix'
+          }))
+        ].filter(Boolean)
+      },
+      attributes: restoreSourceAttributes(state)
+    }
+  }
+
+  if (resource.kind === 'file') {
+    const parts = String(resource.path?.path || '').split('/').filter(Boolean)
+    const name = parts[parts.length - 1] || config.sourceLabel || ''
+    return {
+      name,
+      kind: 'file',
+      term: 'file',
+      is_item: true,
+      is_container: false,
+      path: {
+        segments: parts.map((part, index) => ({
+          name: part,
+          kind: index === parts.length - 1 ? 'file' : 'directory',
+          term: index === parts.length - 1 ? 'file' : 'directory'
+        }))
+      },
+      attributes: restoreSourceAttributes(state)
+    }
+  }
+
+  return null
+}
+
+function restoreSourceAttributes(state, savedAttributes = {}) {
+  return {
+    ...(savedAttributes || {}),
+    data_type: state.sourceDataType.value || savedAttributes?.data_type || 'table',
+    representation: state.sourceRepresentation.value || savedAttributes?.representation || 'native',
+    format: state.sourceFormat.value || savedAttributes?.format || ''
+  }
+}
+
+function engineRootNodeKey() {
+  return `engine:${formData.engineID}`
+}
+
+function catalogNodeToTreeNode(node) {
+  const dataType = nodeDataType(node)
+  const nodeFormatValue = nodeFormat(node)
+  return {
+    id: catalogTreeNodeKey(node),
+    label: node.name || displayPath(node.path?.segments),
+    type: treeNodeType(node),
+    hasChildren: Boolean(node.is_container),
+    children: node.is_container ? [] : undefined,
+    metadata: {
+      catalogNode: node,
+      selectable: Boolean(node.is_item),
+      dataType,
+      format: nodeFormatValue,
+      childrenLoaded: false
+    }
+  }
+}
+
+function treeNodeType(node) {
+  const kind = String(node?.kind || node?.term || '').toLowerCase()
+  if (kind === 'namespace') return 'schema'
+  if (kind === 'root') return 'directory'
+  return kind || (node?.is_container ? 'directory' : 'object')
+}
+
+function catalogTreeNodeKey(node) {
+  return catalogTreeNodeKeyFromSegments(node?.path?.segments || [])
+}
+
+function catalogTreeNodeKeyFromSegments(segments) {
+  const path = (segments || [])
+    .map(segment => `${segment.kind || segment.term || 'node'}:${segment.name}`)
+    .join('/')
+  return `catalog:${formData.engineID}:${path}`
+}
+
+function findTreeNodeById(id, nodes = sourceTreeData.value) {
+  for (const node of nodes || []) {
+    if (node.id === id) return node
+    const found = findTreeNodeById(id, node.children || [])
+    if (found) return found
+  }
+  return null
+}
+
+async function handleTreeNodeClick(treeNode) {
+  const catalogNode = treeNode?.metadata?.catalogNode
+  if (!catalogNode) return
+  if (catalogNode.is_item) {
+    await selectNode(catalogNode)
+    return
+  }
+  if (catalogNode.is_container) {
+    await loadTreeNodeChildren(treeNode)
+  }
+}
+
+async function handleTreeNodeExpand(treeNode) {
+  await loadTreeNodeChildren(treeNode)
+}
+
+async function loadTreeNodeChildren(treeNode) {
+  const target = findTreeNodeById(treeNode?.id)
+  if (!target || target.metadata?.childrenLoaded) return
+
+  const catalogNode = target.metadata?.catalogNode
+  if (!catalogNode?.is_container) return
+
+  loadingNodes.value = true
+  try {
+    target.children = (await fetchCatalogChildren(catalogNode.path?.segments || [])).map(catalogNodeToTreeNode)
+    target.metadata.childrenLoaded = true
+    sourceTreeData.value = [...sourceTreeData.value]
+  } catch (error) {
+    ElMessage.error(t('transfer.taskWizard.loadCatalogFailed', { error: error.response?.data?.error || error.message }))
+  } finally {
+    loadingNodes.value = false
+  }
+}
+
+async function expandAndSelectTreePath(segments) {
+  if (!segments.length) return
+  const root = sourceTreeData.value[0]
+  if (!root) return
+
+  const keys = new Set([root.id, ...expandedNodeKeys.value])
+  let parent = root
+  let current = null
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]
+    current = findChildTreeNodeBySegment(parent, segment)
+    if (!current) break
+    if (index < segments.length - 1) {
+      keys.add(current.id)
+      await loadTreeNodeChildren(current)
+      parent = findTreeNodeById(current.id) || current
+    }
+  }
+
+  expandedNodeKeys.value = Array.from(keys)
+  if (current) {
+    currentNodeKey.value = current.id
+    if (current.metadata?.catalogNode?.is_item) {
+      selectedNode.value = current.metadata.catalogNode
+    }
+  } else {
+    const restored = selectedNode.value
+    currentNodeKey.value = restored ? catalogTreeNodeKey(restored) : ''
+  }
+}
+
+function findChildTreeNodeBySegment(parent, segment) {
+  const wantedName = String(segment?.name || '').trim()
+  if (!wantedName) return null
+  const wantedKind = String(segment?.kind || segment?.term || '').toLowerCase()
+  const children = parent?.children || []
+  return children.find(child => {
+    const catalogNode = child.metadata?.catalogNode
+    if (String(catalogNode?.name || child.label || '').trim() !== wantedName) return false
+    if (!wantedKind) return true
+    const actualKind = String(catalogNode?.kind || catalogNode?.term || child.type || '').toLowerCase()
+    return actualKind === wantedKind || compatibleCatalogKinds(actualKind, wantedKind)
+  }) || children.find(child => String(child.metadata?.catalogNode?.name || child.label || '').trim() === wantedName) || null
+}
+
+function compatibleCatalogKinds(actual, wanted) {
+  const groups = [
+    ['bucket', 'root', 'schema', 'namespace'],
+    ['prefix', 'directory', 'folder'],
+    ['object', 'file'],
+    ['table', 'relation']
+  ]
+  return groups.some(group => group.includes(actual) && group.includes(wanted))
 }
 
 onMounted(async () => {
@@ -490,38 +659,13 @@ onMounted(async () => {
   margin-bottom: 30px;
 }
 
-.catalog-browser {
+.source-resource-tree {
   width: 100%;
 }
 
-.catalog-breadcrumb {
-  margin-bottom: 8px;
-}
-
-.current-path {
-  margin-bottom: 12px;
-  color: var(--addp-text-secondary);
-  font-size: 13px;
-}
-
-.catalog-table {
-  width: 100%;
-}
-
-.catalog-name {
+.tree-node-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-
-.source-info {
-  padding: 12px;
-  background: var(--addp-bg-secondary);
-  border-radius: 4px;
-}
-
-.source-info p {
-  margin: 8px 0;
-  color: var(--addp-text-secondary);
+  gap: 8px;
 }
 </style>

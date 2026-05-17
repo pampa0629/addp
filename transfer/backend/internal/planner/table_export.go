@@ -465,15 +465,7 @@ func writeMode(policy map[string]interface{}) string {
 }
 
 func importWriteMode(policy map[string]interface{}) string {
-	value := stringValue(policy, "write_mode")
-	if value == "" {
-		return "append"
-	}
-	value = strings.ToLower(value)
-	if value == "insert" || value == "truncate_insert" || value == "create_if_not_exists" {
-		return "append"
-	}
-	return value
+	return "append"
 }
 
 func importWriteMethod(policy map[string]interface{}, targetEngineType string) string {
@@ -489,10 +481,14 @@ func importWriteMethod(policy map[string]interface{}, targetEngineType string) s
 
 func importPrepareMode(policy map[string]interface{}) string {
 	value := strings.ToLower(stringValue(policy, "write_mode"))
-	if value == "truncate_insert" || value == "create_if_not_exists" {
+	switch value {
+	case "append", "insert", "create_if_not_exists":
+		return "append"
+	case "overwrite", "truncate_insert", "":
+		return "overwrite"
+	default:
 		return value
 	}
-	return ""
 }
 
 func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType) *format.WriteOptions {

@@ -286,7 +286,7 @@ func (e *TableImportExecutor) prepareTargetTable(ctx context.Context, plan Table
 		return nil, fmt.Errorf("target engine does not implement table write prepare for mode %q", mode)
 	}
 	opts := engineplugin.TableWriteOptions{Mode: mode}
-	if mode == "create_if_not_exists" {
+	if mode == "append" || mode == "create_if_not_exists" || mode == "overwrite" || mode == "truncate_insert" {
 		fields, err := e.describeSourceFields(ctx, plan)
 		if err != nil {
 			return nil, err
@@ -301,7 +301,7 @@ func (e *TableImportExecutor) prepareTargetTable(ctx context.Context, plan Table
 
 func (e *TableImportExecutor) describeSourceFields(ctx context.Context, plan TableImportPlan) ([]engineplugin.FieldInfo, error) {
 	if e.InfoProvider == nil {
-		return nil, fmt.Errorf("table import format %q does not implement table info provider required for create_if_not_exists", plan.Format)
+		return nil, fmt.Errorf("table import format %q does not implement table info provider required for target table prepare", plan.Format)
 	}
 	input, err := e.Reader.OpenContent(ctx, plan.SourceConnInfo, plan.SourcePath, plan.SourceRead)
 	if err != nil {
@@ -376,10 +376,14 @@ func fieldsFromRows(rows []map[string]interface{}) []engineplugin.FieldInfo {
 
 func normalizeImportPrepareMode(mode string) string {
 	switch mode {
-	case "truncate_insert", "create_if_not_exists":
-		return mode
-	default:
+	case "append", "create_if_not_exists":
+		return "append"
+	case "overwrite", "truncate_insert":
+		return "overwrite"
+	case "":
 		return ""
+	default:
+		return mode
 	}
 }
 

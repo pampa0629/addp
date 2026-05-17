@@ -173,7 +173,7 @@ export function useTaskWizardState() {
         data_type: 'table',
         representation: 'native',
         policy: {
-          write_mode: fileConfig.writeMode || 'create_if_not_exists'
+          write_mode: normalizeTableWriteMode(fileConfig.writeMode)
         }
       }
     }
@@ -454,7 +454,7 @@ export function useTaskWizardState() {
       targetTable.value = target.resource?.path?.table || target.resource?.path?.name || ''
       targetType.value = normalizeTargetType(target)
       targetRepresentation.value = target.representation || 'encoded'
-      targetConfig.value = extractTargetFileConfig(target)
+      targetConfig.value = extractTargetConfig(target)
     }
 
     // 字段映射
@@ -484,7 +484,16 @@ export function useTaskWizardState() {
     return 'nfs'
   }
 
-  function extractTargetFileConfig(target) {
+  function extractTargetConfig(target) {
+    if (target.resource?.kind === 'native_table') {
+      const path = target.resource?.path || {}
+      return {
+        schema: path.schema || '',
+        table: path.table || path.name || '',
+        writeMode: normalizeTableWriteMode(target.policy?.write_mode)
+      }
+    }
+
     if (target.resource?.kind !== 'file' && target.resource?.kind !== 'object') {
       return {}
     }
@@ -546,6 +555,12 @@ export function useTaskWizardState() {
     const parts = cleaned.split('/')
     const file = parts.pop() || ''
     return { dir: parts.join('/'), file }
+  }
+
+  function normalizeTableWriteMode(value) {
+    const mode = String(value || '').toLowerCase()
+    if (mode === 'append' || mode === 'create_if_not_exists') return 'append'
+    return 'overwrite'
   }
 
   // 更新任务

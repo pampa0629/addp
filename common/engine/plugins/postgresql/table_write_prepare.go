@@ -13,11 +13,11 @@ import (
 func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	switch mode {
-	case "", "append", "insert":
+	case "":
 		return nil
-	case "truncate_insert", "create_if_not_exists":
+	case "append", "insert", "create_if_not_exists", "overwrite", "truncate_insert":
 	default:
-		return fmt.Errorf("postgresql table write mode %q is not supported; supported modes: append, create_if_not_exists, truncate_insert", opts.Mode)
+		return fmt.Errorf("postgresql table write mode %q is not supported; supported modes: append, overwrite", opts.Mode)
 	}
 
 	schema, table, err := tablePathParts(path)
@@ -35,16 +35,46 @@ func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 	defer db.Close()
 
 	switch mode {
-	case "truncate_insert":
-		if err := truncatePostgresTable(ctx, db, schema, table); err != nil {
+	case "overwrite", "truncate_insert":
+		if err := truncateOrCreatePostgresTable(ctx, db, schema, table, opts.Fields); err != nil {
 			return err
 		}
-	case "create_if_not_exists":
+	case "append", "insert", "create_if_not_exists":
 		if err := createPostgresTableIfNotExists(ctx, db, schema, table, opts.Fields); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func truncateOrCreatePostgresTable(ctx context.Context, db *sql.DB, schema, table string, fields []plugin.FieldInfo) error {
+	exists, err := postgresTableExists(ctx, db, schema, table)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := createPostgresTableIfNotExists(ctx, db, schema, table, fields); err != nil {
+			return err
+		}
+		return nil
+	}
+	return truncatePostgresTable(ctx, db, schema, table)
+}
+
+func postgresTableExists(ctx context.Context, db *sql.DB, schema, table string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM information_schema.tables
+  WHERE table_schema = $1
+    AND table_name = $2
+    AND table_type = 'BASE TABLE'
+)`, schema, table).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check postgresql table %s.%s exists: %w", schema, table, err)
+	}
+	return exists, nil
 }
 
 func truncatePostgresTable(ctx context.Context, db *sql.DB, schema, table string) error {
@@ -57,7 +87,7 @@ func truncatePostgresTable(ctx context.Context, db *sql.DB, schema, table string
 
 func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []plugin.FieldInfo) error {
 	if len(fields) == 0 {
-		return fmt.Errorf("postgresql create_if_not_exists requires table fields")
+		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
 	dialect := sqldialect.ForEngine("postgresql")
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
@@ -86,7 +116,7 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 		}
 	}
 	if len(definitions) == 0 {
-		return fmt.Errorf("postgresql create_if_not_exists requires at least one named field")
+		return fmt.Errorf("postgresql table write prepare requires at least one named field")
 	}
 	if len(primaryKeys) > 0 {
 		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")")

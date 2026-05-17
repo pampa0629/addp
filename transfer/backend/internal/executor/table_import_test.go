@@ -45,7 +45,7 @@ func TestTableImportExecutorExecuteWritesBatches(t *testing.T) {
 		t.Fatalf("source open offsets = %#v, want one full read", reader.opens)
 	}
 	if len(preparer.modes) != 0 {
-		t.Fatalf("prepare modes = %#v, want no prepare for append", preparer.modes)
+		t.Fatalf("prepare modes = %#v, want no prepare when plan has no prepare mode", preparer.modes)
 	}
 }
 
@@ -64,17 +64,20 @@ func TestTableImportExecutorPreparesTargetOnce(t *testing.T) {
 	_, err := exec.Execute(context.Background(), TableImportPlan{
 		BatchSize:     1,
 		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "truncate_insert"},
+		TargetPrepare: engineplugin.TableWriteOptions{Mode: "overwrite"},
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if got := strings.Join(preparer.modes, ","); got != "truncate_insert" {
-		t.Fatalf("prepare modes = %q, want truncate_insert once", got)
+	if got := strings.Join(preparer.modes, ","); got != "overwrite" {
+		t.Fatalf("prepare modes = %q, want overwrite once", got)
+	}
+	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" || preparer.fields[0].Type != "int" {
+		t.Fatalf("prepare fields = %#v, want CSV inferred fields for overwrite", preparer.fields)
 	}
 }
 
-func TestTableImportExecutorPrepareCreateIfNotExistsUsesTableInfo(t *testing.T) {
+func TestTableImportExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableImportExecutor{
@@ -89,13 +92,13 @@ func TestTableImportExecutorPrepareCreateIfNotExistsUsesTableInfo(t *testing.T) 
 	_, err := exec.Execute(context.Background(), TableImportPlan{
 		BatchSize:     2,
 		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "create_if_not_exists"},
+		TargetPrepare: engineplugin.TableWriteOptions{Mode: "append"},
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if got := strings.Join(preparer.modes, ","); got != "create_if_not_exists" {
-		t.Fatalf("prepare modes = %q, want create_if_not_exists once", got)
+	if got := strings.Join(preparer.modes, ","); got != "append" {
+		t.Fatalf("prepare modes = %q, want append once", got)
 	}
 	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" || preparer.fields[0].Type != "int" {
 		t.Fatalf("prepare fields = %#v, want CSV inferred fields", preparer.fields)
@@ -122,7 +125,7 @@ func TestTableImportExecutorPrefersTableWriteSessionForCopy(t *testing.T) {
 	metrics, err := exec.Execute(context.Background(), TableImportPlan{
 		BatchSize:     2,
 		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "create_if_not_exists"},
+		TargetPrepare: engineplugin.TableWriteOptions{Mode: "append"},
 		TargetWrite:   engineplugin.BatchWriteOptions{Mode: "append", Method: "copy"},
 	})
 	if err != nil {
@@ -157,7 +160,7 @@ func TestTableImportExecutorRequiresPreparerForPrepareMode(t *testing.T) {
 
 	_, err := exec.Execute(context.Background(), TableImportPlan{
 		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "truncate_insert"},
+		TargetPrepare: engineplugin.TableWriteOptions{Mode: "overwrite"},
 	})
 	if err == nil {
 		t.Fatal("Execute succeeded, want missing preparer error")

@@ -268,9 +268,9 @@ func TestBuildTableExportPlanRejectsEncodedSource(t *testing.T) {
 	}
 }
 
-func TestBuildTableImportPlanSplitsTruncateInsertPolicy(t *testing.T) {
+func TestBuildTableImportPlanSplitsOverwritePolicy(t *testing.T) {
 	spec := minimalTableImportSpec()
-	spec.Target.Policy = map[string]interface{}{"write_mode": "truncate_insert"}
+	spec.Target.Policy = map[string]interface{}{"write_mode": "overwrite"}
 
 	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -279,17 +279,17 @@ func TestBuildTableImportPlanSplitsTruncateInsertPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableImportPlan failed: %v", err)
 	}
-	if result.Plan.TargetPrepare.Mode != "truncate_insert" {
-		t.Fatalf("prepare mode = %q, want truncate_insert", result.Plan.TargetPrepare.Mode)
+	if result.Plan.TargetPrepare.Mode != "overwrite" {
+		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.TargetPrepare.Mode)
 	}
 	if result.Plan.TargetWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append after truncate", result.Plan.TargetWrite.Mode)
+		t.Fatalf("write mode = %q, want append after overwrite prepare", result.Plan.TargetWrite.Mode)
 	}
 }
 
-func TestBuildTableImportPlanKeepsCreateIfNotExistsPolicy(t *testing.T) {
+func TestBuildTableImportPlanKeepsAppendPolicy(t *testing.T) {
 	spec := minimalTableImportSpec()
-	spec.Target.Policy = map[string]interface{}{"write_mode": "create_if_not_exists", "write_method": "insert"}
+	spec.Target.Policy = map[string]interface{}{"write_mode": "append", "write_method": "insert"}
 
 	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -298,11 +298,11 @@ func TestBuildTableImportPlanKeepsCreateIfNotExistsPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableImportPlan failed: %v", err)
 	}
-	if result.Plan.TargetPrepare.Mode != "create_if_not_exists" {
-		t.Fatalf("prepare mode = %q, want create_if_not_exists", result.Plan.TargetPrepare.Mode)
+	if result.Plan.TargetPrepare.Mode != "append" {
+		t.Fatalf("prepare mode = %q, want append", result.Plan.TargetPrepare.Mode)
 	}
 	if result.Plan.TargetWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append after create_if_not_exists", result.Plan.TargetWrite.Mode)
+		t.Fatalf("write mode = %q, want append", result.Plan.TargetWrite.Mode)
 	}
 	if result.Plan.TargetWrite.Method != "insert" {
 		t.Fatalf("write method = %q, want explicit insert", result.Plan.TargetWrite.Method)
