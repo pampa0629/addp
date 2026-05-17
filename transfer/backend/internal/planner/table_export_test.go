@@ -236,6 +236,39 @@ func TestBuildTableImportPlanAllowsJSONTableReader(t *testing.T) {
 	}
 }
 
+func TestBuildEncodedTableTransferPlanForCSVObjectToJSONLObject(t *testing.T) {
+	spec := minimalEncodedTableTransferSpec()
+	spec.Target.Format = format.FormatJSON
+	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
+	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.jsonl"}}
+
+	result, err := BuildEncodedTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "minio"},
+		2: {Type: "minio"},
+	})
+	if err != nil {
+		t.Fatalf("BuildEncodedTableTransferPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "minio" || result.TargetEngineType != "minio" {
+		t.Fatalf("engine types = %q -> %q, want minio -> minio", result.SourceEngineType, result.TargetEngineType)
+	}
+	if result.SourceFormat != format.FormatCSV || result.TargetFormat != format.FormatJSON {
+		t.Fatalf("formats = %q -> %q, want csv -> json", result.SourceFormat, result.TargetFormat)
+	}
+	if got := result.Plan.SourcePath.StringPath(); got != "imports/roads.csv" {
+		t.Fatalf("source path = %q, want imports/roads.csv", got)
+	}
+	if got := result.Plan.TargetPath.StringPath(); got != "exports/roads.jsonl" {
+		t.Fatalf("target path = %q, want exports/roads.jsonl", got)
+	}
+	if !result.Plan.TargetWrite.Overwrite {
+		t.Fatal("target overwrite = false, want true")
+	}
+	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.WriteOptions)
+	}
+}
+
 func TestBuildTableExportPlanRejectsNonTableFormat(t *testing.T) {
 	spec := minimalTableExportSpec()
 	spec.Target.Format = format.FormatPDF
@@ -407,6 +440,26 @@ func minimalTableImportSpec() TableExportTaskSpec {
 			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
 			DataType:       dataTypeTable,
 			Representation: representationNative,
+		},
+	}
+}
+
+func minimalEncodedTableTransferSpec() TableExportTaskSpec {
+	return TableExportTaskSpec{
+		Mode: modeBatch,
+		Source: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 1},
+			Resource:       ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "imports", "path": "roads.csv"}},
+			DataType:       dataTypeTable,
+			Representation: representationEncoded,
+			Format:         format.FormatCSV,
+		},
+		Target: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 2},
+			Resource:       ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}},
+			DataType:       dataTypeTable,
+			Representation: representationEncoded,
+			Format:         format.FormatCSV,
 		},
 	}
 }

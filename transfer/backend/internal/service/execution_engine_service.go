@@ -69,8 +69,11 @@ func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Contex
 	}
 
 	resolver := planner.NewSystemEngineResolver(s.systemClient)
-	if isImportSpec(spec) {
+	if planner.IsTableImportSpec(spec) {
 		return s.executeCommonTableImportTask(ctx, task, executionID, spec, resolver)
+	}
+	if planner.IsEncodedTableTransferSpec(spec) {
+		return s.executeEncodedTableTransferTask(ctx, task, executionID, spec, resolver)
 	}
 	return s.executeCommonTableExportPlan(ctx, task, executionID, spec, resolver)
 }
@@ -150,6 +153,47 @@ func (s *ExecutionEngineService) executeCommonTableImportTask(ctx context.Contex
 		"progress": 100.0,
 	}); err != nil {
 		s.logger.Warn("failed to update task after successful import", "error", err, "task_id", task.ID)
+	}
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task, spec)
+	}
+	return nil
+}
+
+func (s *ExecutionEngineService) executeEncodedTableTransferTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
+	buildResult, err := planner.BuildEncodedTableTransferPlan(spec, resolver)
+	if err != nil {
+		wrapped := fmt.Errorf("build encoded table transfer plan: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+
+	tableExecutor, err := executor.NewEncodedTableTransferExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType, buildResult.SourceFormat, buildResult.TargetFormat)
+	if err != nil {
+		wrapped := fmt.Errorf("create encoded table transfer executor: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+
+	metrics, err := tableExecutor.Execute(ctx, buildResult.Plan)
+	if err != nil {
+		wrapped := fmt.Errorf("execute encoded table transfer plan: %w", err)
+		if metrics != nil {
+			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
+		}
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
+
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		s.logger.Warn("failed to finish execution", "error", err)
+	}
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":   models.TaskStatusIdle,
+		"progress": 100.0,
+	}); err != nil {
+		s.logger.Warn("failed to update task after successful encoded transfer", "error", err, "task_id", task.ID)
 	}
 	if task.AutoScanMetadata {
 		s.triggerMetadataScan(task, spec)
@@ -253,8 +297,4 @@ func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
 		}
 	}
 	return nil
-}
-
-func isImportSpec(spec planner.TableExportTaskSpec) bool {
-	return spec.Source.Representation == "encoded" && spec.Target.Representation == "native"
 }

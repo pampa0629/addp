@@ -265,7 +265,7 @@ const isNativeTableTarget = computed(() => {
 })
 
 const isContentTarget = computed(() => {
-  return sourceRepresentation.value === 'native' && isContentEngine(selectedEngine.value)
+  return isContentEngine(selectedEngine.value)
 })
 
 const targetStorageKind = computed(() => {
@@ -432,7 +432,7 @@ function isAllowedTargetEngine(engine) {
     return isContentEngine(engine)
   }
   if (sourceRepresentation.value === 'encoded') {
-    return isNativeTableEngine(engine)
+    return isNativeTableEngine(engine) || isContentEngine(engine)
   }
   return false
 }

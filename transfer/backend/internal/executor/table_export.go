@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 
@@ -89,56 +88,27 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 		return nil, err
 	}
 
-	if e.ComponentProvider != nil {
-		return e.executeComponentTableExport(ctx, plan)
-	}
-
-	output, err := e.Writer.CreateContent(ctx, plan.TargetConnInfo, plan.TargetPath, plan.TargetWrite)
-	if err != nil {
-		return nil, fmt.Errorf("create target content: %w", err)
-	}
-	outputClosed := false
-	defer func() {
-		if !outputClosed {
-			_ = output.Close()
-		}
-	}()
-
-	batchSize := plan.BatchSize
-	if batchSize <= 0 {
-		batchSize = defaultBatchSize
-	}
-
-	var tableWriter format.TableWriter
-	metrics := &TableExportMetrics{}
-	readBatch := e.batchReader(ctx, plan, batchSize)
-	for {
-		batch, err := readBatch()
-		if err != nil {
-			return metrics, err
-		}
-		if batch == nil || len(batch.Rows) == 0 {
-			break
-		}
-		if err := writeExportBatch(ctx, e.FormatProvider, output, plan.WriteOptions, &tableWriter, metrics, batch); err != nil {
-			return metrics, err
-		}
-		if len(batch.Rows) < batchSize {
-			break
-		}
-	}
-
-	if tableWriter != nil {
-		if err := tableWriter.Close(ctx); err != nil {
-			return metrics, fmt.Errorf("close table writer: %w", err)
-		}
-	}
-	if err := output.Close(); err != nil {
-		return metrics, fmt.Errorf("close target content: %w", err)
-	}
-	outputClosed = true
-
-	return metrics, nil
+	metrics, err := (&TablePipeline{
+		Source: &nativeTableBatchSource{
+			reader:               e.Reader,
+			tableSessionProvider: e.TableSessionProvider,
+			connInfo:             plan.SourceConnInfo,
+			path:                 plan.SourcePath,
+			query:                plan.SourceQuery,
+			readOptions:          plan.ReadOptions,
+		},
+		Target: &encodedContentTableTarget{
+			writer:            e.Writer,
+			formatProvider:    e.FormatProvider,
+			componentProvider: e.ComponentProvider,
+			connInfo:          plan.TargetConnInfo,
+			path:              plan.TargetPath,
+			writeOptions:      plan.TargetWrite,
+			formatOptions:     plan.WriteOptions,
+		},
+		BatchSize: plan.BatchSize,
+	}).Execute(ctx)
+	return tableExportMetrics(metrics), err
 }
 
 func validateTableExportFormat(planFormat format.FormatType, e *TableExportExecutor) error {
@@ -155,131 +125,6 @@ func validateTableExportFormat(planFormat format.FormatType, e *TableExportExecu
 	if planFormat != providerFormat {
 		return fmt.Errorf("table export format %q does not match table writer provider format %q", planFormat, providerFormat)
 	}
-	return nil
-}
-
-func (e *TableExportExecutor) executeComponentTableExport(ctx context.Context, plan TableExportPlan) (*TableExportMetrics, error) {
-	componentWriter := newContentComponentWriter(e.Writer, plan.TargetConnInfo, plan.TargetPath, plan.TargetWrite, e.ComponentProvider.ComponentSpecs())
-	batchSize := plan.BatchSize
-	if batchSize <= 0 {
-		batchSize = defaultBatchSize
-	}
-
-	var tableWriter format.TableWriter
-	metrics := &TableExportMetrics{}
-	readBatch := e.batchReader(ctx, plan, batchSize)
-	for {
-		batch, err := readBatch()
-		if err != nil {
-			_ = componentWriter.AbortComponents(ctx)
-			return metrics, err
-		}
-		if batch == nil || len(batch.Rows) == 0 {
-			break
-		}
-		if tableWriter == nil {
-			schema := tableInfoFromBatch(batch)
-			applySpatialInfoFromOptions(schema, plan.WriteOptions)
-			opened, err := e.ComponentProvider.OpenComponentTableWriter(ctx, componentWriter, resourceRefFromCatalogPath(plan.TargetPath), schema, plan.WriteOptions)
-			if err != nil {
-				_ = componentWriter.AbortComponents(ctx)
-				return metrics, fmt.Errorf("open component table writer: %w", err)
-			}
-			tableWriter = opened
-		}
-		if err := tableWriter.WriteRows(ctx, batch.Rows); err != nil {
-			_ = componentWriter.AbortComponents(ctx)
-			return metrics, fmt.Errorf("write component table rows at offset %d: %w", batch.Offset, err)
-		}
-		rowCount := int64(len(batch.Rows))
-		metrics.RecordsRead += rowCount
-		metrics.RecordsWritten += rowCount
-		metrics.Batches++
-		if len(batch.Rows) < batchSize {
-			break
-		}
-	}
-
-	if tableWriter != nil {
-		if err := tableWriter.Close(ctx); err != nil {
-			return metrics, fmt.Errorf("close component table writer: %w", err)
-		}
-	}
-	return metrics, nil
-}
-
-func (e *TableExportExecutor) batchReader(ctx context.Context, plan TableExportPlan, batchSize int) func() (*engineplugin.BatchData, error) {
-	if e.TableSessionProvider != nil {
-		session, sessionErr := e.TableSessionProvider.OpenTableReadSession(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.TableReadSessionOptions{Query: plan.SourceQuery, Metadata: plan.ReadOptions})
-		if sessionErr == nil {
-			return tableSessionBatchReader(ctx, session, batchSize)
-		}
-		return func() (*engineplugin.BatchData, error) {
-			return nil, fmt.Errorf("open source table read session: %w", sessionErr)
-		}
-	}
-	return offsetBatchReader(ctx, e.Reader, plan, batchSize)
-}
-
-func tableSessionBatchReader(ctx context.Context, session engineplugin.TableReadSession, batchSize int) func() (*engineplugin.BatchData, error) {
-	closed := false
-	return func() (*engineplugin.BatchData, error) {
-		if closed {
-			return &engineplugin.BatchData{}, nil
-		}
-		batch, err := session.ReadBatch(ctx, batchSize)
-		if err != nil {
-			_ = session.Close(ctx)
-			closed = true
-			return nil, err
-		}
-		if batch == nil || len(batch.Rows) == 0 || len(batch.Rows) < batchSize {
-			if closeErr := session.Close(ctx); closeErr != nil {
-				closed = true
-				return batch, closeErr
-			}
-			closed = true
-		}
-		return batch, nil
-	}
-}
-
-func offsetBatchReader(ctx context.Context, reader engineplugin.BatchReadableProvider, plan TableExportPlan, batchSize int) func() (*engineplugin.BatchData, error) {
-	offset := int64(0)
-	return func() (*engineplugin.BatchData, error) {
-		batch, err := reader.ReadBatch(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.BatchReadOptions{
-			Limit:  batchSize,
-			Offset: offset,
-			Query:  plan.SourceQuery,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("read source batch at offset %d: %w", offset, err)
-		}
-		if batch != nil {
-			offset += int64(len(batch.Rows))
-		}
-		return batch, nil
-	}
-}
-
-func writeExportBatch(ctx context.Context, provider format.TableWriterProvider, output io.Writer, opts *format.WriteOptions, tableWriter *format.TableWriter, metrics *TableExportMetrics, batch *engineplugin.BatchData) error {
-	offset := batch.Offset
-	if *tableWriter == nil {
-		schema := tableInfoFromBatch(batch)
-		opened, err := provider.OpenTableWriter(ctx, output, schema, opts)
-		if err != nil {
-			return fmt.Errorf("open table writer: %w", err)
-		}
-		*tableWriter = opened
-	}
-
-	if err := (*tableWriter).WriteRows(ctx, batch.Rows); err != nil {
-		return fmt.Errorf("write table rows at offset %d: %w", offset, err)
-	}
-	rowCount := int64(len(batch.Rows))
-	metrics.RecordsRead += rowCount
-	metrics.RecordsWritten += rowCount
-	metrics.Batches++
 	return nil
 }
 
@@ -313,6 +158,17 @@ func validateTableExportPlan(plan TableExportPlan) error {
 		return fmt.Errorf("table export format cannot be unknown")
 	}
 	return nil
+}
+
+func tableExportMetrics(metrics *TablePipelineMetrics) *TableExportMetrics {
+	if metrics == nil {
+		return nil
+	}
+	return &TableExportMetrics{
+		RecordsRead:    metrics.RecordsRead,
+		RecordsWritten: metrics.RecordsWritten,
+		Batches:        metrics.Batches,
+	}
 }
 
 func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {

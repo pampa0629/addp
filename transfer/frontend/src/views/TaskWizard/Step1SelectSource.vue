@@ -187,7 +187,9 @@ async function loadSourceTreeRoot() {
 async function fetchCatalogChildren(segments) {
   const normalizedSegments = Array.isArray(segments) ? segments : []
   const nodes = await listCatalogChildren(formData.engineID, { segments: normalizedSegments })
-  return nodes.map(node => normalizeNode(node, normalizedSegments))
+  return nodes
+    .map(node => normalizeNode(node, normalizedSegments))
+    .filter(visibleSourceCatalogNode)
 }
 
 function normalizeNode(node, parentSegments = []) {
@@ -329,6 +331,16 @@ function nodeAttribute(node, key) {
   if (!node?.attributes) return ''
   const attrs = node.attributes
   return String(attrs[key] || attrs.item?.[key] || attrs.type_info?.[key] || '').trim()
+}
+
+function visibleSourceCatalogNode(node) {
+  if (node?.is_container) return true
+  return isSelectableSourceItem(node)
+}
+
+function isSelectableSourceItem(node) {
+  if (!node?.is_item) return false
+  return Boolean(nodeDataType(node))
 }
 
 function inferDataTypeFromKind(node) {
@@ -517,7 +529,7 @@ function catalogNodeToTreeNode(node) {
     children: node.is_container ? [] : undefined,
     metadata: {
       catalogNode: node,
-      selectable: Boolean(node.is_item),
+      selectable: isSelectableSourceItem(node),
       dataType,
       format: nodeFormatValue,
       childrenLoaded: false

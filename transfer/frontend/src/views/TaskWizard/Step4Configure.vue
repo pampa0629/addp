@@ -3,11 +3,11 @@
     <h3>{{ t('transfer.taskWizard.configPage') }}</h3>
     <p class="step-description">{{ t('transfer.taskWizard.configPageDesc') }}</p>
 
-    <el-form :model="wizardState" label-width="120px" :rules="rules" ref="formRef">
+    <el-form :model="formData" label-width="120px" :rules="rules" ref="formRef">
       <!-- 任务名称 -->
       <el-form-item :label="t('transfer.taskWizard.taskNameLabel2')" prop="taskName" required>
         <el-input
-          v-model="wizardState.taskName.value"
+          v-model="formData.taskName"
           :placeholder="t('transfer.taskWizard.taskNamePlaceholder2')"
           maxlength="50"
           show-word-limit
@@ -17,7 +17,7 @@
       <!-- 任务描述 -->
       <el-form-item :label="t('transfer.taskWizard.taskDescLabel2')" prop="taskDescription">
         <el-input
-          v-model="wizardState.taskDescription.value"
+          v-model="formData.taskDescription"
           type="textarea"
           :rows="3"
           :placeholder="t('transfer.taskWizard.taskDescPlaceholder')"
@@ -37,15 +37,15 @@
       <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.cronExpression')">
         <div class="cron-config">
           <el-input
-            v-model="wizardState.schedule.value"
+            v-model="formData.schedule"
             :placeholder="t('transfer.taskWizard.cronPlaceholder')"
             style="margin-bottom: 12px"
           />
           <div class="cron-presets">
             <el-tag
-              v-for="preset in cronPresets"
-              :key="preset.value"
-              @click="wizardState.schedule.value = preset.value"
+            v-for="preset in cronPresets"
+            :key="preset.value"
+              @click="formData.schedule = preset.value"
               style="cursor: pointer; margin-right: 8px; margin-bottom: 8px"
             >
               {{ preset.label }}
@@ -62,7 +62,7 @@
       </el-form-item>
 
       <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.enableScheduleLabel')">
-        <el-switch v-model="wizardState.enabled.value" />
+        <el-switch v-model="formData.enabled" />
         <span class="form-hint">{{ t('transfer.taskWizard.enableScheduleHint') }}</span>
       </el-form-item>
 
@@ -71,7 +71,7 @@
 
       <el-form-item :label="t('transfer.taskWizard.batchProcessSize')">
         <el-input-number
-          v-model="wizardState.batchSize.value"
+          v-model="formData.batchSize"
           :min="100"
           :max="50000"
           :step="100"
@@ -83,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -97,6 +97,13 @@ const props = defineProps({
 
 const formRef = ref(null)
 const scheduleMode = ref('once')
+const formData = reactive({
+  taskName: props.wizardState.taskName.value,
+  taskDescription: props.wizardState.taskDescription.value,
+  schedule: props.wizardState.schedule.value,
+  enabled: props.wizardState.enabled.value,
+  batchSize: props.wizardState.batchSize.value
+})
 
 const cronPresets = [
   { label: t('transfer.taskWizard.cronPresetEveryHour'), value: '0 0 * * * *' },
@@ -112,6 +119,23 @@ const rules = {
     { min: 2, max: 50, message: t('transfer.taskWizard.taskNameLengthRule'), trigger: 'blur' }
   ]
 }
+
+watch(
+  formData,
+  (value) => {
+    props.wizardState.taskName.value = value.taskName
+    props.wizardState.taskDescription.value = value.taskDescription
+    props.wizardState.schedule.value = scheduleMode.value === 'cron' ? value.schedule : ''
+    props.wizardState.enabled.value = scheduleMode.value === 'cron' ? value.enabled : false
+    props.wizardState.batchSize.value = value.batchSize
+  },
+  { deep: true, immediate: true }
+)
+
+watch(scheduleMode, (mode) => {
+  props.wizardState.schedule.value = mode === 'cron' ? formData.schedule : ''
+  props.wizardState.enabled.value = mode === 'cron' ? formData.enabled : false
+})
 </script>
 
 <style scoped>
