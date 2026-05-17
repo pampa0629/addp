@@ -289,12 +289,80 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
 	path, ok := endpoint.Resource.Path.(map[string]interface{})
 	if !ok {
+		if endpoint.Resource.Kind == "file" {
+			return parentFileCatalogPaths(fmt.Sprint(endpoint.Resource.Path))
+		}
 		return nil
 	}
+
+	switch endpoint.Resource.Kind {
+	case "native_table":
+		if qualified := strings.TrimSpace(fmt.Sprintf("%v", path["name"])); qualified != "" && qualified != "<nil>" {
+			parts := strings.Split(qualified, ".")
+			if len(parts) == 2 {
+				return []string{strings.TrimSpace(parts[0])}
+			}
+		}
+		for _, key := range []string{"schema", "database"} {
+			if value := cleanPathValue(path[key]); value != "" {
+				return []string{value}
+			}
+		}
+	case "object":
+		bucket := cleanPathValue(path["bucket"])
+		objectPath := cleanPathValue(path["path"])
+		if objectPath == "" {
+			objectPath = cleanPathValue(path["object"])
+		}
+		return parentObjectCatalogPaths(bucket, objectPath)
+	case "file":
+		filePath := cleanPathValue(path["path"])
+		if filePath == "" {
+			filePath = cleanPathValue(path["file"])
+		}
+		return parentFileCatalogPaths(filePath)
+	}
+
 	for _, key := range []string{"schema", "database", "bucket"} {
-		if value := strings.TrimSpace(fmt.Sprintf("%v", path[key])); value != "" && value != "<nil>" {
+		if value := cleanPathValue(path[key]); value != "" {
 			return []string{value}
 		}
 	}
 	return nil
+}
+
+func parentObjectCatalogPaths(bucket, objectPath string) []string {
+	if bucket == "" {
+		return nil
+	}
+	cleanObjectPath := strings.Trim(objectPath, "/")
+	if cleanObjectPath == "" {
+		return []string{bucket}
+	}
+	if idx := strings.LastIndex(cleanObjectPath, "/"); idx > 0 {
+		return []string{bucket + "/" + cleanObjectPath[:idx]}
+	}
+	return []string{bucket}
+}
+
+func parentFileCatalogPaths(filePath string) []string {
+	cleanFilePath := strings.Trim(strings.TrimSpace(filePath), "/")
+	if cleanFilePath == "" || cleanFilePath == "." || cleanFilePath == "<nil>" {
+		return nil
+	}
+	if idx := strings.LastIndex(cleanFilePath, "/"); idx > 0 {
+		return []string{cleanFilePath[:idx]}
+	}
+	return []string{"/"}
+}
+
+func cleanPathValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprintf("%v", value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
 }

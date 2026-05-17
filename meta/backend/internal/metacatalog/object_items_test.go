@@ -169,6 +169,24 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 	}
 }
 
+func TestStorageResourcesToFileEntriesUsesBucketRelativeObjectPath(t *testing.T) {
+	t.Parallel()
+
+	files := storageResourcesToFileEntries([]StorageResource{{
+		RootName: "addp",
+		Path:     "gis/roads.shp",
+		FullPath: "addp/gis/roads.shp",
+		NodeType: "object",
+	}})
+
+	if len(files) != 1 {
+		t.Fatalf("files len = %d, want 1", len(files))
+	}
+	if files[0].Path != "gis/roads.shp" {
+		t.Fatalf("file path = %q, want bucket-relative path", files[0].Path)
+	}
+}
+
 func int64PtrForTest(value int64) *int64 {
 	return &value
 }

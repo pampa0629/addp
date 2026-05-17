@@ -74,7 +74,7 @@ func DetectObjectCatalogCompositeItems(
 			ConnInfo:       connInfo,
 			EngineID:       engineID,
 			CatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
-			DirPath:        bucket + "/" + prefix,
+			DirPath:        prefix,
 			Files:          files,
 		})
 		if err != nil {
@@ -339,7 +339,9 @@ func storageResourcesToFileEntries(resources []StorageResource) []plugin.FileEnt
 	})
 	files := make([]plugin.FileEntry, 0, len(resources))
 	for _, resource := range resources {
-		files = append(files, resource.FileEntry())
+		entry := resource.FileEntry()
+		entry.Path = strings.Trim(resource.Path, "/")
+		files = append(files, entry)
 	}
 	return files
 }

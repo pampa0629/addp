@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -140,6 +141,44 @@ func TestCommonDataItemResolverEnrichesComponentTableViaFormatProvider(t *testin
 	}
 }
 
+func TestCommonDataItemResolverEnrichesObjectComponentsWithBucketRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	base := createMetaTestShapefile(t)
+	content := map[string][]byte{}
+	for _, ext := range []string{".shp", ".shx", ".dbf"} {
+		data, err := os.ReadFile(base + ext)
+		if err != nil {
+			t.Fatalf("read %s: %v", ext, err)
+		}
+		content["gis/roads"+ext] = data
+	}
+
+	d := &commonDataItemResolver{}
+	files := []plugin.FileEntry{
+		{Name: "roads.shp", Path: "gis/roads.shp", Size: int64(len(content["gis/roads.shp"]))},
+		{Name: "roads.shx", Path: "gis/roads.shx", Size: int64(len(content["gis/roads.shx"]))},
+		{Name: "roads.dbf", Path: "gis/roads.dbf", Size: int64(len(content["gis/roads.dbf"]))},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader:  componentMapContentReader{content: content},
+		EngineID:       1,
+		CatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
+		DirPath:        "gis",
+		Files:          files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("Items = %#v, want one multi item", result.Items)
+	}
+	if rowCount := commonJSON.Int64(result.Items[0].Attributes, "type_info.table", "row_count"); rowCount != 2 {
+		t.Fatalf("row_count = %d, want 2", rowCount)
+	}
+}
+
 type componentMapContentReader struct {
 	content map[string][]byte
 }
@@ -163,7 +202,11 @@ func (r componentMapContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
 func (r componentMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
-	data, ok := r.content[path.StringPath()]
+	key := path.StringPath()
+	if len(path.Segments) > 0 && path.Segments[0].Name == "bucket" {
+		key = strings.TrimPrefix(key, "bucket/")
+	}
+	data, ok := r.content[key]
 	if !ok {
 		return nil, os.ErrNotExist
 	}
