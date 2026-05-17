@@ -3,6 +3,7 @@ package jsonformat
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,16 @@ const defaultDocumentTextLimit int64 = 512 * 1024
 const (
 	StructureDocument          = "document"
 	StructureGeoJSONFeatureSet = "geojson_feature_collection"
+	StructureJSONLines         = "json_lines"
 	StructureObjectArray       = "object_array"
 )
+
+const (
+	jsonTableWriteModeArray = "array"
+	jsonTableWriteModeLines = "lines"
+)
+
+const jsonTargetEncodingGeoJSON = "geojson"
 
 // Plugin 提供 JSON 结构解析能力。
 //
@@ -79,6 +88,69 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 		TransferWrite: true,
 		Parse:         true,
 	}
+}
+
+// OpenTableWriter 打开 JSON table 写出会话。
+//
+// 默认写出 JSON 对象数组；通过 WriteOptions.ExtraParams["json_mode"] 设置
+// lines/jsonl/ndjson 时写出 JSON Lines。
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if output == nil {
+		return nil, fmt.Errorf("json table writer requires output")
+	}
+
+	opts := jsonTableWriteOptions(options)
+	writer := &tableWriter{
+		output:         output,
+		fields:         jsonSchemaFields(schema),
+		mode:           opts.mode,
+		pretty:         opts.pretty,
+		targetEncoding: opts.targetEncoding,
+		geometryField:  opts.geometryField,
+		idField:        opts.idField,
+	}
+	if writer.geometryField == "" && schema != nil && schema.SpatialInfo != nil {
+		writer.geometryField = strings.TrimSpace(schema.SpatialInfo.GeometryColumn)
+	}
+	if writer.geometryField == "" {
+		writer.geometryField = p.geometryField
+	}
+	if writer.targetEncoding == jsonTargetEncodingGeoJSON {
+		if _, err := writer.output.Write([]byte(`{"type":"FeatureCollection","features":[`)); err != nil {
+			return nil, fmt.Errorf("failed to start GeoJSON feature collection: %w", err)
+		}
+		return writer, nil
+	}
+	if writer.mode == jsonTableWriteModeArray {
+		if _, err := writer.output.Write([]byte("[")); err != nil {
+			return nil, fmt.Errorf("failed to start JSON array: %w", err)
+		}
+	}
+	return writer, nil
+}
+
+func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if input == nil {
+		return nil, fmt.Errorf("json table reader requires input")
+	}
+	geometryField := p.geometryField
+	if options != nil {
+		geometryField = geometryFieldFromOptions(options, geometryField)
+	}
+	iter, err := newRecordIterator(input)
+	if err != nil {
+		return nil, err
+	}
+	return &tableReader{
+		iter:          iter,
+		geometryField: geometryField,
+	}, nil
 }
 
 // DescribeFormat 返回 JSON 的格式私有结构信息，写入 attributes.format_info.json。
@@ -356,6 +428,345 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 		records = append(records, feature.ToRecord(geometryField))
 	}
 	return records, nil
+}
+
+type tableReader struct {
+	iter          *iterator
+	geometryField string
+	schema        *format.TableInfo
+	closed        bool
+}
+
+func (r *tableReader) Schema() *format.TableInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	copied := *r.schema
+	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
+	return &copied
+}
+
+func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	if r.closed {
+		return nil, fmt.Errorf("json table reader is closed")
+	}
+	if limit < 0 {
+		return nil, fmt.Errorf("json table reader limit cannot be negative")
+	}
+	if limit == 0 {
+		limit = 1
+	}
+
+	rows := make([]map[string]interface{}, 0, limit)
+	builder := newTableInfoBuilder(r.geometryField)
+	for len(rows) < limit {
+		if err := contextErr(ctx); err != nil {
+			return rows, err
+		}
+		feature, err := r.iter.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return rows, err
+		}
+		builder.AddFeature(feature)
+		rows = append(rows, feature.ToRecord(r.geometryField))
+	}
+	if len(rows) > 0 {
+		r.schema = mergeTableInfo(r.schema, builder.Build())
+	}
+	return rows, nil
+}
+
+func (r *tableReader) Close(ctx context.Context) error {
+	if r.closed {
+		return nil
+	}
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	r.closed = true
+	return nil
+}
+
+type tableWriter struct {
+	output         io.Writer
+	fields         []string
+	mode           string
+	pretty         bool
+	targetEncoding string
+	geometryField  string
+	idField        string
+
+	wroteRows bool
+	closed    bool
+}
+
+func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
+	if w.closed {
+		return fmt.Errorf("json table writer is closed")
+	}
+	for _, row := range rows {
+		if err := contextErr(ctx); err != nil {
+			return err
+		}
+		writeRow := jsonTableRow(row, w.fields)
+		if w.targetEncoding == jsonTargetEncodingGeoJSON {
+			writeRow = geoJSONFeatureRow(writeRow, w.geometryField, w.idField)
+		}
+		data, err := marshalJSONTableRow(writeRow, w.pretty)
+		if err != nil {
+			return err
+		}
+		switch w.mode {
+		case jsonTableWriteModeLines:
+			if _, err := w.output.Write(data); err != nil {
+				return fmt.Errorf("failed to write JSON line: %w", err)
+			}
+			if _, err := w.output.Write([]byte("\n")); err != nil {
+				return fmt.Errorf("failed to write JSON line ending: %w", err)
+			}
+		default:
+			if w.wroteRows {
+				if _, err := w.output.Write([]byte(",")); err != nil {
+					return fmt.Errorf("failed to write JSON row separator: %w", err)
+				}
+			}
+			if w.pretty {
+				prefix := []byte("\n  ")
+				if w.targetEncoding == jsonTargetEncodingGeoJSON {
+					prefix = []byte("\n    ")
+				}
+				if _, err := w.output.Write(prefix); err != nil {
+					return fmt.Errorf("failed to write JSON row prefix: %w", err)
+				}
+				if w.targetEncoding == jsonTargetEncodingGeoJSON {
+					data = bytes.ReplaceAll(data, []byte("\n"), []byte("\n    "))
+				} else {
+					data = bytes.ReplaceAll(data, []byte("\n"), []byte("\n  "))
+				}
+			}
+			if _, err := w.output.Write(data); err != nil {
+				return fmt.Errorf("failed to write JSON row: %w", err)
+			}
+		}
+		w.wroteRows = true
+	}
+	return nil
+}
+
+func (w *tableWriter) Close(ctx context.Context) error {
+	if w.closed {
+		return nil
+	}
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	if w.targetEncoding == jsonTargetEncodingGeoJSON {
+		suffix := []byte(`]}`)
+		if w.pretty && w.wroteRows {
+			suffix = []byte("\n  ]\n}")
+		}
+		if _, err := w.output.Write(suffix); err != nil {
+			return fmt.Errorf("failed to close GeoJSON feature collection: %w", err)
+		}
+	} else if w.mode == jsonTableWriteModeArray {
+		suffix := []byte("]")
+		if w.pretty && w.wroteRows {
+			suffix = []byte("\n]")
+		}
+		if _, err := w.output.Write(suffix); err != nil {
+			return fmt.Errorf("failed to close JSON array: %w", err)
+		}
+	}
+	w.closed = true
+	return nil
+}
+
+type jsonTableWriterOptions struct {
+	mode           string
+	pretty         bool
+	targetEncoding string
+	geometryField  string
+	idField        string
+}
+
+func jsonTableWriteOptions(options *format.WriteOptions) jsonTableWriterOptions {
+	opts := jsonTableWriterOptions{mode: jsonTableWriteModeArray}
+	if options == nil || options.ExtraParams == nil {
+		return opts
+	}
+	if v, ok := options.ExtraParams["pretty"].(bool); ok {
+		opts.pretty = v
+	}
+	opts.geometryField = strings.TrimSpace(formatOptionString(options.ExtraParams["geometry_field"]))
+	opts.idField = strings.TrimSpace(formatOptionString(options.ExtraParams["id_field"]))
+	opts.targetEncoding = jsonTargetEncoding(options.ExtraParams)
+	mode := strings.ToLower(strings.TrimSpace(formatOptionString(options.ExtraParams["json_mode"])))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(formatOptionString(options.ExtraParams["layout"])))
+	}
+	switch mode {
+	case "lines", "jsonl", "ndjson":
+		opts.mode = jsonTableWriteModeLines
+	case "", "array":
+		opts.mode = jsonTableWriteModeArray
+	default:
+		opts.mode = mode
+	}
+	if opts.targetEncoding == jsonTargetEncodingGeoJSON {
+		opts.mode = jsonTableWriteModeArray
+	}
+	return opts
+}
+
+func jsonTargetEncoding(params map[string]interface{}) string {
+	value := strings.ToLower(strings.TrimSpace(formatOptionString(params["spatial.target_encoding"])))
+	if value != "" {
+		return value
+	}
+	if spatial, ok := params["spatial"].(map[string]interface{}); ok {
+		return strings.ToLower(strings.TrimSpace(formatOptionString(spatial["target_encoding"])))
+	}
+	if spatial, ok := params["spatial"].(map[string]string); ok {
+		return strings.ToLower(strings.TrimSpace(spatial["target_encoding"]))
+	}
+	return strings.ToLower(strings.TrimSpace(formatOptionString(params["target_encoding"])))
+}
+
+func marshalJSONTableRow(row map[string]interface{}, pretty bool) ([]byte, error) {
+	if pretty {
+		data, err := json.MarshalIndent(row, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode JSON row: %w", err)
+		}
+		return data, nil
+	}
+	data, err := json.Marshal(row)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode JSON row: %w", err)
+	}
+	return data, nil
+}
+
+func jsonTableRow(row map[string]interface{}, fields []string) map[string]interface{} {
+	if len(fields) == 0 {
+		copied := make(map[string]interface{}, len(row))
+		for key, value := range row {
+			copied[key] = value
+		}
+		return copied
+	}
+	out := make(map[string]interface{}, len(fields))
+	for _, field := range fields {
+		out[field] = row[field]
+	}
+	return out
+}
+
+func geoJSONFeatureRow(row map[string]interface{}, geometryField, idField string) map[string]interface{} {
+	if geometryField == "" {
+		geometryField = defaultGeometryField
+	}
+	if idField == "" {
+		idField = "id"
+	}
+	properties := make(map[string]interface{}, len(row))
+	var geometry interface{}
+	var id interface{}
+	for key, value := range row {
+		switch key {
+		case geometryField:
+			geometry = geoJSONGeometry(value)
+		case idField:
+			id = value
+		default:
+			properties[key] = value
+		}
+	}
+	feature := map[string]interface{}{
+		"type":       "Feature",
+		"geometry":   geometry,
+		"properties": properties,
+	}
+	if id != nil {
+		feature["id"] = id
+	}
+	return feature
+}
+
+func geoJSONGeometry(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+	if geom := geometryValue(value); geom != nil {
+		return geom
+	}
+	if raw, ok := value.(json.RawMessage); ok {
+		var decoded interface{}
+		if err := json.Unmarshal(raw, &decoded); err == nil {
+			return decoded
+		}
+	}
+	if text, ok := value.(string); ok {
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+			return decoded
+		}
+	}
+	return value
+}
+
+func jsonSchemaFields(schema *format.TableInfo) []string {
+	if schema == nil {
+		return nil
+	}
+	fields := make([]string, 0, len(schema.Fields))
+	for _, field := range schema.Fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		fields = append(fields, name)
+	}
+	return fields
+}
+
+func mergeTableInfo(current, next *format.TableInfo) *format.TableInfo {
+	if current == nil {
+		return next
+	}
+	if next == nil {
+		return current
+	}
+	existing := make(map[string]struct{}, len(current.Fields))
+	for _, field := range current.Fields {
+		existing[field.Name] = struct{}{}
+	}
+	copied := *current
+	copied.Fields = append([]format.FieldInfo(nil), current.Fields...)
+	for _, field := range next.Fields {
+		if _, ok := existing[field.Name]; ok {
+			continue
+		}
+		copied.Fields = append(copied.Fields, field)
+	}
+	if copied.SpatialInfo == nil && next.SpatialInfo != nil {
+		spatial := *next.SpatialInfo
+		copied.SpatialInfo = &spatial
+	}
+	return &copied
+}
+
+func formatOptionString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprint(value)
 }
 
 func jsonArrayFragment(data []byte) []byte {

@@ -161,7 +161,9 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 		return nil, fmt.Errorf("format %q is not registered", formatType)
 	}
 	if descriptor.DataType != format.FormatDataTypeTable {
-		return nil, fmt.Errorf("format %q data type is %q, want table", formatType, descriptor.DataType)
+		if _, err := format.GetTableWriterProvider(formatType); err != nil {
+			return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
+		}
 	}
 	if !descriptor.TransferWrite {
 		return nil, fmt.Errorf("format %q is not declared as transfer writable", formatType)
@@ -187,6 +189,7 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 			Format:       formatType,
 			BatchSize:    spec.BatchSize,
 			WriteOptions: writeOptions,
+			ReadOptions:  readOptionsForTarget(formatType, writeOptions),
 		},
 	}, nil
 }
@@ -237,7 +240,9 @@ func BuildTableImportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 		return nil, fmt.Errorf("format %q is not registered", formatType)
 	}
 	if descriptor.DataType != format.FormatDataTypeTable {
-		return nil, fmt.Errorf("format %q data type is %q, want table", formatType, descriptor.DataType)
+		if _, err := format.GetTableSampleProvider(formatType); err != nil {
+			return nil, fmt.Errorf("format %q has no table sample provider: %w", formatType, err)
+		}
 	}
 	if !descriptor.TransferRead {
 		return nil, fmt.Errorf("format %q is not declared as transfer readable", formatType)
@@ -486,6 +491,7 @@ func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType)
 	if raw == nil {
 		return opts
 	}
+	opts.ExtraParams = extraParams(raw, "header", "delimiter")
 	if header, ok := raw["header"].(bool); ok {
 		opts.OmitHeader = !header
 	}
@@ -498,6 +504,24 @@ func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType)
 	return opts
 }
 
+func readOptionsForTarget(formatType format.FormatType, writeOptions *format.WriteOptions) map[string]interface{} {
+	if formatType != format.FormatJSON || writeOptions == nil || writeOptions.ExtraParams == nil {
+		return nil
+	}
+	targetEncoding := strings.ToLower(strings.TrimSpace(stringValue(writeOptions.ExtraParams, "spatial.target_encoding")))
+	if targetEncoding == "" {
+		targetEncoding = nestedStringValue(writeOptions.ExtraParams, "spatial", "target_encoding")
+	}
+	if targetEncoding != "geojson" {
+		return nil
+	}
+	options := map[string]interface{}{"spatial.target_encoding": "geojson"}
+	if geometryField := stringValue(writeOptions.ExtraParams, "geometry_field"); geometryField != "" {
+		options["geometry_field"] = geometryField
+	}
+	return options
+}
+
 func tableParseOptions(raw map[string]interface{}, formatType format.FormatType) *format.ParseOptions {
 	opts := format.DefaultParseOptions()
 	if formatType == format.FormatTSV {
@@ -506,6 +530,7 @@ func tableParseOptions(raw map[string]interface{}, formatType format.FormatType)
 	if raw == nil {
 		return opts
 	}
+	opts.ExtraParams = extraParams(raw, "header", "delimiter")
 	if header, ok := raw["header"].(bool); ok {
 		opts.HasHeader = header
 	}
@@ -516,6 +541,27 @@ func tableParseOptions(raw map[string]interface{}, formatType format.FormatType)
 		}
 	}
 	return opts
+}
+
+func extraParams(raw map[string]interface{}, excludedKeys ...string) map[string]interface{} {
+	if len(raw) == 0 {
+		return nil
+	}
+	excluded := make(map[string]struct{}, len(excludedKeys))
+	for _, key := range excludedKeys {
+		excluded[key] = struct{}{}
+	}
+	params := make(map[string]interface{}, len(raw))
+	for key, value := range raw {
+		if _, ok := excluded[key]; ok {
+			continue
+		}
+		params[key] = value
+	}
+	if len(params) == 0 {
+		return nil
+	}
+	return params
 }
 
 func contentPathString(raw interface{}, alternateKey string) string {
@@ -549,5 +595,19 @@ func stringValue(values map[string]interface{}, key string) string {
 		return strings.TrimSpace(typed)
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func nestedStringValue(values map[string]interface{}, parentKey, childKey string) string {
+	if values == nil {
+		return ""
+	}
+	switch nested := values[parentKey].(type) {
+	case map[string]interface{}:
+		return strings.ToLower(strings.TrimSpace(stringValue(nested, childKey)))
+	case map[string]string:
+		return strings.ToLower(strings.TrimSpace(nested[childKey]))
+	default:
+		return ""
 	}
 }

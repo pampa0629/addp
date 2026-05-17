@@ -11,10 +11,6 @@ import (
 )
 
 func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
-	query, err := postgresReadSessionQuery(path, opts)
-	if err != nil {
-		return nil, err
-	}
 	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build postgresql dsn: %w", err)
@@ -22,6 +18,11 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgresql connection: %w", err)
+	}
+	query, err := postgresReadSessionQuery(ctx, db, path, opts)
+	if err != nil {
+		db.Close()
+		return nil, err
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -44,7 +45,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	}, nil
 }
 
-func postgresReadSessionQuery(path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (string, error) {
+func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (string, error) {
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
 		return query, nil
@@ -53,7 +54,106 @@ func postgresReadSessionQuery(path plugin.CatalogPath, opts plugin.TableReadSess
 	if err != nil {
 		return "", err
 	}
-	return sqldialect.ForEngine("postgresql").SelectTableSQL("*", schema, table, "", "", 0, 0), nil
+	selectExpr := "*"
+	if shouldReadPostgresSpatialAsGeoJSON(opts.Metadata) {
+		if expr, err := postgresGeoJSONSelectExpr(ctx, db, schema, table, opts.Metadata); err != nil {
+			return "", err
+		} else if expr != "" {
+			selectExpr = expr
+		}
+	}
+	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), nil
+}
+
+func shouldReadPostgresSpatialAsGeoJSON(metadata map[string]interface{}) bool {
+	if metadata == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(metadataString(metadata, "spatial.target_encoding")), "geojson")
+}
+
+func postgresGeoJSONSelectExpr(ctx context.Context, db *sql.DB, schema, table string, metadata map[string]interface{}) (string, error) {
+	columns, err := postgresTableColumns(ctx, db, schema, table)
+	if err != nil {
+		return "", err
+	}
+	geometryField := strings.TrimSpace(metadataString(metadata, "geometry_field"))
+	dialect := sqldialect.ForEngine("postgresql")
+	exprs := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quoted := dialect.QuoteIdentifier(column.Name)
+		if column.IsSpatial() && (geometryField == "" || column.Name == geometryField) {
+			exprs = append(exprs, "ST_AsGeoJSON("+quoted+")::json AS "+quoted)
+			continue
+		}
+		exprs = append(exprs, quoted)
+	}
+	if len(exprs) == 0 {
+		return "", nil
+	}
+	return strings.Join(exprs, ", "), nil
+}
+
+type postgresColumnInfo struct {
+	Name     string
+	DataType string
+	UDTName  string
+}
+
+func (c postgresColumnInfo) IsSpatial() bool {
+	switch strings.ToLower(strings.TrimSpace(c.UDTName)) {
+	case "geometry", "geography":
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(c.DataType)) {
+	case "geometry", "geography", "user-defined":
+		return strings.EqualFold(strings.TrimSpace(c.UDTName), "geometry") || strings.EqualFold(strings.TrimSpace(c.UDTName), "geography")
+	default:
+		return false
+	}
+}
+
+func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string) ([]postgresColumnInfo, error) {
+	if db == nil {
+		return nil, fmt.Errorf("postgresql table columns requires db")
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT column_name, data_type, udt_name
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2
+		ORDER BY ordinal_position
+	`, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("query postgresql table columns %s.%s: %w", schema, table, err)
+	}
+	defer rows.Close()
+
+	columns := make([]postgresColumnInfo, 0)
+	for rows.Next() {
+		var column postgresColumnInfo
+		if err := rows.Scan(&column.Name, &column.DataType, &column.UDTName); err != nil {
+			return nil, fmt.Errorf("scan postgresql table column: %w", err)
+		}
+		columns = append(columns, column)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgresql table columns: %w", err)
+	}
+	return columns, nil
+}
+
+func metadataString(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	value := values[key]
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
 }
 
 type postgresTableReadSession struct {

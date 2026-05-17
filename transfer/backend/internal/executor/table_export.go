@@ -24,6 +24,7 @@ type TableExportPlan struct {
 	Format       format.FormatType
 	BatchSize    int
 	WriteOptions *format.WriteOptions
+	ReadOptions  map[string]interface{}
 }
 
 type TableExportMetrics struct {
@@ -133,7 +134,7 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 
 func (e *TableExportExecutor) batchReader(ctx context.Context, plan TableExportPlan, batchSize int) func() (*engineplugin.BatchData, error) {
 	if e.TableSessionProvider != nil {
-		session, sessionErr := e.TableSessionProvider.OpenTableReadSession(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.TableReadSessionOptions{Query: plan.SourceQuery})
+		session, sessionErr := e.TableSessionProvider.OpenTableReadSession(ctx, plan.SourceConnInfo, plan.SourcePath, engineplugin.TableReadSessionOptions{Query: plan.SourceQuery, Metadata: plan.ReadOptions})
 		if sessionErr == nil {
 			return tableSessionBatchReader(ctx, session, batchSize)
 		}

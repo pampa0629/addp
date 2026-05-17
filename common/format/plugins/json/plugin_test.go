@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -19,6 +20,8 @@ func TestJSONPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.DocumentTextReader = plugin
 	var _ format.TableInfoProvider = plugin
 	var _ format.TableSampleReader = plugin
+	var _ format.TableReaderProvider = plugin
+	var _ format.TableWriterProvider = plugin
 }
 
 func TestJSONPluginReadDocumentText(t *testing.T) {
@@ -163,6 +166,185 @@ func TestJSONPluginDescribeAndSampleObjectArray(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0]["name"] != "B" {
 		t.Fatalf("rows = %#v, want second object", rows)
+	}
+}
+
+func TestJSONPluginOpenTableReaderObjectArray(t *testing.T) {
+	data := `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`
+	plugin := NewPlugin(nil)
+
+	reader, err := plugin.OpenTableReader(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+
+	rows, err := reader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows first batch failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "A" {
+		t.Fatalf("first rows = %#v, want A", rows)
+	}
+	rows, err = reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows second batch failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "B" {
+		t.Fatalf("second rows = %#v, want B", rows)
+	}
+	rows, err = reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows EOF batch failed: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("EOF rows = %#v, want empty", rows)
+	}
+}
+
+func TestJSONPluginOpenTableReaderLines(t *testing.T) {
+	data := "{\"id\":1,\"name\":\"A\"}\n{\"id\":2,\"name\":\"B\"}\n"
+	plugin := NewPlugin(nil)
+
+	reader, err := plugin.OpenTableReader(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+
+	rows, err := reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["name"] != "A" || rows[1]["name"] != "B" {
+		t.Fatalf("rows = %#v, want A/B", rows)
+	}
+}
+
+func TestJSONPluginOpenTableWriterArray(t *testing.T) {
+	plugin := NewPlugin(nil)
+	schema := &format.TableInfo{Fields: []format.FieldInfo{
+		{Name: "id", Type: format.FieldTypeInt},
+		{Name: "name", Type: format.FieldTypeString},
+	}}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "A", "extra": "ignored"},
+		{"id": 2, "name": "B"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &rows); err != nil {
+		t.Fatalf("unmarshal output failed: %v; output=%s", err, buf.String())
+	}
+	if len(rows) != 2 || rows[0]["name"] != "A" || rows[1]["name"] != "B" {
+		t.Fatalf("rows = %#v, want A/B", rows)
+	}
+	if _, ok := rows[0]["extra"]; ok {
+		t.Fatalf("schema field filtering failed: %#v", rows[0])
+	}
+}
+
+func TestJSONPluginOpenTableWriterLines(t *testing.T) {
+	plugin := NewPlugin(nil)
+	opts := format.DefaultWriteOptions()
+	opts.ExtraParams = map[string]interface{}{"json_mode": "jsonl"}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, nil, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "A"},
+		{"id": 2, "name": "B"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(buf.String()))
+	names := []string{}
+	for decoder.More() {
+		var row map[string]interface{}
+		if err := decoder.Decode(&row); err != nil {
+			t.Fatalf("decode JSON line failed: %v; output=%s", err, buf.String())
+		}
+		names = append(names, row["name"].(string))
+	}
+	if strings.Join(names, ",") != "A,B" {
+		t.Fatalf("names = %#v, want A/B", names)
+	}
+}
+
+func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
+	plugin := NewPlugin(nil)
+	opts := format.DefaultWriteOptions()
+	opts.ExtraParams = map[string]interface{}{
+		"spatial.target_encoding": "geojson",
+		"geometry_field":          "geom",
+	}
+	schema := &format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "id", Type: format.FieldTypeInt},
+			{Name: "name", Type: format.FieldTypeString},
+			{Name: "geom", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{GeometryColumn: "geom", GeometryType: "Point", SRID: 4326},
+	}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "A", "geom": map[string]interface{}{"type": "Point", "coordinates": []interface{}{float64(1), float64(2)}}},
+		{"id": 2, "name": "B", "geom": `{"type":"Point","coordinates":[3,4]}`},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	var collection map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &collection); err != nil {
+		t.Fatalf("unmarshal GeoJSON failed: %v; output=%s", err, buf.String())
+	}
+	if collection["type"] != "FeatureCollection" {
+		t.Fatalf("collection type = %#v, want FeatureCollection", collection["type"])
+	}
+	features, ok := collection["features"].([]interface{})
+	if !ok || len(features) != 2 {
+		t.Fatalf("features = %#v, want 2 features", collection["features"])
+	}
+	first := features[0].(map[string]interface{})
+	if first["type"] != "Feature" || first["id"].(float64) != 1 {
+		t.Fatalf("first feature = %#v", first)
+	}
+	props := first["properties"].(map[string]interface{})
+	if props["name"] != "A" {
+		t.Fatalf("properties = %#v, want name A", props)
+	}
+	if _, ok := props["geom"]; ok {
+		t.Fatalf("geometry field leaked into properties: %#v", props)
+	}
+	geom := first["geometry"].(map[string]interface{})
+	if geom["type"] != "Point" {
+		t.Fatalf("geometry = %#v, want Point", geom)
 	}
 }
 

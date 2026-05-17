@@ -336,6 +336,13 @@ func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.Connec
 	filePath := normalizePath(path)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	parentDir := filepath.Dir(filePath)
+	if parentDir != "." && parentDir != "/" {
+		if err := mkdirAllLocked(entry, parentDir); err != nil {
+			invalidatePool(server, exportPath)
+			return nil, err
+		}
+	}
 	if overwrite {
 		// go-nfs-client 的 OpenFile 不会自动截断，覆盖写必须先删除旧文件。
 		_ = entry.target.Remove(filePath)
@@ -349,6 +356,25 @@ func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.Connec
 		return nil, fmt.Errorf("failed to open NFS file for write %s: %w", filePath, err)
 	}
 	return &lockedWriteCloser{WriteCloser: f, mu: &entry.mu}, nil
+}
+
+func mkdirAllLocked(entry *poolEntry, path string) error {
+	dirPath := normalizePath(path)
+	parts := strings.Split(strings.TrimPrefix(dirPath, "/"), "/")
+	current := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		current = current + "/" + part
+		if _, err := entry.target.Mkdir(current, 0755); err != nil {
+			if _, _, lookupErr := entry.target.Lookup(current); lookupErr == nil {
+				continue
+			}
+			return fmt.Errorf("failed to create NFS directory %s: %w", current, err)
+		}
+	}
+	return nil
 }
 
 // MkdirAll 在 NFS 上递归创建目录
@@ -366,23 +392,7 @@ func (p *NFSPlugin) MkdirAll(ctx context.Context, connInfo plugin.ConnectionInfo
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	dirPath := normalizePath(path)
-	parts := strings.Split(strings.TrimPrefix(dirPath, "/"), "/")
-	current := ""
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		current = current + "/" + part
-		if _, err := entry.target.Mkdir(current, 0755); err != nil {
-			// 目录已存在则忽略
-			if _, _, lookupErr := entry.target.Lookup(current); lookupErr == nil {
-				continue
-			}
-			return fmt.Errorf("failed to create NFS directory %s: %w", current, err)
-		}
-	}
-	return nil
+	return mkdirAllLocked(entry, path)
 }
 
 // WriteFile 将 reader 内容写入 NFS 文件

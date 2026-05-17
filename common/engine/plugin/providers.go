@@ -227,7 +227,8 @@ type BatchReadOptions struct {
 }
 
 type TableReadSessionOptions struct {
-	Query string
+	Query    string
+	Metadata map[string]interface{}
 }
 
 type BatchWriteOptions struct {

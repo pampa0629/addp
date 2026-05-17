@@ -7,6 +7,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/pdf"
 )
 
@@ -78,6 +79,48 @@ func TestBuildTableExportPlanForObjectTarget(t *testing.T) {
 	}
 }
 
+func TestBuildTableExportPlanAllowsJSONTableWriter(t *testing.T) {
+	spec := minimalTableExportSpec()
+	spec.Target.Format = format.FormatJSON
+	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.jsonl"}
+	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
+
+	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableExportPlan failed: %v", err)
+	}
+	if result.Format != format.FormatJSON || result.Plan.Format != format.FormatJSON {
+		t.Fatalf("format = %q / %q, want json", result.Format, result.Plan.Format)
+	}
+	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.WriteOptions)
+	}
+}
+
+func TestBuildTableExportPlanPassesGeoJSONReadOptions(t *testing.T) {
+	spec := minimalTableExportSpec()
+	spec.Target.Format = format.FormatJSON
+	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.geojson"}
+	spec.Target.Options = map[string]interface{}{
+		"spatial.target_encoding": "geojson",
+		"geometry_field":          "geom",
+	}
+
+	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableExportPlan failed: %v", err)
+	}
+	if result.Plan.ReadOptions["spatial.target_encoding"] != "geojson" || result.Plan.ReadOptions["geometry_field"] != "geom" {
+		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.ReadOptions)
+	}
+}
+
 func TestBuildTableImportPlanForCSVFileToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
@@ -126,6 +169,27 @@ func TestBuildTableImportPlanForCSVFileToNativeTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableImportPlanAllowsJSONTableReader(t *testing.T) {
+	spec := minimalTableImportSpec()
+	spec.Source.Format = format.FormatJSON
+	spec.Source.Resource = ResourceSpec{Kind: resourceKindFile, Path: "imports/roads.jsonl"}
+	spec.Source.Options = map[string]interface{}{"json_mode": "jsonl"}
+
+	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableImportPlan failed: %v", err)
+	}
+	if result.Format != format.FormatJSON || result.Plan.Format != format.FormatJSON {
+		t.Fatalf("format = %q / %q, want json", result.Format, result.Plan.Format)
+	}
+	if result.Plan.ParseOptions == nil || result.Plan.ParseOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("parse options = %#v, want json_mode passthrough", result.Plan.ParseOptions)
+	}
+}
+
 func TestBuildTableExportPlanRejectsNonTableFormat(t *testing.T) {
 	spec := minimalTableExportSpec()
 	spec.Target.Format = format.FormatPDF
@@ -135,10 +199,10 @@ func TestBuildTableExportPlanRejectsNonTableFormat(t *testing.T) {
 		2: {Type: "nfs"},
 	})
 	if err == nil {
-		t.Fatal("BuildTableExportPlan succeeded, want format data type error")
+		t.Fatal("BuildTableExportPlan succeeded, want table writer provider error")
 	}
-	if !strings.Contains(err.Error(), "data type") {
-		t.Fatalf("error = %q, want data type error", err)
+	if !strings.Contains(err.Error(), "table writer provider") {
+		t.Fatalf("error = %q, want table writer provider error", err)
 	}
 }
 

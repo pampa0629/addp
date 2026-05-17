@@ -6,7 +6,6 @@ import (
 	"io"
 	"mime"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -204,75 +203,62 @@ func CreateContent(ctx context.Context, client *miniogo.Client, path string, opt
 		}
 	}
 
-	file, err := os.CreateTemp("", "addp-object-write-*")
-	if err != nil {
-		return nil, fmt.Errorf("create temporary object buffer: %w", err)
-	}
 	contentType := opts.ContentType
 	if contentType == "" {
 		contentType = InferContentType(key)
 	}
+	reader, writer := io.Pipe()
+	uploadDone := make(chan error, 1)
+	go func() {
+		_, err := client.PutObject(ctx, bucket, key, reader, -1, miniogo.PutObjectOptions{
+			ContentType:  contentType,
+			UserMetadata: opts.Metadata,
+		})
+		if err != nil {
+			uploadDone <- fmt.Errorf("write object %s: %w", path, err)
+			return
+		}
+		uploadDone <- nil
+	}()
+
 	return &contentWriter{
-		ctx:         ctx,
-		client:      client,
-		file:        file,
-		path:        path,
-		bucket:      bucket,
-		key:         key,
-		contentType: contentType,
-		metadata:    opts.Metadata,
+		writer:     writer,
+		uploadDone: uploadDone,
+		path:       path,
 	}, nil
 }
 
 type contentWriter struct {
-	ctx         context.Context
-	client      *miniogo.Client
-	file        *os.File
-	path        string
-	bucket      string
-	key         string
-	contentType string
-	metadata    map[string]string
-	closed      bool
+	writer     *io.PipeWriter
+	uploadDone chan error
+	path       string
+	closed     bool
 }
 
 func (w *contentWriter) Write(p []byte) (int, error) {
-	if w == nil || w.file == nil {
+	if w == nil || w.writer == nil {
 		return 0, fmt.Errorf("object writer is not initialized")
 	}
 	if w.closed {
 		return 0, fmt.Errorf("object writer is already closed")
 	}
-	return w.file.Write(p)
+	return w.writer.Write(p)
 }
 
 func (w *contentWriter) Close() error {
-	if w == nil || w.file == nil {
+	if w == nil || w.writer == nil {
 		return nil
 	}
 	if w.closed {
 		return nil
 	}
 	w.closed = true
-	defer os.Remove(w.file.Name())
-
-	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
-		_ = w.file.Close()
-		return fmt.Errorf("rewind temporary object buffer: %w", err)
+	if err := w.writer.Close(); err != nil {
+		_ = w.writer.CloseWithError(err)
+		return fmt.Errorf("close object writer %s: %w", w.path, err)
 	}
-	info, err := w.file.Stat()
-	if err != nil {
-		_ = w.file.Close()
-		return fmt.Errorf("stat temporary object buffer: %w", err)
-	}
-	defer w.file.Close()
-
-	_, err = w.client.PutObject(w.ctx, w.bucket, w.key, w.file, info.Size(), miniogo.PutObjectOptions{
-		ContentType:  w.contentType,
-		UserMetadata: w.metadata,
-	})
-	if err != nil {
-		return fmt.Errorf("write object %s: %w", w.path, err)
+	if err := <-w.uploadDone; err != nil {
+		return err
 	}
 	return nil
 }

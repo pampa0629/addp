@@ -13,6 +13,7 @@ type iterator struct {
 	meta            Metadata
 	structure       string
 	dataStartOffset int64
+	pendingRows     []map[string]interface{}
 }
 
 func newRecordIterator(r io.Reader) (*iterator, error) {
@@ -46,6 +47,7 @@ func newRecordIterator(r io.Reader) (*iterator, error) {
 	}
 
 	var collectionType string
+	rootObject := map[string]interface{}{}
 	for dec.More() {
 		keyToken, err := dec.Token()
 		if err != nil {
@@ -58,11 +60,13 @@ func newRecordIterator(r io.Reader) (*iterator, error) {
 
 		switch key {
 		case "type":
-			valTok, err := dec.Token()
-			if err != nil {
+			var value interface{}
+			if err := dec.Decode(&value); err != nil {
 				return nil, fmt.Errorf("geojson: failed to read type: %w", err)
 			}
-			if typeStr, ok := valTok.(string); ok {
+			rootObject[key] = value
+			typeStr, _ := value.(string)
+			if typeStr != "" {
 				collectionType = typeStr
 			}
 		case "bbox":
@@ -71,6 +75,7 @@ func newRecordIterator(r io.Reader) (*iterator, error) {
 				return nil, fmt.Errorf("geojson: failed to decode bbox: %w", err)
 			}
 			it.meta.BoundingBox = bbox
+			rootObject[key] = bbox
 		case "crs":
 			var crs rawCRS
 			if err := dec.Decode(&crs); err != nil {
@@ -79,6 +84,7 @@ func newRecordIterator(r io.Reader) (*iterator, error) {
 			if name := crs.Name(); name != "" {
 				it.meta.CoordinateSystem = name
 			}
+			rootObject[key] = crs
 		case "features":
 			arrayTok, err := dec.Token()
 			if err != nil {
@@ -96,18 +102,55 @@ func newRecordIterator(r io.Reader) (*iterator, error) {
 			it.dataStartOffset = dec.InputOffset()
 			return it, nil
 		default:
-			var skip interface{}
-			if err := dec.Decode(&skip); err != nil {
+			var value interface{}
+			if err := dec.Decode(&value); err != nil {
 				return nil, fmt.Errorf("geojson: failed to skip key %q: %w", key, err)
 			}
+			rootObject[key] = value
 		}
 	}
 
-	return nil, fmt.Errorf("json table: features array not found")
+	closeToken, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("json table: failed to close root object: %w", err)
+	}
+	if closeDelim, ok := closeToken.(json.Delim); !ok || closeDelim != '}' {
+		return nil, fmt.Errorf("json table: expected closing root object, got %v", closeToken)
+	}
+
+	var nextObject map[string]interface{}
+	if err := dec.Decode(&nextObject); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("json table: features array not found")
+		}
+		return nil, fmt.Errorf("json table: failed to decode JSON line: %w", err)
+	}
+	return &iterator{
+		decoder:     dec,
+		meta:        Metadata{},
+		structure:   StructureJSONLines,
+		pendingRows: []map[string]interface{}{rootObject, nextObject},
+	}, nil
 }
 
 // Next 读取下一条 Feature。
 func (it *iterator) Next() (*Feature, error) {
+	if it.structure == StructureJSONLines && len(it.pendingRows) > 0 {
+		raw := it.pendingRows[0]
+		it.pendingRows = it.pendingRows[1:]
+		return featureFromObjectRecord(raw), nil
+	}
+	if it.structure == StructureJSONLines {
+		var raw map[string]interface{}
+		if err := it.decoder.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, io.EOF
+			}
+			return nil, fmt.Errorf("json table: failed to decode JSON line: %w", err)
+		}
+		return featureFromObjectRecord(raw), nil
+	}
+
 	if !it.decoder.More() {
 		if err := it.finishArray(); err != nil {
 			return nil, err
