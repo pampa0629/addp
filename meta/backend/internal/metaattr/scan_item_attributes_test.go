@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -29,8 +30,27 @@ func TestSpatialMetadataWritesMinimalCapabilitiesSpatial(t *testing.T) {
 	if len(columns) != 1 {
 		t.Fatalf("geometry_columns = %#v", columns)
 	}
-	if columns[0]["name"] != "geom" || columns[0]["geometry_type"] != "geometry" || columns[0]["srid"] != 4326 {
+	if columns[0]["name"] != "geom" || columns[0]["geometry_type"] != "MultiPolygon" || columns[0]["srid"] != 4326 {
 		t.Fatalf("geometry column = %#v", columns[0])
+	}
+}
+
+func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
+	t.Parallel()
+
+	fields := FieldAttributesFromFormat([]format.FieldInfo{{
+		Name:         "SmGeometry",
+		Type:         format.FieldTypeGeometry,
+		OriginalType: "geometry",
+		Nullable:     true,
+	}})
+
+	if len(fields) != 1 {
+		t.Fatalf("fields = %#v, want one field", fields)
+	}
+	field := fields[0]
+	if field["data_type"] != "geometry" || field["is_spatial"] != true || field["geometry_type"] != "Geometry" {
+		t.Fatalf("spatial field attributes = %#v", field)
 	}
 }
 

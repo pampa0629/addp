@@ -10,6 +10,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
+	shapefileformat "github.com/addp/common/format/plugins/shapefile"
 )
 
 func TestTableExportExecutorExecuteWritesCSV(t *testing.T) {
@@ -122,6 +123,55 @@ func TestTableExportExecutorPrefersTableReadSession(t *testing.T) {
 	}
 	if !reader.sessionClosed {
 		t.Fatal("table read session was not closed")
+	}
+}
+
+func TestTableExportExecutorExecuteWritesShapefileComponents(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "name", Type: "string"},
+					{Name: "geom", Type: "geometry"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": 1, "name": "Alpha", "geom": "POINT (120 30)"},
+					{"id": 2, "name": "Beta", "geom": "POINT (121 31)"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{files: map[string][]byte{}}
+	exec := &TableExportExecutor{
+		Reader:            reader,
+		Writer:            writer,
+		ComponentProvider: shapefileformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableExportPlan{
+		TargetPath:  engineplugin.FileItemPath(2, "exports/cities.shp"),
+		TargetWrite: engineplugin.WriteOptions{Overwrite: true},
+		Format:      format.FormatShapefile,
+		BatchSize:   100,
+		WriteOptions: &format.WriteOptions{
+			Encoding: "utf-8",
+			ExtraParams: map[string]interface{}{
+				"geometry_field": "geom",
+				"geometry_type":  "Point",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 1 {
+		t.Fatalf("metrics = %#v, want 2 read/written and 1 batch", metrics)
+	}
+	for _, path := range []string{"exports/cities.shp", "exports/cities.shx", "exports/cities.dbf", "exports/cities.cpg"} {
+		if len(writer.files[path]) == 0 {
+			t.Fatalf("component %s was not written", path)
+		}
 	}
 }
 
@@ -259,6 +309,7 @@ func (s *fakeTableReadSession) Close(context.Context) error {
 type fakeContentWriter struct {
 	engineType string
 	buf        bytes.Buffer
+	files      map[string][]byte
 	closed     bool
 }
 
@@ -293,7 +344,14 @@ func (w *fakeContentWriter) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (w *fakeContentWriter) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
+	if w.files != nil {
+		buf := &bytes.Buffer{}
+		return fakeWriteCloser{Writer: buf, close: func() {
+			w.files[path.StringPath()] = append([]byte(nil), buf.Bytes()...)
+			w.closed = true
+		}}, nil
+	}
 	return fakeWriteCloser{Writer: &w.buf, close: func() { w.closed = true }}, nil
 }
 

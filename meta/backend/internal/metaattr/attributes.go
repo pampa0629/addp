@@ -107,14 +107,28 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":          f.Name,
-			"type":          string(f.Type),
-			"original_type": f.OriginalType,
-			"nullable":      f.Nullable,
-		})
+		field := map[string]interface{}{
+			"name":           f.Name,
+			"data_type":      string(f.Type),
+			"type":           string(f.Type),
+			"original_type":  f.OriginalType,
+			"is_nullable":    f.Nullable,
+			"nullable":       f.Nullable,
+			"is_primary_key": f.IsPrimaryKey,
+			"comment":        f.Comment,
+		}
+		if format.IsGeometryType(f.Type) || isSpatialOriginalType(f.OriginalType) {
+			field["is_spatial"] = true
+			field["geometry_type"] = NormalizeGeometryType(string(f.Type))
+		}
+		fieldsData = append(fieldsData, field)
 	}
 	return fieldsData
+}
+
+func isSpatialOriginalType(value string) bool {
+	token := normalizeGeometryToken(value)
+	return token == "geometry" || token == "geography"
 }
 
 func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {

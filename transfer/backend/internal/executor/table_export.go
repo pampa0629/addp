@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resource"
 )
 
 const defaultBatchSize = 1000
@@ -38,6 +40,7 @@ type TableExportExecutor struct {
 	TableSessionProvider engineplugin.TableReadSessionProvider
 	Writer               engineplugin.ContentWritableProvider
 	FormatProvider       format.TableWriterProvider
+	ComponentProvider    format.ComponentTableWriterProvider
 }
 
 func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatType format.FormatType) (*TableExportExecutor, error) {
@@ -60,9 +63,10 @@ func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatTyp
 		return nil, fmt.Errorf("target engine %q does not implement content write", targetEngineType)
 	}
 
-	formatProvider, err := format.GetTableWriterProvider(formatType)
-	if err != nil {
-		return nil, fmt.Errorf("get table writer provider %q: %w", formatType, err)
+	formatProvider, tableWriterErr := format.GetTableWriterProvider(formatType)
+	componentProvider, componentWriterErr := format.GetComponentTableWriterProvider(formatType)
+	if tableWriterErr != nil && componentWriterErr != nil {
+		return nil, fmt.Errorf("get table writer provider %q: %w", formatType, tableWriterErr)
 	}
 
 	return &TableExportExecutor{
@@ -70,6 +74,7 @@ func NewTableExportExecutor(sourceEngineType, targetEngineType string, formatTyp
 		TableSessionProvider: tableSessionProvider,
 		Writer:               writer,
 		FormatProvider:       formatProvider,
+		ComponentProvider:    componentProvider,
 	}, nil
 }
 
@@ -80,8 +85,12 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 	if err := validateTableExportPlan(plan); err != nil {
 		return nil, err
 	}
-	if plan.Format != "" && plan.Format != e.FormatProvider.Format() {
-		return nil, fmt.Errorf("table export format %q does not match table writer provider format %q", plan.Format, e.FormatProvider.Format())
+	if err := validateTableExportFormat(plan.Format, e); err != nil {
+		return nil, err
+	}
+
+	if e.ComponentProvider != nil {
+		return e.executeComponentTableExport(ctx, plan)
 	}
 
 	output, err := e.Writer.CreateContent(ctx, plan.TargetConnInfo, plan.TargetPath, plan.TargetWrite)
@@ -129,6 +138,73 @@ func (e *TableExportExecutor) Execute(ctx context.Context, plan TableExportPlan)
 	}
 	outputClosed = true
 
+	return metrics, nil
+}
+
+func validateTableExportFormat(planFormat format.FormatType, e *TableExportExecutor) error {
+	if planFormat == "" {
+		return nil
+	}
+	providerFormat := format.FormatType("")
+	if e.FormatProvider != nil {
+		providerFormat = e.FormatProvider.Format()
+	}
+	if e.ComponentProvider != nil {
+		providerFormat = e.ComponentProvider.Format()
+	}
+	if planFormat != providerFormat {
+		return fmt.Errorf("table export format %q does not match table writer provider format %q", planFormat, providerFormat)
+	}
+	return nil
+}
+
+func (e *TableExportExecutor) executeComponentTableExport(ctx context.Context, plan TableExportPlan) (*TableExportMetrics, error) {
+	componentWriter := newContentComponentWriter(e.Writer, plan.TargetConnInfo, plan.TargetPath, plan.TargetWrite, e.ComponentProvider.ComponentSpecs())
+	batchSize := plan.BatchSize
+	if batchSize <= 0 {
+		batchSize = defaultBatchSize
+	}
+
+	var tableWriter format.TableWriter
+	metrics := &TableExportMetrics{}
+	readBatch := e.batchReader(ctx, plan, batchSize)
+	for {
+		batch, err := readBatch()
+		if err != nil {
+			_ = componentWriter.AbortComponents(ctx)
+			return metrics, err
+		}
+		if batch == nil || len(batch.Rows) == 0 {
+			break
+		}
+		if tableWriter == nil {
+			schema := tableInfoFromBatch(batch)
+			applySpatialInfoFromOptions(schema, plan.WriteOptions)
+			opened, err := e.ComponentProvider.OpenComponentTableWriter(ctx, componentWriter, resourceRefFromCatalogPath(plan.TargetPath), schema, plan.WriteOptions)
+			if err != nil {
+				_ = componentWriter.AbortComponents(ctx)
+				return metrics, fmt.Errorf("open component table writer: %w", err)
+			}
+			tableWriter = opened
+		}
+		if err := tableWriter.WriteRows(ctx, batch.Rows); err != nil {
+			_ = componentWriter.AbortComponents(ctx)
+			return metrics, fmt.Errorf("write component table rows at offset %d: %w", batch.Offset, err)
+		}
+		rowCount := int64(len(batch.Rows))
+		metrics.RecordsRead += rowCount
+		metrics.RecordsWritten += rowCount
+		metrics.Batches++
+		if len(batch.Rows) < batchSize {
+			break
+		}
+	}
+
+	if tableWriter != nil {
+		if err := tableWriter.Close(ctx); err != nil {
+			return metrics, fmt.Errorf("close component table writer: %w", err)
+		}
+	}
 	return metrics, nil
 }
 
@@ -217,11 +293,14 @@ func validateTableExportExecutor(e *TableExportExecutor) error {
 	if e.Writer == nil {
 		return fmt.Errorf("table export executor requires target content writer")
 	}
-	if e.FormatProvider == nil {
+	if e.FormatProvider == nil && e.ComponentProvider == nil {
 		return fmt.Errorf("table export executor requires table writer provider")
 	}
-	if e.FormatProvider.Format() == "" || e.FormatProvider.Format() == format.FormatUnknown {
+	if e.FormatProvider != nil && (e.FormatProvider.Format() == "" || e.FormatProvider.Format() == format.FormatUnknown) {
 		return fmt.Errorf("table export executor requires concrete table writer format")
+	}
+	if e.ComponentProvider != nil && (e.ComponentProvider.Format() == "" || e.ComponentProvider.Format() == format.FormatUnknown) {
+		return fmt.Errorf("table export executor requires concrete component table writer format")
 	}
 	return nil
 }
@@ -267,4 +346,44 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 	}
 	return info
+}
+
+func resourceRefFromCatalogPath(path engineplugin.CatalogPath) resource.ResourceRef {
+	stringPath := path.StringPath()
+	return resource.NewResourceRef(stringPath, resource.ResourceRoleMain)
+}
+
+func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptions) {
+	if info == nil || opts == nil || opts.ExtraParams == nil {
+		return
+	}
+	geometryField := optionString(opts.ExtraParams, "geometry_field")
+	geometryType := optionString(opts.ExtraParams, "geometry_type")
+	if geometryField == "" && geometryType == "" {
+		return
+	}
+	if info.SpatialInfo == nil {
+		info.SpatialInfo = &format.SpatialInfo{}
+	}
+	if geometryField != "" {
+		info.SpatialInfo.GeometryColumn = geometryField
+		for i := range info.Fields {
+			if strings.EqualFold(info.Fields[i].Name, geometryField) {
+				info.Fields[i].Type = format.FieldTypeGeometry
+				break
+			}
+		}
+	}
+	if geometryType != "" {
+		info.SpatialInfo.GeometryType = geometryType
+	}
+}
+
+func optionString(values map[string]interface{}, key string) string {
+	value, ok := values[key]
+	if !ok {
+		return ""
+	}
+	text, _ := value.(string)
+	return strings.TrimSpace(text)
 }

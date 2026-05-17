@@ -10,6 +10,7 @@ import (
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/pdf"
+	_ "github.com/addp/common/format/plugins/shapefile"
 )
 
 func TestBuildTableExportPlanForNativeTableToCSVFile(t *testing.T) {
@@ -139,6 +140,30 @@ func TestBuildTableExportPlanAllowsParquetTableWriter(t *testing.T) {
 	}
 	if result.Plan.WriteOptions == nil {
 		t.Fatal("write options is nil")
+	}
+}
+
+func TestBuildTableExportPlanAllowsShapefileComponentTableWriter(t *testing.T) {
+	spec := minimalTableExportSpec()
+	spec.Target.Format = format.FormatShapefile
+	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.shp"}
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+		"geometry_type":  "Point",
+	}
+
+	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableExportPlan failed: %v", err)
+	}
+	if result.Format != format.FormatShapefile || result.Plan.Format != format.FormatShapefile {
+		t.Fatalf("format = %q / %q, want shapefile", result.Format, result.Plan.Format)
+	}
+	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["geometry_field"] != "geom" {
+		t.Fatalf("write options = %#v, want geometry_field passthrough", result.Plan.WriteOptions)
 	}
 }
 

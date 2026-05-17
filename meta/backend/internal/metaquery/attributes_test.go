@@ -31,6 +31,45 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 	}
 }
 
+func TestFieldsFromMetaItemMergesCapabilitiesSpatial(t *testing.T) {
+	t.Parallel()
+
+	fields, err := FieldsFromMetaItem(models.MetaItem{
+		Attributes: models.JSONMap{
+			"capabilities": map[string]interface{}{
+				"spatial": map[string]interface{}{
+					"geometry_columns": []interface{}{
+						map[string]interface{}{
+							"name":          "SmGeometry",
+							"geometry_type": "Polygon",
+							"srid":          float64(2360),
+						},
+					},
+					"primary_geometry_column": "SmGeometry",
+				},
+			},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"fields": []interface{}{
+						map[string]interface{}{"name": "id", "type": "int"},
+						map[string]interface{}{"name": "SmGeometry", "type": "geometry", "original_type": "geometry"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("FieldsFromMetaItem() error = %v", err)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("fields = %#v, want 2 fields", fields)
+	}
+	geom := fields[1]
+	if geom.Name != "SmGeometry" || geom.DataType != "geometry" || !geom.IsSpatial || geom.GeometryType != "Polygon" || geom.SRID != 2360 {
+		t.Fatalf("geometry field = %#v, want spatial SmGeometry Polygon SRID 2360", geom)
+	}
+}
+
 func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	t.Parallel()
 

@@ -172,3 +172,8 @@ business/nfs/data/shp/规划用地.qmd
 business/nfs/data/shp/规划用地.shp
 business/nfs/data/shp/规划用地.shx
 business/nfs/data/container/shapefile.zip
+*.csv
+*.cpg
+*.dbf
+*.shp
+*.shx

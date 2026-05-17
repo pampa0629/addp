@@ -161,14 +161,16 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 		return nil, fmt.Errorf("format %q is not registered", formatType)
 	}
 	if descriptor.DataType != format.FormatDataTypeTable {
-		if _, err := format.GetTableWriterProvider(formatType); err != nil {
+		if !hasTableExportWriter(formatType) {
+			_, err := format.GetTableWriterProvider(formatType)
 			return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
 		}
 	}
 	if !descriptor.TransferWrite {
 		return nil, fmt.Errorf("format %q is not declared as transfer writable", formatType)
 	}
-	if _, err := format.GetTableWriterProvider(formatType); err != nil {
+	if !hasTableExportWriter(formatType) {
+		_, err := format.GetTableWriterProvider(formatType)
 		return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
 	}
 
@@ -192,6 +194,16 @@ func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 			ReadOptions:  readOptionsForTarget(formatType, writeOptions),
 		},
 	}, nil
+}
+
+func hasTableExportWriter(formatType format.FormatType) bool {
+	if _, err := format.GetTableWriterProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetComponentTableWriterProvider(formatType); err == nil {
+		return true
+	}
+	return false
 }
 
 func BuildTableImportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*TableImportBuildResult, error) {

@@ -105,7 +105,7 @@ export function useTaskWizardState() {
 
   function buildTargetEndpoint() {
     const fileConfig = targetConfig.value || {}
-    const format = fileConfig.format || 'csv'
+    const format = targetBackendFormat(fileConfig)
     const endpoint = {
       engine: {
         scope: 'system',
@@ -119,12 +119,57 @@ export function useTaskWizardState() {
       policy: {
         write_mode: fileConfig.writeMode || 'overwrite'
       },
-      options: {
-        header: fileConfig.includeHeader !== false,
-        delimiter: format === 'tsv' ? '\t' : (fileConfig.delimiter || ',')
-      }
+      options: targetBackendOptions(fileConfig)
     }
     return endpoint
+  }
+
+  function targetBackendFormat(fileConfig) {
+    const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
+    if (uiFormat === 'jsonl' || uiFormat === 'geojson') return 'json'
+    return uiFormat
+  }
+
+  function targetBackendOptions(fileConfig) {
+    const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
+    switch (uiFormat) {
+      case 'csv':
+        return {
+          header: fileConfig.includeHeader !== false,
+          delimiter: fileConfig.delimiter || ','
+        }
+      case 'tsv':
+        return {
+          header: fileConfig.includeHeader !== false,
+          delimiter: '\t'
+        }
+      case 'jsonl':
+        return {
+          json_mode: 'jsonl'
+        }
+      case 'json':
+        return {
+          json_mode: 'array'
+        }
+      case 'geojson':
+        return compactOptions({
+          'spatial.target_encoding': 'geojson',
+          geometry_field: fileConfig.geometryField
+        })
+      case 'shapefile':
+        return compactOptions({
+          geometry_field: fileConfig.geometryField,
+          geometry_type: fileConfig.geometryType
+        })
+      default:
+        return {}
+    }
+  }
+
+  function compactOptions(options) {
+    return Object.fromEntries(
+      Object.entries(options).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+    )
   }
 
   function buildEncodedTargetResource(fileConfig) {
@@ -334,15 +379,32 @@ export function useTaskWizardState() {
       ? [rawPath.bucket, rawPath.path].filter(Boolean).join('/')
       : rawPath.path || ''
     const { dir, file } = splitPath(path)
+    const options = target.options || {}
+    const format = targetUiFormat(target.format, options)
 
     return {
-      format: target.format || 'csv',
+      format,
       resourcePath: dir,
       resourceFile: file,
       includeHeader: target.options?.header !== false,
       delimiter: target.options?.delimiter || ',',
+      geometryField: options.geometry_field || '',
+      geometryType: options.geometry_type || '',
       writeMode: target.policy?.write_mode || 'overwrite'
     }
+  }
+
+  function targetUiFormat(format, options = {}) {
+    const normalized = String(format || 'csv').toLowerCase()
+    if (normalized !== 'json') return normalized
+
+    const spatialEncoding = String(options['spatial.target_encoding'] || options.target_encoding || '').toLowerCase()
+    if (spatialEncoding === 'geojson') return 'geojson'
+
+    const jsonMode = String(options.json_mode || options.layout || '').toLowerCase()
+    if (jsonMode === 'jsonl' || jsonMode === 'lines' || jsonMode === 'ndjson') return 'jsonl'
+
+    return 'json'
   }
 
   function splitPath(path) {

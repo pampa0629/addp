@@ -1,6 +1,8 @@
 package metaattr
 
 import (
+	"strings"
+
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
@@ -44,7 +46,7 @@ func SpatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[stri
 
 	geometryColumn := map[string]interface{}{
 		"name":          spatialMeta.GeometryColumn,
-		"geometry_type": "geometry",
+		"geometry_type": GeometryTypeFromSpatialMetadata(spatialMeta),
 	}
 	if spatialMeta.SRID > 0 {
 		geometryColumn["srid"] = spatialMeta.SRID
@@ -60,6 +62,42 @@ func SpatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[stri
 		values["extent_srid"] = spatialMeta.ExtentSRID
 	}
 	return values
+}
+
+func GeometryTypeFromSpatialMetadata(spatialMeta *models.SpatialMetadata) string {
+	if spatialMeta == nil || len(spatialMeta.GeometryTypes) == 0 {
+		return "Geometry"
+	}
+	return NormalizeGeometryType(spatialMeta.GeometryTypes[0])
+}
+
+func NormalizeGeometryType(value string) string {
+	switch normalizeGeometryToken(value) {
+	case "point":
+		return "Point"
+	case "linestring":
+		return "LineString"
+	case "polygon":
+		return "Polygon"
+	case "multipoint":
+		return "MultiPoint"
+	case "multilinestring":
+		return "MultiLineString"
+	case "multipolygon":
+		return "MultiPolygon"
+	default:
+		return "Geometry"
+	}
+}
+
+func normalizeGeometryToken(value string) string {
+	token := strings.ToLower(strings.TrimSpace(value))
+	token = strings.TrimPrefix(token, "st_")
+	token = strings.TrimPrefix(token, "st")
+	token = strings.ReplaceAll(token, "_", "")
+	token = strings.ReplaceAll(token, "-", "")
+	token = strings.ReplaceAll(token, " ", "")
+	return token
 }
 
 func BuildDocumentCollectionAttributes(itemMetadata *plugin.ItemMetadata) models.JSONMap {

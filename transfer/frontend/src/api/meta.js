@@ -4,9 +4,7 @@
  */
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:8000/api/v1'
-  : '/api/v1'
+const API_BASE_URL = '/api/v1'
 
 // 创建带认证的请求函数
 const apiRequest = (method, url, options = {}) => {
@@ -39,6 +37,16 @@ export const getSchemas = async (engineId) => {
     schema_name: item.name || item.schema_name,
     name: item.name || item.schema_name
   }))
+}
+
+export const listCatalogChildren = async (engineId, path = { segments: [] }, options = {}) => {
+  const response = await apiRequest('post', `/system/engines/${engineId}/catalog/children`, {
+    data: {
+      path,
+      options
+    }
+  })
+  return response.data?.nodes || response.data?.data?.nodes || []
 }
 
 /**

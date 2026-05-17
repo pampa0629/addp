@@ -15,6 +15,7 @@ func FieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) 
 		return []commonModels.FieldInfo{}, nil
 	}
 
+	spatialColumns := spatialColumnsFromItem(item)
 	fieldInfos := make([]commonModels.FieldInfo, 0, len(fieldsList))
 	for _, fieldData := range fieldsList {
 		fieldMap, ok := fieldData.(map[string]interface{})
@@ -22,20 +23,74 @@ func FieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) 
 			continue
 		}
 
-		dataType := toString(fieldMap["data_type"])
+		fieldName := toString(fieldMap["name"])
+		dataType := firstString(fieldMap["data_type"], fieldMap["type"], fieldMap["original_type"])
+		isSpatial := toBool(fieldMap["is_spatial"]) || isGeometryType(dataType)
+		geometryType := toString(fieldMap["geometry_type"])
+		srid := int(toInt(fieldMap["srid"]))
+		if column, ok := spatialColumns[fieldName]; ok {
+			isSpatial = true
+			if column.GeometryType != "" {
+				geometryType = column.GeometryType
+			}
+			if column.SRID > 0 {
+				srid = column.SRID
+			}
+		}
 		fieldInfos = append(fieldInfos, commonModels.FieldInfo{
-			Name:         toString(fieldMap["name"]),
+			Name:         fieldName,
 			DataType:     dataType,
 			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
 			IsNullable:   toBool(fieldMap["is_nullable"]),
 			Comment:      toString(fieldMap["comment"]),
-			IsSpatial:    toBool(fieldMap["is_spatial"]),
-			GeometryType: toString(fieldMap["geometry_type"]),
-			SRID:         int(toInt(fieldMap["srid"])),
+			IsSpatial:    isSpatial,
+			GeometryType: geometryType,
+			SRID:         srid,
 		})
 	}
 
 	return fieldInfos, nil
+}
+
+type spatialColumnInfo struct {
+	GeometryType string
+	SRID         int
+}
+
+func spatialColumnsFromItem(item models.MetaItem) map[string]spatialColumnInfo {
+	spatialData, ok := spatialMetadataAttribute(item.Attributes)
+	if !ok {
+		return nil
+	}
+	columns := map[string]spatialColumnInfo{}
+	addSpatialColumn := func(raw interface{}) {
+		column, ok := rawMap(raw)
+		if !ok {
+			return
+		}
+		name := toString(column["name"])
+		if name == "" {
+			return
+		}
+		columns[name] = spatialColumnInfo{
+			GeometryType: toString(column["geometry_type"]),
+			SRID:         int(toInt(column["srid"])),
+		}
+	}
+	switch rawColumns := spatialData["geometry_columns"].(type) {
+	case []interface{}:
+		for _, rawColumn := range rawColumns {
+			addSpatialColumn(rawColumn)
+		}
+	case []map[string]interface{}:
+		for _, rawColumn := range rawColumns {
+			addSpatialColumn(rawColumn)
+		}
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	return columns
 }
 
 func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataResponse, error) {
@@ -104,13 +159,8 @@ func applyGeometryColumns(spatialMeta *models.SpatialMetadataResponse, rawColumn
 }
 
 func applyGeometryColumn(spatialMeta *models.SpatialMetadataResponse, rawColumn interface{}) bool {
-	var column map[string]interface{}
-	switch typed := rawColumn.(type) {
-	case map[string]interface{}:
-		column = typed
-	case models.JSONMap:
-		column = map[string]interface{}(typed)
-	default:
+	column, ok := rawMap(rawColumn)
+	if !ok {
 		return false
 	}
 
@@ -123,6 +173,17 @@ func applyGeometryColumn(spatialMeta *models.SpatialMetadataResponse, rawColumn 
 		spatialMeta.GeometryTypes = []string{geomType}
 	}
 	return true
+}
+
+func rawMap(raw interface{}) (map[string]interface{}, bool) {
+	switch typed := raw.(type) {
+	case map[string]interface{}:
+		return typed, true
+	case models.JSONMap:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
 }
 
 func float64Slice(raw interface{}) []float64 {
@@ -221,6 +282,15 @@ func toString(value interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+func firstString(values ...interface{}) string {
+	for _, value := range values {
+		if text := toString(value); strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func toBool(value interface{}) bool {

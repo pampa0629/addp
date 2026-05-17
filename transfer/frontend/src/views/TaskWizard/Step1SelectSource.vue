@@ -4,13 +4,6 @@
     <p class="step-description">{{ t('transfer.taskWizard.selectSourcePageDesc') }}</p>
 
     <el-form :model="formData" label-width="120px">
-      <el-form-item :label="t('transfer.taskWizard.sourceTypeLabel')">
-        <el-radio-group v-model="sourceType" @change="handleSourceTypeChange">
-          <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
-          <el-radio-button value="mysql">MySQL</el-radio-button>
-        </el-radio-group>
-      </el-form-item>
-
       <el-form-item :label="t('transfer.taskWizard.sourceEngineLabel')">
         <el-select
           v-model="formData.engineID"
@@ -20,7 +13,7 @@
           @change="handleEngineChange"
         >
           <el-option
-            v-for="engine in filteredEngines"
+            v-for="engine in engines"
             :key="engine.id"
             :label="`${engine.name} (${engine.engine_type})`"
             :value="engine.id"
@@ -31,7 +24,7 @@
       <el-form-item v-if="needsSchema" :label="t('transfer.taskWizard.schemaLabel')">
         <el-select
           v-model="formData.schema"
-          :placeholder="t('transfer.taskWizard.schemaPlaceholder')"
+          :placeholder="namespacePlaceholder"
           filterable
           :loading="loadingSchemas"
           :disabled="!formData.engineID"
@@ -91,7 +84,6 @@ const props = defineProps({
   }
 })
 
-const sourceType = ref('postgresql')
 const formData = reactive({
   engineID: null,
   schema: '',
@@ -111,13 +103,13 @@ const selectedEngine = computed(() => {
   return engines.value.find(engine => engine.id === formData.engineID) || null
 })
 
-const filteredEngines = computed(() => {
-  return engines.value.filter(engine => matchesEngineType(engine.engine_type, sourceType.value))
-})
-
 const needsSchema = computed(() => {
   const engineType = (selectedEngine.value?.engine_type || '').toLowerCase()
-  return engineType.includes('postgres') || engineType.includes('mysql')
+  return isNativeTableEngine(engineType)
+})
+
+const namespacePlaceholder = computed(() => {
+  return t('transfer.taskWizard.schemaPlaceholder')
 })
 
 const canProceed = computed(() => {
@@ -137,11 +129,16 @@ watch(canProceed, (ready) => {
   }
 })
 
-function matchesEngineType(engineType, expected) {
+function isNativeTableEngine(engineType) {
   const type = (engineType || '').toLowerCase()
-  if (expected === 'postgresql') return type.includes('postgres')
-  if (expected === 'mysql') return type.includes('mysql')
-  return false
+  return [
+    'postgres',
+    'mysql',
+    'doris',
+    'clickhouse',
+    'sqlite',
+    'spatialite'
+  ].some(token => type.includes(token))
 }
 
 function syncSource() {
@@ -154,17 +151,8 @@ function syncSource() {
     scope: 'system',
     schema: formData.schema,
     table: formData.table,
-    sourceType: sourceType.value
+    sourceType: normalizeEngineType(engine.engine_type)
   })
-}
-
-function handleSourceTypeChange() {
-  formData.engineID = null
-  formData.schema = ''
-  formData.table = ''
-  schemas.value = []
-  tables.value = []
-  selectedTable.value = null
 }
 
 async function loadEngines() {
@@ -174,7 +162,7 @@ async function loadEngines() {
     engines.value = (data || []).filter(engine =>
       engine?.id !== undefined &&
       engine?.id !== null &&
-      (matchesEngineType(engine.engine_type, 'postgresql') || matchesEngineType(engine.engine_type, 'mysql'))
+      isNativeTableEngine(engine.engine_type)
     )
   } catch (error) {
     ElMessage.error(t('transfer.taskWizard.loadEnginesFailedMsg'))
@@ -267,7 +255,6 @@ function formatBytes(bytes) {
 
 async function restoreState() {
   const state = props.wizardState
-  sourceType.value = state.sourceType.value || 'postgresql'
 
   if (!state.sourceEngineID.value) return
 
@@ -286,6 +273,12 @@ async function restoreState() {
     formData.table = state.sourceTable.value
     selectedTable.value = tables.value.find(table => table.name === state.sourceTable.value) || null
   }
+}
+
+function normalizeEngineType(engineType) {
+  const type = String(engineType || '').toLowerCase()
+  if (type.includes('postgres')) return 'postgresql'
+  return type
 }
 
 onMounted(async () => {

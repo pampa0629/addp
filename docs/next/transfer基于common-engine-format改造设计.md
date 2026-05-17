@@ -195,7 +195,7 @@ PostgreSQL native table
 仍未完成：
 
 - progress / checkpoint / batch-level logs 还只是最小状态。
-- JSON / JSONL 已补 `TableReaderProvider` 和 `TableWriterProvider`，Transfer planner 已允许主 data type 不是 table、但实际具备 table reader / writer provider 的格式参与 table transfer；JSON writer 已支持 `spatial.target_encoding=geojson` 写出 GeoJSON FeatureCollection。Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`，PostgreSQL table -> NFS Parquet -> PostgreSQL table 真实链路已跑通；Shapefile 已补 common `ComponentTableWriterProvider` 第一版，可写出 `.shp/.shx/.dbf/.cpg` 组件；Transfer executor 的 multi component target 接入仍待补。
+- JSON / JSONL 已补 `TableReaderProvider` 和 `TableWriterProvider`，Transfer planner 已允许主 data type 不是 table、但实际具备 table reader / writer provider 的格式参与 table transfer；JSON writer 已支持 `spatial.target_encoding=geojson` 写出 GeoJSON FeatureCollection。Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`，PostgreSQL table -> NFS Parquet -> PostgreSQL table 真实链路已跑通；Shapefile 已补 common `ComponentTableWriterProvider` 第一版，可写出 `.shp/.shx/.dbf/.cpg` 组件；Transfer planner / executor 已接入 multi component export 第一版。
 - PostgreSQL 读侧已补 cursor session 第一版；分区并行读取、schema 快照、稳定 checkpoint 和失败恢复仍未补。
 - PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert、单批 COPY 和跨批次 COPY session；`TableWritePreparer` 已支持 `create_if_not_exists` 和 `truncate_insert`；drop-create、schema evolution 仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY session。
 - CSV / TSV、JSON / JSONL 已补 `TableReaderProvider`，Transfer import 优先使用连续 reader，不再通过 `TableSampleReader` 每批重新打开并重扫源文件；其他格式仍按需要逐步补。
@@ -225,16 +225,16 @@ PostgreSQL native table
 | 连续批量读取表 | PostgreSQL 已补 server-side cursor session；其他引擎仍主要依赖 `BatchReadableProvider.ReadBatch()` 单次 batch 调用，缺少分区计划、稳定 checkpoint、schema 快照和通用高性能游标语义。 |
 | 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 和 `TableWriteSessionProvider` 第一版，写入方法可选 ordinary insert、单批 COPY 或跨批次 COPY session；并通过 `TableWritePreparer` 支持 `create_if_not_exists` 和 `truncate_insert`。drop-create、schema evolution 仍待补。 |
 | 写入对象存储 | S3 / MinIO 已升级为 streaming multipart common 写 provider；后续仍需补更细的失败清理、提交语义和可观测性。 |
-| data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / JSONL 已补 table reader / writer，并支持 GeoJSON FeatureCollection 写出；Parquet 已补最小 table reader / writer；Shapefile 已补 `ComponentTableWriterProvider`，Transfer 尚未把 multi component target 接入 executor。 |
+| data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / JSONL 已补 table reader / writer，并支持 GeoJSON FeatureCollection 写出；Parquet 已补最小 table reader / writer；Shapefile 已补 `ComponentTableWriterProvider`，Transfer 已能在 export 中选择 multi component writer。 |
 | planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
 | 全量读取文件格式 | CSV / TSV、JSON / JSONL、Parquet 已补最小 `TableReaderProvider`；Shapefile 等仍主要依赖 `TableSampleReader.SampleTable()` 或 component / scope sample，后续需要按真实链路补连续 reader 或更高性能 reader。 |
-| 多组件写出 | `common/resource.ComponentWriter` 和 `common/format.ComponentTableWriterProvider` 已补最小抽象；Shapefile 插件已能按 target basename 写出必需组件。后续需把 NFS / S3 / MinIO 等 engine 写侧适配成 `ComponentWriter`，并接入 Transfer executor。 |
+| 多组件写出 | `common/resource.ComponentWriter` 和 `common/format.ComponentTableWriterProvider` 已补最小抽象；Shapefile 插件已能按 target basename 写出必需组件。Transfer executor 已补 `ContentWritableProvider` 到 `ComponentWriter` 的适配，NFS / S3 / MinIO 可复用单文件写能力写出多组件。 |
 | stream / CDC | common engine 尚无 `StreamReadableProvider`、`CDCReadableProvider` 和 change event / offset 标准。 |
 
 因此，第一阶段不新增“统一传输数据流”大框架，而是先补三个明确缺口：
 
 1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已升级为 streaming multipart；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已补 `create_if_not_exists` / `truncate_insert`，后续补 drop-create 和 schema evolution。
-2. **common format table 读写侧**：CSV / TSV、JSON / JSONL `TableReaderProvider` 和 `TableWriterProvider` 已补，JSON writer 已支持 `spatial.target_encoding=geojson`；Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`；Shapefile 已补 `ComponentTableWriterProvider` 第一版；PostgreSQL read session 已能在 GeoJSON 目标编码时把空间字段读取为 GeoJSON geometry。后续按链路需要继续补 Parquet row group reader、Transfer multi component executor。
+2. **common format table 读写侧**：CSV / TSV、JSON / JSONL `TableReaderProvider` 和 `TableWriterProvider` 已补，JSON writer 已支持 `spatial.target_encoding=geojson`；Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`；Shapefile 已补 `ComponentTableWriterProvider` 第一版并接入 Transfer export；PostgreSQL read session 已能在 GeoJSON 目标编码时把空间字段读取为 GeoJSON geometry。后续按链路需要继续补 Parquet row group reader、PostGIS -> Shapefile 真实验证。
 3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
 ## 第一阶段最小增强
@@ -391,7 +391,7 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 | CSV / TSV | 已有 `TableReaderProvider`，`TableSampleReader` 保留用于预览 / 窗口读取 | 已有最小 `TableWriterProvider` | 第一条链路。 |
 | JSON / JSONL / GeoJSON encoding | JSON / JSONL 已有 `TableReaderProvider`、`TableSampleReader`、`DocumentTextReader` | JSON / JSONL 已有 `TableWriterProvider`，支持 JSON array、JSON Lines 和 `spatial.target_encoding=geojson` FeatureCollection | 空间表导出和普通 table JSON/JSONL 传输。 |
 | Parquet | 已有最小 `TableReaderProvider`，scope sample 保留；后续补 row group reader / 分区数据集读取 | 已有最小 `TableWriterProvider` | 大数据传输核心格式。 |
-| Shapefile | 现有 component sample | 已有 `ComponentTableWriterProvider` 第一版 | multi component 输出；Transfer 侧待接 engine `ComponentWriter` 适配。 |
+| Shapefile | 现有 component sample | 已有 `ComponentTableWriterProvider` 第一版 | multi component 输出；Transfer export 已有第一版适配。 |
 | Excel / SQLite / GeoPackage | 现有容器 / child 能力 | 后续按 child table 转出 | 容器局部传输。 |
 | Document / Media raw | 现有 info / text / media metadata | 先用 engine content read/write 做 raw copy | table 之外的第一步。 |
 
@@ -420,7 +420,7 @@ type ComponentTableWriterProvider interface {
 }
 ```
 
-当前 Shapefile 插件已实现该接口，并复用既有 component sample 能力做写后读回验证。下一步需要在 common engine 或 Transfer executor 中把 NFS / S3 / MinIO 的 content writer 适配成 component writer。
+当前 Shapefile 插件已实现该接口，并复用既有 component sample 能力做写后读回验证。Transfer executor 已补 `ContentWritableProvider` 到 `ComponentWriter` 的适配，组件路径基于目标主文件 / 主对象的 basename 派生。
 
 ## 第一条链路能力差距图
 
@@ -738,7 +738,7 @@ Transfer planner 根据目标 policy 决定：
 ### 阶段四：扩展格式和空间链路
 
 1. Parquet reader 继续增强为 row group reader / 分区数据集 reader。
-2. Shapefile component writer 已迁入 common；下一步接入 Transfer multi component target。
+2. Shapefile component writer 已迁入 common，并已接入 Transfer multi component export 第一版；下一步跑 PostGIS -> NFS Shapefile 真实链路。
 3. 删除对应 Transfer 私有插件。
 
 ### 阶段五：扩展 data type 和实时链路
