@@ -42,6 +42,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 			Store: &StoreCapability{
 				BatchRead:        true,
 				TableReadSession: opts.TableReadSession,
+				Delete:           opts.Delete,
 			},
 		},
 		Compute: &ComputeCapabilities{
@@ -92,6 +93,9 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 	if opts.TableWritePrepare {
 		caps.Storage.Store.TableWritePrepare = true
 	}
+	if opts.Delete {
+		caps.Storage.Store.Delete = true
+	}
 
 	return caps
 }
@@ -103,6 +107,7 @@ type TabularCapabilityOptions struct {
 	BatchWrite        bool
 	TableWriteSession bool
 	TableWritePrepare bool
+	Delete            bool
 	SpatialMetadata   bool
 	SupportsExplain   bool
 	SupportsCancel    bool
@@ -139,8 +144,9 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				StreamRead:  true,
 				RangeRead:   true,
 				StreamWrite: true,
+				Delete:      true,
 			},
-			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read", "stream_write"},
+			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read", "stream_write", "delete"},
 			NotSupported: []string{"range_write", "real_directory"},
 		},
 		Transfer: &TransferCapabilities{
@@ -187,8 +193,9 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				StreamRead:  true,
 				RangeRead:   true,
 				StreamWrite: true,
+				Delete:      true,
 			},
-			Semantics: []string{"root", "directory", "file", "stream_read", "range_read", "stream_write"},
+			Semantics: []string{"root", "directory", "file", "stream_read", "range_read", "stream_write", "delete"},
 		},
 		Transfer: &TransferCapabilities{
 			Read:  true,
@@ -340,6 +347,9 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	}
 	if store.RangeWrite {
 		semantics = append(semantics, "range_write")
+	}
+	if store.Delete {
+		semantics = append(semantics, "delete")
 	}
 	if store.BatchRead {
 		semantics = append(semantics, "batch_read")

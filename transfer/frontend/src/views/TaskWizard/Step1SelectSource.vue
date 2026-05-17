@@ -74,6 +74,12 @@
               <span class="summary-value" :title="item.value">{{ item.value }}</span>
             </span>
           </div>
+          <div v-if="selectedSourceSummary.spatialInfo" class="summary-spatial">
+            <span class="summary-label">{{ t('transfer.taskWizard.spatialInfoLabel') }}</span>
+            <span class="summary-spatial-value" :title="selectedSourceSummary.spatialInfo">
+              {{ selectedSourceSummary.spatialInfo }}
+            </span>
+          </div>
         </div>
       </el-form-item>
 
@@ -473,10 +479,7 @@ function buildSelectedSourceSummary(node) {
     })
   }
   if (spatial) {
-    items.push({
-      label: t('transfer.taskWizard.spatialInfoLabel'),
-      value: [spatial.geometry, spatial.geometryType, spatial.srid ? `SRID ${spatial.srid}` : ''].filter(Boolean).join(' · ')
-    })
+    // 空间信息通常更长，摘要条里单独换行展示，避免挤占行数/字段数等基础信息。
   }
   if (size !== null && size !== undefined) {
     items.push({
@@ -496,6 +499,9 @@ function buildSelectedSourceSummary(node) {
     dataType: dataTypeLabel(selectedDataType.value),
     format: format ? formatLabel(format) : '',
     spatial,
+    spatialInfo: spatial
+      ? [spatial.geometry, spatial.geometryType, spatial.srid ? `SRID ${spatial.srid}` : ''].filter(Boolean).join(' · ')
+      : '',
     items
   }
 }
@@ -899,19 +905,22 @@ onMounted(async () => {
 }
 
 .selected-source-summary {
-  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: 1px solid var(--addp-border-color);
   border-radius: 8px;
   background: var(--addp-bg-primary);
+  min-height: 44px;
 }
 
 .summary-main {
   min-width: 0;
-  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -933,12 +942,13 @@ onMounted(async () => {
 }
 
 .summary-items {
-  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 8px 14px;
+  overflow: hidden;
 }
 
 .summary-item {
@@ -956,12 +966,43 @@ onMounted(async () => {
 }
 
 .summary-value {
-  max-width: 180px;
+  max-width: 220px;
   color: var(--addp-text-primary);
   font-size: 13px;
   line-height: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.summary-spatial {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--addp-border-color-light);
+}
+
+.summary-spatial-value {
+  min-width: 0;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .selected-source-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .summary-items {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 </style>

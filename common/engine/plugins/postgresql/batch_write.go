@@ -18,9 +18,6 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	if err := validateBatchWriteMode(opts.Mode); err != nil {
-		return err
-	}
 
 	schema, table, err := tablePathParts(path)
 	if err != nil {
@@ -87,15 +84,6 @@ func shouldUseCopyBatchWrite(opts plugin.BatchWriteOptions, batch *plugin.BatchD
 		}
 	}
 	return method == "copy" || method == "postgres_copy"
-}
-
-func validateBatchWriteMode(mode string) error {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", "append", "insert":
-		return nil
-	default:
-		return fmt.Errorf("postgresql batch write mode %q is not supported; table-level overwrite/truncate must be planned outside WriteBatch", mode)
-	}
 }
 
 func tablePathParts(path plugin.CatalogPath) (string, string, error) {

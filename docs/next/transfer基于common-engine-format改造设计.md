@@ -197,7 +197,7 @@ PostgreSQL native table
 - progress / checkpoint / batch-level logs 还只是最小状态。
 - JSON / JSONL 已补 `TableReaderProvider` 和 `TableWriterProvider`，Transfer planner 已允许主 data type 不是 table、但实际具备 table reader / writer provider 的格式参与 table transfer；JSON writer 已支持 `spatial.target_encoding=geojson` 写出 GeoJSON FeatureCollection。Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`，PostgreSQL table -> NFS Parquet -> PostgreSQL table 真实链路已跑通；Shapefile 已补 common `ComponentTableWriterProvider` 第一版，可写出 `.shp/.shx/.dbf/.cpg` 组件；Transfer planner / executor 已接入 multi component export 第一版。
 - PostgreSQL 读侧已补 cursor session 第一版；分区并行读取、schema 快照、稳定 checkpoint 和失败恢复仍未补。
-- PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert、单批 COPY 和跨批次 COPY session；`TableWritePreparer` 已支持 `append` 和 `overwrite`；drop-create、schema evolution 仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY session。
+- PostgreSQL 数据库写侧 common writer 已补第一版，支持普通 batch insert、单批 COPY 和跨批次 COPY session；`TableWritePreparer` 只负责按字段确保目标表可写，不承载 Transfer 的追加/覆盖语义；`DeleteResource` 已作为 common engine 原子能力补齐，Transfer 的覆盖模式先调用删除，再进入统一写入链路。schema evolution 仍未补。CSV / TSV file/object -> PostgreSQL native table 的 import 已接入 Transfer 新主路径，PostgreSQL 目标默认使用 COPY session。
 - CSV / TSV、JSON / JSONL 已补 `TableReaderProvider`，Transfer import 优先使用连续 reader，不再通过 `TableSampleReader` 每批重新打开并重扫源文件；其他格式仍按需要逐步补。
 - S3 / MinIO `ContentWritableProvider.CreateContent()` 已升级为 streaming multipart：通过 `io.Pipe` 直接写入 MinIO SDK `PutObject(size=-1)`，不再落地 OS 临时文件。
 
@@ -223,7 +223,7 @@ PostgreSQL native table
 | 需求 | 现有能力不足 |
 |---|---|
 | 连续批量读取表 | PostgreSQL 已补 server-side cursor session；其他引擎仍主要依赖 `BatchReadableProvider.ReadBatch()` 单次 batch 调用，缺少分区计划、稳定 checkpoint、schema 快照和通用高性能游标语义。 |
-| 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 和 `TableWriteSessionProvider` 第一版，写入方法可选 ordinary insert、单批 COPY 或跨批次 COPY session；并通过 `TableWritePreparer` 支持 `append` 和 `overwrite`。drop-create、schema evolution 仍待补。 |
+| 写入数据库表 | PostgreSQL 已实现 `BatchWritableProvider` 和 `TableWriteSessionProvider` 第一版，写入方法可选 ordinary insert、单批 COPY 或跨批次 COPY session；`TableWritePreparer` 只做 ensure/create table，覆盖策略由 Transfer 先调用 `DeleteResource` 再写入。schema evolution 仍待补。 |
 | 写入对象存储 | S3 / MinIO 已升级为 streaming multipart common 写 provider；后续仍需补更细的失败清理、提交语义和可观测性。 |
 | data type 内容写出 | CSV / TSV 已有最小 `TableWriterProvider`；JSON / JSONL 已补 table reader / writer，并支持 GeoJSON FeatureCollection 写出；Parquet 已补最小 table reader / writer；Shapefile 已补 `ComponentTableWriterProvider`，Transfer 已能在 export 中选择 multi component writer。 |
 | planner 能力判定 | `FormatCapabilityView` 已能表达声明能力和 writer implementation status；Transfer 已有第一条链路的最小 planner，并已接入 System engine resolver、worker 和真实任务入库；完整能力矩阵尚未补齐。 |
@@ -233,7 +233,7 @@ PostgreSQL native table
 
 因此，第一阶段不新增“统一传输数据流”大框架，而是先补三个明确缺口：
 
-1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已升级为 streaming multipart；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已补 `append` / `overwrite`，后续补 drop-create 和 schema evolution。
+1. **common engine 写侧**：S3 / MinIO `ContentWritableProvider` 已升级为 streaming multipart；PostgreSQL `BatchWritableProvider` 已补普通 batch insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已收敛为 ensure/create table；NFS / S3 / MinIO / PostgreSQL 已补 `DeleteResource` 原子能力，Transfer 覆盖模式负责先删目标，后续补 schema evolution。
 2. **common format table 读写侧**：CSV / TSV、JSON / JSONL `TableReaderProvider` 和 `TableWriterProvider` 已补，JSON writer 已支持 `spatial.target_encoding=geojson`；Parquet 已补最小 `TableReaderProvider` / `TableWriterProvider`；Shapefile 已补 `ComponentTableWriterProvider` 第一版并接入 Transfer export；PostgreSQL read session 已能在 GeoJSON 目标编码时把空间字段读取为 GeoJSON geometry。后续按链路需要继续补 Parquet row group reader、PostGIS -> Shapefile 真实验证。
 3. **Transfer 执行适配**：最小 `internal/planner` 和 `internal/executor` 已能把 table/native -> CSV/TSV encoded file/object 规划为 `BatchData` / `TableWriterProvider` / `CreateContent` 执行链路，并已接入 worker 和真实任务入库。
 
@@ -378,7 +378,7 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 
 | 阶段 | 当前不足 | 最小增强 | 受益模块 |
 |---|---|---|---|
-| 第一阶段 | 数据库写入无 common 实现 | PostgreSQL `BatchWritableProvider` 已补普通 batch insert / COPY batch write，`TableWritePreparer` 已补 `append` / `overwrite` | Transfer、Service、Manager 导出回写 |
+| 第一阶段 | 数据库写入无 common 实现 | PostgreSQL `BatchWritableProvider` 已补普通 batch insert / COPY batch write，`TableWritePreparer` 已收敛为 ensure/create table；Transfer 覆盖通过 `DeleteResource` 编排 | Transfer、Service、Manager 导出回写 |
 | 第二阶段 | PostgreSQL COPY 曾是逐 transfer batch 建立会话 | 跨批次 COPY 写入会话已补第一版；后续补错误恢复和更细提交策略 | Transfer、数据导入、批量服务 |
 | 第三阶段 | `ReadBatch(limit, offset)` 大表性能一般 | PostgreSQL cursor session 已补第一版；后续增加 partition read options | Transfer、Manager 大表预览、Service 批量读取 |
 | 第四阶段 | 对象写入大文件曾依赖临时文件缓冲 | S3 / MinIO streaming multipart `ContentWritableProvider` 已补第一版；后续补失败清理和提交语义 | Transfer、Manager 导出、文件生成任务 |
@@ -500,7 +500,7 @@ sequenceDiagram
 缺失的是：
 
 - 更完整的执行日志、checkpoint、progress 回写。
-- PostgreSQL drop-create、schema evolution；MySQL 等其他数据库写侧 common writer。
+- PostgreSQL schema evolution；MySQL 等其他数据库写侧 common writer。
 - Parquet row group reader、Shapefile writer 等更多格式能力。
 
 ## TransferPlanner 设计
@@ -761,7 +761,7 @@ Transfer planner 根据目标 policy 决定：
 2. CSV / TSV、JSON / JSONL 插件已实现 `TableReaderProvider`、`TableWriterProvider` / `TableWriter`。
 3. NFS `CreateContent()`，S3 / MinIO streaming multipart `CreateContent()`。
 4. 必要的 schema / type mapper 转换。
-5. PostgreSQL `BatchWritableProvider` 已补普通 append / insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已补 `append` / `overwrite`，CSV / TSV file/object -> PostgreSQL native table 已接入第一版 import；drop-create 后续补。
+5. PostgreSQL `BatchWritableProvider` 已补普通 insert 和 COPY batch write，`TableWriteSessionProvider` 已补跨批次 COPY session，`TableWritePreparer` 已收敛为 ensure/create table；覆盖策略由 Transfer 调用 `DeleteResource` 后再写入，CSV / TSV file/object -> PostgreSQL native table 已接入第一版 import。
 
 ### 阶段三：搭 Transfer 新框架
 

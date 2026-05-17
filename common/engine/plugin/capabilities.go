@@ -112,6 +112,7 @@ type StoreCapability struct {
 	StreamWrite       bool `json:"stream_write,omitempty"`
 	RangeRead         bool `json:"range_read,omitempty"`
 	RangeWrite        bool `json:"range_write,omitempty"`
+	Delete            bool `json:"delete,omitempty"`
 	BatchRead         bool `json:"batch_read,omitempty"`
 	TableReadSession  bool `json:"table_read_session,omitempty"`
 	BatchWrite        bool `json:"batch_write,omitempty"`

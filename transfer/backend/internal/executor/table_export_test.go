@@ -189,6 +189,60 @@ func TestTableTransferExecutorWritesShapefileComponents(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{
+					{Name: "id", Type: "bigint", NativeType: "bigint"},
+					{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": int64(1), "SmGeometry": "0106000020E610000000000000"},
+				},
+			},
+		},
+	}
+	writer := &fakeNativeTableWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         reader,
+		SourceTableSessionProvider: reader,
+		TargetNativePreparer:       writer,
+		TargetNativeWriter:         writer,
+		TargetTableSessionProvider: writer,
+		TargetDeleteProvider:       writer,
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{
+			Kind:              TableEndpointNative,
+			DeleteBeforeWrite: true,
+			TableWrite:        engineplugin.BatchWriteOptions{Method: "copy"},
+		},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want one written record", metrics)
+	}
+	if !writer.deleted {
+		t.Fatal("target was not deleted before write")
+	}
+	if len(writer.preparedFields) != 2 {
+		t.Fatalf("prepared fields = %#v, want 2 fields", writer.preparedFields)
+	}
+	geom := writer.preparedFields[1]
+	if geom.Name != "SmGeometry" || geom.Type != "geometry" || geom.NativeType != "geometry(MultiPolygon,4326)" {
+		t.Fatalf("prepared spatial field = %#v, want geometry native typmod", geom)
+	}
+	if len(writer.sessionFields) != 2 || writer.sessionFields[1].NativeType != "geometry(MultiPolygon,4326)" {
+		t.Fatalf("session fields = %#v, want geometry native typmod", writer.sessionFields)
+	}
+}
+
 func TestNewTableTransferExecutorLoadsNativeToEncodedProvidersFromRegistry(t *testing.T) {
 	source := &fakeBatchReader{engineType: "registry_source"}
 	target := &fakeContentWriter{engineType: "registry_target"}
@@ -316,6 +370,80 @@ type fakeContentWriter struct {
 	buf        bytes.Buffer
 	files      map[string][]byte
 	closed     bool
+}
+
+type fakeNativeTableWriter struct {
+	preparedFields []engineplugin.FieldInfo
+	sessionFields  []engineplugin.FieldInfo
+	batches        []*engineplugin.BatchData
+	deleted        bool
+	closed         bool
+	aborted        bool
+}
+
+func (w *fakeNativeTableWriter) Type() string { return "fake_native_table_writer" }
+
+func (w *fakeNativeTableWriter) DisplayName() string { return "Fake Native Table Writer" }
+
+func (w *fakeNativeTableWriter) EngineOrigin() string { return "general" }
+
+func (w *fakeNativeTableWriter) DefaultPort() int { return 0 }
+
+func (w *fakeNativeTableWriter) RequiredFields() []string { return nil }
+
+func (w *fakeNativeTableWriter) SensitiveFields() []string { return nil }
+
+func (w *fakeNativeTableWriter) ValidateConnectionInfo(engineplugin.ConnectionInfo) error { return nil }
+
+func (w *fakeNativeTableWriter) TestConnection(context.Context, engineplugin.ConnectionInfo) error {
+	return nil
+}
+
+func (w *fakeNativeTableWriter) Capabilities() engineplugin.EngineCapabilities {
+	return engineplugin.EngineCapabilities{}
+}
+
+func (w *fakeNativeTableWriter) StoreSemantics() engineplugin.StoreSemantics {
+	return engineplugin.StoreSemantics{}
+}
+
+func (w *fakeNativeTableWriter) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
+	w.preparedFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	return nil
+}
+
+func (w *fakeNativeTableWriter) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath) error {
+	w.deleted = true
+	return nil
+}
+
+func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
+	w.batches = append(w.batches, batch)
+	return nil
+}
+
+func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
+	w.sessionFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	return &fakeNativeTableWriteSession{writer: w}, nil
+}
+
+type fakeNativeTableWriteSession struct {
+	writer *fakeNativeTableWriter
+}
+
+func (s *fakeNativeTableWriteSession) WriteBatch(_ context.Context, batch *engineplugin.BatchData) error {
+	s.writer.batches = append(s.writer.batches, batch)
+	return nil
+}
+
+func (s *fakeNativeTableWriteSession) Close(context.Context) error {
+	s.writer.closed = true
+	return nil
+}
+
+func (s *fakeNativeTableWriteSession) Abort(context.Context) error {
+	s.writer.aborted = true
+	return nil
 }
 
 func (w *fakeContentWriter) Type() string {

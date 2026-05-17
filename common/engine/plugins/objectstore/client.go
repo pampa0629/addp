@@ -228,6 +228,20 @@ func CreateContent(ctx context.Context, client *miniogo.Client, path string, opt
 	}, nil
 }
 
+func DeleteResource(ctx context.Context, client *miniogo.Client, path string) error {
+	if client == nil {
+		return fmt.Errorf("object store client is required")
+	}
+	bucket, key := SplitBucketPrefix(path)
+	if bucket == "" || key == "" {
+		return fmt.Errorf("invalid path: %s (expected bucket/key)", path)
+	}
+	if err := client.RemoveObject(ctx, bucket, key, miniogo.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("delete object %s: %w", path, err)
+	}
+	return nil
+}
+
 type contentWriter struct {
 	writer     *io.PipeWriter
 	uploadDone chan error

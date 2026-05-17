@@ -11,9 +11,6 @@ import (
 )
 
 func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
-	if err := validateBatchWriteMode(opts.Mode); err != nil {
-		return nil, err
-	}
 	if !shouldUseCopyWriteMethod(opts.Method) {
 		return nil, fmt.Errorf("postgresql table write session only supports copy method")
 	}

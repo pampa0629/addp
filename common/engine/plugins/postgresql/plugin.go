@@ -57,6 +57,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		BatchWrite:        true,
 		TableWriteSession: true,
 		TableWritePrepare: true,
+		Delete:            true,
 		SpatialMetadata:   true,
 		SupportsExplain:   true,
 		SupportsCancel:    true,

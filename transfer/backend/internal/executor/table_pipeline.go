@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -39,6 +41,73 @@ type TableBatchWriter interface {
 type componentTableSourceProvider interface {
 	format.ComponentTableProvider
 	format.ComponentSpecProvider
+}
+
+type targetResourceDeleter interface {
+	DeleteTarget(ctx context.Context) error
+}
+
+type engineTargetResourceDeleter struct {
+	provider engineplugin.ResourceDeleteProvider
+	connInfo engineplugin.ConnectionInfo
+	path     engineplugin.CatalogPath
+}
+
+func (d *engineTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
+	if d == nil || d.provider == nil {
+		return nil
+	}
+	return d.provider.DeleteResource(ctx, d.connInfo, d.path)
+}
+
+type componentTargetResourceDeleter struct {
+	provider   engineplugin.ResourceDeleteProvider
+	connInfo   engineplugin.ConnectionInfo
+	basePath   engineplugin.CatalogPath
+	components []resource.ComponentRef
+}
+
+func (d *componentTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
+	if d == nil || d.provider == nil {
+		return nil
+	}
+	for _, component := range d.components {
+		path, err := contentCatalogPathForComponent(d.basePath, component.ResourceRef)
+		if err != nil {
+			return err
+		}
+		if err := d.provider.DeleteResource(ctx, d.connInfo, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func contentCatalogPathForComponent(base engineplugin.CatalogPath, ref resource.ResourceRef) (engineplugin.CatalogPath, error) {
+	if len(base.Segments) == 0 {
+		return engineplugin.CatalogPath{}, fmt.Errorf("resource base path requires at least one segment")
+	}
+	name := filepath.Base(ref.Path)
+	if name == "." || name == "/" || name == "" {
+		return engineplugin.CatalogPath{}, fmt.Errorf("resource path %q has no file name", ref.Path)
+	}
+	next := engineplugin.CatalogPath{
+		Version:  base.Version,
+		EngineID: base.EngineID,
+		Segments: append([]engineplugin.CatalogSegment(nil), base.Segments...),
+	}
+	if next.Version == "" {
+		next.Version = engineplugin.CatalogPathVersion
+	}
+	last := &next.Segments[len(next.Segments)-1]
+	last.Name = name
+	if strings.TrimSpace(last.Term) == "" {
+		last.Term = engineplugin.CatalogTermFile
+	}
+	if strings.TrimSpace(last.Kind) == "" {
+		last.Kind = engineplugin.CatalogKindFile
+	}
+	return next, nil
 }
 
 type TablePipeline struct {
@@ -438,6 +507,7 @@ func (r *sampleEncodedTableBatchReader) Close(context.Context) error {
 }
 
 type nativeTableBatchTarget struct {
+	deleter              *engineTargetResourceDeleter
 	preparer             engineplugin.TableWritePreparer
 	writer               engineplugin.BatchWritableProvider
 	tableSessionProvider engineplugin.TableWriteSessionProvider
@@ -448,13 +518,17 @@ type nativeTableBatchTarget struct {
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *format.TableInfo) (TableBatchWriter, error) {
+	if t.deleter != nil {
+		if err := t.deleter.DeleteTarget(ctx); err != nil {
+			return nil, fmt.Errorf("delete native table target before write: %w", err)
+		}
+	}
 	if err := t.prepare(ctx, schema); err != nil {
 		return nil, err
 	}
 	fields := tableInfoFields(schema)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
-			Mode:   t.writeOptions.Mode,
 			Method: t.writeOptions.Method,
 			Fields: fields,
 		})
@@ -476,15 +550,10 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *format.TableI
 }
 
 func (t *nativeTableBatchTarget) prepare(ctx context.Context, schema *format.TableInfo) error {
-	mode := normalizeImportPrepareMode(t.prepareOptions.Mode)
-	if mode == "" {
-		return nil
-	}
 	if t.preparer == nil {
-		return fmt.Errorf("target engine does not implement table write prepare for mode %q", mode)
+		return fmt.Errorf("target engine does not implement table write prepare")
 	}
 	opts := engineplugin.TableWriteOptions{
-		Mode:   mode,
 		Fields: tableInfoFields(schema),
 	}
 	if err := t.preparer.PrepareTableWrite(ctx, t.connInfo, t.path, opts); err != nil {
@@ -562,6 +631,7 @@ func (w *nativeTableSessionBatchWriter) Abort(ctx context.Context) error {
 
 type encodedContentTableTarget struct {
 	writer            engineplugin.ContentWritableProvider
+	deleter           *engineTargetResourceDeleter
 	formatProvider    format.TableWriterProvider
 	componentProvider format.ComponentTableWriterProvider
 	connInfo          engineplugin.ConnectionInfo
@@ -572,6 +642,11 @@ type encodedContentTableTarget struct {
 
 func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.TableInfo) (TableBatchWriter, error) {
 	applySpatialInfoFromOptions(schema, t.formatOptions)
+	if t.deleter != nil {
+		if err := t.deleteExistingTarget(ctx); err != nil {
+			return nil, err
+		}
+	}
 	if tableSchemaEmpty(schema) && t.componentProvider == nil {
 		output, err := t.writer.CreateContent(ctx, t.connInfo, t.path, t.writeOptions)
 		if err != nil {
@@ -600,6 +675,25 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
 	return &contentTableBatchWriter{output: output, tableWriter: tableWriter}, nil
+}
+
+func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) error {
+	if t.componentProvider == nil {
+		if err := t.deleter.DeleteTarget(ctx); err != nil {
+			return fmt.Errorf("delete encoded target before write: %w", err)
+		}
+		return nil
+	}
+	componentDeleter := &componentTargetResourceDeleter{
+		provider:   t.deleter.provider,
+		connInfo:   t.deleter.connInfo,
+		basePath:   t.path,
+		components: resource.SameBasenameComponents(t.path.StringPath(), t.componentProvider.ComponentSpecs()),
+	}
+	if err := componentDeleter.DeleteTarget(ctx); err != nil {
+		return fmt.Errorf("delete encoded component target before write: %w", err)
+	}
+	return nil
 }
 
 type emptyContentBatchWriter struct {

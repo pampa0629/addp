@@ -48,6 +48,11 @@ type ContentWritableProvider interface {
 	CreateContent(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts WriteOptions) (io.WriteCloser, error)
 }
 
+type ResourceDeleteProvider interface {
+	StoreProvider
+	DeleteResource(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) error
+}
+
 type RangeReadableProvider interface {
 	StoreProvider
 	OpenRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
@@ -232,18 +237,15 @@ type TableReadSessionOptions struct {
 }
 
 type BatchWriteOptions struct {
-	Mode   string
 	Method string
 }
 
 type TableWriteSessionOptions struct {
-	Mode   string
 	Method string
 	Fields []FieldInfo
 }
 
 type TableWriteOptions struct {
-	Mode   string
 	Fields []FieldInfo
 }
 

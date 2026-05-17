@@ -85,6 +85,11 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares range_write but does not implement RangeWritableProvider", p.Type())
 		}
 	}
+	if store.Delete {
+		if _, ok := p.(ResourceDeleteProvider); !ok {
+			return fmt.Errorf("%s declares delete but does not implement ResourceDeleteProvider", p.Type())
+		}
+	}
 	if store.BatchRead {
 		if _, ok := p.(BatchReadableProvider); !ok {
 			return fmt.Errorf("%s declares batch_read but does not implement BatchReadableProvider", p.Type())

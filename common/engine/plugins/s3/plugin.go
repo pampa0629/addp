@@ -99,6 +99,14 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 	return objectstore.CreateContent(ctx, client, path.StringPath(), opts)
 }
 
+func (p *S3Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return err
+	}
+	return objectstore.DeleteResource(ctx, client, path.StringPath())
+}
+
 func (p *S3Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }

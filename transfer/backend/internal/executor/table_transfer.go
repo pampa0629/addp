@@ -27,14 +27,15 @@ type TableSourcePlan struct {
 }
 
 type TableTargetPlan struct {
-	Kind          TableEndpointKind
-	ConnInfo      engineplugin.ConnectionInfo
-	Path          engineplugin.CatalogPath
-	ContentWrite  engineplugin.WriteOptions
-	TablePrepare  engineplugin.TableWriteOptions
-	TableWrite    engineplugin.BatchWriteOptions
-	Format        format.FormatType
-	FormatOptions *format.WriteOptions
+	Kind              TableEndpointKind
+	ConnInfo          engineplugin.ConnectionInfo
+	Path              engineplugin.CatalogPath
+	DeleteBeforeWrite bool
+	ContentWrite      engineplugin.WriteOptions
+	TablePrepare      engineplugin.TableWriteOptions
+	TableWrite        engineplugin.BatchWriteOptions
+	Format            format.FormatType
+	FormatOptions     *format.WriteOptions
 }
 
 type TableTransferPlan struct {
@@ -54,6 +55,7 @@ type TableTransferExecutor struct {
 	TargetContentWriter        engineplugin.ContentWritableProvider
 	TargetFormatProvider       format.TableWriterProvider
 	TargetComponentProvider    format.ComponentTableWriterProvider
+	TargetDeleteProvider       engineplugin.ResourceDeleteProvider
 	TargetNativePreparer       engineplugin.TableWritePreparer
 	TargetNativeWriter         engineplugin.BatchWritableProvider
 	TargetTableSessionProvider engineplugin.TableWriteSessionProvider
@@ -92,6 +94,7 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 	if writer, ok := targetPlugin.(engineplugin.ContentWritableProvider); ok {
 		executor.TargetContentWriter = writer
 	}
+	executor.TargetDeleteProvider, _ = targetPlugin.(engineplugin.ResourceDeleteProvider)
 	if targetFormat != "" {
 		executor.TargetFormatProvider, _ = format.GetTableWriterProvider(targetFormat)
 		executor.TargetComponentProvider, _ = format.GetComponentTableWriterProvider(targetFormat)
@@ -165,6 +168,10 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 }
 
 func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarget, error) {
+	deleter, err := e.targetDeleter(plan)
+	if err != nil {
+		return nil, err
+	}
 	switch plan.Kind {
 	case TableEndpointEncoded:
 		if e.TargetContentWriter == nil {
@@ -175,6 +182,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 		}
 		return &encodedContentTableTarget{
 			writer:            e.TargetContentWriter,
+			deleter:           deleter,
 			formatProvider:    e.TargetFormatProvider,
 			componentProvider: e.TargetComponentProvider,
 			connInfo:          plan.ConnInfo,
@@ -186,10 +194,11 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 		if e.TargetNativeWriter == nil {
 			return nil, fmt.Errorf("native table target requires batch writer")
 		}
-		if normalizeImportPrepareMode(plan.TablePrepare.Mode) != "" && e.TargetNativePreparer == nil {
-			return nil, fmt.Errorf("target engine does not implement table write prepare for mode %q", normalizeImportPrepareMode(plan.TablePrepare.Mode))
+		if e.TargetNativePreparer == nil {
+			return nil, fmt.Errorf("target engine does not implement table write prepare")
 		}
 		return &nativeTableBatchTarget{
+			deleter:              deleter,
 			preparer:             e.TargetNativePreparer,
 			writer:               e.TargetNativeWriter,
 			tableSessionProvider: e.TargetTableSessionProvider,
@@ -201,4 +210,18 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)
 	}
+}
+
+func (e *TableTransferExecutor) targetDeleter(plan TableTargetPlan) (*engineTargetResourceDeleter, error) {
+	if !plan.DeleteBeforeWrite {
+		return nil, nil
+	}
+	if e.TargetDeleteProvider == nil {
+		return nil, fmt.Errorf("target engine does not implement resource delete")
+	}
+	return &engineTargetResourceDeleter{
+		provider: e.TargetDeleteProvider,
+		connInfo: plan.ConnInfo,
+		path:     plan.Path,
+	}, nil
 }

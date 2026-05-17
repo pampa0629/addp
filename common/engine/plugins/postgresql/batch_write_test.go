@@ -80,16 +80,6 @@ func TestTablePathPartsRequiresSchemaAndTable(t *testing.T) {
 	}
 }
 
-func TestValidateBatchWriteModeRejectsOverwrite(t *testing.T) {
-	err := validateBatchWriteMode("overwrite")
-	if err == nil {
-		t.Fatal("validateBatchWriteMode() succeeded, want error")
-	}
-	if !strings.Contains(err.Error(), "table-level overwrite") {
-		t.Fatalf("error = %q, want table-level overwrite guidance", err)
-	}
-}
-
 func TestShouldUseCopyBatchWrite(t *testing.T) {
 	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{Method: "copy"}, nil) {
 		t.Fatal("shouldUseCopyBatchWrite(copy) = false, want true")

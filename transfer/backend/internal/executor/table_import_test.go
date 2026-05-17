@@ -44,8 +44,8 @@ func TestTableTransferExecutorWritesEncodedCSVToNativeTable(t *testing.T) {
 	if len(reader.opens) != 1 || reader.opens[0] != 0 {
 		t.Fatalf("source open offsets = %#v, want one full read", reader.opens)
 	}
-	if len(preparer.modes) != 0 {
-		t.Fatalf("prepare modes = %#v, want no prepare when plan has no prepare mode", preparer.modes)
+	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" {
+		t.Fatalf("prepare fields = %#v, want CSV inferred fields", preparer.fields)
 	}
 }
 
@@ -63,17 +63,14 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
-		Target:    TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "overwrite"}},
+		Target:    TableTargetPlan{Kind: TableEndpointNative},
 		BatchSize: 1,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if got := strings.Join(preparer.modes, ","); got != "overwrite" {
-		t.Fatalf("prepare modes = %q, want overwrite once", got)
-	}
 	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" || preparer.fields[0].Type != "int" {
-		t.Fatalf("prepare fields = %#v, want CSV inferred fields for overwrite", preparer.fields)
+		t.Fatalf("prepare fields = %#v, want CSV inferred fields", preparer.fields)
 	}
 }
 
@@ -91,14 +88,11 @@ func TestTableTransferExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
-		Target:    TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "append"}},
+		Target:    TableTargetPlan{Kind: TableEndpointNative},
 		BatchSize: 2,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
-	}
-	if got := strings.Join(preparer.modes, ","); got != "append" {
-		t.Fatalf("prepare modes = %q, want append once", got)
 	}
 	if len(preparer.fields) != 2 || preparer.fields[0].Name != "id" || preparer.fields[0].Type != "int" {
 		t.Fatalf("prepare fields = %#v, want CSV inferred fields", preparer.fields)
@@ -125,9 +119,8 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
 		Target: TableTargetPlan{
-			Kind:         TableEndpointNative,
-			TablePrepare: engineplugin.TableWriteOptions{Mode: "append"},
-			TableWrite:   engineplugin.BatchWriteOptions{Mode: "append", Method: "copy"},
+			Kind:       TableEndpointNative,
+			TableWrite: engineplugin.BatchWriteOptions{Method: "copy"},
 		},
 		BatchSize: 2,
 	})
@@ -154,7 +147,7 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T
 	}
 }
 
-func TestTableTransferExecutorRequiresPreparerForPrepareMode(t *testing.T) {
+func TestTableTransferExecutorRequiresNativePreparer(t *testing.T) {
 	exec := &TableTransferExecutor{
 		SourceContentReader:  &fakeContentReader{},
 		SourceFormatProvider: csvformat.NewPlugin(nil),
@@ -163,7 +156,7 @@ func TestTableTransferExecutorRequiresPreparerForPrepareMode(t *testing.T) {
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
-		Target: TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "overwrite"}},
+		Target: TableTargetPlan{Kind: TableEndpointNative},
 	})
 	if err == nil {
 		t.Fatal("Execute succeeded, want missing preparer error")
@@ -313,7 +306,6 @@ func (s *fakeTableWriteSession) Abort(context.Context) error {
 }
 
 type fakeTableWritePreparer struct {
-	modes  []string
 	fields []engineplugin.FieldInfo
 }
 
@@ -346,7 +338,6 @@ func (p *fakeTableWritePreparer) StoreSemantics() engineplugin.StoreSemantics {
 }
 
 func (p *fakeTableWritePreparer) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
-	p.modes = append(p.modes, opts.Mode)
 	p.fields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
 	return nil
 }

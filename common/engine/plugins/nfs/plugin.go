@@ -154,6 +154,10 @@ func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.Connectio
 	return p.openFileForWrite(ctx, connInfo, path.StringPath(), opts.Overwrite)
 }
 
+func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+	return p.deleteFile(ctx, connInfo, path.StringPath())
+}
+
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
@@ -356,6 +360,29 @@ func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.Connec
 		return nil, fmt.Errorf("failed to open NFS file for write %s: %w", filePath, err)
 	}
 	return &lockedWriteCloser{WriteCloser: f, mu: &entry.mu}, nil
+}
+
+func (p *NFSPlugin) deleteFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) error {
+	server, exportPath, err := p.parseConnInfo(connInfo)
+	if err != nil {
+		return err
+	}
+	entry, err := getOrCreateMount(server, exportPath)
+	if err != nil {
+		invalidatePool(server, exportPath)
+		return fmt.Errorf("NFS connection failed: %w", err)
+	}
+	filePath := normalizePath(path)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if err := entry.target.Remove(filePath); err != nil {
+		if _, _, lookupErr := entry.target.Lookup(filePath); lookupErr != nil {
+			return nil
+		}
+		invalidatePool(server, exportPath)
+		return fmt.Errorf("failed to delete NFS file %s: %w", filePath, err)
+	}
+	return nil
 }
 
 func mkdirAllLocked(entry *poolEntry, path string) error {

@@ -46,8 +46,11 @@ func TestBuildTableTransferPlanForNativeTableToEncodedFile(t *testing.T) {
 	if result.Plan.Target.Format != format.FormatCSV {
 		t.Fatalf("target format = %q, want csv", result.Plan.Target.Format)
 	}
-	if !result.Plan.Target.ContentWrite.Overwrite {
-		t.Fatal("target overwrite = false, want true")
+	if !result.Plan.Target.DeleteBeforeWrite {
+		t.Fatal("target delete before write = false, want true")
+	}
+	if result.Plan.Target.ContentWrite.Overwrite {
+		t.Fatal("content write overwrite = true, want false; overwrite is planned as delete-before-write")
 	}
 	if result.Plan.Target.FormatOptions == nil {
 		t.Fatal("write options is nil")
@@ -199,9 +202,6 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	if got := result.Plan.Target.Path.StringPath(); got != "public/roads" {
 		t.Fatalf("target path = %q, want public/roads", got)
 	}
-	if result.Plan.Target.TableWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append", result.Plan.Target.TableWrite.Mode)
-	}
 	if result.Plan.Target.TableWrite.Method != "copy" {
 		t.Fatalf("write method = %q, want postgresql import default copy", result.Plan.Target.TableWrite.Method)
 	}
@@ -253,8 +253,8 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.jsonl" {
 		t.Fatalf("target path = %q, want exports/roads.jsonl", got)
 	}
-	if !result.Plan.Target.ContentWrite.Overwrite {
-		t.Fatal("target overwrite = false, want true")
+	if !result.Plan.Target.DeleteBeforeWrite {
+		t.Fatal("target delete before write = false, want true")
 	}
 	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["json_mode"] != "jsonl" {
 		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.Target.FormatOptions)
@@ -299,11 +299,11 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	if got := result.Plan.Target.Path.StringPath(); got != "gis/roads_copy" {
 		t.Fatalf("target path = %q, want gis/roads_copy", got)
 	}
-	if result.Plan.Target.TablePrepare.Mode != "overwrite" {
-		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.Target.TablePrepare.Mode)
+	if !result.Plan.Target.DeleteBeforeWrite {
+		t.Fatal("target delete before write = false, want true")
 	}
-	if result.Plan.Target.TableWrite.Mode != "append" || result.Plan.Target.TableWrite.Method != "copy" {
-		t.Fatalf("write options = %#v, want append/copy", result.Plan.Target.TableWrite)
+	if result.Plan.Target.TableWrite.Method != "copy" {
+		t.Fatalf("write method = %q, want copy", result.Plan.Target.TableWrite.Method)
 	}
 }
 
@@ -350,11 +350,8 @@ func TestBuildTableTransferPlanSplitsOverwritePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.Target.TablePrepare.Mode != "overwrite" {
-		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.Target.TablePrepare.Mode)
-	}
-	if result.Plan.Target.TableWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append after overwrite prepare", result.Plan.Target.TableWrite.Mode)
+	if !result.Plan.Target.DeleteBeforeWrite {
+		t.Fatal("target delete before write = false, want true")
 	}
 }
 
@@ -369,11 +366,8 @@ func TestBuildTableTransferPlanKeepsAppendPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.Target.TablePrepare.Mode != "append" {
-		t.Fatalf("prepare mode = %q, want append", result.Plan.Target.TablePrepare.Mode)
-	}
-	if result.Plan.Target.TableWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append", result.Plan.Target.TableWrite.Mode)
+	if result.Plan.Target.DeleteBeforeWrite {
+		t.Fatal("target delete before write = true, want false")
 	}
 	if result.Plan.Target.TableWrite.Method != "insert" {
 		t.Fatalf("write method = %q, want explicit insert", result.Plan.Target.TableWrite.Method)

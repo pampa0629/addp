@@ -98,6 +98,14 @@ func (p *MinIOPlugin) CreateContent(ctx context.Context, connInfo plugin.Connect
 	return objectstore.CreateContent(ctx, client, path.StringPath(), opts)
 }
 
+func (p *MinIOPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+	client, err := p.createClient(connInfo)
+	if err != nil {
+		return err
+	}
+	return objectstore.DeleteResource(ctx, client, path.StringPath())
+}
+
 func (p *MinIOPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }

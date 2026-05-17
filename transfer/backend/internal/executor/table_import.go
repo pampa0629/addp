@@ -14,19 +14,6 @@ func isCopyWriteMethod(method string) bool {
 	}
 }
 
-func normalizeImportPrepareMode(mode string) string {
-	switch mode {
-	case "append":
-		return "append"
-	case "overwrite":
-		return "overwrite"
-	case "":
-		return ""
-	default:
-		return mode
-	}
-}
-
 func tableInfoFields(info *format.TableInfo) []engineplugin.FieldInfo {
 	if info == nil {
 		return nil

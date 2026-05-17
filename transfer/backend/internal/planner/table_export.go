@@ -209,12 +209,12 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		}
 		targetType := effectiveEngineType(engine, endpoint.Engine)
 		return executor.TableTargetPlan{
-			Kind:         executor.TableEndpointNative,
-			ConnInfo:     engine.ConnInfo,
-			Path:         targetPath,
-			TablePrepare: engineplugin.TableWriteOptions{Mode: importPrepareMode(endpoint.Policy)},
+			Kind:              executor.TableEndpointNative,
+			ConnInfo:          engine.ConnInfo,
+			Path:              targetPath,
+			DeleteBeforeWrite: writeMode(endpoint.Policy) == defaultWriteMode,
+			TablePrepare:      engineplugin.TableWriteOptions{},
 			TableWrite: engineplugin.BatchWriteOptions{
-				Mode:   importWriteMode(endpoint.Policy),
 				Method: importWriteMethod(endpoint.Policy, targetType),
 			},
 		}, nil
@@ -232,12 +232,13 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		}
 		writeOptions := tableWriteOptions(endpoint.Options, targetFormat)
 		return executor.TableTargetPlan{
-			Kind:          executor.TableEndpointEncoded,
-			ConnInfo:      engine.ConnInfo,
-			Path:          targetPath,
-			ContentWrite:  engineplugin.WriteOptions{Overwrite: writeMode(endpoint.Policy) == defaultWriteMode},
-			Format:        targetFormat,
-			FormatOptions: writeOptions,
+			Kind:              executor.TableEndpointEncoded,
+			ConnInfo:          engine.ConnInfo,
+			Path:              targetPath,
+			DeleteBeforeWrite: writeMode(endpoint.Policy) == defaultWriteMode,
+			ContentWrite:      engineplugin.WriteOptions{Overwrite: false},
+			Format:            targetFormat,
+			FormatOptions:     writeOptions,
 		}, nil
 	default:
 		return executor.TableTargetPlan{}, fmt.Errorf("unsupported target representation %q", endpoint.Representation)
@@ -500,10 +501,6 @@ func validateTransferWritableTableFormat(formatType format.FormatType) error {
 	return nil
 }
 
-func importWriteMode(policy map[string]interface{}) string {
-	return "append"
-}
-
 func importWriteMethod(policy map[string]interface{}, targetEngineType string) string {
 	value := strings.ToLower(stringValue(policy, "write_method"))
 	if value != "" {
@@ -513,18 +510,6 @@ func importWriteMethod(policy map[string]interface{}, targetEngineType string) s
 		return "copy"
 	}
 	return ""
-}
-
-func importPrepareMode(policy map[string]interface{}) string {
-	value := strings.ToLower(stringValue(policy, "write_mode"))
-	switch value {
-	case "append":
-		return "append"
-	case "overwrite", "":
-		return "overwrite"
-	default:
-		return value
-	}
 }
 
 func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType) *format.WriteOptions {
