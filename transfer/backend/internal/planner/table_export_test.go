@@ -11,99 +11,88 @@ import (
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/transfer/internal/executor"
 )
 
-func TestBuildTableExportPlanForNativeTableToCSVFile(t *testing.T) {
-	spec := TableExportTaskSpec{
-		Mode: modeBatch,
-		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
-		},
-		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.csv"},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
-			Policy:         map[string]interface{}{"write_mode": "overwrite"},
-		},
-		BatchSize: 500,
-	}
+func TestBuildTableTransferPlanForNativeTableToEncodedFile(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.BatchSize = 500
+	spec.Target.Policy = map[string]interface{}{"write_mode": "overwrite"}
 	resolver := StaticEngineResolver{
 		1: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "gis"}},
 		2: {Type: "nfs", ConnInfo: engineplugin.ConnectionInfo{"server": "127.0.0.1", "export_path": "/data"}},
 	}
 
-	result, err := BuildTableExportPlan(spec, resolver)
+	result, err := BuildTableTransferPlan(spec, resolver)
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
 
 	if result.SourceEngineType != "postgresql" || result.TargetEngineType != "nfs" {
 		t.Fatalf("engine types = %q -> %q, want postgresql -> nfs", result.SourceEngineType, result.TargetEngineType)
 	}
-	if result.Format != format.FormatCSV || result.Plan.Format != format.FormatCSV {
-		t.Fatalf("format = %q / %q, want csv", result.Format, result.Plan.Format)
+	if result.Plan.Source.Kind != executor.TableEndpointNative || result.Plan.Target.Kind != executor.TableEndpointEncoded {
+		t.Fatalf("endpoint kinds = %q -> %q, want native -> encoded", result.Plan.Source.Kind, result.Plan.Target.Kind)
 	}
 	if result.Plan.BatchSize != 500 {
 		t.Fatalf("batch size = %d, want 500", result.Plan.BatchSize)
 	}
-	if got := result.Plan.SourcePath.StringPath(); got != "public/roads" {
+	if got := result.Plan.Source.Path.StringPath(); got != "public/roads" {
 		t.Fatalf("source path = %q, want public/roads", got)
 	}
-	if got := result.Plan.TargetPath.StringPath(); got != "exports/roads.csv" {
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.csv" {
 		t.Fatalf("target path = %q, want exports/roads.csv", got)
 	}
-	if !result.Plan.TargetWrite.Overwrite {
+	if result.Plan.Target.Format != format.FormatCSV {
+		t.Fatalf("target format = %q, want csv", result.Plan.Target.Format)
+	}
+	if !result.Plan.Target.ContentWrite.Overwrite {
 		t.Fatal("target overwrite = false, want true")
 	}
-	if result.Plan.WriteOptions == nil {
+	if result.Plan.Target.FormatOptions == nil {
 		t.Fatal("write options is nil")
 	}
 }
 
-func TestBuildTableExportPlanForObjectTarget(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}}
 
-	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "s3"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if got := result.Plan.TargetPath.StringPath(); got != "exports/roads.csv" {
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.csv" {
 		t.Fatalf("target path = %q, want exports/roads.csv", got)
 	}
 }
 
-func TestBuildTableExportPlanAllowsJSONTableWriter(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.jsonl"}
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
 
-	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Format != format.FormatJSON || result.Plan.Format != format.FormatJSON {
-		t.Fatalf("format = %q / %q, want json", result.Format, result.Plan.Format)
+	if result.Plan.Target.Format != format.FormatJSON {
+		t.Fatalf("target format = %q, want json", result.Plan.Target.Format)
 	}
-	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["json_mode"] != "jsonl" {
-		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.WriteOptions)
+	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.Target.FormatOptions)
 	}
 }
 
-func TestBuildTableExportPlanPassesGeoJSONReadOptions(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanPassesGeoJSONReadOptions(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.geojson"}
 	spec.Target.Options = map[string]interface{}{
@@ -111,40 +100,40 @@ func TestBuildTableExportPlanPassesGeoJSONReadOptions(t *testing.T) {
 		"geometry_field":          "geom",
 	}
 
-	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.ReadOptions["spatial.target_encoding"] != "geojson" || result.Plan.ReadOptions["geometry_field"] != "geom" {
-		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.ReadOptions)
+	if result.Plan.Source.ReadOptions["spatial.target_encoding"] != "geojson" || result.Plan.Source.ReadOptions["geometry_field"] != "geom" {
+		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.Source.ReadOptions)
 	}
 }
 
-func TestBuildTableExportPlanAllowsParquetTableWriter(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.parquet"}
 
-	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Format != format.FormatParquet || result.Plan.Format != format.FormatParquet {
-		t.Fatalf("format = %q / %q, want parquet", result.Format, result.Plan.Format)
+	if result.Plan.Target.Format != format.FormatParquet {
+		t.Fatalf("target format = %q, want parquet", result.Plan.Target.Format)
 	}
-	if result.Plan.WriteOptions == nil {
+	if result.Plan.Target.FormatOptions == nil {
 		t.Fatal("write options is nil")
 	}
 }
 
-func TestBuildTableExportPlanAllowsShapefileComponentTableWriter(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanAllowsShapefileComponentTableWriter(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatShapefile
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.shp"}
 	spec.Target.Options = map[string]interface{}{
@@ -152,22 +141,22 @@ func TestBuildTableExportPlanAllowsShapefileComponentTableWriter(t *testing.T) {
 		"geometry_type":  "Point",
 	}
 
-	result, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableExportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Format != format.FormatShapefile || result.Plan.Format != format.FormatShapefile {
-		t.Fatalf("format = %q / %q, want shapefile", result.Format, result.Plan.Format)
+	if result.Plan.Target.Format != format.FormatShapefile {
+		t.Fatalf("target format = %q, want shapefile", result.Plan.Target.Format)
 	}
-	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["geometry_field"] != "geom" {
-		t.Fatalf("write options = %#v, want geometry_field passthrough", result.Plan.WriteOptions)
+	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["geometry_field"] != "geom" {
+		t.Fatalf("write options = %#v, want geometry_field passthrough", result.Plan.Target.FormatOptions)
 	}
 }
 
-func TestBuildTableImportPlanForCSVFileToNativeTable(t *testing.T) {
+func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
@@ -188,157 +177,206 @@ func TestBuildTableImportPlanForCSVFileToNativeTable(t *testing.T) {
 		BatchSize: 500,
 	}
 
-	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
 		2: {Type: "postgresql"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableImportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
 	if result.SourceEngineType != "nfs" || result.TargetEngineType != "postgresql" {
 		t.Fatalf("engine types = %q -> %q, want nfs -> postgresql", result.SourceEngineType, result.TargetEngineType)
 	}
-	if result.Format != format.FormatCSV || result.Plan.Format != format.FormatCSV {
-		t.Fatalf("format = %q / %q, want csv", result.Format, result.Plan.Format)
+	if result.Plan.Source.Kind != executor.TableEndpointEncoded || result.Plan.Target.Kind != executor.TableEndpointNative {
+		t.Fatalf("endpoint kinds = %q -> %q, want encoded -> native", result.Plan.Source.Kind, result.Plan.Target.Kind)
 	}
-	if got := result.Plan.SourcePath.StringPath(); got != "imports/roads.csv" {
+	if result.Plan.Source.Format != format.FormatCSV {
+		t.Fatalf("source format = %q, want csv", result.Plan.Source.Format)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "imports/roads.csv" {
 		t.Fatalf("source path = %q, want imports/roads.csv", got)
 	}
-	if got := result.Plan.TargetPath.StringPath(); got != "public/roads" {
+	if got := result.Plan.Target.Path.StringPath(); got != "public/roads" {
 		t.Fatalf("target path = %q, want public/roads", got)
 	}
-	if result.Plan.TargetWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append", result.Plan.TargetWrite.Mode)
+	if result.Plan.Target.TableWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append", result.Plan.Target.TableWrite.Mode)
 	}
-	if result.Plan.TargetWrite.Method != "copy" {
-		t.Fatalf("write method = %q, want postgresql import default copy", result.Plan.TargetWrite.Method)
+	if result.Plan.Target.TableWrite.Method != "copy" {
+		t.Fatalf("write method = %q, want postgresql import default copy", result.Plan.Target.TableWrite.Method)
 	}
 }
 
-func TestBuildTableImportPlanAllowsJSONTableReader(t *testing.T) {
-	spec := minimalTableImportSpec()
+func TestBuildTableTransferPlanAllowsJSONTableReader(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
 	spec.Source.Format = format.FormatJSON
 	spec.Source.Resource = ResourceSpec{Kind: resourceKindFile, Path: "imports/roads.jsonl"}
 	spec.Source.Options = map[string]interface{}{"json_mode": "jsonl"}
 
-	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
 		2: {Type: "postgresql"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableImportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Format != format.FormatJSON || result.Plan.Format != format.FormatJSON {
-		t.Fatalf("format = %q / %q, want json", result.Format, result.Plan.Format)
+	if result.Plan.Source.Format != format.FormatJSON {
+		t.Fatalf("source format = %q, want json", result.Plan.Source.Format)
 	}
-	if result.Plan.ParseOptions == nil || result.Plan.ParseOptions.ExtraParams["json_mode"] != "jsonl" {
-		t.Fatalf("parse options = %#v, want json_mode passthrough", result.Plan.ParseOptions)
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("parse options = %#v, want json_mode passthrough", result.Plan.Source.ParseOptions)
 	}
 }
 
-func TestBuildEncodedTableTransferPlanForCSVObjectToJSONLObject(t *testing.T) {
-	spec := minimalEncodedTableTransferSpec()
+func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.jsonl"}}
 
-	result, err := BuildEncodedTableTransferPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "minio"},
 		2: {Type: "minio"},
 	})
 	if err != nil {
-		t.Fatalf("BuildEncodedTableTransferPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
 	if result.SourceEngineType != "minio" || result.TargetEngineType != "minio" {
 		t.Fatalf("engine types = %q -> %q, want minio -> minio", result.SourceEngineType, result.TargetEngineType)
 	}
-	if result.SourceFormat != format.FormatCSV || result.TargetFormat != format.FormatJSON {
-		t.Fatalf("formats = %q -> %q, want csv -> json", result.SourceFormat, result.TargetFormat)
+	if result.Plan.Source.Format != format.FormatCSV || result.Plan.Target.Format != format.FormatJSON {
+		t.Fatalf("formats = %q -> %q, want csv -> json", result.Plan.Source.Format, result.Plan.Target.Format)
 	}
-	if got := result.Plan.SourcePath.StringPath(); got != "imports/roads.csv" {
+	if got := result.Plan.Source.Path.StringPath(); got != "imports/roads.csv" {
 		t.Fatalf("source path = %q, want imports/roads.csv", got)
 	}
-	if got := result.Plan.TargetPath.StringPath(); got != "exports/roads.jsonl" {
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.jsonl" {
 		t.Fatalf("target path = %q, want exports/roads.jsonl", got)
 	}
-	if !result.Plan.TargetWrite.Overwrite {
+	if !result.Plan.Target.ContentWrite.Overwrite {
 		t.Fatal("target overwrite = false, want true")
 	}
-	if result.Plan.WriteOptions == nil || result.Plan.WriteOptions.ExtraParams["json_mode"] != "jsonl" {
-		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.WriteOptions)
+	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["json_mode"] != "jsonl" {
+		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.Target.FormatOptions)
 	}
 }
 
-func TestBuildTableExportPlanRejectsNonTableFormat(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Mode: modeBatch,
+		Source: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 1},
+			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+		},
+		Target: EndpointSpec{
+			Engine:         EngineRef{Scope: "system", ID: 2},
+			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "gis", "table": "roads_copy"}},
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"write_mode": "overwrite"},
+		},
+		BatchSize: 500,
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "postgresql" || result.TargetEngineType != "postgresql" {
+		t.Fatalf("engine types = %q -> %q, want postgresql -> postgresql", result.SourceEngineType, result.TargetEngineType)
+	}
+	if result.Plan.Source.Kind != executor.TableEndpointNative || result.Plan.Target.Kind != executor.TableEndpointNative {
+		t.Fatalf("endpoint kinds = %q -> %q, want native -> native", result.Plan.Source.Kind, result.Plan.Target.Kind)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "public/roads" {
+		t.Fatalf("source path = %q, want public/roads", got)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "gis/roads_copy" {
+		t.Fatalf("target path = %q, want gis/roads_copy", got)
+	}
+	if result.Plan.Target.TablePrepare.Mode != "overwrite" {
+		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.Target.TablePrepare.Mode)
+	}
+	if result.Plan.Target.TableWrite.Mode != "append" || result.Plan.Target.TableWrite.Method != "copy" {
+		t.Fatalf("write options = %#v, want append/copy", result.Plan.Target.TableWrite)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsNonTableFormat(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatPDF
 
-	_, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err == nil {
-		t.Fatal("BuildTableExportPlan succeeded, want table writer provider error")
+		t.Fatal("BuildTableTransferPlan succeeded, want table writer provider error")
 	}
 	if !strings.Contains(err.Error(), "table writer provider") {
 		t.Fatalf("error = %q, want table writer provider error", err)
 	}
 }
 
-func TestBuildTableExportPlanRejectsEncodedSource(t *testing.T) {
-	spec := minimalTableExportSpec()
+func TestBuildTableTransferPlanRejectsInvalidShape(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
 	spec.Source.Representation = representationEncoded
 
-	_, err := BuildTableExportPlan(spec, StaticEngineResolver{
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
 		2: {Type: "nfs"},
 	})
 	if err == nil {
-		t.Fatal("BuildTableExportPlan succeeded, want representation error")
+		t.Fatal("BuildTableTransferPlan succeeded, want representation error")
 	}
 	if !strings.Contains(err.Error(), "source encoded endpoint resource kind") {
 		t.Fatalf("error = %q, want encoded source resource kind error", err)
 	}
 }
 
-func TestBuildTableImportPlanSplitsOverwritePolicy(t *testing.T) {
-	spec := minimalTableImportSpec()
+func TestBuildTableTransferPlanSplitsOverwritePolicy(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
 	spec.Target.Policy = map[string]interface{}{"write_mode": "overwrite"}
 
-	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
 		2: {Type: "postgresql"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableImportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.TargetPrepare.Mode != "overwrite" {
-		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.TargetPrepare.Mode)
+	if result.Plan.Target.TablePrepare.Mode != "overwrite" {
+		t.Fatalf("prepare mode = %q, want overwrite", result.Plan.Target.TablePrepare.Mode)
 	}
-	if result.Plan.TargetWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append after overwrite prepare", result.Plan.TargetWrite.Mode)
+	if result.Plan.Target.TableWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append after overwrite prepare", result.Plan.Target.TableWrite.Mode)
 	}
 }
 
-func TestBuildTableImportPlanKeepsAppendPolicy(t *testing.T) {
-	spec := minimalTableImportSpec()
+func TestBuildTableTransferPlanKeepsAppendPolicy(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
 	spec.Target.Policy = map[string]interface{}{"write_mode": "append", "write_method": "insert"}
 
-	result, err := BuildTableImportPlan(spec, StaticEngineResolver{
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
 		2: {Type: "postgresql"},
 	})
 	if err != nil {
-		t.Fatalf("BuildTableImportPlan failed: %v", err)
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.TargetPrepare.Mode != "append" {
-		t.Fatalf("prepare mode = %q, want append", result.Plan.TargetPrepare.Mode)
+	if result.Plan.Target.TablePrepare.Mode != "append" {
+		t.Fatalf("prepare mode = %q, want append", result.Plan.Target.TablePrepare.Mode)
 	}
-	if result.Plan.TargetWrite.Mode != "append" {
-		t.Fatalf("write mode = %q, want append", result.Plan.TargetWrite.Mode)
+	if result.Plan.Target.TableWrite.Mode != "append" {
+		t.Fatalf("write mode = %q, want append", result.Plan.Target.TableWrite.Mode)
 	}
-	if result.Plan.TargetWrite.Method != "insert" {
-		t.Fatalf("write method = %q, want explicit insert", result.Plan.TargetWrite.Method)
+	if result.Plan.Target.TableWrite.Method != "insert" {
+		t.Fatalf("write method = %q, want explicit insert", result.Plan.Target.TableWrite.Method)
 	}
 }
 
@@ -406,7 +444,7 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 	}
 }
 
-func minimalTableExportSpec() TableExportTaskSpec {
+func minimalNativeToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
@@ -425,7 +463,7 @@ func minimalTableExportSpec() TableExportTaskSpec {
 	}
 }
 
-func minimalTableImportSpec() TableExportTaskSpec {
+func minimalEncodedToNativeSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
@@ -444,7 +482,7 @@ func minimalTableImportSpec() TableExportTaskSpec {
 	}
 }
 
-func minimalEncodedTableTransferSpec() TableExportTaskSpec {
+func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{

@@ -76,26 +76,10 @@ func (r StaticEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, error
 	return binding, nil
 }
 
-type TableExportBuildResult struct {
+type TableTransferBuildResult struct {
 	SourceEngineType string
 	TargetEngineType string
-	Format           format.FormatType
-	Plan             executor.TableExportPlan
-}
-
-type TableImportBuildResult struct {
-	SourceEngineType string
-	TargetEngineType string
-	Format           format.FormatType
-	Plan             executor.TableImportPlan
-}
-
-type EncodedTableTransferBuildResult struct {
-	SourceEngineType string
-	TargetEngineType string
-	SourceFormat     format.FormatType
-	TargetFormat     format.FormatType
-	Plan             executor.EncodedTableTransferPlan
+	Plan             executor.TableTransferPlan
 }
 
 func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize int) (TableExportTaskSpec, error) {
@@ -123,87 +107,6 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	return spec, nil
 }
 
-func BuildTableExportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*TableExportBuildResult, error) {
-	if resolver == nil {
-		return nil, fmt.Errorf("engine resolver is required")
-	}
-	if err := validateTableTransferSpec(spec); err != nil {
-		return nil, err
-	}
-	if !isTableExportSpec(spec) {
-		return nil, fmt.Errorf("table export requires native table source and encoded file/object target")
-	}
-
-	sourceEngine, err := resolver.ResolveEngine(spec.Source.Engine)
-	if err != nil {
-		return nil, fmt.Errorf("resolve source engine: %w", err)
-	}
-	targetEngine, err := resolver.ResolveEngine(spec.Target.Engine)
-	if err != nil {
-		return nil, fmt.Errorf("resolve target engine: %w", err)
-	}
-	sourceType := effectiveEngineType(sourceEngine, spec.Source.Engine)
-	targetType := effectiveEngineType(targetEngine, spec.Target.Engine)
-	if sourceType == "" {
-		return nil, fmt.Errorf("source engine type is required")
-	}
-	if targetType == "" {
-		return nil, fmt.Errorf("target engine type is required")
-	}
-
-	sourcePath, err := nativeTablePath(sourceEngine.EngineID, spec.Source.Resource.Path)
-	if err != nil {
-		return nil, fmt.Errorf("build source path: %w", err)
-	}
-	targetPath, err := targetContentPath(targetEngine.EngineID, spec.Target.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("build target path: %w", err)
-	}
-
-	formatType := spec.Target.Format
-	if formatType == "" {
-		return nil, fmt.Errorf("target format is required")
-	}
-	descriptor, ok := format.GetFormatDescriptor(formatType)
-	if !ok {
-		return nil, fmt.Errorf("format %q is not registered", formatType)
-	}
-	if descriptor.DataType != format.FormatDataTypeTable {
-		if !hasTableExportWriter(formatType) {
-			_, err := format.GetTableWriterProvider(formatType)
-			return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
-		}
-	}
-	if !descriptor.TransferWrite {
-		return nil, fmt.Errorf("format %q is not declared as transfer writable", formatType)
-	}
-	if !hasTableExportWriter(formatType) {
-		_, err := format.GetTableWriterProvider(formatType)
-		return nil, fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
-	}
-
-	writeOptions := tableWriteOptions(spec.Target.Options, formatType)
-
-	return &TableExportBuildResult{
-		SourceEngineType: sourceType,
-		TargetEngineType: targetType,
-		Format:           formatType,
-		Plan: executor.TableExportPlan{
-			SourceConnInfo: sourceEngine.ConnInfo,
-			SourcePath:     sourcePath,
-			TargetConnInfo: targetEngine.ConnInfo,
-			TargetPath:     targetPath,
-			TargetWrite: engineplugin.WriteOptions{
-				Overwrite: writeMode(spec.Target.Policy) == defaultWriteMode,
-			},
-			Format:       formatType,
-			BatchSize:    spec.BatchSize,
-			WriteOptions: writeOptions,
-			ReadOptions:  readOptionsForTarget(formatType, writeOptions),
-		},
-	}, nil
-}
-
 func hasTableExportWriter(formatType format.FormatType) bool {
 	if _, err := format.GetTableWriterProvider(formatType); err == nil {
 		return true
@@ -214,15 +117,12 @@ func hasTableExportWriter(formatType format.FormatType) bool {
 	return false
 }
 
-func BuildTableImportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*TableImportBuildResult, error) {
+func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (*TableTransferBuildResult, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("engine resolver is required")
 	}
 	if err := validateTableTransferSpec(spec); err != nil {
 		return nil, err
-	}
-	if !isTableImportSpec(spec) {
-		return nil, fmt.Errorf("table import requires encoded file/object source and native table target")
 	}
 
 	sourceEngine, err := resolver.ResolveEngine(spec.Source.Engine)
@@ -242,131 +142,106 @@ func BuildTableImportPlan(spec TableExportTaskSpec, resolver EngineResolver) (*T
 		return nil, fmt.Errorf("target engine type is required")
 	}
 
-	sourcePath, err := contentResourcePath(sourceEngine.EngineID, spec.Source.Resource, "source")
+	sourcePlan, err := buildTableSourcePlan(spec.Source, sourceEngine)
 	if err != nil {
-		return nil, fmt.Errorf("build source path: %w", err)
+		return nil, err
 	}
-	targetPath, err := nativeTablePath(targetEngine.EngineID, spec.Target.Resource.Path)
+	targetPlan, err := buildTableTargetPlan(spec.Target, targetEngine)
 	if err != nil {
-		return nil, fmt.Errorf("build target path: %w", err)
+		return nil, err
 	}
-
-	formatType := spec.Source.Format
-	if formatType == "" {
-		return nil, fmt.Errorf("source format is required")
+	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded {
+		sourcePlan.ReadOptions = readOptionsForTarget(targetPlan.Format, targetPlan.FormatOptions)
 	}
-	descriptor, ok := format.GetFormatDescriptor(formatType)
-	if !ok {
-		return nil, fmt.Errorf("format %q is not registered", formatType)
-	}
-	if descriptor.DataType != format.FormatDataTypeTable {
-		if _, err := format.GetTableSampleProvider(formatType); err != nil {
-			return nil, fmt.Errorf("format %q has no table sample provider: %w", formatType, err)
-		}
-	}
-	if !descriptor.TransferRead {
-		return nil, fmt.Errorf("format %q is not declared as transfer readable", formatType)
-	}
-	if _, err := format.GetTableSampleProvider(formatType); err != nil {
-		return nil, fmt.Errorf("format %q has no table sample provider: %w", formatType, err)
-	}
-
-	return &TableImportBuildResult{
+	return &TableTransferBuildResult{
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
-		Format:           formatType,
-		Plan: executor.TableImportPlan{
-			SourceConnInfo: sourceEngine.ConnInfo,
-			SourcePath:     sourcePath,
-			TargetConnInfo: targetEngine.ConnInfo,
-			TargetPath:     targetPath,
-			TargetPrepare: engineplugin.TableWriteOptions{
-				Mode: importPrepareMode(spec.Target.Policy),
-			},
-			TargetWrite: engineplugin.BatchWriteOptions{
-				Mode:   importWriteMode(spec.Target.Policy),
-				Method: importWriteMethod(spec.Target.Policy, targetType),
-			},
-			Format:       formatType,
-			BatchSize:    spec.BatchSize,
-			ParseOptions: tableParseOptions(spec.Source.Options, formatType),
+		Plan: executor.TableTransferPlan{
+			Source:    sourcePlan,
+			Target:    targetPlan,
+			BatchSize: spec.BatchSize,
 		},
 	}, nil
 }
 
-func BuildEncodedTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (*EncodedTableTransferBuildResult, error) {
-	if resolver == nil {
-		return nil, fmt.Errorf("engine resolver is required")
+func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableSourcePlan, error) {
+	switch endpoint.Representation {
+	case representationNative:
+		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.Resource.Path)
+		if err != nil {
+			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
+		}
+		return executor.TableSourcePlan{
+			Kind:     executor.TableEndpointNative,
+			ConnInfo: engine.ConnInfo,
+			Path:     sourcePath,
+		}, nil
+	case representationEncoded:
+		sourcePath, err := contentResourcePath(engine.EngineID, endpoint.Resource, "source")
+		if err != nil {
+			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
+		}
+		sourceFormat := endpoint.Format
+		if sourceFormat == "" {
+			return executor.TableSourcePlan{}, fmt.Errorf("source format is required")
+		}
+		if err := validateTransferReadableTableFormat(sourceFormat); err != nil {
+			return executor.TableSourcePlan{}, err
+		}
+		return executor.TableSourcePlan{
+			Kind:         executor.TableEndpointEncoded,
+			ConnInfo:     engine.ConnInfo,
+			Path:         sourcePath,
+			Format:       sourceFormat,
+			ParseOptions: tableParseOptions(endpoint.Options, sourceFormat),
+		}, nil
+	default:
+		return executor.TableSourcePlan{}, fmt.Errorf("unsupported source representation %q", endpoint.Representation)
 	}
-	if err := validateTableTransferSpec(spec); err != nil {
-		return nil, err
-	}
-	if !isEncodedTableTransferSpec(spec) {
-		return nil, fmt.Errorf("encoded table transfer requires encoded file/object source and encoded file/object target")
-	}
+}
 
-	sourceEngine, err := resolver.ResolveEngine(spec.Source.Engine)
-	if err != nil {
-		return nil, fmt.Errorf("resolve source engine: %w", err)
-	}
-	targetEngine, err := resolver.ResolveEngine(spec.Target.Engine)
-	if err != nil {
-		return nil, fmt.Errorf("resolve target engine: %w", err)
-	}
-	sourceType := effectiveEngineType(sourceEngine, spec.Source.Engine)
-	targetType := effectiveEngineType(targetEngine, spec.Target.Engine)
-	if sourceType == "" {
-		return nil, fmt.Errorf("source engine type is required")
-	}
-	if targetType == "" {
-		return nil, fmt.Errorf("target engine type is required")
-	}
-
-	sourcePath, err := contentResourcePath(sourceEngine.EngineID, spec.Source.Resource, "source")
-	if err != nil {
-		return nil, fmt.Errorf("build source path: %w", err)
-	}
-	targetPath, err := targetContentPath(targetEngine.EngineID, spec.Target.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("build target path: %w", err)
-	}
-
-	sourceFormat := spec.Source.Format
-	if sourceFormat == "" {
-		return nil, fmt.Errorf("source format is required")
-	}
-	if err := validateTransferReadableTableFormat(sourceFormat); err != nil {
-		return nil, err
-	}
-	targetFormat := spec.Target.Format
-	if targetFormat == "" {
-		return nil, fmt.Errorf("target format is required")
-	}
-	if err := validateTransferWritableTableFormat(targetFormat); err != nil {
-		return nil, err
-	}
-
-	writeOptions := tableWriteOptions(spec.Target.Options, targetFormat)
-	return &EncodedTableTransferBuildResult{
-		SourceEngineType: sourceType,
-		TargetEngineType: targetType,
-		SourceFormat:     sourceFormat,
-		TargetFormat:     targetFormat,
-		Plan: executor.EncodedTableTransferPlan{
-			SourceConnInfo: sourceEngine.ConnInfo,
-			SourcePath:     sourcePath,
-			SourceFormat:   sourceFormat,
-			TargetConnInfo: targetEngine.ConnInfo,
-			TargetPath:     targetPath,
-			TargetWrite: engineplugin.WriteOptions{
-				Overwrite: writeMode(spec.Target.Policy) == defaultWriteMode,
+func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableTargetPlan, error) {
+	switch endpoint.Representation {
+	case representationNative:
+		targetPath, err := nativeTablePath(engine.EngineID, endpoint.Resource.Path)
+		if err != nil {
+			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
+		}
+		targetType := effectiveEngineType(engine, endpoint.Engine)
+		return executor.TableTargetPlan{
+			Kind:         executor.TableEndpointNative,
+			ConnInfo:     engine.ConnInfo,
+			Path:         targetPath,
+			TablePrepare: engineplugin.TableWriteOptions{Mode: importPrepareMode(endpoint.Policy)},
+			TableWrite: engineplugin.BatchWriteOptions{
+				Mode:   importWriteMode(endpoint.Policy),
+				Method: importWriteMethod(endpoint.Policy, targetType),
 			},
-			TargetFormat: targetFormat,
-			BatchSize:    spec.BatchSize,
-			ParseOptions: tableParseOptions(spec.Source.Options, sourceFormat),
-			WriteOptions: writeOptions,
-		},
-	}, nil
+		}, nil
+	case representationEncoded:
+		targetPath, err := targetContentPath(engine.EngineID, endpoint.Resource)
+		if err != nil {
+			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
+		}
+		targetFormat := endpoint.Format
+		if targetFormat == "" {
+			return executor.TableTargetPlan{}, fmt.Errorf("target format is required")
+		}
+		if err := validateTransferWritableTableFormat(targetFormat); err != nil {
+			return executor.TableTargetPlan{}, err
+		}
+		writeOptions := tableWriteOptions(endpoint.Options, targetFormat)
+		return executor.TableTargetPlan{
+			Kind:          executor.TableEndpointEncoded,
+			ConnInfo:      engine.ConnInfo,
+			Path:          targetPath,
+			ContentWrite:  engineplugin.WriteOptions{Overwrite: writeMode(endpoint.Policy) == defaultWriteMode},
+			Format:        targetFormat,
+			FormatOptions: writeOptions,
+		}, nil
+	default:
+		return executor.TableTargetPlan{}, fmt.Errorf("unsupported target representation %q", endpoint.Representation)
+	}
 }
 
 func validateTableTransferSpec(spec TableExportTaskSpec) error {
@@ -382,12 +257,19 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	if err := validateEndpointCommon(spec.Target, "target", dataTypeTable); err != nil {
 		return err
 	}
-	if isTableExportSpec(spec) || isTableImportSpec(spec) || isEncodedTableTransferSpec(spec) {
+	if isTableExportSpec(spec) || isTableImportSpec(spec) || isEncodedTableTransferSpec(spec) || isNativeTableTransferSpec(spec) {
 		return nil
 	}
 	return fmt.Errorf("unsupported table transfer shape: source %s/%s -> target %s/%s",
 		spec.Source.Representation, spec.Source.Resource.Kind,
 		spec.Target.Representation, spec.Target.Resource.Kind)
+}
+
+func isNativeTableTransferSpec(spec TableExportTaskSpec) bool {
+	return spec.Source.Representation == representationNative &&
+		spec.Source.Resource.Kind == resourceKindNativeTable &&
+		spec.Target.Representation == representationNative &&
+		spec.Target.Resource.Kind == resourceKindNativeTable
 }
 
 func isTableExportSpec(spec TableExportTaskSpec) bool {
@@ -417,6 +299,10 @@ func IsTableImportSpec(spec TableExportTaskSpec) bool {
 
 func IsEncodedTableTransferSpec(spec TableExportTaskSpec) bool {
 	return isEncodedTableTransferSpec(spec)
+}
+
+func IsNativeTableTransferSpec(spec TableExportTaskSpec) bool {
+	return isNativeTableTransferSpec(spec)
 }
 
 func isContentResourceKind(kind string) bool {

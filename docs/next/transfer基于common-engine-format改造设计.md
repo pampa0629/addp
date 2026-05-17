@@ -422,6 +422,42 @@ type ComponentTableWriterProvider interface {
 
 当前 Shapefile 插件已实现该接口，并复用既有 component sample 能力做写后读回验证。Transfer executor 已补 `ContentWritableProvider` 到 `ComponentWriter` 的适配，组件路径基于目标主文件 / 主对象的 basename 派生。
 
+### 七、写后 Meta 扫描闭环
+
+Transfer 成功写出目标资源后，如果 `auto_scan_metadata=true`，必须立即触发 Meta deep scan，且扫描目标必须与目标资源的 catalog 语义一致。
+
+关键约束：
+
+1. 对象存储目标不能只扫描 bucket 根。`bucket/path/to/item.ext` 应转换为目标所在容器 `bucket/path/to`；例如 `addp/gis/abc.shp` 扫描 `addp/gis`。
+2. 文件系统目标不能按单文件路径扫描。`dir/item.ext` 应转换为父目录 `dir`；顶层文件扫描根目录 `/`。
+3. 数据库 native table 目标扫描 namespace，例如 PostgreSQL 的 `schema`。
+4. Shapefile 等 multi component format 必须扫描所在容器，而不是主文件本身。Meta 需要同时枚举 `.shp/.shx/.dbf/.cpg/.prj` 等同 basename 组件，才能完成 data item 组合识别、字段提取、行数统计和空间能力补充。
+5. 对象存储组合项进入 common dataitem / format provider 时，组件路径使用 bucket 内相对 key；bucket 只由 `plugin.ObjectItemPathForBucket()` 承担，避免出现 `bucket/bucket/path` 的重复定位。
+
+当前验证结果：
+
+| 链路 | 结果 |
+|---|---|
+| NFS Shapefile -> MinIO Shapefile | 已手动验证通过，目标 multi component 正确生成；Meta deep scan 后可得到字段、行数、Shapefile format info 和 spatial capabilities。 |
+
+```mermaid
+sequenceDiagram
+    participant T as Transfer Worker
+    participant E as Transfer Executor
+    participant S as common/engine S3/MinIO
+    participant M as Meta Scan
+    participant F as common/format Shapefile
+
+    T->>E: 执行 table -> shapefile
+    E->>S: 写出 abc.shp/abc.shx/abc.dbf/abc.cpg
+    E-->>T: records_written
+    T->>M: TriggerScan(engine=MinIO, catalog_paths=["addp/gis"], depth=deep)
+    M->>S: ListChildren(bucket=addp, prefix=gis, recursive=true)
+    M->>F: DescribeTableComponents(相对 key: gis/abc.*)
+    F-->>M: fields / row_count / format_info / spatial
+    M-->>M: Upsert meta_item addp/gis/abc.shp
+```
+
 ## 第一条链路能力差距图
 
 ```mermaid
@@ -733,12 +769,12 @@ Transfer planner 根据目标 policy 决定：
 2. `internal/executor` 已有最小 table export executor，优先使用 common engine `TableReadSessionProvider`，兜底使用 `BatchReadableProvider`，写侧使用 `ContentWritableProvider` 和 common format `TableWriterProvider`。
 3. System engine resolver 已补，新任务 JSON 入库、更新和启动前校验已补。
 4. worker / `ExecutionEngineService` 已接入 planner + executor，并回写基础 records metrics；待补 checkpoint、progress 和更完整日志。
-5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，PostgreSQL table -> NFS JSONL -> PostgreSQL table 也已通过 executor 真实链路验证；前端创建 / 编辑 / 详情页已切到新规范；S3 / MinIO streaming multipart 写侧、PostgreSQL 普通 batch writer、CSV/TSV/JSONL -> PostgreSQL import 第一版和旧本地引擎 / pipeline / plugins 删除也已完成。
+5. PostgreSQL table -> CSV -> NFS file 已在真实环境跑通，PostgreSQL table -> NFS JSONL -> PostgreSQL table 也已通过 executor 真实链路验证；NFS Shapefile -> MinIO Shapefile 已验证 multi component 写出和 Meta deep scan 字段回填；前端创建 / 编辑 / 详情页已切到新规范；S3 / MinIO streaming multipart 写侧、PostgreSQL 普通 batch writer、CSV/TSV/JSONL -> PostgreSQL import 第一版和旧本地引擎 / pipeline / plugins 删除也已完成。
 
 ### 阶段四：扩展格式和空间链路
 
 1. Parquet reader 继续增强为 row group reader / 分区数据集 reader。
-2. Shapefile component writer 已迁入 common，并已接入 Transfer multi component export 第一版；下一步跑 PostGIS -> NFS Shapefile 真实链路。
+2. Shapefile component writer 已迁入 common，并已接入 Transfer multi component export 第一版；NFS Shapefile -> MinIO Shapefile 已验证写后 Meta deep scan；下一步跑 PostGIS -> NFS / MinIO Shapefile 真实链路。
 3. 删除对应 Transfer 私有插件。
 
 ### 阶段五：扩展 data type 和实时链路

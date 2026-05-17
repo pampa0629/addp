@@ -308,8 +308,13 @@ export function useTaskWizardState() {
   function updateSource(config) {
     const extra = config.extra || {}
     const nextResource = config.resource || extra.resource || null
-    const sourceChanged = sourceEngineID.value !== config.engineID ||
-      JSON.stringify(sourceResource.value || null) !== JSON.stringify(nextResource)
+    const oldSourceEngineID = sourceEngineID.value
+    const oldSourceResource = sourceResource.value
+    const oldSourceEmpty = !oldSourceEngineID && !oldSourceResource
+    const sourceChanged = !oldSourceEmpty && (
+      oldSourceEngineID !== config.engineID ||
+      JSON.stringify(oldSourceResource || null) !== JSON.stringify(nextResource)
+    )
 
     sourceEngineID.value = config.engineID
     sourceEngineType.value = config.engineType || ''

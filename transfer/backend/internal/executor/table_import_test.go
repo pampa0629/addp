@@ -11,22 +11,22 @@ import (
 	csvformat "github.com/addp/common/format/plugins/csv"
 )
 
-func TestTableImportExecutorExecuteWritesBatches(t *testing.T) {
+func TestTableTransferExecutorWritesEncodedCSVToNativeTable(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
 	writer := &fakeBatchWriter{}
 	preparer := &fakeTableWritePreparer{}
-	exec := &TableImportExecutor{
-		Reader:            reader,
-		Preparer:          preparer,
-		InfoProvider:      csvformat.NewPlugin(nil),
-		Writer:            writer,
-		FormatProvider:    csvformat.NewPlugin(nil),
-		TableReadProvider: csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		SourceFormatProvider:    csvformat.NewPlugin(nil),
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetNativePreparer:    preparer,
+		TargetNativeWriter:      writer,
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableImportPlan{
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target:    TableTargetPlan{Kind: TableEndpointNative},
 		BatchSize: 2,
-		Format:    format.FormatCSV,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -49,22 +49,22 @@ func TestTableImportExecutorExecuteWritesBatches(t *testing.T) {
 	}
 }
 
-func TestTableImportExecutorPreparesTargetOnce(t *testing.T) {
+func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}
-	exec := &TableImportExecutor{
-		Reader:            reader,
-		Preparer:          preparer,
-		InfoProvider:      csvformat.NewPlugin(nil),
-		Writer:            &fakeBatchWriter{},
-		FormatProvider:    csvformat.NewPlugin(nil),
-		TableReadProvider: csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		SourceFormatProvider:    csvformat.NewPlugin(nil),
+		SourceInfoProvider:      csvformat.NewPlugin(nil),
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetNativePreparer:    preparer,
+		TargetNativeWriter:      &fakeBatchWriter{},
 	}
 
-	_, err := exec.Execute(context.Background(), TableImportPlan{
-		BatchSize:     1,
-		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "overwrite"},
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target:    TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "overwrite"}},
+		BatchSize: 1,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -77,22 +77,22 @@ func TestTableImportExecutorPreparesTargetOnce(t *testing.T) {
 	}
 }
 
-func TestTableImportExecutorPrepareAppendUsesTableInfo(t *testing.T) {
+func TestTableTransferExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}
-	exec := &TableImportExecutor{
-		Reader:            reader,
-		Preparer:          preparer,
-		InfoProvider:      csvformat.NewPlugin(nil),
-		Writer:            &fakeBatchWriter{},
-		FormatProvider:    csvformat.NewPlugin(nil),
-		TableReadProvider: csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		SourceFormatProvider:    csvformat.NewPlugin(nil),
+		SourceInfoProvider:      csvformat.NewPlugin(nil),
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetNativePreparer:    preparer,
+		TargetNativeWriter:      &fakeBatchWriter{},
 	}
 
-	_, err := exec.Execute(context.Background(), TableImportPlan{
-		BatchSize:     2,
-		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "append"},
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target:    TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "append"}},
+		BatchSize: 2,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -108,25 +108,28 @@ func TestTableImportExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 	}
 }
 
-func TestTableImportExecutorPrefersTableWriteSessionForCopy(t *testing.T) {
+func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
 	writer := &fakeBatchWriter{}
 	preparer := &fakeTableWritePreparer{}
-	exec := &TableImportExecutor{
-		Reader:               reader,
-		Preparer:             preparer,
-		InfoProvider:         csvformat.NewPlugin(nil),
-		Writer:               writer,
-		TableSessionProvider: writer,
-		FormatProvider:       csvformat.NewPlugin(nil),
-		TableReadProvider:    csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:        reader,
+		SourceFormatProvider:       csvformat.NewPlugin(nil),
+		SourceInfoProvider:         csvformat.NewPlugin(nil),
+		SourceTableReadProvider:    csvformat.NewPlugin(nil),
+		TargetNativePreparer:       preparer,
+		TargetNativeWriter:         writer,
+		TargetTableSessionProvider: writer,
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableImportPlan{
-		BatchSize:     2,
-		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "append"},
-		TargetWrite:   engineplugin.BatchWriteOptions{Mode: "append", Method: "copy"},
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointNative,
+			TablePrepare: engineplugin.TableWriteOptions{Mode: "append"},
+			TableWrite:   engineplugin.BatchWriteOptions{Mode: "append", Method: "copy"},
+		},
+		BatchSize: 2,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -151,16 +154,16 @@ func TestTableImportExecutorPrefersTableWriteSessionForCopy(t *testing.T) {
 	}
 }
 
-func TestTableImportExecutorRequiresPreparerForPrepareMode(t *testing.T) {
-	exec := &TableImportExecutor{
-		Reader:         &fakeContentReader{},
-		Writer:         &fakeBatchWriter{},
-		FormatProvider: csvformat.NewPlugin(nil),
+func TestTableTransferExecutorRequiresPreparerForPrepareMode(t *testing.T) {
+	exec := &TableTransferExecutor{
+		SourceContentReader:  &fakeContentReader{},
+		SourceFormatProvider: csvformat.NewPlugin(nil),
+		TargetNativeWriter:   &fakeBatchWriter{},
 	}
 
-	_, err := exec.Execute(context.Background(), TableImportPlan{
-		Format:        format.FormatCSV,
-		TargetPrepare: engineplugin.TableWriteOptions{Mode: "overwrite"},
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target: TableTargetPlan{Kind: TableEndpointNative, TablePrepare: engineplugin.TableWriteOptions{Mode: "overwrite"}},
 	})
 	if err == nil {
 		t.Fatal("Execute succeeded, want missing preparer error")
@@ -170,23 +173,7 @@ func TestTableImportExecutorRequiresPreparerForPrepareMode(t *testing.T) {
 	}
 }
 
-func TestTableImportExecutorRejectsMismatchedFormat(t *testing.T) {
-	exec := &TableImportExecutor{
-		Reader:         &fakeContentReader{},
-		Writer:         &fakeBatchWriter{},
-		FormatProvider: csvformat.NewPlugin(nil),
-	}
-
-	_, err := exec.Execute(context.Background(), TableImportPlan{Format: format.FormatTSV})
-	if err == nil {
-		t.Fatal("Execute succeeded, want format mismatch error")
-	}
-	if !strings.Contains(err.Error(), "does not match table reader format") {
-		t.Fatalf("error = %q, want format mismatch", err)
-	}
-}
-
-func TestNewTableImportExecutorFromRegistry(t *testing.T) {
+func TestNewTableTransferExecutorLoadsEncodedToNativeProvidersFromRegistry(t *testing.T) {
 	source := &fakeContentReader{engineType: "registry_import_source"}
 	target := &fakeBatchWriter{engineType: "registry_import_target"}
 	engineplugin.Register(source)
@@ -196,21 +183,21 @@ func TestNewTableImportExecutorFromRegistry(t *testing.T) {
 		engineplugin.Unregister(target.Type())
 	})
 
-	exec, err := NewTableImportExecutor(source.Type(), target.Type(), format.FormatCSV)
+	exec, err := NewTableTransferExecutor(source.Type(), target.Type(), format.FormatCSV, "")
 	if err != nil {
-		t.Fatalf("NewTableImportExecutor failed: %v", err)
+		t.Fatalf("NewTableTransferExecutor failed: %v", err)
 	}
-	if exec.Reader != source {
-		t.Fatalf("reader = %#v, want registered source", exec.Reader)
+	if exec.SourceContentReader != source {
+		t.Fatalf("reader = %#v, want registered source", exec.SourceContentReader)
 	}
-	if exec.Writer != target {
-		t.Fatalf("writer = %#v, want registered target", exec.Writer)
+	if exec.TargetNativeWriter != target {
+		t.Fatalf("writer = %#v, want registered target", exec.TargetNativeWriter)
 	}
-	if exec.FormatProvider.Format() != format.FormatCSV {
-		t.Fatalf("format provider = %q, want csv", exec.FormatProvider.Format())
+	if exec.SourceFormatProvider.Format() != format.FormatCSV {
+		t.Fatalf("format provider = %q, want csv", exec.SourceFormatProvider.Format())
 	}
-	if exec.TableReadProvider == nil || exec.TableReadProvider.Format() != format.FormatCSV {
-		t.Fatalf("table read provider = %#v, want csv", exec.TableReadProvider)
+	if exec.SourceTableReadProvider == nil || exec.SourceTableReadProvider.Format() != format.FormatCSV {
+		t.Fatalf("table read provider = %#v, want csv", exec.SourceTableReadProvider)
 	}
 }
 

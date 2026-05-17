@@ -254,7 +254,7 @@ const targetEnginePlaceholder = computed(() => {
 })
 
 const isNativeTableTarget = computed(() => {
-  return sourceRepresentation.value === 'encoded' && isNativeTableEngine(selectedEngine.value)
+  return isNativeTableEngine(selectedEngine.value)
 })
 
 const isContentTarget = computed(() => {
@@ -423,13 +423,7 @@ async function loadEngines() {
 
 function isAllowedTargetEngine(engine) {
   if (!sourceTransferSupported.value) return false
-  if (sourceRepresentation.value === 'native') {
-    return isContentEngine(engine)
-  }
-  if (sourceRepresentation.value === 'encoded') {
-    return isNativeTableEngine(engine) || isContentEngine(engine)
-  }
-  return false
+  return isNativeTableEngine(engine) || isContentEngine(engine)
 }
 
 function supportedEncodedSourceFormat(format) {

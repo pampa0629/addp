@@ -51,6 +51,30 @@
             </span>
           </template>
         </ResourceTree>
+        <div v-if="selectedSourceSummary" class="selected-source-summary">
+          <div class="summary-main">
+            <span class="summary-title">{{ t('transfer.taskWizard.selectedSourceSummaryTitle') }}</span>
+            <span class="summary-path" :title="selectedSourceSummary.path">{{ selectedSourceSummary.path }}</span>
+            <el-tag size="small" type="success">{{ selectedSourceSummary.dataType }}</el-tag>
+            <el-tag v-if="selectedSourceSummary.format" size="small" type="info">
+              {{ selectedSourceSummary.format }}
+            </el-tag>
+            <el-tag v-if="selectedSourceSummary.spatial" size="small" type="warning">
+              {{ t('transfer.taskWizard.spatialDataLabel') }}
+            </el-tag>
+          </div>
+          <div class="summary-items">
+            <span
+              v-for="item in selectedSourceSummary.items"
+              :key="item.label"
+              class="summary-item"
+              :title="`${item.label}: ${item.value}`"
+            >
+              <span class="summary-label">{{ item.label }}</span>
+              <span class="summary-value" :title="item.value">{{ item.value }}</span>
+            </span>
+          </div>
+        </div>
       </el-form-item>
 
       <el-alert
@@ -116,6 +140,7 @@ const selectedDataType = computed(() => nodeDataType(selectedNode.value))
 const selectedFormat = computed(() => nodeFormat(selectedNode.value))
 const selectedRepresentation = computed(() => representationForSelection(selectedNode.value))
 const selectedSourceLabel = computed(() => catalogPathForNode(selectedNode.value))
+const selectedSourceSummary = computed(() => buildSelectedSourceSummary(selectedNode.value))
 const selectedSourceSupported = computed(() => {
   if (selectedDataType.value !== 'table') return false
   if (selectedRepresentation.value === 'native') return true
@@ -393,6 +418,161 @@ function nodeAttribute(node, key) {
   if (!node?.attributes) return ''
   const attrs = node.attributes
   return String(attrs[key] || attrs.item?.[key] || attrs.type_info?.[key] || node?.[key] || '').trim()
+}
+
+function buildSelectedSourceSummary(node) {
+  if (!node) return null
+
+  const attrs = node.attributes || {}
+  const fields = tableFieldsFromAttributes(attrs)
+  const loadedFields = props.wizardState.sourceFields?.value || []
+  const fieldCount = firstPresent(
+    numericValue(attrs.field_count),
+    numericValue(attrs.type_info?.table?.field_count),
+    numericValue(attrs.type_info?.table?.column_count),
+    fields.length || null,
+    loadedFields.length || null
+  )
+  const rowCount = firstPresent(
+    numericValue(node.row_count),
+    numericValue(attrs.row_count),
+    numericValue(attrs.item?.row_count),
+    numericValue(attrs.type_info?.row_count),
+    numericValue(attrs.type_info?.table?.row_count),
+    numericValue(attrs.capabilities?.statistics?.row_count),
+    numericValue(attrs.statistics?.row_count)
+  )
+  const size = firstPresent(
+    numericValue(node.size),
+    numericValue(attrs.size),
+    numericValue(attrs.file_size),
+    numericValue(attrs.item?.size),
+    numericValue(attrs.format_info?.file_size)
+  )
+  const modified = firstPresent(
+    attrs.last_modified,
+    attrs.modified_at,
+    attrs.item?.last_modified,
+    attrs.item?.modified_at
+  )
+  const format = selectedFormat.value
+  const spatial = spatialSummaryFromAttributes(attrs, fields.length > 0 ? fields : loadedFields)
+
+  const items = []
+
+  if (rowCount !== null && rowCount !== undefined) {
+    items.push({
+      label: t('transfer.taskWizard.rowCount'),
+      value: `${formatInteger(rowCount)} ${t('transfer.taskWizard.rowsUnit')}`
+    })
+  }
+  if (fieldCount !== null && fieldCount !== undefined) {
+    items.push({
+      label: t('transfer.taskWizard.sourceItemFields'),
+      value: formatInteger(fieldCount)
+    })
+  }
+  if (spatial) {
+    items.push({
+      label: t('transfer.taskWizard.spatialInfoLabel'),
+      value: [spatial.geometry, spatial.geometryType, spatial.srid ? `SRID ${spatial.srid}` : ''].filter(Boolean).join(' · ')
+    })
+  }
+  if (size !== null && size !== undefined) {
+    items.push({
+      label: t('transfer.taskWizard.fileSize'),
+      value: formatBytes(size)
+    })
+  }
+  if (modified) {
+    items.push({
+      label: t('transfer.taskWizard.lastModified'),
+      value: formatDateTime(modified)
+    })
+  }
+
+  return {
+    path: selectedSourceLabel.value || node.name || '-',
+    dataType: dataTypeLabel(selectedDataType.value),
+    format: format ? formatLabel(format) : '',
+    spatial,
+    items
+  }
+}
+
+function tableFieldsFromAttributes(attrs) {
+  const candidates = [
+    attrs?.type_info?.table?.fields,
+    attrs?.type_info?.fields,
+    attrs?.fields,
+    attrs?.item?.fields
+  ]
+  return candidates.find(Array.isArray) || []
+}
+
+function spatialSummaryFromAttributes(attrs, fields) {
+  const spatial = attrs?.capabilities?.spatial || attrs?.spatial || {}
+  const geometryColumns = Array.isArray(spatial.geometry_columns)
+    ? spatial.geometry_columns
+    : Array.isArray(spatial.geometryColumns)
+      ? spatial.geometryColumns
+      : []
+  const geometryField = geometryColumns[0] || geometryFieldFromFields(fields)
+  if (!geometryField) return null
+
+  return {
+    geometry: geometryField.name || spatial.primary_geometry_column || spatial.primaryGeometryColumn || t('transfer.taskWizard.sourceItemUnknown'),
+    geometryType: geometryField.geometry_type || geometryField.geometryType || spatial.geometry_type || spatial.geometryType || '',
+    srid: firstPresent(geometryField.srid, spatial.srid)
+  }
+}
+
+function geometryFieldFromFields(fields) {
+  return (fields || []).find(field => {
+    const values = [
+      field?.type,
+      field?.data_type,
+      field?.standard_type,
+      field?.original_type,
+      field?.native_type,
+      field?.db_type
+    ].map(value => String(value || '').toLowerCase())
+    return values.some(value => value.includes('geometry') || value.includes('geography'))
+  }) || null
+}
+
+function numericValue(value) {
+  if (value === null || value === undefined || value === '') return null
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : null
+}
+
+function firstPresent(...values) {
+  return values.find(value => value !== null && value !== undefined && value !== '')
+}
+
+function formatInteger(value) {
+  return new Intl.NumberFormat().format(Number(value))
+}
+
+function formatBytes(value) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes)) return String(value)
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let size = bytes / 1024
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`
+}
+
+function formatDateTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString()
 }
 
 function visibleSourceTreeNode(node) {
@@ -716,5 +896,72 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.selected-source-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  background: var(--addp-bg-primary);
+}
+
+.summary-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.summary-path {
+  min-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+}
+
+.summary-items {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 14px;
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.summary-label {
+  flex: 0 0 auto;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.summary-value {
+  max-width: 180px;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

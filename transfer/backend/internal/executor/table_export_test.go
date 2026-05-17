@@ -14,7 +14,7 @@ import (
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
 )
 
-func TestTableExportExecutorExecuteWritesCSV(t *testing.T) {
+func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
@@ -33,15 +33,16 @@ func TestTableExportExecutorExecuteWritesCSV(t *testing.T) {
 		},
 	}
 	writer := &fakeContentWriter{}
-	exec := &TableExportExecutor{
-		Reader:         reader,
-		Writer:         writer,
-		FormatProvider: csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceNativeReader:   reader,
+		TargetContentWriter:  writer,
+		TargetFormatProvider: csvformat.NewPlugin(nil),
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableExportPlan{
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointNative},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
 		BatchSize: 2,
-		Format:    format.FormatCSV,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -61,16 +62,20 @@ func TestTableExportExecutorExecuteWritesCSV(t *testing.T) {
 	}
 }
 
-func TestTableExportExecutorExecuteNoRowsCreatesEmptyTarget(t *testing.T) {
+func TestTableTransferExecutorNoRowsCreatesEmptyEncodedTarget(t *testing.T) {
 	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{}}}
 	writer := &fakeContentWriter{}
-	exec := &TableExportExecutor{
-		Reader:         reader,
-		Writer:         writer,
-		FormatProvider: csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceNativeReader:   reader,
+		TargetContentWriter:  writer,
+		TargetFormatProvider: csvformat.NewPlugin(nil),
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableExportPlan{BatchSize: 10})
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointNative},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 10,
+	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -85,7 +90,7 @@ func TestTableExportExecutorExecuteNoRowsCreatesEmptyTarget(t *testing.T) {
 	}
 }
 
-func TestTableExportExecutorPrefersTableReadSession(t *testing.T) {
+func TestTableTransferExecutorPrefersNativeTableReadSession(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
@@ -102,14 +107,18 @@ func TestTableExportExecutorPrefersTableReadSession(t *testing.T) {
 		},
 	}
 	writer := &fakeContentWriter{}
-	exec := &TableExportExecutor{
-		Reader:               &fakeBatchReader{},
-		TableSessionProvider: reader,
-		Writer:               writer,
-		FormatProvider:       csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         &fakeBatchReader{},
+		SourceTableSessionProvider: reader,
+		TargetContentWriter:        writer,
+		TargetFormatProvider:       csvformat.NewPlugin(nil),
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableExportPlan{BatchSize: 2, Format: format.FormatCSV})
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointNative},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 2,
+	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -127,7 +136,7 @@ func TestTableExportExecutorPrefersTableReadSession(t *testing.T) {
 	}
 }
 
-func TestTableExportExecutorExecuteWritesShapefileComponents(t *testing.T) {
+func TestTableTransferExecutorWritesShapefileComponents(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
@@ -144,24 +153,28 @@ func TestTableExportExecutorExecuteWritesShapefileComponents(t *testing.T) {
 		},
 	}
 	writer := &fakeContentWriter{files: map[string][]byte{}}
-	exec := &TableExportExecutor{
-		Reader:            reader,
-		Writer:            writer,
-		ComponentProvider: shapefileformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceNativeReader:      reader,
+		TargetContentWriter:     writer,
+		TargetComponentProvider: shapefileformat.NewPlugin(nil),
 	}
 
-	metrics, err := exec.Execute(context.Background(), TableExportPlan{
-		TargetPath:  engineplugin.FileItemPath(2, "exports/cities.shp"),
-		TargetWrite: engineplugin.WriteOptions{Overwrite: true},
-		Format:      format.FormatShapefile,
-		BatchSize:   100,
-		WriteOptions: &format.WriteOptions{
-			Encoding: "utf-8",
-			ExtraParams: map[string]interface{}{
-				"geometry_field": "geom",
-				"geometry_type":  "Point",
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Path:         engineplugin.FileItemPath(2, "exports/cities.shp"),
+			ContentWrite: engineplugin.WriteOptions{Overwrite: true},
+			Format:       format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"geometry_field": "geom",
+					"geometry_type":  "Point",
+				},
 			},
 		},
+		BatchSize: 100,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -176,23 +189,7 @@ func TestTableExportExecutorExecuteWritesShapefileComponents(t *testing.T) {
 	}
 }
 
-func TestTableExportExecutorRejectsMismatchedFormat(t *testing.T) {
-	exec := &TableExportExecutor{
-		Reader:         &fakeBatchReader{},
-		Writer:         &fakeContentWriter{},
-		FormatProvider: csvformat.NewPlugin(nil),
-	}
-
-	_, err := exec.Execute(context.Background(), TableExportPlan{Format: format.FormatTSV})
-	if err == nil {
-		t.Fatal("Execute succeeded, want format mismatch error")
-	}
-	if !strings.Contains(err.Error(), "does not match table writer provider format") {
-		t.Fatalf("error = %q, want format mismatch", err)
-	}
-}
-
-func TestNewTableExportExecutorFromRegistry(t *testing.T) {
+func TestNewTableTransferExecutorLoadsNativeToEncodedProvidersFromRegistry(t *testing.T) {
 	source := &fakeBatchReader{engineType: "registry_source"}
 	target := &fakeContentWriter{engineType: "registry_target"}
 	engineplugin.Register(source)
@@ -202,33 +199,40 @@ func TestNewTableExportExecutorFromRegistry(t *testing.T) {
 		engineplugin.Unregister(target.Type())
 	})
 
-	exec, err := NewTableExportExecutor(source.Type(), target.Type(), format.FormatCSV)
+	exec, err := NewTableTransferExecutor(source.Type(), target.Type(), "", format.FormatCSV)
 	if err != nil {
-		t.Fatalf("NewTableExportExecutor failed: %v", err)
+		t.Fatalf("NewTableTransferExecutor failed: %v", err)
 	}
-	if exec.Reader != source {
-		t.Fatalf("reader = %#v, want registered source", exec.Reader)
+	if exec.SourceNativeReader != source {
+		t.Fatalf("reader = %#v, want registered source", exec.SourceNativeReader)
 	}
-	if exec.Writer != target {
-		t.Fatalf("writer = %#v, want registered target", exec.Writer)
+	if exec.TargetContentWriter != target {
+		t.Fatalf("writer = %#v, want registered target", exec.TargetContentWriter)
 	}
-	if exec.FormatProvider.Format() != format.FormatCSV {
-		t.Fatalf("format provider = %q, want csv", exec.FormatProvider.Format())
+	if exec.TargetFormatProvider.Format() != format.FormatCSV {
+		t.Fatalf("format provider = %q, want csv", exec.TargetFormatProvider.Format())
 	}
 }
 
-func TestNewTableExportExecutorRejectsMissingCapability(t *testing.T) {
+func TestTableTransferExecutorRejectsMissingNativeSourceCapability(t *testing.T) {
 	target := &fakeContentWriter{engineType: "registry_target_only"}
 	engineplugin.Register(target)
 	t.Cleanup(func() {
 		engineplugin.Unregister(target.Type())
 	})
 
-	_, err := NewTableExportExecutor(target.Type(), target.Type(), format.FormatCSV)
-	if err == nil {
-		t.Fatal("NewTableExportExecutor succeeded, want source capability error")
+	exec, err := NewTableTransferExecutor(target.Type(), target.Type(), "", format.FormatCSV)
+	if err != nil {
+		t.Fatalf("NewTableTransferExecutor failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "does not implement batch table read") {
+	_, err = exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+	})
+	if err == nil {
+		t.Fatal("Execute succeeded, want source capability error")
+	}
+	if !strings.Contains(err.Error(), "native table source requires batch reader") {
 		t.Fatalf("error = %q, want batch table read capability error", err)
 	}
 }

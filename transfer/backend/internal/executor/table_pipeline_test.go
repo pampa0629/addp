@@ -13,23 +13,26 @@ import (
 	"github.com/addp/common/resource"
 )
 
-func TestEncodedTableTransferExecutorConvertsCSVToJSONL(t *testing.T) {
+func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
 	writer := &fakeContentWriter{}
-	exec := &EncodedTableTransferExecutor{
-		Reader:            reader,
-		Writer:            writer,
-		TableReadProvider: csvformat.NewPlugin(nil),
-		FormatProvider:    jsonformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		TargetContentWriter:     writer,
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetFormatProvider:    jsonformat.NewPlugin(nil),
 	}
 
-	metrics, err := exec.Execute(context.Background(), EncodedTableTransferPlan{
-		SourceFormat: format.FormatCSV,
-		TargetFormat: format.FormatJSON,
-		BatchSize:    2,
-		WriteOptions: &format.WriteOptions{
-			ExtraParams: map[string]interface{}{"json_mode": "jsonl"},
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Format: format.FormatJSON,
+			FormatOptions: &format.WriteOptions{
+				ExtraParams: map[string]interface{}{"json_mode": "jsonl"},
+			},
 		},
+		BatchSize: 2,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -56,7 +59,7 @@ func TestEncodedTableTransferExecutorConvertsCSVToJSONL(t *testing.T) {
 	}
 }
 
-func TestEncodedTableTransferExecutorReadsShapefileComponents(t *testing.T) {
+func TestTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
@@ -87,17 +90,16 @@ func TestEncodedTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 	}
 
 	output := &fakeContentWriter{}
-	exec := &EncodedTableTransferExecutor{
-		Reader:            source,
-		Writer:            output,
-		ComponentProvider: shapefilePlugin,
-		FormatProvider:    csvformat.NewPlugin(nil),
+	exec := &TableTransferExecutor{
+		SourceContentReader:     source,
+		TargetContentWriter:     output,
+		SourceComponentProvider: shapefilePlugin,
+		TargetFormatProvider:    csvformat.NewPlugin(nil),
 	}
-	metrics, err := exec.Execute(context.Background(), EncodedTableTransferPlan{
-		SourcePath:   target,
-		SourceFormat: format.FormatShapefile,
-		TargetFormat: format.FormatCSV,
-		BatchSize:    1,
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: target, Format: format.FormatShapefile},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -113,7 +115,7 @@ func TestEncodedTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 	}
 }
 
-func TestNewEncodedTableTransferExecutorFromRegistry(t *testing.T) {
+func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *testing.T) {
 	source := &fakeContentReader{engineType: "registry_encoded_source"}
 	target := &fakeContentWriter{engineType: "registry_encoded_target"}
 	engineplugin.Register(source)
@@ -123,20 +125,20 @@ func TestNewEncodedTableTransferExecutorFromRegistry(t *testing.T) {
 		engineplugin.Unregister(target.Type())
 	})
 
-	exec, err := NewEncodedTableTransferExecutor(source.Type(), target.Type(), format.FormatCSV, format.FormatJSON)
+	exec, err := NewTableTransferExecutor(source.Type(), target.Type(), format.FormatCSV, format.FormatJSON)
 	if err != nil {
-		t.Fatalf("NewEncodedTableTransferExecutor failed: %v", err)
+		t.Fatalf("NewTableTransferExecutor failed: %v", err)
 	}
-	if exec.Reader != source {
-		t.Fatalf("reader = %#v, want registered source", exec.Reader)
+	if exec.SourceContentReader != source {
+		t.Fatalf("reader = %#v, want registered source", exec.SourceContentReader)
 	}
-	if exec.Writer != target {
-		t.Fatalf("writer = %#v, want registered target", exec.Writer)
+	if exec.TargetContentWriter != target {
+		t.Fatalf("writer = %#v, want registered target", exec.TargetContentWriter)
 	}
-	if exec.TableReadProvider.Format() != format.FormatCSV {
-		t.Fatalf("table read provider = %q, want csv", exec.TableReadProvider.Format())
+	if exec.SourceTableReadProvider.Format() != format.FormatCSV {
+		t.Fatalf("table read provider = %q, want csv", exec.SourceTableReadProvider.Format())
 	}
-	if exec.FormatProvider.Format() != format.FormatJSON {
-		t.Fatalf("table writer provider = %q, want json", exec.FormatProvider.Format())
+	if exec.TargetFormatProvider.Format() != format.FormatJSON {
+		t.Fatalf("table writer provider = %q, want json", exec.TargetFormatProvider.Format())
 	}
 }
