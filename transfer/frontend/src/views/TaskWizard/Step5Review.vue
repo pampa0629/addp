@@ -53,11 +53,17 @@
         <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.sourceEngineID.value }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewSchema')">
-          {{ wizardState.sourceSchema.value }}
+        <el-descriptions-item :label="t('transfer.taskWizard.dataType')">
+          {{ dataTypeLabel(wizardState.sourceDataType.value) }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewTable')" :span="2">
-          {{ wizardState.sourceTable.value }}
+        <el-descriptions-item :label="t('transfer.taskWizard.representation')">
+          {{ representationLabel(wizardState.sourceRepresentation.value) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskWizard.format')">
+          {{ formatLabel(wizardState.sourceFormat.value) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
+          {{ sourceResourcePath }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -73,10 +79,16 @@
         <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.targetEngineID.value }}
         </el-descriptions-item>
-        <el-descriptions-item label="格式">
-          {{ wizardState.targetConfig.value.format || '-' }}
+        <el-descriptions-item :label="t('transfer.taskWizard.representation')">
+          {{ representationLabel(wizardState.targetRepresentation.value) }}
         </el-descriptions-item>
-        <el-descriptions-item label="资源路径" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.format')">
+          {{ formatLabel(wizardState.targetConfig.value.format) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskWizard.writeModeLabel')">
+          {{ writeModeLabel(wizardState.targetConfig.value.writeMode) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
           {{ targetResourcePath }}
         </el-descriptions-item>
       </el-descriptions>
@@ -152,6 +164,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
 
 const { t } = useI18n()
 
@@ -188,10 +201,32 @@ const warnings = computed(() => {
 
 const hasWarnings = computed(() => warnings.value.length > 0)
 
+const sourceResourcePath = computed(() => {
+  const config = props.wizardState.sourceConfig.value || {}
+  return config.sourceLabel || resourcePath(props.wizardState.sourceResource.value) || '-'
+})
+
 const targetResourcePath = computed(() => {
   const config = props.wizardState.targetConfig.value || {}
+  if (props.wizardState.targetRepresentation.value === 'native') {
+    return [props.wizardState.targetSchema.value, props.wizardState.targetTable.value].filter(Boolean).join('.') || '-'
+  }
   return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
 })
+
+function resourcePath(resource) {
+  const path = resource?.path || {}
+  if (resource?.kind === 'native_table') {
+    return [path.schema, path.table || path.name].filter(Boolean).join('.')
+  }
+  if (resource?.kind === 'object') {
+    return [path.bucket, path.path].filter(Boolean).join('/')
+  }
+  if (resource?.kind === 'file') {
+    return path.path || path.name || ''
+  }
+  return ''
+}
 
 function copyConfig() {
   const config = JSON.stringify(props.wizardState.taskConfig.value, null, 2)

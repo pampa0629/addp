@@ -209,7 +209,9 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 		metadata, err := DescribeNamedItem(ctx, resource, namespace, item, MetadataOptions{IncludeStatistics: true})
 		if err == nil && metadata != nil {
 			if rowCount, ok := int64Stat(metadata.Stats, "row_count"); ok {
-				return rowCount, nil
+				if rowCount > 0 {
+					return rowCount, nil
+				}
 			}
 		}
 	}

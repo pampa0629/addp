@@ -257,11 +257,9 @@ export const useExplorerStore = defineStore('explorer', {
         const response = await client.get('/manager/preview', {
           params
         })
-        // 后端直接返回 PreviewResult 对象（符合 API 规范）
-        // API 客户端的 extractData 已提取了 response.data
-        // PreviewResult: {preview_type, data: TablePreview, metadata}
-        // 前端预览插件期望直接收到 TablePreview 格式，所以需要提取 response.data
-        const preview = response.data
+        // 后端返回 PreviewResult: { preview_type, data, metadata }。
+        // createAPIClient 已经抽取过 HTTP response.data，这里只在确实存在 PreviewResult.data 时再拆包。
+        const preview = response?.preview_type && response?.data ? response.data : (response?.data || response)
         if (normalizedChildName) {
           this.activeChildPreviewData = preview
           return preview

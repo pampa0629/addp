@@ -180,8 +180,13 @@ const handleSearchResultSelect = async (result) => {
 }
 
 // 事件处理：分页变化
-const handlePageChange = async (page) => {
+const handlePageChange = async (payload) => {
   if (!store.selectedLocator) return
+  const page = typeof payload === 'object' ? payload?.page || 1 : payload
+  const pageSize = typeof payload === 'object' ? Number(payload?.pageSize || 0) : 0
+  if (pageSize > 0) {
+    store.pagination.pageSize = pageSize
+  }
 
   try {
     await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedComponentPath, store.selectedNestedChildPath)

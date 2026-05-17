@@ -330,7 +330,7 @@ const itemTypeLabel = computed(() => {
 
 const overviewItems = computed(() => {
   if (!itemMeta.value) return []
-  return [
+  const items = [
     {
       key: 'item_type',
       label: t('meta.itemType'),
@@ -347,13 +347,38 @@ const overviewItems = computed(() => {
       value: formatScalar(itemMeta.value.scanned_at)
     }
   ]
+  if (itemRowCount.value !== null) {
+    items.splice(2, 0, {
+      key: 'row_count',
+      label: t('manager.explorer.attributes.fields.rowCount'),
+      value: formatScalar(itemRowCount.value)
+    })
+  }
+  return items
 })
 
-const rawAttributesJson = computed(() => {
+const itemAttributesMap = computed(() => {
   const attrs = {}
   for (const attr of itemMeta.value?.attributes || []) {
     attrs[attr.key] = attr.value
   }
+  return attrs
+})
+
+const itemRowCount = computed(() => {
+  const directRowCount = Number(itemMeta.value?.row_count)
+  if (Number.isFinite(directRowCount)) return directRowCount
+  const previewRowCount = Number(props.previewData?.total)
+  if (Number.isFinite(previewRowCount) && previewRowCount > 0) return previewRowCount
+  return pickNestedNumber(itemAttributesMap.value, [
+    ['type_info', 'table', 'row_count'],
+    ['capabilities', 'statistics', 'row_count'],
+    ['row_count']
+  ])
+})
+
+const rawAttributesJson = computed(() => {
+  const attrs = itemAttributesMap.value
   return JSON.stringify(attrs, null, 2)
 })
 
@@ -566,6 +591,19 @@ const compareKeys = (a, b, order) => {
   if (indexA === -1 && indexB !== -1) return 1
   if (indexA !== -1 && indexB !== -1) return indexA - indexB
   return String(a).localeCompare(String(b))
+}
+
+const pickNestedNumber = (source, paths) => {
+  for (const path of paths) {
+    let current = source
+    for (const segment of path) {
+      current = current?.[segment]
+    }
+    if (current === null || current === undefined || current === '') continue
+    const value = Number(current)
+    if (Number.isFinite(value)) return value
+  }
+  return null
 }
 </script>
 

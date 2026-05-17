@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
@@ -655,7 +656,8 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			}
 		}
 
-		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, nil, &sizeVal, catalogResource.LastModified, scanDepth)
+		rowCount := itemRowCountFromAttributes(enhancedAttrs)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, rowCount, &sizeVal, catalogResource.LastModified, scanDepth)
 		if err != nil {
 			return objects, err
 		}
@@ -711,7 +713,8 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 
 		sizeVal := itemPlan.SizeBytes
-		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, nil, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
+		rowCount := itemRowCountFromAttributes(itemPlan.Attributes)
+		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, rowCount, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
 			return count, err
 		}
 		count++
@@ -730,6 +733,17 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 	}
 	return count, nil
+}
+
+func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {
+	rowCount := commonJSON.Int64(attrs, "type_info.table", "row_count")
+	if rowCount <= 0 {
+		rowCount = commonJSON.Int64(attrs, "capabilities.statistics", "row_count")
+	}
+	if rowCount <= 0 {
+		return nil
+	}
+	return &rowCount
 }
 
 func (s *ObjectStorageCatalogScanService) ensureObjectCatalogPrefixNodes(

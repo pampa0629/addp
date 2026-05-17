@@ -3,20 +3,35 @@
     <h3>{{ t('transfer.taskWizard.selectTargetPage') }}</h3>
     <p class="step-description">{{ t('transfer.taskWizard.selectTargetPageDesc') }}</p>
 
+    <el-alert
+      v-if="!sourceTransferSupported"
+      class="target-filter-alert"
+      type="warning"
+      :closable="false"
+      :title="t('transfer.taskWizard.unsupportedSourceDataTypeTitle')"
+      :description="t('transfer.taskWizard.unsupportedSourceShapeDesc', {
+        dataType: dataTypeLabel(sourceDataType),
+        representation: representationLabel(sourceRepresentation),
+        format: formatLabel(sourceFormat)
+      })"
+    />
+
     <el-form :model="formData" label-width="120px">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
           v-model="formData.engineID"
-          :placeholder="t('transfer.taskWizard.targetEnginePlaceholder')"
+          :placeholder="targetEnginePlaceholder"
           filterable
           :loading="loadingEngines"
+          :disabled="!sourceTransferSupported"
           @change="handleTargetEngineChange"
         >
           <el-option
             v-for="engine in engines"
             :key="engine.id"
-            :label="`${engine.name} (${engine.engine_type})`"
+            :label="engineOptionLabel(engine)"
             :value="engine.id"
+            :disabled="!isAllowedTargetEngine(engine)"
           />
         </el-select>
       </el-form-item>
@@ -60,10 +75,19 @@
 
       <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.writeModeLabel')">
         <el-select v-model="tableWriteMode" @change="syncTarget">
-          <el-option :label="t('transfer.taskWizard.writeModeCreateIfNotExists')" value="create_if_not_exists" />
-          <el-option :label="t('transfer.taskWizard.writeModeAppend')" value="append" />
-          <el-option :label="t('transfer.taskWizard.writeModeTruncateInsert')" value="truncate_insert" />
+          <el-option
+            v-for="mode in tableWriteModeOptions"
+            :key="mode"
+            :label="writeModeLabel(mode)"
+            :value="mode"
+          >
+            <div class="write-mode-option">
+              <span>{{ writeModeLabel(mode) }}</span>
+              <small>{{ writeModeDescription(mode) }}</small>
+            </div>
+          </el-option>
         </el-select>
+        <div class="field-hint">{{ writeModeDescription(tableWriteMode) }}</div>
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputFormatLabel')">
@@ -130,7 +154,7 @@
       v-model:visible="showOutputPathPicker"
       :engine-id="formData.engineID"
       :initial-path="outputPath"
-      :storage-kind="targetType"
+      :storage-kind="targetStorageKind"
       @selected="handleOutputPathSelected"
     />
   </div>
@@ -143,6 +167,17 @@ import { ElMessage } from 'element-plus'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { getSchemas, getTables } from '@/api/meta'
 import CatalogDirectoryPicker from '@/components/CatalogDirectoryPicker.vue'
+import {
+  dataTypeLabel,
+  engineOptionLabel,
+  formatLabel,
+  hasStorageCapability,
+  isContentEngine,
+  isNativeTableEngine,
+  representationLabel,
+  writeModeDescription,
+  writeModeLabel
+} from '@/utils/transferDisplay'
 
 const { t } = useI18n()
 
@@ -157,7 +192,6 @@ const formData = reactive({
   engineID: null
 })
 
-const targetType = ref('nfs')
 const outputFormat = ref('csv')
 const outputPath = ref('')
 const outputFileName = ref('')
@@ -169,6 +203,7 @@ const targetTable = ref('')
 const targetTables = ref([])
 const namespaces = ref([])
 const tableWriteMode = ref('create_if_not_exists')
+const tableWriteModeOptions = ['create_if_not_exists', 'append', 'truncate_insert']
 
 const engines = ref([])
 const loadingEngines = ref(false)
@@ -204,15 +239,36 @@ const selectedEngine = computed(() => {
   return engines.value.find(engine => engine.id === formData.engineID) || null
 })
 
+const sourceDataType = computed(() => props.wizardState.sourceDataType?.value || 'table')
+
+const sourceRepresentation = computed(() => props.wizardState.sourceRepresentation?.value || 'native')
+
+const sourceFormat = computed(() => props.wizardState.sourceFormat?.value || '')
+
+const sourceTransferSupported = computed(() => {
+  return sourceDataType.value === 'table' &&
+    (
+      sourceRepresentation.value === 'native' ||
+      (sourceRepresentation.value === 'encoded' && supportedEncodedSourceFormat(sourceFormat.value))
+    )
+})
+
+const targetEnginePlaceholder = computed(() => {
+  if (!sourceTransferSupported.value) {
+    return t('transfer.taskWizard.noSupportedTargetForSource')
+  }
+  return t('transfer.taskWizard.targetEnginePlaceholder')
+})
+
 const isNativeTableTarget = computed(() => {
-  return isNativeTableEngine(selectedEngine.value?.engine_type)
+  return sourceRepresentation.value === 'encoded' && isNativeTableEngine(selectedEngine.value)
 })
 
 const isContentTarget = computed(() => {
-  return isContentEngine(selectedEngine.value?.engine_type)
+  return sourceRepresentation.value === 'native' && isContentEngine(selectedEngine.value)
 })
 
-const targetType = computed(() => {
+const targetStorageKind = computed(() => {
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 's3' : selectedEngine.value?.engine_type || ''
 })
 
@@ -221,7 +277,8 @@ const canProceed = computed(() => {
     return !!(formData.engineID && targetSchema.value.trim() && targetTable.value.trim())
   }
   if (isContentTarget.value) {
-    return !!(formData.engineID && outputPath.value.trim() && outputFileName.value.trim())
+    const hasRequiredPath = targetStorageKind.value === 's3' ? !!outputPath.value.trim() : true
+    return !!(formData.engineID && hasRequiredPath && outputFileName.value.trim())
   }
   return false
 })
@@ -280,19 +337,9 @@ watch(canProceed, (ready) => {
   }
 })
 
-function isNativeTableEngine(engineType) {
-  const type = (engineType || '').toLowerCase()
-  return ['postgres', 'mysql', 'doris', 'clickhouse', 'sqlite', 'spatialite'].some(token => type.includes(token))
-}
-
 function isObjectStorageEngine(engineType) {
   const type = (engineType || '').toLowerCase()
-  return type.includes('s3') || type.includes('minio') || type.includes('oss')
-}
-
-function isContentEngine(engineType) {
-  const type = (engineType || '').toLowerCase()
-  return type === 'nfs' || isObjectStorageEngine(type)
+  return type.includes('s3') || type.includes('minio') || type.includes('oss') || type.includes('objectstore')
 }
 
 function syncTarget() {
@@ -319,7 +366,9 @@ function syncTarget() {
     engineID: formData.engineID,
     engineType: selectedEngine.value.engine_type,
     scope: 'system',
-    targetType: targetType.value,
+    targetType: targetStorageKind.value,
+    schema: isNativeTableTarget.value ? targetSchema.value : '',
+    table: isNativeTableTarget.value ? targetTable.value : '',
     representation: isNativeTableTarget.value ? 'native' : 'encoded',
     extra
   })
@@ -365,13 +414,31 @@ async function loadEngines() {
     engines.value = (data || []).filter(engine =>
       engine?.id !== undefined &&
       engine?.id !== null &&
-      (isNativeTableEngine(engine.engine_type) || isContentEngine(engine.engine_type))
+      hasStorageCapability(engine)
     )
+    if (formData.engineID && !engines.value.some(engine => engine.id === formData.engineID)) {
+      formData.engineID = null
+    }
   } catch (error) {
     ElMessage.error(t('transfer.taskWizard.loadTargetEngineFailedMsg'))
   } finally {
     loadingEngines.value = false
   }
+}
+
+function isAllowedTargetEngine(engine) {
+  if (!sourceTransferSupported.value) return false
+  if (sourceRepresentation.value === 'native') {
+    return isContentEngine(engine)
+  }
+  if (sourceRepresentation.value === 'encoded') {
+    return isNativeTableEngine(engine)
+  }
+  return false
+}
+
+function supportedEncodedSourceFormat(format) {
+  return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet'].includes(String(format || '').toLowerCase())
 }
 
 async function loadNamespaces() {
@@ -531,5 +598,15 @@ onMounted(async () => {
   line-height: 1.5;
   color: var(--addp-text-secondary);
   font-size: 12px;
+}
+
+.write-mode-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+}
+
+.write-mode-option small {
+  color: var(--addp-text-tertiary);
 }
 </style>

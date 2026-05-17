@@ -230,10 +230,11 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			continue
 		}
 		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, isDeepScan); err == nil {
+			rowCount := itemRowCountFromAttributes(fileAttrs)
 			_, upsertErr := s.repo.UpsertItemWithDepth(
 				tenantID, resource.ID, parentNode,
 				itemTerm, itemName, fullName,
-				fileAttrs, nil, &file.Size, fileModifiedAtPtr(file.ModifiedAt),
+				fileAttrs, rowCount, &file.Size, fileModifiedAtPtr(file.ModifiedAt),
 				scanDepth,
 			)
 			if upsertErr != nil {
@@ -313,10 +314,11 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		return false
 	}
 	sizeVal := itemPlan.SizeBytes
+	rowCount := itemRowCountFromAttributes(itemPlan.Attributes)
 	_, upsertErr := s.repo.UpsertItemWithDepth(
 		tenantID, resource.ID, parentNode,
 		itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName,
-		itemPlan.Attributes, nil, &sizeVal, nil,
+		itemPlan.Attributes, rowCount, &sizeVal, nil,
 		models.ScannedDepthDeep,
 	)
 	if upsertErr != nil {

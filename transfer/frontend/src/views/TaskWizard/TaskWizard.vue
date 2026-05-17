@@ -64,7 +64,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
-import { getTableFields } from '@/api/meta'
+import { getItemFieldsByCatalogPath, getTableFields } from '@/api/meta'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -133,10 +133,11 @@ async function loadSourceFieldsForEdit(task) {
   try {
     let fieldList = []
 
-    const schema = path.schema || ''
-    const table = path.table || ''
-    if (table) {
-      const response = await getTableFields(engineId, schema, table)
+    const catalogPath = catalogPathFromEndpoint(source)
+    if (catalogPath) {
+      const response = source.resource?.kind === 'native_table'
+        ? await getTableFields(engineId, path.schema || '', path.table || '')
+        : await getItemFieldsByCatalogPath(engineId, catalogPath)
       fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     }
 
@@ -145,6 +146,21 @@ async function loadSourceFieldsForEdit(task) {
     console.error('加载源字段失败:', error)
     // 不阻断整体加载流程，仅记录错误
   }
+}
+
+function catalogPathFromEndpoint(endpoint) {
+  const resource = endpoint?.resource || {}
+  const path = resource.path || {}
+  if (resource.kind === 'native_table') {
+    return [path.schema, path.table || path.name].filter(Boolean).join('.')
+  }
+  if (resource.kind === 'object') {
+    return [path.bucket, path.path].filter(Boolean).join('/')
+  }
+  if (resource.kind === 'file') {
+    return path.path || path.name || ''
+  }
+  return ''
 }
 
 // 加载目标字段（编辑模式）

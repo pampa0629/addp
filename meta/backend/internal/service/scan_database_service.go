@@ -166,6 +166,7 @@ func (s *DatabaseScanService) scanTables(
 		)
 
 		scannedTables[tableInfo.TableName] = true
+		tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, schemaName, tableInfo)
 
 		// 检查是否需要更新
 		existingItem := existingTableMap[tableInfo.TableName]
@@ -271,6 +272,27 @@ func (s *DatabaseScanService) listTables(
 	return tables, nil
 }
 
+func (s *DatabaseScanService) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, schemaName string, tableInfo plugin.TableInfo) int64 {
+	if tableInfo.RowCount > 0 {
+		return tableInfo.RowCount
+	}
+	count, err := plugin.CountItemRows(ctx, &plugin.Engine{
+		ID:             resource.ID,
+		EngineType:     resource.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}, schemaName, tableInfo.TableName)
+	if err != nil {
+		s.log.Debug("表行数精确查询失败，保留 catalog 统计值",
+			"engine_id", resource.ID,
+			"schema", schemaName,
+			"table", tableInfo.TableName,
+			"error", err,
+		)
+		return tableInfo.RowCount
+	}
+	return count
+}
+
 func (s *DatabaseScanService) tryOpenConnectionPool(resource *commonModels.Engine) *gorm.DB {
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -373,6 +395,8 @@ func (s *DatabaseScanService) scanTableDetails(
 	}
 	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
+	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": tableInfo.RowCount})
+	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": tableInfo.RowCount})
 
 	return fields, attrs, nil
 }

@@ -63,11 +63,13 @@
     <div v-if="total > 0" ref="paginationRef" class="pagination">
       <el-pagination
         background
-        layout="prev, pager, next"
+        layout="total, sizes, prev, pager, next, jumper"
         :total="total"
         :page-size="pageSize"
         :current-page="currentPage"
+        :page-sizes="[10, 20, 50, 100]"
         @current-change="handlePageChange"
+        @size-change="handlePageSizeChange"
       />
       <div class="tip">{{ t('map.maxRows') }}</div>
     </div>
@@ -504,7 +506,13 @@ const handleFeatureClick = ({ feature, coordinate, position }) => {
 
 const handlePageChange = (page) => {
   currentPage.value = page
-  emit('page-change', page)
+  emit('page-change', { page, pageSize: pageSize.value })
+}
+
+const handlePageSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  emit('page-change', { page: 1, pageSize: size })
 }
 
 watch(

@@ -318,6 +318,12 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		if metaItem.SizeBytes != nil {
 			sizeBytes = *metaItem.SizeBytes
 		}
+		attrs := cloneMetaAttributes(metaItem.Attributes)
+		if metaItem.RowCount != nil && *metaItem.RowCount > 0 {
+			upsertMetaNested(attrs, "type_info", "table", map[string]interface{}{
+				"row_count": *metaItem.RowCount,
+			})
+		}
 		req.Metadata = &commonModels.MetaNode{
 			ID:             metaItem.ID,
 			EngineID:       metaItem.EngineID,
@@ -325,14 +331,50 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			FullName:       metaItem.FullName,
 			ItemCount:      1,
 			TotalSizeBytes: sizeBytes,
-			Attributes:     metaItem.Attributes,
+			Attributes:     attrs,
 		}
 		req.ItemType = metaItem.ItemType
-		req.PhysicalPath, req.ScopePath = previewResourcePaths(metaItem.Attributes)
+		req.PhysicalPath, req.ScopePath = previewResourcePaths(attrs)
 	}
 
 	// 5. 执行预览
 	return r.Preview(ctx, req)
+}
+
+func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
+	if len(attrs) == 0 {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(attrs))
+	for k, v := range attrs {
+		cloned[k] = v
+	}
+	return cloned
+}
+
+func upsertMetaNested(attrs map[string]interface{}, section, namespace string, values map[string]interface{}) {
+	if attrs == nil {
+		return
+	}
+	if attrs[section] == nil {
+		attrs[section] = map[string]interface{}{}
+	}
+	sectionMap, ok := attrs[section].(map[string]interface{})
+	if !ok {
+		sectionMap = map[string]interface{}{}
+		attrs[section] = sectionMap
+	}
+	if sectionMap[namespace] == nil {
+		sectionMap[namespace] = map[string]interface{}{}
+	}
+	targetMap, ok := sectionMap[namespace].(map[string]interface{})
+	if !ok {
+		targetMap = map[string]interface{}{}
+		sectionMap[namespace] = targetMap
+	}
+	for key, value := range values {
+		targetMap[key] = value
+	}
 }
 
 func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, scopePath string) {

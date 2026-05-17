@@ -24,6 +24,10 @@ export function useTaskWizardState() {
   const sourceSchema = ref('')
   const sourceTable = ref('')
   const sourceType = ref('postgresql')
+  const sourceDataType = ref('table')
+  const sourceRepresentation = ref('native')
+  const sourceFormat = ref('')
+  const sourceResource = ref(null)
 
   // Target 配置
   const targetConfig = ref({})
@@ -32,6 +36,7 @@ export function useTaskWizardState() {
   const targetSchema = ref('')
   const targetTable = ref('')
   const targetType = ref('nfs')
+  const targetRepresentation = ref('encoded')
 
   // 字段映射
   const fieldMappings = ref([])
@@ -45,14 +50,14 @@ export function useTaskWizardState() {
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
-        return sourceEngineID.value && sourceTable.value
+        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceResource.value || sourceTable.value))
       case 1: // 选择Target
-        if (targetType.value === 's3') {
-          return !!(targetEngineID.value && targetConfig.value?.resourcePath && targetConfig.value?.resourceFile)
+        if (targetRepresentation.value === 'native') {
+          return !!(targetEngineID.value && targetSchema.value && targetTable.value)
         }
         return !!(targetEngineID.value && targetConfig.value?.resourceFile)
       case 2: // 字段映射
-        return fieldMappings.value.length > 0
+        return fieldMappings.value.length > 0 || sourceFields.value.length === 0
       case 3: // 配置
         return taskName.value.trim() !== ''
       default:
@@ -61,13 +66,13 @@ export function useTaskWizardState() {
   })
 
   const taskConfig = computed(() => {
-    const sourceEndpoint = buildNativeTableSource()
+    const sourceEndpoint = buildSourceEndpoint()
     const targetEndpoint = buildTargetEndpoint()
 
     const config = {
       name: taskName.value,
       description: taskDescription.value,
-      task_type: 'export',
+      task_type: taskTypeForShape(sourceEndpoint, targetEndpoint),
       config: {
         mode: 'batch',
         source: sourceEndpoint,
@@ -78,33 +83,101 @@ export function useTaskWizardState() {
       enabled: schedule.value ? enabled.value : false, // 只有设置了定时任务才考虑 enabled
       batch_size: batchSize.value,
       mappings: fieldMappings.value,
-      auto_scan_metadata: false
+      auto_scan_metadata: true
     }
 
     return config
   })
 
-  function buildNativeTableSource() {
-    return {
+  function buildSourceEndpoint() {
+    const config = sourceConfig.value || {}
+    const endpoint = {
       engine: {
         scope: 'system',
         id: Number(sourceEngineID.value),
         type: sourceEngineType.value || sourceType.value
       },
-      resource: {
+      resource: sourceResource.value || {
         kind: 'native_table',
         path: {
           schema: sourceSchema.value,
           table: sourceTable.value
         }
       },
-      data_type: 'table',
-      representation: 'native'
+      data_type: sourceDataType.value || 'table',
+      representation: sourceRepresentation.value || 'native'
     }
+
+    const format = sourceBackendFormat(sourceFormat.value || config.format)
+    if (endpoint.representation === 'encoded' && format) {
+      endpoint.format = format
+      endpoint.options = sourceBackendOptions(config)
+    }
+    return endpoint
+  }
+
+  function sourceBackendFormat(uiFormat) {
+    if (!uiFormat) return ''
+    return targetBackendFormat({ format: uiFormat })
+  }
+
+  function sourceBackendOptions(config) {
+    const uiFormat = String(config.format || sourceFormat.value || '').toLowerCase()
+    if (uiFormat === 'jsonl') {
+      return { json_mode: 'jsonl' }
+    }
+    if (uiFormat === 'geojson') {
+      return compactOptions({
+        'spatial.target_encoding': 'geojson',
+        geometry_field: config.geometryField
+      })
+    }
+    return compactOptions(config.options || {})
+  }
+
+  function taskTypeForShape(sourceEndpoint, targetEndpoint) {
+    if (sourceEndpoint?.representation === 'encoded' && targetEndpoint?.representation === 'native') return 'import'
+    if (sourceEndpoint?.representation === 'native' && targetEndpoint?.representation === 'encoded') return 'export'
+    return 'transfer'
+  }
+
+  function isSupportedSourceShape() {
+    if (sourceDataType.value !== 'table') return false
+    if (sourceRepresentation.value === 'native') return true
+    if (sourceRepresentation.value === 'encoded') {
+      return supportedEncodedSourceFormat(sourceFormat.value)
+    }
+    return false
+  }
+
+  function supportedEncodedSourceFormat(format) {
+    return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet'].includes(String(format || '').toLowerCase())
   }
 
   function buildTargetEndpoint() {
     const fileConfig = targetConfig.value || {}
+    if (targetRepresentation.value === 'native') {
+      return {
+        engine: {
+          scope: 'system',
+          id: Number(targetEngineID.value),
+          type: targetEngineType.value || targetType.value
+        },
+        resource: {
+          kind: 'native_table',
+          path: {
+            schema: targetSchema.value,
+            table: targetTable.value
+          }
+        },
+        data_type: 'table',
+        representation: 'native',
+        policy: {
+          write_mode: fileConfig.writeMode || 'create_if_not_exists'
+        }
+      }
+    }
+
     const format = targetBackendFormat(fileConfig)
     const endpoint = {
       engine: {
@@ -223,17 +296,42 @@ export function useTaskWizardState() {
 
   // Source 配置
   function updateSource(config) {
+    const extra = config.extra || {}
+    const nextResource = config.resource || extra.resource || null
+    const sourceChanged = sourceEngineID.value !== config.engineID ||
+      JSON.stringify(sourceResource.value || null) !== JSON.stringify(nextResource)
+
     sourceEngineID.value = config.engineID
     sourceEngineType.value = config.engineType || ''
-    sourceSchema.value = config.schema || ''
-    sourceTable.value = config.table || ''
+    sourceSchema.value = config.schema || extra.schema || ''
+    sourceTable.value = config.table || extra.table || ''
     sourceType.value = config.sourceType || 'postgresql'
-    sourceConfig.value = config.extra || {}
+    sourceDataType.value = config.dataType || extra.dataType || 'table'
+    sourceRepresentation.value = config.representation || extra.representation || 'native'
+    sourceFormat.value = config.format || extra.format || ''
+    sourceResource.value = nextResource
+    sourceConfig.value = extra
+
+    if (sourceChanged) {
+      sourceFields.value = []
+      targetFields.value = []
+      fieldMappings.value = []
+      targetEngineID.value = null
+      targetEngineType.value = ''
+      targetSchema.value = ''
+      targetTable.value = ''
+      targetConfig.value = {}
+      targetRepresentation.value = sourceRepresentation.value === 'encoded' ? 'native' : 'encoded'
+    }
   }
 
   function loadSourceFields(fields) {
-    sourceFields.value = fields
+    sourceFields.value = Array.isArray(fields) ? fields : []
     // 自动初始化字段映射
+    if (sourceFields.value.length === 0) {
+      fieldMappings.value = []
+      return
+    }
     if (fieldMappings.value.length === 0) {
       autoGenerateFieldMappings()
     }
@@ -241,12 +339,14 @@ export function useTaskWizardState() {
 
   // Target 配置
   function updateTarget(config) {
+    const extra = config.extra || {}
     targetEngineID.value = config.engineID
     targetEngineType.value = config.engineType || ''
-    targetSchema.value = config.schema || ''
-    targetTable.value = config.table || ''
-      targetType.value = config.targetType || 'nfs'
-    targetConfig.value = config.extra || {}
+    targetSchema.value = config.schema || extra.schema || ''
+    targetTable.value = config.table || extra.table || ''
+    targetType.value = config.targetType || 'nfs'
+    targetRepresentation.value = config.representation || 'encoded'
+    targetConfig.value = extra
   }
 
   function loadTargetFields(fields) {
@@ -298,9 +398,19 @@ export function useTaskWizardState() {
   // 提交任务
   async function submitTask() {
     try {
-      // 创建任务
-      await taskAPI.create(taskConfig.value)
-      ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
+      const created = await taskAPI.create(taskConfig.value)
+      const task = created?.data || created
+      if (!schedule.value && task?.id) {
+        try {
+          await taskAPI.start(task.id)
+          ElMessage.success(t('transfer.taskWizard.taskCreateAndStartSuccess'))
+        } catch (startError) {
+          const startMessage = startError.response?.data?.error || startError.response?.data?.message || startError.message || t('transfer.taskWizard.taskCreateAndStartFailed')
+          ElMessage.warning(startMessage)
+        }
+      } else {
+        ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
+      }
       return true
     } catch (error) {
       const message = error.response?.data?.error || error.response?.data?.message || error.message || t('transfer.taskWizard.taskCreateFailed')
@@ -328,7 +438,11 @@ export function useTaskWizardState() {
       sourceSchema.value = source.resource?.path?.schema || ''
       sourceTable.value = source.resource?.path?.table || source.resource?.path?.name || ''
       sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
-      sourceConfig.value = {}
+      sourceDataType.value = source.data_type || 'table'
+      sourceRepresentation.value = source.representation || 'native'
+      sourceFormat.value = targetUiFormat(source.format, source.options || {})
+      sourceResource.value = source.resource || null
+      sourceConfig.value = extractSourceConfig(source)
     }
 
     // Target 配置
@@ -339,6 +453,7 @@ export function useTaskWizardState() {
       targetSchema.value = target.resource?.path?.schema || ''
       targetTable.value = target.resource?.path?.table || target.resource?.path?.name || ''
       targetType.value = normalizeTargetType(target)
+      targetRepresentation.value = target.representation || 'encoded'
       targetConfig.value = extractTargetFileConfig(target)
     }
 
@@ -394,6 +509,24 @@ export function useTaskWizardState() {
     }
   }
 
+  function extractSourceConfig(source) {
+    const resource = source.resource || {}
+    const path = resource.path || {}
+    const label = resource.kind === 'native_table'
+      ? [path.schema, path.table].filter(Boolean).join('.')
+      : resource.kind === 'object'
+        ? [path.bucket, path.path].filter(Boolean).join('/')
+        : path.path || ''
+    return {
+      sourceLabel: label,
+      catalogPath: label,
+      dataType: source.data_type || 'table',
+      representation: source.representation || 'native',
+      format: targetUiFormat(source.format, source.options || {}),
+      resource
+    }
+  }
+
   function targetUiFormat(format, options = {}) {
     const normalized = String(format || 'csv').toLowerCase()
     if (normalized !== 'json') return normalized
@@ -442,12 +575,17 @@ export function useTaskWizardState() {
     sourceSchema.value = ''
     sourceTable.value = ''
     sourceType.value = 'postgresql'
+    sourceDataType.value = 'table'
+    sourceRepresentation.value = 'native'
+    sourceFormat.value = ''
+    sourceResource.value = null
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
     targetSchema.value = ''
     targetTable.value = ''
     targetType.value = 'nfs'
+    targetRepresentation.value = 'encoded'
     targetConfig.value = {}
     fieldMappings.value = []
     sourceFields.value = []
@@ -469,12 +607,17 @@ export function useTaskWizardState() {
     sourceSchema,
     sourceTable,
     sourceType,
+    sourceDataType,
+    sourceRepresentation,
+    sourceFormat,
+    sourceResource,
     targetConfig,
     targetEngineID,
     targetEngineType,
     targetSchema,
     targetTable,
     targetType,
+    targetRepresentation,
     fieldMappings,
     sourceFields,
     targetFields,

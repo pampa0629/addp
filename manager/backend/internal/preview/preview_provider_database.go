@@ -335,10 +335,14 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 ) (int64, error) {
 	if itemMetadata != nil {
 		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok {
-			return rowCount, nil
+			if rowCount > 0 {
+				return rowCount, nil
+			}
 		}
 		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "document_count"); ok {
-			return rowCount, nil
+			if rowCount > 0 {
+				return rowCount, nil
+			}
 		}
 	}
 	query := databasePreviewCountQuery(engineType, schema, table)

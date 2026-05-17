@@ -224,7 +224,13 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		"engine_id", targetEngineID,
 		"catalog_paths", catalogPaths)
 
-	if err := metaClient.TriggerScanEngine(targetEngineID, catalogPaths); err != nil {
+	if err := metaClient.TriggerScan(commonClient.MetaScanOptions{
+		EngineID:     targetEngineID,
+		CatalogPaths: catalogPaths,
+		ScanDepth:    "deep",
+		Force:        true,
+		TriggerType:  "transfer",
+	}); err != nil {
 		s.logger.Error("failed to trigger metadata scan",
 			"error", err,
 			"task_id", task.ID,

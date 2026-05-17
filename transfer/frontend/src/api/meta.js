@@ -49,6 +49,26 @@ export const listCatalogChildren = async (engineId, path = { segments: [] }, opt
   return response.data?.nodes || response.data?.data?.nodes || []
 }
 
+export const getItemByCatalogPath = async (engineId, catalogPath) => {
+  const response = await apiRequest('get', '/meta/items/by-catalog-path', {
+    params: {
+      engine_id: engineId,
+      catalog_path: catalogPath
+    }
+  })
+  return response.data?.data || response.data
+}
+
+export const getItemFieldsByCatalogPath = async (engineId, catalogPath) => {
+  const item = await getItemByCatalogPath(engineId, catalogPath)
+  const response = await apiRequest('get', `/meta/items/${item.id}/fields`, {
+    params: {
+      include_details: true
+    }
+  })
+  return response.data
+}
+
 /**
  * 获取表列表
  * @param {number} engineId - 引擎ID
@@ -71,17 +91,5 @@ export const getTables = async (engineId, schema = null) => {
  */
 export const getTableFields = async (engineId, schema, tableName) => {
   const catalogPath = schema ? `${schema}.${tableName}` : tableName
-  const itemResponse = await apiRequest('get', '/meta/items/by-catalog-path', {
-    params: {
-      engine_id: engineId,
-      catalog_path: catalogPath
-    }
-  })
-  const item = itemResponse.data?.data || itemResponse.data
-  const response = await apiRequest('get', `/meta/items/${item.id}/fields`, {
-    params: {
-      include_details: true
-    }
-  })
-  return response.data
+  return getItemFieldsByCatalogPath(engineId, catalogPath)
 }
