@@ -568,17 +568,29 @@ func validateTransferReadableTableFormat(formatType format.FormatType) error {
 		return fmt.Errorf("format %q is not registered", formatType)
 	}
 	if descriptor.DataType != format.FormatDataTypeTable {
-		if _, err := format.GetTableReaderProvider(formatType); err != nil {
+		if !hasTableTransferReader(formatType) {
+			_, err := format.GetTableReaderProvider(formatType)
 			return fmt.Errorf("format %q has no table reader provider: %w", formatType, err)
 		}
 	}
 	if !descriptor.TransferRead {
 		return fmt.Errorf("format %q is not declared as transfer readable", formatType)
 	}
-	if _, err := format.GetTableReaderProvider(formatType); err != nil {
+	if !hasTableTransferReader(formatType) {
+		_, err := format.GetTableReaderProvider(formatType)
 		return fmt.Errorf("format %q has no table reader provider: %w", formatType, err)
 	}
 	return nil
+}
+
+func hasTableTransferReader(formatType format.FormatType) bool {
+	if _, err := format.GetTableReaderProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetComponentTableProvider(formatType); err == nil {
+		return true
+	}
+	return false
 }
 
 func validateTransferWritableTableFormat(formatType format.FormatType) error {

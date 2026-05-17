@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -353,6 +354,37 @@ func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.Conn
 		}}, nil
 	}
 	return fakeWriteCloser{Writer: &w.buf, close: func() { w.closed = true }}, nil
+}
+
+func (w *fakeContentWriter) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
+	if w.files == nil {
+		return io.NopCloser(bytes.NewReader(w.buf.Bytes())), nil
+	}
+	data, ok := w.files[path.StringPath()]
+	if !ok {
+		return nil, fmt.Errorf("fake content %s not found", path.StringPath())
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
+	if w.files == nil {
+		data := w.buf.Bytes()
+		end := opts.Offset + opts.Length
+		if end > int64(len(data)) {
+			end = int64(len(data))
+		}
+		return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
+	}
+	data, ok := w.files[path.StringPath()]
+	if !ok {
+		return nil, fmt.Errorf("fake content %s not found", path.StringPath())
+	}
+	end := opts.Offset + opts.Length
+	if end > int64(len(data)) {
+		end = int64(len(data))
+	}
+	return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 }
 
 type fakeWriteCloser struct {

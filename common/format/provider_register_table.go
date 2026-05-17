@@ -23,6 +23,25 @@ func (r *ProviderRegistry) RegisterTableProvider(provider TableProvider) error {
 	return nil
 }
 
+func RegisterComponentTableProvider(provider ComponentTableProvider) error {
+	return globalProviderRegistry.RegisterComponentTableProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterComponentTableProvider(provider ComponentTableProvider) error {
+	if provider == nil {
+		return fmt.Errorf("component table provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "component table provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.componentTableProviders[formatType] = provider
+	return nil
+}
+
 func RegisterTableInfoProvider(provider TableInfoProvider) error {
 	return globalProviderRegistry.RegisterTableInfoProvider(provider)
 }

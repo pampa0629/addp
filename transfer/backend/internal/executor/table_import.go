@@ -37,6 +37,7 @@ type TableImportExecutor struct {
 	TableSessionProvider engineplugin.TableWriteSessionProvider
 	FormatProvider       format.TableSampleReader
 	TableReadProvider    format.TableReaderProvider
+	ComponentProvider    componentTableSourceProvider
 }
 
 func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatType format.FormatType) (*TableImportExecutor, error) {
@@ -66,6 +67,8 @@ func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatTyp
 	}
 	infoProvider, _ := format.GetTableInfoProvider(formatType)
 	tableReadProvider, _ := format.GetTableReaderProvider(formatType)
+	componentReader, _ := format.GetComponentTableProvider(formatType)
+	componentProvider, _ := componentReader.(componentTableSourceProvider)
 
 	return &TableImportExecutor{
 		Reader:               reader,
@@ -75,6 +78,7 @@ func NewTableImportExecutor(sourceEngineType, targetEngineType string, formatTyp
 		TableSessionProvider: tableSessionProvider,
 		FormatProvider:       formatProvider,
 		TableReadProvider:    tableReadProvider,
+		ComponentProvider:    componentProvider,
 	}, nil
 }
 
@@ -99,14 +103,15 @@ func (e *TableImportExecutor) Execute(ctx context.Context, plan TableImportPlan)
 
 	metrics, err := (&TablePipeline{
 		Source: &encodedContentTableSource{
-			reader:         e.Reader,
-			tableProvider:  e.TableReadProvider,
-			sampleProvider: e.FormatProvider,
-			infoProvider:   infoProvider,
-			connInfo:       plan.SourceConnInfo,
-			path:           plan.SourcePath,
-			readOptions:    plan.SourceRead,
-			parseOptions:   plan.ParseOptions,
+			reader:            e.Reader,
+			tableProvider:     e.TableReadProvider,
+			componentProvider: e.ComponentProvider,
+			sampleProvider:    e.FormatProvider,
+			infoProvider:      infoProvider,
+			connInfo:          plan.SourceConnInfo,
+			path:              plan.SourcePath,
+			readOptions:       plan.SourceRead,
+			parseOptions:      plan.ParseOptions,
 		},
 		Target: &nativeTableBatchTarget{
 			preparer:             e.Preparer,

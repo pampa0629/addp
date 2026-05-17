@@ -61,6 +61,11 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			}
 		}
 	}
+	if provider, ok := plugin.(ComponentTableProvider); ok {
+		if err := r.RegisterComponentTableProvider(provider); err != nil {
+			return err
+		}
+	}
 	if reader, ok := plugin.(TableReaderProvider); ok {
 		if err := r.RegisterTableReaderProvider(reader); err != nil {
 			return err

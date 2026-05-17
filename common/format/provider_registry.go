@@ -10,6 +10,7 @@ type ProviderRegistry struct {
 	mu                      sync.RWMutex
 	formatPlugins           map[FormatType]FormatPlugin
 	tableProviders          map[FormatType]TableProvider
+	componentTableProviders map[FormatType]ComponentTableProvider
 	formatInfoProviders     map[FormatType]FormatInfoProvider
 	tableInfoProviders      map[FormatType]TableInfoProvider
 	tableSampleProviders    map[FormatType]TableSampleProvider
@@ -30,6 +31,7 @@ func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
 		formatPlugins:           make(map[FormatType]FormatPlugin),
 		tableProviders:          make(map[FormatType]TableProvider),
+		componentTableProviders: make(map[FormatType]ComponentTableProvider),
 		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
 		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
 		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
@@ -67,6 +69,14 @@ func GetTableProvider(formatType FormatType) (TableProvider, error) {
 
 func (r *ProviderRegistry) GetTableProvider(formatType FormatType) (TableProvider, error) {
 	return providerFromMap(r, r.tableProviders, formatType, "table provider")
+}
+
+func GetComponentTableProvider(formatType FormatType) (ComponentTableProvider, error) {
+	return globalProviderRegistry.GetComponentTableProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetComponentTableProvider(formatType FormatType) (ComponentTableProvider, error) {
+	return providerFromMap(r, r.componentTableProviders, formatType, "component table provider")
 }
 
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
@@ -199,6 +209,14 @@ func ListTableProviderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListTableProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableProviders)
+}
+
+func ListComponentTableProviderFormats() []FormatType {
+	return globalProviderRegistry.ListComponentTableProviderFormats()
+}
+
+func (r *ProviderRegistry) ListComponentTableProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.componentTableProviders)
 }
 
 func ListTableInfoProviderFormats() []FormatType {

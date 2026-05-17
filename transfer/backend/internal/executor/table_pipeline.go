@@ -36,6 +36,11 @@ type TableBatchWriter interface {
 	Abort(ctx context.Context) error
 }
 
+type componentTableSourceProvider interface {
+	format.ComponentTableProvider
+	format.ComponentSpecProvider
+}
+
 type TablePipeline struct {
 	Source    TableBatchSource
 	Target    TableBatchTarget
@@ -143,8 +148,9 @@ type EncodedTableTransferExecutor struct {
 	Reader            engineplugin.ContentReadableProvider
 	Writer            engineplugin.ContentWritableProvider
 	TableReadProvider format.TableReaderProvider
+	ComponentProvider componentTableSourceProvider
 	FormatProvider    format.TableWriterProvider
-	ComponentProvider format.ComponentTableWriterProvider
+	ComponentWriter   format.ComponentTableWriterProvider
 }
 
 func NewEncodedTableTransferExecutor(sourceEngineType, targetEngineType string, sourceFormat, targetFormat format.FormatType) (*EncodedTableTransferExecutor, error) {
@@ -166,22 +172,38 @@ func NewEncodedTableTransferExecutor(sourceEngineType, targetEngineType string, 
 		return nil, fmt.Errorf("target engine %q does not implement content write", targetEngineType)
 	}
 
-	tableReadProvider, err := format.GetTableReaderProvider(sourceFormat)
-	if err != nil {
-		return nil, fmt.Errorf("get table reader provider %q: %w", sourceFormat, err)
+	tableReadProvider, tableReaderErr := format.GetTableReaderProvider(sourceFormat)
+	var sourceComponentProvider componentTableSourceProvider
+	sourceComponentReader, componentReaderErr := format.GetComponentTableProvider(sourceFormat)
+	if componentReaderErr == nil {
+		var ok bool
+		sourceComponentProvider, ok = sourceComponentReader.(componentTableSourceProvider)
+		if !ok {
+			componentReaderErr = fmt.Errorf("component table provider %q does not declare component specs", sourceFormat)
+		}
 	}
-	formatProvider, tableWriterErr := format.GetTableWriterProvider(targetFormat)
-	componentProvider, componentWriterErr := format.GetComponentTableWriterProvider(targetFormat)
+	if tableReaderErr != nil && componentReaderErr != nil {
+		return nil, fmt.Errorf("get table reader provider %q: %w", sourceFormat, tableReaderErr)
+	}
+	if tableReadProvider != nil {
+		sourceComponentProvider = nil
+	}
+	targetFormatProvider, tableWriterErr := format.GetTableWriterProvider(targetFormat)
+	targetComponentWriter, componentWriterErr := format.GetComponentTableWriterProvider(targetFormat)
 	if tableWriterErr != nil && componentWriterErr != nil {
 		return nil, fmt.Errorf("get table writer provider %q: %w", targetFormat, tableWriterErr)
+	}
+	if targetFormatProvider != nil {
+		targetComponentWriter = nil
 	}
 
 	return &EncodedTableTransferExecutor{
 		Reader:            reader,
 		Writer:            writer,
 		TableReadProvider: tableReadProvider,
-		FormatProvider:    formatProvider,
-		ComponentProvider: componentProvider,
+		ComponentProvider: sourceComponentProvider,
+		FormatProvider:    targetFormatProvider,
+		ComponentWriter:   targetComponentWriter,
 	}, nil
 }
 
@@ -189,25 +211,26 @@ func (e *EncodedTableTransferExecutor) Execute(ctx context.Context, plan Encoded
 	if e == nil {
 		return nil, fmt.Errorf("encoded table transfer executor cannot be nil")
 	}
-	if e.Reader == nil || e.Writer == nil || e.TableReadProvider == nil {
+	if e.Reader == nil || e.Writer == nil || (e.TableReadProvider == nil && e.ComponentProvider == nil) {
 		return nil, fmt.Errorf("encoded table transfer executor is missing source or target provider")
 	}
-	if e.FormatProvider == nil && e.ComponentProvider == nil {
+	if e.FormatProvider == nil && e.ComponentWriter == nil {
 		return nil, fmt.Errorf("encoded table transfer executor requires table writer provider")
 	}
 	pipeline := &TablePipeline{
 		Source: &encodedContentTableSource{
-			reader:        e.Reader,
-			tableProvider: e.TableReadProvider,
-			connInfo:      plan.SourceConnInfo,
-			path:          plan.SourcePath,
-			readOptions:   plan.SourceRead,
-			parseOptions:  plan.ParseOptions,
+			reader:            e.Reader,
+			tableProvider:     e.TableReadProvider,
+			componentProvider: e.ComponentProvider,
+			connInfo:          plan.SourceConnInfo,
+			path:              plan.SourcePath,
+			readOptions:       plan.SourceRead,
+			parseOptions:      plan.ParseOptions,
 		},
 		Target: &encodedContentTableTarget{
 			writer:            e.Writer,
 			formatProvider:    e.FormatProvider,
-			componentProvider: e.ComponentProvider,
+			componentProvider: e.ComponentWriter,
 			connInfo:          plan.TargetConnInfo,
 			path:              plan.TargetPath,
 			writeOptions:      plan.TargetWrite,
@@ -330,17 +353,34 @@ func (r *nativeOffsetBatchReader) Close(context.Context) error {
 }
 
 type encodedContentTableSource struct {
-	reader         engineplugin.ContentReadableProvider
-	tableProvider  format.TableReaderProvider
-	sampleProvider format.TableSampleReader
-	infoProvider   format.TableInfoProvider
-	connInfo       engineplugin.ConnectionInfo
-	path           engineplugin.CatalogPath
-	readOptions    engineplugin.ReadOptions
-	parseOptions   *format.ParseOptions
+	reader            engineplugin.ContentReadableProvider
+	tableProvider     format.TableReaderProvider
+	componentProvider componentTableSourceProvider
+	sampleProvider    format.TableSampleReader
+	infoProvider      format.TableInfoProvider
+	connInfo          engineplugin.ConnectionInfo
+	path              engineplugin.CatalogPath
+	readOptions       engineplugin.ReadOptions
+	parseOptions      *format.ParseOptions
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
+	if s.componentProvider != nil {
+		resourceReader := newEngineResourceReader(s.reader, s.connInfo, s.path, s.readOptions)
+		components := resource.SameBasenameComponents(s.path.StringPath(), s.componentProvider.ComponentSpecs())
+		componentReader := resource.NewStaticComponentReader(resourceReader, components)
+		schema, err := s.componentProvider.DescribeTableComponents(ctx, componentReader, s.parseOptions)
+		if err != nil {
+			return nil, fmt.Errorf("describe encoded source table components: %w", err)
+		}
+		return &componentEncodedTableBatchReader{
+			componentReader: componentReader,
+			provider:        s.componentProvider,
+			schema:          schema,
+			parseOptions:    s.parseOptions,
+		}, nil
+	}
+
 	schema, err := s.describeSchema(ctx)
 	if err != nil {
 		return nil, err
@@ -428,6 +468,43 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+type componentEncodedTableBatchReader struct {
+	componentReader resource.ComponentReader
+	provider        format.ComponentTableProvider
+	schema          *format.TableInfo
+	parseOptions    *format.ParseOptions
+	offset          int64
+	done            bool
+}
+
+func (r *componentEncodedTableBatchReader) Schema() *format.TableInfo {
+	return r.schema
+}
+
+func (r *componentEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
+	if r.done {
+		return &engineplugin.BatchData{}, nil
+	}
+	rows, err := r.provider.SampleTableComponents(ctx, r.componentReader, r.offset, int64(limit), r.parseOptions)
+	if err != nil {
+		return nil, fmt.Errorf("sample encoded source table components at offset %d: %w", r.offset, err)
+	}
+	batch := &engineplugin.BatchData{
+		Rows:   rows,
+		Fields: tableInfoFields(r.schema),
+		Offset: r.offset,
+	}
+	r.offset += int64(len(rows))
+	if len(rows) < limit {
+		r.done = true
+	}
+	return batch, nil
+}
+
+func (r *componentEncodedTableBatchReader) Close(context.Context) error {
+	return nil
 }
 
 type sampleEncodedTableBatchReader struct {
