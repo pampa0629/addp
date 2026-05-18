@@ -152,14 +152,15 @@ format / engine native field type
 
 1. `engine.id` 指向 System engine。
 2. `resource.kind` 表示资源形态，例如 `native_table`、`file`、`object`。
-3. `data_type` 表示平台数据类型，例如 `table`、`document`、`media`、`container`、`graph`。
-4. `representation` 表示 endpoint 表示方式：`native` 或 `encoded`。
-5. `format` 只用于 encoded endpoint，例如 `csv`、`jsonl`、`parquet`、`shapefile`。
-6. native endpoint 不写 `format=table`。
-7. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
-8. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关文件。
-9. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
-10. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
+3. `resource` 是 Transfer endpoint 的业务描述字段，不是 `common/contentio` 抽象；planner 将其转换为 engine `CatalogPath`，executor 再通过 `contentadapter` 构造 `contentio.Reader` / `contentio.Writer`。
+4. `data_type` 表示平台数据类型，例如 `table`、`document`、`media`、`container`、`graph`。
+5. `representation` 表示 endpoint 表示方式：`native` 或 `encoded`。
+6. `format` 只用于 encoded endpoint，例如 `csv`、`jsonl`、`parquet`、`shapefile`。
+7. native endpoint 不写 `format=table`。
+8. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
+9. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关文件。
+10. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
+11. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
 
 旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等不再兼容，出现即拒绝。
 
@@ -229,7 +230,7 @@ format / engine native field type
 |---|---|
 | 新 endpoint JSON | 创建、编辑、详情、执行已切换到新结构。 |
 | planner | 已能规划 native table、encoded table file/object、multi ref export、native table import。 |
-| executor | 已统一走 common engine / format / resource 能力。 |
+| executor | 已统一走 common engine / format / contentio 能力；single content 使用固定 CatalogPath，multi sibling refs 使用 basename 推导。 |
 | worker | Asynq worker 保留，执行入口已切到 planner + executor。 |
 | field mapping transform | 已进入 `config.transforms[type=field_mapping]`，executor 可执行投影、重命名、默认值、目标类型和 geometry schema 同步。 |
 | metrics | 已回写基础 records_read / records_written。 |

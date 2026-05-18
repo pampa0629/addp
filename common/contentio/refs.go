@@ -5,6 +5,31 @@ import (
 	"strings"
 )
 
+const (
+	RoleMain      = "main"
+	RoleScope     = "scope"
+	RoleManifest  = "manifest"
+	RoleAuxiliary = "auxiliary"
+)
+
+type Ref struct {
+	Path     string `json:"path"`
+	Name     string `json:"name,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Required bool   `json:"required,omitempty"`
+	Primary  bool   `json:"primary,omitempty"`
+}
+
+func NewRef(path string, role string) Ref {
+	path = strings.Trim(path, "/")
+	return Ref{
+		Path:    path,
+		Name:    filepath.Base(path),
+		Role:    strings.ToLower(strings.TrimSpace(role)),
+		Primary: strings.EqualFold(role, RoleMain),
+	}
+}
+
 type RelatedRefSpec struct {
 	Extension string
 	Role      string

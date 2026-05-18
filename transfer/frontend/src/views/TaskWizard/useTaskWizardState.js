@@ -27,7 +27,7 @@ export function useTaskWizardState() {
   const sourceDataType = ref('table')
   const sourceRepresentation = ref('native')
   const sourceFormat = ref('')
-  const sourceResource = ref(null)
+  const sourceEndpointResource = ref(null)
 
   // Target 配置
   const targetConfig = ref({})
@@ -50,7 +50,7 @@ export function useTaskWizardState() {
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
-        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceResource.value || sourceTable.value))
+        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceEndpointResource.value || sourceTable.value))
       case 1: // 选择Target
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetSchema.value && targetTable.value)
@@ -134,7 +134,7 @@ export function useTaskWizardState() {
         id: Number(sourceEngineID.value),
         type: sourceEngineType.value || sourceType.value
       },
-      resource: sourceResource.value || {
+      resource: sourceEndpointResource.value || {
         kind: 'native_table',
         path: {
           schema: sourceSchema.value,
@@ -344,13 +344,13 @@ export function useTaskWizardState() {
   // Source 配置
   function updateSource(config) {
     const extra = config.extra || {}
-    const nextResource = config.resource || extra.resource || null
+    const nextEndpointResource = config.resource || extra.resource || null
     const oldSourceEngineID = sourceEngineID.value
-    const oldSourceResource = sourceResource.value
-    const oldSourceEmpty = !oldSourceEngineID && !oldSourceResource
+    const oldSourceEndpointResource = sourceEndpointResource.value
+    const oldSourceEmpty = !oldSourceEngineID && !oldSourceEndpointResource
     const sourceChanged = !oldSourceEmpty && (
       oldSourceEngineID !== config.engineID ||
-      JSON.stringify(oldSourceResource || null) !== JSON.stringify(nextResource)
+      JSON.stringify(oldSourceEndpointResource || null) !== JSON.stringify(nextEndpointResource)
     )
 
     sourceEngineID.value = config.engineID
@@ -361,7 +361,7 @@ export function useTaskWizardState() {
     sourceDataType.value = config.dataType || extra.dataType || 'table'
     sourceRepresentation.value = config.representation || extra.representation || 'native'
     sourceFormat.value = config.format || extra.format || ''
-    sourceResource.value = nextResource
+    sourceEndpointResource.value = nextEndpointResource
     sourceConfig.value = extra
 
     if (sourceChanged) {
@@ -493,7 +493,7 @@ export function useTaskWizardState() {
       sourceDataType.value = source.data_type || 'table'
       sourceRepresentation.value = source.representation || 'native'
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
-      sourceResource.value = source.resource || null
+      sourceEndpointResource.value = source.resource || null
       sourceConfig.value = extractSourceConfig(source)
     }
 
@@ -575,11 +575,11 @@ export function useTaskWizardState() {
   }
 
   function extractSourceConfig(source) {
-    const resource = source.resource || {}
-    const path = resource.path || {}
-    const label = resource.kind === 'native_table'
+    const endpointResource = source.resource || {}
+    const path = endpointResource.path || {}
+    const label = endpointResource.kind === 'native_table'
       ? [path.schema, path.table].filter(Boolean).join('.')
-      : resource.kind === 'object'
+      : endpointResource.kind === 'object'
         ? [path.bucket, path.path].filter(Boolean).join('/')
         : path.path || ''
     return {
@@ -588,7 +588,7 @@ export function useTaskWizardState() {
       dataType: source.data_type || 'table',
       representation: source.representation || 'native',
       format: targetUiFormat(source.format, source.options || {}),
-      resource
+      resource: endpointResource
     }
   }
 
@@ -649,7 +649,7 @@ export function useTaskWizardState() {
     sourceDataType.value = 'table'
     sourceRepresentation.value = 'native'
     sourceFormat.value = ''
-    sourceResource.value = null
+    sourceEndpointResource.value = null
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
@@ -681,7 +681,7 @@ export function useTaskWizardState() {
     sourceDataType,
     sourceRepresentation,
     sourceFormat,
-    sourceResource,
+    sourceEndpointResource,
     targetConfig,
     targetEngineID,
     targetEngineType,

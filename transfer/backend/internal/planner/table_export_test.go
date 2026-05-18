@@ -100,7 +100,7 @@ func TestBuildTableTransferPlanIncludesFieldMappingTransform(t *testing.T) {
 
 func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -117,7 +117,7 @@ func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.jsonl"}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "exports/roads.jsonl"}
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
@@ -138,7 +138,7 @@ func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 func TestBuildTableTransferPlanPassesGeoJSONReadOptions(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.geojson"}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "exports/roads.geojson"}
 	spec.Target.Options = map[string]interface{}{
 		"spatial.target_encoding": "geojson",
 		"geometry_field":          "geom",
@@ -159,7 +159,7 @@ func TestBuildTableTransferPlanPassesGeoJSONReadOptions(t *testing.T) {
 func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.parquet"}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "exports/roads.parquet"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -179,7 +179,7 @@ func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 func TestBuildTableTransferPlanAllowsShapefileMultiTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatShapefile
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.shp"}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "exports/roads.shp"}
 	spec.Target.Options = map[string]interface{}{
 		"geometry_field": "geom",
 		"geometry_type":  "Point",
@@ -204,19 +204,19 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
-			Options:        map[string]interface{}{"header": true, "delimiter": ","},
+			Engine:           EngineRef{Scope: "system", ID: 1},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
+			DataType:         dataTypeTable,
+			Representation:   representationEncoded,
+			Format:           format.FormatCSV,
+			Options:          map[string]interface{}{"header": true, "delimiter": ","},
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
-			Policy:         map[string]interface{}{"write_mode": "append"},
+			Engine:           EngineRef{Scope: "system", ID: 2},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:         dataTypeTable,
+			Representation:   representationNative,
+			Policy:           map[string]interface{}{"write_mode": "append"},
 		},
 		BatchSize: 500,
 	}
@@ -251,7 +251,7 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 func TestBuildTableTransferPlanAllowsJSONTableReader(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
 	spec.Source.Format = format.FormatJSON
-	spec.Source.Resource = ResourceSpec{Kind: resourceKindFile, Path: "imports/roads.jsonl"}
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/roads.jsonl"}
 	spec.Source.Options = map[string]interface{}{"json_mode": "jsonl"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
@@ -273,7 +273,7 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 	spec := minimalEncodedToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
-	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.jsonl"}}
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.jsonl"}}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "minio"},
@@ -306,17 +306,17 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
+			Engine:           EngineRef{Scope: "system", ID: 1},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:         dataTypeTable,
+			Representation:   representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "gis", "table": "roads_copy"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
-			Policy:         map[string]interface{}{"write_mode": "overwrite"},
+			Engine:           EngineRef{Scope: "system", ID: 2},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "gis", "table": "roads_copy"}},
+			DataType:         dataTypeTable,
+			Representation:   representationNative,
+			Policy:           map[string]interface{}{"write_mode": "overwrite"},
 		},
 		BatchSize: 500,
 	}
@@ -483,17 +483,17 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"name": "public.roads"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
+			Engine:           EngineRef{Scope: "system", ID: 1},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"name": "public.roads"}},
+			DataType:         dataTypeTable,
+			Representation:   representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "exports/roads.csv"}},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
+			Engine:           EngineRef{Scope: "system", ID: 2},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "exports/roads.csv"}},
+			DataType:         dataTypeTable,
+			Representation:   representationEncoded,
+			Format:           format.FormatCSV,
 		},
 	}
 }
@@ -502,17 +502,17 @@ func minimalEncodedToNativeSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
+			Engine:           EngineRef{Scope: "system", ID: 1},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
+			DataType:         dataTypeTable,
+			Representation:   representationEncoded,
+			Format:           format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
-			DataType:       dataTypeTable,
-			Representation: representationNative,
+			Engine:           EngineRef{Scope: "system", ID: 2},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
+			DataType:         dataTypeTable,
+			Representation:   representationNative,
 		},
 	}
 }
@@ -521,18 +521,18 @@ func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
-			Resource:       ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "imports", "path": "roads.csv"}},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
+			Engine:           EngineRef{Scope: "system", ID: 1},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "imports", "path": "roads.csv"}},
+			DataType:         dataTypeTable,
+			Representation:   representationEncoded,
+			Format:           format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
-			Resource:       ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}},
-			DataType:       dataTypeTable,
-			Representation: representationEncoded,
-			Format:         format.FormatCSV,
+			Engine:           EngineRef{Scope: "system", ID: 2},
+			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}},
+			DataType:         dataTypeTable,
+			Representation:   representationEncoded,
+			Format:           format.FormatCSV,
 		},
 	}
 }

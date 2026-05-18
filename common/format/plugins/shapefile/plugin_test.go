@@ -50,7 +50,8 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	plugin := NewPlugin(nil)
 	target := contentio.NewRef("exports/cities.shp", contentio.RoleMain)
-	output := newMemoryMultiWriter(contentio.SameBasenameRefs(target.Path, RelatedRefSpecs()))
+	refs := contentio.SameBasenameRefs(target.Path, RelatedRefSpecs())
+	output := newMemoryRefStore()
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
@@ -64,7 +65,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 		},
 	}
 
-	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, target, schema, nil)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, target, schema, nil)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -84,11 +85,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 			t.Fatalf("ref %s was not written", path)
 		}
 	}
-	if !output.committed {
-		t.Fatal("ref writer was not committed")
-	}
-
-	rows, err := plugin.SampleMultiTable(context.Background(), output, 0, 10, nil)
+	rows, err := plugin.SampleMultiTable(context.Background(), output, refs, 0, 10, nil)
 	if err != nil {
 		t.Fatalf("SampleMultiTable failed: %v", err)
 	}
@@ -103,41 +100,23 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	}
 }
 
-type memoryMultiWriter struct {
-	refs      []contentio.Ref
-	files     map[string][]byte
-	committed bool
-	aborted   bool
+type memoryRefStore struct {
+	files map[string][]byte
 }
 
-func newMemoryMultiWriter(refs []contentio.Ref) *memoryMultiWriter {
-	return &memoryMultiWriter{
-		refs:  append([]contentio.Ref(nil), refs...),
+func newMemoryRefStore() *memoryRefStore {
+	return &memoryRefStore{
 		files: map[string][]byte{},
 	}
 }
 
-func (w *memoryMultiWriter) Refs() []contentio.Ref {
-	return append([]contentio.Ref(nil), w.refs...)
-}
-
-func (w *memoryMultiWriter) Create(ctx context.Context, ref contentio.Ref) (io.WriteCloser, error) {
+func (w *memoryRefStore) Create(ctx context.Context, ref contentio.Ref) (io.WriteCloser, error) {
 	return &memoryWriteCloser{onClose: func(data []byte) {
 		w.files[ref.Path] = append([]byte(nil), data...)
 	}}, nil
 }
 
-func (w *memoryMultiWriter) Commit(ctx context.Context) error {
-	w.committed = true
-	return nil
-}
-
-func (w *memoryMultiWriter) Abort(ctx context.Context) error {
-	w.aborted = true
-	return nil
-}
-
-func (w *memoryMultiWriter) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+func (w *memoryRefStore) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	data, ok := w.files[ref.Path]
 	if !ok {
 		return nil, contentio.ErrContentNotFound
@@ -145,12 +124,11 @@ func (w *memoryMultiWriter) Open(ctx context.Context, ref contentio.Ref) (io.Rea
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (w *memoryMultiWriter) OpenRole(ctx context.Context, role string) (io.ReadCloser, error) {
-	for _, ref := range w.refs {
-		if ref.Role == role {
-			return w.Open(ctx, ref)
-		}
-	}
+func (w *memoryRefStore) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, nil
+}
+
+func (w *memoryRefStore) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, contentio.ErrContentNotFound
 }
 

@@ -46,7 +46,7 @@ func (r *objectCatalogContentReader) OpenRange(ctx context.Context, ref contenti
 	})
 }
 
-func (r *objectCatalogContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
+func (r *objectCatalogContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, nil
 }
 
@@ -114,7 +114,7 @@ func (r *fileCatalogContentReader) OpenRange(ctx context.Context, ref contentio.
 	})
 }
 
-func (r *fileCatalogContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
+func (r *fileCatalogContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, nil
 }
 
@@ -138,13 +138,13 @@ func (r *fileCatalogContentReader) List(ctx context.Context, scope contentio.Ref
 	return refs, nil
 }
 
-func refReaderForPreview(reader contentio.Reader, mainPath string, formatType format.FormatType, attrs map[string]interface{}) *contentio.StaticMultiReader {
+func refsForPreview(mainPath string, formatType format.FormatType, attrs map[string]interface{}) []contentio.Ref {
 	specs := refSpecsForPreviewFormat(formatType)
 	refs := refRefsFromAttributes(attrs)
 	if len(refs) == 0 {
-		return contentio.NewStaticMultiReader(reader, contentio.SameBasenameRefs(mainPath, specs))
+		return contentio.SameBasenameRefs(mainPath, specs)
 	}
-	return contentio.NewStaticMultiReader(reader, refs)
+	return refs
 }
 
 func refRefsFromAttributes(attrs map[string]interface{}) []contentio.Ref {

@@ -87,10 +87,11 @@ func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
 	t.Parallel()
 
 	base := createEncodedPointShapefile(t, "GBK", "北京")
-	refs := newLocalRefReader(base)
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
 	plugin := NewPlugin(nil)
 
-	info, err := plugin.DescribeMultiTable(context.Background(), refs, nil)
+	info, err := plugin.DescribeMultiTable(context.Background(), reader, refs, nil)
 	if err != nil {
 		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
@@ -99,7 +100,7 @@ func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
 		t.Fatalf("shapefile encoding = %#v, want gbk", shpAttrs["encoding"])
 	}
 
-	rows, err := plugin.SampleMultiTable(context.Background(), refs, 0, 10, nil)
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 10, nil)
 	if err != nil {
 		t.Fatalf("SampleMultiTable() error = %v", err)
 	}
@@ -177,13 +178,21 @@ func newLocalRefReader(base string) *localRefReader {
 	return &localRefReader{base: base}
 }
 
-func (r *localRefReader) Refs() []contentio.Ref {
+func (r *localRefReader) refs() []contentio.Ref {
 	return []contentio.Ref{
 		{Path: r.base + ".shp", Name: filepath.Base(r.base + ".shp"), Role: contentio.RoleMain, Required: true, Primary: true},
 		{Path: r.base + ".shx", Name: filepath.Base(r.base + ".shx"), Role: "index", Required: true},
 		{Path: r.base + ".dbf", Name: filepath.Base(r.base + ".dbf"), Role: "attributes", Required: true},
 		{Path: r.base + ".cpg", Name: filepath.Base(r.base + ".cpg"), Role: "encoding"},
 	}
+}
+
+func (r *localRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, nil
+}
+
+func (r *localRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
+	return nil, contentio.ErrContentNotFound
 }
 
 func (r *localRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
@@ -210,34 +219,26 @@ func (r *localRefReader) OpenRange(ctx context.Context, ref contentio.Ref, offse
 	}, nil
 }
 
-func (r *localRefReader) OpenRole(ctx context.Context, role string) (io.ReadCloser, error) {
-	for _, ref := range r.Refs() {
-		if strings.EqualFold(ref.Role, role) {
-			return r.Open(ctx, ref)
-		}
-	}
-	return nil, contentio.ErrContentNotFound
-}
-
 func TestShapefilePluginUsesSHXIndexedRefSample(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b", "c"})
-	refs := newLocalRefReader(base)
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
 	plugin := NewPlugin(nil)
 
-	rows, err := plugin.SampleMultiTable(context.Background(), refs, 2, 1, nil)
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("SampleMultiTable() error = %v", err)
 	}
-	if refs.rangeReads == 0 {
+	if reader.rangeReads == 0 {
 		t.Fatalf("rangeReads = 0, want indexed ref sample path")
 	}
-	if refs.openReads != 0 {
-		t.Fatalf("openReads = %d, want no full ref reads for indexed sample path", refs.openReads)
+	if reader.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref reads for indexed sample path", reader.openReads)
 	}
-	if refs.rangeReads > 6 {
-		t.Fatalf("rangeReads = %d, want page-level range reads", refs.rangeReads)
+	if reader.rangeReads > 6 {
+		t.Fatalf("rangeReads = %d, want page-level range reads", reader.rangeReads)
 	}
 	if len(rows) != 1 {
 		t.Fatalf("row count = %d, want 1", len(rows))
@@ -254,14 +255,15 @@ func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredRefReadFails(t *testin
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b"})
-	refs := newFailingRangeRefReader(base, ".dbf")
+	reader := newFailingRangeRefReader(base, ".dbf")
+	refs := reader.refs()
 	plugin := NewPlugin(nil)
 
-	if _, err := plugin.SampleMultiTable(context.Background(), refs, 0, 1, nil); err == nil {
+	if _, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, nil); err == nil {
 		t.Fatal("SampleMultiTable() error = nil, want indexed read error")
 	}
-	if refs.openReads != 0 {
-		t.Fatalf("openReads = %d, want no full ref fallback on indexed read failure", refs.openReads)
+	if reader.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref fallback on indexed read failure", reader.openReads)
 	}
 }
 
@@ -269,10 +271,11 @@ func TestShapefilePluginReportsMissingRequiredRef(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a"})
-	refs := newMissingRefReader(base, ".dbf")
+	reader := newMissingRefReader(base, ".dbf")
+	refs := reader.refs()
 	plugin := NewPlugin(nil)
 
-	_, err := plugin.DescribeMultiTable(context.Background(), refs, nil)
+	_, err := plugin.DescribeMultiTable(context.Background(), reader, refs, nil)
 	if err == nil {
 		t.Fatal("DescribeMultiTable() error = nil, want missing required ref error")
 	}

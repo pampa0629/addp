@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/contentio"
 )
 
-func materializeRefs(ctx context.Context, refs contentio.MultiReader) (tempDir string, basePath string, cleanup func(), err error) {
+func materializeRefs(ctx context.Context, reader contentio.Reader, refs []contentio.Ref) (tempDir string, basePath string, cleanup func(), err error) {
 	tempDir, err = os.MkdirTemp("", "shapefile-refs-*")
 	if err != nil {
 		return "", "", nil, err
@@ -21,9 +21,9 @@ func materializeRefs(ctx context.Context, refs contentio.MultiReader) (tempDir s
 	}
 
 	var mainLocalPath string
-	for _, ref := range refs.Refs() {
+	for _, ref := range refs {
 		localPath := filepath.Join(tempDir, filepath.Base(ref.Path))
-		if err := materializeRef(ctx, refs, ref, localPath); err != nil {
+		if err := materializeRef(ctx, reader, ref, localPath); err != nil {
 			if ref.Required {
 				cleanup()
 				return "", "", nil, fmt.Errorf("failed to read required ref %s: %w", ref.Path, err)
@@ -41,8 +41,8 @@ func materializeRefs(ctx context.Context, refs contentio.MultiReader) (tempDir s
 	return tempDir, strings.TrimSuffix(mainLocalPath, filepath.Ext(mainLocalPath)), cleanup, nil
 }
 
-func materializeRef(ctx context.Context, refs contentio.MultiReader, ref contentio.Ref, destPath string) error {
-	src, err := refs.Open(ctx, ref)
+func materializeRef(ctx context.Context, reader contentio.Reader, ref contentio.Ref, destPath string) error {
+	src, err := reader.Open(ctx, ref)
 	if err != nil {
 		return err
 	}

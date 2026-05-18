@@ -11,14 +11,17 @@ import (
 )
 
 const (
-	modeBatch               = "batch"
-	dataTypeTable           = "table"
-	representationNative    = "native"
-	representationEncoded   = "encoded"
-	resourceKindNativeTable = "native_table"
-	resourceKindFile        = "file"
-	resourceKindObject      = "object"
-	defaultWriteMode        = "overwrite"
+	modeBatch             = "batch"
+	dataTypeTable         = "table"
+	representationNative  = "native"
+	representationEncoded = "encoded"
+	defaultWriteMode      = "overwrite"
+)
+
+const (
+	EndpointResourceKindNativeTable = "native_table"
+	EndpointResourceKindFile        = "file"
+	EndpointResourceKindObject      = "object"
 )
 
 type EngineRef struct {
@@ -27,19 +30,21 @@ type EngineRef struct {
 	Type  string `json:"type,omitempty"`
 }
 
-type ResourceSpec struct {
+type EndpointResourceSpec struct {
 	Kind string      `json:"kind"`
 	Path interface{} `json:"path"`
 }
 
+// EndpointSpec 是 Transfer 任务 JSON 中 source / target 的业务端点描述。
+// EndpointResource 字段表示端点所在的引擎资源形态，不是 common/contentio 抽象。
 type EndpointSpec struct {
-	Engine         EngineRef              `json:"engine"`
-	Resource       ResourceSpec           `json:"resource"`
-	DataType       string                 `json:"data_type"`
-	Representation string                 `json:"representation"`
-	Format         format.FormatType      `json:"format,omitempty"`
-	Options        map[string]interface{} `json:"options,omitempty"`
-	Policy         map[string]interface{} `json:"policy,omitempty"`
+	Engine           EngineRef              `json:"engine"`
+	EndpointResource EndpointResourceSpec   `json:"resource"`
+	DataType         string                 `json:"data_type"`
+	Representation   string                 `json:"representation"`
+	Format           format.FormatType      `json:"format,omitempty"`
+	Options          map[string]interface{} `json:"options,omitempty"`
+	Policy           map[string]interface{} `json:"policy,omitempty"`
 }
 
 type TableExportTaskSpec struct {
@@ -186,7 +191,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableSourcePlan, error) {
 	switch endpoint.Representation {
 	case representationNative:
-		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.Resource.Path)
+		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
 		}
@@ -196,7 +201,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			Path:     sourcePath,
 		}, nil
 	case representationEncoded:
-		sourcePath, err := contentResourcePath(engine.EngineID, endpoint.Resource, "source")
+		sourcePath, err := endpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, "source")
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
 		}
@@ -222,7 +227,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor
 func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableTargetPlan, error) {
 	switch endpoint.Representation {
 	case representationNative:
-		targetPath, err := nativeTablePath(engine.EngineID, endpoint.Resource.Path)
+		targetPath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)
 		if err != nil {
 			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
 		}
@@ -238,7 +243,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			},
 		}, nil
 	case representationEncoded:
-		targetPath, err := targetContentPath(engine.EngineID, endpoint.Resource)
+		targetPath, err := targetEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource)
 		if err != nil {
 			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
 		}
@@ -284,8 +289,8 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 		return nil
 	}
 	return fmt.Errorf("unsupported table transfer shape: source %s/%s -> target %s/%s",
-		spec.Source.Representation, spec.Source.Resource.Kind,
-		spec.Target.Representation, spec.Target.Resource.Kind)
+		spec.Source.Representation, spec.Source.EndpointResource.Kind,
+		spec.Target.Representation, spec.Target.EndpointResource.Kind)
 }
 
 func validateTransformSpecs(transforms []TransformSpec) error {
@@ -364,30 +369,30 @@ func buildFieldMappingFields(fields []FieldMappingSpec) []executor.FieldMappingF
 
 func isNativeTableTransferSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationNative &&
-		spec.Source.Resource.Kind == resourceKindNativeTable &&
+		spec.Source.EndpointResource.Kind == EndpointResourceKindNativeTable &&
 		spec.Target.Representation == representationNative &&
-		spec.Target.Resource.Kind == resourceKindNativeTable
+		spec.Target.EndpointResource.Kind == EndpointResourceKindNativeTable
 }
 
 func isTableExportSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationNative &&
-		spec.Source.Resource.Kind == resourceKindNativeTable &&
+		spec.Source.EndpointResource.Kind == EndpointResourceKindNativeTable &&
 		spec.Target.Representation == representationEncoded &&
-		isContentResourceKind(spec.Target.Resource.Kind)
+		isEndpointContentKind(spec.Target.EndpointResource.Kind)
 }
 
 func isTableImportSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationEncoded &&
-		isContentResourceKind(spec.Source.Resource.Kind) &&
+		isEndpointContentKind(spec.Source.EndpointResource.Kind) &&
 		spec.Target.Representation == representationNative &&
-		spec.Target.Resource.Kind == resourceKindNativeTable
+		spec.Target.EndpointResource.Kind == EndpointResourceKindNativeTable
 }
 
 func isEncodedTableTransferSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationEncoded &&
-		isContentResourceKind(spec.Source.Resource.Kind) &&
+		isEndpointContentKind(spec.Source.EndpointResource.Kind) &&
 		spec.Target.Representation == representationEncoded &&
-		isContentResourceKind(spec.Target.Resource.Kind)
+		isEndpointContentKind(spec.Target.EndpointResource.Kind)
 }
 
 func IsTableImportSpec(spec TableExportTaskSpec) bool {
@@ -402,8 +407,8 @@ func IsNativeTableTransferSpec(spec TableExportTaskSpec) bool {
 	return isNativeTableTransferSpec(spec)
 }
 
-func isContentResourceKind(kind string) bool {
-	return kind == resourceKindFile || kind == resourceKindObject
+func isEndpointContentKind(kind string) bool {
+	return kind == EndpointResourceKindFile || kind == EndpointResourceKindObject
 }
 
 func validateEndpointCommon(endpoint EndpointSpec, role, dataType string) error {
@@ -412,12 +417,12 @@ func validateEndpointCommon(endpoint EndpointSpec, role, dataType string) error 
 	}
 	switch endpoint.Representation {
 	case representationNative:
-		if endpoint.Resource.Kind != resourceKindNativeTable {
-			return fmt.Errorf("%s native endpoint resource kind must be %q, got %q", role, resourceKindNativeTable, endpoint.Resource.Kind)
+		if endpoint.EndpointResource.Kind != EndpointResourceKindNativeTable {
+			return fmt.Errorf("%s native endpoint resource kind must be %q, got %q", role, EndpointResourceKindNativeTable, endpoint.EndpointResource.Kind)
 		}
 	case representationEncoded:
-		if !isContentResourceKind(endpoint.Resource.Kind) {
-			return fmt.Errorf("%s encoded endpoint resource kind must be %q or %q, got %q", role, resourceKindFile, resourceKindObject, endpoint.Resource.Kind)
+		if !isEndpointContentKind(endpoint.EndpointResource.Kind) {
+			return fmt.Errorf("%s encoded endpoint resource kind must be %q or %q, got %q", role, EndpointResourceKindFile, EndpointResourceKindObject, endpoint.EndpointResource.Kind)
 		}
 	default:
 		return fmt.Errorf("%s representation must be %q or %q, got %q", role, representationNative, representationEncoded, endpoint.Representation)
@@ -512,19 +517,19 @@ func nativeTablePath(engineID uint, raw interface{}) (engineplugin.CatalogPath, 
 	}, nil
 }
 
-func targetContentPath(engineID uint, resource ResourceSpec) (engineplugin.CatalogPath, error) {
-	return contentResourcePath(engineID, resource, "target")
+func targetEndpointContentCatalogPath(engineID uint, resource EndpointResourceSpec) (engineplugin.CatalogPath, error) {
+	return endpointContentCatalogPath(engineID, resource, "target")
 }
 
-func contentResourcePath(engineID uint, resource ResourceSpec, role string) (engineplugin.CatalogPath, error) {
+func endpointContentCatalogPath(engineID uint, resource EndpointResourceSpec, role string) (engineplugin.CatalogPath, error) {
 	switch resource.Kind {
-	case resourceKindFile:
+	case EndpointResourceKindFile:
 		path := engineplugin.NormalizeFileCatalogPath(contentPathString(resource.Path, "file"))
 		if path == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("%s file resource path requires path", role)
 		}
 		return engineplugin.FileItemPath(engineID, path), nil
-	case resourceKindObject:
+	case EndpointResourceKindObject:
 		values, _ := resource.Path.(map[string]interface{})
 		bucket := stringValue(values, "bucket")
 		objectPath := contentPathString(resource.Path, "object")

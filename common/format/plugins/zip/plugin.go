@@ -189,20 +189,18 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Rea
 	if len(refs) > 0 {
 		entryPath = zipPrimaryRefPath(refs, entryPath)
 	}
-	metadata := &contentio.Metadata{
-		Ref:          entryRef,
-		Size:         size,
-		Exists:       true,
-		FormatHint:   string(childFormat),
-		DataTypeHint: child.DataType,
+	stat := &contentio.Stat{
+		Ref:    entryRef,
+		Size:   size,
+		Exists: true,
 	}
-	reader := format.NewSingleContentReader(entryRef, openEntry, metadata)
+	reader := format.NewSingleContentReader(entryRef, openEntry, stat)
 	if len(refs) > 0 {
 		reader = &zipChildContentReader{
 			parent:    parent,
 			parentRef: parentRef,
 			basePath:  parentRef.Path,
-			metadata:  metadata,
+			stat:      stat,
 		}
 	}
 	resolved := format.StreamContainerChildResource(reader, entryRef, child)
@@ -214,7 +212,7 @@ type zipChildContentReader struct {
 	parent    contentio.Reader
 	parentRef contentio.Ref
 	basePath  string
-	metadata  *contentio.Metadata
+	stat      *contentio.Stat
 }
 
 func (r *zipChildContentReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
@@ -245,11 +243,11 @@ func (r *zipChildContentReader) Open(ctx context.Context, ref contentio.Ref) (io
 	return nil, contentio.ErrContentNotFound
 }
 
-func (r *zipChildContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
-	if r.metadata == nil {
+func (r *zipChildContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	if r.stat == nil {
 		return nil, contentio.ErrContentNotFound
 	}
-	return r.metadata, nil
+	return r.stat, nil
 }
 
 func (r *zipChildContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {

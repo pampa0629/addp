@@ -498,10 +498,10 @@ func (r tableFileContentReader) Open(ctx context.Context, ref contentio.Ref) (io
 	return r.contentReader.OpenContent(ctx, r.connInfo, resolveTableFileCatalogPath(r.engineID, ref.Path, r.catalogPathFor), plugin.ReadOptions{})
 }
 
-func (r tableFileContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Metadata, error) {
+func (r tableFileContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Stat, error) {
 	for _, file := range r.files {
 		if strings.Trim(file.Path, "/") == strings.Trim(ref.Path, "/") {
-			return &contentio.Metadata{
+			return &contentio.Stat{
 				Ref:    contentio.NewRef(file.Path, contentio.RoleMain),
 				Size:   file.Size,
 				Exists: true,
@@ -510,13 +510,13 @@ func (r tableFileContentReader) Stat(_ context.Context, ref contentio.Ref) (*con
 	}
 	for _, dir := range r.subdirs {
 		if strings.Trim(dir.Path, "/") == strings.Trim(ref.Path, "/") {
-			return &contentio.Metadata{
+			return &contentio.Stat{
 				Ref:    contentio.NewRef(dir.Path, contentio.RoleScope),
 				Exists: true,
 			}, nil
 		}
 	}
-	return &contentio.Metadata{Ref: ref, Exists: false}, nil
+	return &contentio.Stat{Ref: ref, Exists: false}, nil
 }
 
 func (r tableFileContentReader) List(_ context.Context, scope contentio.Ref) ([]contentio.Ref, error) {

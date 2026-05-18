@@ -63,7 +63,7 @@
           {{ formatLabel(wizardState.sourceFormat.value) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
-          {{ sourceResourcePath }}
+          {{ sourceEndpointResourcePath }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -201,9 +201,9 @@ const warnings = computed(() => {
 
 const hasWarnings = computed(() => warnings.value.length > 0)
 
-const sourceResourcePath = computed(() => {
+const sourceEndpointResourcePath = computed(() => {
   const config = props.wizardState.sourceConfig.value || {}
-  return config.sourceLabel || resourcePath(props.wizardState.sourceResource.value) || '-'
+  return config.sourceLabel || endpointResourcePath(props.wizardState.sourceEndpointResource.value) || '-'
 })
 
 const targetResourcePath = computed(() => {
@@ -214,15 +214,15 @@ const targetResourcePath = computed(() => {
   return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
 })
 
-function resourcePath(resource) {
-  const path = resource?.path || {}
-  if (resource?.kind === 'native_table') {
+function endpointResourcePath(endpointResource) {
+  const path = endpointResource?.path || {}
+  if (endpointResource?.kind === 'native_table') {
     return [path.schema, path.table || path.name].filter(Boolean).join('.')
   }
-  if (resource?.kind === 'object') {
+  if (endpointResource?.kind === 'object') {
     return [path.bucket, path.path].filter(Boolean).join('/')
   }
-  if (resource?.kind === 'file') {
+  if (endpointResource?.kind === 'file') {
     return path.path || path.name || ''
   }
   return ''

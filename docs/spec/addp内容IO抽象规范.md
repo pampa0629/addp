@@ -15,8 +15,9 @@
 - `Ref`：一个已确定 content 的定位器。
 - `Reader` / `Writer`：按 `Ref` 打开内容流或创建输出流。
 - `RangeReader`：按 `Ref` 打开字节范围内容。
-- `MultiReader` / `MultiWriter`：围绕一组 `Ref` 的便利组合。
 - `RelatedRefSpec`：从主 `Ref` 推导相关 refs 的规则。
+
+多个 content 共同组成一个 format item 时，不在 `contentio` 内引入独立的 multi 读写器，而是由 format / dataitem / 调用编排层显式传递 `[]Ref`。
 
 `common/catalogview` 已退出。目录展示、资源树、`ResourceLocator`、DataSourceService 等偏目录视图和服务编排的能力归入 `common/catalogview`；内容 I/O 归入 `common/contentio`；engine 到 contentio 的适配归入 `common/engine/contentadapter`。
 
@@ -28,13 +29,14 @@ engine 到 contentio 的适配放在 `common/engine/contentadapter`。该包可�
 
 1. 一个 content 怎么被稳定定位。
 2. 一个 content 怎么被读取或写入。
-3. 多 content 格式如何把一组定位器交给格式实现。
+3. 多 content 格式如何显式把一组定位器交给格式实现。
 
 推荐调用方向：
 
 ```text
 Meta / Manager / Transfer 编排层
-  -> 根据 engine capability 构造 contentio.Reader / Writer / MultiReader / MultiWriter
+  -> 根据 engine capability 构造 contentio.Reader / Writer
+  -> 对多 content 格式同时传递 []contentio.Ref
   -> 将内容 I/O 抽象交给 common/format provider
   -> FormatPlugin 解码 / 提取 / 编码
   -> info provider / content reader 归一为平台语义或内容数据
@@ -72,7 +74,7 @@ Meta / Manager / Transfer 编排层
 | `auxiliary` | 辅助 content |
 | 格式自定义角色 | 如 Shapefile 的 `index`、`attributes`、`projection`、`encoding` |
 
-旧内容组合兼容命名已删除。新代码统一使用 `Ref`、`Reader`、`MultiReader` 这一组语义。
+旧内容组合兼容命名已删除。新代码统一使用 `Ref`、`Reader` / `Writer`、`[]Ref` 这一组语义。
 
 ## RelatedRefSpec
 
@@ -98,6 +100,8 @@ Meta / Manager / Transfer 编排层
 
 `RangeReader` 在 `Reader` 基础上提供字节范围读取，适用于 Shapefile `.shx` 索引读取、媒体头部读取、大文件局部采样等场景。
 
+`Reader.List` 只表达对一个 scope ref 的内容列举能力。按扩展名选择、临时目录物化、本地缓存和格式探测等编排工具不属于 `contentio` 核心，应放在 format、dataitem 或具体模块中。
+
 这些接口不负责：
 
 - engine registry 查询。
@@ -106,23 +110,30 @@ Meta / Manager / Transfer 编排层
 - 格式解析。
 - Manager / Frontend DTO 组装。
 
-## MultiReader / MultiWriter
+## 多 content 调用方式
 
-multi 的本质是一组 `Ref`。
+multi 是 data item / format 层的组织方式，不是 `contentio` 的底层 I/O 原语。
 
-`MultiReader` 负责：
+当一个格式需要多个 content 时，调用方应显式传递：
 
-- 返回当前已确认的 refs。
-- 按 ref 打开内容。
-- 按 role 打开内容。
+```go
+reader contentio.Reader
+refs   []contentio.Ref
+```
 
-`MultiWriter` 负责：
+写入时显式传递：
 
-- 返回目标 refs。
-- 按 ref 创建输出流。
-- 提供整组输出的 `Commit` / `Abort` 边界。
+```go
+writer contentio.Writer
+refs   []contentio.Ref
+target contentio.Ref
+```
 
-Shapefile 这类格式必须使用 multi writer 提交整组文件，不能只写主文件。
+Shapefile 这类格式应在 `common/format` 层声明相关 ref 规则，并由调用编排层生成或读取已确认的 refs；格式实现只按 `Ref` 打开 / 创建内容。
+
+`contentio` 不提供 `OpenRole`、`Refs`、`Commit`、`Abort` 这类把多 content 绑定成一个对象的接口。需要事务或清理语义时，应由具体 engine writer、模块编排层或格式 writer 的一次会话负责。
+
+Shapefile 这类格式必须写完整组 refs，不能只写主文件。
 
 ## 表格来源的统一处理
 
@@ -132,7 +143,7 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 | 来源形态 | 典型场景 | 读取抽象 | 是否经过 FormatPlugin |
 |---|---|---|---|
-| single / multi 文件表 | CSV、JSON、Excel、Shapefile、单 Parquet | `Reader` 或 `MultiReader` | 是 |
+| single / multi 文件表 | CSV、JSON、Excel、Shapefile、单 Parquet | `Reader`，多 content 时另传 `[]Ref` | 是 |
 | scope 表 | Parquet 目录、Iceberg/Delta/Hudi 类目录表 | `Reader` + scope ref/list，必要时加 manifest ref | 是 |
 | engine-native 表 | PostgreSQL、MySQL、MongoDB collection、Neo4j 查询结果 | engine-native batch/session | 通常否 |
 
@@ -140,7 +151,7 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 ## 创建方与消费方
 
-`contentio.Reader / MultiReader / Writer / MultiWriter` 由 Meta、Manager、Transfer 的编排层根据 engine capability 适配创建。
+`contentio.Reader / Writer` 由 Meta、Manager、Transfer 的编排层根据 engine capability 适配创建。
 
 当前 engine 层已有可作为底座的能力：
 
@@ -169,7 +180,7 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 ```text
 Meta 已确认 refs
-  -> contentio.MultiReader
+  -> `contentio.Reader` + `[]contentio.Ref`
   -> FormatPlugin
   -> info provider / content reader
 ```

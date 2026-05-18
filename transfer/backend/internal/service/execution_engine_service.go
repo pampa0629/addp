@@ -258,16 +258,16 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 }
 
 func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
-	path, ok := endpoint.Resource.Path.(map[string]interface{})
+	path, ok := endpoint.EndpointResource.Path.(map[string]interface{})
 	if !ok {
-		if endpoint.Resource.Kind == "file" {
-			return parentFileCatalogPaths(fmt.Sprint(endpoint.Resource.Path))
+		if endpoint.EndpointResource.Kind == planner.EndpointResourceKindFile {
+			return parentFileCatalogPaths(fmt.Sprint(endpoint.EndpointResource.Path))
 		}
 		return nil
 	}
 
-	switch endpoint.Resource.Kind {
-	case "native_table":
+	switch endpoint.EndpointResource.Kind {
+	case planner.EndpointResourceKindNativeTable:
 		if qualified := strings.TrimSpace(fmt.Sprintf("%v", path["name"])); qualified != "" && qualified != "<nil>" {
 			parts := strings.Split(qualified, ".")
 			if len(parts) == 2 {
@@ -279,14 +279,14 @@ func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
 				return []string{value}
 			}
 		}
-	case "object":
+	case planner.EndpointResourceKindObject:
 		bucket := cleanPathValue(path["bucket"])
 		objectPath := cleanPathValue(path["path"])
 		if objectPath == "" {
 			objectPath = cleanPathValue(path["object"])
 		}
 		return parentObjectCatalogPaths(bucket, objectPath)
-	case "file":
+	case planner.EndpointResourceKindFile:
 		filePath := cleanPathValue(path["path"])
 		if filePath == "" {
 			filePath = cleanPathValue(path["file"])

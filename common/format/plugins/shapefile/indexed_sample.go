@@ -28,12 +28,12 @@ func isIndexedSampleFallbackError(err error) bool {
 	return errors.Is(err, errUnsupportedIndexedShapeType)
 }
 
-func (plugin *Plugin) sampleMultiTableIndexed(ctx context.Context, refs contentio.MultiReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
-	rangeReader, ok := refs.(contentio.MultiRangeReader)
+func (plugin *Plugin) sampleMultiTableIndexed(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
+	rangeReader, ok := reader.(contentio.RangeReader)
 	if !ok {
 		return nil, false, nil
 	}
-	source, ok, err := newIndexedMultiTableReadSource(ctx, plugin, refs.Refs(), rangeReader, opts)
+	source, ok, err := newIndexedMultiTableReadSource(ctx, plugin, refs, rangeReader, opts)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -42,7 +42,7 @@ func (plugin *Plugin) sampleMultiTableIndexed(ctx context.Context, refs contenti
 
 type indexedMultiTableReadSource struct {
 	plugin        *Plugin
-	rangeReader   contentio.MultiRangeReader
+	rangeReader   contentio.RangeReader
 	shpRef        contentio.Ref
 	shxRef        contentio.Ref
 	dbfRef        contentio.Ref
@@ -51,7 +51,7 @@ type indexedMultiTableReadSource struct {
 	geometryField string
 }
 
-func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []contentio.Ref, rangeReader contentio.MultiRangeReader, opts *format.ParseOptions) (*indexedMultiTableReadSource, bool, error) {
+func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []contentio.Ref, rangeReader contentio.RangeReader, opts *format.ParseOptions) (*indexedMultiTableReadSource, bool, error) {
 	refMap := shapefileRefsByExtension(refs)
 	shpRef, hasSHP := refMap[".shp"]
 	shxRef, hasSHX := refMap[".shx"]
@@ -220,7 +220,7 @@ func shapefileRefsByExtension(refs []contentio.Ref) map[string]contentio.Ref {
 	return result
 }
 
-func readRefTextPrefix(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, length int64) (string, error) {
+func readRefTextPrefix(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, length int64) (string, error) {
 	rc, err := reader.OpenRange(ctx, ref, 0, length)
 	if err != nil {
 		return "", err
@@ -238,7 +238,7 @@ func hasRefExtension(refs map[string]contentio.Ref, ext string) bool {
 	return ok
 }
 
-func readSHPHeaderIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref) (*shpHeaderInfo, error) {
+func readSHPHeaderIndexed(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref) (*shpHeaderInfo, error) {
 	rc, err := reader.OpenRange(ctx, ref, 32, 68)
 	if err != nil {
 		return nil, err
@@ -260,7 +260,7 @@ func readSHPHeaderIndexed(ctx context.Context, reader contentio.MultiRangeReader
 	return &shpHeaderInfo{ShapeType: shapeType, BBox: bbox}, nil
 }
 
-func readSHXWindow(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, offset, limit int64) ([]shxEntry, error) {
+func readSHXWindow(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, offset, limit int64) ([]shxEntry, error) {
 	start := int64(100) + offset*8
 	length := limit * 8
 	rc, err := reader.OpenRange(ctx, ref, start, length)
@@ -286,7 +286,7 @@ func readSHXWindow(ctx context.Context, reader contentio.MultiRangeReader, ref c
 	return entries, nil
 }
 
-func readDBFHeaderIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, encodingName string) (*dbfHeaderInfo, error) {
+func readDBFHeaderIndexed(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, encodingName string) (*dbfHeaderInfo, error) {
 	rc, err := reader.OpenRange(ctx, ref, 0, 32)
 	if err != nil {
 		return nil, err
@@ -354,7 +354,7 @@ func parseDBFHeaderBytes(data []byte, encodingName string) (*dbfHeaderInfo, erro
 	}, nil
 }
 
-func readDBFRecordsIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, header *dbfHeaderInfo, rowIndex, count int64, encodingName string) ([]map[string]interface{}, error) {
+func readDBFRecordsIndexed(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, header *dbfHeaderInfo, rowIndex, count int64, encodingName string) ([]map[string]interface{}, error) {
 	recordLength := int64(header.RecordLength)
 	if count <= 0 {
 		return []map[string]interface{}{}, nil
@@ -402,7 +402,7 @@ func parseDBFRecordBytes(data []byte, header *dbfHeaderInfo, encodingName string
 	return row, nil
 }
 
-func readShapesIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, entries []shxEntry) ([]shp.Shape, error) {
+func readShapesIndexed(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, entries []shxEntry) ([]shp.Shape, error) {
 	if len(entries) == 0 {
 		return []shp.Shape{}, nil
 	}

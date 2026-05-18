@@ -149,15 +149,15 @@ async function loadSourceFieldsForEdit(task) {
 }
 
 function catalogPathFromEndpoint(endpoint) {
-  const resource = endpoint?.resource || {}
-  const path = resource.path || {}
-  if (resource.kind === 'native_table') {
+  const endpointResource = endpoint?.resource || {}
+  const path = endpointResource.path || {}
+  if (endpointResource.kind === 'native_table') {
     return [path.schema, path.table || path.name].filter(Boolean).join('.')
   }
-  if (resource.kind === 'object') {
+  if (endpointResource.kind === 'object') {
     return [path.bucket, path.path].filter(Boolean).join('/')
   }
-  if (resource.kind === 'file') {
+  if (endpointResource.kind === 'file') {
     return path.path || path.name || ''
   }
   return ''

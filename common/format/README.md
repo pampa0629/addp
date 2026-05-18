@@ -24,7 +24,7 @@
 - 不把 `.geojson` 当作独立顶层格式；它是 `FormatJSON` 的空间结构能力。
 - `ExtractInput` 等 provider 输入不携带 `EngineID`，调用方需要的引擎上下文应留在编排层。
 
-上层模块应先基于 engine capability 或本地文件系统能力构造 `common/contentio` 内容 I/O 抽象，再把 `io.Reader`、`contentio.Reader` 或 `contentio.MultiReader` 交给 FormatPlugin、info provider 或 content reader。
+上层模块应先基于 engine capability 或本地文件系统能力构造 `common/contentio` 内容 I/O 抽象，再把 `io.Reader`、`contentio.Reader`，以及多 content 场景下的 `[]contentio.Ref` 交给 FormatPlugin、info provider 或 content reader。
 
 ## 职责清单与目录归位
 
@@ -209,9 +209,9 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableReaderProvider` | `table` | `single` | `io.Reader` -> `TableReader` | 打开一次连续读取会话，按批读取全量行。 | Transfer 主链路、批处理导出/导入 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableWriterProvider` | `table` | `single` | `io.Writer` + `TableInfo` -> `TableWriter` | 打开一次连续写出会话，按批编码写入。 | Transfer 写侧 | CSV、JSON/JSONL、Parquet 单文件 |
-| `MultiTableProvider` | `table` | `multi` | `contentio.MultiReader` | 多 ref table 的 info / sample 能力。 | Meta、Manager、Transfer 探查兜底 | Shapefile |
-| `MultiTableReaderProvider` | `table` | `multi` | `contentio.MultiReader` -> `TableReader` | 多 ref table 的连续全量读取会话。 | Transfer 主链路 | Shapefile |
-| `MultiTableWriterProvider` | `table` | `multi` | `contentio.MultiWriter` + 主 ref + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
+| `MultiTableProvider` | `table` | `multi` | `contentio.Reader` + `[]contentio.Ref` | 多 ref table 的 info / sample 能力。 | Meta、Manager、Transfer 探查兜底 | Shapefile |
+| `MultiTableReaderProvider` | `table` | `multi` | `contentio.Reader` + `[]contentio.Ref` -> `TableReader` | 多 ref table 的连续全量读取会话。 | Transfer 主链路 | Shapefile |
+| `MultiTableWriterProvider` | `table` | `multi` | `contentio.Writer` + `[]contentio.Ref` + 主 ref + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
 | `ScopeTableProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 的 info / sample 能力。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、未来 PDF/DOCX 解析 |
 | `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、未来 PDF/DOCX 解析 |
@@ -286,8 +286,8 @@ type TableSampleReader interface {
 ```go
 type MultiTableProvider interface {
     TableProvider
-    DescribeMultiTable(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (*TableInfo, error)
-    SampleMultiTable(ctx context.Context, refs contentio.MultiReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (*TableInfo, error)
+    SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 ```
 
@@ -297,7 +297,13 @@ type MultiTableProvider interface {
 type MultiTableReaderProvider interface {
     Provider
     RelatedRefSpecs() []contentio.RelatedRefSpec
-    OpenMultiTableReader(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (TableReader, error)
+    OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (TableReader, error)
+}
+
+type MultiTableWriterProvider interface {
+    Provider
+    RelatedRefSpecs() []contentio.RelatedRefSpec
+    OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 ```
 
@@ -336,7 +342,7 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 使用约束：
 
 - 单文件 provider 接收 `io.Reader`。
-- multi provider 接收 `contentio.MultiReader`。
+- multi provider 接收 `contentio.Reader` / `contentio.Writer` 与显式 `[]contentio.Ref`。
 - 目录 scope provider 接收 `contentio.Reader` 和 `contentio.Ref`。
 - `SampleTable` 的 `offset` / `limit` 是逻辑数据行窗口，不是字节偏移。行号从数据区第 0 行开始；CSV 等有表头的格式不把表头计入数据行。
 - `SampleTable` 的 `input` 默认表示资源起点。调用方也可以传入从某个 record boundary 开始的局部流，但必须通过 `ParseOptions.TableSample` 提供 `InputStartsAtRow`、`Fields` 等上下文，让格式 plugin 在内部完成剩余行跳过和解析。

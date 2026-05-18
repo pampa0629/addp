@@ -97,6 +97,38 @@ func TestMappedWriterUsesObjectRefPath(t *testing.T) {
 	}
 }
 
+func TestMappedReaderUsesFixedCatalogPath(t *testing.T) {
+	provider := &contentProviderStub{data: map[string]string{"bucket/source.shp": "ok"}}
+	reader := NewMappedReader(provider, nil, FixedPathMapper(baseCatalogPath()), engineplugin.ReadOptions{})
+
+	rc, err := reader.Open(context.Background(), contentio.NewRef("ignored.csv", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer rc.Close()
+	data, _ := io.ReadAll(rc)
+	if string(data) != "ok" {
+		t.Fatalf("Open() data = %q, want ok", data)
+	}
+}
+
+func TestFixedPathMapperReturnsIndependentCatalogPath(t *testing.T) {
+	mapRef := FixedPathMapper(baseCatalogPath())
+	first, err := mapRef(contentio.NewRef("ignored.csv", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("first map error = %v", err)
+	}
+	first.Segments[1].Name = "changed.csv"
+
+	second, err := mapRef(contentio.NewRef("ignored.csv", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("second map error = %v", err)
+	}
+	if got := second.StringPath(); got != "bucket/source.shp" {
+		t.Fatalf("second path = %q, want bucket/source.shp", got)
+	}
+}
+
 type contentProviderStub struct {
 	data map[string]string
 }

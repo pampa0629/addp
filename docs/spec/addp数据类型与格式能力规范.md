@@ -11,7 +11,7 @@
 | format capability 表达格式实现能做什么 | data item 如何归并和 claims 如何合并 |
 | FormatPlugin 如何声明格式身份、能力和布局 | `meta_item.name/full_name/item_type` 来源规则 |
 | info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
-| content reader 如何提供内容数据 | contentio Reader / MultiReader 的具体接口 |
+| content reader 如何提供内容数据 | contentio Reader / Writer 与 `[]Ref` 的具体接口 |
 
 item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
@@ -65,7 +65,7 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 - 它可以声明“CSV 是 `format=csv`，默认 `data_type=table`，支持 `single`，有 `table_sample` reader”。
 - 它不能决定“当前某个文件最终是不是一个 data item”。
 - 它不能决定 Shapefile refs如何归并成最终 item；只能声明ref 布局能力，最终归并由 Meta detector 裁决。
-- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader` 或 `contentio.MultiReader`。
+- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader`，并在多 content 场景下显式传递 `[]contentio.Ref`。
 
 ### FormatDescriptor
 

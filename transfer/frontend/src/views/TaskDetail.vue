@@ -236,8 +236,9 @@ function buildEndpointDetails(endpoint, role) {
   addItem(items, t('transfer.taskDetail.connectionType'), endpoint.engine?.type)
   addItem(items, t('transfer.taskDetail.dataType'), endpoint.data_type)
   addItem(items, t('transfer.taskDetail.representation'), endpoint.representation)
-  addItem(items, t('transfer.taskDetail.resourceKind'), endpoint.resource?.kind)
-  addItem(items, t('transfer.taskDetail.path'), formatResourcePath(endpoint.resource), 2)
+  const endpointResource = endpoint.resource
+  addItem(items, t('transfer.taskDetail.resourceKind'), endpointResource?.kind)
+  addItem(items, t('transfer.taskDetail.path'), formatEndpointResourcePath(endpointResource), 2)
 
   if (role === 'target') {
     addItem(items, t('transfer.taskDetail.format'), endpoint.format)
@@ -252,8 +253,8 @@ function addItem(items, label, value, span) {
   items.push({ label, value: formatValue(value), span })
 }
 
-function formatResourcePath(resource) {
-  const path = resource?.path
+function formatEndpointResourcePath(endpointResource) {
+  const path = endpointResource?.path
   if (path === undefined || path === null) {
     return ''
   }

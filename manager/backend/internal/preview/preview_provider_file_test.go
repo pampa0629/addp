@@ -841,6 +841,7 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 	preview, err := provider.previewRefs(
 		context.Background(),
 		emptyRefReader{},
+		nil,
 		"bucket",
 		format.FormatShapefile,
 		refProvider,
@@ -883,6 +884,7 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 	preview, err := provider.previewRefs(
 		context.Background(),
 		emptyRefReader{},
+		nil,
 		"bucket",
 		format.FormatShapefile,
 		refProvider,
@@ -904,7 +906,7 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 }
 
 func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
-	reader := refReaderForPreview(staticContentReader{}, "bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
+	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
 		"item": map[string]interface{}{
 			"refs": []interface{}{
 				map[string]interface{}{"path": "bucket/roads/roads.dbf", "role": "attributes", "required": true},
@@ -915,7 +917,6 @@ func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 		},
 	})
 
-	refs := reader.Refs()
 	got := make(map[string]contentio.Ref, len(refs))
 	for _, ref := range refs {
 		got[ref.Role] = ref
@@ -938,8 +939,7 @@ func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 }
 
 func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
-	reader := refReaderForPreview(staticContentReader{}, "bucket/roads/roads.shp", format.FormatShapefile, nil)
-	refs := reader.Refs()
+	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, nil)
 	required := map[string]bool{}
 	for _, ref := range refs {
 		if ref.Required {
@@ -964,7 +964,7 @@ func (r staticContentReader) Open(context.Context, contentio.Ref) (io.ReadCloser
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
 
-func (r staticContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
+func (r staticContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, nil
 }
 
@@ -1011,7 +1011,7 @@ func (p *recordingMultiTableProvider) Format() format.FormatType {
 	return format.FormatShapefile
 }
 
-func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.MultiReader, *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []contentio.Ref, *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
 	rowCount := int64(1)
 	return &format.TableInfo{
@@ -1020,29 +1020,29 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, conten
 	}, nil
 }
 
-func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.MultiReader, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []contentio.Ref, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
 
 type emptyRefReader struct{}
 
-func (emptyRefReader) Refs() []contentio.Ref {
-	return nil
-}
-
 func (emptyRefReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
 	return nil, contentio.ErrContentNotFound
 }
 
-func (emptyRefReader) OpenRole(context.Context, string) (io.ReadCloser, error) {
+func (emptyRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, contentio.ErrContentNotFound
+}
+
+func (emptyRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, contentio.ErrContentNotFound
 }
 
 var _ format.TableProvider = (*recordingTableProvider)(nil)
 var _ format.MultiTableProvider = (*recordingMultiTableProvider)(nil)
 var _ contentio.Reader = staticContentReader{}
-var _ contentio.MultiReader = emptyRefReader{}
+var _ contentio.Reader = emptyRefReader{}
 
 type recordingContentPlugin struct {
 	engineType      string

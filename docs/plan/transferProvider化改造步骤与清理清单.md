@@ -83,7 +83,7 @@ transfer/backend/internal/resourceadapter/
 读取侧：
 
 - system / local engine -> `contentio.Reader`
-- multi refs -> `contentio.MultiReader`
+- multi refs -> `contentio.Reader` + `[]contentio.Ref`
 - engine-native table -> native cursor / batch reader adapter
 
 写入侧：

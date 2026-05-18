@@ -323,10 +323,8 @@ type encodedContentTableSource struct {
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
 	if s.multiReaderProvider != nil {
-		contentReader := contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions)
-		refs := contentio.SameBasenameRefs(s.path.StringPath(), s.multiReaderProvider.RelatedRefSpecs())
-		multiReader := contentio.NewStaticMultiReader(contentReader, refs)
-		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, multiReader, s.parseOptions)
+		reader, refs := s.refReader(s.multiReaderProvider.RelatedRefSpecs())
+		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, reader, refs, s.parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
@@ -337,15 +335,14 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 	}
 
 	if s.multiProvider != nil {
-		contentReader := contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions)
-		refs := contentio.SameBasenameRefs(s.path.StringPath(), s.multiProvider.RelatedRefSpecs())
-		multiReader := contentio.NewStaticMultiReader(contentReader, refs)
-		schema, err := s.multiProvider.DescribeMultiTable(ctx, multiReader, s.parseOptions)
+		reader, refs := s.refReader(s.multiProvider.RelatedRefSpecs())
+		schema, err := s.multiProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("describe encoded source table refs: %w", err)
 		}
 		return &multiEncodedTableBatchReader{
-			multiReader:  multiReader,
+			reader:       reader,
+			refs:         refs,
 			provider:     s.multiProvider,
 			schema:       schema,
 			parseOptions: s.parseOptions,
@@ -366,7 +363,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}, nil
 	}
 
-	input, err := s.reader.OpenContent(ctx, s.connInfo, s.path, s.readOptions)
+	input, err := s.contentReader().Open(ctx, contentRefFromCatalogPath(s.path))
 	if err != nil {
 		return nil, fmt.Errorf("open encoded source content: %w", err)
 	}
@@ -419,7 +416,7 @@ func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*format
 	if s.infoProvider == nil {
 		return nil, nil
 	}
-	input, err := s.reader.OpenContent(ctx, s.connInfo, s.path, s.readOptions)
+	input, err := s.contentReader().Open(ctx, contentRefFromCatalogPath(s.path))
 	if err != nil {
 		return nil, fmt.Errorf("open encoded source content for table info: %w", err)
 	}
@@ -476,7 +473,8 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 }
 
 type multiEncodedTableBatchReader struct {
-	multiReader  contentio.MultiReader
+	reader       contentio.Reader
+	refs         []contentio.Ref
 	provider     format.MultiTableProvider
 	schema       *format.TableInfo
 	parseOptions *format.ParseOptions
@@ -492,7 +490,7 @@ func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int)
 	if r.done {
 		return &engineplugin.BatchData{}, nil
 	}
-	rows, err := r.provider.SampleMultiTable(ctx, r.multiReader, r.offset, int64(limit), r.parseOptions)
+	rows, err := r.provider.SampleMultiTable(ctx, r.reader, r.refs, r.offset, int64(limit), r.parseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("sample encoded source table refs at offset %d: %w", r.offset, err)
 	}
@@ -527,7 +525,7 @@ func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int
 	if r.done {
 		return &engineplugin.BatchData{}, nil
 	}
-	input, err := r.source.reader.OpenContent(ctx, r.source.connInfo, r.source.path, r.source.readOptions)
+	input, err := r.source.contentReader().Open(ctx, contentRefFromCatalogPath(r.source.path))
 	if err != nil {
 		return nil, fmt.Errorf("open encoded source content at offset %d: %w", r.offset, err)
 	}
@@ -553,6 +551,14 @@ func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int
 
 func (r *sampleEncodedTableBatchReader) Close(context.Context) error {
 	return nil
+}
+
+func (s *encodedContentTableSource) contentReader() contentio.Reader {
+	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.FixedPathMapper(s.path), s.readOptions)
+}
+
+func (s *encodedContentTableSource) refReader(specs []contentio.RelatedRefSpec) (contentio.Reader, []contentio.Ref) {
+	return contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions), contentio.SameBasenameRefs(s.path.StringPath(), specs)
 }
 
 type nativeTableBatchTarget struct {
@@ -704,24 +710,22 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 		}
 	}
 	if tableSchemaEmpty(schema) && t.multiProvider == nil {
-		output, err := t.writer.CreateContent(ctx, t.connInfo, t.path, t.writeOptions)
+		output, err := t.contentWriter().Create(ctx, contentRefFromCatalogPath(t.path))
 		if err != nil {
 			return nil, fmt.Errorf("create empty encoded target content: %w", err)
 		}
 		return &emptyContentBatchWriter{output: output}, nil
 	}
 	if t.multiProvider != nil {
-		contentWriter := contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions)
-		multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()))
-		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, multiWriter, contentRefFromCatalogPath(t.path), schema, t.formatOptions)
+		writer, refs := t.refWriter(t.multiProvider.RelatedRefSpecs())
+		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, writer, refs, contentRefFromCatalogPath(t.path), schema, t.formatOptions)
 		if err != nil {
-			_ = multiWriter.Abort(ctx)
 			return nil, fmt.Errorf("open encoded multi table writer: %w", err)
 		}
-		return &multiTableBatchWriter{multiWriter: multiWriter, tableWriter: tableWriter}, nil
+		return &multiTableBatchWriter{tableWriter: tableWriter}, nil
 	}
 
-	output, err := t.writer.CreateContent(ctx, t.connInfo, t.path, t.writeOptions)
+	output, err := t.contentWriter().Create(ctx, contentRefFromCatalogPath(t.path))
 	if err != nil {
 		return nil, fmt.Errorf("create encoded target content: %w", err)
 	}
@@ -750,6 +754,14 @@ func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) er
 		return fmt.Errorf("delete encoded multi target before write: %w", err)
 	}
 	return nil
+}
+
+func (t *encodedContentTableTarget) contentWriter() contentio.Writer {
+	return contentadapter.NewMappedWriter(t.writer, t.connInfo, contentadapter.FixedPathMapper(t.path), t.writeOptions)
+}
+
+func (t *encodedContentTableTarget) refWriter(specs []contentio.RelatedRefSpec) (contentio.Writer, []contentio.Ref) {
+	return contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions), contentio.SameBasenameRefs(t.path.StringPath(), specs)
 }
 
 type emptyContentBatchWriter struct {
@@ -819,7 +831,6 @@ func (w *contentTableBatchWriter) Abort(context.Context) error {
 }
 
 type multiTableBatchWriter struct {
-	multiWriter contentio.MultiWriter
 	tableWriter format.TableWriter
 	closed      bool
 }
@@ -847,5 +858,8 @@ func (w *multiTableBatchWriter) Abort(ctx context.Context) error {
 		return nil
 	}
 	w.closed = true
-	return w.multiWriter.Abort(ctx)
+	if w.tableWriter != nil {
+		return w.tableWriter.Close(ctx)
+	}
+	return nil
 }

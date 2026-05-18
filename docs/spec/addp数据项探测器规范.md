@@ -12,7 +12,7 @@
 |---|---|
 | 扫描范围如何解析为 `0..N` 个 data item | `attributes` 的完整 JSON schema |
 | `organization`、主资源、ref 资源和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
-| `claims`、`exclusive` 如何合并 | contentio.Reader / contentio.MultiReader 的具体接口 |
+| `claims`、`exclusive` 如何合并 | contentio.Reader / Writer 与 `[]contentio.Ref` 的具体接口 |
 | `meta_item.name/full_name/item_type` 的来源规则 | Manager 面向前端的 DTO 或 Transfer plan |
 | `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser、provider、reader 字段细节 |
 | detector 如何裁决 item 边界 | `scan_depth`、`force`、`scanned_depth` 和任务触发策略 |

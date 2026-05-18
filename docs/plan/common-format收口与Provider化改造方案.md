@@ -102,12 +102,12 @@
 ```text
 engine ContentReadableProvider
   -> contentio.Reader
-  -> contentio.MultiReader
+  -> []contentio.Ref
   -> format.MultiTableProvider
   -> Manager 面向前端的 DTO
 ```
 
-Shapefile 的ref 物化已经从 Manager 下沉到 FormatPlugin / table content reader，Manager 只负责把 engine provider 适配为 `contentio.Reader / contentio.MultiReader`。
+Shapefile 的ref 物化已经从 Manager 下沉到 FormatPlugin / table content reader，Manager 只负责把 engine provider 适配为 `contentio.Reader`，并把已确认的 `[]contentio.Ref` 交给 format provider。
 
 Parquet lake table 预览也已经验证 scope 链路：
 

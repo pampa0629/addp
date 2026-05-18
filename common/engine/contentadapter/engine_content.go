@@ -11,6 +11,9 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
+// RefCatalogPathMapper maps a contentio ref to an engine catalog path.
+// It is the explicit boundary between bottom-level content I/O refs and
+// engine-specific catalog addressing.
 type RefCatalogPathMapper func(ref contentio.Ref) (engineplugin.CatalogPath, error)
 
 type engineContentReader struct {
@@ -36,6 +39,9 @@ func NewReader(provider engineplugin.ContentReadableProvider, connInfo engineplu
 	}
 }
 
+// NewMappedReader creates a content reader whose catalog path is fully decided
+// by mapRef. Use it when a content ref is not derived by replacing basePath's
+// basename, for example a fixed single-content endpoint or object bucket/path.
 func NewMappedReader(provider engineplugin.ContentReadableProvider, connInfo engineplugin.ConnectionInfo, mapRef RefCatalogPathMapper, readOptions engineplugin.ReadOptions) contentio.Reader {
 	var rangeReader engineplugin.RangeReadableProvider
 	if typed, ok := provider.(engineplugin.RangeReadableProvider); ok {
@@ -61,7 +67,7 @@ func (r *engineContentReader) Open(ctx context.Context, ref contentio.Ref) (io.R
 	return r.provider.OpenContent(ctx, r.connInfo, path, r.readOptions)
 }
 
-func (r *engineContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
+func (r *engineContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, contentio.ErrContentNotFound
 }
 
@@ -107,6 +113,7 @@ func NewWriter(provider engineplugin.ContentWritableProvider, connInfo engineplu
 	}
 }
 
+// NewMappedWriter is the writer counterpart of NewMappedReader.
 func NewMappedWriter(provider engineplugin.ContentWritableProvider, connInfo engineplugin.ConnectionInfo, mapRef RefCatalogPathMapper, writeOptions engineplugin.WriteOptions) contentio.Writer {
 	return &engineContentWriter{
 		provider:     provider,
@@ -172,5 +179,21 @@ func ObjectPathMapper(engineID uint) RefCatalogPathMapper {
 			return engineplugin.CatalogPath{}, fmt.Errorf("object content ref %q must be bucket/object", ref.Path)
 		}
 		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
+	}
+}
+
+// FixedPathMapper maps every content ref to the same catalog path. It is for
+// single-content endpoints where the endpoint path is already exact.
+func FixedPathMapper(path engineplugin.CatalogPath) RefCatalogPathMapper {
+	return func(contentio.Ref) (engineplugin.CatalogPath, error) {
+		return cloneCatalogPath(path), nil
+	}
+}
+
+func cloneCatalogPath(path engineplugin.CatalogPath) engineplugin.CatalogPath {
+	return engineplugin.CatalogPath{
+		Version:  path.Version,
+		EngineID: path.EngineID,
+		Segments: append([]engineplugin.CatalogSegment(nil), path.Segments...),
 	}
 }

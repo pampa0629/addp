@@ -344,9 +344,9 @@ func (r parquetMemoryContentReader) Open(_ context.Context, ref contentio.Ref) (
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (r parquetMemoryContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Metadata, error) {
+func (r parquetMemoryContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Stat, error) {
 	_, ok := r.data[ref.Path]
-	return &contentio.Metadata{Ref: ref, Exists: ok}, nil
+	return &contentio.Stat{Ref: ref, Exists: ok}, nil
 }
 
 func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref) ([]contentio.Ref, error) {

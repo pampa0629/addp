@@ -17,7 +17,7 @@ import (
 
 var _ format.MultiTableWriterProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.MultiWriter, target contentio.Ref, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if output == nil {
 		return nil, fmt.Errorf("ref writer cannot be nil")
 	}
@@ -70,6 +70,7 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 		tempDir:       tempDir,
 		basePath:      basePath,
 		writer:        writer,
+		refs:          append([]contentio.Ref(nil), refs...),
 		geometryField: geometryField,
 		fieldNames:    dbfSchema.originalNames,
 		fields:        dbfSchema.fields,
@@ -78,8 +79,9 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 }
 
 type multiTableWriter struct {
-	output        contentio.MultiWriter
+	output        contentio.Writer
 	target        contentio.Ref
+	refs          []contentio.Ref
 	tempDir       string
 	basePath      string
 	writer        *Writer
@@ -256,21 +258,19 @@ func (w *multiTableWriter) Close(ctx context.Context) error {
 		w.writer = nil
 	}
 	if err := w.writeSidecarFiles(); err != nil {
-		_ = w.output.Abort(ctx)
 		return err
 	}
-	refs := contentio.SameBasenameRefs(w.target.Path, RelatedRefSpecs())
+	refs := w.refs
+	if len(refs) == 0 {
+		refs = contentio.SameBasenameRefs(w.target.Path, RelatedRefSpecs())
+	}
 	for _, ref := range refs {
 		if !ref.Required && !fileExists(refPath(w.basePath, ref)) {
 			continue
 		}
 		if err := copyRef(ctx, w.output, w.basePath, ref); err != nil {
-			_ = w.output.Abort(ctx)
 			return err
 		}
-	}
-	if err := w.output.Commit(ctx); err != nil {
-		return fmt.Errorf("commit shapefile refs: %w", err)
 	}
 	return nil
 }
@@ -293,7 +293,7 @@ func (w *multiTableWriter) writeSidecarFiles() error {
 	return nil
 }
 
-func copyRef(ctx context.Context, output contentio.MultiWriter, basePath string, ref contentio.Ref) error {
+func copyRef(ctx context.Context, output contentio.Writer, basePath string, ref contentio.Ref) error {
 	sourcePath := refPath(basePath, ref)
 	source, err := os.Open(sourcePath)
 	if err != nil {

@@ -33,7 +33,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		return nil, err
 	}
 	formatType := normalizeFileTableFormat(stringAttribute(req.Attributes, "format"))
-	refs := refReaderForPreview(contentCtx.reader, contentCtx.path, formatType, req.Attributes).Refs()
+	refs := refsForPreview(contentCtx.path, formatType, req.Attributes)
 	ref, ok := refForPreviewPath(formatType, refs, req.RefPath)
 	if !ok {
 		return nil, fmt.Errorf("ref %s not found", req.RefPath)

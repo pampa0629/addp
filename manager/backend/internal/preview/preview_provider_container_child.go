@@ -276,7 +276,7 @@ func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, r
 		opts = format.ChildTableParseOptions(req.ChildName, containerChildForRequest(req.Attributes, req.ChildName))
 	}
 	if refProvider, ok := provider.(format.MultiTableProvider); ok && len(child.Refs) > 0 {
-		return (&FileTablePreviewProvider{}).previewRefs(ctx, contentio.NewStaticMultiReader(child.Reader, child.Refs), bucket, child.Format, refProvider, opts, req)
+		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, bucket, child.Format, refProvider, opts, req)
 	}
 	return (&FileTablePreviewProvider{}).previewStreamable(ctx, child.Reader, bucket, child.Ref.Path, child.Format, provider, opts, req)
 }

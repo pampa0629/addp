@@ -195,8 +195,8 @@ func (r singleTestContentReader) Open(context.Context, contentio.Ref) (io.ReadCl
 	return io.NopCloser(bytes.NewReader(r.data)), nil
 }
 
-func (r singleTestContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
-	return &contentio.Metadata{Exists: true, Size: int64(len(r.data))}, nil
+func (r singleTestContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return &contentio.Stat{Exists: true, Size: int64(len(r.data))}, nil
 }
 
 func (r singleTestContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {

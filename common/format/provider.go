@@ -86,7 +86,7 @@ type TableReader interface {
 type MultiTableReaderProvider interface {
 	Provider
 	RelatedRefSpecs() []contentio.RelatedRefSpec
-	OpenMultiTableReader(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (TableReader, error)
+	OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (TableReader, error)
 }
 
 // TableProvider 是兼容旧调用方的组合接口。
@@ -115,7 +115,7 @@ type TableWriterProvider interface {
 type MultiTableWriterProvider interface {
 	Provider
 	RelatedRefSpecs() []contentio.RelatedRefSpec
-	OpenMultiTableWriter(ctx context.Context, output contentio.MultiWriter, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
 type TableWriter interface {
@@ -179,8 +179,8 @@ type MediaProvider = MediaInfoProvider
 
 type MultiTableProvider interface {
 	TableProvider
-	DescribeMultiTable(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (*TableInfo, error)
-	SampleMultiTable(ctx context.Context, refs contentio.MultiReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (*TableInfo, error)
+	SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。

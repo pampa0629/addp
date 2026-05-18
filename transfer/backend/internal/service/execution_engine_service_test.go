@@ -9,8 +9,8 @@ import (
 
 func TestTargetCatalogPathsUsesObjectParentPrefix(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Resource: planner.ResourceSpec{
-			Kind: "object",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindObject,
 			Path: map[string]interface{}{"bucket": "addp", "path": "gis/abc.shp"},
 		},
 	}
@@ -24,8 +24,8 @@ func TestTargetCatalogPathsUsesObjectParentPrefix(t *testing.T) {
 
 func TestTargetCatalogPathsUsesBucketForTopLevelObject(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Resource: planner.ResourceSpec{
-			Kind: "object",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindObject,
 			Path: map[string]interface{}{"bucket": "addp", "path": "abc.csv"},
 		},
 	}
@@ -39,8 +39,8 @@ func TestTargetCatalogPathsUsesBucketForTopLevelObject(t *testing.T) {
 
 func TestTargetCatalogPathsUsesFileParentDirectory(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Resource: planner.ResourceSpec{
-			Kind: "file",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindFile,
 			Path: map[string]interface{}{"path": "exports/abc.shp"},
 		},
 	}
@@ -54,8 +54,8 @@ func TestTargetCatalogPathsUsesFileParentDirectory(t *testing.T) {
 
 func TestTargetCatalogPathsUsesFilesystemRootForTopLevelFile(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Resource: planner.ResourceSpec{
-			Kind: "file",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindFile,
 			Path: map[string]interface{}{"path": "abc.csv"},
 		},
 	}
@@ -69,8 +69,8 @@ func TestTargetCatalogPathsUsesFilesystemRootForTopLevelFile(t *testing.T) {
 
 func TestTargetCatalogPathsUsesNativeTableNamespace(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Resource: planner.ResourceSpec{
-			Kind: "native_table",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindNativeTable,
 			Path: map[string]interface{}{"schema": "public", "table": "roads"},
 		},
 	}

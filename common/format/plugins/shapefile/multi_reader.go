@@ -10,16 +10,16 @@ import (
 
 var _ format.MultiTableReaderProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, refs contentio.MultiReader, options *format.ParseOptions) (format.TableReader, error) {
+func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *format.ParseOptions) (format.TableReader, error) {
 	opts := plugin.resolveOptions(options)
 
-	if rangeReader, ok := refs.(contentio.MultiRangeReader); ok {
-		source, indexed, err := newIndexedMultiTableReadSource(ctx, plugin, refs.Refs(), rangeReader, opts)
+	if rangeReader, ok := reader.(contentio.RangeReader); ok {
+		source, indexed, err := newIndexedMultiTableReadSource(ctx, plugin, refs, rangeReader, opts)
 		if err != nil {
 			return nil, err
 		}
 		if indexed {
-			schema, err := source.describeTable(ctx, refs.Refs(), opts)
+			schema, err := source.describeTable(ctx, refs, opts)
 			if err != nil {
 				return nil, fmt.Errorf("describe indexed shapefile ref table: %w", err)
 			}
@@ -30,12 +30,12 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, refs contentio.M
 		}
 	}
 
-	schema, err := plugin.DescribeMultiTable(ctx, refs, opts)
+	schema, err := plugin.DescribeMultiTable(ctx, reader, refs, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	_, basePath, cleanup, err := materializeRefs(ctx, refs)
+	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
 		return nil, err
 	}
@@ -44,13 +44,13 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, refs contentio.M
 			opts.Encoding = cpgEncoding
 		}
 	}
-	reader, err := OpenWithEncoding(basePath+".shp", opts.Encoding)
+	shpReader, err := OpenWithEncoding(basePath+".shp", opts.Encoding)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("open shapefile ref table reader: %w", err)
 	}
 	return &sequentialMultiTableReader{
-		reader:        reader,
+		reader:        shpReader,
 		schema:        schema,
 		cleanup:       cleanup,
 		geometryField: plugin.getGeometryFieldName(),

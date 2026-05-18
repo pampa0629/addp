@@ -189,7 +189,7 @@ func (p providerTestMultiTableReaderProvider) RelatedRefSpecs() []contentio.Rela
 	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
 }
 
-func (p providerTestMultiTableReaderProvider) OpenMultiTableReader(context.Context, contentio.MultiReader, *ParseOptions) (TableReader, error) {
+func (p providerTestMultiTableReaderProvider) OpenMultiTableReader(context.Context, contentio.Reader, []contentio.Ref, *ParseOptions) (TableReader, error) {
 	return nil, nil
 }
 
@@ -209,7 +209,7 @@ func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []contentio.Rela
 	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
 }
 
-func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.MultiWriter, contentio.Ref, *TableInfo, *WriteOptions) (TableWriter, error) {
+func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.Writer, []contentio.Ref, contentio.Ref, *TableInfo, *WriteOptions) (TableWriter, error) {
 	return nil, nil
 }
 

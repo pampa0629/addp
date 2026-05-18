@@ -66,8 +66,8 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
-	multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs()))
-	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), multiWriter, contentRefFromCatalogPath(target), &format.TableInfo{
+	refs := contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, contentRefFromCatalogPath(target), &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
 			{Name: "name", Type: format.FieldTypeString, Size: 32},
@@ -123,8 +123,8 @@ func TestTableTransferExecutorPrefersMultiReaderProvider(t *testing.T) {
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
-	multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs()))
-	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), multiWriter, contentRefFromCatalogPath(target), &format.TableInfo{
+	refs := contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, contentRefFromCatalogPath(target), &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
 			{Name: "name", Type: format.FieldTypeString, Size: 32},
@@ -211,7 +211,7 @@ func (p *failingMultiTableProvider) RelatedRefSpecs() []contentio.RelatedRefSpec
 	return append([]contentio.RelatedRefSpec(nil), p.specs...)
 }
 
-func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.MultiReader, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.Reader, []contentio.Ref, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleCalled = true
 	return nil, fmt.Errorf("sample multi provider should not be called")
 }

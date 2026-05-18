@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"sort"
-	"strings"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
@@ -104,7 +103,8 @@ func enrichRefTableInfo(
 	if !ok {
 		return
 	}
-	tableInfo, err := refProvider.DescribeMultiTable(ctx, newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor, item.ContentRefs()), nil)
+	reader := newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor)
+	tableInfo, err := refProvider.DescribeMultiTable(ctx, reader, item.ContentRefs(), nil)
 	if err != nil {
 		return
 	}
@@ -117,33 +117,26 @@ type metaRefReader struct {
 	connInfo       plugin.ConnectionInfo
 	engineID       uint
 	catalogPathFor func(path string) plugin.CatalogPath
-	refs           []contentio.Ref
 }
 
-func newMetaRefReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath, refs []contentio.Ref) *metaRefReader {
+func newMetaRefReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath) *metaRefReader {
 	return &metaRefReader{
 		contentReader:  contentReader,
 		connInfo:       connInfo,
 		engineID:       engineID,
 		catalogPathFor: catalogPathFor,
-		refs:           append([]contentio.Ref(nil), refs...),
 	}
-}
-
-func (r *metaRefReader) Refs() []contentio.Ref {
-	return append([]contentio.Ref(nil), r.refs...)
 }
 
 func (r *metaRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	return r.contentReader.OpenContent(ctx, r.connInfo, resolveCatalogPath(r.engineID, ref.Path, r.catalogPathFor), plugin.ReadOptions{})
 }
 
-func (r *metaRefReader) OpenRole(ctx context.Context, role string) (io.ReadCloser, error) {
-	for _, ref := range r.refs {
-		if strings.EqualFold(ref.Role, role) {
-			return r.Open(ctx, ref)
-		}
-	}
+func (r *metaRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, contentio.ErrContentNotFound
+}
+
+func (r *metaRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, contentio.ErrContentNotFound
 }
 

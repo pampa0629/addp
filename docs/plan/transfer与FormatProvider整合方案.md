@@ -221,8 +221,8 @@ engine capability
 
 ```text
 DataBatch
-  -> format BatchWriter / contentio.MultiWriter
-  -> contentio.Writer
+  -> format BatchWriter / TableWriter
+  -> contentio.Writer + []contentio.Ref
   -> CommitPolicy
 ```
 
@@ -361,7 +361,7 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 
 - FormatPlugin、info provider、content reader 不返回 Manager 面向前端的 DTO。
 - Transfer 不复用 Manager 面向前端的 DTO 做批量读取。
-- 二者可以共享 `contentio.Reader`、`contentio.MultiReader`、`TableProvider.Describe/Sample`。
+- 二者可以共享 `contentio.Reader`、`[]contentio.Ref`、`TableProvider.Describe/Sample`。
 - Transfer 需要额外的 `ReadBatch/WriteBatch/CommitPolicy`。
 
 ## 目标任务配置方向

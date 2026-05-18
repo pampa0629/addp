@@ -86,12 +86,12 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	}
 
 	if refProvider, ok := provider.(format.MultiTableProvider); ok {
-		refReader := refReaderForPreview(contentReader, fullPath, formatType, req.Attributes)
-		preview, err := p.previewRefs(ctx, refReader, contentCtx.bucket, formatType, refProvider, opts, req)
+		refs := refsForPreview(fullPath, formatType, req.Attributes)
+		preview, err := p.previewRefs(ctx, contentReader, refs, contentCtx.bucket, formatType, refProvider, opts, req)
 		if err != nil {
 			return nil, err
 		}
-		attachMultiRefPreview(preview, formatType, refReader.Refs())
+		attachMultiRefPreview(preview, formatType, refs)
 		return preview, nil
 	}
 
@@ -592,7 +592,8 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 // previewRefs 处理多 ref表格格式。
 func (p *FileTablePreviewProvider) previewRefs(
 	ctx context.Context,
-	refs contentio.MultiReader,
+	reader contentio.Reader,
+	refs []contentio.Ref,
 	bucket string,
 	formatType format.FormatType,
 	provider format.MultiTableProvider,
@@ -605,7 +606,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		return nil, err
 	}
 	if tableInfo == nil {
-		tableInfo, err = provider.DescribeMultiTable(ctx, refs, opts)
+		tableInfo, err = provider.DescribeMultiTable(ctx, reader, refs, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
@@ -635,7 +636,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	offset := (page - 1) * pageSize
 
 	// 读取分页数据
-	rows, err := provider.SampleMultiTable(ctx, refs, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleMultiTable(ctx, reader, refs, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read %s ref table data: %w", formatType, err)
 	}

@@ -46,8 +46,8 @@
 | capability | 能力 | 引擎、格式插件或数据项声明 / 呈现的能力。 | engine capability、format capability、item capability 含义不同。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | contentio.Ref | 内容引用 | 一个已确定 content 的定位器，不携带凭据。 | 需要多个 content 时使用 refs 数组。 |
-| contentio.Reader | 内容读取器 | 面向单 content 或 scope 的统一读取抽象。 | 由编排层基于 engine capability 构造。 |
-| contentio.MultiReader | 多内容读取器 | 面向 multi item 的多 content 读取抽象。 | 例如 Shapefile 的 `.shp/.shx/.dbf/.prj`。 |
+| contentio.Reader | 内容读取器 | 按内容引用打开单个 content 或列举 scope 的统一读取抽象。 | 由编排层基于 engine capability 构造。 |
+| []contentio.Ref | 内容引用集合 | 多 content 格式的显式引用列表。 | 例如 Shapefile 的 `.shp/.shx/.dbf/.prj`；不是独立 reader。 |
 | NativeCursor | 原生游标 | 面向数据库表、文档集合、图查询等引擎原生批量读取的抽象。 | 通常不经过文件格式解码。 |
 
 ## 命名约定

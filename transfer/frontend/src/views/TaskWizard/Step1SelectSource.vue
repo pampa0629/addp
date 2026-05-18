@@ -319,10 +319,10 @@ async function loadFieldsForNode(node) {
     return
   }
 
-  const resource = buildSourceResource(node)
+  const endpointResource = buildSourceEndpointResource(node)
   try {
-    const response = resource.kind === 'native_table'
-      ? await getTableFields(formData.engineID, resource.path.schema, resource.path.table)
+    const response = endpointResource.kind === 'native_table'
+      ? await getTableFields(formData.engineID, endpointResource.path.schema, endpointResource.path.table)
       : await getItemFieldsByCatalogPath(formData.engineID, catalogPathForNode(node))
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     props.wizardState.loadSourceFields(fieldList)
@@ -336,25 +336,25 @@ function syncSource(node) {
   const engine = selectedEngine.value
   if (!engine || !node) return
 
-  const resource = buildSourceResource(node)
+  const endpointResource = buildSourceEndpointResource(node)
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
     scope: 'system',
-    schema: resource.path?.schema || '',
-    table: resource.path?.table || '',
+    schema: endpointResource.path?.schema || '',
+    table: endpointResource.path?.table || '',
     sourceType: normalizeEngineType(engine.engine_type),
     dataType: nodeDataType(node),
     representation: representationForSelection(node),
     format: nodeFormat(node),
-    resource,
+    resource: endpointResource,
     extra: {
       sourceLabel: catalogPathForNode(node),
       catalogPath: catalogPathForNode(node),
       dataType: nodeDataType(node),
       representation: representationForSelection(node),
       format: nodeFormat(node),
-      resource,
+      resource: endpointResource,
       sourceItem: {
         name: node.name,
         kind: node.kind,
@@ -366,15 +366,15 @@ function syncSource(node) {
   })
 }
 
-function buildSourceResource(node) {
+function buildSourceEndpointResource(node) {
   const representation = representationForSelection(node)
   if (representation === 'encoded') {
-    return contentResourceFromNode(node)
+    return contentEndpointResourceFromNode(node)
   }
-  return nativeTableResourceFromNode(node)
+  return nativeTableEndpointResourceFromNode(node)
 }
 
-function nativeTableResourceFromNode(node) {
+function nativeTableEndpointResourceFromNode(node) {
   const names = pathNames(node)
   const table = names[names.length - 1] || node?.name || ''
   const schema = names.length > 1 ? names[names.length - 2] : ''
@@ -387,7 +387,7 @@ function nativeTableResourceFromNode(node) {
   }
 }
 
-function contentResourceFromNode(node) {
+function contentEndpointResourceFromNode(node) {
   const names = pathNames(node)
   if (isObjectStorageEngine(selectedEngine.value?.engine_type)) {
     return {
@@ -621,20 +621,20 @@ function pathNames(node) {
 
 function catalogPathForNode(node) {
   if (!node) return ''
-  const resource = buildPathOnlyResource(node)
-  if (resource.kind === 'native_table') {
-    return [resource.path.schema, resource.path.table].filter(Boolean).join('.')
+  const endpointResource = buildPathOnlyEndpointResource(node)
+  if (endpointResource.kind === 'native_table') {
+    return [endpointResource.path.schema, endpointResource.path.table].filter(Boolean).join('.')
   }
-  if (resource.kind === 'object') {
-    return [resource.path.bucket, resource.path.path].filter(Boolean).join('/')
+  if (endpointResource.kind === 'object') {
+    return [endpointResource.path.bucket, endpointResource.path.path].filter(Boolean).join('/')
   }
-  return resource.path.path || pathNames(node).join('/')
+  return endpointResource.path.path || pathNames(node).join('/')
 }
 
-function buildPathOnlyResource(node) {
+function buildPathOnlyEndpointResource(node) {
   return representationForSelection(node) === 'encoded'
-    ? contentResourceFromNode(node)
-    : nativeTableResourceFromNode(node)
+    ? contentEndpointResourceFromNode(node)
+    : nativeTableEndpointResourceFromNode(node)
 }
 
 function displayPath(segments) {
@@ -679,12 +679,12 @@ function restoreSourceNodeFromState(state) {
     }
   }
 
-  const resource = state.sourceResource.value || config.resource
-  if (!resource?.kind) return null
+  const endpointResource = state.sourceEndpointResource.value || config.resource
+  if (!endpointResource?.kind) return null
 
-  if (resource.kind === 'native_table') {
-    const schema = resource.path?.schema || state.sourceSchema.value || ''
-    const table = resource.path?.table || resource.path?.name || state.sourceTable.value || ''
+  if (endpointResource.kind === 'native_table') {
+    const schema = endpointResource.path?.schema || state.sourceSchema.value || ''
+    const table = endpointResource.path?.table || endpointResource.path?.name || state.sourceTable.value || ''
     return {
       name: table,
       kind: 'table',
@@ -701,9 +701,9 @@ function restoreSourceNodeFromState(state) {
     }
   }
 
-  if (resource.kind === 'object') {
-    const bucket = resource.path?.bucket || ''
-    const objectPath = resource.path?.path || ''
+  if (endpointResource.kind === 'object') {
+    const bucket = endpointResource.path?.bucket || ''
+    const objectPath = endpointResource.path?.path || ''
     const objectParts = objectPath.split('/').filter(Boolean)
     const name = objectParts[objectParts.length - 1] || bucket
     return {
@@ -726,8 +726,8 @@ function restoreSourceNodeFromState(state) {
     }
   }
 
-  if (resource.kind === 'file') {
-    const parts = String(resource.path?.path || '').split('/').filter(Boolean)
+  if (endpointResource.kind === 'file') {
+    const parts = String(endpointResource.path?.path || '').split('/').filter(Boolean)
     const name = parts[parts.length - 1] || config.sourceLabel || ''
     return {
       name,
