@@ -47,14 +47,16 @@ func ListFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 		}
 		nodes := make([]CatalogNode, 0, len(roots))
 		for _, root := range roots {
+			rootName := normalizeFileCatalogRootName(root.Name)
+			rootPath := NormalizeFileCatalogPath(root.Path)
 			nodes = append(nodes, CatalogNode{
-				Name:        root.Name,
-				Path:        appendCatalogSegment(parent, engineID, CatalogTermRoot, CatalogKindRoot, root.Name),
+				Name:        rootName,
+				Path:        appendCatalogSegment(parent, engineID, CatalogTermRoot, CatalogKindRoot, rootName),
 				Term:        CatalogTermRoot,
 				Kind:        CatalogKindRoot,
 				IsContainer: true,
 				Attributes: map[string]interface{}{
-					"path": root.Path,
+					"path": rootPath,
 				},
 			})
 		}
@@ -74,6 +76,7 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 	}
 	nodes := make([]CatalogNode, 0, len(dirs)+len(files))
 	for _, dir := range dirs {
+		dir.Path = NormalizeFileCatalogPath(dir.Path)
 		dirPath := appendCatalogSegment(parent, engineID, CatalogTermDirectory, CatalogKindDirectory, dir.Name)
 		nodes = append(nodes, CatalogNode{
 			Name:        dir.Name,
@@ -94,6 +97,7 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 		}
 	}
 	for _, file := range files {
+		file.Path = NormalizeFileCatalogPath(file.Path)
 		filePath := appendCatalogSegment(parent, engineID, CatalogTermFile, CatalogKindFile, file.Name)
 		nodes = append(nodes, CatalogNode{
 			Name:   file.Name,
@@ -116,6 +120,7 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 
 // ResolveFileCatalogPath resolves a file catalog path.
 func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogNode, error) {
+	path = NormalizeFileCatalogSegments(path)
 	if len(path.Segments) == 0 {
 		return &CatalogNode{
 			Name:        "",
@@ -155,6 +160,7 @@ func DescribeFileItem(ctx context.Context, callbacks FileCatalogCallbacks, connI
 	if callbacks.GetFileMetadataFunc == nil {
 		return nil, fmt.Errorf("file catalog callbacks GetFileMetadataFunc is nil")
 	}
+	path = NormalizeFileCatalogSegments(path)
 	meta, err := callbacks.GetFileMetadataFunc(ctx, connInfo, path.StringPath())
 	if err != nil {
 		return nil, err
@@ -178,8 +184,9 @@ func DescribeFileItem(ctx context.Context, callbacks FileCatalogCallbacks, connI
 }
 
 func fileCatalogListPath(path CatalogPath) string {
+	path = NormalizeFileCatalogSegments(path)
 	if len(path.Segments) == 1 && path.Segments[0].Kind == CatalogKindRoot {
-		return "/"
+		return ""
 	}
 	return path.StringPath()
 }

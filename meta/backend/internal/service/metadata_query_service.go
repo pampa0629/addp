@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -209,7 +210,7 @@ func catalogPathCandidates(catalogPath string) []string {
 }
 
 func normalizeCatalogPath(catalogPath string) string {
-	return strings.Trim(strings.TrimSpace(catalogPath), "/")
+	return metapath.SanitizeFSPath(catalogPath)
 }
 
 func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {

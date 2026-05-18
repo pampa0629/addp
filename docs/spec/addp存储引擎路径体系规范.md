@@ -164,26 +164,95 @@ meta_node 存储结构：        用户看到的树：
     └── file: README.md        └── README.md
 ```
 
-root 节点在数据库中存在（作为顶层子节点的父节点），但在展示层透明化——
-其子节点直接挂到引擎节点下，用户不感知 root 这一层。
+root 节点在数据库中存在（作为顶层子节点的父节点），但在 Manager 等资源树展示层透明化——
+其子节点直接挂到引擎节点下，用户不感知 root 这一层。目录选择器等需要让用户选择挂载根时，可以把该结构性根显示为 `/`。
 
-NFS 必须创建 root meta_node，且 root 的 `name` 必须为 `.`。这是文件系统路径模型的结构性要求：
+#### NFS root、name 与 full_name 的语义定位
+
+NFS 的 root 容易混淆，是因为它不像 MinIO bucket 或 PostgreSQL schema 那样是用户明确创建、可见且有业务名称的根对象。
+
+MinIO/S3 的 bucket 同时是可见节点和业务路径起点：
+
+```text
+bucket.name = "addp"
+bucket.full_name = "addp"
+```
+
+PostgreSQL 的 schema 也同时是可见节点和业务路径起点：
+
+```text
+schema.name = "public"
+schema.full_name = "public"
+```
+
+NFS 不同。NFS root 是“挂载点内的结构性根”，不是业务路径本身：
+
+```text
+root.name = "/"
+root.full_name = ""
+```
+
+因此，NFS 在 ADDP 中要按四层语义分别处理：
+
+| 层次 | 字段 / 概念 | NFS root 取值 | 用途 |
+|---|---|---|---|
+| 展示名 | `meta_node.name` | `/` | 节点标题、目录选择器中的根目录显示 |
+| 语义路径 | `meta_node.full_name` | `""` | 资源定位、指纹、扫描、预览、Transfer meta 扫描 |
+| Meta 树结构 | `meta_node.path` | node id 链 | 表达父子节点关系，不是存储路径 |
+| 底层物理路径 | NFS plugin 内部路径 | `/` | 传给 NFS client 的真实文件系统路径 |
+
+这一点是 NFS 与对象存储、数据库 catalog 最大的差异：
+
+```text
+Engine 实例
+  └── root: /              ← 结构性 root，不进入 full_name
+        ├── file: README.md
+        ├── dir: shp
+        │     └── file: shp/a3.shp
+        └── dir: exports
+              └── file: exports/a.csv
+```
+
+资源树展示可以透明化 root：
+
+```text
+NFS 引擎
+  ├── README.md
+  ├── shp
+  │   └── a3.shp
+  └── exports
+      └── a.csv
+```
+
+但透明化只属于展示层，不得改变 Meta 中的父子关系。根目录文件的 `node_id` 指向 root node；`shp/a3.shp` 的 `node_id` 必须指向 `shp` dir node，不能因为 `full_name` 已包含 `shp/` 就挂到 root node 下。
+
+一句话原则：
+
+```text
+NFS root 是结构上必须存在、语义路径上为空、展示上可透明的节点。
+```
+
+NFS 必须创建 root meta_node，且 root 的 `name` 必须为 `/`。这是文件系统路径模型的结构性要求：
 
 - NFS 的 `export_path` 属于连接配置，不得暴露为数据路径，也不得进入 `full_name`。
 - 挂载根目录下直接存在的文件必须有父 node 容纳；该父 node 就是 root meta_node。
 - root meta_node 是元数据树结构根，不是用户真实数据路径的一部分。
-- 当前 NFS 实现中以 `.` 作为唯一 root 的效果是正确的，后续重构不得省略或改错。
+- `.` 只是底层文件系统 API 可接受的当前目录写法，不得进入 CatalogPath、`full_name`、ResourceLocator 或 Transfer 任务 JSON。
 
 root 节点字段规范：
 
 | 字段 | 值 |
 |------|-----|
-| `name` | `.` |
+| `name` | `/` |
 | `full_name` | `""` |
 | `node_type` | `root` |
-| `attributes.storage.path` | `/` |
+| `attributes.path` | `""` |
 
-`name = "."` 源自 Unix 惯例的"当前目录"含义，同时避免暴露 `export_path`。
+这里三个字段含义不同，不能互相替代：
+
+- `name` 是节点名 / 展示名；NFS 根显示为 `/`。
+- `full_name` 是引擎内资源语义路径；NFS 根路径为空字符串。
+- `path` 是 Meta 内部节点层级路径，由 node id 组成，不表达存储路径。
 
 ### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
 
@@ -260,18 +329,19 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 | 引擎类型 | 扫描单元 | 说明 |
 |---------|---------|------|
 | 对象存储（MinIO/S3） | bucket / path | 可按 bucket 或指定路径触发扫描 |
-| NFS | 挂载根 `/` | 只有一个扫描入口，扫描整个挂载点 |
+| NFS | 挂载根 `/` 或任意目录路径 | 可扫描整个挂载点，也可按目录路径扫描；扫描非根路径时必须先确保 root -> directory 节点链存在 |
 | 关系型数据库（PostgreSQL/MySQL/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/Doris/ClickHouse 选 database） |
 | Namespace/Item 型引擎（MongoDB/Neo4j） | database | 用户选择一个或多个 database 触发扫描 |
 
 ### NFS 扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 返回唯一根节点，`Name = "."`，`Path = "/"`
-2. 创建 root `meta_node`，`full_name = ""`
-3. 递归扫描 `/` 下的所有目录和文件
-4. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`
-5. 文件创建 `meta_item`（`item_type = file`），`full_name = 文件相对路径`
-6. 文件格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区
+1. 通过 `CatalogProvider.ListChildren(root)` 返回唯一根节点，`Name = "/"`，CatalogPath 包含 root segment，但其 `StringPath()` 为空。
+2. 创建 root `meta_node`，`name = "/"`，`full_name = ""`。
+3. 扫描根目录时，递归扫描 `/` 下的所有目录和文件。
+4. 扫描非根目录时，先按 `catalog_paths` 确保从 root 到目标目录的 `dir meta_node` 链存在，再把扫描上下文切换到该目录 node。
+5. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`。
+6. 文件创建 `meta_item`（`item_type = file`），`node_id` 指向所在目录 node，`full_name = 文件相对路径`。
+7. 文件格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区。
 
 ### 对象存储扫描流程
 

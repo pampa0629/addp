@@ -170,7 +170,7 @@ func (p *NFSPlugin) TestConnection(ctx context.Context, connInfo plugin.Connecti
 
 // === 文件系统底层 helper ===
 
-// listRoots 返回 NFS 唯一根节点，Name 为空（挂载点透明，不暴露 export_path）
+// listRoots 返回 NFS 唯一根节点，挂载点透明，不暴露 export_path。
 func (p *NFSPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
@@ -183,10 +183,9 @@ func (p *NFSPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInf
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
-	// NFS 根节点用 "." 表示挂载根（不暴露 export_path）
 	return []plugin.RootEntry{{
-		Name: ".",
-		Path: "/",
+		Name: "/",
+		Path: "",
 	}}, nil
 }
 
@@ -448,13 +447,11 @@ func (p *NFSPlugin) parseConnInfo(connInfo plugin.ConnectionInfo) (server, expor
 
 // normalizePath 确保路径以 / 开头
 func normalizePath(path string) string {
-	if path == "" || path == "/" {
+	path = plugin.NormalizeFileCatalogPath(path)
+	if path == "" {
 		return "/"
 	}
-	if !strings.HasPrefix(path, "/") {
-		return "/" + path
-	}
-	return strings.TrimSuffix(path, "/")
+	return "/" + path
 }
 
 // joinPath 拼接路径

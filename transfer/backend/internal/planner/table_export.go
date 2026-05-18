@@ -423,7 +423,7 @@ func targetContentPath(engineID uint, resource ResourceSpec) (engineplugin.Catal
 func contentResourcePath(engineID uint, resource ResourceSpec, role string) (engineplugin.CatalogPath, error) {
 	switch resource.Kind {
 	case resourceKindFile:
-		path := contentPathString(resource.Path, "file")
+		path := engineplugin.NormalizeFileCatalogPath(contentPathString(resource.Path, "file"))
 		if path == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("%s file resource path requires path", role)
 		}

@@ -13,10 +13,10 @@
           </el-link>
         </el-breadcrumb-item>
         <el-breadcrumb-item
-          v-for="(segment, index) in currentSegments"
+          v-for="(segment, index) in breadcrumbSegments"
           :key="`${segment.kind}:${segment.name}:${index}`"
         >
-          <el-link type="primary" @click="openPath(currentSegments.slice(0, index + 1))">
+          <el-link type="primary" @click="openPath(displayIndexToSegments(index))">
             {{ segment.name }}
           </el-link>
         </el-breadcrumb-item>
@@ -110,12 +110,38 @@ const pathForCatalog = computed(() => ({
   segments: currentSegments.value
 }))
 
+const breadcrumbSegments = computed(() => displaySegments(currentSegments.value))
+
 function segmentForNode(node) {
   return {
     name: node.name,
     term: node.term || termForKind(node.kind),
     kind: node.kind || termForKind(node.term)
   }
+}
+
+function isRootSegment(segment) {
+  const kind = String(segment?.kind || segment?.term || '').toLowerCase()
+  const name = String(segment?.name || '').trim()
+  return kind === 'root' || name === '' || name === '.' || name === '/'
+}
+
+function normalizeSegments(segments) {
+  return (segments || []).filter(segment => !isRootSegment(segment))
+}
+
+function displaySegments(segments) {
+  return normalizeSegments(segments)
+}
+
+function catalogSegmentsForDisplayPath(segments) {
+  return normalizeSegments(segments)
+}
+
+function displayIndexToSegments(index) {
+  const visible = breadcrumbSegments.value.slice(0, index + 1)
+  const root = currentSegments.value.find(isRootSegment)
+  return root ? [root, ...visible] : visible
 }
 
 function termForKind(kind) {
@@ -130,7 +156,7 @@ function isDirectoryNode(node) {
 }
 
 function displayPath(segments) {
-  const names = (segments || []).map(segment => segment.name).filter(Boolean)
+  const names = displaySegments(segments).map(segment => segment.name).filter(Boolean)
   return names.length > 0 ? names.join('/') : '/'
 }
 
@@ -138,7 +164,7 @@ function normalizeInitialPath(path) {
   return String(path || '')
     .split('/')
     .map(part => part.trim())
-    .filter(Boolean)
+    .filter(part => part && part !== '.' && part !== '/')
     .map((name, index) => ({
       name,
       term: props.storageKind === 's3' && index === 0 ? 'bucket' : 'prefix',
@@ -154,7 +180,10 @@ async function loadDirectories() {
     directories.value = nodes
       .filter(isDirectoryNode)
       .map(node => {
-        const segments = [...currentSegments.value, segmentForNode(node)]
+        const segment = segmentForNode(node)
+        const segments = isRootSegment(segment)
+          ? [segment]
+          : [...currentSegments.value, segment]
         return {
           ...node,
           nodeKey: displayPath(segments),
@@ -184,7 +213,8 @@ function handleRowClick(row) {
 }
 
 function selectDirectory(segments) {
-  emit('selected', displayPath(segments || []))
+  const selected = displayPath(catalogSegmentsForDisplayPath(segments || []))
+  emit('selected', selected === '/' ? '' : selected)
   emit('update:visible', false)
 }
 

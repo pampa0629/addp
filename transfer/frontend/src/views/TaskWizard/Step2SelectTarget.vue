@@ -398,7 +398,7 @@ async function handleTargetSchemaChange() {
 }
 
 function handleOutputPathSelected(path) {
-  outputPath.value = path
+  outputPath.value = normalizeFileCatalogPath(path)
   syncTarget()
 }
 
@@ -490,7 +490,7 @@ async function restoreState() {
 
   const config = state.targetConfig.value || {}
   outputFormat.value = config.format || 'csv'
-  outputPath.value = config.resourcePath || ''
+  outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
   outputFileName.value = config.resourceFile || ''
   csvHeaders.value = config.includeHeader !== false
   csvDelimiter.value = config.delimiter || ','
@@ -579,6 +579,15 @@ function normalizeTableWriteMode(value) {
   const mode = String(value || '').toLowerCase()
   if (mode === 'append') return 'append'
   return 'overwrite'
+}
+
+function normalizeFileCatalogPath(path) {
+  return String(path || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map(part => part.trim())
+    .filter(part => part && part !== '.' && part !== '/')
+    .join('/')
 }
 
 function normalizeOutputFormatCapability(item) {

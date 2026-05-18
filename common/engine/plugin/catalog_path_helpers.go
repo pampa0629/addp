@@ -2,6 +2,60 @@ package plugin
 
 import "strings"
 
+// NormalizeFileCatalogPath maps filesystem catalog paths to ADDP semantic paths.
+// The storage root is represented by an empty path; "." and "/" are only
+// tolerated as external/root spellings and must not become catalog segments.
+func NormalizeFileCatalogPath(rawPath string) string {
+	trimmed := strings.TrimSpace(rawPath)
+	trimmed = strings.ReplaceAll(trimmed, "\\", "/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" || trimmed == "." {
+		return ""
+	}
+	parts := make([]string, 0)
+	for _, part := range strings.Split(trimmed, "/") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "/")
+}
+
+func normalizeFileCatalogRootName(name string) string {
+	if NormalizeFileCatalogPath(name) == "" {
+		return "/"
+	}
+	return strings.Trim(name, "/")
+}
+
+func NormalizeFileCatalogSegments(path CatalogPath) CatalogPath {
+	if len(path.Segments) == 0 {
+		return path
+	}
+	normalized := CatalogPath{
+		Version:  path.Version,
+		EngineID: path.EngineID,
+		Segments: make([]CatalogSegment, 0, len(path.Segments)),
+	}
+	for i, segment := range path.Segments {
+		if segment.Kind == CatalogKindRoot || segment.Term == CatalogTermRoot {
+			segment.Name = normalizeFileCatalogRootName(segment.Name)
+			normalized.Segments = append(normalized.Segments, segment)
+			continue
+		}
+		if NormalizeFileCatalogPath(segment.Name) == "" {
+			continue
+		}
+		if i > 0 {
+			segment.Name = strings.Trim(segment.Name, "/")
+		}
+		normalized.Segments = append(normalized.Segments, segment)
+	}
+	return normalized
+}
+
 func appendCatalogSegment(parent CatalogPath, engineID uint, term, kind, name string) CatalogPath {
 	next := CatalogPath{
 		Version:  parent.Version,
@@ -29,8 +83,8 @@ func FileRootPath(engineID uint) CatalogPath {
 // FileDirectoryPath maps an engine-relative filesystem path to root -> directory segments.
 func FileDirectoryPath(engineID uint, rawPath string) CatalogPath {
 	path := FileRootPath(engineID)
-	trimmed := strings.Trim(rawPath, "/")
-	if trimmed == "" || trimmed == "." {
+	trimmed := NormalizeFileCatalogPath(rawPath)
+	if trimmed == "" {
 		return path
 	}
 	for _, part := range strings.Split(trimmed, "/") {
@@ -44,8 +98,8 @@ func FileDirectoryPath(engineID uint, rawPath string) CatalogPath {
 
 // FileItemPath maps an engine-relative filesystem path to root -> directory? -> file.
 func FileItemPath(engineID uint, rawPath string) CatalogPath {
-	trimmed := strings.Trim(rawPath, "/")
-	if trimmed == "" || trimmed == "." {
+	trimmed := NormalizeFileCatalogPath(rawPath)
+	if trimmed == "" {
 		return FileRootPath(engineID)
 	}
 	parts := strings.Split(trimmed, "/")

@@ -88,7 +88,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - 对象存储：`bucket -> prefix -> object`。
 - 文件系统：`root -> directory -> file`。
 
-二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。NFS 必须保留 `name="."` 的 root meta_node，用于容纳挂载根目录下直接存在的文件。
+二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。NFS 必须保留结构性 root meta_node，用于容纳挂载根目录下直接存在的文件；root `name` 使用 `/`，`full_name` 使用空字符串，`.` 不得进入 catalog path 或元数据路径。
 
 ---
 

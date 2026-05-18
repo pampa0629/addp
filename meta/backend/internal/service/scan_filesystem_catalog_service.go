@@ -77,6 +77,7 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	}
 	pathToName := make(map[string]string, len(allRoots))
 	for _, r := range allRoots {
+		r.Path = metapath.SanitizeFSPath(r.Path)
 		pathToName[r.Path] = r.Name
 	}
 
@@ -96,17 +97,19 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	totalItems := 0
 
 	for i, rootPath := range paths {
+		rootPath = metapath.SanitizeFSPath(rootPath)
 		if reporter != nil {
-			reporter.Message(fmt.Sprintf("扫描路径 %s", rootPath))
+			displayPath := rootPath
+			if displayPath == "" {
+				displayPath = "/"
+			}
+			reporter.Message(fmt.Sprintf("扫描路径 %s", displayPath))
 		}
 
-		// 使用 catalog 根节点返回的名称；插件返回空名时保持空字符串（如 NFS，挂载点透明）
+		// 使用 catalog 根节点返回的展示名；文件系统语义根路径仍保持空字符串。
 		rootName := pathToName[rootPath]
 
-		// 创建根节点（root）。文件系统 catalog 的根标识由插件连接配置决定，Meta 不再从路径推断。
-		rootFullName := ""
-		rootAttrs := models.JSONMap{"path": rootPath}
-		rootNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, "root", rootName, &rootFullName, rootAttrs)
+		rootNode, scanNode, err := s.ensureFilesystemScanRoot(tenantID, resource.ID, rootName, rootPath)
 		if err != nil {
 			s.log.Warn("创建根节点失败", "path", rootPath, "error", err)
 			continue
@@ -117,7 +120,7 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, rootNode, true, itemTerm, scanDepth, force)
+		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -132,6 +135,48 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	}
 
 	return totalRoots, totalItems, nil
+}
+
+func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID, engineID uint, rootName, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
+	rootFullName := ""
+	rootName = filesystemRootDisplayName(rootName)
+	rootNode, err := s.repo.UpsertNode(tenantID, engineID, nil, "root", rootName, &rootFullName, models.JSONMap{"path": ""})
+	if err != nil {
+		return nil, nil, err
+	}
+	scanPath = metapath.SanitizeFSPath(scanPath)
+	if scanPath == "" {
+		return rootNode, rootNode, nil
+	}
+	current := rootNode
+	parts := strings.Split(scanPath, "/")
+	for i, part := range parts {
+		if part == "" || part == "." {
+			continue
+		}
+		fullName := strings.Join(parts[:i+1], "/")
+		node, err := s.repo.UpsertNode(
+			tenantID,
+			engineID,
+			current,
+			"dir",
+			part,
+			&fullName,
+			models.JSONMap{"path": fullName},
+		)
+		if err != nil {
+			return rootNode, nil, err
+		}
+		current = node
+	}
+	return rootNode, current, nil
+}
+
+func filesystemRootDisplayName(name string) string {
+	if metapath.SanitizeFSPath(name) == "" {
+		return "/"
+	}
+	return strings.Trim(name, "/")
 }
 
 // scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
@@ -455,12 +500,16 @@ func (s *FilesystemCatalogScanService) listRoots(
 		if !node.IsContainer {
 			continue
 		}
-		rootPath := node.Path.StringPath()
+		rootPath := plugin.NormalizeFileCatalogPath(node.Path.StringPath())
 		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			rootPath = raw
+			rootPath = plugin.NormalizeFileCatalogPath(raw)
+		}
+		rootName := node.Name
+		if plugin.NormalizeFileCatalogPath(rootName) == "" {
+			rootName = "/"
 		}
 		roots = append(roots, plugin.RootEntry{
-			Name: node.Name,
+			Name: rootName,
 			Path: rootPath,
 		})
 	}

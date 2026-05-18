@@ -121,6 +121,28 @@ func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("create meta_node table: %v", err)
 	}
+	if err := db.Exec(`
+		CREATE TABLE metadata.meta_item (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			engine_id INTEGER NOT NULL,
+			node_id INTEGER NOT NULL,
+			item_type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			full_name TEXT,
+			fingerprint TEXT NOT NULL,
+			row_count INTEGER,
+			size_bytes INTEGER,
+			data_updated_at DATETIME,
+			scanned_at DATETIME,
+			scanned_depth TEXT,
+			attributes JSON,
+			created_at DATETIME,
+			deleted_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create meta_item table: %v", err)
+	}
 	return db
 }
 

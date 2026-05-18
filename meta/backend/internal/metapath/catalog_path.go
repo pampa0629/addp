@@ -86,10 +86,34 @@ func ComposeNodeFullName(name string, parent *models.MetaNode, separator string)
 
 // JoinFSPath 拼接文件系统 full_name。
 func JoinFSPath(parent, name string) string {
+	parent = SanitizeFSPath(parent)
+	name = SanitizeFSPath(name)
 	if parent == "" {
 		return name
 	}
+	if name == "" {
+		return parent
+	}
 	return parent + "/" + name
+}
+
+// SanitizeFSPath 清理文件系统语义路径。根路径用空字符串表达，"." 不进入 full_name。
+func SanitizeFSPath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.ReplaceAll(path, "\\", "/")
+	path = strings.Trim(path, "/")
+	if path == "" || path == "." {
+		return ""
+	}
+	parts := make([]string, 0)
+	for _, part := range strings.Split(path, "/") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "/")
 }
 
 func FilterObjectResourcesForDepth(resources []metacatalog.StorageResource, basePath string) []metacatalog.StorageResource {
