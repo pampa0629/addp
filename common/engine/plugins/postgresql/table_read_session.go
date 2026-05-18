@@ -167,11 +167,14 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 
 func postgresFieldInfoFromColumn(column postgresColumnInfo) plugin.FieldInfo {
 	nativeType := postgresColumnNativeType(column)
-	return plugin.FieldInfo{
-		Name:       column.Name,
-		Type:       postgresCommonFieldType(column, nativeType),
-		NativeType: nativeType,
+	field := plugin.FieldInfo{
+		Name: column.Name,
+		Type: postgresCommonFieldType(column, nativeType),
 	}
+	if spatialAttrs := postgresSpatialFieldAttributes(column, nativeType); len(spatialAttrs) > 0 {
+		field.Attributes = spatialAttrs
+	}
+	return field
 }
 
 func postgresColumnNativeType(column postgresColumnInfo) string {
@@ -212,6 +215,56 @@ var postgresTypeModifierPattern = regexp.MustCompile(`\s*\(.*\)$`)
 
 func stripPostgresTypeModifiers(value string) string {
 	return postgresTypeModifierPattern.ReplaceAllString(strings.TrimSpace(value), "")
+}
+
+func postgresSpatialFieldAttributes(column postgresColumnInfo, nativeType string) map[string]interface{} {
+	if !column.IsSpatial() {
+		return nil
+	}
+	geometryType, srid := parsePostgresSpatialType(nativeType)
+	attrs := map[string]interface{}{}
+	if geometryType != "" {
+		attrs["geometry_type"] = geometryType
+	}
+	if srid > 0 {
+		attrs["srid"] = srid
+	}
+	return attrs
+}
+
+func parsePostgresSpatialType(nativeType string) (string, int) {
+	value := strings.TrimSpace(nativeType)
+	open := strings.Index(value, "(")
+	close := strings.LastIndex(value, ")")
+	if open < 0 || close <= open {
+		return "", 0
+	}
+	parts := strings.Split(value[open+1:close], ",")
+	geometryType := normalizePostgresGeometryType(parts[0])
+	srid := 0
+	if len(parts) > 1 {
+		_, _ = fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &srid)
+	}
+	return geometryType, srid
+}
+
+func normalizePostgresGeometryType(value string) string {
+	switch strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "ST_")) {
+	case "point":
+		return "Point"
+	case "linestring":
+		return "LineString"
+	case "polygon":
+		return "Polygon"
+	case "multipoint":
+		return "MultiPoint"
+	case "multilinestring":
+		return "MultiLineString"
+	case "multipolygon":
+		return "MultiPolygon"
+	default:
+		return ""
+	}
 }
 
 func metadataString(values map[string]interface{}, key string) string {

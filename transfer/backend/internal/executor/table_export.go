@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 )
 
 const defaultBatchSize = 1000
@@ -25,11 +26,11 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		info.Fields = append(info.Fields, format.FieldInfo{
 			Name:         name,
 			Type:         format.FieldType(field.Type),
-			OriginalType: field.NativeType,
 			Nullable:     field.Nullable,
 			IsPrimaryKey: field.PrimaryKey,
 			Comment:      field.Comment,
 		})
+		applySpatialInfoFromField(info, field)
 	}
 	if len(info.Fields) == 0 && len(batch.Rows) > 0 {
 		names := make([]string, 0, len(batch.Rows[0]))
@@ -42,6 +43,27 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 	}
 	return info
+}
+
+func applySpatialInfoFromField(info *format.TableInfo, field engineplugin.FieldInfo) {
+	if info == nil || !format.IsGeometryType(format.FieldType(field.Type)) {
+		return
+	}
+	if info.SpatialInfo == nil {
+		info.SpatialInfo = &format.SpatialInfo{}
+	}
+	if info.SpatialInfo.GeometryColumn == "" {
+		info.SpatialInfo.GeometryColumn = field.Name
+	}
+	if field.Attributes == nil {
+		return
+	}
+	if info.SpatialInfo.GeometryType == "" {
+		info.SpatialInfo.GeometryType = commonJSON.InterfaceString(field.Attributes["geometry_type"])
+	}
+	if info.SpatialInfo.SRID == 0 {
+		info.SpatialInfo.SRID = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
+	}
 }
 
 func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {

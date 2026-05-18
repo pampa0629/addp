@@ -109,7 +109,7 @@
       >
         <el-table-column prop="source_field" :label="t('transfer.taskWizard.reviewSourceFieldCol')" width="200" />
         <el-table-column prop="target_field" :label="t('transfer.taskWizard.reviewTargetFieldCol')" width="200" />
-        <el-table-column prop="field_type" :label="t('transfer.taskWizard.reviewTypeCol')" width="120" />
+        <el-table-column prop="target_type" :label="t('transfer.taskWizard.reviewTypeCol')" width="120" />
         <el-table-column :label="t('transfer.taskWizard.reviewFormatDefaultCol')">
           <template #default="{ row }">
             {{ row.format || row.default_value || '-' }}

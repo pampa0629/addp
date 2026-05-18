@@ -202,7 +202,6 @@ type ItemMetadata struct {
 type FieldInfo struct {
 	Name       string                 `json:"name"`
 	Type       string                 `json:"type"`
-	NativeType string                 `json:"native_type,omitempty"`
 	Nullable   bool                   `json:"nullable"`
 	PrimaryKey bool                   `json:"primary_key,omitempty"`
 	Comment    string                 `json:"comment,omitempty"`

@@ -259,8 +259,7 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 
 		fields[i] = format.FieldInfo{
 			Name:         header,
-			Type:         fieldType,
-			OriginalType: "", // Excel 没有原始类型概念
+			Type:         fieldType, // Excel 没有原始类型概念
 			Nullable:     true,
 			IsPrimaryKey: false,
 		}
@@ -337,10 +336,9 @@ func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
 			fieldType = mapExcelTypeToFieldType(originalType)
 		}
 		fields = append(fields, format.FieldInfo{
-			Name:         header,
-			Type:         fieldType,
-			OriginalType: originalType,
-			Nullable:     true,
+			Name:     header,
+			Type:     fieldType,
+			Nullable: true,
 		})
 	}
 	return fields

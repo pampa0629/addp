@@ -199,11 +199,11 @@ func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plu
 		fields = append(fields, plugin.FieldInfo{
 			Name:       name,
 			Type:       mapMongoBSONType(stat.Type),
-			NativeType: stat.Type,
 			Nullable:   true,
 			PrimaryKey: name == "_id",
 			Attributes: map[string]interface{}{
 				"occurrence_rate": float64(stat.Count) / maxFloat64(float64(len(documents)), 1),
+				"native_type":     stat.Type,
 			},
 		})
 	}

@@ -446,7 +446,7 @@ type TableInfo struct {
 
 字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。
 
-`TypeMapper` 负责原生类型和通用字段类型互转：
+`TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和通用字段类型互转：
 
 ```go
 mapper := format.GetTypeMapper("postgresql")
@@ -464,6 +464,8 @@ func (m *OracleTypeMapper) Name() string { return "oracle" }
 func (m *OracleTypeMapper) ToCommon(nativeType string) format.FieldType
 func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int, int)
 ```
+
+原生字段类型不得作为执行链路的公共 schema 语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由对应插件写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。
 
 ## 旧 FileMetadataExtractor 已删除
 

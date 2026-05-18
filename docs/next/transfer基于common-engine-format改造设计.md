@@ -85,6 +85,25 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 
 因此 `MultiTableReaderProvider` 不是重复定义 `MultiTableProvider`，而是把“按样本窗口读取”和“打开一次、连续按批读取”拆开。Shapefile 这类格式在 Transfer 中优先使用连续 reader；sample provider 保留给预览和兜底。
 
+### 2.4 原生字段类型不得进入执行决策
+
+`common/format` 已定义 ADDP 统一字段类型。各 format / engine plugin 必须在自身边界内完成原生字段类型与 ADDP 标准字段语义的转换：
+
+```text
+format / engine native field type
+  -> ADDP FieldType / Size / Precision / SpatialInfo
+```
+
+因此：
+
+- Shapefile 的 DBF `N/C/F/D/L`、CSV 的采样推断原始字符串、Parquet / Excel / SQLite 的原生字段类型，都只能作为对应 format plugin 的内部事实。
+- PostgreSQL 的 `int4`、`varchar(32)`、`geometry(MultiPolygon,4326)` 等也只能作为 PostgreSQL engine plugin 的内部事实。
+- Transfer、transform、writer selection、native table prepare / write 不得读取或判断任何 format / engine 原生字段类型。
+- 跨模块执行链路只使用 ADDP 标准字段类型和标准补充事实，例如 `SpatialInfo.GeometryColumn`、`SpatialInfo.GeometryType`、`SpatialInfo.SRID`。
+- 如果 Manager / Meta 需要展示“原始字段类型”，也只能通过只读的抽象 attributes 暴露，供查看和诊断使用；不得反向参与 Transfer / engine / format 的写入决策。
+
+`OriginalType` / `NativeType` 不作为公共 `FieldInfo` 字段存在。原生字段类型如需展示，统一由对应 plugin 写入只读 attributes 的 `native_type`；已有元数据不做兼容迁移，删除后重新扫描生成。
+
 ## 三、新任务 JSON 口径
 
 新任务配置以 source / target endpoint 为核心：

@@ -192,8 +192,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		fields[i] = format.FieldInfo{
 			Name:         strings.TrimSpace(header),
 			Type:         fieldType,
-			OriginalType: string(fieldType), // CSV 没有原始类型，使用推断类型的字符串表示
-			Nullable:     true,              // CSV 默认允许 NULL
+			Nullable:     true, // CSV 默认允许 NULL
 			IsPrimaryKey: false,
 			Comment:      "",
 		}
@@ -337,10 +336,9 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 			continue
 		}
 		fields = append(fields, format.FieldInfo{
-			Name:         name,
-			Type:         format.FieldTypeString,
-			OriginalType: string(format.FieldTypeString),
-			Nullable:     true,
+			Name:     name,
+			Type:     format.FieldTypeString,
+			Nullable: true,
 		})
 	}
 	if len(fields) == 0 {

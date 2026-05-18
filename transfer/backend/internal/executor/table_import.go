@@ -26,11 +26,31 @@ func tableInfoFields(info *format.TableInfo) []engineplugin.FieldInfo {
 		fields = append(fields, engineplugin.FieldInfo{
 			Name:       field.Name,
 			Type:       string(field.Type),
-			NativeType: field.OriginalType,
 			Nullable:   field.Nullable,
 			PrimaryKey: field.IsPrimaryKey,
 			Comment:    field.Comment,
+			Attributes: fieldAttributes(info, field),
 		})
 	}
 	return fields
+}
+
+func fieldAttributes(info *format.TableInfo, field format.FieldInfo) map[string]interface{} {
+	if info == nil || info.SpatialInfo == nil || !format.IsGeometryType(field.Type) {
+		return nil
+	}
+	if info.SpatialInfo.GeometryColumn != "" && info.SpatialInfo.GeometryColumn != field.Name {
+		return nil
+	}
+	attrs := map[string]interface{}{}
+	if info.SpatialInfo.GeometryType != "" {
+		attrs["geometry_type"] = info.SpatialInfo.GeometryType
+	}
+	if info.SpatialInfo.SRID > 0 {
+		attrs["srid"] = info.SpatialInfo.SRID
+	}
+	if len(attrs) == 0 {
+		return nil
+	}
+	return attrs
 }

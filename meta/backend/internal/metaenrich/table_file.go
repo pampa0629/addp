@@ -349,10 +349,9 @@ func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":          f.Name,
-			"type":          string(f.Type),
-			"original_type": f.OriginalType,
-			"nullable":      f.Nullable,
+			"name":     f.Name,
+			"type":     string(f.Type),
+			"nullable": f.Nullable,
 		})
 	}
 	return fieldsData
@@ -706,10 +705,9 @@ func ExtractTableFileSingleFileInfo(
 	fieldsData := make([]map[string]interface{}, 0, len(tableInfo.Fields))
 	for _, f := range tableInfo.Fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":          f.Name,
-			"type":          string(f.Type),
-			"original_type": f.OriginalType,
-			"nullable":      f.Nullable,
+			"name":     f.Name,
+			"type":     string(f.Type),
+			"nullable": f.Nullable,
 		})
 	}
 

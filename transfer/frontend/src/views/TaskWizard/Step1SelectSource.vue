@@ -538,10 +538,7 @@ function geometryFieldFromFields(fields) {
     const values = [
       field?.type,
       field?.data_type,
-      field?.standard_type,
-      field?.original_type,
-      field?.native_type,
-      field?.db_type
+      field?.standard_type
     ].map(value => String(value || '').toLowerCase())
     return values.some(value => value.includes('geometry') || value.includes('geography'))
   }) || null

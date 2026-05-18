@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/service/internal/models"
 )
 
@@ -406,7 +407,7 @@ func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []plugin.ColumnInfo 
 	}
 	columns := make([]plugin.ColumnInfo, 0, len(metadata.Fields))
 	for _, field := range metadata.Fields {
-		dataType := field.NativeType
+		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
 		if dataType == "" {
 			dataType = field.Type
 		}

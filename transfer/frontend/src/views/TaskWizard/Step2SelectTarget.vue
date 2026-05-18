@@ -542,11 +542,8 @@ function isGeometryField(field) {
     field.type,
     field.data_type,
     field.standard_type,
-    field.field_type,
     field.geometry_type,
-    field.geometryType,
-    field.original_type,
-    field.originalType
+    field.geometryType
   ].map(value => String(value || '').toLowerCase())
   return values.some(value => value.includes('geometry') || geometryTypes.some(type => type.toLowerCase() === value))
 }
@@ -558,10 +555,7 @@ function inferGeometryType(field) {
     field.geometryType,
     field.type,
     field.data_type,
-    field.standard_type,
-    field.field_type,
-    field.original_type,
-    field.originalType
+    field.standard_type
   ]
   for (const value of values) {
     const normalized = normalizeGeometryType(value)

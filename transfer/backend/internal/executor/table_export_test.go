@@ -293,8 +293,8 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 		batches: []*engineplugin.BatchData{
 			{
 				Fields: []engineplugin.FieldInfo{
-					{Name: "id", Type: "bigint", NativeType: "bigint"},
-					{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
+					{Name: "id", Type: "bigint"},
+					{Name: "SmGeometry", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}},
 				},
 				Rows: []map[string]interface{}{
 					{"id": int64(1), "SmGeometry": "0106000020E610000000000000"},
@@ -334,11 +334,11 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 		t.Fatalf("prepared fields = %#v, want 2 fields", writer.preparedFields)
 	}
 	geom := writer.preparedFields[1]
-	if geom.Name != "SmGeometry" || geom.Type != "geometry" || geom.NativeType != "geometry(MultiPolygon,4326)" {
-		t.Fatalf("prepared spatial field = %#v, want geometry native typmod", geom)
+	if geom.Name != "SmGeometry" || geom.Type != "geometry" || geom.Attributes["geometry_type"] != "MultiPolygon" {
+		t.Fatalf("prepared spatial field = %#v, want standard spatial attributes", geom)
 	}
-	if len(writer.sessionFields) != 2 || writer.sessionFields[1].NativeType != "geometry(MultiPolygon,4326)" {
-		t.Fatalf("session fields = %#v, want geometry native typmod", writer.sessionFields)
+	if len(writer.sessionFields) != 2 || writer.sessionFields[1].Attributes["geometry_type"] != "MultiPolygon" {
+		t.Fatalf("session fields = %#v, want standard spatial attributes", writer.sessionFields)
 	}
 }
 
@@ -348,7 +348,7 @@ func TestTableTransferExecutorTransformsNativeTargetSchema(t *testing.T) {
 			{
 				Fields: []engineplugin.FieldInfo{
 					{Name: "id", Type: "int"},
-					{Name: "geom", Type: "geometry", NativeType: "geometry(Point,4326)"},
+					{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326}},
 				},
 				Rows: []map[string]interface{}{
 					{"id": 1, "geom": "POINT (120 30)"},

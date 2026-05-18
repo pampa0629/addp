@@ -11,13 +11,10 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 
 	fields, err := FieldsFromMetaItem(models.MetaItem{
 		Attributes: models.JSONMap{
-			"fields": []interface{}{
-				map[string]interface{}{"name": "legacy_id", "data_type": "text"},
-			},
 			"type_info": map[string]interface{}{
 				"table": map[string]interface{}{
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+						map[string]interface{}{"name": "id", "type": "integer", "is_primary_key": true},
 					},
 				},
 			},
@@ -52,7 +49,7 @@ func TestFieldsFromMetaItemMergesCapabilitiesSpatial(t *testing.T) {
 				"table": map[string]interface{}{
 					"fields": []interface{}{
 						map[string]interface{}{"name": "id", "type": "int"},
-						map[string]interface{}{"name": "SmGeometry", "type": "geometry", "original_type": "geometry"},
+						map[string]interface{}{"name": "SmGeometry", "type": "geometry"},
 					},
 				},
 			},
@@ -93,7 +90,7 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 						"primary_key": []interface{}{"id"},
 					},
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "data_type": "integer", "is_primary_key": true},
+						map[string]interface{}{"name": "id", "type": "integer", "is_primary_key": true},
 					},
 				},
 			},

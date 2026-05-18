@@ -50,7 +50,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 		fieldRecords = append(fieldRecords, search.FieldRecord{
 			Name:         field.Name,
 			DataType:     string(field.Type),
-			ColumnType:   field.OriginalType,
+			ColumnType:   string(field.Type),
 			Comment:      field.Comment,
 			IsNullable:   field.Nullable,
 			IsPrimaryKey: field.IsPrimaryKey,

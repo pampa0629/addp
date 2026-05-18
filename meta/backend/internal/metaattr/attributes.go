@@ -109,26 +109,19 @@ func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface
 	for _, f := range fields {
 		field := map[string]interface{}{
 			"name":           f.Name,
-			"data_type":      string(f.Type),
 			"type":           string(f.Type),
-			"original_type":  f.OriginalType,
 			"is_nullable":    f.Nullable,
 			"nullable":       f.Nullable,
 			"is_primary_key": f.IsPrimaryKey,
 			"comment":        f.Comment,
 		}
-		if format.IsGeometryType(f.Type) || isSpatialOriginalType(f.OriginalType) {
+		if format.IsGeometryType(f.Type) {
 			field["is_spatial"] = true
 			field["geometry_type"] = NormalizeGeometryType(string(f.Type))
 		}
 		fieldsData = append(fieldsData, field)
 	}
 	return fieldsData
-}
-
-func isSpatialOriginalType(value string) bool {
-	token := normalizeGeometryToken(value)
-	return token == "geometry" || token == "geography"
 }
 
 func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {

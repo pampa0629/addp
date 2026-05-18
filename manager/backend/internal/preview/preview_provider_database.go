@@ -8,6 +8,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
@@ -74,6 +75,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		columnNames = make([]string, len(columnMetadata))
 		for i, meta := range columnMetadata {
 			columnNames[i] = meta.ColumnName
+		}
+		if len(geometryColumns) == 0 {
+			geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
 		}
 	} else {
 		// Meta 不可用或无数据，回退到 ItemMetadataProvider。
@@ -289,7 +293,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	}
 	columns := make([]plugin.ColumnInfo, 0, len(itemMetadata.Fields))
 	for _, field := range itemMetadata.Fields {
-		dataType := field.NativeType
+		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
 		if dataType == "" {
 			dataType = field.Type
 		}

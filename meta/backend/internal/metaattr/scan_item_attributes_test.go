@@ -39,17 +39,16 @@ func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
 	t.Parallel()
 
 	fields := FieldAttributesFromFormat([]format.FieldInfo{{
-		Name:         "SmGeometry",
-		Type:         format.FieldTypeGeometry,
-		OriginalType: "geometry",
-		Nullable:     true,
+		Name:     "SmGeometry",
+		Type:     format.FieldTypeGeometry,
+		Nullable: true,
 	}})
 
 	if len(fields) != 1 {
 		t.Fatalf("fields = %#v, want one field", fields)
 	}
 	field := fields[0]
-	if field["data_type"] != "geometry" || field["is_spatial"] != true || field["geometry_type"] != "Geometry" {
+	if field["type"] != "geometry" || field["is_spatial"] != true || field["geometry_type"] != "Geometry" {
 		t.Fatalf("spatial field attributes = %#v", field)
 	}
 }

@@ -99,7 +99,7 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 					map[string]interface{}{
 						"name":          "id",
 						"type":          "bigint",
-						"original_type": "int64",
+						"native_type": "int64",
 						"nullable":      false,
 					},
 				},

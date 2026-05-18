@@ -555,10 +555,9 @@ func fieldsFromAttribute(value interface{}) []format.FieldInfo {
 			continue
 		}
 		fields = append(fields, format.FieldInfo{
-			Name:         name,
-			Type:         format.FieldType(commonJSON.InterfaceString(attrs["type"])),
-			OriginalType: commonJSON.InterfaceString(attrs["original_type"]),
-			Nullable:     commonJSON.InterfaceBool(attrs["nullable"]),
+			Name:     name,
+			Type:     format.FieldType(commonJSON.InterfaceString(attrs["type"])),
+			Nullable: commonJSON.InterfaceBool(attrs["nullable"]),
 		})
 	}
 	return fields

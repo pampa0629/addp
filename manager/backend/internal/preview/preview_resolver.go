@@ -236,13 +236,13 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		}
 	}
 
-	if r.metaClient != nil && isContentCatalogEngine(engine.EngineType) {
+	if r.metaClient != nil {
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
 		if !metaIDResolved && len(loc.Path) > 0 {
 			catalogPath := strings.Join(loc.Path, "/")
-			if len(loc.Path) > 1 {
+			if isPreviewItemLocator(loc) {
 				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && item != nil {
 					if item.ScannedDepth != "deep" {
@@ -253,11 +253,11 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 						}
 					}
 					metaItem = item
-					logger.L().Debug("从 Meta 获取到对象元数据",
+					logger.L().Debug("从 Meta 获取到数据项元数据",
 						"catalog_path", catalogPath,
 						"size_bytes", item.SizeBytes)
 				} else {
-					logger.L().Debug("未从 Meta 获取到对象元数据",
+					logger.L().Debug("未从 Meta 获取到数据项元数据",
 						"catalog_path", catalogPath,
 						"error", err)
 				}
@@ -390,6 +390,13 @@ func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, sc
 	default:
 		return "", ""
 	}
+}
+
+func isPreviewItemLocator(loc *catalogview.ResourceLocator) bool {
+	if loc == nil {
+		return false
+	}
+	return isPreviewItemType(strings.ToLower(strings.TrimSpace(string(loc.Type))))
 }
 
 func isContentCatalogEngine(engineType string) bool {

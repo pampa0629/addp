@@ -99,7 +99,6 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 	fields = append(fields, format.FieldInfo{
 		Name:         geometryField,
 		Type:         format.FieldTypeGeometry,
-		OriginalType: "Geometry",
 		Nullable:     false,
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
@@ -108,7 +107,6 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 		fields = append(fields, format.FieldInfo{
 			Name:         field.Name,
 			Type:         mapShapefileTypeToFieldType(field.Type),
-			OriginalType: field.Type,
 			Nullable:     true,
 			IsPrimaryKey: false,
 			Comment:      "",
@@ -186,7 +184,6 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []conte
 	fields = append(fields, format.FieldInfo{
 		Name:         geometryField,
 		Type:         format.FieldTypeGeometry,
-		OriginalType: geomType,
 		Nullable:     false,
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
@@ -198,12 +195,11 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []conte
 			fieldType = mapper.ToCommon(field.RawType)
 		}
 		fields = append(fields, format.FieldInfo{
-			Name:         field.Name,
-			Type:         fieldType,
-			OriginalType: field.RawType,
-			Nullable:     true,
-			Size:         field.Size,
-			Precision:    field.Precision,
+			Name:      field.Name,
+			Type:      fieldType,
+			Nullable:  true,
+			Size:      field.Size,
+			Precision: field.Precision,
 		})
 	}
 

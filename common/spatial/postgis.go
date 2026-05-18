@@ -86,7 +86,7 @@ func PostGISRenderGeoJSONExpression(columnName, dataType string) string {
 	if IsPostGISGeographyType(dataType) {
 		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(%s::geometry) END", quotedColumn, quotedColumn)
 	}
-	return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(ST_Transform(%s, 4326)) END", quotedColumn, quotedColumn)
+	return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL WHEN ST_SRID(%s) IN (0, 4326) THEN ST_AsGeoJSON(%s) ELSE ST_AsGeoJSON(ST_Transform(%s, 4326)) END", quotedColumn, quotedColumn, quotedColumn, quotedColumn)
 }
 
 func PostGISGeoJSONSelectExpression(columnName string) string {

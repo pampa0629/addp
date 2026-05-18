@@ -148,7 +148,7 @@ attributes 分区统一采用以下概念：
 | `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
-表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段级空间类型、原始字段类型、nullable 等属于 table field info；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`。
+表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`。
 
 ## format_info 命名空间
 

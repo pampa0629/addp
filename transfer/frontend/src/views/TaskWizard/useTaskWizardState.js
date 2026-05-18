@@ -109,7 +109,7 @@ export function useTaskWizardState() {
         }
         const source = String(mapping.source_field || '').trim()
         if (source) field.source = source
-        if (mapping.field_type) field.target_type = mapping.field_type
+        if (mapping.target_type) field.target_type = mapping.target_type
         if (mapping.default_value !== undefined && mapping.default_value !== null && String(mapping.default_value).trim() !== '') {
           field.default = mapping.default_value
         }
@@ -412,7 +412,7 @@ export function useTaskWizardState() {
     fieldMappings.value = sourceFields.value.map(field => ({
       source_field: field.name,
       target_field: field.name, // 默认同名映射
-      field_type: field.standard_type || field.data_type || 'string',
+      target_type: field.type || field.standard_type || field.data_type || 'string',
       format: '',
       default_value: '',
       nullable: true
@@ -427,7 +427,7 @@ export function useTaskWizardState() {
     fieldMappings.value.push({
       source_field: '',
       target_field: '',
-      field_type: 'string',
+      target_type: 'string',
       format: '',
       default_value: '',
       nullable: true
@@ -509,28 +509,18 @@ export function useTaskWizardState() {
       targetConfig.value = extractTargetConfig(target)
     }
 
-    // 字段映射：新任务从 config.transforms 回填，旧任务兼容外层 mappings。
+    // 字段映射：从 config.transforms 回填。
     const fieldMappingTransform = (task.config?.transforms || []).find(transform => transform?.type === 'field_mapping')
     if (fieldMappingTransform) {
       fieldMappings.value = (fieldMappingTransform.fields || []).map(field => ({
         source_field: field.source || '',
         target_field: field.target || '',
-        field_type: field.target_type || 'string',
+        target_type: field.target_type || 'string',
         format: field.format || '',
         default_value: field.default ?? '',
         nullable: field.nullable !== false
       }))
       transforms.value = (task.config?.transforms || []).filter(transform => transform?.type !== 'field_mapping')
-    } else if (Array.isArray(task.mappings)) {
-      fieldMappings.value = task.mappings.map(m => ({
-        source_field: m.source_field || '',
-        target_field: m.target_field || '',
-        field_type: m.field_type || 'string',
-        format: m.format || '',
-        default_value: m.default_value || '',
-        nullable: m.nullable !== false
-      }))
-      transforms.value = task.config?.transforms || []
     } else {
       transforms.value = task.config?.transforms || []
     }

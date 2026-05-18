@@ -312,7 +312,7 @@ const fieldLabelKeys = {
 const tableColumnLabelKeys = {
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
-  original_type: 'manager.explorer.attributes.tableColumns.originalType',
+  native_type: 'manager.explorer.attributes.tableColumns.nativeType',
   nullable: 'manager.explorer.attributes.tableColumns.nullable',
   primary_key: 'manager.explorer.attributes.tableColumns.primaryKey',
   comment: 'manager.explorer.attributes.tableColumns.comment'
@@ -493,7 +493,7 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 }
 
 const buildFieldTable = (pathParts, rows) => {
-  const preferredColumns = ['name', 'type', 'original_type', 'nullable', 'primary_key', 'comment']
+  const preferredColumns = ['name', 'type', 'native_type', 'nullable', 'primary_key', 'comment']
   const rowObjects = rows.filter(isPlainObject)
   const discoveredColumns = [...new Set(rowObjects.flatMap(row => Object.keys(row)))]
   const columns = [

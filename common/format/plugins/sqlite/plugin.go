@@ -310,7 +310,6 @@ func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
 		fields = append(fields, format.FieldInfo{
 			Name:         column.Name,
 			Type:         mapSQLiteTypeToFieldType(column.Type),
-			OriginalType: column.Type,
 			Nullable:     !column.NotNull,
 			IsPrimaryKey: column.PrimaryKey,
 		})

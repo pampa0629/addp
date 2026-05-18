@@ -21,7 +21,7 @@
             <el-option
               v-for="field in wizardState.sourceFields.value"
               :key="field.name"
-              :label="`${field.name} (${field.type})`"
+              :label="fieldOptionLabel(field)"
               :value="field.name"
             />
           </el-select>
@@ -40,7 +40,7 @@
             <el-option
               v-for="field in wizardState.targetFields.value"
               :key="field.name"
-              :label="`${field.name} (${field.type})`"
+              :label="fieldOptionLabel(field)"
               :value="field.name"
             />
           </el-select>
@@ -50,7 +50,7 @@
       <el-table-column :label="t('transfer.taskWizard.dataTypeCol')" width="140">
         <template #default="{ row, $index }">
           <el-select
-            v-model="row.field_type"
+            v-model="row.target_type"
             placeholder="类型"
             @change="handleMappingChange($index)"
           >
@@ -164,6 +164,16 @@ async function clearMappings() {
 function handleMappingChange(index) {
   const mapping = props.wizardState.fieldMappings.value[index]
   props.wizardState.updateFieldMapping(index, mapping)
+}
+
+function fieldOptionLabel(field) {
+  const name = String(field?.name || '').trim()
+  const type = standardFieldType(field)
+  return type ? `${name} (${type})` : name
+}
+
+function standardFieldType(field) {
+  return String(field?.type || field?.data_type || field?.standard_type || '').trim()
 }
 </script>
 

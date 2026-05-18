@@ -74,6 +74,42 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 	}
 }
 
+func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
+	fields := tableInfoFields(&format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "value", Type: format.FieldTypeFloat},
+			{Name: "name", Type: format.FieldTypeString},
+		},
+	})
+
+	if len(fields) != 2 {
+		t.Fatalf("fields = %#v, want 2", fields)
+	}
+	if fields[0].Type != "float" || fields[1].Type != "string" {
+		t.Fatalf("fields = %#v, want standard field types", fields)
+	}
+}
+
+func TestTableInfoFieldsCarriesStandardSpatialAttributes(t *testing.T) {
+	fields := tableInfoFields(&format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "geom", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{
+			GeometryColumn: "geom",
+			GeometryType:   "Polygon",
+			SRID:           4326,
+		},
+	})
+
+	if len(fields) != 1 {
+		t.Fatalf("fields = %#v, want one field", fields)
+	}
+	if fields[0].Attributes["geometry_type"] != "Polygon" || fields[0].Attributes["srid"] != 4326 {
+		t.Fatalf("attributes = %#v, want standard spatial attributes", fields[0].Attributes)
+	}
+}
+
 func TestTableTransferExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}

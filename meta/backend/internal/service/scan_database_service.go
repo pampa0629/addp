@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
@@ -418,7 +419,6 @@ func databaseFieldInfo(columns []plugin.ColumnInfo) []format.FieldInfo {
 		fields = append(fields, format.FieldInfo{
 			Name:         col.ColumnName,
 			Type:         format.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
-			OriginalType: col.DataType,
 			Nullable:     col.IsNullable,
 			IsPrimaryKey: col.IsPrimaryKey,
 			Comment:      col.Comment,
@@ -458,7 +458,7 @@ func (s *DatabaseScanService) listColumns(
 	}
 	columns := make([]plugin.ColumnInfo, 0, len(item.Fields))
 	for _, field := range item.Fields {
-		dataType := field.NativeType
+		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
 		if dataType == "" {
 			dataType = field.Type
 		}

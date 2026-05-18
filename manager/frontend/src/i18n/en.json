@@ -308,7 +308,7 @@
         "tableColumns": {
           "name": "Field",
           "type": "Type",
-          "originalType": "Original Type",
+          "nativeType": "Native Type",
           "nullable": "Nullable",
           "primaryKey": "Primary Key",
           "comment": "Comment"

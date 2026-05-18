@@ -102,7 +102,6 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 	fields = append(fields, format.FieldInfo{
 		Name:         s.geometryField,
 		Type:         format.FieldTypeGeometry,
-		OriginalType: geomType,
 		Nullable:     false,
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
@@ -114,12 +113,11 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 			fieldType = mapper.ToCommon(field.RawType)
 		}
 		fields = append(fields, format.FieldInfo{
-			Name:         field.Name,
-			Type:         fieldType,
-			OriginalType: field.RawType,
-			Nullable:     true,
-			Size:         field.Size,
-			Precision:    field.Precision,
+			Name:      field.Name,
+			Type:      fieldType,
+			Nullable:  true,
+			Size:      field.Size,
+			Precision: field.Precision,
 		})
 	}
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/sqldialect"
 )
 
@@ -95,16 +96,41 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 }
 
 func postgresSQLTypeForField(field plugin.FieldInfo) string {
-	if nativeType := strings.TrimSpace(field.NativeType); nativeType != "" {
-		if sqlType, ok := postgresSQLTypeForCommonType(nativeType); ok {
-			return sqlType
-		}
-		return nativeType
+	if sqlType := postgresSpatialTypeForField(field); sqlType != "" {
+		return sqlType
 	}
 	if sqlType, ok := postgresSQLTypeForCommonType(field.Type); ok {
 		return sqlType
 	}
 	return "TEXT"
+}
+
+func postgresSpatialTypeForField(field plugin.FieldInfo) string {
+	fieldType := strings.ToLower(strings.TrimSpace(field.Type))
+	if fieldType != "geometry" && fieldType != "point" && fieldType != "linestring" && fieldType != "polygon" && fieldType != "multipoint" {
+		return ""
+	}
+	geometryType := commonJSON.InterfaceString(field.Attributes["geometry_type"])
+	if geometryType == "" {
+		switch fieldType {
+		case "point":
+			geometryType = "Point"
+		case "linestring":
+			geometryType = "LineString"
+		case "polygon":
+			geometryType = "Polygon"
+		case "multipoint":
+			geometryType = "MultiPoint"
+		}
+	}
+	if geometryType == "" {
+		return ""
+	}
+	srid := commonJSON.InterfaceInt64(field.Attributes["srid"])
+	if srid > 0 {
+		return fmt.Sprintf("GEOMETRY(%s,%d)", geometryType, srid)
+	}
+	return fmt.Sprintf("GEOMETRY(%s)", geometryType)
 }
 
 func postgresSQLTypeForCommonType(fieldType string) (string, bool) {

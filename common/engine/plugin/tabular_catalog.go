@@ -170,10 +170,10 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 		fields = append(fields, FieldInfo{
 			Name:       col.ColumnName,
 			Type:       col.DataType,
-			NativeType: col.DataType,
 			Nullable:   col.IsNullable,
 			PrimaryKey: col.IsPrimaryKey,
 			Comment:    col.Comment,
+			Attributes: map[string]interface{}{"native_type": col.DataType},
 		})
 	}
 

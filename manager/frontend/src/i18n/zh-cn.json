@@ -308,7 +308,7 @@
         "tableColumns": {
           "name": "字段名",
           "type": "类型",
-          "originalType": "原始类型",
+          "nativeType": "原生类型",
           "nullable": "可为空",
           "primaryKey": "主键",
           "comment": "注释"

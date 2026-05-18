@@ -726,7 +726,7 @@
       "refreshTarget": "Refresh Target Fields",
       "sourceField": "Source Field",
       "targetField": "Target Field",
-      "fieldType": "Field Type",
+      "targetType": "Target Type",
       "defaultValue": "Default Value",
       "nullable": "Nullable",
       "actions": "Actions",

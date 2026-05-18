@@ -723,14 +723,14 @@ func emptyContainerPreview(formatName string) map[string]interface{} {
 }
 
 type containerPreviewChildren struct {
-	Children              []map[string]interface{}
-	RawCount              int
-	VisibleCount          int
-	IgnoredCount          int
-	GroupedItemCount      int
-	GroupedRefCount int
-	FilteredCount         int
-	Resolved              bool
+	Children         []map[string]interface{}
+	RawCount         int
+	VisibleCount     int
+	IgnoredCount     int
+	GroupedItemCount int
+	GroupedRefCount  int
+	FilteredCount    int
+	Resolved         bool
 }
 
 func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
@@ -871,14 +871,14 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 		return nil
 	}
 	return &containerPreviewChildren{
-		Children:              previewChildren,
-		RawCount:              rawCount,
-		VisibleCount:          len(previewChildren),
-		IgnoredCount:          len(resolved.Ignored),
-		GroupedItemCount:      groupedItemCount,
-		GroupedRefCount: groupedRefCount,
-		FilteredCount:         skippedCount + len(resolved.Ignored),
-		Resolved:              true,
+		Children:         previewChildren,
+		RawCount:         rawCount,
+		VisibleCount:     len(previewChildren),
+		IgnoredCount:     len(resolved.Ignored),
+		GroupedItemCount: groupedItemCount,
+		GroupedRefCount:  groupedRefCount,
+		FilteredCount:    skippedCount + len(resolved.Ignored),
+		Resolved:         true,
 	}
 }
 
@@ -1370,13 +1370,13 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 			next.FormatInfo = map[string]interface{}{}
 		}
 		applyContainerChildrenSummary(next.FormatInfo, &containerPreviewChildren{
-			RawCount:              rawCount,
-			VisibleCount:          len(next.Children),
-			IgnoredCount:          len(resolved.Ignored),
-			GroupedItemCount:      groupedItemCount,
-			GroupedRefCount: groupedRefCount,
-			FilteredCount:         skippedCount + len(resolved.Ignored),
-			Resolved:              true,
+			RawCount:         rawCount,
+			VisibleCount:     len(next.Children),
+			IgnoredCount:     len(resolved.Ignored),
+			GroupedItemCount: groupedItemCount,
+			GroupedRefCount:  groupedRefCount,
+			FilteredCount:    skippedCount + len(resolved.Ignored),
+			Resolved:         true,
 		})
 	}
 	return &next
@@ -1629,9 +1629,6 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 			"name":     field.Name,
 			"type":     string(field.Type),
 			"nullable": field.Nullable,
-		}
-		if field.OriginalType != "" {
-			col["original_type"] = field.OriginalType
 		}
 		columns = append(columns, col)
 	}

@@ -878,7 +878,6 @@ func sameFieldSchema(left, right []format.FieldInfo) bool {
 	for i := range left {
 		if left[i].Name != right[i].Name ||
 			left[i].Type != right[i].Type ||
-			left[i].OriginalType != right[i].OriginalType ||
 			left[i].Nullable != right[i].Nullable {
 			return false
 		}
@@ -924,10 +923,9 @@ func extractFields(schema *parquetgo.Schema) []format.FieldInfo {
 
 	for _, f := range fields {
 		fieldInfo := format.FieldInfo{
-			Name:         f.Name(),
-			Nullable:     f.Optional(),
-			OriginalType: parquetTypeString(f),
-			Type:         mapParquetType(f),
+			Name:     f.Name(),
+			Nullable: f.Optional(),
+			Type:     mapParquetType(f),
 		}
 		result = append(result, fieldInfo)
 	}

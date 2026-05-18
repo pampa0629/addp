@@ -595,7 +595,7 @@
       "refreshTarget": "刷新目标字段",
       "sourceField": "源字段",
       "targetField": "目标字段",
-      "fieldType": "字段类型",
+      "targetType": "目标类型",
       "defaultValue": "默认值",
       "nullable": "可空",
       "actions": "操作",

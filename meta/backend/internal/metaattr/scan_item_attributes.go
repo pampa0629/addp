@@ -232,7 +232,6 @@ func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{}
 		fieldAttr := map[string]interface{}{
 			"name":           field.Name,
 			"type":           field.Type,
-			"original_type":  field.NativeType,
 			"nullable":       field.Nullable,
 			"is_primary_key": field.PrimaryKey,
 		}

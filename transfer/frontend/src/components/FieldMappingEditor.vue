@@ -67,9 +67,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('transfer.fieldMapping.fieldType')" width="140">
+        <el-table-column :label="t('transfer.fieldMapping.targetType')" width="140">
           <template #default="{ row }">
-            <el-select v-model="row.field_type" :placeholder="t('transfer.fieldMapping.fieldType')" size="small">
+            <el-select v-model="row.target_type" :placeholder="t('transfer.fieldMapping.targetType')" size="small">
               <el-option :label="t('transfer.fieldMapping.typeString')" value="string" />
               <el-option :label="t('transfer.fieldMapping.typeInteger')" value="integer" />
               <el-option :label="t('transfer.fieldMapping.typeFloat')" value="float" />
@@ -201,7 +201,7 @@ const handleAutoMatch = () => {
       newMappings.push({
         source_field: sourceField,
         target_field: sourceField,
-        field_type: fieldType,
+        target_type: fieldType,
         format: '',
         default_value: '',
         nullable: true
@@ -224,7 +224,7 @@ const handleAutoMatch = () => {
         newMappings.push({
           source_field: sourceField,
           target_field: targetField,
-          field_type: fieldType,
+          target_type: fieldType,
           format: '',
           default_value: '',
           nullable: true
@@ -239,7 +239,7 @@ const handleAutoMatch = () => {
   }
 
   mappings.value = newMappings
-  const geometryCount = newMappings.filter(m => m.field_type === 'geometry').length
+  const geometryCount = newMappings.filter(m => m.target_type === 'geometry').length
   if (geometryCount > 0) {
     ElMessage.success(t('transfer.fieldMapping.autoMatchSuccess', { count: newMappings.length, spatial: geometryCount }))
   } else {
@@ -252,7 +252,7 @@ const handleAddMapping = () => {
   mappings.value.push({
     source_field: '',
     target_field: '',
-    field_type: 'string',
+    target_type: 'string',
     format: '',
     default_value: '',
     nullable: true

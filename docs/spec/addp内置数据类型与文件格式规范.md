@@ -172,7 +172,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 
 - `.dbf` 提供非空间字段。
 - `.shp` 提供平台统一几何字段。
-- 字段类型映射为 ADDP 通用字段类型，原始 DBF 类型保留在字段 `original_type`。
+- 字段类型映射为 ADDP 通用字段类型。原始 DBF 类型属于 Shapefile format plugin 内部事实；如需给 Manager 展示，只能写入只读 attributes，不能进入 Transfer / engine / format writer 的执行决策。
 - 记录数来自真实 Shapefile 记录数，不写固定占位值。
 
 ### 标准写入示例
@@ -202,7 +202,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
         {
           "name": "geometry",
           "type": "geometry",
-          "original_type": "Polygon",
+          "native_type": "Polygon",
           "nullable": false
         }
       ],

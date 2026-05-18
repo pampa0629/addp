@@ -584,7 +584,7 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *format.TableI
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
 		}
-		return &nativeTableSessionBatchWriter{session: session}, nil
+		return &nativeTableSessionBatchWriter{session: session, fields: fields}, nil
 	}
 	if t.writer == nil {
 		return nil, fmt.Errorf("native table target requires batch writer")
@@ -623,11 +623,7 @@ func (w *nativeDirectBatchWriter) WriteBatch(ctx context.Context, batch *enginep
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	if len(batch.Fields) == 0 && len(w.fields) > 0 {
-		copyBatch := *batch
-		copyBatch.Fields = append([]engineplugin.FieldInfo(nil), w.fields...)
-		batch = &copyBatch
-	}
+	batch = batchWithTargetFields(batch, w.fields)
 	if err := w.writer.WriteBatch(ctx, w.connInfo, w.path, batch, w.writeOptions); err != nil {
 		return fmt.Errorf("write native table batch at offset %d: %w", batch.Offset, err)
 	}
@@ -642,8 +638,18 @@ func (w *nativeDirectBatchWriter) Abort(context.Context) error {
 	return nil
 }
 
+func batchWithTargetFields(batch *engineplugin.BatchData, fields []engineplugin.FieldInfo) *engineplugin.BatchData {
+	if batch == nil || len(fields) == 0 {
+		return batch
+	}
+	copyBatch := *batch
+	copyBatch.Fields = append([]engineplugin.FieldInfo(nil), fields...)
+	return &copyBatch
+}
+
 type nativeTableSessionBatchWriter struct {
 	session engineplugin.TableWriteSession
+	fields  []engineplugin.FieldInfo
 	closed  bool
 }
 
@@ -651,6 +657,7 @@ func (w *nativeTableSessionBatchWriter) WriteBatch(ctx context.Context, batch *e
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
+	batch = batchWithTargetFields(batch, w.fields)
 	if err := w.session.WriteBatch(ctx, batch); err != nil {
 		_ = w.session.Abort(ctx)
 		w.closed = true

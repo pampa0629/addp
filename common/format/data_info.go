@@ -29,7 +29,6 @@ type TableInfo struct {
 type FieldInfo struct {
 	Name         string    // 字段名
 	Type         FieldType // 统一的字段类型
-	OriginalType string    // 原始类型（如 PostgreSQL 的 "int4", CSV 推断的 "integer"）
 	Nullable     bool      // 是否允许 NULL
 	IsPrimaryKey bool      // 是否主键
 	Comment      string    // 字段注释

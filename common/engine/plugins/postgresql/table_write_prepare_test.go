@@ -31,10 +31,7 @@ func TestPostgresSQLTypeForField(t *testing.T) {
 		field plugin.FieldInfo
 		want  string
 	}{
-		{name: "native type wins", field: plugin.FieldInfo{Name: "id", Type: "string", NativeType: "VARCHAR(32)"}, want: "VARCHAR(32)"},
-		{name: "native common type maps", field: plugin.FieldInfo{Name: "name", Type: "string", NativeType: "string"}, want: "TEXT"},
-		{name: "native inferred double maps", field: plugin.FieldInfo{Name: "score", Type: "double", NativeType: "double"}, want: "DOUBLE PRECISION"},
-		{name: "native spatial typmod wins", field: plugin.FieldInfo{Name: "geom", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"}, want: "geometry(MultiPolygon,4326)"},
+		{name: "standard spatial attributes map", field: plugin.FieldInfo{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}}, want: "GEOMETRY(MultiPolygon,4326)"},
 		{name: "common int", field: plugin.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
 		{name: "unknown defaults text", field: plugin.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
 	}
