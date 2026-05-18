@@ -39,9 +39,36 @@ type TableTargetPlan struct {
 }
 
 type TableTransferPlan struct {
-	Source    TableSourcePlan
-	Target    TableTargetPlan
-	BatchSize int
+	Source     TableSourcePlan
+	Target     TableTargetPlan
+	Transforms []TableTransformPlan
+	BatchSize  int
+}
+
+type TableTransformPlan struct {
+	Type         string
+	FieldMapping *FieldMappingTransformPlan
+}
+
+type FieldMappingMode string
+
+const (
+	FieldMappingModeProject     FieldMappingMode = "project"
+	FieldMappingModePassthrough FieldMappingMode = "passthrough"
+)
+
+type FieldMappingTransformPlan struct {
+	Mode   FieldMappingMode
+	Fields []FieldMappingFieldPlan
+}
+
+type FieldMappingFieldPlan struct {
+	Source     string
+	Target     string
+	TargetType string
+	Nullable   bool
+	Default    interface{}
+	Format     string
 }
 
 type TableTransferExecutor struct {
@@ -124,9 +151,10 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		return nil, err
 	}
 	return (&TablePipeline{
-		Source:    source,
-		Target:    target,
-		BatchSize: plan.BatchSize,
+		Source:     source,
+		Target:     target,
+		Transforms: plan.Transforms,
+		BatchSize:  plan.BatchSize,
 	}).Execute(ctx)
 }
 

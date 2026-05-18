@@ -102,6 +102,18 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
     "options": {"header": true},
     "policy": {"write_mode": "overwrite"}
   },
+  "transforms": [
+    {
+      "type": "field_mapping",
+      "version": "v1",
+      "mode": "project",
+      "fields": [
+        {"source": "name", "target": "road_name", "target_type": "string"},
+        {"source": "geom", "target": "geometry", "target_type": "geometry", "nullable": false},
+        {"target": "created_by", "target_type": "string", "default": "transfer"}
+      ]
+    }
+  ],
   "batch_size": 10000
 }
 ```
@@ -117,8 +129,43 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 7. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
 8. Shapefile 输出按 `format=shapefile` 表达，并通过 multi component writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等组件。
 9. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
+10. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
 
 旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等不再兼容，出现即拒绝。
+
+### 3.1 field_mapping transform
+
+字段映射是第一类正式进入新主链路的 Transfer transform。它取代旧的任务外层 `mappings` / `field_mappings` 附属表语义，但用户界面仍可继续叫“字段映射”。
+
+字段映射只负责 table batch 的字段级变换：
+
+- 字段投影：只输出声明的目标字段。
+- 字段重命名：`source` 读源字段，`target` 写目标字段。
+- 默认值：`source` 为空，或源字段不存在 / 值为 nil 时使用 `default`。
+- 类型声明：`target_type` 写入目标 schema，供 native table prepare、CSV / JSON / Parquet / Shapefile writer 使用。
+- 空间字段同步：`target_type=geometry` 时，目标 schema 的 `SpatialInfo.GeometryColumn` 跟随 `target`。
+
+第一版不支持表达式语言、过滤、条件分支、聚合或跨行计算。此类 ETL 能力后续作为新的 transform 类型补充，不塞进 `field_mapping`。
+
+字段项定义：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `source` | 否 | 源字段名；为空表示常量 / 默认字段。 |
+| `target` | 是 | 目标字段名。 |
+| `target_type` | 否 | 目标字段类型，例如 `string`、`int`、`bigint`、`double`、`bool`、`date`、`timestamp`、`geometry`。 |
+| `nullable` | 否 | 目标字段是否可空；默认 `true`。 |
+| `default` | 否 | 源字段缺失或值为 nil 时使用的默认值。 |
+| `format` | 否 | 日期、时间、数字等简单解析 / 格式化提示；第一版只保留配置，不引入表达式。 |
+
+`mode` 第一版支持：
+
+| mode | 语义 |
+|---|---|
+| `project` | 只输出 `fields` 声明的目标字段。默认模式。 |
+| `passthrough` | 先保留源 row，再应用字段映射覆盖 / 新增目标字段。 |
+
+旧任务外层 `mappings` 不再作为新执行主链路输入；新任务必须把字段映射写入 `config.transforms[]`。
 
 ## 四、已完成能力
 
@@ -144,7 +191,7 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
 | Parquet | 最小 `TableReaderProvider` 已有 | 最小 `TableWriterProvider` 已有 | 已能跑通基础 table transfer；row group / 分区数据集仍待增强。 |
-| Shapefile | component sample / table info 已有 | `ComponentTableWriterProvider` 已有 | 可写 multi component；连续 reader 仍待补。 |
+| Shapefile | component table info / sample 读侧已接入 Transfer 主链路 | `ComponentTableWriterProvider` 已有 | multi component 读写已可用于 Transfer；后续只保留连续 stateful component reader / 大文件性能增强。 |
 
 ### 4.3 Transfer
 
@@ -154,6 +201,7 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 | planner | 已能规划 native table、encoded table file/object、multi component export、native table import。 |
 | executor | 已统一走 common engine / format / resource 能力。 |
 | worker | Asynq worker 保留，执行入口已切到 planner + executor。 |
+| field mapping transform | 已进入 `config.transforms[type=field_mapping]`，executor 可执行投影、重命名、默认值、目标类型和 geometry schema 同步。 |
 | metrics | 已回写基础 records_read / records_written。 |
 | overwrite / append | 已收敛为 Transfer policy；common engine 不理解写入模式。 |
 | 写后 Meta 扫描 | 已触发 deep scan；文件型目标扫描父目录，对象存储目标扫描 bucket/prefix 容器。 |
@@ -169,7 +217,10 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 | CSV / TSV file/object -> PostgreSQL table | 已接入第一版 import | PostgreSQL 目标默认优先 COPY session。 |
 | PostgreSQL table -> PostgreSQL table | 已收敛到统一 table reader / writer 链路 | 不保留 native-to-native 专用通道；空间字段类型已修复。 |
 | PostgreSQL spatial table -> PostgreSQL spatial table | 已修复空间字段类型保真 | 旧目标表可直接删除后重建，不做兼容迁移。 |
-| PostgreSQL spatial table -> NFS Shapefile | 已完成写出链路，NFS root / meta 扫描路径已修复 | 需要服务重启后重扫确认 item node / fields / spatial info。 |
+| PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到。 |
+| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、组件文件、Meta scan 和 Manager preview。 |
+| NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi component 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session。 |
+| MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi component 读侧可导入 native table。 |
 | NFS Shapefile -> MinIO Shapefile | 已手动验证通过 | multi component 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities。 |
 
 ## 六、写后 Meta 扫描规则
@@ -210,34 +261,31 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 
 | 方向 | 当前不足 |
 |---|---|
-| checkpoint / progress | 只有基础 records metrics，缺少 batch-level checkpoint、恢复和更细日志。 |
+| checkpoint / progress | 只有基础 records metrics，缺少 batch-level checkpoint、恢复和更细日志；这是下一阶段最高优先级之一。 |
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
 | Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection、分区数据集读取仍待补。 |
-| Shapefile 读取 | 写侧已通，连续读取 / 大文件读取能力仍待从 sample/component 能力演进。 |
+| Shapefile 读取 | Transfer 主链路已验收通过；连续 stateful component reader、按批保持打开句柄、超大文件性能仍待增强。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
-| UI 字段映射 | 旧字段映射 UI 仍需整理为新 planner transform，避免继续承载旧概念。 |
+| transform 扩展 | `field_mapping` 已进入主链路；过滤、派生字段、表达式、空间坐标转换等更完整 ETL transform 尚未设计。 |
 
 ## 九、下一步建议
 
 ### 近期优先级
 
-1. **复验 NFS root / Meta 扫描闭环**  
-   重启服务后重跑 PostgreSQL spatial table -> NFS Shapefile，确认 `metadata.meta_node` 中 root 为 `name="/"、full_name=""`，`shp/a3.shp` 的 `node_id` 指向 `shp` dir node，Manager 能看到字段、行数和空间能力。
-
-2. **补齐 Shapefile 读侧主链路**  
-   让 Shapefile 从 sample/component 能力演进到可用于 Transfer 的连续 table reader，优先支撑 NFS / MinIO Shapefile -> PostgreSQL table。
-
-3. **做 PostGIS -> NFS / MinIO Shapefile 真实验收**  
-   覆盖 geometry type、SRID、字段类型、组件文件、Meta scan、Manager preview。
-
-4. **整理字段映射为 planner transform**  
-   明确 field mapping 是 Transfer transform，而不是 source / target endpoint 的一部分。
-
-5. **完善 checkpoint / progress / execution logs**  
+1. **完善 checkpoint / progress / execution logs**  
    至少记录 batch 序号、累计行数、当前 source offset / cursor 状态、目标提交状态。
+
+2. **增强 Shapefile 大文件读侧性能**  
+   当前主链路已通过，但仍可把 component sample path 演进为 stateful component reader，避免每批重新打开 / 定位组件文件。
+
+3. **补 Transfer 验收用例沉淀**  
+   将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、NFS / MinIO Shapefile -> PostgreSQL table 形成可重复的集成测试或操作清单。
+
+4. **设计下一批 transform 类型**  
+   在 `field_mapping` 稳定后，再讨论过滤、派生字段、简单表达式、空间坐标转换等 ETL 能力边界。
 
 ### 中期优先级
 
@@ -247,7 +295,7 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 4. document / media raw copy：先走 content reader / writer，不做格式转换。
 5. container child table transfer：Excel sheet、SQLite table、GeoPackage layer 等按 child table 转出。
 
-### 长期方向
+### 长期方向 
 
 1. Kafka / stream：新增 stream event、partition / offset checkpoint。
 2. CDC：新增 change event 抽象，支持 snapshot + incremental。
@@ -266,4 +314,3 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 - GeoJSON 不是顶层 format，而是 JSON 的空间编码策略。
 - Shapefile 是 multi component table format，Transfer 通过 component writer 写出。
 - NFS root 是结构上必须存在、语义路径上为空、展示上可透明的节点；具体规范已移入 `docs/spec/addp存储引擎路径体系规范.md`。
-

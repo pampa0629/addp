@@ -62,6 +62,57 @@ func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorAppliesFieldMappingTransform(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "name", Type: "string"},
+					{Name: "geom", Type: "geometry"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": int64(1), "name": "Alice", "geom": "POINT (120 30)"},
+					{"id": int64(2), "name": nil, "geom": "POINT (121 31)"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:   reader,
+		TargetContentWriter:  writer,
+		TargetFormatProvider: csvformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Transforms: []TableTransformPlan{{
+			Type: "field_mapping",
+			FieldMapping: &FieldMappingTransformPlan{
+				Mode: FieldMappingModeProject,
+				Fields: []FieldMappingFieldPlan{
+					{Source: "id", Target: "road_id", TargetType: "bigint", Nullable: false},
+					{Source: "name", Target: "road_name", TargetType: "string", Nullable: true, Default: "unknown"},
+					{Source: "geom", Target: "geometry", TargetType: "geometry", Nullable: false},
+					{Target: "created_by", TargetType: "string", Nullable: false, Default: "transfer"},
+				},
+			},
+		}},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if got, want := writer.buf.String(), "road_id,road_name,geometry,created_by\n1,Alice,POINT (120 30),transfer\n2,unknown,POINT (121 31),transfer\n"; got != want {
+		t.Fatalf("csv output = %q, want %q", got, want)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 1 {
+		t.Fatalf("metrics = %#v, want 2 read/written and 1 batch", metrics)
+	}
+}
+
 func TestTableTransferExecutorNoRowsCreatesEmptyEncodedTarget(t *testing.T) {
 	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{}}}
 	writer := &fakeContentWriter{}
@@ -240,6 +291,70 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 	}
 	if len(writer.sessionFields) != 2 || writer.sessionFields[1].NativeType != "geometry(MultiPolygon,4326)" {
 		t.Fatalf("session fields = %#v, want geometry native typmod", writer.sessionFields)
+	}
+}
+
+func TestTableTransferExecutorTransformsNativeTargetSchema(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "geom", Type: "geometry", NativeType: "geometry(Point,4326)"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": 1, "geom": "POINT (120 30)"},
+				},
+			},
+		},
+	}
+	writer := &fakeNativeTableWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         reader,
+		SourceTableSessionProvider: reader,
+		TargetNativePreparer:       writer,
+		TargetNativeWriter:         writer,
+		TargetTableSessionProvider: writer,
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{
+			Kind:       TableEndpointNative,
+			TableWrite: engineplugin.BatchWriteOptions{Method: "copy"},
+		},
+		Transforms: []TableTransformPlan{{
+			Type: "field_mapping",
+			FieldMapping: &FieldMappingTransformPlan{
+				Mode: FieldMappingModeProject,
+				Fields: []FieldMappingFieldPlan{
+					{Source: "id", Target: "road_id", TargetType: "bigint", Nullable: false},
+					{Source: "geom", Target: "geometry", TargetType: "geometry", Nullable: false},
+				},
+			},
+		}},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(writer.preparedFields) != 2 {
+		t.Fatalf("prepared fields = %#v, want 2 fields", writer.preparedFields)
+	}
+	if writer.preparedFields[0].Name != "road_id" || writer.preparedFields[0].Type != "bigint" {
+		t.Fatalf("first prepared field = %#v, want road_id bigint", writer.preparedFields[0])
+	}
+	if writer.preparedFields[1].Name != "geometry" || writer.preparedFields[1].Type != "geometry" {
+		t.Fatalf("second prepared field = %#v, want geometry geometry", writer.preparedFields[1])
+	}
+	if len(writer.batches) != 1 {
+		t.Fatalf("session batches = %#v, want one batch", writer.batches)
+	}
+	if _, ok := writer.batches[0].Rows[0]["road_id"]; !ok {
+		t.Fatalf("written row = %#v, want transformed road_id", writer.batches[0].Rows[0])
+	}
+	if _, ok := writer.batches[0].Rows[0]["id"]; ok {
+		t.Fatalf("written row = %#v, should not contain source id in project mode", writer.batches[0].Rows[0])
 	}
 }
 

@@ -111,9 +111,10 @@ func contentCatalogPathForComponent(base engineplugin.CatalogPath, ref resource.
 }
 
 type TablePipeline struct {
-	Source    TableBatchSource
-	Target    TableBatchTarget
-	BatchSize int
+	Source     TableBatchSource
+	Target     TableBatchTarget
+	Transforms []TableTransformPlan
+	BatchSize  int
 }
 
 func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, error) {
@@ -125,6 +126,10 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}
 	if p.Target == nil {
 		return nil, fmt.Errorf("table pipeline requires target")
+	}
+	transforms, err := buildTableTransforms(p.Transforms)
+	if err != nil {
+		return nil, err
 	}
 	batchSize := p.BatchSize
 	if batchSize <= 0 {
@@ -147,6 +152,10 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 		if firstBatch != nil && len(firstBatch.Rows) > 0 {
 			schema = tableInfoFromBatch(firstBatch)
 		}
+	}
+	schema, err = applySchemaTransforms(schema, transforms)
+	if err != nil {
+		return nil, fmt.Errorf("transform table schema: %w", err)
 	}
 	if schema == nil {
 		schema = &format.TableInfo{}
@@ -177,6 +186,13 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 		}
 		if batch == nil || len(batch.Rows) == 0 {
 			break
+		}
+		if len(transforms) > 0 {
+			offset := batch.Offset
+			batch, err = applyBatchTransforms(ctx, batch, transforms)
+			if err != nil {
+				return metrics, fmt.Errorf("transform table batch at offset %d: %w", offset, err)
+			}
 		}
 		if err := writer.WriteBatch(ctx, batch); err != nil {
 			return metrics, err

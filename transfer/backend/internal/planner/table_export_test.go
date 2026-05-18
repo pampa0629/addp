@@ -57,6 +57,47 @@ func TestBuildTableTransferPlanForNativeTableToEncodedFile(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanIncludesFieldMappingTransform(t *testing.T) {
+	nullable := false
+	spec := minimalNativeToEncodedSpec()
+	spec.Transforms = []TransformSpec{{
+		Type: "field_mapping",
+		Mode: "project",
+		Fields: []FieldMappingSpec{
+			{Source: "id", Target: "road_id", TargetType: "bigint", Nullable: &nullable},
+			{Source: "geom", Target: "geometry", TargetType: "geometry", Nullable: &nullable},
+			{Target: "created_by", TargetType: "string", Default: "transfer"},
+		},
+	}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if len(result.Plan.Transforms) != 1 {
+		t.Fatalf("transforms = %#v, want one transform", result.Plan.Transforms)
+	}
+	fieldMapping := result.Plan.Transforms[0].FieldMapping
+	if fieldMapping == nil {
+		t.Fatal("field mapping transform is nil")
+	}
+	if fieldMapping.Mode != executor.FieldMappingModeProject {
+		t.Fatalf("field mapping mode = %q, want project", fieldMapping.Mode)
+	}
+	if len(fieldMapping.Fields) != 3 {
+		t.Fatalf("field mappings = %#v, want 3 fields", fieldMapping.Fields)
+	}
+	if fieldMapping.Fields[0].Target != "road_id" || fieldMapping.Fields[0].Nullable {
+		t.Fatalf("first field mapping = %#v, want road_id nullable=false", fieldMapping.Fields[0])
+	}
+	if fieldMapping.Fields[2].Default != "transfer" || !fieldMapping.Fields[2].Nullable {
+		t.Fatalf("third field mapping = %#v, want default transfer nullable=true", fieldMapping.Fields[2])
+	}
+}
+
 func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}}

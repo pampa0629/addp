@@ -2,7 +2,15 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，负责导入、导出、同步任务、本地引擎、对象存储辅助浏览、字段映射、转换器和基于 Asynq 的异步执行。
+Transfer 模块是 ADDP 的数据传输中枢，负责导入、导出、同步任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和基于 Asynq 的异步执行。
+
+当前主路径基于 `common/engine`、`common/format`、`common/resource`：
+
+- Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
+- 具体 engine-native 读写由 `common/engine` 提供。
+- 具体格式和数据类型读写由 `common/format` 提供。
+- 资源定位、component / range / multi component 读写由 `common/resource` 提供。
+- 旧 Transfer 私有 reader / writer 插件体系、旧 `pkg/pipeline`、旧 `pkg/plugin_loader` 不作为新功能入口。
 
 ## 技术栈与端口
 
@@ -18,13 +26,11 @@ transfer/
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # tasks、executions、local-engines、object-storage、transforms
-│   ├── internal/service/      # task、execution、local engine、object storage
+│   ├── internal/planner/      # source/target endpoint -> table transfer plan
+│   ├── internal/executor/     # 基于 common engine/format/resource 的 table transfer executor
+│   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
 │   ├── internal/worker/       # Asynq queue、handler、scheduler
-│   ├── internal/transform/    # 内置转换器
-│   ├── pkg/pipeline/          # Reader -> Transform -> Writer 执行引擎
-│   ├── pkg/plugin_loader/
-│   ├── pkg/postprocessor/
-│   └── plugins/               # readers、writers、注册入口
+│   └── pkg/vfs/               # 兼容性辅助能力，非新 transfer reader/writer 主入口
 ├── docs/
 │   ├── 数据库架构.md
 │   ├── transfer-基本概念及配置说明.md
@@ -42,17 +48,20 @@ transfer/
 - 公共连通：`GET /ping`。
 - 数据源辅助：`GET /engines`、`GET /engines/:engine_id/tree`、`GET /nodes/:node_id/children`、`GET /tables/metadata`。
 - 任务：`POST /tasks`、`GET /tasks`、`GET /tasks/statistics`、`GET /tasks/:id`、`PUT /tasks/:id`、`DELETE /tasks/:id`、`POST /tasks/:id/start|stop|pause|resume`、`GET /tasks/:id/executions`。
-- 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。
+- 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新主线应收敛为 planner transform。
 - 本地引擎：`GET /system-engines`、`GET/POST/PUT/DELETE /local-engines`、`POST /local-engines/test-connection`、`POST /local-engines/:id/test`、`POST /local-engines/:id/sync`。
 - 对象存储：`POST /object-storage/browse`、`POST /object-storage/list-files`。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:id`、`POST /executions/:id/cancel|retry`、`GET /executions/:id/progress|logs`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
-## 插件与执行规则
+## 执行规则
 
-- 数据流统一走 `pkg/pipeline`，遵循 Reader -> Transform -> Writer。
-- Reader/Writer 插件在 `backend/plugins/` 下实现和注册，转换器在 `internal/transform/` 下注册。
-- 大数据传输要优先考虑批大小、流式读取、Checkpoint 和幂等重试。
+- 新任务配置必须使用 source / target endpoint JSON，旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
+- table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / organization 分叉，不按具体引擎组合分叉。
+- encoded file/object 读写必须通过 `common/engine` content provider + `common/format` table provider，不在 Transfer 中新增私有 reader / writer。
+- Shapefile 等 multi component 格式通过 `common/resource` component reader / writer + `common/format` component table provider 接入。
+- overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
+- 大数据传输要优先考虑批大小、流式读取、Checkpoint、进度日志和幂等重试。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
 
@@ -77,4 +86,4 @@ curl http://localhost:8083/health
 - `transfer/docs/transfer高性能分析.md`
 - `transfer/docs/tables/tasks表.md`
 - `transfer/docs/tables/task_executions表.md`
-- `docs/next/engine-plugin-transfer后续事项.md`
+- `docs/next/transfer基于common-engine-format改造设计.md`

@@ -77,17 +77,54 @@ export function useTaskWizardState() {
         mode: 'batch',
         source: sourceEndpoint,
         target: targetEndpoint,
+        transforms: buildTransformsConfig(),
         batch_size: batchSize.value
       },
       schedule: schedule.value,
       enabled: schedule.value ? enabled.value : false, // 只有设置了定时任务才考虑 enabled
       batch_size: batchSize.value,
-      mappings: fieldMappings.value,
       auto_scan_metadata: true
     }
 
     return config
   })
+
+  function buildTransformsConfig() {
+    const result = []
+    const fieldMapping = buildFieldMappingTransform()
+    if (fieldMapping) {
+      result.push(fieldMapping)
+    }
+    result.push(...transforms.value)
+    return result
+  }
+
+  function buildFieldMappingTransform() {
+    const fields = fieldMappings.value
+      .filter(mapping => String(mapping.target_field || '').trim())
+      .map(mapping => {
+        const field = {
+          target: String(mapping.target_field || '').trim(),
+          nullable: mapping.nullable !== false
+        }
+        const source = String(mapping.source_field || '').trim()
+        if (source) field.source = source
+        if (mapping.field_type) field.target_type = mapping.field_type
+        if (mapping.default_value !== undefined && mapping.default_value !== null && String(mapping.default_value).trim() !== '') {
+          field.default = mapping.default_value
+        }
+        if (mapping.format) field.format = mapping.format
+        return field
+      })
+
+    if (fields.length === 0) return null
+    return {
+      type: 'field_mapping',
+      version: 'v1',
+      mode: 'project',
+      fields
+    }
+  }
 
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
@@ -472,8 +509,19 @@ export function useTaskWizardState() {
       targetConfig.value = extractTargetConfig(target)
     }
 
-    // 字段映射
-    if (Array.isArray(task.mappings)) {
+    // 字段映射：新任务从 config.transforms 回填，旧任务兼容外层 mappings。
+    const fieldMappingTransform = (task.config?.transforms || []).find(transform => transform?.type === 'field_mapping')
+    if (fieldMappingTransform) {
+      fieldMappings.value = (fieldMappingTransform.fields || []).map(field => ({
+        source_field: field.source || '',
+        target_field: field.target || '',
+        field_type: field.target_type || 'string',
+        format: field.format || '',
+        default_value: field.default ?? '',
+        nullable: field.nullable !== false
+      }))
+      transforms.value = (task.config?.transforms || []).filter(transform => transform?.type !== 'field_mapping')
+    } else if (Array.isArray(task.mappings)) {
       fieldMappings.value = task.mappings.map(m => ({
         source_field: m.source_field || '',
         target_field: m.target_field || '',
@@ -482,6 +530,9 @@ export function useTaskWizardState() {
         default_value: m.default_value || '',
         nullable: m.nullable !== false
       }))
+      transforms.value = task.config?.transforms || []
+    } else {
+      transforms.value = task.config?.transforms || []
     }
   }
 

@@ -43,10 +43,28 @@ type EndpointSpec struct {
 }
 
 type TableExportTaskSpec struct {
-	Mode      string       `json:"mode"`
-	Source    EndpointSpec `json:"source"`
-	Target    EndpointSpec `json:"target"`
-	BatchSize int          `json:"batch_size,omitempty"`
+	Mode       string          `json:"mode"`
+	Source     EndpointSpec    `json:"source"`
+	Target     EndpointSpec    `json:"target"`
+	Transforms []TransformSpec `json:"transforms,omitempty"`
+	BatchSize  int             `json:"batch_size,omitempty"`
+}
+
+type TransformSpec struct {
+	Type    string                 `json:"type"`
+	Version string                 `json:"version,omitempty"`
+	Mode    string                 `json:"mode,omitempty"`
+	Fields  []FieldMappingSpec     `json:"fields,omitempty"`
+	Config  map[string]interface{} `json:"config,omitempty"`
+}
+
+type FieldMappingSpec struct {
+	Source     string      `json:"source,omitempty"`
+	Target     string      `json:"target"`
+	TargetType string      `json:"target_type,omitempty"`
+	Nullable   *bool       `json:"nullable,omitempty"`
+	Default    interface{} `json:"default,omitempty"`
+	Format     string      `json:"format,omitempty"`
 }
 
 type EngineBinding struct {
@@ -157,9 +175,10 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
 		Plan: executor.TableTransferPlan{
-			Source:    sourcePlan,
-			Target:    targetPlan,
-			BatchSize: spec.BatchSize,
+			Source:     sourcePlan,
+			Target:     targetPlan,
+			Transforms: buildTableTransforms(spec.Transforms),
+			BatchSize:  spec.BatchSize,
 		},
 	}, nil
 }
@@ -258,12 +277,89 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	if err := validateEndpointCommon(spec.Target, "target", dataTypeTable); err != nil {
 		return err
 	}
+	if err := validateTransformSpecs(spec.Transforms); err != nil {
+		return err
+	}
 	if isTableExportSpec(spec) || isTableImportSpec(spec) || isEncodedTableTransferSpec(spec) || isNativeTableTransferSpec(spec) {
 		return nil
 	}
 	return fmt.Errorf("unsupported table transfer shape: source %s/%s -> target %s/%s",
 		spec.Source.Representation, spec.Source.Resource.Kind,
 		spec.Target.Representation, spec.Target.Resource.Kind)
+}
+
+func validateTransformSpecs(transforms []TransformSpec) error {
+	for i, transform := range transforms {
+		transformType := strings.ToLower(strings.TrimSpace(transform.Type))
+		if transformType == "" {
+			return fmt.Errorf("transform[%d] type is required", i)
+		}
+		switch transformType {
+		case "field_mapping":
+			mode := strings.ToLower(strings.TrimSpace(transform.Mode))
+			if mode != "" && mode != string(executor.FieldMappingModeProject) && mode != string(executor.FieldMappingModePassthrough) {
+				return fmt.Errorf("transform[%d] field_mapping mode must be %q or %q, got %q", i, executor.FieldMappingModeProject, executor.FieldMappingModePassthrough, transform.Mode)
+			}
+			if len(transform.Fields) == 0 {
+				return fmt.Errorf("transform[%d] field_mapping requires fields", i)
+			}
+			for j, field := range transform.Fields {
+				if strings.TrimSpace(field.Target) == "" {
+					return fmt.Errorf("transform[%d].fields[%d] target is required", i, j)
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported transform type %q", transform.Type)
+		}
+	}
+	return nil
+}
+
+func buildTableTransforms(transforms []TransformSpec) []executor.TableTransformPlan {
+	if len(transforms) == 0 {
+		return nil
+	}
+	plans := make([]executor.TableTransformPlan, 0, len(transforms))
+	for _, transform := range transforms {
+		switch strings.ToLower(strings.TrimSpace(transform.Type)) {
+		case "field_mapping":
+			plans = append(plans, executor.TableTransformPlan{
+				Type: "field_mapping",
+				FieldMapping: &executor.FieldMappingTransformPlan{
+					Mode:   executor.FieldMappingMode(normalizeFieldMappingMode(transform.Mode)),
+					Fields: buildFieldMappingFields(transform.Fields),
+				},
+			})
+		}
+	}
+	return plans
+}
+
+func normalizeFieldMappingMode(mode string) string {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == "" {
+		return string(executor.FieldMappingModeProject)
+	}
+	return normalized
+}
+
+func buildFieldMappingFields(fields []FieldMappingSpec) []executor.FieldMappingFieldPlan {
+	plans := make([]executor.FieldMappingFieldPlan, 0, len(fields))
+	for _, field := range fields {
+		nullable := true
+		if field.Nullable != nil {
+			nullable = *field.Nullable
+		}
+		plans = append(plans, executor.FieldMappingFieldPlan{
+			Source:     strings.TrimSpace(field.Source),
+			Target:     strings.TrimSpace(field.Target),
+			TargetType: strings.TrimSpace(field.TargetType),
+			Nullable:   nullable,
+			Default:    field.Default,
+			Format:     strings.TrimSpace(field.Format),
+		})
+	}
+	return plans
 }
 
 func isNativeTableTransferSpec(spec TableExportTaskSpec) bool {
