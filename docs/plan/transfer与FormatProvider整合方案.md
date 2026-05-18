@@ -222,7 +222,7 @@ engine capability
 ```text
 DataBatch
   -> format BatchWriter / contentio.MultiWriter
-  -> ResourceWriteSession
+  -> contentio.Writer
   -> CommitPolicy
 ```
 
@@ -342,9 +342,9 @@ spatial:
 | Adapter | 输入 | 输出 |
 |---|---|---|
 | `NativeTableReaderAdapter` | engine native table reader | `pipeline.Reader` |
-| `FormatBatchReaderAdapter` | resource reader + format batch reader | `pipeline.Reader` |
+| `FormatBatchReaderAdapter` | contentio.Reader + format batch reader | `pipeline.Reader` |
 | `NativeTableWriterAdapter` | engine native table writer | `pipeline.Writer` |
-| `FormatBatchWriterAdapter` | format writer + resource writer | `pipeline.Writer` |
+| `FormatBatchWriterAdapter` | format writer + contentio.Writer | `pipeline.Writer` |
 
 这样主执行引擎仍然只看 `Reader -> Transform -> Writer`。
 

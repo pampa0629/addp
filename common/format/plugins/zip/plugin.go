@@ -137,7 +137,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 
 func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
 	if parent == nil {
-		return nil, fmt.Errorf("zip child resolver requires parent resource reader")
+		return nil, fmt.Errorf("zip child resolver requires parent contentio.Reader")
 	}
 	entryPath := zipChildPath(child, options)
 	if entryPath == "" {

@@ -156,7 +156,7 @@ engine capability
 | data item 边界、主资源、组件、whole scope、claims / exclusive | [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md) |
 | attributes 分区和字段归属 | [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md) |
 | 数据类型、文件格式、FormatPlugin、info provider、content reader | [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) |
-| 资源定位和读取抽象 | [ADDP 资源读取抽象规范](../spec/addp资源读取抽象规范.md) |
+| 内容定位和 I/O 抽象 | [ADDP 内容 I/O 抽象规范](../spec/addp内容IO抽象规范.md) |
 | 内置数据类型与文件格式落地规则 | [ADDP 内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md) |
 | 新增数据类型或文件格式步骤 | [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md) |
 
@@ -178,7 +178,7 @@ Meta 可以调用格式能力，但最终 item 边界和 attributes 核心字段
 
 ```text
 meta item + attributes
-  -> Manager 根据 engine capability 构造 resource reader
+  -> Manager 根据 engine capability 构造 contentio.Reader
   -> FormatPlugin / info provider / content reader
   -> Manager 组装管理端 DTO
 ```
@@ -190,7 +190,7 @@ Manager 不重新识别 item。multi 读取使用 `attributes.item.refs`；whole
 ```text
 source / target data item
   -> TransferPlan(engine, resource, data_type, format, capabilities, policy)
-  -> resource reader / writer
+  -> contentio.Reader / Writer
   -> format plugin
   -> content reader / writer
   -> pipeline reader / writer

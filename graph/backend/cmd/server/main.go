@@ -17,8 +17,9 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	resourceobjectstore "github.com/addp/common/engine/contentadapter/objectstore"
+	"github.com/addp/common/engine/contentadapter"
 	commonPlugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/minio"
 	commonLogger "github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
@@ -62,16 +63,15 @@ func main() {
 	buildRepo := repository.NewBuildRepository(db)
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
 
-	// 初始化 MinIO 客户端
-	materialStore, err := resourceobjectstore.NewReaderFromConnectionInfo(commonPlugin.ConnectionInfo{
+	materialConnInfo := commonPlugin.ConnectionInfo{
 		"endpoint":   cfg.MinioEndpoint,
 		"access_key": cfg.MinioAccessKey,
 		"secret_key": cfg.MinioSecretKey,
-	})
-	if err != nil {
-		logger.Error("MinIO 客户端初始化失败", "error", err)
-		os.Exit(1)
 	}
+	materialPlugin := &minio.MinIOPlugin{}
+	materialPathMapper := contentadapter.ObjectPathMapper(0)
+	materialReader := contentadapter.NewMappedReader(materialPlugin, materialConnInfo, materialPathMapper, commonPlugin.ReadOptions{})
+	materialWriter := contentadapter.NewMappedWriter(materialPlugin, materialConnInfo, materialPathMapper, commonPlugin.WriteOptions{Overwrite: true})
 
 	// 初始化 services
 	ontologySvc := service.NewOntologyService(ontologyRepo, entityTypeRepo, relationTypeRepo, versionRepo)
@@ -80,7 +80,7 @@ func main() {
 	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialStore, cfg.CopilotServiceURL)
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 
 	// 初始化 Model 导入服务（如果配置了 MODEL_URL）

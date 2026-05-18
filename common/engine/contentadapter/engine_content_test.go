@@ -11,7 +11,7 @@ import (
 )
 
 func TestEngineContentReaderUsesRefBasename(t *testing.T) {
-	provider := &contentProviderStub{data: map[string]string{"result.dbf": "ok"}}
+	provider := &contentProviderStub{data: map[string]string{"bucket/result.dbf": "ok"}}
 	reader := NewReader(provider, nil, baseCatalogPath(), engineplugin.ReadOptions{})
 
 	rc, err := reader.Open(context.Background(), contentio.NewRef("elsewhere/result.dbf", contentio.RoleAuxiliary))
@@ -26,7 +26,7 @@ func TestEngineContentReaderUsesRefBasename(t *testing.T) {
 }
 
 func TestEngineContentReaderOpenRange(t *testing.T) {
-	provider := &contentProviderStub{data: map[string]string{"result.shx": "0123456789"}}
+	provider := &contentProviderStub{data: map[string]string{"bucket/result.shx": "0123456789"}}
 	reader := NewReader(provider, nil, baseCatalogPath(), engineplugin.ReadOptions{})
 	rangeReader, ok := reader.(contentio.RangeReader)
 	if !ok {
@@ -58,7 +58,41 @@ func TestEngineContentWriterUsesRefBasename(t *testing.T) {
 	if err := wc.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	if got := provider.data["result.dbf"]; got != "new" {
+	if got := provider.data["bucket/result.dbf"]; got != "new" {
+		t.Fatalf("written data = %q, want new", got)
+	}
+}
+
+func TestMappedReaderUsesObjectRefPath(t *testing.T) {
+	provider := &contentProviderStub{data: map[string]string{"graph/build/input.txt": "ok"}}
+	reader := NewMappedReader(provider, nil, ObjectPathMapper(42), engineplugin.ReadOptions{})
+
+	rc, err := reader.Open(context.Background(), contentio.NewRef("graph/build/input.txt", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer rc.Close()
+	data, _ := io.ReadAll(rc)
+	if string(data) != "ok" {
+		t.Fatalf("Open() data = %q, want ok", data)
+	}
+}
+
+func TestMappedWriterUsesObjectRefPath(t *testing.T) {
+	provider := &contentProviderStub{data: map[string]string{}}
+	writer := NewMappedWriter(provider, nil, ObjectPathMapper(42), engineplugin.WriteOptions{Overwrite: true})
+
+	wc, err := writer.Create(context.Background(), contentio.NewRef("graph/build/output.txt", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := wc.Write([]byte("new")); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if got := provider.data["graph/build/output.txt"]; got != "new" {
 		t.Fatalf("written data = %q, want new", got)
 	}
 }
@@ -68,7 +102,7 @@ type contentProviderStub struct {
 }
 
 func (p *contentProviderStub) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
-	value := p.data[path.Segments[len(path.Segments)-1].Name]
+	value := p.data[path.StringPath()]
 	return io.NopCloser(bytes.NewBufferString(value)), nil
 }
 
@@ -99,7 +133,7 @@ func (p *contentProviderStub) StoreSemantics() engineplugin.StoreSemantics {
 }
 
 func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
-	value := p.data[path.Segments[len(path.Segments)-1].Name]
+	value := p.data[path.StringPath()]
 	end := opts.Offset + opts.Length
 	if end > int64(len(value)) {
 		end = int64(len(value))
@@ -110,7 +144,7 @@ func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.Connec
 func (p *contentProviderStub) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
 	return &captureWriter{
 		close: func(data string) {
-			p.data[path.Segments[len(path.Segments)-1].Name] = data
+			p.data[path.StringPath()] = data
 		},
 	}, nil
 }

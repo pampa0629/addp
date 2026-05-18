@@ -11,8 +11,7 @@ import (
 	"sync"
 	"time"
 
-	commonResource "github.com/addp/common/contentio"
-	resourceobjectstore "github.com/addp/common/engine/contentadapter/objectstore"
+	"github.com/addp/common/contentio"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/graph/internal/models"
@@ -34,7 +33,8 @@ type BuildService struct {
 	graphRepo         *repository.KnowledgeGraphRepository
 	taskExecutionRepo *commonRepo.TaskExecutionRepository
 	neo4jSvc          *Neo4jService
-	materialStore     *resourceobjectstore.Reader
+	materialReader    contentio.Reader
+	materialWriter    contentio.Writer
 	copilotURL        string
 	httpClient        *http.Client
 
@@ -50,7 +50,8 @@ func NewBuildService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	taskExecutionRepo *commonRepo.TaskExecutionRepository,
 	neo4jSvc *Neo4jService,
-	materialStore *resourceobjectstore.Reader,
+	materialReader contentio.Reader,
+	materialWriter contentio.Writer,
 	copilotURL string,
 ) *BuildService {
 	return &BuildService{
@@ -60,7 +61,8 @@ func NewBuildService(
 		graphRepo:         graphRepo,
 		taskExecutionRepo: taskExecutionRepo,
 		neo4jSvc:          neo4jSvc,
-		materialStore:     materialStore,
+		materialReader:    materialReader,
+		materialWriter:    materialWriter,
 		copilotURL:        copilotURL,
 		httpClient:        &http.Client{Timeout: 120 * time.Second},
 		cancels:           make(map[string]context.CancelFunc),
@@ -103,7 +105,18 @@ func (s *BuildService) ListMaterials(taskID, tenantID uint) ([]models.BuildMater
 // UploadMaterial 上传材料到 MinIO，创建数据库记录
 func (s *BuildService) UploadMaterial(taskID, tenantID, graphID uint, fileName string, reader io.Reader, fileSize int64) (*models.BuildMaterial, error) {
 	key := fmt.Sprintf("%s%d/%d/%d/%s", buildMaterialsDir, tenantID, graphID, taskID, fileName)
-	if err := s.materialStore.Put(context.Background(), commonResource.NewRef(minioBucket+"/"+key, commonResource.RoleMain), reader, "text/plain", fileSize); err != nil {
+	if s.materialWriter == nil {
+		return nil, fmt.Errorf("材料写入器未初始化")
+	}
+	wc, err := s.materialWriter.Create(context.Background(), contentio.NewRef(minioBucket+"/"+key, contentio.RoleMain))
+	if err != nil {
+		return nil, fmt.Errorf("创建材料文件失败: %w", err)
+	}
+	if _, err := io.Copy(wc, reader); err != nil {
+		_ = wc.Close()
+		return nil, fmt.Errorf("上传文件失败: %w", err)
+	}
+	if err := wc.Close(); err != nil {
 		return nil, fmt.Errorf("上传文件失败: %w", err)
 	}
 	mat := &models.BuildMaterial{
@@ -380,7 +393,7 @@ func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID
 // 返回：autoWritten, pendingReview, error
 func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]*models.SpatialLayerConfig, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
 	// 从 MinIO 读取文件内容
-	rc, err := s.materialStore.Open(ctx, commonResource.NewRef(minioBucket+"/"+mat.FilePath, commonResource.RoleMain))
+	rc, err := s.materialReader.Open(ctx, contentio.NewRef(minioBucket+"/"+mat.FilePath, contentio.RoleMain))
 	if err != nil {
 		return 0, 0, fmt.Errorf("读取文件失败: %w", err)
 	}

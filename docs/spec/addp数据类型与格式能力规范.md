@@ -2,7 +2,7 @@
 
 本文定义 `common/format` 中的 FormatPlugin、format capability、info provider 与 content reader 边界。它只约束格式和数据类型能力，不定义 Meta 的 item 归并实现。
 
-概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，资源链条和模块边界见 [ADDP 数据项体系图](../concepts/addp数据项体系图.md)，资源读取边界见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，资源链条和模块边界见 [ADDP 数据项体系图](../concepts/addp数据项体系图.md)，资源读取边界见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
 ## 本文边界
 
@@ -298,7 +298,7 @@ Transfer 能力负责批量读写、ref 读写和提交边界。
 - `MultiWrite`
 - `CommitPolicy`
 
-Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。更细的读取抽象和ref 定位规则见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。更细的读取抽象和ref 定位规则见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
 ## 能力发现视图
 

@@ -215,7 +215,7 @@ Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item �
 | 模块 | 消费方式 | 不应做的事 |
 |---|---|---|
 | Manager | 读取已入库 data item 和 attributes，构造内容读取和前端 DTO | 重新探测 item、重新猜组件 |
-| Transfer | 基于 data item、engine capability、resource 抽象和 format 能力规划读写 | 重复推断字段类型、绕过 provider 硬编码格式 |
+| Transfer | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、绕过 provider 硬编码格式 |
 | Asset / Search | 索引标准 attributes 和必要私有命名空间 | 自行解析文件格式 |
 | Frontend | 展示后端 DTO | 直接访问 engine 或裁决 data item 边界 |
 

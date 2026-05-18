@@ -35,7 +35,7 @@
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
 - [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)
-- [资源读取抽象规范](spec/addp资源读取抽象规范.md)
+- [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)
 - [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
@@ -45,7 +45,7 @@
 
 ## 数据类型与格式主题
 
-处理数据类型、组织方式、文件格式、attributes、provider 或资源读取抽象时，建议按以下顺序阅读：
+处理数据类型、组织方式、文件格式、attributes、provider 或内容 I/O 抽象时，建议按以下顺序阅读：
 
 1. [术语表](concepts/addp术语表.md)：先统一 data item、data type、format、detector 等术语。
 2. [数据项体系图](concepts/addp数据项体系图.md)：确认 engine、node、data item 链条和模块职责边界。
@@ -55,6 +55,6 @@
 6. [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)：确认 FormatPlugin、info provider、content reader 和注册方式。
 7. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 item 识别、主资源、组件和 claims 规则。
 8. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 attributes 分区和字段归属。
-9. [资源读取抽象规范](spec/addp资源读取抽象规范.md)：确认读取抽象和调用链。
+9. [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)：确认读取抽象和调用链。
 10. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：对照首批内置格式的落地规则。
 11. [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)：按实现清单落地新 data type / format。

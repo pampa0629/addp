@@ -8,7 +8,7 @@
 
 1. 需要用真实样例继续核实 CSV / TSV、JSON / GeoJSON、Parquet、Shapefile、Excel、SQLite、GeoPackage、ZIP、text / markdown、image、PDF、DOCX、PPTX、WPS 的扫描、attributes、Manager 预览、分页和异常提示。
 2. `ListFormatCapabilityViews()` 仍要定期校验 descriptor 声明能力与当前进程实现状态。
-3. Manager 后端匹配逻辑还要继续从独立扩展名清单收口到 descriptor、data item attributes、resource 抽象和 provider / reader 能力。
+3. Manager 后端匹配逻辑还要继续从独立扩展名清单收口到 descriptor、data item attributes、contentio 抽象和 provider / reader 能力。
 4. 容器 children、特殊空间识别、component / scope table 读取中可通用化的部分还要继续上移到 `common/format` provider / reader 或 `common/dataitem` 组织规则，不能恢复旧 extractor 旁路。
 5. 仅 raw / range 的文档和媒体格式还要明确使用体验目标，避免写成“后端可解析”。
 6. 每完成一个格式，都要同步收掉 Meta、Manager、Transfer 中对应的 `engine_type`、format 后缀或 format ID 分支。

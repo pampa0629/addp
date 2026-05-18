@@ -508,5 +508,5 @@ go test ./manager/backend/internal/preview ./manager/backend/internal/objectcont
 
 - `docs/spec/addp数据类型与格式能力规范.md`
 - `docs/spec/addp数据类型与文件格式扩展指南.md`
-- `docs/spec/addp资源读取抽象规范.md`
+- `docs/spec/addp内容IO抽象规范.md`
 - Manager 内容展示边界文档由 Manager 模块维护，不能反向约束 `common/format`。

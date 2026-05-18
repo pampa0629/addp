@@ -276,7 +276,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 表格读取
 
-上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 resource 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableProvider` / `ScopeTableProvider`，预览探查走 sample reader，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
+上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 contentio 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableProvider` / `ScopeTableProvider`，预览探查走 sample reader，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
 
 ### 格式约束
 

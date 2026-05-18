@@ -2,7 +2,7 @@
 
 更新时间：2026-05-09
 
-本文汇总 Transfer 模块当前与 engine、format、data type、resource 抽象相关的真实实现状态，用于后续把 Transfer 接入统一 Provider 体系。
+本文汇总 Transfer 模块当前与 engine、format、data type、contentio 抽象相关的真实实现状态，用于后续把 Transfer 接入统一 Provider 体系。
 
 ## 结论
 
@@ -16,7 +16,7 @@ Transfer 当前已经有可用的批处理执行骨架，但 reader / writer 的
 4. Transfer 配置中仍把 engine、format、data type、spatial encoding 混在一个 `connector_type` 或 `output_format` 里。
 5. 批量读写的性能优化能力已经存在雏形，但没有进入统一 planner 与 capability 模型。
 
-因此，Transfer 后续不应继续新增具体格式 connector，而应先引入 `TransferPlan`：由 Transfer 编排层组合 engine capability、resource reader/writer、FormatPlugin、info provider 和 content reader，再生成运行期 `pipeline.Reader` / `pipeline.Writer`。
+因此，Transfer 后续不应继续新增具体格式 connector，而应先引入 `TransferPlan`：由 Transfer 编排层组合 engine capability、contentio.Reader/Writer、FormatPlugin、info provider 和 content reader，再生成运行期 `pipeline.Reader` / `pipeline.Writer`。
 
 ## 当前核心抽象
 
@@ -240,5 +240,5 @@ Transfer 不应该拥有：
 1. `pipeline.DataBatch` 是否直接升级为 common table batch，还是先保持 Transfer 内部模型并做 adapter。
 2. `Reader.SeekTo(offset)` 是否足够表达文件 row group、目录多文件、数据库游标和分区 checkpoint。
 3. `Writer.Flush()` 与 format commit / engine commit 的边界如何拆。
-4. 多 ref 写出时，format writer 产物应该落本地临时目录，还是通过 resource writer 提供的 staging sink。
+4. 多 ref 写出时，format writer 产物应该落本地临时目录，还是通过 contentio.Writer 提供的 staging sink。
 5. 并行写出时，单文件格式、目录型格式和原生表的提交策略应如何统一表达。

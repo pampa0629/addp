@@ -17,7 +17,7 @@
 | `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser、provider、reader 字段细节 |
 | detector 如何裁决 item 边界 | `scan_depth`、`force`、`scanned_depth` 和任务触发策略 |
 
-attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，扫描机制见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)，读取抽象见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，扫描机制见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)，读取抽象见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
 ## 核心结论
 

@@ -11,7 +11,7 @@ Transfer 最终应做到：
 ```text
 任务配置 / Meta item
   -> TransferPlanner
-  -> engine capability + resource abstraction
+  -> engine capability + contentio 抽象
   -> FormatPlugin + info provider / content reader
   -> pipeline.Reader / pipeline.Writer
   -> 执行、提交、指标、日志
@@ -92,7 +92,7 @@ transfer/backend/internal/resourceadapter/
 - multi ref target -> multi write session
 - engine-native table -> native batch writer
 
-第一阶段如果 `common/contentio` 还没有写入抽象，可先在 Transfer 内部定义 `ResourceWriteSession`，稳定后再沉淀到 common。
+第一阶段如果 `common/contentio` 还没有写入抽象，可先在 Transfer 内部定义 `contentio.Writer`，稳定后再沉淀到 common。
 
 ## 阶段 3：table batch provider 对齐
 
@@ -175,8 +175,8 @@ transfer/backend/internal/resourceadapter/
 | `geojson` connector | 删除，改为 `format=json + spatial.encoding=geojson` |
 | `parquet` 中的 S3 访问逻辑 | 删除，改为 contentio.Reader + Parquet provider |
 | `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 contentio.Reader + FormatPlugin / content reader |
-| `S3Writer` 的 CSV/JSON/Shapefile/Parquet 分支 | 删除，改为 format writer + resource writer |
-| `NFSWriter` 中的格式分支 | 删除，改为 resource writer |
+| `S3Writer` 的 CSV/JSON/Shapefile/Parquet 分支 | 删除，改为 format writer + contentio.Writer |
+| `NFSWriter` 中的格式分支 | 删除，改为 contentio.Writer |
 | `inferConnectorType()` | 删除 |
 | `resourceToConnectorConfig()` | 删除或改为 planner 的 engine adapter |
 

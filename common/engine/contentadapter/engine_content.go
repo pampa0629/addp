@@ -11,11 +11,14 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
+type RefCatalogPathMapper func(ref contentio.Ref) (engineplugin.CatalogPath, error)
+
 type engineContentReader struct {
 	provider    engineplugin.ContentReadableProvider
 	rangeReader engineplugin.RangeReadableProvider
 	connInfo    engineplugin.ConnectionInfo
 	basePath    engineplugin.CatalogPath
+	mapRef      RefCatalogPathMapper
 	readOptions engineplugin.ReadOptions
 }
 
@@ -33,11 +36,25 @@ func NewReader(provider engineplugin.ContentReadableProvider, connInfo engineplu
 	}
 }
 
+func NewMappedReader(provider engineplugin.ContentReadableProvider, connInfo engineplugin.ConnectionInfo, mapRef RefCatalogPathMapper, readOptions engineplugin.ReadOptions) contentio.Reader {
+	var rangeReader engineplugin.RangeReadableProvider
+	if typed, ok := provider.(engineplugin.RangeReadableProvider); ok {
+		rangeReader = typed
+	}
+	return &engineContentReader{
+		provider:    provider,
+		rangeReader: rangeReader,
+		connInfo:    connInfo,
+		mapRef:      mapRef,
+		readOptions: readOptions,
+	}
+}
+
 func (r *engineContentReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	if r == nil || r.provider == nil {
 		return nil, fmt.Errorf("engine content reader requires content readable provider")
 	}
-	path, err := CatalogPath(r.basePath, ref)
+	path, err := r.catalogPath(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +73,7 @@ func (r *engineContentReader) OpenRange(ctx context.Context, ref contentio.Ref, 
 	if r == nil || r.rangeReader == nil {
 		return nil, contentio.ErrContentNotFound
 	}
-	path, err := CatalogPath(r.basePath, ref)
+	path, err := r.catalogPath(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +83,18 @@ func (r *engineContentReader) OpenRange(ctx context.Context, ref contentio.Ref, 
 	return r.rangeReader.OpenRange(ctx, r.connInfo, path, opts)
 }
 
+func (r *engineContentReader) catalogPath(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+	if r != nil && r.mapRef != nil {
+		return r.mapRef(ref)
+	}
+	return CatalogPath(r.basePath, ref)
+}
+
 type engineContentWriter struct {
 	provider     engineplugin.ContentWritableProvider
 	connInfo     engineplugin.ConnectionInfo
 	basePath     engineplugin.CatalogPath
+	mapRef       RefCatalogPathMapper
 	writeOptions engineplugin.WriteOptions
 }
 
@@ -82,15 +107,31 @@ func NewWriter(provider engineplugin.ContentWritableProvider, connInfo engineplu
 	}
 }
 
+func NewMappedWriter(provider engineplugin.ContentWritableProvider, connInfo engineplugin.ConnectionInfo, mapRef RefCatalogPathMapper, writeOptions engineplugin.WriteOptions) contentio.Writer {
+	return &engineContentWriter{
+		provider:     provider,
+		connInfo:     connInfo,
+		mapRef:       mapRef,
+		writeOptions: writeOptions,
+	}
+}
+
 func (w *engineContentWriter) Create(ctx context.Context, ref contentio.Ref) (io.WriteCloser, error) {
 	if w == nil || w.provider == nil {
 		return nil, fmt.Errorf("engine content writer requires content writable provider")
 	}
-	path, err := CatalogPath(w.basePath, ref)
+	path, err := w.catalogPath(ref)
 	if err != nil {
 		return nil, err
 	}
 	return w.provider.CreateContent(ctx, w.connInfo, path, w.writeOptions)
+}
+
+func (w *engineContentWriter) catalogPath(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+	if w != nil && w.mapRef != nil {
+		return w.mapRef(ref)
+	}
+	return CatalogPath(w.basePath, ref)
 }
 
 func CatalogPath(base engineplugin.CatalogPath, ref contentio.Ref) (engineplugin.CatalogPath, error) {
@@ -118,4 +159,18 @@ func CatalogPath(base engineplugin.CatalogPath, ref contentio.Ref) (engineplugin
 		last.Kind = engineplugin.CatalogKindFile
 	}
 	return next, nil
+}
+
+func ObjectPathMapper(engineID uint) RefCatalogPathMapper {
+	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+		path := strings.Trim(ref.Path, "/")
+		if path == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("content ref path is empty")
+		}
+		bucket, objectPath, ok := strings.Cut(path, "/")
+		if !ok || strings.TrimSpace(bucket) == "" || strings.TrimSpace(objectPath) == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("object content ref %q must be bucket/object", ref.Path)
+		}
+		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
+	}
 }
