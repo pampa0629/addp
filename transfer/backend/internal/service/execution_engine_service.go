@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
@@ -79,6 +80,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
+	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
 
 	tableExecutor, err := executor.NewTableTransferExecutor(
 		buildResult.SourceEngineType,
@@ -156,6 +158,65 @@ func (s *ExecutionEngineService) updateTableTransferMetrics(executionID uint, re
 	}); err != nil {
 		s.logger.Error("failed to update common transfer execution metrics", "error", err, "execution_id", executionID)
 	}
+}
+
+func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask, executionID uint) executor.TableProgressCallback {
+	return func(ctx context.Context, event executor.TableProgressEvent) error {
+		if s.executionService == nil {
+			return nil
+		}
+		if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{
+			"records_read":    event.RecordsRead,
+			"records_written": event.RecordsWritten,
+		}); err != nil {
+			return fmt.Errorf("update metrics: %w", err)
+		}
+		checkpointState := map[string]interface{}{
+			"version":          "v1",
+			"batch_index":      event.BatchIndex,
+			"source_offset":    event.SourceOffset,
+			"records_read":     event.RecordsRead,
+			"records_written":  event.RecordsWritten,
+			"target_committed": true,
+			"updated_at":       time.Now().Format(time.RFC3339),
+		}
+		if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+			"checkpoint_offset": event.RecordsRead,
+			"checkpoint_state":  checkpointState,
+		}); err != nil {
+			return fmt.Errorf("update checkpoint: %w", err)
+		}
+		if task != nil {
+			progress := runningProgress(event.BatchIndex)
+			if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"progress": progress}); err != nil {
+				s.logger.Warn("failed to update task progress", "error", err, "task_id", task.ID, "progress", progress)
+			}
+		}
+		logLine := fmt.Sprintf(
+			"%s batch=%d source_offset=%d batch_rows=%d records_read=%d records_written=%d target_committed=true",
+			time.Now().Format(time.RFC3339),
+			event.BatchIndex,
+			event.SourceOffset,
+			event.BatchRows,
+			event.RecordsRead,
+			event.RecordsWritten,
+		)
+		if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
+			return fmt.Errorf("append progress log: %w", err)
+		}
+		return nil
+	}
+}
+
+func runningProgress(batchIndex int64) float64 {
+	if batchIndex <= 0 {
+		return 0
+	}
+	progress := float64(batchIndex)
+	if progress > 99 {
+		return 99
+	}
+	return progress
 }
 
 func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec) {

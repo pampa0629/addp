@@ -240,6 +240,41 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 
 文件型引擎的特别规则见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md)：NFS root `name="/"`，`full_name=""`，`path` 是 Meta 内部节点链，`.` 不进入业务路径。
 
+## 七、执行进度、Checkpoint 和日志
+
+Transfer 执行状态复用 `common.task_executions`：
+
+- `records_read`、`records_written` 写入统一执行表的指标字段。
+- `checkpoint_offset`、`checkpoint_state` 写入 `metadata`。
+- 运行日志暂存于 `error_details.logs`；这是当前兼容实现，后续如日志量增大再拆到独立日志表或对象存储。
+
+第一阶段目标不是恢复执行，而是先形成稳定观测点：每个成功写入的 batch 都回写一次执行进度、checkpoint 和简短日志。
+
+batch checkpoint 最小结构：
+
+```json
+{
+  "checkpoint_offset": 20000,
+  "checkpoint_state": {
+    "version": "v1",
+    "batch_index": 2,
+    "source_offset": 10000,
+    "records_read": 20000,
+    "records_written": 20000,
+    "target_committed": true
+  }
+}
+```
+
+规则：
+
+1. checkpoint 只在目标 batch 写入成功后更新，避免记录未提交状态。
+2. `checkpoint_offset` 第一版等于累计 `records_read`。
+3. `source_offset` 使用当前 batch 的 `BatchData.Offset`。
+4. `batch_index` 从 1 开始递增。
+5. 当前版本只记录进度和故障定位信息，不承诺从 checkpoint 自动恢复。
+6. 进度百分比在无法预知总行数时只表示执行活跃度：运行中从 0 递增但不超过 99，成功后统一置为 100。
+
 ## 七、职责边界
 
 | 层 | 负责 | 不负责 |
@@ -261,7 +296,7 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 
 | 方向 | 当前不足 |
 |---|---|
-| checkpoint / progress | 只有基础 records metrics，缺少 batch-level checkpoint、恢复和更细日志；这是下一阶段最高优先级之一。 |
+| checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；尚未实现从 checkpoint 恢复执行。 |
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
@@ -275,14 +310,14 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 
 ### 近期优先级
 
-1. **完善 checkpoint / progress / execution logs**  
-   至少记录 batch 序号、累计行数、当前 source offset / cursor 状态、目标提交状态。
-
-2. **增强 Shapefile 大文件读侧性能**  
+1. **增强 Shapefile 大文件读侧性能**  
    当前主链路已通过，但仍可把 component sample path 演进为 stateful component reader，避免每批重新打开 / 定位组件文件。
 
-3. **补 Transfer 验收用例沉淀**  
+2. **补 Transfer 验收用例沉淀**  
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、NFS / MinIO Shapefile -> PostgreSQL table 形成可重复的集成测试或操作清单。
+
+3. **设计 checkpoint 恢复语义**  
+   明确哪些 source reader 支持 seek / cursor 恢复、哪些 target writer 可幂等续写，再决定恢复执行是否进入主链路。
 
 4. **设计下一批 transform 类型**  
    在 `field_mapping` 稳定后，再讨论过滤、派生字段、简单表达式、空间坐标转换等 ETL 能力边界。

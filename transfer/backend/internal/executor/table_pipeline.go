@@ -111,10 +111,11 @@ func contentCatalogPathForComponent(base engineplugin.CatalogPath, ref resource.
 }
 
 type TablePipeline struct {
-	Source     TableBatchSource
-	Target     TableBatchTarget
-	Transforms []TableTransformPlan
-	BatchSize  int
+	Source           TableBatchSource
+	Target           TableBatchTarget
+	Transforms       []TableTransformPlan
+	BatchSize        int
+	ProgressCallback TableProgressCallback
 }
 
 func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, error) {
@@ -187,11 +188,11 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 		if batch == nil || len(batch.Rows) == 0 {
 			break
 		}
+		sourceOffset := batch.Offset
 		if len(transforms) > 0 {
-			offset := batch.Offset
 			batch, err = applyBatchTransforms(ctx, batch, transforms)
 			if err != nil {
-				return metrics, fmt.Errorf("transform table batch at offset %d: %w", offset, err)
+				return metrics, fmt.Errorf("transform table batch at offset %d: %w", sourceOffset, err)
 			}
 		}
 		if err := writer.WriteBatch(ctx, batch); err != nil {
@@ -201,6 +202,17 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 		metrics.RecordsRead += rowCount
 		metrics.RecordsWritten += rowCount
 		metrics.Batches++
+		if p.ProgressCallback != nil {
+			if err := p.ProgressCallback(ctx, TableProgressEvent{
+				BatchIndex:     metrics.Batches,
+				SourceOffset:   sourceOffset,
+				BatchRows:      rowCount,
+				RecordsRead:    metrics.RecordsRead,
+				RecordsWritten: metrics.RecordsWritten,
+			}); err != nil {
+				return metrics, fmt.Errorf("update table transfer progress at batch %d: %w", metrics.Batches, err)
+			}
+		}
 	}
 	if err := writer.Close(ctx); err != nil {
 		return metrics, err

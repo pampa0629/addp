@@ -39,10 +39,21 @@ type TableTargetPlan struct {
 }
 
 type TableTransferPlan struct {
-	Source     TableSourcePlan
-	Target     TableTargetPlan
-	Transforms []TableTransformPlan
-	BatchSize  int
+	Source           TableSourcePlan
+	Target           TableTargetPlan
+	Transforms       []TableTransformPlan
+	BatchSize        int
+	ProgressCallback TableProgressCallback
+}
+
+type TableProgressCallback func(context.Context, TableProgressEvent) error
+
+type TableProgressEvent struct {
+	BatchIndex     int64
+	SourceOffset   int64
+	BatchRows      int64
+	RecordsRead    int64
+	RecordsWritten int64
 }
 
 type TableTransformPlan struct {
@@ -151,10 +162,11 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		return nil, err
 	}
 	return (&TablePipeline{
-		Source:     source,
-		Target:     target,
-		Transforms: plan.Transforms,
-		BatchSize:  plan.BatchSize,
+		Source:           source,
+		Target:           target,
+		Transforms:       plan.Transforms,
+		BatchSize:        plan.BatchSize,
+		ProgressCallback: plan.ProgressCallback,
 	}).Execute(ctx)
 }
 

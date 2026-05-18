@@ -113,6 +113,54 @@ func TestTableTransferExecutorAppliesFieldMappingTransform(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorReportsBatchProgress(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}},
+				Rows: []map[string]interface{}{
+					{"id": 1},
+					{"id": 2},
+				},
+			},
+			{
+				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}},
+				Offset: 2,
+				Rows:   []map[string]interface{}{{"id": 3}},
+			},
+		},
+	}
+	writer := &fakeContentWriter{}
+	var events []TableProgressEvent
+	exec := &TableTransferExecutor{
+		SourceNativeReader:   reader,
+		TargetContentWriter:  writer,
+		TargetFormatProvider: csvformat.NewPlugin(nil),
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointNative},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 2,
+		ProgressCallback: func(_ context.Context, event TableProgressEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("progress events = %#v, want 2 events", events)
+	}
+	if events[0].BatchIndex != 1 || events[0].SourceOffset != 0 || events[0].BatchRows != 2 || events[0].RecordsRead != 2 || events[0].RecordsWritten != 2 {
+		t.Fatalf("first progress event = %#v, want batch 1 offset 0 rows/read/written 2", events[0])
+	}
+	if events[1].BatchIndex != 2 || events[1].SourceOffset != 2 || events[1].BatchRows != 1 || events[1].RecordsRead != 3 || events[1].RecordsWritten != 3 {
+		t.Fatalf("second progress event = %#v, want batch 2 offset 2 rows 1 read/written 3", events[1])
+	}
+}
+
 func TestTableTransferExecutorNoRowsCreatesEmptyEncodedTarget(t *testing.T) {
 	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{}}}
 	writer := &fakeContentWriter{}

@@ -81,3 +81,21 @@ func TestTargetCatalogPathsUsesNativeTableNamespace(t *testing.T) {
 		t.Fatalf("targetCatalogPaths() = %#v, want %#v", got, want)
 	}
 }
+
+func TestRunningProgressCapsAtNinetyNine(t *testing.T) {
+	tests := []struct {
+		batchIndex int64
+		want       float64
+	}{
+		{batchIndex: 0, want: 0},
+		{batchIndex: 1, want: 1},
+		{batchIndex: 50, want: 50},
+		{batchIndex: 100, want: 99},
+	}
+
+	for _, tt := range tests {
+		if got := runningProgress(tt.batchIndex); got != tt.want {
+			t.Fatalf("runningProgress(%d) = %v, want %v", tt.batchIndex, got, tt.want)
+		}
+	}
+}
