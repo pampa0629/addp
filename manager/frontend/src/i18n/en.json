@@ -270,7 +270,8 @@
           "csv": "CSV",
           "json": "JSON",
           "geojson": "GeoJSON",
-          "parquet": "Parquet"
+          "parquet": "Parquet",
+          "refs": "Related Files"
         },
         "fields": {
           "dataType": "Data Type",
@@ -309,6 +310,19 @@
           "name": "Field",
           "type": "Type",
           "nativeType": "Native Type",
+          "kind": "Kind",
+          "dataType": "Data Type",
+          "format": "Format",
+          "path": "Path",
+          "role": "Role",
+          "extension": "Extension",
+          "required": "Required",
+          "primary": "Primary",
+          "rowCount": "Row Count",
+          "columnCount": "Column Count",
+          "geometryType": "Geometry Type",
+          "srid": "SRID",
+          "dimension": "Dimension",
           "nullable": "Nullable",
           "primaryKey": "Primary Key",
           "comment": "Comment"

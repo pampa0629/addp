@@ -270,7 +270,8 @@
           "csv": "CSV",
           "json": "JSON",
           "geojson": "GeoJSON",
-          "parquet": "Parquet"
+          "parquet": "Parquet",
+          "refs": "相关文件"
         },
         "fields": {
           "dataType": "数据类型",
@@ -309,6 +310,19 @@
           "name": "字段名",
           "type": "类型",
           "nativeType": "原生类型",
+          "kind": "类型",
+          "dataType": "数据类型",
+          "format": "格式",
+          "path": "路径",
+          "role": "角色",
+          "extension": "扩展名",
+          "required": "必需",
+          "primary": "主文件",
+          "rowCount": "行数",
+          "columnCount": "字段数",
+          "geometryType": "几何类型",
+          "srid": "SRID",
+          "dimension": "维度",
           "nullable": "可为空",
           "primaryKey": "主键",
           "comment": "注释"

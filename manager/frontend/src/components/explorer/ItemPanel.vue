@@ -109,6 +109,7 @@
                     :key="table.path"
                     class="attribute-table-wrap"
                   >
+                    <div class="attribute-table-title">{{ table.title }}</div>
                     <el-table
                       :data="table.rows"
                       size="small"
@@ -270,7 +271,8 @@ const groupLabelKeys = {
   csv: 'manager.explorer.attributes.groups.csv',
   json: 'manager.explorer.attributes.groups.json',
   geojson: 'manager.explorer.attributes.groups.geojson',
-  parquet: 'manager.explorer.attributes.groups.parquet'
+  parquet: 'manager.explorer.attributes.groups.parquet',
+  refs: 'manager.explorer.attributes.groups.refs'
 }
 
 const fieldLabelKeys = {
@@ -313,6 +315,19 @@ const tableColumnLabelKeys = {
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
   native_type: 'manager.explorer.attributes.tableColumns.nativeType',
+  kind: 'manager.explorer.attributes.tableColumns.kind',
+  data_type: 'manager.explorer.attributes.tableColumns.dataType',
+  format: 'manager.explorer.attributes.tableColumns.format',
+  path: 'manager.explorer.attributes.tableColumns.path',
+  role: 'manager.explorer.attributes.tableColumns.role',
+  extension: 'manager.explorer.attributes.tableColumns.extension',
+  required: 'manager.explorer.attributes.tableColumns.required',
+  primary: 'manager.explorer.attributes.tableColumns.primary',
+  row_count: 'manager.explorer.attributes.tableColumns.rowCount',
+  column_count: 'manager.explorer.attributes.tableColumns.columnCount',
+  geometry_type: 'manager.explorer.attributes.tableColumns.geometryType',
+  srid: 'manager.explorer.attributes.tableColumns.srid',
+  dimension: 'manager.explorer.attributes.tableColumns.dimension',
   nullable: 'manager.explorer.attributes.tableColumns.nullable',
   primary_key: 'manager.explorer.attributes.tableColumns.primaryKey',
   comment: 'manager.explorer.attributes.tableColumns.comment'
@@ -429,10 +444,26 @@ const buildAttributeGroup = (pathParts, value) => {
   const tables = []
   let groupValue = value
 
-  if (isPlainObject(value) && isTableRows(value.fields)) {
-    tables.push(buildFieldTable([...pathParts, 'fields'], value.fields))
+  if (isTableRows(value)) {
+    tables.push(buildObjectArrayTable(pathParts, value, preferredColumnsForObjectTable(pathParts)))
+    groupValue = []
+  } else if (isPlainObject(value)) {
     groupValue = { ...value }
-    delete groupValue.fields
+    if (isTableRows(value.fields)) {
+      tables.push(buildFieldTable([...pathParts, 'fields'], value.fields))
+      delete groupValue.fields
+    }
+    Object.keys(value).forEach(key => {
+      if (key === 'fields') return
+      const childValue = value[key]
+      if (!isTableRows(childValue)) return
+      tables.push(buildObjectArrayTable(
+        [...pathParts, key],
+        childValue,
+        preferredColumnsForObjectTable([...pathParts, key])
+      ))
+      delete groupValue[key]
+    })
   }
 
   const entries = flattenAttributeValue(groupValue, pathParts, pathParts)
@@ -494,6 +525,24 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 
 const buildFieldTable = (pathParts, rows) => {
   const preferredColumns = ['name', 'type', 'native_type', 'nullable', 'primary_key', 'comment']
+  return buildObjectArrayTable(pathParts, rows, preferredColumns)
+}
+
+const preferredColumnsForObjectTable = (pathParts) => {
+  const key = pathParts[pathParts.length - 1]
+  switch (key) {
+    case 'refs':
+      return ['path', 'role', 'extension', 'required', 'primary']
+    case 'geometry_columns':
+      return ['name', 'type', 'geometry_type', 'srid', 'dimension', 'nullable', 'primary']
+    case 'children':
+      return ['name', 'kind', 'data_type', 'format', 'path', 'row_count', 'column_count']
+    default:
+      return ['name', 'type', 'path', 'role', 'format', 'data_type']
+  }
+}
+
+const buildObjectArrayTable = (pathParts, rows, preferredColumns = []) => {
   const rowObjects = rows.filter(isPlainObject)
   const discoveredColumns = [...new Set(rowObjects.flatMap(row => Object.keys(row)))]
   const columns = [
@@ -503,6 +552,7 @@ const buildFieldTable = (pathParts, rows) => {
 
   return {
     path: pathParts.join('.'),
+    title: formatAttributeSegment(pathParts[pathParts.length - 1]),
     rows: rowObjects.map(row => {
       const formatted = {}
       columns.forEach(column => {
@@ -768,6 +818,13 @@ const pickNestedNumber = (source, paths) => {
 .attribute-table-wrap {
   overflow: auto;
   border-radius: 6px;
+}
+
+.attribute-table-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--addp-text-secondary);
 }
 
 .attribute-table {
