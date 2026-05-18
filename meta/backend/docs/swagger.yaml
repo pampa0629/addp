@@ -2,11 +2,11 @@ basePath: /api/v1/meta
 definitions:
   github_com_addp_meta_internal_models.FieldInfo:
     properties:
-      data_type:
-        type: string
       is_primary_key:
         type: boolean
       name:
+        type: string
+      type:
         type: string
     type: object
   github_com_addp_meta_internal_models.MetaItemLite:

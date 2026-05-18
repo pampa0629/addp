@@ -141,7 +141,7 @@ type MetaAttribute struct {
 // ColumnMetadata 列元数据
 type ColumnMetadata struct {
 	ColumnName   string `json:"column_name"`    // 列名
-	DataType     string `json:"data_type"`      // 数据类型（如 varchar, int4, geometry）
+	Type         string `json:"type"`           // 字段类型
 	IsNullable   bool   `json:"is_nullable"`    // 是否可为空
 	IsPrimaryKey bool   `json:"is_primary_key"` // 是否主键
 	Comment      string `json:"comment"`        // 列注释

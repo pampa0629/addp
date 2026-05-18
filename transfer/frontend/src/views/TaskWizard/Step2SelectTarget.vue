@@ -540,8 +540,6 @@ function isGeometryField(field) {
   if (field.is_spatial === true || field.isSpatial === true || field.is_geometry === true) return true
   const values = [
     field.type,
-    field.data_type,
-    field.standard_type,
     field.geometry_type,
     field.geometryType
   ].map(value => String(value || '').toLowerCase())
@@ -553,9 +551,7 @@ function inferGeometryType(field) {
   const values = [
     field.geometry_type,
     field.geometryType,
-    field.type,
-    field.data_type,
-    field.standard_type
+    field.type
   ]
   for (const value of values) {
     const normalized = normalizeGeometryType(value)

@@ -61,14 +61,14 @@ type SpatialMetadata struct {
 // Field 字段信息
 type Field struct {
 	Name         string `json:"name"`
-	DataType     string `json:"data_type"`
+	Type         string `json:"type"`
 	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
 }
 
 // FieldInfo 字段详细信息
 type FieldInfo struct {
 	Name         string `json:"name"`
-	DataType     string `json:"data_type"`
+	Type         string `json:"type"`
 	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
 	IsNullable   bool   `json:"is_nullable,omitempty"`
 	DefaultValue string `json:"default_value,omitempty"`

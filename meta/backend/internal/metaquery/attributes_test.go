@@ -23,7 +23,7 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FieldsFromMetaItem() error = %v", err)
 	}
-	if len(fields) != 1 || fields[0].Name != "id" || fields[0].DataType != "integer" || !fields[0].IsPrimaryKey {
+	if len(fields) != 1 || fields[0].Name != "id" || fields[0].Type != "integer" || !fields[0].IsPrimaryKey {
 		t.Fatalf("fields = %#v, want partitioned id field", fields)
 	}
 }
@@ -62,7 +62,7 @@ func TestFieldsFromMetaItemMergesCapabilitiesSpatial(t *testing.T) {
 		t.Fatalf("fields = %#v, want 2 fields", fields)
 	}
 	geom := fields[1]
-	if geom.Name != "SmGeometry" || geom.DataType != "geometry" || !geom.IsSpatial || geom.GeometryType != "Polygon" || geom.SRID != 2360 {
+	if geom.Name != "SmGeometry" || geom.Type != "geometry" || !geom.IsSpatial || geom.GeometryType != "Polygon" || geom.SRID != 2360 {
 		t.Fatalf("geometry field = %#v, want spatial SmGeometry Polygon SRID 2360", geom)
 	}
 }

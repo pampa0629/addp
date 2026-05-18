@@ -39,7 +39,7 @@ func FieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) 
 		}
 		fieldInfos = append(fieldInfos, commonModels.FieldInfo{
 			Name:         fieldName,
-			DataType:     dataType,
+			Type:         dataType,
 			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
 			IsNullable:   toBool(fieldMap["is_nullable"]),
 			Comment:      toString(fieldMap["comment"]),
@@ -127,7 +127,7 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 			if fieldMap, ok := f.(map[string]interface{}); ok {
 				spatialMeta.Fields = append(spatialMeta.Fields, models.FieldInfo{
 					Name:         toString(fieldMap["name"]),
-					DataType:     toString(fieldMap["type"]),
+					Type:         toString(fieldMap["type"]),
 					IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
 				})
 			}

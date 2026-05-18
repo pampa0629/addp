@@ -127,7 +127,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		columns = append(columns, f.Name)
 		columnMeta = append(columnMeta, models.ColumnMetadata{
 			ColumnName: f.Name,
-			DataType:   string(f.Type),
+			Type:       string(f.Type),
 			IsNullable: f.Nullable,
 		})
 	}

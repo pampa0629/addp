@@ -164,7 +164,7 @@ func buildDocumentColumnMetadata(columns []string, rows []map[string]interface{}
 	for _, column := range columns {
 		metadata = append(metadata, models.ColumnMetadata{
 			ColumnName:   column,
-			DataType:     inferDocumentColumnType(column, rows),
+			Type:         inferDocumentColumnType(column, rows),
 			IsNullable:   true,
 			IsPrimaryKey: column == "_id",
 		})

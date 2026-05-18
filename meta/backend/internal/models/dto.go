@@ -121,6 +121,6 @@ type SpatialMetadataResponse struct {
 // FieldInfo 字段信息
 type FieldInfo struct {
 	Name         string `json:"name"`
-	DataType     string `json:"data_type"`
+	Type         string `json:"type"`
 	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
 }

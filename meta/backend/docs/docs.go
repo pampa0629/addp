@@ -1531,13 +1531,13 @@ const docTemplate = `{
         "github_com_addp_meta_internal_models.FieldInfo": {
             "type": "object",
             "properties": {
-                "data_type": {
-                    "type": "string"
-                },
                 "is_primary_key": {
                     "type": "boolean"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }

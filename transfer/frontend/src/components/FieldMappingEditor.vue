@@ -196,7 +196,7 @@ const handleAutoMatch = () => {
   props.sourceFields.forEach(sourceField => {
     if (props.targetFields.includes(sourceField)) {
       const fieldDetail = sourceFieldMap.get(sourceField)
-      const fieldType = fieldDetail?.is_geometry ? 'geometry' : 'string'
+      const fieldType = fieldMappingType(fieldDetail)
 
       newMappings.push({
         source_field: sourceField,
@@ -219,7 +219,7 @@ const handleAutoMatch = () => {
       if (normalizedSource === normalizedTarget &&
           !newMappings.find(m => m.source_field === sourceField)) {
         const fieldDetail = sourceFieldMap.get(sourceField)
-        const fieldType = fieldDetail?.is_geometry ? 'geometry' : 'string'
+        const fieldType = fieldMappingType(fieldDetail)
 
         newMappings.push({
           source_field: sourceField,
@@ -245,6 +245,15 @@ const handleAutoMatch = () => {
   } else {
     ElMessage.success(t('transfer.fieldMapping.autoMatchSuccessSimple', { count: newMappings.length }))
   }
+}
+
+function fieldMappingType(field) {
+  if (!field) return 'string'
+  if (field.is_geometry === true || field.is_spatial === true || field.isSpatial === true) return 'geometry'
+  const type = String(field.type || '').trim()
+  const lowerType = type.toLowerCase()
+  if (lowerType.includes('geometry') || lowerType.includes('geography')) return 'geometry'
+  return type || 'string'
 }
 
 // 添加映射

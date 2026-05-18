@@ -537,8 +537,8 @@ function geometryFieldFromFields(fields) {
   return (fields || []).find(field => {
     const values = [
       field?.type,
-      field?.data_type,
-      field?.standard_type
+      field?.geometry_type,
+      field?.geometryType
     ].map(value => String(value || '').toLowerCase())
     return values.some(value => value.includes('geometry') || value.includes('geography'))
   }) || null

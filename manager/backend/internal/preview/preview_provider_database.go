@@ -94,7 +94,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		for i, col := range columns {
 			columnMetadata[i] = models.ColumnMetadata{
 				ColumnName:   col.ColumnName,
-				DataType:     col.DataType,
+				Type:         col.DataType,
 				IsNullable:   col.IsNullable,
 				IsPrimaryKey: col.IsPrimaryKey,
 				Comment:      col.Comment,
@@ -449,9 +449,9 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	geometryColumns := []string{}
 
 	for i, field := range spatialMeta.Fields {
-		dataType := field.DataType
+		dataType := field.Type
 
-		// 对于几何列，使用 Meta 返回的标准空间能力信息来丰富 data_type
+		// 对于几何列，使用 Meta 返回的标准空间能力信息来丰富 type
 		if field.Name == spatialMeta.GeometryColumn && spatialMeta.GeometryColumn != "" {
 			// 将几何列添加到列表
 			geometryColumns = append(geometryColumns, field.Name)
@@ -482,7 +482,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 
 		columnMetadata[i] = models.ColumnMetadata{
 			ColumnName:   field.Name,
-			DataType:     dataType,
+			Type:         dataType,
 			IsNullable:   true, // Meta 当前不存储 nullable 信息，默认为 true
 			IsPrimaryKey: field.IsPrimaryKey,
 			Comment:      "", // Meta 当前不存储 comment 信息

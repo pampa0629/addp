@@ -412,7 +412,7 @@ export function useTaskWizardState() {
     fieldMappings.value = sourceFields.value.map(field => ({
       source_field: field.name,
       target_field: field.name, // 默认同名映射
-      target_type: field.type || field.standard_type || field.data_type || 'string',
+      target_type: field.type || 'string',
       format: '',
       default_value: '',
       nullable: true

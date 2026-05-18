@@ -28,6 +28,15 @@
         </template>
       </el-table-column>
 
+      <el-table-column :label="t('transfer.taskWizard.sourceTypeCol')" width="120">
+        <template #default="{ row }">
+          <el-tag v-if="sourceFieldType(row.source_field)" size="small">
+            {{ sourceFieldType(row.source_field) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+
       <el-table-column :label="t('transfer.taskWizard.targetFieldCol')" width="200">
         <template #default="{ row, $index }">
           <el-select
@@ -173,7 +182,14 @@ function fieldOptionLabel(field) {
 }
 
 function standardFieldType(field) {
-  return String(field?.type || field?.data_type || field?.standard_type || '').trim()
+  return String(field?.type || '').trim()
+}
+
+function sourceFieldType(fieldName) {
+  const name = String(fieldName || '').trim()
+  if (!name) return ''
+  const field = props.wizardState.sourceFields.value.find(item => item?.name === name)
+  return standardFieldType(field)
 }
 </script>
 
