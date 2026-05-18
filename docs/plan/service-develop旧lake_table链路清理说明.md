@@ -91,7 +91,7 @@ ADDP 的数据类型与格式模型已经收口为：
 问题：
 
 - 这里有一半已经按新模型走，一半仍是旧命名。
-- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.organization`、`meta_item.full_name` 和 ResourceReader / FormatPlugin / content reader。
+- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.organization`、`meta_item.full_name` 和 contentio.Reader / FormatPlugin / content reader。
 
 ## 目标模型
 
@@ -104,7 +104,7 @@ ADDP 的数据类型与格式模型已经收口为：
   - `item.format in ["parquet", "orc", "avro"]`
   - `item.organization == "single" | "whole"`
   - `storage.physical_path`
-  - `item.component_files`
+  - `item.refs`
 - DuckDB 查询路径不再基于旧 `schema/table/lake_mode` 猜路径，而是基于 Meta 已确认的物理路径和组织形态生成。
 
 建议的新语义命名：
@@ -168,7 +168,7 @@ item.attributes.item.organization in ("single", "whole")
 
 - `organization=single`：使用 `storage.physical_path` 或 `entry_path` 指向单文件。
 - `organization=whole`：使用 `storage.physical_path` 作为 scope，再由 format/resource 规则决定读取表达。
-- 多文件组件：使用 `item.component_files`，由 DuckDB 适配层决定是否展开成 `read_parquet([...])` 或 glob。
+- 多 ref：使用 `item.refs`，由 DuckDB 适配层决定是否展开成 `read_parquet([...])` 或 glob。
 
 ### 第四步：调整 `service` 查询服务配置
 

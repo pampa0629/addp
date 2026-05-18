@@ -13,11 +13,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/contentio"
 	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -728,7 +728,7 @@ type containerPreviewChildren struct {
 	VisibleCount          int
 	IgnoredCount          int
 	GroupedItemCount      int
-	GroupedComponentCount int
+	GroupedRefCount int
 	FilteredCount         int
 	Resolved              bool
 }
@@ -856,13 +856,13 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 	}
 	previewChildren := make([]map[string]interface{}, 0, len(resolved.Items))
 	groupedItemCount := 0
-	groupedComponentCount := 0
+	groupedRefCount := 0
 	for index, item := range resolved.Items {
 		childInfo := commondataitem.ContainerChildInfoFromResolvedItem(item)
 		if item.Organization == commondataitem.OrganizationMulti {
 			groupedItemCount++
-			if len(item.ComponentList) > 1 {
-				groupedComponentCount += len(item.ComponentList) - 1
+			if len(item.RefList) > 1 {
+				groupedRefCount += len(item.RefList) - 1
 			}
 		}
 		previewChildren = append(previewChildren, containerChildPreviewMap(childInfo, index))
@@ -876,7 +876,7 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 		VisibleCount:          len(previewChildren),
 		IgnoredCount:          len(resolved.Ignored),
 		GroupedItemCount:      groupedItemCount,
-		GroupedComponentCount: groupedComponentCount,
+		GroupedRefCount: groupedRefCount,
 		FilteredCount:         skippedCount + len(resolved.Ignored),
 		Resolved:              true,
 	}
@@ -902,32 +902,34 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 	if childInfo.HasHeader != nil {
 		child["has_header"] = *childInfo.HasHeader
 	}
-	if len(childInfo.Components) > 0 {
-		child["components"] = containerChildComponentDescriptors(childInfo)
+	if len(childInfo.Refs) > 0 {
+		child["refs"] = containerChildRefDescriptors(childInfo)
 	}
 	for key, value := range childInfo.Properties {
 		child[key] = value
 	}
-	if len(childInfo.Components) > 0 {
-		child["components"] = containerChildComponentDescriptors(childInfo)
+	if len(childInfo.Refs) > 0 {
+		child["refs"] = containerChildRefDescriptors(childInfo)
 	}
 	return child
 }
 
-func containerChildComponentDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
-	refs := make([]resource.ComponentRef, 0, len(childInfo.Components))
-	for _, component := range childInfo.Components {
-		role := resource.ResourceRoleComponent
-		if component.Primary {
-			role = resource.ResourceRoleMain
+func containerChildRefDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
+	refs := make([]contentio.Ref, 0, len(childInfo.Refs))
+	for _, ref := range childInfo.Refs {
+		role := contentio.RoleAuxiliary
+		if ref.Primary {
+			role = contentio.RoleMain
 		}
-		refs = append(refs, resource.ComponentRef{
-			ResourceRef:   resource.NewResourceRef(component.Path, role),
-			ComponentRole: component.Role,
-			Required:      component.Required,
-		})
+		ref := contentio.NewRef(ref.Path, role)
+		if ref.Role != "" {
+			ref.Role = ref.Role
+		}
+		ref.Required = ref.Required
+		ref.Primary = ref.Primary
+		refs = append(refs, ref)
 	}
-	descriptors := format.DescribeComponents(childInfo.Format, refs)
+	descriptors := format.DescribeRefs(childInfo.Format, refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
 	for index, descriptor := range descriptors {
 		key := strings.TrimSpace(descriptor.Key)
@@ -1007,8 +1009,8 @@ func applyContainerChildrenSummary(summary map[string]interface{}, resolved *con
 	if resolved.GroupedItemCount > 0 {
 		summary["grouped_item_count"] = resolved.GroupedItemCount
 	}
-	if resolved.GroupedComponentCount > 0 {
-		summary["grouped_component_count"] = resolved.GroupedComponentCount
+	if resolved.GroupedRefCount > 0 {
+		summary["grouped_ref_count"] = resolved.GroupedRefCount
 	}
 	if resolved.Resolved {
 		summary["organization_resolved"] = true
@@ -1352,12 +1354,12 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 	next := *info
 	next.Children = make([]format.ContainerChildInfo, 0, len(resolved.Items))
 	groupedItemCount := 0
-	groupedComponentCount := 0
+	groupedRefCount := 0
 	for _, item := range resolved.Items {
 		if item.Organization == commondataitem.OrganizationMulti {
 			groupedItemCount++
-			if len(item.ComponentList) > 1 {
-				groupedComponentCount += len(item.ComponentList) - 1
+			if len(item.RefList) > 1 {
+				groupedRefCount += len(item.RefList) - 1
 			}
 		}
 		next.Children = append(next.Children, commondataitem.ContainerChildInfoFromResolvedItem(item))
@@ -1372,7 +1374,7 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 			VisibleCount:          len(next.Children),
 			IgnoredCount:          len(resolved.Ignored),
 			GroupedItemCount:      groupedItemCount,
-			GroupedComponentCount: groupedComponentCount,
+			GroupedRefCount: groupedRefCount,
 			FilteredCount:         skippedCount + len(resolved.Ignored),
 			Resolved:              true,
 		})

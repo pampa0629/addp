@@ -30,16 +30,16 @@ func NewModelImportService(
 
 // ModelImportPreview 预览可导入的实体和关系（不写库）
 type ModelImportPreview struct {
-	Entities  []ModelEntityPreview  `json:"entities"`
+	Entities  []ModelEntityPreview   `json:"entities"`
 	Relations []ModelRelationPreview `json:"relations"`
 }
 
 type ModelEntityPreview struct {
-	ModelID    uint                            `json:"model_id"`
-	Name       string                          `json:"name"`  // 将成为 EntityType.name (code)
-	Label      string                          `json:"label"` // 将成为 EntityType.label (name)
-	Properties []models.PropertyDefinition     `json:"properties"`
-	Exists     bool                            `json:"exists"` // 本体中已存在同名实体类型
+	ModelID    uint                        `json:"model_id"`
+	Name       string                      `json:"name"`  // 将成为 EntityType.name (code)
+	Label      string                      `json:"label"` // 将成为 EntityType.label (name)
+	Properties []models.PropertyDefinition `json:"properties"`
+	Exists     bool                        `json:"exists"` // 本体中已存在同名实体类型
 }
 
 type ModelRelationPreview struct {

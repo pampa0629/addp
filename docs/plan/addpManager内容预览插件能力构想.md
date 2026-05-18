@@ -6,7 +6,7 @@
 
 ## 目标
 
-Manager 内容预览插件应消费 meta 已识别的标准 data item，不重新判断组织方式，不按扩展名抢路由，不自行枚举 sibling 组件。
+Manager 内容预览插件应消费 meta 已识别的标准 data item，不重新判断组织方式，不按扩展名抢路由，不自行枚举 sibling refs。
 插件本身不直接承担格式解析职责；它依赖资源读取抽象、FormatPlugin、info provider 和 content reader 提供的结果，再组装最终 preview。
 
 ## 表预览统一口径
@@ -15,7 +15,7 @@ Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套�
 
 对 Manager 来说，它们只是同一类 `table preview` 的不同来源路径：
 
-- `filetable`：单文件或多组件文件形成的表格来源。
+- `filetable`：单文件或多相关文件形成的表格来源。
 - `laketable`：目录型或范围型表格来源。
 - `native table`：引擎原生表格来源。
 
@@ -23,7 +23,7 @@ Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套�
 
 因此，preview manifest 中不建议再把 `filetable`、`laketable` 作为独立预览类型，而应围绕 `data_type=table`、`format`、`organization`、`capabilities` 来做匹配。
 
-当前实现已经先把底层读取链路收口到 `TableProvider` / `ComponentTableProvider` / `ScopeTableProvider`。`builtin:scope-table` 作为目录型表格来源路由，直接对应 `item.data_type=table + item.organization=whole`。
+当前实现已经先把底层读取链路收口到 `TableProvider` / `MultiTableProvider` / `ScopeTableProvider`。`builtin:scope-table` 作为目录型表格来源路由，直接对应 `item.data_type=table + item.organization=whole`。
 
 Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` 的目录型表格范围；`PhysicalPath` 只用于 `organization=single` 的单文件表。Provider 选择基于 `data_type=table + organization`：whole table 走 `builtin:scope-table`，single 文件表走 `builtin:file-table`。新扫描结果不再使用 `item_type=lake_table`。
 
@@ -36,14 +36,14 @@ Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` �
 - `attributes.item.organization`
 - `attributes.item.data_type`
 - `attributes.item.format`
-- `attributes.item.component_files`
+- `attributes.item.refs`
 - `attributes.storage.physical_path`
 - `attributes.type_info`
 - `attributes.format_info`
 - `attributes.capabilities`
 
-其中，插件不应直接依赖 `engine id` 构造读取器，也不应自己找 sibling 组件。
-应由上层编排层先构造 `ResourceReader / ComponentReader / NativeCursor`，再交给插件或其依赖的 provider。
+其中，插件不应直接依赖 `engine id` 构造读取器，也不应自己找 sibling refs。
+应由上层编排层先构造 `contentio.Reader / contentio.MultiReader / NativeCursor`，再交给插件或其依赖的 provider。
 对于表预览，编排层可以根据资源组织方式选择不同读取计划，但对插件暴露的仍应是统一的表格输入。
 
 ## manifest 构想
@@ -74,7 +74,7 @@ Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` �
 
 - `priority` 只在同一标准匹配结果内解决冲突。
 - 插件不得用扩展名、MIME 或 provider 优先级覆盖 meta 识别结果。
-- multi item 使用 `meta_item.full_name` 作为主资源，并使用 `component_files` 读取组件资源。
+- multi item 使用 `meta_item.full_name` 作为主资源，并使用 `refs` 读取ref 资源。
 - whole item 使用 `meta_item.full_name` 作为 whole scope 根范围；manifest 等格式入口写入 `format_info.<format>`。
 - 私有 `format_info` 只能用于展示细节，不得改变核心路由。
 - 插件输出的 `kind` 是 Manager 展示语义，不是 format 的标准类型。

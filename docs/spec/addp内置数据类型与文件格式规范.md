@@ -12,7 +12,7 @@
 
 | 小节 | 必须说明 |
 |---|---|
-| 识别与组织 | `organization`、`data_type`、`format`、主资源或 whole scope、组件规则 |
+| 识别与组织 | `organization`、`data_type`、`format`、主资源或 whole scope、ref 规则 |
 | attributes 写入 | `storage`、`item`、`type_info`、`format_info`、`capabilities` 的事实归属 |
 | 消费要求 | Manager、Transfer、Search 等模块应如何消费已入库 meta item |
 | 格式约束 | 不得重复推断、不得写入错误分区、不得保留旧字段等约束 |
@@ -23,9 +23,9 @@
 
 除非具体格式小节另有说明，内置格式统一遵守以下规则：
 
-1. `attributes.item` 只写 data item 核心语义，例如 `organization`、`data_type`、`format`、`component_files`、`scope_exclusive`、`claim_policy`。
+1. `attributes.item` 只写 data item 核心语义，例如 `organization`、`data_type`、`format`、`refs`、`scope_exclusive`、`claim_policy`。
 2. `type_info.<data_type>` 只写对应数据类型的通用元信息，例如表字段、文档页数、媒体宽高、容器 children。
-3. `format_info.<format>` 只写格式私有信息，例如分隔符、组件摘要、footer、EXIF、容器版本。
+3. `format_info.<format>` 只写格式私有信息，例如分隔符、ref 摘要、footer、EXIF、容器版本。
 4. `capabilities.<capability>` 只写横切能力，例如 spatial、statistics、extraction、partitioning。
 5. Manager、Transfer、Search 等消费者必须基于已入库 `meta_item` 和标准 attributes 消费，不得按扩展名、MIME、`engine_type` 或前端预览类型二次决定核心语义。
 6. 子对象默认只作为父容器的轻量 children；未形成子 item 规范前，不得自动展开成独立 `meta_item`。
@@ -41,9 +41,9 @@
 | records JSON / JSON Lines | `single` | `table` | `json` | 行列结构 JSON |
 | GeoJSON / FeatureCollection | `single` | `table` | `json` | JSON 格式 + spatial 横切能力 |
 | 任意对象 JSON / 配置 JSON | `single` | `document` 或 `container` | `json` | 按平台消费方式判断 |
-| Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename 组件 |
+| Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename refs |
 | 单个 Parquet | `single` | `table` | `parquet` | 单文件表 |
-| sibling Parquet 文件组 | `multi` | `table` | `parquet` | 仅在有明确组件或 manifest 规则时成立 |
+| sibling Parquet 文件组 | `multi` | `table` | `parquet` | 仅在有明确 ref 或 manifest 规则时成立 |
 | ORC / Avro 单文件 | `single` | `table` | `orc` / `avro` | 单文件表 |
 | Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
@@ -154,18 +154,18 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 | `data_type` | `table` |
 | `format` | `shapefile` |
 | 主资源 | `.shp`，即 `meta_item.full_name` |
-| 必需组件 | `.shp`、`.shx`、`.dbf` |
-| 可选组件 | `.prj`、`.cpg`、`.sbn`、`.sbx` |
+| 必需 refs | `.shp`、`.shx`、`.dbf` |
+| 可选 refs | `.prj`、`.cpg`、`.sbn`、`.sbx` |
 
-Shapefile 是空间矢量表，不是单个 `.shp` 文件。组件匹配规则是同目录或同 prefix 下相同 basename；不得跨目录递归匹配；不独占目录。
+Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是同目录或同 prefix 下相同 basename；不得跨目录递归匹配；不独占目录。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization=multi`、`data_type=table`、`format=shapefile`、`component_files`、`file_count` |
+| `item` | `organization=multi`、`data_type=table`、`format=shapefile`、`refs`、`file_count` |
 | `type_info.table` | `.dbf` 非空间字段、平台统一几何字段、`row_count`、`primary_key` |
-| `format_info.shapefile` | `base_name`、`component_extensions`、`has_prj`、`has_cpg`、`shape_type`、DBF 私有信息 |
+| `format_info.shapefile` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、`shape_type`、DBF 私有信息 |
 | `capabilities.spatial` | `geometry_columns`、`primary_geometry_column`、`srid` 或 `crs`、`extent`、`has_spatial_index` |
 
 字段规则：
@@ -188,11 +188,11 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。组件匹配规则�
     "organization": "multi",
     "data_type": "table",
     "format": "shapefile",
-    "component_files": [
-      "/shp/farmland.dbf",
-      "/shp/farmland.prj",
-      "/shp/farmland.shp",
-      "/shp/farmland.shx"
+    "refs": [
+      {"path": "/shp/farmland.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
+      {"path": "/shp/farmland.shx", "role": "index", "required": true, "extension": ".shx"},
+      {"path": "/shp/farmland.dbf", "role": "attributes", "required": true, "extension": ".dbf"},
+      {"path": "/shp/farmland.prj", "role": "projection", "extension": ".prj"}
     ],
     "file_count": 4
   },
@@ -213,7 +213,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。组件匹配规则�
   "format_info": {
     "shapefile": {
       "base_name": "farmland",
-      "component_extensions": ["dbf", "prj", "shp", "shx"],
+      "ref_extensions": ["dbf", "prj", "shp", "shx"],
       "has_prj": true,
       "has_cpg": false,
       "shape_type": "Polygon"
@@ -238,15 +238,15 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。组件匹配规则�
 }
 ```
 
-### 组件读取
+### ref 读取
 
-Manager 内容读取必须使用 `meta_item.full_name` 作为主文件路径，并使用 `attributes.item.component_files` 读取组件文件。Transfer 写出 Shapefile 时必须明确组件提交边界，不能只写 `.shp`。
+Manager 内容读取必须使用 `meta_item.full_name` 作为主文件路径，并使用 `attributes.item.refs` 读取相关文件。Transfer 写出 Shapefile 时必须明确ref 提交边界，不能只写 `.shp`。
 
 ### 格式约束
 
 - 不得把 `.shp` 单独作为完整 Shapefile item。
 - 不得把 Shapefile 作为 whole scope detector。
-- 不得把 `base_name`、`component_extensions`、`has_prj`、`has_cpg` 写入 attributes 顶层或长期写入 `format_info.unqualified`。
+- 不得把 `base_name`、`ref_extensions`、`has_prj`、`has_cpg` 写入 attributes 顶层或长期写入 `format_info.unqualified`。
 
 ## Parquet / ORC / Avro / Iceberg
 
@@ -260,23 +260,23 @@ Manager 内容读取必须使用 `meta_item.full_name` 作为主文件路径，�
 | 单个 Avro 文件 | `single` | `table` | `avro` |
 | Iceberg 表目录 | `whole` | `table` | `iceberg` |
 
-Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“湖表”。一组同类 Parquet 文件只有在有明确组件规则或 manifest 规则时才能归并为 `multi` item。Iceberg 等表格式目录由规范声明后可作为 `organization=whole` 的 table item。
+Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“湖表”。一组同类 Parquet 文件只有在有明确ref 规则或 manifest 规则时才能归并为 `multi` item。Iceberg 等表格式目录由规范声明后可作为 `organization=whole` 的 table item。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type=table`、`format`、可选 `component_files`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
+| `item` | `organization`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
 | `type_info.table` | 字段、原始字段类型、行数或估算行数、采样信息 |
 | `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要等格式私有信息 |
 | `capabilities.partitioning` | 分区字段、分区数量、分区样例 |
 | `capabilities.statistics` | 可轻量获得的列统计、采样统计 |
 
-`whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`component_files` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。
+`whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`refs` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。
 
 ### 表格读取
 
-上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 resource 抽象和 `TableInfoProvider` / `TableSampleReader` 收口，不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
+上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 resource 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableProvider` / `ScopeTableProvider`，预览探查走 sample reader，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
 
 ### 格式约束
 

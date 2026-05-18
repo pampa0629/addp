@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 func DetectFormat(candidate Candidate) string {
@@ -124,18 +124,18 @@ func BuiltinMultiRules() []FormatRule {
 		if !containsString(capability.Layouts, format.FormatLayoutMulti) {
 			continue
 		}
-		specs := ComponentSpecs(format.FormatType(capability.Format))
+		specs := RelatedRefSpecs(format.FormatType(capability.Format))
 		if len(specs) == 0 {
 			continue
 		}
 		rules = append(rules, FormatRule{
-			Format:         string(capability.Format),
-			DataType:       dataTypeFromString(capability.DataType),
-			Organization:   OrganizationMulti,
-			Priority:       100,
-			Entry:          EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
-			Components:     componentRuleFromSpecs(specs),
-			ComponentSpecs: specs,
+			Format:          string(capability.Format),
+			DataType:        dataTypeFromString(capability.DataType),
+			Organization:    OrganizationMulti,
+			Priority:        100,
+			Entry:           EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+			Refs:            refRuleFromSpecs(specs),
+			RelatedRefSpecs: specs,
 		})
 	}
 	sort.SliceStable(rules, func(i, j int) bool {
@@ -180,15 +180,15 @@ func BuiltinWholeScopeRules() []FormatRule {
 	return rules
 }
 
-func ComponentSpecs(formatType format.FormatType) []resource.ComponentSpec {
+func RelatedRefSpecs(formatType format.FormatType) []contentio.RelatedRefSpec {
 	if provider, err := format.GetTableProvider(formatType); err == nil {
-		if specProvider, ok := provider.(format.ComponentSpecProvider); ok {
-			return specProvider.ComponentSpecs()
+		if specProvider, ok := provider.(format.RelatedRefSpecProvider); ok {
+			return specProvider.RelatedRefSpecs()
 		}
 	}
 	if plugin, err := format.GetFormatPlugin(formatType); err == nil {
-		if specProvider, ok := plugin.(format.ComponentSpecProvider); ok {
-			return specProvider.ComponentSpecs()
+		if specProvider, ok := plugin.(format.RelatedRefSpecProvider); ok {
+			return specProvider.RelatedRefSpecs()
 		}
 	}
 	return nil
@@ -209,18 +209,18 @@ func ValidateFormatRule(rule FormatRule) error {
 	}
 	switch rule.Organization {
 	case OrganizationSingle:
-		if rule.Components != nil || rule.WholeScope != nil {
-			return fmt.Errorf("single rule %s must not declare Components or WholeScope", rule.Format)
+		if rule.Refs != nil || rule.WholeScope != nil {
+			return fmt.Errorf("single rule %s must not declare Refs or WholeScope", rule.Format)
 		}
 	case OrganizationMulti:
-		if rule.Components == nil && len(rule.ComponentSpecs) == 0 {
-			return fmt.Errorf("multi rule %s requires Components", rule.Format)
+		if rule.Refs == nil && len(rule.RelatedRefSpecs) == 0 {
+			return fmt.Errorf("multi rule %s requires Refs", rule.Format)
 		}
-		if rule.Components != nil {
-			if len(rule.Components.RequiredExtensions) == 0 {
+		if rule.Refs != nil {
+			if len(rule.Refs.RequiredExtensions) == 0 {
 				return fmt.Errorf("multi rule %s requires RequiredExtensions", rule.Format)
 			}
-			if rule.Components.EntryExtension == "" {
+			if rule.Refs.EntryExtension == "" {
 				return fmt.Errorf("multi rule %s requires EntryExtension", rule.Format)
 			}
 		}
@@ -231,8 +231,8 @@ func ValidateFormatRule(rule FormatRule) error {
 		if rule.WholeScope == nil {
 			return fmt.Errorf("whole rule %s requires WholeScope", rule.Format)
 		}
-		if rule.Components != nil || rule.Container != nil {
-			return fmt.Errorf("whole rule %s must not declare Components or Container", rule.Format)
+		if rule.Refs != nil || rule.Container != nil {
+			return fmt.Errorf("whole rule %s must not declare Refs or Container", rule.Format)
 		}
 	default:
 		return fmt.Errorf("format rule %s has unsupported Organization %q", rule.Format, rule.Organization)
@@ -246,9 +246,9 @@ func NormalizeCandidate(candidate Candidate) Candidate {
 	if candidate.Name == "" && candidate.Path != "" {
 		candidate.Name = filepath.Base(candidate.Path)
 	}
-	candidate.Extension = resource.NormalizeExtension(candidate.Extension)
+	candidate.Extension = contentio.NormalizeExtension(candidate.Extension)
 	if candidate.Extension == "" {
-		candidate.Extension = resource.NormalizeExtension(filepath.Ext(candidate.Name))
+		candidate.Extension = contentio.NormalizeExtension(filepath.Ext(candidate.Name))
 	}
 	candidate.BaseName = strings.TrimSpace(candidate.BaseName)
 	if candidate.BaseName == "" && candidate.Name != "" {
@@ -278,7 +278,7 @@ func dataTypeFromString(value string) DataType {
 	}
 }
 
-func componentRuleFromSpecs(specs []resource.ComponentSpec) *ComponentRule {
+func refRuleFromSpecs(specs []contentio.RelatedRefSpec) *RefRule {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -286,7 +286,7 @@ func componentRuleFromSpecs(specs []resource.ComponentSpec) *ComponentRule {
 	optional := []string{}
 	entry := ""
 	for _, spec := range specs {
-		ext := resource.NormalizeExtension(spec.Extension)
+		ext := contentio.NormalizeExtension(spec.Extension)
 		if ext == "" {
 			continue
 		}
@@ -302,9 +302,9 @@ func componentRuleFromSpecs(specs []resource.ComponentSpec) *ComponentRule {
 	if entry == "" && len(required) > 0 {
 		entry = required[0]
 	}
-	return &ComponentRule{
-		MatchScope:         ComponentMatchScopeSameDirectory,
-		MatchKey:           ComponentMatchKeyBaseName,
+	return &RefRule{
+		MatchScope:         RefMatchScopeSameDirectory,
+		MatchKey:           RefMatchKeyBaseName,
 		RequiredExtensions: required,
 		OptionalExtensions: optional,
 		EntryExtension:     entry,

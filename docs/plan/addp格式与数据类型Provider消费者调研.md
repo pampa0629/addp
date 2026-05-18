@@ -34,7 +34,7 @@ Meta 目前已经在做两类工作：
    - `organization=single|multi|whole`
    - `claimed resources`
    - `exclusive`
-   - `component_files`
+   - `refs`
    - `meta_item.full_name`
 
    目前这一步是 Meta 自己的职责，`common/format` 并不直接参与 item 归并。
@@ -62,7 +62,7 @@ Manager 现在主要依赖两类信号：
 1. **Meta 已入库 attributes**
    - `item.format`
    - `item.data_type`
-   - `item.component_files`
+   - `item.refs`
    - `meta_item.full_name`
    - `type_info.*`
    - `format_info.*`
@@ -87,7 +87,7 @@ Manager 现在主要依赖两类信号：
 
 Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 
-- 能从已扫描 item 定位主资源和组件资源。
+- 能从已扫描 item 定位主资源和ref 资源。
 - 能读取 item 内容流或 item 对应的引擎原生数据。
 - 能根据 data type 得到适合组装前端 preview 的数据提取结果。
 - 能补充预览所需的 schema、字段、空间列、分页信息、文档/媒体/容器摘要。
@@ -115,8 +115,8 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 
 | 当前路径 | 长期来源形态 | 长期入口 |
 |---|---|---|
-| 文件表预览 | single / multi 文件表 | `TableProvider.Sample` 经 `ResourceReader` / `ComponentReader` |
-| 目录型表格预览 | scope 表 | `TableProvider.Sample` 经 `ResourceReader` + scope list |
+| 文件表预览 | single / multi 文件表 | `TableProvider.Sample` 经 `contentio.Reader` / `contentio.MultiReader` |
+| 目录型表格预览 | scope 表 | `TableProvider.Sample` 经 `contentio.Reader` + scope list |
 | 数据库表预览 | engine-native 表 | `TableProvider.Sample` 经 `NativeCursor` |
 
 Parquet/ORC/Avro 这类表格文件或目录型表格 scope 不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.organization=single/whole` 区分单文件表和目录型表。
@@ -208,7 +208,7 @@ Transfer 任务应该同时解析 source / target 的两个维度：
 | PostgreSQL table -> PostgreSQL table | SQL read / SQL write | 无文件格式 | engine-native table provider |
 | PostgreSQL table -> S3 Parquet | SQL read | Parquet write + S3 object write | 读原生表，写 Parquet 字节流到对象存储 |
 | S3 CSV -> PostgreSQL table | S3 object read | CSV read + SQL write | 读对象流，解码 CSV，写原生表 |
-| S3 Shapefile -> GeoPackage | S3 object read / component read | Shapefile read + GeoPackage write | 读取组件文件，写容器文件 |
+| S3 Shapefile -> GeoPackage | S3 object read / multi read | Shapefile read + GeoPackage write | 读取ref 文件，写容器文件 |
 | NFS Parquet dir -> MySQL | NFS catalog/read | Parquet multi-file read + SQL write | 枚举目录下 Parquet，批量写 MySQL |
 
 因此 Transfer 不应只按 `connector_type=parquet` 或 `connector_type=s3` 做单维路由。它需要的是真正的计划：
@@ -233,8 +233,8 @@ target:
 
 | Provider | 职责 | 来源 |
 |---|---|---|
-| StorageReadProvider | 打开对象流、列举对象、读取组件资源 | engine provider |
-| StorageWriteProvider | 写对象流、提交组件资源、生成最终路径 | engine provider |
+| StorageReadProvider | 打开对象流、列举对象、读取ref 资源 | engine provider |
+| StorageWriteProvider | 写对象流、提交ref 资源、生成最终路径 | engine provider |
 | NativeTableReadProvider | 从引擎原生表读取 DataBatch | engine provider |
 | NativeTableWriteProvider | 向引擎原生表写入 DataBatch | engine provider |
 | FormatBatchReader | 从外部提供的一个或多个资源流解码 DataBatch | FormatPlugin / content reader |
@@ -303,9 +303,9 @@ target:
 
 Transfer 的批量读写不能只考虑格式，还要考虑引擎能力：
 
-1. **输入侧是否支持列表 / 分区 / 多组件**
+1. **输入侧是否支持列表 / 分区 / 多refs**
    - Parquet 目录需要 catalog/list 能力。
-   - Shapefile 需要组件文件读取能力。
+   - Shapefile 需要ref 文件读取能力。
    - 单 CSV 只需要一个对象流。
 
 2. **输入侧是否支持 seek / checkpoint**
@@ -316,7 +316,7 @@ Transfer 的批量读写不能只考虑格式，还要考虑引擎能力：
 3. **输出侧是否支持原子提交**
    - 数据库事务。
    - 对象存储临时对象 + rename/copy/commit。
-   - Shapefile 这类多组件格式需要整体提交。
+   - Shapefile 这类多refs格式需要整体提交。
 
 4. **输出侧是否支持并行写**
    - 数据库可多 writer 连接。
@@ -329,8 +329,8 @@ Transfer 的批量读写不能只考虑格式，还要考虑引擎能力：
    - 写出 JSON 空间结构 / Shapefile / GeoPackage 需要明确 geometry column、geometry encoding、SRID。
 
 6. **format write 与 engine write 的提交边界**
-   - Format writer 负责产生文件或组件。
-   - Engine writer 负责把文件或组件提交到目标存储。
+   - Format writer 负责产生文件或refs。
+   - Engine writer 负责把文件或refs提交到目标存储。
    - 两者需要一个明确的 commit 协议，尤其是 multi 文件格式。
 
 ### Transfer 优雅方案
@@ -357,7 +357,7 @@ TransferPlan
 
 1. Transfer 从任务配置或 Meta item 得到 source / target 的 engine、format、data_type。
 2. Transfer 查询 engine capability，确认能否读取或写入对应资源。
-3. Transfer 查询 format capability，确认是否支持基于外部读取抽象的 batch read / batch write / component read / component write。
+3. Transfer 查询 format capability，确认是否支持基于外部读取抽象的 batch read / batch write / multi read / multi write。
 4. Transfer 根据 info provider / content reader 补齐 schema、children、spatial 等平台语义。
 5. Planner 组合成运行期 `Reader` / `Writer`。
 6. Pipeline 只处理 `DataBatch`，不关心底层是 PostgreSQL、S3、CSV 还是 Parquet。
@@ -428,7 +428,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
 
 1. **Meta 只做框架，不写死每个格式**
    - Meta 负责询问注册表。
-   - Meta 不应该知道每种格式的组件规则细节。
+   - Meta 不应该知道每种格式的refs规则细节。
 
 2. **format capability 统一对齐 engine capability 的术语**
    - 格式声明自己能提供什么。

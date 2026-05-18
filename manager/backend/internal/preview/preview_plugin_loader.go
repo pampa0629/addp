@@ -34,8 +34,8 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"container-child": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewContainerChildPreviewProvider(content), nil
 	},
-	"component-file": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
-		return NewComponentFilePreviewProvider(content), nil
+	"ref-file": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewRefFilePreviewProvider(content), nil
 	},
 	"object-catalog": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewObjectCatalogPreviewProvider(repo, metaClient, metaServiceURL, content), nil
@@ -91,7 +91,7 @@ func fallbackBuiltinPreviewPlugins() []PluginConfig {
 		{Name: "builtin:graph-relationship", Type: "builtin", Builtin: "graph-relationship"},
 		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},
 		{Name: "builtin:container-child", Type: "builtin", Builtin: "container-child"},
-		{Name: "builtin:component-file", Type: "builtin", Builtin: "component-file"},
+		{Name: "builtin:ref-file", Type: "builtin", Builtin: "ref-file"},
 		{Name: "builtin:file-table", Type: "builtin", Builtin: "file-table"},
 		{Name: "builtin:object-catalog", Type: "builtin", Builtin: "object-catalog"},
 		{Name: "builtin:file-catalog", Type: "builtin", Builtin: "file-catalog"},

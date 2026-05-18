@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 const defaultEntryLimit = 100
@@ -135,7 +135,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
-func (p *Plugin) ResolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
+func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
 	if parent == nil {
 		return nil, fmt.Errorf("zip child resolver requires parent resource reader")
 	}
@@ -173,10 +173,10 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent resource.Reso
 			}
 			return entryReader, nil
 		}
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 
-	entryRef := resource.NewResourceRef(path.Join(parentRef.Path, entryPath), resource.ResourceRoleMain)
+	entryRef := contentio.NewRef(path.Join(parentRef.Path, entryPath), contentio.RoleMain)
 	size := int64(0)
 	if rawSize, ok := child.Properties["uncompressed_size"]; ok {
 		size = interfaceInt64(rawSize)
@@ -185,20 +185,20 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent resource.Reso
 	if childFormat == "" {
 		childFormat = format.FormatUnknown
 	}
-	components := zipChildComponents(child, parentRef.Path)
-	if len(components) > 0 {
-		entryPath = zipPrimaryComponentPath(components, entryPath)
+	refs := zipChildRefs(child, parentRef.Path)
+	if len(refs) > 0 {
+		entryPath = zipPrimaryRefPath(refs, entryPath)
 	}
-	metadata := &resource.ResourceMetadata{
+	metadata := &contentio.Metadata{
 		Ref:          entryRef,
 		Size:         size,
 		Exists:       true,
 		FormatHint:   string(childFormat),
 		DataTypeHint: child.DataType,
 	}
-	reader := format.NewSingleResourceReader(entryRef, openEntry, metadata)
-	if len(components) > 0 {
-		reader = &zipChildResourceReader{
+	reader := format.NewSingleContentReader(entryRef, openEntry, metadata)
+	if len(refs) > 0 {
+		reader = &zipChildContentReader{
 			parent:    parent,
 			parentRef: parentRef,
 			basePath:  parentRef.Path,
@@ -206,21 +206,21 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent resource.Reso
 		}
 	}
 	resolved := format.StreamContainerChildResource(reader, entryRef, child)
-	resolved.Components = components
+	resolved.Refs = refs
 	return resolved, nil
 }
 
-type zipChildResourceReader struct {
-	parent    resource.ResourceReader
-	parentRef resource.ResourceRef
+type zipChildContentReader struct {
+	parent    contentio.Reader
+	parentRef contentio.Ref
 	basePath  string
-	metadata  *resource.ResourceMetadata
+	metadata  *contentio.Metadata
 }
 
-func (r *zipChildResourceReader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+func (r *zipChildContentReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	entryPath := strings.Trim(strings.TrimPrefix(strings.Trim(ref.Path, "/"), strings.Trim(r.basePath, "/")), "/")
 	if entryPath == "" {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	parentReader, err := r.parent.Open(ctx, r.parentRef)
 	if err != nil {
@@ -242,17 +242,17 @@ func (r *zipChildResourceReader) Open(ctx context.Context, ref resource.Resource
 		}
 		return entry.Open()
 	}
-	return nil, resource.ErrResourceNotFound
+	return nil, contentio.ErrContentNotFound
 }
 
-func (r *zipChildResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r *zipChildContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
 	if r.metadata == nil {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	return r.metadata, nil
 }
 
-func (r *zipChildResourceReader) List(context.Context, resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r *zipChildContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, nil
 }
 
@@ -325,38 +325,40 @@ func zipChildPath(child format.ContainerChildInfo, options *format.ParseOptions)
 	return strings.Trim(strings.TrimSpace(child.Name), "/")
 }
 
-func zipChildComponents(child format.ContainerChildInfo, basePath string) []resource.ComponentRef {
-	if len(child.Components) == 0 {
+func zipChildRefs(child format.ContainerChildInfo, basePath string) []contentio.Ref {
+	if len(child.Refs) == 0 {
 		return nil
 	}
-	components := make([]resource.ComponentRef, 0, len(child.Components))
-	for _, component := range child.Components {
-		role := resource.ResourceRoleComponent
-		if component.Primary {
-			role = resource.ResourceRoleMain
+	refs := make([]contentio.Ref, 0, len(child.Refs))
+	for _, itemRef := range child.Refs {
+		role := contentio.RoleAuxiliary
+		if itemRef.Primary {
+			role = contentio.RoleMain
 		}
-		componentPath := strings.TrimSpace(component.Path)
-		if basePath != "" && componentPath != "" {
-			componentPath = path.Join(basePath, componentPath)
+		refPath := strings.TrimSpace(itemRef.Path)
+		if basePath != "" && refPath != "" {
+			refPath = path.Join(basePath, refPath)
 		}
-		components = append(components, resource.ComponentRef{
-			ResourceRef:   resource.NewResourceRef(componentPath, role),
-			ComponentRole: component.Role,
-			Required:      component.Required,
-		})
+		contentRef := contentio.NewRef(refPath, role)
+		if itemRef.Role != "" {
+			contentRef.Role = itemRef.Role
+		}
+		contentRef.Required = itemRef.Required
+		contentRef.Primary = itemRef.Primary
+		refs = append(refs, contentRef)
 	}
-	return components
+	return refs
 }
 
-func zipPrimaryComponentPath(components []resource.ComponentRef, fallback string) string {
-	for _, component := range components {
-		if component.ResourceRef.Role == resource.ResourceRoleMain {
-			return component.Path
+func zipPrimaryRefPath(refs []contentio.Ref, fallback string) string {
+	for _, ref := range refs {
+		if ref.Role == contentio.RoleMain || ref.Primary {
+			return ref.Path
 		}
 	}
-	for _, component := range components {
-		if strings.TrimSpace(component.Path) != "" {
-			return component.Path
+	for _, ref := range refs {
+		if strings.TrimSpace(ref.Path) != "" {
+			return ref.Path
 		}
 	}
 	return fallback

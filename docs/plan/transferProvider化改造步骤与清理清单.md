@@ -28,7 +28,7 @@ Transfer 最终应做到：
 - 不再新增以具体 engine + format 组合命名的 connector。
 - 不再新增 `s3_xxx`、`nfs_xxx` 这类组合 reader / writer。
 - 新增格式能力优先进入 `common/format` provider。
-- 新增引擎访问能力优先进入 engine provider 或 `common/resource` adapter。
+- 新增引擎访问能力优先进入 engine provider 或 `common/contentio` adapter。
 - Transfer 只新增 planner / adapter / strategy。
 
 ## 阶段 1：补 TransferPlan 草案实现
@@ -82,17 +82,17 @@ transfer/backend/internal/resourceadapter/
 
 读取侧：
 
-- system / local engine -> `common/resource.ResourceReader`
-- multi 组件 -> `common/resource.ComponentReader`
+- system / local engine -> `contentio.Reader`
+- multi refs -> `contentio.MultiReader`
 - engine-native table -> native cursor / batch reader adapter
 
 写入侧：
 
 - object / file target -> resource write session
-- multi component target -> component write session
+- multi ref target -> multi write session
 - engine-native table -> native batch writer
 
-第一阶段如果 `common/resource` 还没有写入抽象，可先在 Transfer 内部定义 `ResourceWriteSession`，稳定后再沉淀到 common。
+第一阶段如果 `common/contentio` 还没有写入抽象，可先在 Transfer 内部定义 `ResourceWriteSession`，稳定后再沉淀到 common。
 
 ## 阶段 3：table batch provider 对齐
 
@@ -107,14 +107,14 @@ transfer/backend/internal/resourceadapter/
 | CSV -> PostgreSQL table | resource read + CSV format read + native write |
 | Parquet scope -> PostgreSQL table | scope read + Parquet format read + native write |
 | PostgreSQL table -> Parquet | native read + Parquet format write + resource write |
-| Shapefile -> PostgreSQL table | component read + Shapefile format read + native write |
+| Shapefile -> PostgreSQL table | multi read + Shapefile format read + native write |
 
 需要新增或补齐的 format 能力：
 
 - CSV `ReadBatch` / `WriteBatch`
 - JSON `ReadBatch` / `WriteBatch`
 - Parquet `ReadBatch` / `WriteBatch`
-- Shapefile `ReadBatch` / `WriteBatch` / component write
+- Shapefile `ReadBatch` / `WriteBatch` / multi write
 
 当前 `common/format.TableProvider` 已有 `DescribeTable` / `SampleTable`，Transfer 需要在此基础上扩展批量读写能力，或先在 Transfer 内通过 adapter 包一层过渡接口。
 
@@ -132,7 +132,7 @@ transfer/backend/internal/resourceadapter/
 必须明确：
 
 - 单文件写出是否先写 staging 再提交。
-- 多组件写出是否整体提交。
+- 多 ref 写出是否整体提交。
 - scope 目录写出是否替换整个 scope。
 - 数据库写入是否使用 transaction / truncate+insert / copy。
 - checkpoint 的恢复粒度是 record、file、row group、partition 还是 cursor。
@@ -169,12 +169,12 @@ transfer/backend/internal/resourceadapter/
 
 | 旧对象 | 处理方式 |
 |---|---|
-| `s3_shapefile` connector | 删除，改为 S3 ResourceReader + Shapefile provider |
+| `s3_shapefile` connector | 删除，改为 S3 contentio.Reader + Shapefile provider |
 | `postgres_copy` connector | 删除，改为 PostgreSQL write strategy |
 | `spatialite_parallel` connector | 删除，改为 read strategy |
 | `geojson` connector | 删除，改为 `format=json + spatial.encoding=geojson` |
-| `parquet` 中的 S3 访问逻辑 | 删除，改为 ResourceReader + Parquet provider |
-| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 ResourceReader + FormatPlugin / content reader |
+| `parquet` 中的 S3 访问逻辑 | 删除，改为 contentio.Reader + Parquet provider |
+| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 contentio.Reader + FormatPlugin / content reader |
 | `S3Writer` 的 CSV/JSON/Shapefile/Parquet 分支 | 删除，改为 format writer + resource writer |
 | `NFSWriter` 中的格式分支 | 删除，改为 resource writer |
 | `inferConnectorType()` | 删除 |
@@ -232,7 +232,7 @@ Transfer 中的 GeoJSON 只能表示 JSON 空间编码或输出内容结构。
 每阶段至少保持：
 
 ```bash
-go test ./common/resource ./common/format/... ./common/engine/plugin
+go test ./common/contentio ./common/format/... ./common/engine/plugin
 go test ./transfer/backend/pkg/pipeline ./transfer/backend/internal/service
 npm run build --prefix transfer/frontend
 git diff --check
@@ -264,7 +264,7 @@ bash scripts/swagger/check-route-coverage.sh transfer
 3. 用 planner 输出继续驱动旧 registry，确认行为不变。
 4. 为 CSV 单文件读写接入 resource + FormatPlugin / content reader adapter。
 5. 为 Parquet scope 读接入 resource + FormatPlugin / content reader adapter。
-6. 为 Shapefile multi 读写接入 component reader / writer。
+6. 为 Shapefile multi 读写接入 multi reader / writer。
 7. 把 PostgreSQL COPY 改成 native write strategy。
 8. 删除被新路径覆盖的旧 connector。
 9. 改前端向导和任务 API。

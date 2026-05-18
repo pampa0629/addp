@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -21,8 +21,8 @@ import (
 // 自动支持所有实现了 format.TableProvider 的文件格式（CSV、Excel、Shapefile、JSON 空间扩展、Parquet 等）
 type FileTablePreviewProvider struct{}
 
-type tablePreviewResourceContext struct {
-	reader resource.ResourceReader
+type tablePreviewContentContext struct {
+	reader contentio.Reader
 	bucket string
 	path   string
 }
@@ -53,24 +53,24 @@ func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo,
 }
 
 func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	resourceCtx, err := p.resourceContextForPreview(req)
+	contentCtx, err := p.contentContextForPreview(req)
 	if err != nil {
 		return nil, err
 	}
 
 	// 使用共享 dataitem 口径识别格式，避免在 provider 内重复维护扩展名别名。
 	formatType := p.resolveFormat(req)
-	fullPath := resourceCtx.path
+	fullPath := contentCtx.path
 
 	// 构建解析选项
 	opts := p.buildParseOptions(formatType, req)
-	resourceReader := resourceCtx.reader
+	contentReader := contentCtx.reader
 	if strings.TrimSpace(req.ChildName) != "" {
-		resolved, err := p.resolveContainerChild(ctx, resourceReader, fullPath, formatType, req)
+		resolved, err := p.resolveContainerChild(ctx, contentReader, fullPath, formatType, req)
 		if err != nil {
 			return nil, err
 		}
-		resourceReader = resolved.Reader
+		contentReader = resolved.Reader
 		fullPath = resolved.Ref.Path
 		formatType = resolved.Format
 		opts = resolved.ParentOptions
@@ -85,27 +85,27 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return nil, fmt.Errorf("no table provider for format %s: %w", formatType, err)
 	}
 
-	if componentProvider, ok := provider.(format.ComponentTableProvider); ok {
-		componentReader := componentReaderForPreview(resourceReader, fullPath, formatType, req.Attributes)
-		preview, err := p.previewComponents(ctx, componentReader, resourceCtx.bucket, formatType, componentProvider, opts, req)
+	if refProvider, ok := provider.(format.MultiTableProvider); ok {
+		refReader := refReaderForPreview(contentReader, fullPath, formatType, req.Attributes)
+		preview, err := p.previewRefs(ctx, refReader, contentCtx.bucket, formatType, refProvider, opts, req)
 		if err != nil {
 			return nil, err
 		}
-		attachMultiComponentPreview(preview, formatType, componentReader.Components())
+		attachMultiRefPreview(preview, formatType, refReader.Refs())
 		return preview, nil
 	}
 
-	p.ensureContentIndex(ctx, req, resourceReader, resourceCtx.bucket, fullPath, formatType)
+	p.ensureContentIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, resourceReader, resourceCtx.bucket, fullPath, formatType, provider, opts, req)
+	return p.previewStreamable(ctx, contentReader, contentCtx.bucket, fullPath, formatType, provider, opts, req)
 }
 
-func resolvePreviewContainerChild(ctx context.Context, parent resource.ResourceReader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
-	return resolvePreviewContainerChildFromResource(ctx, parent, resource.NewResourceRef(parentPath, resource.ResourceRoleMain), parentFormat, req)
+func resolvePreviewContainerChild(ctx context.Context, parent contentio.Reader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	return resolvePreviewContainerChildFromResource(ctx, parent, contentio.NewRef(parentPath, contentio.RoleMain), parentFormat, req)
 }
 
-func resolvePreviewContainerChildFromResource(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+func resolvePreviewContainerChildFromResource(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
 	child := containerChildForRequest(req.Attributes, req.ChildName)
 	resolver, err := format.GetContainerChildResolver(parentFormat)
 	if err != nil {
@@ -129,11 +129,11 @@ func resolvePreviewContainerChildFromResource(ctx context.Context, parent resour
 	return resolved, nil
 }
 
-func (p *FileTablePreviewProvider) resolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+func (p *FileTablePreviewProvider) resolveContainerChild(ctx context.Context, parent contentio.Reader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
 	return resolvePreviewContainerChild(ctx, parent, parentPath, parentFormat, req)
 }
 
-func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest) (*tablePreviewResourceContext, error) {
+func (p *FileTablePreviewProvider) contentContextForPreview(req *PreviewRequest) (*tablePreviewContentContext, error) {
 	connInfo, contentReader, catalogProvider, err := contentReaderContextForPreview(req)
 	if err != nil {
 		return nil, err
@@ -144,15 +144,15 @@ func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest
 		if err != nil {
 			return nil, err
 		}
-		return &tablePreviewResourceContext{
-			reader: newObjectCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket),
+		return &tablePreviewContentContext{
+			reader: newObjectCatalogContentReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket),
 			bucket: bucket,
 			path:   objectKeyFromPreviewRequest(req, bucket),
 		}, nil
 	case "file":
 		path := fileSystemPathFromPreviewRequest(req)
-		return &tablePreviewResourceContext{
-			reader: newFileCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
+		return &tablePreviewContentContext{
+			reader: newFileCatalogContentReader(contentReader, catalogProvider, connInfo, req.Engine.ID),
 			bucket: req.Schema,
 			path:   path,
 		}, nil
@@ -164,7 +164,7 @@ func (p *FileTablePreviewProvider) resourceContextForPreview(req *PreviewRequest
 // previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
 func (p *FileTablePreviewProvider) previewStreamable(
 	ctx context.Context,
-	resourceReader resource.ResourceReader,
+	contentReader contentio.Reader,
 	bucket, fullPath string,
 	formatType format.FormatType,
 	provider format.TableProvider,
@@ -177,7 +177,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 	if tableInfo == nil {
 		// 获取对象流
-		object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+		object, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get object: %w", err)
 		}
@@ -213,7 +213,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 	offset := (page - 1) * pageSize
 
-	object, sampleOpts, err := p.openSampleReader(ctx, resourceReader, fullPath, tableInfo, opts, req, offset, pageSize)
+	object, sampleOpts, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
@@ -340,7 +340,7 @@ func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo
 
 func (p *FileTablePreviewProvider) openSampleReader(
 	ctx context.Context,
-	resourceReader resource.ResourceReader,
+	contentReader contentio.Reader,
 	fullPath string,
 	tableInfo *format.TableInfo,
 	opts *format.ParseOptions,
@@ -351,19 +351,19 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	if reader, sampleOpts, ok := p.openIndexedRangeReader(ctx, tableInfo, opts, req, offset, pageSize); ok {
 		return reader, sampleOpts, nil
 	}
-	reader, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	reader, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
 	return reader, opts, err
 }
 
 func (p *FileTablePreviewProvider) ensureContentIndex(
 	ctx context.Context,
 	req *PreviewRequest,
-	resourceReader resource.ResourceReader,
+	contentReader contentio.Reader,
 	bucket string,
 	fullPath string,
 	formatType format.FormatType,
 ) {
-	if req == nil || req.Engine == nil || resourceReader == nil || tableContentIndexFromAttributes(req.Attributes) != nil {
+	if req == nil || req.Engine == nil || contentReader == nil || tableContentIndexFromAttributes(req.Attributes) != nil {
 		return
 	}
 	if !format.SupportsContentIndex(formatType) {
@@ -373,7 +373,7 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 	if token == "" {
 		return
 	}
-	object, err := resourceReader.Open(ctx, resource.NewResourceRef(fullPath, resource.ResourceRoleMain))
+	object, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
 	if err != nil {
 		return
 	}
@@ -590,13 +590,13 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 	}
 }
 
-// previewComponents 处理多组件表格格式。
-func (p *FileTablePreviewProvider) previewComponents(
+// previewRefs 处理多 ref表格格式。
+func (p *FileTablePreviewProvider) previewRefs(
 	ctx context.Context,
-	components resource.ComponentReader,
+	refs contentio.MultiReader,
 	bucket string,
 	formatType format.FormatType,
-	provider format.ComponentTableProvider,
+	provider format.MultiTableProvider,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
@@ -606,9 +606,9 @@ func (p *FileTablePreviewProvider) previewComponents(
 		return nil, err
 	}
 	if tableInfo == nil {
-		tableInfo, err = provider.DescribeTableComponents(ctx, components, opts)
+		tableInfo, err = provider.DescribeMultiTable(ctx, refs, opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s component table info: %w", formatType, err)
+			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
 	}
 
@@ -636,9 +636,9 @@ func (p *FileTablePreviewProvider) previewComponents(
 	offset := (page - 1) * pageSize
 
 	// 读取分页数据
-	rows, err := provider.SampleTableComponents(ctx, components, int64(offset), int64(pageSize), opts)
+	rows, err := provider.SampleMultiTable(ctx, refs, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
-		return nil, fmt.Errorf("failed to read %s component table data: %w", formatType, err)
+		return nil, fmt.Errorf("failed to read %s ref table data: %w", formatType, err)
 	}
 
 	// 检测几何列
@@ -669,26 +669,26 @@ func (p *FileTablePreviewProvider) previewComponents(
 	}, nil
 }
 
-func attachMultiComponentPreview(preview *models.TablePreview, formatType format.FormatType, components []resource.ComponentRef) {
-	if preview == nil || preview.Object == nil || len(components) == 0 {
+func attachMultiRefPreview(preview *models.TablePreview, formatType format.FormatType, refs []contentio.Ref) {
+	if preview == nil || preview.Object == nil || len(refs) == 0 {
 		return
 	}
 	if preview.Object.Attributes == nil {
 		preview.Object.Attributes = models.JSONMap{}
 	}
-	preview.Object.Attributes["components"] = componentPreviewDescriptors(formatType, components)
+	preview.Object.Attributes["refs"] = refPreviewDescriptors(formatType, refs)
 	if preview.Object.Content == nil {
 		preview.Object.Content = &models.ObjectPreviewContent{}
 	}
 	if preview.Object.Content.Metadata == nil {
 		preview.Object.Content.Metadata = map[string]interface{}{}
 	}
-	preview.Object.Content.Metadata["components"] = preview.Object.Attributes["components"]
+	preview.Object.Content.Metadata["refs"] = preview.Object.Attributes["refs"]
 	preview.Object.Content.Metadata["organization"] = "multi"
 }
 
-func componentPreviewDescriptors(formatType format.FormatType, components []resource.ComponentRef) []map[string]interface{} {
-	descriptors := format.DescribeComponents(formatType, components)
+func refPreviewDescriptors(formatType format.FormatType, refs []contentio.Ref) []map[string]interface{} {
+	descriptors := format.DescribeRefs(formatType, refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
 	for index, descriptor := range descriptors {
 		key := strings.TrimSpace(descriptor.Key)
@@ -715,7 +715,7 @@ func componentPreviewDescriptors(formatType format.FormatType, components []reso
 		if descriptor.Extension != "" {
 			item["extension"] = descriptor.Extension
 		}
-		hint := previewHintForComponentDescriptor(&descriptor, descriptor.Path)
+		hint := previewHintForRefDescriptor(&descriptor, descriptor.Path)
 		item["preview_data_type"] = hint.DataType
 		item["preview_format"] = string(hint.Format)
 		item["preview_material"] = hint.Material
@@ -781,7 +781,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	properties := make(map[string]interface{}, len(child))
 	for key, value := range child {
 		switch key {
-		case "name", "kind", "data_type", "format", "organization", "components", "row_count", "column_count", "has_header":
+		case "name", "kind", "data_type", "format", "organization", "refs", "row_count", "column_count", "has_header":
 			continue
 		default:
 			properties[key] = value
@@ -808,7 +808,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 		DataType:     dataType,
 		Format:       format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
 		Organization: strings.TrimSpace(commonJSON.InterfaceString(child["organization"])),
-		Components:   containerChildComponentsFromMap(child),
+		Refs:         containerChildRefsFromMap(child),
 		RowCount:     rowCount,
 		ColumnCount:  columnCount,
 		HasHeader:    hasHeader,
@@ -816,30 +816,30 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	}
 }
 
-func containerChildComponentsFromMap(child map[string]interface{}) []format.ContainerChildComponent {
-	values := interfaceSlice(child["components"])
+func containerChildRefsFromMap(child map[string]interface{}) []format.ContainerChildRef {
+	values := interfaceSlice(child["refs"])
 	if len(values) == 0 {
 		return nil
 	}
-	components := make([]format.ContainerChildComponent, 0, len(values))
+	refs := make([]format.ContainerChildRef, 0, len(values))
 	for _, value := range values {
-		component := rawMapAttribute(value)
-		if len(component) == 0 {
+		ref := rawMapAttribute(value)
+		if len(ref) == 0 {
 			continue
 		}
-		path := strings.TrimSpace(commonJSON.InterfaceString(component["path"]))
+		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
 		if path == "" {
 			continue
 		}
-		components = append(components, format.ContainerChildComponent{
-			Role:      strings.TrimSpace(commonJSON.InterfaceString(component["role"])),
+		refs = append(refs, format.ContainerChildRef{
+			Role:      strings.TrimSpace(commonJSON.InterfaceString(ref["role"])),
 			Path:      path,
-			Required:  commonJSON.InterfaceBool(component["required"]),
-			Primary:   commonJSON.InterfaceBool(component["primary"]),
-			Extension: strings.TrimSpace(commonJSON.InterfaceString(component["extension"])),
+			Required:  commonJSON.InterfaceBool(ref["required"]),
+			Primary:   commonJSON.InterfaceBool(ref["primary"]),
+			Extension: strings.TrimSpace(commonJSON.InterfaceString(ref["extension"])),
 		})
 	}
-	return components
+	return refs
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {

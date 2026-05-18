@@ -18,9 +18,9 @@ var ErrTaskNotFound = errors.New("task not found")
 // EmbeddingTaskService 向量化任务定义管理服务
 // 管理 EmbeddingTask 任务定义（CRUD），执行时写入 common.task_executions
 type EmbeddingTaskService struct {
-	embeddingRepo *repository.EmbeddingRepository
+	embeddingRepo    *repository.EmbeddingRepository
 	embeddingService *EmbeddingService
-	taskExecRepo  *commonRepo.TaskExecutionRepository
+	taskExecRepo     *commonRepo.TaskExecutionRepository
 }
 
 // NewEmbeddingTaskService 创建服务
@@ -149,5 +149,5 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	return executionID, nil
 }
 
-func intPtr(v int) *int       { return &v }
-func uintPtr(v uint) *uint    { return &v }
+func intPtr(v int) *int    { return &v }
+func uintPtr(v uint) *uint { return &v }

@@ -5,9 +5,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	. "github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/resource"
 )
 
 func TestListFormatCapabilityViewsIncludesMarkdown(t *testing.T) {
@@ -42,8 +42,8 @@ func TestGetFormatCapabilityView(t *testing.T) {
 	if !view.Spatial {
 		t.Fatal("shapefile capability view should declare spatial")
 	}
-	if !view.Providers.ComponentTable {
-		t.Fatal("shapefile capability view should declare component table provider")
+	if !view.Providers.MultiTable {
+		t.Fatal("shapefile capability view should declare multi table provider")
 	}
 }
 
@@ -178,8 +178,18 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	if !view.Implementations.TableInfoProvider || !view.Implementations.TableSampleReader {
 		t.Fatalf("implementations = %#v, want table info and sample providers", view.Implementations)
 	}
-	if view.Implementations.ComponentTableProvider {
-		t.Fatalf("implementations = %#v, did not expect component table provider", view.Implementations)
+	if view.Implementations.MultiTableProvider {
+		t.Fatalf("implementations = %#v, did not expect multi table provider", view.Implementations)
+	}
+}
+
+func TestFormatCapabilityViewReportsMultiTableReaderProvider(t *testing.T) {
+	view, ok := GetFormatCapabilityView(FormatShapefile)
+	if !ok {
+		t.Fatal("expected shapefile capability view")
+	}
+	if !view.Implementations.MultiTableReader {
+		t.Fatalf("implementations = %#v, want multi table reader provider", view.Implementations)
 	}
 }
 
@@ -253,11 +263,11 @@ func (p discoveryScopeTableProvider) SampleTable(context.Context, io.Reader, int
 	return nil, nil
 }
 
-func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, resource.ResourceReader, resource.ResourceRef, *ParseOptions) (*TableInfo, error) {
+func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (*TableInfo, error) {
 	return &TableInfo{}, nil
 }
 
-func (p discoveryScopeTableProvider) SampleTableScope(context.Context, resource.ResourceReader, resource.ResourceRef, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
+func (p discoveryScopeTableProvider) SampleTableScope(context.Context, contentio.Reader, contentio.Ref, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 

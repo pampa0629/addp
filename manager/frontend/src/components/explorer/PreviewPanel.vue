@@ -162,26 +162,26 @@
 
     <!-- 渲染预览组件 -->
     <div v-else-if="!showGraphSchema" class="preview-content">
-      <div v-if="multiComponentOptions.length" class="preview-component-toolbar">
-        <span class="preview-component-label">{{ t('containerPreview.components') }}</span>
+      <div v-if="multiRefOptions.length" class="preview-ref-toolbar">
+        <span class="preview-ref-label">{{ t('containerPreview.refs') }}</span>
         <el-select
-          v-model="activeMultiComponentPath"
+          v-model="activeMultiRefPath"
           size="small"
-          class="preview-component-select"
-          @change="handleMultiComponentChange"
+          class="preview-ref-select"
+          @change="handleMultiRefChange"
         >
           <el-option
-            v-for="component in multiComponentOptions"
-            :key="component.key"
-            :label="component.label"
-            :value="component.path"
+            v-for="ref in multiRefOptions"
+            :key="ref.key"
+            :label="ref.label"
+            :value="ref.path"
           />
         </el-select>
       </div>
       <component
         v-if="previewComponent"
         :is="previewComponent"
-        :key="componentKey"
+        :key="refKey"
         :data="previewData"
         v-bind="previewComponentProps"
         :loading="loading"
@@ -233,7 +233,7 @@ const props = defineProps({
 
 const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
-const activeMultiComponentPath = ref('')
+const activeMultiRefPath = ref('')
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -524,14 +524,14 @@ const emptyDescription = computed(() => {
   return 'No data available'
 })
 
-const rawMultiComponents = computed(() => {
+const rawMultiRefs = computed(() => {
   const attrs = props.previewData?.object?.attributes || {}
   const contentMetadata = props.previewData?.object?.content?.metadata || {}
   const candidates = [
-    attrs.components,
-    attrs.item?.components,
-    attrs.item?.component_descriptors,
-    contentMetadata.components
+    attrs.refs,
+    attrs.item?.refs,
+    attrs.item?.ref_descriptors,
+    contentMetadata.refs
   ]
   for (const value of candidates) {
     if (Array.isArray(value) && value.length) {
@@ -541,46 +541,46 @@ const rawMultiComponents = computed(() => {
   return []
 })
 
-const componentDisplayName = (path) => {
+const refDisplayName = (path) => {
   if (!path) return ''
   const parts = String(path).split(/[\\/]/).filter(Boolean)
   return parts.pop() || String(path)
 }
 
-const multiComponentOptions = computed(() => {
-  const components = rawMultiComponents.value
-    .filter(component => component && component.path)
-    .map((component, index) => {
-      const path = component.path || ''
-      const label = component.label || component.role || component.key || componentDisplayName(path) || String(index)
-      const fileName = componentDisplayName(path)
+const multiRefOptions = computed(() => {
+  const refs = rawMultiRefs.value
+    .filter(ref => ref && ref.path)
+    .map((ref, index) => {
+      const path = ref.path || ''
+      const label = ref.label || ref.role || ref.key || refDisplayName(path) || String(index)
+      const fileName = refDisplayName(path)
       return {
-        key: component.key || component.role || path || String(index),
+        key: ref.key || ref.role || path || String(index),
         path,
         label: fileName && !String(label).includes(fileName) ? `${label} · ${fileName}` : String(label)
       }
     })
-  if (!components.length) return []
+  if (!refs.length) return []
   return [
     {
       key: '__combined__',
       path: '',
       label: t('containerPreview.combinedPreview')
     },
-    ...components
+    ...refs
   ]
 })
 
 watch(
   () => props.previewData?.object?.path,
   () => {
-    activeMultiComponentPath.value = store.selectedComponentPath || ''
+    activeMultiRefPath.value = store.selectedRefPath || ''
   },
   { immediate: true }
 )
 
 // 生成组件唯一 key
-const componentKey = computed(() => {
+const refKey = computed(() => {
   if (!props.selectedNode || !props.previewData) {
     return 'empty'
   }
@@ -592,7 +592,7 @@ const componentKey = computed(() => {
   const contentKind = props.previewData?.object?.content?.kind || ''
   const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
 
-  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedComponentPath}-${store.selectedNestedChildPath}-${contentType}-${contentKind}`
+  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedRefPath}-${store.selectedNestedChildPath}-${contentType}-${contentKind}`
 })
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
@@ -613,7 +613,7 @@ const fallbackDownloadUrl = computed(() => {
   if (!path || !engineId.value) {
     return ''
   }
-  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIComponent(path)}`
+  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIRef(path)}`
 })
 
 const downloadInfo = computed(() => {
@@ -777,7 +777,7 @@ const loadGraphSchema = async () => {
   const database = props.selectedNode.schema || ''
   graphSchemaLoading.value = true
   try {
-    const data = await client.get(`/manager/graph-schema/${engineId}?database=${encodeURIComponent(database)}`)
+    const data = await client.get(`/manager/graph-schema/${engineId}?database=${encodeURIRef(database)}`)
     graphSchemaData.value = data
   } catch (error) {
     console.error('加载图 Schema 失败:', error)
@@ -1615,12 +1615,12 @@ const handleChildChange = (payload) => {
   emit('child-change', payload)
 }
 
-const handleMultiComponentChange = (path) => {
-  activeMultiComponentPath.value = path || ''
+const handleMultiRefChange = (path) => {
+  activeMultiRefPath.value = path || ''
   emit('child-change', {
     childName: '',
-    componentPath: path || '',
-    componentSwitch: true
+    refPath: path || '',
+    refSwitch: true
   })
 }
 
@@ -1719,7 +1719,7 @@ const handleNavigate = (path) => {
   background: var(--addp-bg-primary) !important;
 }
 
-.preview-component-toolbar {
+.preview-ref-toolbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -1730,13 +1730,13 @@ const handleNavigate = (path) => {
   background: var(--el-fill-color-blank);
 }
 
-.preview-component-label {
+.preview-ref-label {
   color: var(--addp-text-secondary);
   font-size: 13px;
   white-space: nowrap;
 }
 
-.preview-component-select {
+.preview-ref-select {
   width: min(420px, 100%);
 }
 

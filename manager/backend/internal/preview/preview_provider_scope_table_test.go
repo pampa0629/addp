@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -43,43 +43,43 @@ func (p *recordingCatalogProvider) ResolvePath(context.Context, plugin.Connectio
 	return nil, nil
 }
 
-func TestScopeTableResourceReaderUsesObjectCatalogReader(t *testing.T) {
+func TestScopeTableContentReaderUsesObjectCatalogReader(t *testing.T) {
 	t.Parallel()
 
-	reader, err := scopeTableResourceReader(&PreviewRequest{
+	reader, err := scopeTableContentReader(&PreviewRequest{
 		Engine:   &models.Engine{EngineType: "minio", ID: 7},
 		ItemType: "object",
 		Schema:   "demo",
 	}, nil, nil, plugin.ConnectionInfo{"bucket": "demo"})
 	if err != nil {
-		t.Fatalf("scopeTableResourceReader() error = %v", err)
+		t.Fatalf("scopeTableContentReader() error = %v", err)
 	}
-	if _, ok := reader.(*objectCatalogResourceReader); !ok {
-		t.Fatalf("reader = %T, want *objectCatalogResourceReader", reader)
+	if _, ok := reader.(*objectCatalogContentReader); !ok {
+		t.Fatalf("reader = %T, want *objectCatalogContentReader", reader)
 	}
 }
 
-func TestScopeTableResourceReaderUsesFileCatalogReader(t *testing.T) {
+func TestScopeTableContentReaderUsesFileCatalogReader(t *testing.T) {
 	t.Parallel()
 
-	reader, err := scopeTableResourceReader(&PreviewRequest{
+	reader, err := scopeTableContentReader(&PreviewRequest{
 		Engine:   &models.Engine{EngineType: "nfs", ID: 7},
 		ItemType: "file",
 	}, nil, nil, nil)
 	if err != nil {
-		t.Fatalf("scopeTableResourceReader() error = %v", err)
+		t.Fatalf("scopeTableContentReader() error = %v", err)
 	}
-	if _, ok := reader.(*fileCatalogResourceReader); !ok {
-		t.Fatalf("reader = %T, want *fileCatalogResourceReader", reader)
+	if _, ok := reader.(*fileCatalogContentReader); !ok {
+		t.Fatalf("reader = %T, want *fileCatalogContentReader", reader)
 	}
 }
 
-func TestObjectCatalogResourceReaderListTrimsBucketFromScope(t *testing.T) {
+func TestObjectCatalogContentReaderListTrimsBucketFromScope(t *testing.T) {
 	t.Parallel()
 
 	catalog := &recordingCatalogProvider{}
-	reader := newObjectCatalogResourceReader(nil, catalog, nil, 7, "demo")
-	if _, err := reader.List(context.Background(), resource.NewResourceRef("demo/dataset", resource.ResourceRoleScope)); err != nil {
+	reader := newObjectCatalogContentReader(nil, catalog, nil, 7, "demo")
+	if _, err := reader.List(context.Background(), contentio.NewRef("demo/dataset", contentio.RoleScope)); err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if got := catalog.parent.StringPath(); got != "demo/dataset" {

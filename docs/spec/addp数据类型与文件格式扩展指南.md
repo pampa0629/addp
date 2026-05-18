@@ -42,7 +42,7 @@
 | 组织方式 | 判断标准 | 需要补的规则 |
 |---|---|---|
 | `single` | 一个引擎资源就是一个 data item | entry 识别规则、`meta_item.full_name` 来源 |
-| `multi` | 多个明确组件资源共同组成一个 data item | 主资源、必需组件、可选组件、claims |
+| `multi` | 多个明确相关 ref 共同组成一个 data item | 主 ref、必需 ref、可选 ref、claims |
 | `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item | whole scope 根范围、manifest / 关键资源、exclusive 策略 |
 
 容器不是组织方式。Excel、SQLite、GeoPackage、ZIP 等外层通常仍是 `single + container`。
@@ -93,27 +93,36 @@ func (p *Plugin) Capabilities() format.FormatCapability
 
 ## 4. 实现 provider 和 reader
 
-按 data type 实现对应接口，不要把 info 和 content 混在一起。
+按 data type、组织方式和消费意图实现对应接口，不要把 info、sample、连续读写混在一起。详细矩阵见 `common/format/README.md`。
 
 | 场景 | 必需 / 推荐接口 | 注册后主要消费者 |
 |---|---|---|
-| 单资源表格 | `TableInfoProvider`、`TableSampleReader` | Meta、Manager、Transfer |
-| 多组件表格 | `ComponentTableProvider`，或组件型 table info / sample reader | Manager、Transfer |
-| scope 表格 | `ScopeTableProvider`，或 scope 型 table info / sample reader | Manager、Transfer |
+| 格式身份与能力声明 | `FormatPlugin` | Meta、Manager、Transfer、能力发现 |
+| 格式私有元信息 | `FormatInfoProvider` | Meta |
+| 单资源表格元信息 | `TableInfoProvider` | Meta、Manager、Transfer 探查 |
+| 单资源表格样本 | `TableSampleReader` | Manager、Transfer 探查 |
+| 单资源表格全量读取 | `TableReaderProvider` | Transfer 主链路 |
+| 单资源表格写出 | `TableWriterProvider` | Transfer 写侧 |
+| 多组件表格元信息 / 样本 | `MultiTableProvider` | Meta、Manager、Transfer 探查兜底 |
+| 多组件表格全量读取 | `MultiTableReaderProvider` | Transfer 主链路 |
+| 多组件表格写出 | `MultiTableWriterProvider` | Transfer 写侧 |
+| 多组件规格 / 展示描述 | `RelatedRefSpecProvider`、`RefDescriptorProvider` | Meta item detector、Manager |
+| scope 表格元信息 / 样本 | `ScopeTableProvider` | Meta、Manager、Transfer 探查 |
 | 文档元信息 | `DocumentInfoProvider` | Meta、Manager、Search |
 | 文档文本片段 | `DocumentTextReader` | Manager、Search |
 | 文档仅前端解析 | descriptor 声明 `raw_content` / `range_content`，后端不实现 `DocumentTextReader` | Manager |
 | 媒体元信息 | `MediaInfoProvider` | Meta、Manager |
-| 格式私有元信息 | `FormatInfoProvider` | Meta |
+| 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
+| 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 空间横切事实 | 在 table/media info 中提供候选事实，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 
-兼容期组合接口：
+历史组合接口：
 
 - `TableProvider` = `TableInfoProvider` + `TableSampleReader`
 - `DocumentProvider` = `DocumentInfoProvider` + `DocumentTextReader`
 - `MediaProvider` 是 `MediaInfoProvider` 的旧别名
 
-新增实现优先直接使用拆分后的接口。
+新增实现优先直接使用拆分后的接口。`MultiTableProvider` 和 `ScopeTableProvider` 只表达 info / sample，不表达连续全量读取；全量批处理读取应使用 `TableReaderProvider` 或 `MultiTableReaderProvider`。后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得继续扩展组合接口职责。
 
 ## 5. 注册方式
 
@@ -141,6 +150,10 @@ func init() {
 | `RegisterFormatInfoProvider` | 只提供 `format_info.<format>` |
 | `RegisterTableInfoProvider` | 只提供 `type_info.table` |
 | `RegisterTableSampleProvider` | 只提供 table sample content reader |
+| `RegisterTableReaderProvider` | 只提供单资源 table 连续读取 |
+| `RegisterMultiTableReaderProvider` | 只提供多组件 table 连续读取 |
+| `RegisterTableWriterProvider` | 只提供单资源 table 写出 |
+| `RegisterMultiTableWriterProvider` | 只提供多组件 table 写出 |
 | `RegisterDocumentInfoProvider` | 只提供 `type_info.document` |
 | `RegisterDocumentTextReader` | 只提供 document text content reader |
 | `RegisterMediaInfoProvider` | 只提供 `type_info.media` |

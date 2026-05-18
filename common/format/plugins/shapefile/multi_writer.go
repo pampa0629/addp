@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 	"github.com/jonas-p/go-shp"
 )
 
-var _ format.ComponentTableWriterProvider = (*Plugin)(nil)
+var _ format.MultiTableWriterProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenComponentTableWriter(ctx context.Context, output resource.ComponentWriter, target resource.ResourceRef, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.MultiWriter, target contentio.Ref, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if output == nil {
-		return nil, fmt.Errorf("component writer cannot be nil")
+		return nil, fmt.Errorf("ref writer cannot be nil")
 	}
 	if schema == nil {
 		return nil, fmt.Errorf("shapefile table writer requires schema")
@@ -29,7 +29,7 @@ func (plugin *Plugin) OpenComponentTableWriter(ctx context.Context, output resou
 	if options != nil {
 		*opts = *options
 	}
-	geometryField := componentWriterGeometryField(schema, opts)
+	geometryField := multiWriterGeometryField(schema, opts)
 	if geometryField == "" {
 		return nil, fmt.Errorf("shapefile table writer requires geometry field")
 	}
@@ -64,7 +64,7 @@ func (plugin *Plugin) OpenComponentTableWriter(ctx context.Context, output resou
 		return nil, fmt.Errorf("set shapefile fields: %w", err)
 	}
 
-	return &componentTableWriter{
+	return &multiTableWriter{
 		output:        output,
 		target:        target,
 		tempDir:       tempDir,
@@ -77,9 +77,9 @@ func (plugin *Plugin) OpenComponentTableWriter(ctx context.Context, output resou
 	}, nil
 }
 
-type componentTableWriter struct {
-	output        resource.ComponentWriter
-	target        resource.ResourceRef
+type multiTableWriter struct {
+	output        contentio.MultiWriter
+	target        contentio.Ref
 	tempDir       string
 	basePath      string
 	writer        *Writer
@@ -90,7 +90,7 @@ type componentTableWriter struct {
 	closed        bool
 }
 
-func (w *componentTableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
+func (w *multiTableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
 	if w == nil || w.writer == nil {
 		return fmt.Errorf("shapefile table writer is closed")
 	}
@@ -102,7 +102,7 @@ func (w *componentTableWriter) WriteRows(ctx context.Context, rows []map[string]
 	return nil
 }
 
-func (w *componentTableWriter) writeRow(row map[string]interface{}) error {
+func (w *multiTableWriter) writeRow(row map[string]interface{}) error {
 	geomValue, exists := findGeometryValue(row, w.geometryField)
 	if !exists {
 		return fmt.Errorf("geometry field '%s' not found", w.geometryField)
@@ -244,7 +244,7 @@ func floatDBFValue(value interface{}) (float64, bool) {
 	}
 }
 
-func (w *componentTableWriter) Close(ctx context.Context) error {
+func (w *multiTableWriter) Close(ctx context.Context) error {
 	if w == nil || w.closed {
 		return nil
 	}
@@ -256,26 +256,26 @@ func (w *componentTableWriter) Close(ctx context.Context) error {
 		w.writer = nil
 	}
 	if err := w.writeSidecarFiles(); err != nil {
-		_ = w.output.AbortComponents(ctx)
+		_ = w.output.Abort(ctx)
 		return err
 	}
-	components := resource.SameBasenameComponents(w.target.Path, ComponentSpecs())
-	for _, component := range components {
-		if !component.Required && !fileExists(componentPath(w.basePath, component)) {
+	refs := contentio.SameBasenameRefs(w.target.Path, RelatedRefSpecs())
+	for _, ref := range refs {
+		if !ref.Required && !fileExists(refPath(w.basePath, ref)) {
 			continue
 		}
-		if err := copyComponent(ctx, w.output, w.basePath, component); err != nil {
-			_ = w.output.AbortComponents(ctx)
+		if err := copyRef(ctx, w.output, w.basePath, ref); err != nil {
+			_ = w.output.Abort(ctx)
 			return err
 		}
 	}
-	if err := w.output.CommitComponents(ctx); err != nil {
-		return fmt.Errorf("commit shapefile components: %w", err)
+	if err := w.output.Commit(ctx); err != nil {
+		return fmt.Errorf("commit shapefile refs: %w", err)
 	}
 	return nil
 }
 
-func (w *componentTableWriter) writeSidecarFiles() error {
+func (w *multiTableWriter) writeSidecarFiles() error {
 	if w.options == nil {
 		return nil
 	}
@@ -293,17 +293,17 @@ func (w *componentTableWriter) writeSidecarFiles() error {
 	return nil
 }
 
-func copyComponent(ctx context.Context, output resource.ComponentWriter, basePath string, component resource.ComponentRef) error {
-	sourcePath := componentPath(basePath, component)
+func copyRef(ctx context.Context, output contentio.MultiWriter, basePath string, ref contentio.Ref) error {
+	sourcePath := refPath(basePath, ref)
 	source, err := os.Open(sourcePath)
 	if err != nil {
-		return fmt.Errorf("open shapefile component %s: %w", component.ComponentRole, err)
+		return fmt.Errorf("open shapefile ref %s: %w", ref.Role, err)
 	}
 	defer source.Close()
 
-	target, err := output.CreateComponent(ctx, component)
+	target, err := output.Create(ctx, ref)
 	if err != nil {
-		return fmt.Errorf("create shapefile component %s: %w", component.ComponentRole, err)
+		return fmt.Errorf("create shapefile ref %s: %w", ref.Role, err)
 	}
 	targetClosed := false
 	defer func() {
@@ -312,20 +312,20 @@ func copyComponent(ctx context.Context, output resource.ComponentWriter, basePat
 		}
 	}()
 	if _, err := io.Copy(target, source); err != nil {
-		return fmt.Errorf("copy shapefile component %s: %w", component.ComponentRole, err)
+		return fmt.Errorf("copy shapefile ref %s: %w", ref.Role, err)
 	}
 	if err := target.Close(); err != nil {
-		return fmt.Errorf("close shapefile component %s: %w", component.ComponentRole, err)
+		return fmt.Errorf("close shapefile ref %s: %w", ref.Role, err)
 	}
 	targetClosed = true
 	return nil
 }
 
-func componentPath(basePath string, component resource.ComponentRef) string {
-	return basePath + filepath.Ext(component.Path)
+func refPath(basePath string, ref contentio.Ref) string {
+	return basePath + filepath.Ext(ref.Path)
 }
 
-func componentWriterGeometryField(schema *format.TableInfo, opts *format.WriteOptions) string {
+func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOptions) string {
 	if opts != nil {
 		if value, ok := stringWriteOption(opts, "geometry_field"); ok {
 			return strings.TrimSpace(value)

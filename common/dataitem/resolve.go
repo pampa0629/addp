@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 func ResolveItems(input ResolveInput) (*ResolveResult, error) {
@@ -54,26 +54,26 @@ func resolveMultiItems(candidates []Candidate, result *ResolveResult) {
 	for _, rule := range BuiltinMultiRules() {
 		for _, item := range matchMultiRule(candidates, rule, result.Claims) {
 			result.Items = append(result.Items, item)
-			for _, component := range item.ComponentList {
-				result.Claims[component.Path] = true
+			for _, ref := range item.RefList {
+				result.Claims[ref.Path] = true
 			}
 		}
 	}
 }
 
 func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]bool) []ResolvedItem {
-	specs := rule.ComponentSpecs
+	specs := rule.RelatedRefSpecs
 	if len(specs) == 0 {
-		specs = componentSpecsFromRule(rule)
+		specs = refSpecsFromRule(rule)
 	}
 	if len(specs) == 0 {
 		return nil
 	}
-	knownExts := map[string]resource.ComponentSpec{}
+	knownExts := map[string]contentio.RelatedRefSpec{}
 	requiredExts := map[string]bool{}
 	primaryExt := ""
 	for _, spec := range specs {
-		ext := resource.NormalizeExtension(spec.Extension)
+		ext := contentio.NormalizeExtension(spec.Extension)
 		if ext == "" {
 			continue
 		}
@@ -87,7 +87,7 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 	}
 	if primaryExt == "" {
 		for _, spec := range specs {
-			ext := resource.NormalizeExtension(spec.Extension)
+			ext := contentio.NormalizeExtension(spec.Extension)
 			if ext != "" && spec.Required {
 				primaryExt = ext
 				break
@@ -140,8 +140,8 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		if !ok {
 			continue
 		}
-		componentList := make([]ComponentRef, 0, len(group))
-		componentPaths := map[string]string{}
+		refList := make([]ItemRef, 0, len(group))
+		refPaths := map[string]string{}
 		var total int64
 		exts := make([]string, 0, len(group))
 		for ext := range group {
@@ -158,8 +158,8 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 			if candidate.SizeBytes != nil {
 				total += *candidate.SizeBytes
 			}
-			componentPaths[role] = candidate.Path
-			componentList = append(componentList, ComponentRef{
+			refPaths[role] = candidate.Path
+			refList = append(refList, ItemRef{
 				Role:      role,
 				Path:      candidate.Path,
 				Required:  spec.Required,
@@ -175,10 +175,10 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 			DataType:        rule.DataType,
 			Format:          rule.Format,
 			EntryPath:       entry.Path,
-			ComponentPaths:  componentPaths,
-			ComponentList:   componentList,
+			RefPaths:        refPaths,
+			RefList:         refList,
 			SizeBytes:       &size,
-			DetectionReason: "multi_components",
+			DetectionReason: "multi_refs",
 			Properties: map[string]interface{}{
 				"base_name": strings.TrimSuffix(entry.Name, filepath.Ext(entry.Name)),
 			},
@@ -195,8 +195,8 @@ func resolveWholeScope(candidates []Candidate, result *ResolveResult, input Reso
 			continue
 		}
 		result.Items = append(result.Items, item)
-		for _, component := range item.ComponentList {
-			result.Claims[component.Path] = true
+		for _, ref := range item.RefList {
+			result.Claims[ref.Path] = true
 		}
 		if rule.WholeScope != nil && rule.WholeScope.ExclusiveOnStrongHit {
 			result.Exclusive = true
@@ -259,17 +259,17 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		return ResolvedItem{}, false
 	}
 
-	components := make([]ComponentRef, 0, len(dataCandidates))
-	componentPaths := map[string]string{}
+	refs := make([]ItemRef, 0, len(dataCandidates))
+	refPaths := map[string]string{}
 	for _, candidate := range dataCandidates {
-		components = append(components, ComponentRef{
+		refs = append(refs, ItemRef{
 			Role:      "data",
 			Path:      candidate.Path,
 			Required:  true,
-			Primary:   len(components) == 0,
+			Primary:   len(refs) == 0,
 			Extension: candidate.Extension,
 		})
-		componentPaths[candidate.Path] = candidate.Path
+		refPaths[candidate.Path] = candidate.Path
 	}
 
 	size := total
@@ -284,30 +284,30 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		DataType:        rule.DataType,
 		Format:          rule.Format,
 		EntryPath:       scopePath,
-		ComponentPaths:  componentPaths,
-		ComponentList:   components,
+		RefPaths:        refPaths,
+		RefList:         refs,
 		SizeBytes:       &size,
 		DetectionReason: "whole_scope",
 	}, true
 }
 
-func componentSpecsFromRule(rule FormatRule) []resource.ComponentSpec {
-	if rule.Components == nil {
+func refSpecsFromRule(rule FormatRule) []contentio.RelatedRefSpec {
+	if rule.Refs == nil {
 		return nil
 	}
-	specs := make([]resource.ComponentSpec, 0, len(rule.Components.RequiredExtensions)+len(rule.Components.OptionalExtensions))
-	entryExt := resource.NormalizeExtension(rule.Components.EntryExtension)
-	for _, ext := range rule.Components.RequiredExtensions {
-		normalized := resource.NormalizeExtension(ext)
-		specs = append(specs, resource.ComponentSpec{
+	specs := make([]contentio.RelatedRefSpec, 0, len(rule.Refs.RequiredExtensions)+len(rule.Refs.OptionalExtensions))
+	entryExt := contentio.NormalizeExtension(rule.Refs.EntryExtension)
+	for _, ext := range rule.Refs.RequiredExtensions {
+		normalized := contentio.NormalizeExtension(ext)
+		specs = append(specs, contentio.RelatedRefSpec{
 			Extension: normalized,
 			Required:  true,
 			Primary:   normalized == entryExt,
 		})
 	}
-	for _, ext := range rule.Components.OptionalExtensions {
-		normalized := resource.NormalizeExtension(ext)
-		specs = append(specs, resource.ComponentSpec{
+	for _, ext := range rule.Refs.OptionalExtensions {
+		normalized := contentio.NormalizeExtension(ext)
+		specs = append(specs, contentio.RelatedRefSpec{
 			Extension: normalized,
 			Required:  false,
 			Primary:   normalized == entryExt,
@@ -369,7 +369,7 @@ func multiGroupKey(candidate Candidate) string {
 func ruleExtensionSet(extensions []string) map[string]bool {
 	result := map[string]bool{}
 	for _, ext := range extensions {
-		normalized := resource.NormalizeExtension(ext)
+		normalized := contentio.NormalizeExtension(ext)
 		if normalized != "" {
 			result[normalized] = true
 		}
@@ -449,21 +449,21 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 	properties["path"] = item.EntryPath
 	properties["format"] = item.Format
 	properties["organization"] = string(item.Organization)
-	if len(item.ComponentList) > 0 {
-		components := make([]map[string]interface{}, 0, len(item.ComponentList))
-		componentPaths := map[string]interface{}{}
-		for _, component := range item.ComponentList {
-			components = append(components, map[string]interface{}{
-				"role":      component.Role,
-				"path":      component.Path,
-				"required":  component.Required,
-				"primary":   component.Primary,
-				"extension": component.Extension,
+	if len(item.RefList) > 0 {
+		refs := make([]map[string]interface{}, 0, len(item.RefList))
+		refPaths := map[string]interface{}{}
+		for _, ref := range item.RefList {
+			refs = append(refs, map[string]interface{}{
+				"role":      ref.Role,
+				"path":      ref.Path,
+				"required":  ref.Required,
+				"primary":   ref.Primary,
+				"extension": ref.Extension,
 			})
-			componentPaths[component.Role] = component.Path
+			refPaths[ref.Role] = ref.Path
 		}
-		properties["components"] = components
-		properties["component_paths"] = componentPaths
+		properties["refs"] = refs
+		properties["ref_paths"] = refPaths
 	}
 	return format.ContainerChildInfo{
 		Name:         item.Name,
@@ -471,24 +471,24 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 		DataType:     string(item.DataType),
 		Format:       format.FormatType(item.Format),
 		Organization: string(item.Organization),
-		Components:   containerChildComponents(item),
+		Refs:         containerChildRefs(item),
 		Properties:   properties,
 	}
 }
 
-func containerChildComponents(item ResolvedItem) []format.ContainerChildComponent {
-	if len(item.ComponentList) == 0 {
+func containerChildRefs(item ResolvedItem) []format.ContainerChildRef {
+	if len(item.RefList) == 0 {
 		return nil
 	}
-	components := make([]format.ContainerChildComponent, 0, len(item.ComponentList))
-	for _, component := range item.ComponentList {
-		components = append(components, format.ContainerChildComponent{
-			Role:      component.Role,
-			Path:      component.Path,
-			Required:  component.Required,
-			Primary:   component.Primary,
-			Extension: component.Extension,
+	refs := make([]format.ContainerChildRef, 0, len(item.RefList))
+	for _, ref := range item.RefList {
+		refs = append(refs, format.ContainerChildRef{
+			Role:      ref.Role,
+			Path:      ref.Path,
+			Required:  ref.Required,
+			Primary:   ref.Primary,
+			Extension: ref.Extension,
 		})
 	}
-	return components
+	return refs
 }

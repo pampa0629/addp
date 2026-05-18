@@ -1,0 +1,194 @@
+package preview
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/addp/common/contentio"
+	"github.com/addp/common/format"
+	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/objectcontent"
+)
+
+type RefFilePreviewProvider struct {
+	content *objectcontent.ObjectContentRegistry
+}
+
+func NewRefFilePreviewProvider(content *objectcontent.ObjectContentRegistry) PreviewProvider {
+	return &RefFilePreviewProvider{content: content}
+}
+
+func (p *RefFilePreviewProvider) Name() string {
+	return "builtin:ref-file"
+}
+
+func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	if req == nil || strings.TrimSpace(req.RefPath) == "" {
+		return nil, fmt.Errorf("ref file preview requires ref_path")
+	}
+	contentCtx, err := (&FileTablePreviewProvider{}).contentContextForPreview(req)
+	if err != nil {
+		return nil, err
+	}
+	formatType := normalizeFileTableFormat(stringAttribute(req.Attributes, "format"))
+	refs := refReaderForPreview(contentCtx.reader, contentCtx.path, formatType, req.Attributes).Refs()
+	ref, ok := refForPreviewPath(formatType, refs, req.RefPath)
+	if !ok {
+		return nil, fmt.Errorf("ref %s not found", req.RefPath)
+	}
+	refDescriptors := refPreviewDescriptors(formatType, refs)
+	descriptor := refDescriptorForRef(formatType, ref)
+	preview := previewHintForRefDescriptor(descriptor, ref.Path)
+	contentReq := &objectcontent.ObjectContentRequest{
+		Bucket:      contentCtx.bucket,
+		Path:        "",
+		Name:        ref.Name,
+		Format:      string(preview.Format),
+		Extension:   defaultExtension(ref.Path),
+		ContentType: previewContentType(preview.Format, ref.Name),
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": preview.DataType,
+				"format":    string(preview.Format),
+			},
+		},
+	}
+	if descriptor != nil {
+		contentReq.Attributes["ref"] = map[string]interface{}{
+			"path":     descriptor.Path,
+			"role":     descriptor.Role,
+			"label":    descriptor.Label,
+			"required": descriptor.Required,
+			"primary":  descriptor.Primary,
+		}
+		if preview.Material != "" {
+			contentReq.Attributes["preview_material"] = preview.Material
+		}
+		if preview.Renderer != "" {
+			contentReq.Attributes["frontend_renderer"] = preview.Renderer
+		}
+	}
+	if len(refDescriptors) > 0 {
+		contentReq.Attributes["refs"] = refDescriptors
+	}
+	if contentReq.ContentType == "application/octet-stream" {
+		contentReq.ContentType = ""
+	}
+
+	if p.content != nil {
+		handler := p.content.Resolve(contentReq)
+		if handler != nil {
+			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
+				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, func() (io.ReadCloser, error) {
+					return contentCtx.reader.Open(ctx, ref)
+				})
+				if err != nil {
+					return nil, err
+				}
+				if content != nil {
+					if truncated || content.Truncated {
+						content.Truncated = true
+					}
+					return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, content), nil
+				}
+			}
+			content, truncated, err := handler.Handle(ctx, contentReq, func(limit int64) ([]byte, bool, error) {
+				reader, err := contentCtx.reader.Open(ctx, ref)
+				if err != nil {
+					return nil, false, err
+				}
+				defer reader.Close()
+				if limit <= 0 {
+					limit = maxTextPreviewBytes
+				}
+				return readObjectWithLimit(reader, limit)
+			})
+			if err != nil {
+				return nil, err
+			}
+			if content != nil {
+				if truncated || content.Truncated {
+					content.Truncated = true
+				}
+				return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, content), nil
+			}
+		}
+	}
+
+	return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, &models.ObjectPreviewContent{
+		Kind:     models.ObjectPreviewKindUnsupported,
+		Text:     "暂不支持该相关文件的在线预览，请下载后查看。",
+		Metadata: map[string]interface{}{"format": preview.Format, "data_type": preview.DataType},
+	}), nil
+}
+
+func refForPreviewPath(formatType format.FormatType, refs []contentio.Ref, target string) (contentio.Ref, bool) {
+	target = strings.Trim(strings.TrimSpace(target), "/")
+	if target == "" {
+		return contentio.Ref{}, false
+	}
+	for _, ref := range refs {
+		if refPathMatches(ref.Path, target) {
+			return ref, true
+		}
+	}
+	for _, descriptor := range format.DescribeRefs(formatType, refs) {
+		if refPathMatches(descriptor.Path, target) {
+			for _, ref := range refs {
+				if refPathMatches(ref.Path, descriptor.Path) {
+					return ref, true
+				}
+			}
+		}
+	}
+	return contentio.Ref{}, false
+}
+
+func refDescriptorForRef(formatType format.FormatType, ref contentio.Ref) *format.RefDescriptor {
+	for _, descriptor := range format.DescribeRefs(formatType, []contentio.Ref{ref}) {
+		if refPathMatches(descriptor.Path, ref.Path) {
+			current := descriptor
+			return &current
+		}
+	}
+	return nil
+}
+
+func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref contentio.Ref, preview previewHint, refs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
+	if content != nil {
+		objectcontent.DecoratePreviewContent(content)
+		if len(refs) > 0 {
+			if content.Metadata == nil {
+				content.Metadata = map[string]interface{}{}
+			}
+			content.Metadata["refs"] = refs
+			content.Metadata["organization"] = "multi"
+		}
+	}
+	return &models.TablePreview{
+		Mode:     PreviewModeObject,
+		Page:     1,
+		PageSize: 1,
+		Columns:  []string{},
+		Rows:     []map[string]interface{}{},
+		Object: &models.ObjectPreview{
+			Bucket:      bucket,
+			Path:        ref.Path,
+			ObjectKey:   ref.Path,
+			NodeType:    "object",
+			ContentType: previewContentType(preview.Format, ref.Name),
+			Attributes: models.JSONMap{
+				"item": map[string]interface{}{
+					"data_type": preview.DataType,
+					"format":    string(preview.Format),
+				},
+				"refs": refs,
+			},
+			Content:  content,
+			EngineID: req.Engine.ID,
+		},
+		GeometryColumns: []string{},
+	}
+}

@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -111,7 +111,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}, nil
 }
 
-func (p *Plugin) ResolveContainerChild(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
 	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
 }
 

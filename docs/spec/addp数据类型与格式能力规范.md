@@ -11,7 +11,7 @@
 | format capability 表达格式实现能做什么 | data item 如何归并和 claims 如何合并 |
 | FormatPlugin 如何声明格式身份、能力和布局 | `meta_item.name/full_name/item_type` 来源规则 |
 | info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
-| content reader 如何提供内容数据 | ResourceReader / ComponentReader 的具体接口 |
+| content reader 如何提供内容数据 | contentio Reader / MultiReader 的具体接口 |
 
 item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
@@ -34,7 +34,7 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 `common/format` 不回答 item 归并问题：
 
 - 不决定最终 `organization`。
-- 不决定 claims、exclusive、component_files。
+- 不决定 claims、exclusive、refs。
 - 不决定 `meta_item.full_name`。
 - 不直接写最终 `meta_item.attributes`。
 
@@ -64,8 +64,8 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 
 - 它可以声明“CSV 是 `format=csv`，默认 `data_type=table`，支持 `single`，有 `table_sample` reader”。
 - 它不能决定“当前某个文件最终是不是一个 data item”。
-- 它不能决定 Shapefile 组件如何归并成最终 item；只能声明组件布局能力，最终归并由 Meta detector 裁决。
-- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`ResourceReader` 或 `ComponentReader`。
+- 它不能决定 Shapefile refs如何归并成最终 item；只能声明ref 布局能力，最终归并由 Meta detector 裁决。
+- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader` 或 `contentio.MultiReader`。
 
 ### FormatDescriptor
 
@@ -115,11 +115,17 @@ func init() {
 | `FormatInfoProvider` | format info provider |
 | `TableInfoProvider` | table info provider |
 | `TableSampleReader` | table sample reader |
-| `TableProvider` | 兼容期组合 table provider，同时注册 info 和 sample |
+| `TableReaderProvider` | table continuous reader provider |
+| `MultiTableReaderProvider` | multi table continuous reader provider |
+| `TableWriterProvider` | table writer provider |
+| `MultiTableWriterProvider` | multi table writer provider |
+| `TableProvider` | 历史组合 table provider，同时注册 info 和 sample |
 | `DocumentInfoProvider` | document info provider |
 | `DocumentTextReader` | document text reader |
-| `DocumentProvider` | 兼容期组合 document provider，同时注册 info 和 text reader |
+| `DocumentProvider` | 历史组合 document provider，同时注册 info 和 text reader |
 | `MediaInfoProvider` | media info provider |
+| `ContainerInfoProvider` | container info provider |
+| `ContainerChildResolver` | container child resolver |
 
 也可以只注册单一能力，例如 `RegisterTableInfoProvider` 或 `RegisterDocumentTextReader`。这种方式适合临时迁移旧实现；新增格式优先使用 `RegisterFormatPlugin`，让格式身份和实现入口在同一个子目录内闭合。
 
@@ -154,19 +160,19 @@ import _ "github.com/addp/common/format/builtin"
 | 能力段 | 说明 | 典型产出 | 主要消费者 |
 |---|---|---|---|
 | Identification | 如何识别格式 | 扩展名、MIME、magic bytes、内容签名 | Meta、Registry |
-| Layout | 格式自身如何组织资源 | single / multi / whole、主资源、组件规则、manifest 规则 | Meta |
+| Layout | 格式自身如何组织资源 | single / multi / whole、主资源、refs规则、manifest 规则 | Meta |
 | Info / Facts | 能提取什么 data type info 和横切事实 | table / document / media / container info、spatial facts | Meta、Manager、Transfer |
 | Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、缩略图、容器树、raw content、range content | Manager、Transfer |
-| Transfer | 能否参与批量读写和组件提交 | batch read / write、component read / write、commit policy | Transfer |
+| Transfer | 能否参与批量读写和 multi ref 提交 | batch read / write、multi read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
 
-当前代码中 `FormatCapability` 是能力声明；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、type mapper 等是具体实现能力。能力声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+当前代码中 `FormatCapability` 是能力声明；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、历史组合接口 `TableProvider` / `MultiTableProvider` / `ScopeTableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、type mapper 等是具体实现能力。能力声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
 
 ### Format Identity 与 Format Detection
 
 `format identity` 定义“平台支持的这个格式是谁”，通常由 `FormatDescriptor` 表达；当该格式已有代码实现时，由 `FormatPlugin` 作为格式包主入口承载。它包含稳定格式 ID、默认 data type、布局、info provider、content reader、transfer 和横切能力声明。
 
-`format detection` 是“给定一个资源，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或组件上下文，输出指向某个 format identity 的识别结果。
+`format detection` 是“给定一个资源，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或ref 上下文，输出指向某个 format identity 的识别结果。
 
 二者边界如下：
 
@@ -174,7 +180,7 @@ import _ "github.com/addp/common/format/builtin"
 |---|---|---|
 | 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前资源看起来是什么格式 |
 | 性质 | 静态注册事实 | 动态识别过程 |
-| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、组件上下文 |
+| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、ref 上下文 |
 | 输出 | format descriptor / capability | detection result，指向某个 format |
 | 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
 
@@ -203,18 +209,18 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 建议说明：
 
-- `ScopeKind`：单文件、组件文件、目录、prefix、schema、manifest scope。
+- `ScopeKind`：单文件、相关文件、目录、prefix、schema、manifest scope。
 - `PrimaryResourceRole`：主资源是普通文件、manifest、目录入口，还是整个范围本身。
-- `RequiredComponents`：必须出现哪些组件。
-- `OptionalComponents`：可以出现哪些附加组件。
+- `RequiredRefs`：必须出现哪些 ref。
+- `OptionalRefs`：可以出现哪些附加 ref。
 - `SameNameRule`：是否要求同 basename、同 prefix、同后缀集。
-- `CrossDirectoryAllowed`：是否允许跨目录匹配组件。
+- `CrossDirectoryAllowed`：是否允许跨目录匹配 ref。
 - `WholeScopeExclusive`：是否天然需要整段范围一起认领。
 
 示例：
 
 - CSV：`single`，一个资源即可。
-- Shapefile：`multi`，主文件加同 basename 组件。
+- Shapefile：`multi`，主文件加同 basename refs。
 - Iceberg：`whole`，整体范围认领。
 
 这一组能力只服务 Meta 调度，不直接等于 item 结果。
@@ -240,13 +246,13 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 
 容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
 
-容器 child、组件和嵌套容器路径必须区分：
+容器 child、multi ref 和嵌套容器路径必须区分：
 
 - `child_name` 表示当前容器第一层可寻址子对象，例如 Excel sheet、SQLite table、ZIP entry 或已归并的 Shapefile child。
-- `component_path` 只表示 multi 组织格式的组件路径，例如 Shapefile 的 `.shp`、`.dbf`、`.shx`。它不表示容器内部继续下钻的路径。
+- `ref_path` 只表示 multi 组织格式的ref 路径，例如 Shapefile 的 `.shp`、`.dbf`、`.shx`。它不表示容器内部继续下钻的路径。
 - `nested_child_path` 表示当前 child 本身还是容器时继续寻址其内部对象的相对路径，例如 `data/cities.csv` 或 `inner.zip/data/cities.csv`。
 
-Manager 可以把这三个概念暴露为预览请求参数，但 `common/format` 只负责提供 `ContainerChildResolver`、组件描述和 content reader 能力，不定义 Manager 的 HTTP DTO。
+Manager 可以把这三个概念暴露为预览请求参数，但 `common/format` 只负责提供 `ContainerChildResolver`、ref 描述和 content reader 能力，不定义 Manager 的 HTTP DTO。
 
 ### Content Reader
 
@@ -266,7 +272,7 @@ Manager 面向前端的 DTO 由 Manager 组装，不应进入 `common/format`。
 合理链路是：
 
 ```text
-Manager / Transfer / Meta 构造 ResourceReader 或 io.Reader
+Manager / Transfer / Meta 构造 contentio.Reader 或 io.Reader
   -> data type info provider 或 content reader 消费输入
   -> 返回 type_info / format_info / 内容数据
   -> Manager / Transfer / Meta 各自按模块边界继续组装
@@ -282,17 +288,17 @@ common/format 使用前端渲染器参与展示决策
 
 ### Transfer
 
-Transfer 能力负责批量读写、组件读写和提交边界。
+Transfer 能力负责批量读写、ref 读写和提交边界。
 
 建议说明：
 
 - `BatchRead`
 - `BatchWrite`
-- `ComponentRead`
-- `ComponentWrite`
+- `MultiRead`
+- `MultiWrite`
 - `CommitPolicy`
 
-Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。更细的读取抽象和组件定位规则见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
+Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。更细的读取抽象和ref 定位规则见 [ADDP 资源读取抽象规范](addp资源读取抽象规范.md)。
 
 ## 能力发现视图
 
@@ -302,7 +308,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 |---|---|
 | `providers` | descriptor / capability 的声明能力，表示该格式在规范上属于哪些 info provider 家族 |
 | `content_readers` | descriptor / capability 的内容读取能力声明，表示该格式当前可提供哪些内容数据读取方式 |
-| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、兼容期 `TableProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
+| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、历史组合 provider、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
 
 上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / WPS 当前声明为文档格式和 raw/range content reader，但后端正文解析实现尚未稳定。
 
@@ -323,32 +329,37 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 
 1. 可确定的 data type 元数据进入对应 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider` 或 `ContainerInfoProvider`。
 2. 格式私有元信息进入 `FormatInfoProvider`，由 Meta normalizer 写入 `format_info.<format>`。
-3. 文本片段、缩略图、raw content、range content 等进入 content reader。
+3. 样本、连续读取会话、文本片段、缩略图、raw content、range content 等进入 content reader / reader provider。
 4. Meta 只负责编排 provider / reader 结果并写入标准 attributes 分区；按需对象元信息提取也必须走 FormatInfoProvider / MediaInfoProvider 等主线能力。
 
 ## Info Provider 与 Content Reader
 
 info provider 和 content reader 是上层消费者面向数据类型能力的主入口，目标是让上层不直接感知具体 `engine type` 或 `format type`。
 
-建议围绕两类 provider 收口：
+建议围绕四类能力收口：
 
 | 类别 | 职责 | 示例 |
 |---|---|---|
 | info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` |
-| content reader | 提供按 data type 组织后的内容数据，供 Manager / Transfer 消费 | `TableSampleReader`、`DocumentTextReader`、`RawContentReader`、`RangeContentReader`、`MediaThumbnailReader` |
+| sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / Transfer 探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader` |
+| continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider` |
+| writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider` |
 
-info provider 只回答对应 data type 的元数据语义，content reader 只回答对应 data type 或格式的内容读取能力。二者都不回答格式识别，也不回答 item 归并。
+info provider 只回答对应 data type 的元数据语义；sample / text reader 只回答预览、探查和轻量片段读取；continuous reader provider / writer provider 面向全量批处理。它们都不回答格式识别，也不回答 item 归并。
 
-### Table Info / Sample Provider
+### Table Info / Sample / Reader / Writer Provider
 
 表格型 info provider 和 content reader 是最先需要稳定的数据类型能力，因为它同时覆盖 Meta 表结构提取、Manager 内容查看和 Transfer 批量读写。
 
-第一版拆成两条主能力：
+表格能力按消费意图拆成四类：
 
 - `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源。
 - `TableSampleReader`：返回分页或采样样本，是 Manager 表格探查和 Transfer 探查的主来源。
+- `TableReaderProvider`：打开单资源 table 的连续读取会话，是 Transfer 读取 encoded table 的主入口。
+- `TableWriterProvider`：打开单资源 table 的连续写出会话，是 Transfer 写出 encoded table 的主入口。
+- `MultiTableReaderProvider` / `MultiTableWriterProvider`：面向 Shapefile 等 multi table 的连续读写。
 
-二者可以由同一个格式实现同时提供，也可以分别提供。当前代码中的 `TableProvider` 是兼容期组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。
+这些能力可以由同一个格式实现同时提供，也可以分别提供。当前代码中的 `TableProvider` 是历史组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`；`MultiTableProvider` 和 `ScopeTableProvider` 也是历史组合接口，只表达 info / sample，不表达连续全量读写。
 
 后续完整表格能力至少要覆盖：
 
@@ -362,10 +373,10 @@ info provider 只回答对应 data type 的元数据语义，content reader 只�
 
 - `Describe`：返回表结构与字段元数据。
 - `Sample`：返回分页或采样样本。
-- `ReadBatch`：返回批量读取所需的结构或数据。
-- `WriteBatch`：接受批量写入所需的结构或数据。
+- `ReadSession`：打开连续读取会话。
+- `WriteSession`：打开连续写出会话。
 
-这些名称是能力分组，不要求直接成为最终 Go 方法名。只读来源可以只实现 `Describe` / `Sample`；只用于内容查看的实现不必实现 `WriteBatch`。
+这些名称是能力分组，不要求直接成为最终 Go 方法名。只用于元数据和预览的实现可以只实现 `Describe` / `Sample`；不参与 Transfer 写侧的实现不必实现 `WriteSession`。
 
 `SpatialProvider` 不是另一个表类型，而是横切 provider。表格内容查看没有空间细节时仍应可用，只是空间信息更少。
 
@@ -409,9 +420,9 @@ info provider 只回答对应 data type 的元数据语义，content reader 只�
 
 Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫描 child 内容。ZIP 中嵌套 ZIP、目录中嵌套文件等关系由 Manager 或其他消费者在用户选中 child 后按需解析：如果 child 仍是 `data_type=container`，继续进入同一套 container provider / resolver 链路。
 
-`ContainerChildResolver` 不连接 engine，也不自己构造 engine reader。调用方必须先基于 engine capability、权限、连接信息和资源路径构造 `resource.ResourceReader` 与父 `ResourceRef`。resolver 只把父资源和 child locator 转换为两类结果之一：
+`ContainerChildResolver` 不连接 engine，也不自己构造 engine reader。调用方必须先基于 engine capability、权限、连接信息和资源路径构造 `contentio.Reader` 与父 `Ref`。resolver 只把父资源和 child locator 转换为两类结果之一：
 
-- stream child：返回 child 自己的 `ResourceReader` / `ResourceRef`，例如 ZIP entry、目录文件；后续按 child 的 `data_type` / `format` 调对应 reader。
+- stream child：返回 child 自己的 `Reader` / `Ref`，例如 ZIP entry、目录文件；后续按 child 的 `data_type` / `format` 调对应 reader。
 - native child：复用父资源和 child 定位 options，例如 SQLite table、Excel sheet、GeoPackage layer；后续按父格式的 table reader 读取指定 child。
 
 ### GraphInfoProvider / GraphSampleReader
@@ -471,7 +482,7 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 | 维度 | 作用 |
 |---|---|
 | engine capability | 数据在哪里，如何连接，如何列举，如何读写原生资源 |
-| format capability | 数据如何编码 / 解码，如何组织组件，如何提交 |
+| format capability | 数据如何编码 / 解码，如何组织 refs，如何提交 |
 | info provider / content reader | 以什么平台语义组织 schema、样本、batch、children |
 
 典型读取链路：
@@ -488,7 +499,7 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 
 批量读写需要额外确认：
 
-- 是否支持列表、分区、多组件。
+- 是否支持列表、分区、多 ref。
 - 是否支持 seek / checkpoint。
 - 是否支持原子提交。
 - 是否支持并行写。

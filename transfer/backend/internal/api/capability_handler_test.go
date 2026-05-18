@@ -42,8 +42,8 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 
 	shapefile := byValue["shapefile"]
-	if shapefile.ProviderKind != "component_table" {
-		t.Fatalf("shapefile provider_kind = %q, want component_table", shapefile.ProviderKind)
+	if shapefile.ProviderKind != "multi_table" {
+		t.Fatalf("shapefile provider_kind = %q, want multi_table", shapefile.ProviderKind)
 	}
 	if !shapefile.MultiFile {
 		t.Fatal("shapefile multi_file = false, want true")

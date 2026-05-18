@@ -39,10 +39,10 @@ type AnalysisService struct {
 	systemClient *commonClient.SystemClient
 
 	// GDS 能力缓存（实例级）
-	gdsChecked  bool
-	gdsAvail    bool
-	gdsVersion  string
-	gdsCacheMu  sync.RWMutex
+	gdsChecked bool
+	gdsAvail   bool
+	gdsVersion string
+	gdsCacheMu sync.RWMutex
 
 	// Spatial 能力缓存（实例级）
 	spatialChecked bool

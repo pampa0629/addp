@@ -55,14 +55,14 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 		t.Fatalf("Format = %q, want shapefile from common/format registry", result.Items[0].Format)
 	}
 	if !result.Claims["/shp/farmland.dbf"] || !result.Claims["/shp/roads.shx"] {
-		t.Fatalf("expected component files to be claimed: %#v", result.Claims)
+		t.Fatalf("expected ref files to be claimed: %#v", result.Claims)
 	}
 	if result.Claims["/shp/readme.pdf"] {
 		t.Fatalf("unrelated file must not be claimed: %#v", result.Claims)
 	}
 }
 
-func TestCommonDataItemResolverRejectsIncompleteMultiComponents(t *testing.T) {
+func TestCommonDataItemResolverRejectsIncompleteMultiRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "bucket/roads/roads.shp"},
@@ -78,7 +78,7 @@ func TestCommonDataItemResolverRejectsIncompleteMultiComponents(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemResolverRejectsCrossDirectoryComponents(t *testing.T) {
+func TestCommonDataItemResolverRejectsCrossDirectoryRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []plugin.FileEntry{
 		{Name: "roads.shp", Path: "dataset/roads/roads.shp"},
@@ -95,7 +95,7 @@ func TestCommonDataItemResolverRejectsCrossDirectoryComponents(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemResolverEnrichesComponentTableViaFormatProvider(t *testing.T) {
+func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
 	t.Parallel()
 
 	base := createMetaTestShapefile(t)
@@ -116,7 +116,7 @@ func TestCommonDataItemResolverEnrichesComponentTableViaFormatProvider(t *testin
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader: componentMapContentReader{content: content},
+		ContentReader: refMapContentReader{content: content},
 		EngineID:      1,
 		DirPath:       "bucket/gis",
 		Files:         files,
@@ -141,7 +141,7 @@ func TestCommonDataItemResolverEnrichesComponentTableViaFormatProvider(t *testin
 	}
 }
 
-func TestCommonDataItemResolverEnrichesObjectComponentsWithBucketRelativePaths(t *testing.T) {
+func TestCommonDataItemResolverEnrichesObjectRefsWithBucketRelativePaths(t *testing.T) {
 	t.Parallel()
 
 	base := createMetaTestShapefile(t)
@@ -162,7 +162,7 @@ func TestCommonDataItemResolverEnrichesObjectComponentsWithBucketRelativePaths(t
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader:  componentMapContentReader{content: content},
+		ContentReader:  refMapContentReader{content: content},
 		EngineID:       1,
 		CatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
 		DirPath:        "gis",
@@ -179,29 +179,29 @@ func TestCommonDataItemResolverEnrichesObjectComponentsWithBucketRelativePaths(t
 	}
 }
 
-type componentMapContentReader struct {
+type refMapContentReader struct {
 	content map[string][]byte
 }
 
-func (r componentMapContentReader) Type() string         { return "map" }
-func (r componentMapContentReader) DisplayName() string  { return "map" }
-func (r componentMapContentReader) EngineOrigin() string { return "general" }
-func (r componentMapContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+func (r refMapContentReader) Type() string         { return "map" }
+func (r refMapContentReader) DisplayName() string  { return "map" }
+func (r refMapContentReader) EngineOrigin() string { return "general" }
+func (r refMapContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
 	return nil
 }
-func (r componentMapContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+func (r refMapContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error {
 	return nil
 }
-func (r componentMapContentReader) DefaultPort() int          { return 0 }
-func (r componentMapContentReader) RequiredFields() []string  { return nil }
-func (r componentMapContentReader) SensitiveFields() []string { return nil }
-func (r componentMapContentReader) Capabilities() plugin.EngineCapabilities {
+func (r refMapContentReader) DefaultPort() int          { return 0 }
+func (r refMapContentReader) RequiredFields() []string  { return nil }
+func (r refMapContentReader) SensitiveFields() []string { return nil }
+func (r refMapContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (r componentMapContentReader) StoreSemantics() plugin.StoreSemantics {
+func (r refMapContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r componentMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r refMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	key := path.StringPath()
 	if len(path.Segments) > 0 && path.Segments[0].Name == "bucket" {
 		key = strings.TrimPrefix(key, "bucket/")

@@ -10,13 +10,14 @@ type ProviderRegistry struct {
 	mu                      sync.RWMutex
 	formatPlugins           map[FormatType]FormatPlugin
 	tableProviders          map[FormatType]TableProvider
-	componentTableProviders map[FormatType]ComponentTableProvider
+	multiTableProviders     map[FormatType]MultiTableProvider
 	formatInfoProviders     map[FormatType]FormatInfoProvider
 	tableInfoProviders      map[FormatType]TableInfoProvider
 	tableSampleProviders    map[FormatType]TableSampleProvider
 	tableReaderProviders    map[FormatType]TableReaderProvider
+	multiTableReaders       map[FormatType]MultiTableReaderProvider
 	tableWriterProviders    map[FormatType]TableWriterProvider
-	componentTableWriters   map[FormatType]ComponentTableWriterProvider
+	multiTableWriters       map[FormatType]MultiTableWriterProvider
 	documentProviders       map[FormatType]DocumentProvider
 	documentInfoProviders   map[FormatType]DocumentInfoProvider
 	documentTextReaders     map[FormatType]DocumentTextReader
@@ -31,13 +32,14 @@ func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
 		formatPlugins:           make(map[FormatType]FormatPlugin),
 		tableProviders:          make(map[FormatType]TableProvider),
-		componentTableProviders: make(map[FormatType]ComponentTableProvider),
+		multiTableProviders:     make(map[FormatType]MultiTableProvider),
 		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
 		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
 		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
 		tableReaderProviders:    make(map[FormatType]TableReaderProvider),
+		multiTableReaders:       make(map[FormatType]MultiTableReaderProvider),
 		tableWriterProviders:    make(map[FormatType]TableWriterProvider),
-		componentTableWriters:   make(map[FormatType]ComponentTableWriterProvider),
+		multiTableWriters:       make(map[FormatType]MultiTableWriterProvider),
 		documentProviders:       make(map[FormatType]DocumentProvider),
 		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
 		documentTextReaders:     make(map[FormatType]DocumentTextReader),
@@ -71,12 +73,12 @@ func (r *ProviderRegistry) GetTableProvider(formatType FormatType) (TableProvide
 	return providerFromMap(r, r.tableProviders, formatType, "table provider")
 }
 
-func GetComponentTableProvider(formatType FormatType) (ComponentTableProvider, error) {
-	return globalProviderRegistry.GetComponentTableProvider(formatType)
+func GetMultiTableProvider(formatType FormatType) (MultiTableProvider, error) {
+	return globalProviderRegistry.GetMultiTableProvider(formatType)
 }
 
-func (r *ProviderRegistry) GetComponentTableProvider(formatType FormatType) (ComponentTableProvider, error) {
-	return providerFromMap(r, r.componentTableProviders, formatType, "component table provider")
+func (r *ProviderRegistry) GetMultiTableProvider(formatType FormatType) (MultiTableProvider, error) {
+	return providerFromMap(r, r.multiTableProviders, formatType, "multi table provider")
 }
 
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
@@ -103,6 +105,14 @@ func (r *ProviderRegistry) GetTableReaderProvider(formatType FormatType) (TableR
 	return providerFromMap(r, r.tableReaderProviders, formatType, "table reader provider")
 }
 
+func GetMultiTableReaderProvider(formatType FormatType) (MultiTableReaderProvider, error) {
+	return globalProviderRegistry.GetMultiTableReaderProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetMultiTableReaderProvider(formatType FormatType) (MultiTableReaderProvider, error) {
+	return providerFromMap(r, r.multiTableReaders, formatType, "multi table reader provider")
+}
+
 func GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) {
 	return globalProviderRegistry.GetTableWriterProvider(formatType)
 }
@@ -111,12 +121,12 @@ func (r *ProviderRegistry) GetTableWriterProvider(formatType FormatType) (TableW
 	return providerFromMap(r, r.tableWriterProviders, formatType, "table writer provider")
 }
 
-func GetComponentTableWriterProvider(formatType FormatType) (ComponentTableWriterProvider, error) {
-	return globalProviderRegistry.GetComponentTableWriterProvider(formatType)
+func GetMultiTableWriterProvider(formatType FormatType) (MultiTableWriterProvider, error) {
+	return globalProviderRegistry.GetMultiTableWriterProvider(formatType)
 }
 
-func (r *ProviderRegistry) GetComponentTableWriterProvider(formatType FormatType) (ComponentTableWriterProvider, error) {
-	return providerFromMap(r, r.componentTableWriters, formatType, "component table writer provider")
+func (r *ProviderRegistry) GetMultiTableWriterProvider(formatType FormatType) (MultiTableWriterProvider, error) {
+	return providerFromMap(r, r.multiTableWriters, formatType, "multi table writer provider")
 }
 
 func GetDocumentProvider(formatType FormatType) (DocumentProvider, error) {
@@ -211,12 +221,12 @@ func (r *ProviderRegistry) ListTableProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableProviders)
 }
 
-func ListComponentTableProviderFormats() []FormatType {
-	return globalProviderRegistry.ListComponentTableProviderFormats()
+func ListMultiTableProviderFormats() []FormatType {
+	return globalProviderRegistry.ListMultiTableProviderFormats()
 }
 
-func (r *ProviderRegistry) ListComponentTableProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.componentTableProviders)
+func (r *ProviderRegistry) ListMultiTableProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.multiTableProviders)
 }
 
 func ListTableInfoProviderFormats() []FormatType {
@@ -243,6 +253,14 @@ func (r *ProviderRegistry) ListTableReaderProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableReaderProviders)
 }
 
+func ListMultiTableReaderProviderFormats() []FormatType {
+	return globalProviderRegistry.ListMultiTableReaderProviderFormats()
+}
+
+func (r *ProviderRegistry) ListMultiTableReaderProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.multiTableReaders)
+}
+
 func ListTableWriterProviderFormats() []FormatType {
 	return globalProviderRegistry.ListTableWriterProviderFormats()
 }
@@ -251,12 +269,12 @@ func (r *ProviderRegistry) ListTableWriterProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableWriterProviders)
 }
 
-func ListComponentTableWriterProviderFormats() []FormatType {
-	return globalProviderRegistry.ListComponentTableWriterProviderFormats()
+func ListMultiTableWriterProviderFormats() []FormatType {
+	return globalProviderRegistry.ListMultiTableWriterProviderFormats()
 }
 
-func (r *ProviderRegistry) ListComponentTableWriterProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.componentTableWriters)
+func (r *ProviderRegistry) ListMultiTableWriterProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.multiTableWriters)
 }
 
 func ListDocumentProviderFormats() []FormatType {

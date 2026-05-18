@@ -6,19 +6,19 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
-func listParquetResources(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+func listParquetResources(ctx context.Context, reader contentio.Reader, scope contentio.Ref) ([]contentio.Ref, error) {
 	if reader == nil {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	refs, err := listParquetResourcesRecursive(ctx, reader, scope, map[string]bool{})
 	if err != nil {
 		return nil, err
 	}
 	if len(refs) == 0 {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].Path < refs[j].Path
@@ -26,7 +26,7 @@ func listParquetResources(ctx context.Context, reader resource.ResourceReader, s
 	return refs, nil
 }
 
-func listParquetResourcesRecursive(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, seen map[string]bool) ([]resource.ResourceRef, error) {
+func listParquetResourcesRecursive(ctx context.Context, reader contentio.Reader, scope contentio.Ref, seen map[string]bool) ([]contentio.Ref, error) {
 	if seen[scope.Path] {
 		return nil, nil
 	}
@@ -35,9 +35,9 @@ func listParquetResourcesRecursive(ctx context.Context, reader resource.Resource
 	if err != nil {
 		return nil, err
 	}
-	result := make([]resource.ResourceRef, 0, len(refs))
+	result := make([]contentio.Ref, 0, len(refs))
 	for _, ref := range refs {
-		if ref.Role == resource.ResourceRoleScope {
+		if ref.Role == contentio.RoleScope {
 			children, err := listParquetResourcesRecursive(ctx, reader, ref, seen)
 			if err != nil {
 				return nil, err

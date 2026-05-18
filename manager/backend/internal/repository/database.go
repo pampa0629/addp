@@ -5,9 +5,9 @@ import (
 	"log"
 	"time"
 
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
-	commonRepo "github.com/addp/common/repository"
 	"gorm.io/gorm"
 )
 

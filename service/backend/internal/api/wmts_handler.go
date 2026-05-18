@@ -139,14 +139,14 @@ type Contents struct {
 
 // Layer 图层定义
 type Layer struct {
-	Title              string              `xml:"ows:Title"`
-	Abstract           string              `xml:"ows:Abstract,omitempty"`
-	Identifier         string              `xml:"ows:Identifier"`
-	Style              Style               `xml:"Style"`
-	Format             string              `xml:"Format"`
-	TileMatrixSetLink  TileMatrixSetLink   `xml:"TileMatrixSetLink"`
-	ResourceURL        ResourceURL         `xml:"ResourceURL"`
-	WGS84BoundingBox   *WGS84BoundingBox   `xml:"ows:WGS84BoundingBox,omitempty"`
+	Title             string            `xml:"ows:Title"`
+	Abstract          string            `xml:"ows:Abstract,omitempty"`
+	Identifier        string            `xml:"ows:Identifier"`
+	Style             Style             `xml:"Style"`
+	Format            string            `xml:"Format"`
+	TileMatrixSetLink TileMatrixSetLink `xml:"TileMatrixSetLink"`
+	ResourceURL       ResourceURL       `xml:"ResourceURL"`
+	WGS84BoundingBox  *WGS84BoundingBox `xml:"ows:WGS84BoundingBox,omitempty"`
 }
 
 // Style 样式定义
@@ -175,20 +175,20 @@ type WGS84BoundingBox struct {
 
 // TileMatrixSet 瓦片矩阵集
 type TileMatrixSet struct {
-	Identifier      string        `xml:"ows:Identifier"`
-	SupportedCRS    string        `xml:"ows:SupportedCRS"`
-	TileMatrices    []TileMatrix  `xml:"TileMatrix"`
+	Identifier   string       `xml:"ows:Identifier"`
+	SupportedCRS string       `xml:"ows:SupportedCRS"`
+	TileMatrices []TileMatrix `xml:"TileMatrix"`
 }
 
 // TileMatrix 瓦片矩阵
 type TileMatrix struct {
-	Identifier      string  `xml:"ows:Identifier"`
+	Identifier       string  `xml:"ows:Identifier"`
 	ScaleDenominator float64 `xml:"ScaleDenominator"`
-	TopLeftCorner   string  `xml:"TopLeftCorner"`
-	TileWidth       int     `xml:"TileWidth"`
-	TileHeight      int     `xml:"TileHeight"`
-	MatrixWidth     int     `xml:"MatrixWidth"`
-	MatrixHeight    int     `xml:"MatrixHeight"`
+	TopLeftCorner    string  `xml:"TopLeftCorner"`
+	TileWidth        int     `xml:"TileWidth"`
+	TileHeight       int     `xml:"TileHeight"`
+	MatrixWidth      int     `xml:"MatrixWidth"`
+	MatrixHeight     int     `xml:"MatrixHeight"`
 }
 
 // ExceptionReport 异常报告

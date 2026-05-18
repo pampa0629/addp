@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
-	"strings"
 
+	"github.com/addp/common/contentio"
+	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 type TablePipelineMetrics struct {
@@ -38,9 +37,9 @@ type TableBatchWriter interface {
 	Abort(ctx context.Context) error
 }
 
-type componentTableSourceProvider interface {
-	format.ComponentTableProvider
-	format.ComponentSpecProvider
+type multiTableSourceProvider interface {
+	format.MultiTableProvider
+	format.RelatedRefSpecProvider
 }
 
 type targetResourceDeleter interface {
@@ -60,19 +59,19 @@ func (d *engineTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 	return d.provider.DeleteResource(ctx, d.connInfo, d.path)
 }
 
-type componentTargetResourceDeleter struct {
-	provider   engineplugin.ResourceDeleteProvider
-	connInfo   engineplugin.ConnectionInfo
-	basePath   engineplugin.CatalogPath
-	components []resource.ComponentRef
+type multiTargetResourceDeleter struct {
+	provider engineplugin.ResourceDeleteProvider
+	connInfo engineplugin.ConnectionInfo
+	basePath engineplugin.CatalogPath
+	refs     []contentio.Ref
 }
 
-func (d *componentTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
+func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 	if d == nil || d.provider == nil {
 		return nil
 	}
-	for _, component := range d.components {
-		path, err := contentCatalogPathForComponent(d.basePath, component.ResourceRef)
+	for _, ref := range d.refs {
+		path, err := contentadapter.CatalogPath(d.basePath, ref)
 		if err != nil {
 			return err
 		}
@@ -81,33 +80,6 @@ func (d *componentTargetResourceDeleter) DeleteTarget(ctx context.Context) error
 		}
 	}
 	return nil
-}
-
-func contentCatalogPathForComponent(base engineplugin.CatalogPath, ref resource.ResourceRef) (engineplugin.CatalogPath, error) {
-	if len(base.Segments) == 0 {
-		return engineplugin.CatalogPath{}, fmt.Errorf("resource base path requires at least one segment")
-	}
-	name := filepath.Base(ref.Path)
-	if name == "." || name == "/" || name == "" {
-		return engineplugin.CatalogPath{}, fmt.Errorf("resource path %q has no file name", ref.Path)
-	}
-	next := engineplugin.CatalogPath{
-		Version:  base.Version,
-		EngineID: base.EngineID,
-		Segments: append([]engineplugin.CatalogSegment(nil), base.Segments...),
-	}
-	if next.Version == "" {
-		next.Version = engineplugin.CatalogPathVersion
-	}
-	last := &next.Segments[len(next.Segments)-1]
-	last.Name = name
-	if strings.TrimSpace(last.Term) == "" {
-		last.Term = engineplugin.CatalogTermFile
-	}
-	if strings.TrimSpace(last.Kind) == "" {
-		last.Kind = engineplugin.CatalogKindFile
-	}
-	return next, nil
 }
 
 type TablePipeline struct {
@@ -337,31 +309,46 @@ func (r *nativeOffsetBatchReader) Close(context.Context) error {
 }
 
 type encodedContentTableSource struct {
-	reader            engineplugin.ContentReadableProvider
-	tableProvider     format.TableReaderProvider
-	componentProvider componentTableSourceProvider
-	sampleProvider    format.TableSampleReader
-	infoProvider      format.TableInfoProvider
-	connInfo          engineplugin.ConnectionInfo
-	path              engineplugin.CatalogPath
-	readOptions       engineplugin.ReadOptions
-	parseOptions      *format.ParseOptions
+	reader              engineplugin.ContentReadableProvider
+	tableProvider       format.TableReaderProvider
+	multiReaderProvider format.MultiTableReaderProvider
+	multiProvider       multiTableSourceProvider
+	sampleProvider      format.TableSampleReader
+	infoProvider        format.TableInfoProvider
+	connInfo            engineplugin.ConnectionInfo
+	path                engineplugin.CatalogPath
+	readOptions         engineplugin.ReadOptions
+	parseOptions        *format.ParseOptions
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
-	if s.componentProvider != nil {
-		resourceReader := resource.NewEngineContentReader(s.reader, s.connInfo, s.path, s.readOptions)
-		components := resource.SameBasenameComponents(s.path.StringPath(), s.componentProvider.ComponentSpecs())
-		componentReader := resource.NewStaticComponentReader(resourceReader, components)
-		schema, err := s.componentProvider.DescribeTableComponents(ctx, componentReader, s.parseOptions)
+	if s.multiReaderProvider != nil {
+		contentReader := contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions)
+		refs := contentio.SameBasenameRefs(s.path.StringPath(), s.multiReaderProvider.RelatedRefSpecs())
+		multiReader := contentio.NewStaticMultiReader(contentReader, refs)
+		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, multiReader, s.parseOptions)
 		if err != nil {
-			return nil, fmt.Errorf("describe encoded source table components: %w", err)
+			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
-		return &componentEncodedTableBatchReader{
-			componentReader: componentReader,
-			provider:        s.componentProvider,
-			schema:          schema,
-			parseOptions:    s.parseOptions,
+		return &multiTableBatchReader{
+			tableReader: tableReader,
+			schema:      tableReader.Schema(),
+		}, nil
+	}
+
+	if s.multiProvider != nil {
+		contentReader := contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions)
+		refs := contentio.SameBasenameRefs(s.path.StringPath(), s.multiProvider.RelatedRefSpecs())
+		multiReader := contentio.NewStaticMultiReader(contentReader, refs)
+		schema, err := s.multiProvider.DescribeMultiTable(ctx, multiReader, s.parseOptions)
+		if err != nil {
+			return nil, fmt.Errorf("describe encoded source table refs: %w", err)
+		}
+		return &multiEncodedTableBatchReader{
+			multiReader:  multiReader,
+			provider:     s.multiProvider,
+			schema:       schema,
+			parseOptions: s.parseOptions,
 		}, nil
 	}
 
@@ -392,6 +379,40 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		schema = tableReader.Schema()
 	}
 	return &encodedTableBatchReader{input: input, tableReader: tableReader, schema: schema}, nil
+}
+
+type multiTableBatchReader struct {
+	tableReader format.TableReader
+	schema      *format.TableInfo
+	offset      int64
+}
+
+func (r *multiTableBatchReader) Schema() *format.TableInfo {
+	if !tableSchemaEmpty(r.schema) {
+		return r.schema
+	}
+	return r.tableReader.Schema()
+}
+
+func (r *multiTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
+	rows, err := r.tableReader.ReadRows(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read encoded source multi table rows at offset %d: %w", r.offset, err)
+	}
+	batch := &engineplugin.BatchData{
+		Rows:   rows,
+		Fields: tableInfoFields(r.Schema()),
+		Offset: r.offset,
+	}
+	r.offset += int64(len(rows))
+	return batch, nil
+}
+
+func (r *multiTableBatchReader) Close(ctx context.Context) error {
+	if r.tableReader == nil {
+		return nil
+	}
+	return r.tableReader.Close(ctx)
 }
 
 func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*format.TableInfo, error) {
@@ -454,26 +475,26 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 	return firstErr
 }
 
-type componentEncodedTableBatchReader struct {
-	componentReader resource.ComponentReader
-	provider        format.ComponentTableProvider
-	schema          *format.TableInfo
-	parseOptions    *format.ParseOptions
-	offset          int64
-	done            bool
+type multiEncodedTableBatchReader struct {
+	multiReader  contentio.MultiReader
+	provider     format.MultiTableProvider
+	schema       *format.TableInfo
+	parseOptions *format.ParseOptions
+	offset       int64
+	done         bool
 }
 
-func (r *componentEncodedTableBatchReader) Schema() *format.TableInfo {
+func (r *multiEncodedTableBatchReader) Schema() *format.TableInfo {
 	return r.schema
 }
 
-func (r *componentEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
+func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
 	if r.done {
 		return &engineplugin.BatchData{}, nil
 	}
-	rows, err := r.provider.SampleTableComponents(ctx, r.componentReader, r.offset, int64(limit), r.parseOptions)
+	rows, err := r.provider.SampleMultiTable(ctx, r.multiReader, r.offset, int64(limit), r.parseOptions)
 	if err != nil {
-		return nil, fmt.Errorf("sample encoded source table components at offset %d: %w", r.offset, err)
+		return nil, fmt.Errorf("sample encoded source table refs at offset %d: %w", r.offset, err)
 	}
 	batch := &engineplugin.BatchData{
 		Rows:   rows,
@@ -487,7 +508,7 @@ func (r *componentEncodedTableBatchReader) ReadBatch(ctx context.Context, limit 
 	return batch, nil
 }
 
-func (r *componentEncodedTableBatchReader) Close(context.Context) error {
+func (r *multiEncodedTableBatchReader) Close(context.Context) error {
 	return nil
 }
 
@@ -658,14 +679,14 @@ func (w *nativeTableSessionBatchWriter) Abort(ctx context.Context) error {
 }
 
 type encodedContentTableTarget struct {
-	writer            engineplugin.ContentWritableProvider
-	deleter           *engineTargetResourceDeleter
-	formatProvider    format.TableWriterProvider
-	componentProvider format.ComponentTableWriterProvider
-	connInfo          engineplugin.ConnectionInfo
-	path              engineplugin.CatalogPath
-	writeOptions      engineplugin.WriteOptions
-	formatOptions     *format.WriteOptions
+	writer         engineplugin.ContentWritableProvider
+	deleter        *engineTargetResourceDeleter
+	formatProvider format.TableWriterProvider
+	multiProvider  format.MultiTableWriterProvider
+	connInfo       engineplugin.ConnectionInfo
+	path           engineplugin.CatalogPath
+	writeOptions   engineplugin.WriteOptions
+	formatOptions  *format.WriteOptions
 }
 
 func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.TableInfo) (TableBatchWriter, error) {
@@ -675,22 +696,22 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 			return nil, err
 		}
 	}
-	if tableSchemaEmpty(schema) && t.componentProvider == nil {
+	if tableSchemaEmpty(schema) && t.multiProvider == nil {
 		output, err := t.writer.CreateContent(ctx, t.connInfo, t.path, t.writeOptions)
 		if err != nil {
 			return nil, fmt.Errorf("create empty encoded target content: %w", err)
 		}
 		return &emptyContentBatchWriter{output: output}, nil
 	}
-	if t.componentProvider != nil {
-		resourceWriter := resource.NewEngineContentWriter(t.writer, t.connInfo, t.path, t.writeOptions)
-		componentWriter := resource.NewStaticComponentWriter(resourceWriter, resource.SameBasenameComponents(t.path.StringPath(), t.componentProvider.ComponentSpecs()))
-		tableWriter, err := t.componentProvider.OpenComponentTableWriter(ctx, componentWriter, resourceRefFromCatalogPath(t.path), schema, t.formatOptions)
+	if t.multiProvider != nil {
+		contentWriter := contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions)
+		multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()))
+		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, multiWriter, contentRefFromCatalogPath(t.path), schema, t.formatOptions)
 		if err != nil {
-			_ = componentWriter.AbortComponents(ctx)
-			return nil, fmt.Errorf("open encoded component table writer: %w", err)
+			_ = multiWriter.Abort(ctx)
+			return nil, fmt.Errorf("open encoded multi table writer: %w", err)
 		}
-		return &componentTableBatchWriter{componentWriter: componentWriter, tableWriter: tableWriter}, nil
+		return &multiTableBatchWriter{multiWriter: multiWriter, tableWriter: tableWriter}, nil
 	}
 
 	output, err := t.writer.CreateContent(ctx, t.connInfo, t.path, t.writeOptions)
@@ -706,20 +727,20 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 }
 
 func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) error {
-	if t.componentProvider == nil {
+	if t.multiProvider == nil {
 		if err := t.deleter.DeleteTarget(ctx); err != nil {
 			return fmt.Errorf("delete encoded target before write: %w", err)
 		}
 		return nil
 	}
-	componentDeleter := &componentTargetResourceDeleter{
-		provider:   t.deleter.provider,
-		connInfo:   t.deleter.connInfo,
-		basePath:   t.path,
-		components: resource.SameBasenameComponents(t.path.StringPath(), t.componentProvider.ComponentSpecs()),
+	multiDeleter := &multiTargetResourceDeleter{
+		provider: t.deleter.provider,
+		connInfo: t.deleter.connInfo,
+		basePath: t.path,
+		refs:     contentio.SameBasenameRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()),
 	}
-	if err := componentDeleter.DeleteTarget(ctx); err != nil {
-		return fmt.Errorf("delete encoded component target before write: %w", err)
+	if err := multiDeleter.DeleteTarget(ctx); err != nil {
+		return fmt.Errorf("delete encoded multi target before write: %w", err)
 	}
 	return nil
 }
@@ -790,23 +811,23 @@ func (w *contentTableBatchWriter) Abort(context.Context) error {
 	return w.output.Close()
 }
 
-type componentTableBatchWriter struct {
-	componentWriter resource.ComponentWriter
-	tableWriter     format.TableWriter
-	closed          bool
+type multiTableBatchWriter struct {
+	multiWriter contentio.MultiWriter
+	tableWriter format.TableWriter
+	closed      bool
 }
 
-func (w *componentTableBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
+func (w *multiTableBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
 	if err := w.tableWriter.WriteRows(ctx, batch.Rows); err != nil {
-		return fmt.Errorf("write encoded component target rows at offset %d: %w", batch.Offset, err)
+		return fmt.Errorf("write encoded multi target rows at offset %d: %w", batch.Offset, err)
 	}
 	return nil
 }
 
-func (w *componentTableBatchWriter) Close(ctx context.Context) error {
+func (w *multiTableBatchWriter) Close(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
@@ -814,10 +835,10 @@ func (w *componentTableBatchWriter) Close(ctx context.Context) error {
 	return w.tableWriter.Close(ctx)
 }
 
-func (w *componentTableBatchWriter) Abort(ctx context.Context) error {
+func (w *multiTableBatchWriter) Abort(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
 	w.closed = true
-	return w.componentWriter.AbortComponents(ctx)
+	return w.multiWriter.Abort(ctx)
 }

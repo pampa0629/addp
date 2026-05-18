@@ -150,7 +150,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 | 文件格式 | 格式信息示例 |
 |---|---|
 | `csv` | delimiter、encoding、has_header、quote_char |
-| `shapefile` | base_name、component_extensions、has_prj、shape_type、dbf_version |
+| `shapefile` | base_name、ref_extensions、has_prj、shape_type、dbf_version |
 | `json` | structure、feature_count、properties、geometry_types、bbox、crs |
 | `sqlite` | sqlite_version、table_count、tables |
 | `zip` | compression_method、entry_count、encrypted |
@@ -197,18 +197,20 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 ## Provider 与 Reader 矩阵
 
-`provider` 用于信息获取，`reader` 用于内容读取。二者不应混用。
+`provider` / `reader` 的命名跟随消费意图：info provider 提供元信息，sample / text reader 提供轻量内容，reader provider 打开连续读取会话，writer provider 打开连续写出会话。它们不应混用。
 
-| 数据类型 | info provider | content reader |
-|---|---|---|
-| `table` | `TableInfoProvider` | `TableSampleReader`、批量行读取 |
-| `document` | `DocumentInfoProvider` | `DocumentTextReader`、`RawContentReader`、`RangeContentReader` |
-| `media` | `MediaInfoProvider` | `MediaThumbnailReader`、`RawContentReader`、`RangeContentReader` |
-| `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 |
-| `graph` | `GraphInfoProvider` | `GraphSampleReader`、图查询读取 |
-| 横切能力 | `SpatialInfoProvider` 等 | 视具体能力定义，不替代 data type reader |
+| 数据类型 / 组织方式 | info provider | sample / text reader | continuous reader / writer |
+|---|---|---|---|
+| `table` + `single` | `TableInfoProvider` | `TableSampleReader` | `TableReaderProvider`、`TableWriterProvider` |
+| `table` + `multi` | `MultiTableProvider` | `MultiTableProvider` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
+| `table` + `whole` | `ScopeTableProvider` | `ScopeTableProvider` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
+| `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 engine/resource 或后续 reader 表达 |
+| `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 engine/resource 或后续 reader 表达 |
+| `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
+| `graph` | 后续 `GraphInfoProvider` | 后续 `GraphSampleReader` | 图查询读取由 graph / engine 能力表达 |
+| 横切能力 | spatial 等横切事实进入对应 data type info | 不替代 data type reader | 不替代 data type reader / writer |
 
-当前代码中的 `TableProvider` 是兼容期组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。新实现应按 info provider 与 content reader 分开设计。
+当前代码中的 `TableProvider`、`DocumentProvider`、`MultiTableProvider`、`ScopeTableProvider` 是历史组合接口。新实现应按 info、sample、continuous reader、writer 拆开设计。
 
 ## 横切能力
 
@@ -254,9 +256,9 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
-| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、scope_exclusive |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、refs、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
-| `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile components、SQLite version |
+| `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile refs、SQLite version |
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
 

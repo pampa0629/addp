@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
@@ -53,11 +53,11 @@ func TestShapefileSingleStreamTableProviderIsRejected(t *testing.T) {
 	t.Parallel()
 
 	plugin := NewPlugin(nil)
-	if _, err := plugin.DescribeTable(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
-		t.Fatalf("DescribeTable() error = %v, want component input error", err)
+	if _, err := plugin.DescribeTable(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires multi-ref input") {
+		t.Fatalf("DescribeTable() error = %v, want multi-ref input error", err)
 	}
-	if _, err := plugin.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires component input") {
-		t.Fatalf("SampleTable() error = %v, want component input error", err)
+	if _, err := plugin.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires multi-ref input") {
+		t.Fatalf("SampleTable() error = %v, want multi-ref input error", err)
 	}
 }
 
@@ -83,25 +83,25 @@ func TestShapefileReaderUsesCPGForDBFAttributes(t *testing.T) {
 	}
 }
 
-func TestShapefilePluginUsesCPGForComponentSamples(t *testing.T) {
+func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
 	t.Parallel()
 
 	base := createEncodedPointShapefile(t, "GBK", "北京")
-	components := newLocalComponentReader(base)
+	refs := newLocalRefReader(base)
 	plugin := NewPlugin(nil)
 
-	info, err := plugin.DescribeTableComponents(context.Background(), components, nil)
+	info, err := plugin.DescribeMultiTable(context.Background(), refs, nil)
 	if err != nil {
-		t.Fatalf("DescribeTableComponents() error = %v", err)
+		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
 	shpAttrs, _ := info.FormatInfo["shapefile"].(map[string]interface{})
 	if shpAttrs["encoding"] != "gbk" {
 		t.Fatalf("shapefile encoding = %#v, want gbk", shpAttrs["encoding"])
 	}
 
-	rows, err := plugin.SampleTableComponents(context.Background(), components, 0, 10, nil)
+	rows, err := plugin.SampleMultiTable(context.Background(), refs, 0, 10, nil)
 	if err != nil {
-		t.Fatalf("SampleTableComponents() error = %v", err)
+		t.Fatalf("SampleMultiTable() error = %v", err)
 	}
 	if len(rows) != 1 {
 		t.Fatalf("row count = %d, want 1", len(rows))
@@ -167,33 +167,33 @@ func patchFirstDBFAttribute(t *testing.T, path string, value string, width int) 
 	}
 }
 
-type localComponentReader struct {
+type localRefReader struct {
 	base       string
 	rangeReads int
 	openReads  int
 }
 
-func newLocalComponentReader(base string) *localComponentReader {
-	return &localComponentReader{base: base}
+func newLocalRefReader(base string) *localRefReader {
+	return &localRefReader{base: base}
 }
 
-func (r *localComponentReader) Components() []resource.ComponentRef {
-	return []resource.ComponentRef{
-		{ResourceRef: resource.NewResourceRef(r.base+".shp", resource.ResourceRoleMain), ComponentRole: "main", Required: true},
-		{ResourceRef: resource.NewResourceRef(r.base+".shx", resource.ResourceRoleComponent), ComponentRole: "index", Required: true},
-		{ResourceRef: resource.NewResourceRef(r.base+".dbf", resource.ResourceRoleComponent), ComponentRole: "attributes", Required: true},
-		{ResourceRef: resource.NewResourceRef(r.base+".cpg", resource.ResourceRoleComponent), ComponentRole: "encoding", Required: false},
+func (r *localRefReader) Refs() []contentio.Ref {
+	return []contentio.Ref{
+		{Path: r.base + ".shp", Name: filepath.Base(r.base + ".shp"), Role: contentio.RoleMain, Required: true, Primary: true},
+		{Path: r.base + ".shx", Name: filepath.Base(r.base + ".shx"), Role: "index", Required: true},
+		{Path: r.base + ".dbf", Name: filepath.Base(r.base + ".dbf"), Role: "attributes", Required: true},
+		{Path: r.base + ".cpg", Name: filepath.Base(r.base + ".cpg"), Role: "encoding"},
 	}
 }
 
-func (r *localComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
+func (r *localRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	r.openReads++
-	return os.Open(r.base + filepath.Ext(component.Path))
+	return os.Open(r.base + filepath.Ext(ref.Path))
 }
 
-func (r *localComponentReader) OpenComponentRange(ctx context.Context, component resource.ComponentRef, offset, length int64) (io.ReadCloser, error) {
+func (r *localRefReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
 	r.rangeReads++
-	file, err := os.Open(r.base + filepath.Ext(component.Path))
+	file, err := os.Open(r.base + filepath.Ext(ref.Path))
 	if err != nil {
 		return nil, err
 	}
@@ -210,34 +210,34 @@ func (r *localComponentReader) OpenComponentRange(ctx context.Context, component
 	}, nil
 }
 
-func (r *localComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {
-	for _, component := range r.Components() {
-		if strings.EqualFold(component.ComponentRole, role) {
-			return r.OpenComponent(ctx, component)
+func (r *localRefReader) OpenRole(ctx context.Context, role string) (io.ReadCloser, error) {
+	for _, ref := range r.Refs() {
+		if strings.EqualFold(ref.Role, role) {
+			return r.Open(ctx, ref)
 		}
 	}
-	return nil, resource.ErrComponentNotFound
+	return nil, contentio.ErrContentNotFound
 }
 
-func TestShapefilePluginUsesSHXIndexedComponentSample(t *testing.T) {
+func TestShapefilePluginUsesSHXIndexedRefSample(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b", "c"})
-	components := newLocalComponentReader(base)
+	refs := newLocalRefReader(base)
 	plugin := NewPlugin(nil)
 
-	rows, err := plugin.SampleTableComponents(context.Background(), components, 2, 1, nil)
+	rows, err := plugin.SampleMultiTable(context.Background(), refs, 2, 1, nil)
 	if err != nil {
-		t.Fatalf("SampleTableComponents() error = %v", err)
+		t.Fatalf("SampleMultiTable() error = %v", err)
 	}
-	if components.rangeReads == 0 {
-		t.Fatalf("rangeReads = 0, want indexed component sample path")
+	if refs.rangeReads == 0 {
+		t.Fatalf("rangeReads = 0, want indexed ref sample path")
 	}
-	if components.openReads != 0 {
-		t.Fatalf("openReads = %d, want no full component reads for indexed sample path", components.openReads)
+	if refs.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref reads for indexed sample path", refs.openReads)
 	}
-	if components.rangeReads > 6 {
-		t.Fatalf("rangeReads = %d, want page-level range reads", components.rangeReads)
+	if refs.rangeReads > 6 {
+		t.Fatalf("rangeReads = %d, want page-level range reads", refs.rangeReads)
 	}
 	if len(rows) != 1 {
 		t.Fatalf("row count = %d, want 1", len(rows))
@@ -250,75 +250,75 @@ func TestShapefilePluginUsesSHXIndexedComponentSample(t *testing.T) {
 	}
 }
 
-func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredComponentReadFails(t *testing.T) {
+func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredRefReadFails(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a", "b"})
-	components := newFailingRangeComponentReader(base, ".dbf")
+	refs := newFailingRangeRefReader(base, ".dbf")
 	plugin := NewPlugin(nil)
 
-	if _, err := plugin.SampleTableComponents(context.Background(), components, 0, 1, nil); err == nil {
-		t.Fatal("SampleTableComponents() error = nil, want indexed read error")
+	if _, err := plugin.SampleMultiTable(context.Background(), refs, 0, 1, nil); err == nil {
+		t.Fatal("SampleMultiTable() error = nil, want indexed read error")
 	}
-	if components.openReads != 0 {
-		t.Fatalf("openReads = %d, want no full component fallback on indexed read failure", components.openReads)
+	if refs.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref fallback on indexed read failure", refs.openReads)
 	}
 }
 
-func TestShapefilePluginReportsMissingRequiredComponent(t *testing.T) {
+func TestShapefilePluginReportsMissingRequiredRef(t *testing.T) {
 	t.Parallel()
 
 	base := createPointShapefileRows(t, []string{"a"})
-	components := newMissingComponentReader(base, ".dbf")
+	refs := newMissingRefReader(base, ".dbf")
 	plugin := NewPlugin(nil)
 
-	_, err := plugin.DescribeTableComponents(context.Background(), components, nil)
+	_, err := plugin.DescribeMultiTable(context.Background(), refs, nil)
 	if err == nil {
-		t.Fatal("DescribeTableComponents() error = nil, want missing required component error")
+		t.Fatal("DescribeMultiTable() error = nil, want missing required ref error")
 	}
-	if !strings.Contains(err.Error(), "failed to read required component") || !strings.Contains(err.Error(), ".dbf") {
-		t.Fatalf("DescribeTableComponents() error = %v, want missing required .dbf component", err)
+	if !strings.Contains(err.Error(), "failed to read required ref") || !strings.Contains(err.Error(), ".dbf") {
+		t.Fatalf("DescribeMultiTable() error = %v, want missing required .dbf ref", err)
 	}
 }
 
-type failingRangeComponentReader struct {
-	*localComponentReader
+type failingRangeRefReader struct {
+	*localRefReader
 	failExt string
 }
 
-func newFailingRangeComponentReader(base string, failExt string) *failingRangeComponentReader {
-	return &failingRangeComponentReader{
-		localComponentReader: newLocalComponentReader(base),
-		failExt:              failExt,
+func newFailingRangeRefReader(base string, failExt string) *failingRangeRefReader {
+	return &failingRangeRefReader{
+		localRefReader: newLocalRefReader(base),
+		failExt:        failExt,
 	}
 }
 
-func (r *failingRangeComponentReader) OpenComponentRange(ctx context.Context, component resource.ComponentRef, offset, length int64) (io.ReadCloser, error) {
-	if strings.EqualFold(filepath.Ext(component.Path), r.failExt) {
+func (r *failingRangeRefReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(ref.Path), r.failExt) {
 		r.rangeReads++
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
-	return r.localComponentReader.OpenComponentRange(ctx, component, offset, length)
+	return r.localRefReader.OpenRange(ctx, ref, offset, length)
 }
 
-type missingComponentReader struct {
-	*localComponentReader
+type missingRefReader struct {
+	*localRefReader
 	missingExt string
 }
 
-func newMissingComponentReader(base string, missingExt string) *missingComponentReader {
-	return &missingComponentReader{
-		localComponentReader: newLocalComponentReader(base),
-		missingExt:           missingExt,
+func newMissingRefReader(base string, missingExt string) *missingRefReader {
+	return &missingRefReader{
+		localRefReader: newLocalRefReader(base),
+		missingExt:     missingExt,
 	}
 }
 
-func (r *missingComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
-	if strings.EqualFold(filepath.Ext(component.Path), r.missingExt) {
+func (r *missingRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(ref.Path), r.missingExt) {
 		r.openReads++
-		return nil, errors.New("component missing")
+		return nil, errors.New("ref missing")
 	}
-	return r.localComponentReader.OpenComponent(ctx, component)
+	return r.localRefReader.Open(ctx, ref)
 }
 
 func createPointShapefileRows(t *testing.T, values []string) string {

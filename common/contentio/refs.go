@@ -1,33 +1,29 @@
-package resource
+package contentio
 
 import (
-	"errors"
 	"path/filepath"
 	"strings"
 )
 
-var ErrComponentNotFound = errors.New("resource component not found")
-
-type ComponentSpec struct {
+type RelatedRefSpec struct {
 	Extension string
 	Role      string
 	Required  bool
 	Primary   bool
 }
 
-func SameBasenameComponents(mainPath string, specs []ComponentSpec) []ComponentRef {
+func SameBasenameRefs(mainPath string, specs []RelatedRefSpec) []Ref {
 	basePath := strings.TrimSuffix(strings.Trim(mainPath, "/"), filepath.Ext(mainPath))
-	components := make([]ComponentRef, 0, len(specs))
+	refs := make([]Ref, 0, len(specs))
 	for _, spec := range specs {
 		ext := NormalizeExtension(spec.Extension)
-		componentPath := basePath + ext
-		components = append(components, ComponentRef{
-			ResourceRef:   NewResourceRef(componentPath, ResourceRoleComponent),
-			ComponentRole: normalizedComponentRole(spec.Role, ext),
-			Required:      spec.Required,
-		})
+		role := normalizedRefRole(spec.Role, ext, spec.Primary)
+		ref := NewRef(basePath+ext, role)
+		ref.Required = spec.Required
+		ref.Primary = spec.Primary
+		refs = append(refs, ref)
 	}
-	return components
+	return refs
 }
 
 func NormalizeExtension(ext string) string {
@@ -41,10 +37,13 @@ func NormalizeExtension(ext string) string {
 	return "." + ext
 }
 
-func normalizedComponentRole(role, ext string) string {
+func normalizedRefRole(role, ext string, primary bool) string {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role != "" {
 		return role
+	}
+	if primary {
+		return RoleMain
 	}
 	return strings.TrimPrefix(NormalizeExtension(ext), ".")
 }

@@ -97,7 +97,7 @@ func hasTableReader(formatType format.FormatType) bool {
 	if _, err := format.GetTableReaderProvider(formatType); err == nil {
 		return true
 	}
-	if _, err := format.GetComponentTableProvider(formatType); err == nil {
+	if _, err := format.GetMultiTableProvider(formatType); err == nil {
 		return true
 	}
 	return false
@@ -107,8 +107,8 @@ func transferWritable(formatType format.FormatType) (bool, string) {
 	if _, err := format.GetTableWriterProvider(formatType); err == nil {
 		return true, "table"
 	}
-	if _, err := format.GetComponentTableWriterProvider(formatType); err == nil {
-		return true, "component_table"
+	if _, err := format.GetMultiTableWriterProvider(formatType); err == nil {
+		return true, "multi_table"
 	}
 	return false, ""
 }

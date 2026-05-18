@@ -4,12 +4,12 @@
 
 Transfer 模块是 ADDP 的数据传输中枢，负责导入、导出、同步任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和基于 Asynq 的异步执行。
 
-当前主路径基于 `common/engine`、`common/format`、`common/resource`：
+当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
 - Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
 - 具体 engine-native 读写由 `common/engine` 提供。
 - 具体格式和数据类型读写由 `common/format` 提供。
-- 资源定位、component / range / multi component 读写由 `common/resource` 提供。
+- content 的定位、range 和 multi refs 读写由 `common/contentio` 表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
 - 旧 Transfer 私有 reader / writer 插件体系、旧 `pkg/pipeline`、旧 `pkg/plugin_loader` 不作为新功能入口。
 
 ## 技术栈与端口
@@ -27,7 +27,7 @@ transfer/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # tasks、executions、local-engines、object-storage、transforms
 │   ├── internal/planner/      # source/target endpoint -> table transfer plan
-│   ├── internal/executor/     # 基于 common engine/format/resource 的 table transfer executor
+│   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
 │   ├── internal/worker/       # Asynq queue、handler、scheduler
 │   └── pkg/vfs/               # 兼容性辅助能力，非新 transfer reader/writer 主入口
@@ -58,8 +58,8 @@ transfer/
 
 - 新任务配置必须使用 source / target endpoint JSON，旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / organization 分叉，不按具体引擎组合分叉。
-- encoded file/object 读写必须通过 `common/engine` content provider + `common/format` table provider，不在 Transfer 中新增私有 reader / writer。
-- Shapefile 等 multi component 格式通过 `common/resource` component reader / writer + `common/format` component table provider 接入。
+- encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。
+- Shapefile 等 multi 文件格式通过 `contentio.MultiReader` / `MultiWriter` + `common/format` multi table provider 接入。
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
 - 大数据传输要优先考虑批大小、流式读取、Checkpoint、进度日志和幂等重试。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。

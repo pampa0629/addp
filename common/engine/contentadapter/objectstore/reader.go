@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
 	engineobjectstore "github.com/addp/common/engine/plugins/objectstore"
-	"github.com/addp/common/resource"
 	miniogo "github.com/minio/minio-go/v7"
 )
 
@@ -26,7 +26,7 @@ func NewReaderFromConnectionInfo(connInfo plugin.ConnectionInfo) (*Reader, error
 	return &Reader{client: client}, nil
 }
 
-func (r *Reader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+func (r *Reader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("object store reader is not initialized")
 	}
@@ -41,7 +41,7 @@ func (r *Reader) Open(ctx context.Context, ref resource.ResourceRef) (io.ReadClo
 	return obj, nil
 }
 
-func (r *Reader) Stat(ctx context.Context, ref resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r *Reader) Stat(ctx context.Context, ref contentio.Ref) (*contentio.Metadata, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("object store reader is not initialized")
 	}
@@ -54,14 +54,14 @@ func (r *Reader) Stat(ctx context.Context, ref resource.ResourceRef) (*resource.
 		if err != nil {
 			return nil, err
 		}
-		return &resource.ResourceMetadata{Ref: ref, Exists: exists}, nil
+		return &contentio.Metadata{Ref: ref, Exists: exists}, nil
 	}
 
 	info, err := r.client.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &resource.ResourceMetadata{
+	return &contentio.Metadata{
 		Ref:         ref,
 		Size:        info.Size,
 		ContentType: info.ContentType,
@@ -70,7 +70,7 @@ func (r *Reader) Stat(ctx context.Context, ref resource.ResourceRef) (*resource.
 	}, nil
 }
 
-func (r *Reader) List(ctx context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r *Reader) List(ctx context.Context, scope contentio.Ref) ([]contentio.Ref, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("object store reader is not initialized")
 	}
@@ -80,11 +80,11 @@ func (r *Reader) List(ctx context.Context, scope resource.ResourceRef) ([]resour
 	}
 
 	objectCh := r.client.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
-		Prefix:    resource.EnsurePrefix(prefix),
+		Prefix:    contentio.EnsurePrefix(prefix),
 		Recursive: true,
 	})
 
-	refs := []resource.ResourceRef{}
+	refs := []contentio.Ref{}
 	for obj := range objectCh {
 		if obj.Err != nil {
 			return nil, obj.Err
@@ -92,15 +92,15 @@ func (r *Reader) List(ctx context.Context, scope resource.ResourceRef) ([]resour
 		if strings.HasSuffix(obj.Key, "/") {
 			continue
 		}
-		refs = append(refs, resource.NewResourceRef(bucket+"/"+obj.Key, resource.ResourceRoleMain))
+		refs = append(refs, contentio.NewRef(bucket+"/"+obj.Key, contentio.RoleMain))
 	}
 	if len(refs) == 0 {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	return refs, nil
 }
 
-func (r *Reader) Put(ctx context.Context, ref resource.ResourceRef, content io.Reader, contentType string, size int64) error {
+func (r *Reader) Put(ctx context.Context, ref contentio.Ref, content io.Reader, contentType string, size int64) error {
 	if r == nil || r.client == nil {
 		return fmt.Errorf("object store reader is not initialized")
 	}
@@ -134,7 +134,7 @@ func (r *Reader) Put(ctx context.Context, ref resource.ResourceRef, content io.R
 	return err
 }
 
-func (r *Reader) ReadText(ctx context.Context, ref resource.ResourceRef) (string, error) {
+func (r *Reader) ReadText(ctx context.Context, ref contentio.Ref) (string, error) {
 	rc, err := r.Open(ctx, ref)
 	if err != nil {
 		return "", err
@@ -147,7 +147,7 @@ func (r *Reader) ReadText(ctx context.Context, ref resource.ResourceRef) (string
 	return string(data), nil
 }
 
-func splitObjectStoreRef(ref resource.ResourceRef) (bucket, key string) {
+func splitObjectStoreRef(ref contentio.Ref) (bucket, key string) {
 	return engineobjectstore.SplitBucketPrefix(ref.Path)
 }
 

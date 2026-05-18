@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -26,26 +28,36 @@ func isIndexedSampleFallbackError(err error) bool {
 	return errors.Is(err, errUnsupportedIndexedShapeType)
 }
 
-func (plugin *Plugin) sampleTableComponentsIndexed(ctx context.Context, components resource.ComponentReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
-	rangeReader, ok := components.(resource.ComponentRangeReader)
+func (plugin *Plugin) sampleMultiTableIndexed(ctx context.Context, refs contentio.MultiReader, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
+	rangeReader, ok := refs.(contentio.MultiRangeReader)
 	if !ok {
 		return nil, false, nil
 	}
-	componentMap := shapefileComponentsByExtension(components.Components())
-	shpComponent, hasSHP := componentMap[".shp"]
-	shxComponent, hasSHX := componentMap[".shx"]
-	dbfComponent, hasDBF := componentMap[".dbf"]
+	source, ok, err := newIndexedMultiTableReadSource(ctx, plugin, refs.Refs(), rangeReader, opts)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return source.readRows(ctx, offset, limit)
+}
+
+type indexedMultiTableReadSource struct {
+	plugin        *Plugin
+	rangeReader   contentio.MultiRangeReader
+	shpRef        contentio.Ref
+	shxRef        contentio.Ref
+	dbfRef        contentio.Ref
+	dbfHeader     *dbfHeaderInfo
+	encodingName  string
+	geometryField string
+}
+
+func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []contentio.Ref, rangeReader contentio.MultiRangeReader, opts *format.ParseOptions) (*indexedMultiTableReadSource, bool, error) {
+	refMap := shapefileRefsByExtension(refs)
+	shpRef, hasSHP := refMap[".shp"]
+	shxRef, hasSHX := refMap[".shx"]
+	dbfRef, hasDBF := refMap[".dbf"]
 	if !hasSHP || !hasSHX || !hasDBF {
 		return nil, false, nil
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if limit < 0 {
-		return nil, false, nil
-	}
-	if limit == 0 {
-		return []map[string]interface{}{}, true, nil
 	}
 
 	encodingName := ""
@@ -53,34 +65,130 @@ func (plugin *Plugin) sampleTableComponentsIndexed(ctx context.Context, componen
 		encodingName = opts.Encoding
 	}
 	if encodingName == "" || NormalizeDBFEncoding(encodingName) == "utf-8" {
-		if cpgComponent, ok := componentMap[".cpg"]; ok {
-			if text, err := readComponentTextPrefix(ctx, rangeReader, cpgComponent, 256); err == nil && strings.TrimSpace(text) != "" {
+		if cpgRef, ok := refMap[".cpg"]; ok {
+			if text, err := readRefTextPrefix(ctx, rangeReader, cpgRef, 256); err == nil && strings.TrimSpace(text) != "" {
 				encodingName = NormalizeDBFEncoding(strings.TrimSpace(text))
 			}
 		}
 	}
 
-	dbfHeader, err := readDBFHeaderIndexed(ctx, rangeReader, dbfComponent, encodingName)
+	dbfHeader, err := readDBFHeaderIndexed(ctx, rangeReader, dbfRef, encodingName)
 	if err != nil {
 		return nil, true, err
 	}
-	entries, err := readSHXWindow(ctx, rangeReader, shxComponent, offset, limit)
+	return &indexedMultiTableReadSource{
+		plugin:        plugin,
+		rangeReader:   rangeReader,
+		shpRef:        shpRef,
+		shxRef:        shxRef,
+		dbfRef:        dbfRef,
+		dbfHeader:     dbfHeader,
+		encodingName:  encodingName,
+		geometryField: plugin.getGeometryFieldName(),
+	}, true, nil
+}
+
+func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []contentio.Ref, opts *format.ParseOptions) (*format.TableInfo, error) {
+	shpHeader, err := readSHPHeaderIndexed(ctx, s.rangeReader, s.shpRef)
+	if err != nil {
+		return nil, err
+	}
+	encodingName := s.encodingName
+	if opts != nil && opts.Encoding != "" {
+		encodingName = opts.Encoding
+	}
+	geomType := determineShapefileGeometryType(shpHeader.ShapeType)
+	fields := make([]format.FieldInfo, 0, len(s.dbfHeader.Fields)+1)
+	fields = append(fields, format.FieldInfo{
+		Name:         s.geometryField,
+		Type:         format.FieldTypeGeometry,
+		OriginalType: geomType,
+		Nullable:     false,
+		IsPrimaryKey: false,
+		Comment:      "Shapefile geometry field",
+	})
+	mapper := format.GetTypeMapper("shapefile")
+	for _, field := range s.dbfHeader.Fields {
+		fieldType := format.FieldTypeUnknown
+		if mapper != nil {
+			fieldType = mapper.ToCommon(field.RawType)
+		}
+		fields = append(fields, format.FieldInfo{
+			Name:         field.Name,
+			Type:         fieldType,
+			OriginalType: field.RawType,
+			Nullable:     true,
+			Size:         field.Size,
+			Precision:    field.Precision,
+		})
+	}
+
+	rowCount := int64(s.dbfHeader.RecordCount)
+	spatialInfo := &format.SpatialInfo{
+		GeometryColumn: s.geometryField,
+		GeometryType:   geomType,
+		SRID:           0,
+		BoundingBox:    &shpHeader.BBox,
+		Dimension:      2,
+	}
+	if opts != nil && opts.SpatialRefSys != "" {
+		if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
+			spatialInfo.SRID = srid
+		}
+	}
+	refMap := shapefileRefsByExtension(refs)
+	shapefileInfo := &FormatInfo{
+		Encoding:   NormalizeDBFEncoding(encodingName),
+		ShapeType:  geomType,
+		HasPRJ:     hasRefExtension(refMap, ".prj"),
+		HasCPG:     hasRefExtension(refMap, ".cpg"),
+		DBFVersion: s.dbfHeader.Version,
+	}
+	info := &Info{
+		BaseName:      strings.TrimSuffix(filepath.Base(s.shpRef.Path), filepath.Ext(s.shpRef.Path)),
+		RefExtensions: refExtensions(refs),
+		HasPRJ:        shapefileInfo.HasPRJ,
+		HasCPG:        shapefileInfo.HasCPG,
+		ShapeType:     geomType,
+		DBFVersion:    s.dbfHeader.Version,
+		Encoding:      shapefileInfo.Encoding,
+	}
+	return &format.TableInfo{
+		Name:        "shapefile_data",
+		RowCount:    &rowCount,
+		Fields:      fields,
+		PrimaryKey:  []string{},
+		SpatialInfo: spatialInfo,
+		FormatInfo:  map[string]interface{}{"shapefile": mergeFormatInfo(shapefileInfo.FormatAttributes(), info.FormatAttributes())},
+	}, nil
+}
+
+func (s *indexedMultiTableReadSource) readRows(ctx context.Context, offset, limit int64) ([]map[string]interface{}, bool, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit < 0 {
+		return nil, true, nil
+	}
+	if limit == 0 {
+		return []map[string]interface{}{}, true, nil
+	}
+	entries, err := readSHXWindow(ctx, s.rangeReader, s.shxRef, offset, limit)
 	if err != nil {
 		return nil, true, err
 	}
 	if len(entries) == 0 {
 		return []map[string]interface{}{}, true, nil
 	}
-	rows, err := readDBFRecordsIndexed(ctx, rangeReader, dbfComponent, dbfHeader, offset, int64(len(entries)), encodingName)
+	rows, err := readDBFRecordsIndexed(ctx, s.rangeReader, s.dbfRef, s.dbfHeader, offset, int64(len(entries)), s.encodingName)
 	if err != nil {
 		return nil, true, err
 	}
-	shapes, err := readShapesIndexed(ctx, rangeReader, shpComponent, entries)
+	shapes, err := readShapesIndexed(ctx, s.rangeReader, s.shpRef, entries)
 	if err != nil {
 		return nil, true, err
 	}
 
-	geometryField := plugin.getGeometryFieldName()
 	for i := range entries {
 		select {
 		case <-ctx.Done():
@@ -91,31 +199,31 @@ func (plugin *Plugin) sampleTableComponentsIndexed(ctx context.Context, componen
 		shape := shapes[i]
 		if shape != nil {
 			if wktValue, err := ShapeToWKT(shape); err == nil {
-				row[geometryField] = wktValue
+				row[s.geometryField] = wktValue
 			} else {
-				row[geometryField] = nil
+				row[s.geometryField] = nil
 			}
 		} else {
-			row[geometryField] = nil
+			row[s.geometryField] = nil
 		}
 	}
 	return rows, true, nil
 }
 
-func shapefileComponentsByExtension(components []resource.ComponentRef) map[string]resource.ComponentRef {
-	result := make(map[string]resource.ComponentRef, len(components))
-	for _, component := range components {
-		ext := strings.ToLower(filepath.Ext(component.Path))
+func shapefileRefsByExtension(refs []contentio.Ref) map[string]contentio.Ref {
+	result := make(map[string]contentio.Ref, len(refs))
+	for _, ref := range refs {
+		ext := strings.ToLower(filepath.Ext(ref.Path))
 		if ext == "" {
 			continue
 		}
-		result[ext] = component
+		result[ext] = ref
 	}
 	return result
 }
 
-func readComponentTextPrefix(ctx context.Context, reader resource.ComponentRangeReader, component resource.ComponentRef, length int64) (string, error) {
-	rc, err := reader.OpenComponentRange(ctx, component, 0, length)
+func readRefTextPrefix(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, length int64) (string, error) {
+	rc, err := reader.OpenRange(ctx, ref, 0, length)
 	if err != nil {
 		return "", err
 	}
@@ -127,10 +235,37 @@ func readComponentTextPrefix(ctx context.Context, reader resource.ComponentRange
 	return string(data), nil
 }
 
-func readSHXWindow(ctx context.Context, reader resource.ComponentRangeReader, component resource.ComponentRef, offset, limit int64) ([]shxEntry, error) {
+func hasRefExtension(refs map[string]contentio.Ref, ext string) bool {
+	_, ok := refs[strings.ToLower(ext)]
+	return ok
+}
+
+func readSHPHeaderIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref) (*shpHeaderInfo, error) {
+	rc, err := reader.OpenRange(ctx, ref, 32, 68)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 68 {
+		return nil, fmt.Errorf("invalid SHP header length: %d", len(data)+32)
+	}
+	shapeType := shp.ShapeType(binary.LittleEndian.Uint32(data[0:4]))
+	var bbox [4]float64
+	for i := range bbox {
+		start := 4 + i*8
+		bbox[i] = math.Float64frombits(binary.LittleEndian.Uint64(data[start : start+8]))
+	}
+	return &shpHeaderInfo{ShapeType: shapeType, BBox: bbox}, nil
+}
+
+func readSHXWindow(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, offset, limit int64) ([]shxEntry, error) {
 	start := int64(100) + offset*8
 	length := limit * 8
-	rc, err := reader.OpenComponentRange(ctx, component, start, length)
+	rc, err := reader.OpenRange(ctx, ref, start, length)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +288,8 @@ func readSHXWindow(ctx context.Context, reader resource.ComponentRangeReader, co
 	return entries, nil
 }
 
-func readDBFHeaderIndexed(ctx context.Context, reader resource.ComponentRangeReader, component resource.ComponentRef, encodingName string) (*dbfHeaderInfo, error) {
-	rc, err := reader.OpenComponentRange(ctx, component, 0, 32)
+func readDBFHeaderIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, encodingName string) (*dbfHeaderInfo, error) {
+	rc, err := reader.OpenRange(ctx, ref, 0, 32)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +308,7 @@ func readDBFHeaderIndexed(ctx context.Context, reader resource.ComponentRangeRea
 	if headerLength < 33 {
 		return nil, fmt.Errorf("invalid DBF header length: %d", headerLength)
 	}
-	rc, err = reader.OpenComponentRange(ctx, component, 0, int64(headerLength))
+	rc, err = reader.OpenRange(ctx, ref, 0, int64(headerLength))
 	if err != nil {
 		return nil, err
 	}
@@ -221,12 +356,12 @@ func parseDBFHeaderBytes(data []byte, encodingName string) (*dbfHeaderInfo, erro
 	}, nil
 }
 
-func readDBFRecordsIndexed(ctx context.Context, reader resource.ComponentRangeReader, component resource.ComponentRef, header *dbfHeaderInfo, rowIndex, count int64, encodingName string) ([]map[string]interface{}, error) {
+func readDBFRecordsIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, header *dbfHeaderInfo, rowIndex, count int64, encodingName string) ([]map[string]interface{}, error) {
 	recordLength := int64(header.RecordLength)
 	if count <= 0 {
 		return []map[string]interface{}{}, nil
 	}
-	rc, err := reader.OpenComponentRange(ctx, component, int64(header.HeaderLength)+rowIndex*recordLength, recordLength*count)
+	rc, err := reader.OpenRange(ctx, ref, int64(header.HeaderLength)+rowIndex*recordLength, recordLength*count)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +404,7 @@ func parseDBFRecordBytes(data []byte, header *dbfHeaderInfo, encodingName string
 	return row, nil
 }
 
-func readShapesIndexed(ctx context.Context, reader resource.ComponentRangeReader, component resource.ComponentRef, entries []shxEntry) ([]shp.Shape, error) {
+func readShapesIndexed(ctx context.Context, reader contentio.MultiRangeReader, ref contentio.Ref, entries []shxEntry) ([]shp.Shape, error) {
 	if len(entries) == 0 {
 		return []shp.Shape{}, nil
 	}
@@ -284,7 +419,7 @@ func readShapesIndexed(ctx context.Context, reader resource.ComponentRangeReader
 			end = recordEnd
 		}
 	}
-	rc, err := reader.OpenComponentRange(ctx, component, start, end-start)
+	rc, err := reader.OpenRange(ctx, ref, start, end-start)
 	if err != nil {
 		return nil, err
 	}

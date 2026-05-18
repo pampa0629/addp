@@ -56,7 +56,7 @@ ConnectorConfig.Type -> ReaderFactory / WriterFactory
 | `s3` / `minio` | 对象存储读写 | 内部又按 file type 处理 CSV / JSON / Shapefile / Parquet |
 | `nfs` | NFS 写入 | engine write 与格式输出混合 |
 | `parquet` | Parquet 读写 | 当前实现绑定 S3 / MinIO 配置 |
-| `shapefile` | Shapefile 读写 | 多组件格式，应走 component reader / writer |
+| `shapefile` | Shapefile 读写 | 多refs格式，应走 multi reader / writer |
 | `s3_shapefile` | S3 上的 Shapefile 读取 | 典型的 engine + format 组合被做成单独 connector |
 | `geopackage` | GeoPackage 读写 | container / table 语义需要和 FormatPlugin / provider / reader 对齐 |
 | `geojson` | JSON 空间结构读写 | 顶层 format 应是 `json + spatial` |
@@ -80,7 +80,7 @@ ConnectorConfig.Type -> ReaderFactory / WriterFactory
 合理拆分后应是：
 
 ```text
-S3 engine provider -> ResourceReader/List/Open
+S3 engine provider -> contentio.Reader/List/Open
 CSV/JSON FormatPlugin / content reader -> ReadBatch
 Transfer adapter -> pipeline.Reader
 ```
@@ -98,8 +98,8 @@ Transfer adapter -> pipeline.Reader
 合理拆分后应是：
 
 ```text
-ResourceReader.List(scope)
-  -> ResourceReader.Open(parquet object)
+contentio.Reader.List(scope)
+  -> contentio.Reader.Open(parquet object)
   -> format/parquet ScopeTableProvider 或 BatchReader
   -> pipeline.DataBatch
 ```
@@ -120,12 +120,12 @@ ResourceReader.List(scope)
 合理拆分后应是：
 
 ```text
-FormatBatchWriter / ComponentBatchWriter
-  -> 产生单资源或组件资源
+FormatBatchWriter / MultiBatchWriter
+  -> 产生单资源或ref 资源
   -> StorageWriteProvider 提交到 S3 / MinIO
 ```
 
-Shapefile 的 `.shp/.shx/.dbf/.prj` 组件集合必须整体提交，不能让 S3Writer 通过 file type 分支隐式决定。
+Shapefile 的 `.shp/.shx/.dbf/.prj` ref 集合必须整体提交，不能让 S3Writer 通过 file type 分支隐式决定。
 
 ### ExecutionEngineService
 
@@ -140,8 +140,8 @@ Shapefile 的 `.shp/.shx/.dbf/.prj` 组件集合必须整体提交，不能让 S
 这些逻辑未来应迁移到 `TransferPlanner`：
 
 - engine 解析：确认 source / target engine capability。
-- resource 适配：构造 `ResourceReader` / `ResourceWriter` / `NativeCursor`。
-- format 解析：确认 batch read / batch write / component read / component write。
+- resource 适配：构造 `contentio.Reader` / `contentio.Writer` / `NativeCursor`。
+- format 解析：确认 batch read / batch write / multi read / multi write。
 - data type 解析：确认 table schema、字段映射、空间字段、SRID。
 - strategy 选择：COPY、并行读取、分区读取、对象提交策略。
 
@@ -202,7 +202,7 @@ Transfer 应消费 Meta 已经确认的事实，而不是重复推断：
 - `attributes.item.organization`
 - `attributes.item.data_type`
 - `attributes.item.format`
-- `attributes.item.component_files`
+- `attributes.item.refs`
 - `attributes.storage.physical_path`
 - `attributes.type_info.table.fields`
 - `attributes.capabilities.spatial`
@@ -210,7 +210,7 @@ Transfer 应消费 Meta 已经确认的事实，而不是重复推断：
 
 尤其是：
 
-- 不再在 Transfer 中猜 Shapefile 组件集合。
+- 不再在 Transfer 中猜 Shapefile ref 集合。
 - 不再在 Transfer 中猜空间字段名一定是 `geom`。
 - 不再把 `.geojson` 识别成独立顶层 format。
 - 不再把 Parquet 目录称为 lake table item type。
@@ -240,5 +240,5 @@ Transfer 不应该拥有：
 1. `pipeline.DataBatch` 是否直接升级为 common table batch，还是先保持 Transfer 内部模型并做 adapter。
 2. `Reader.SeekTo(offset)` 是否足够表达文件 row group、目录多文件、数据库游标和分区 checkpoint。
 3. `Writer.Flush()` 与 format commit / engine commit 的边界如何拆。
-4. 多组件写出时，format writer 产物应该落本地临时目录，还是通过 resource writer 提供的 staging sink。
+4. 多 ref 写出时，format writer 产物应该落本地临时目录，还是通过 resource writer 提供的 staging sink。
 5. 并行写出时，单文件格式、目录型格式和原生表的提交策略应如何统一表达。

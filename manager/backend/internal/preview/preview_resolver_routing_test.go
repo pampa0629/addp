@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/addp/common/catalogview"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
@@ -34,7 +34,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 		"builtin:graph-relationship",
 		"builtin:scope-table",
 		"builtin:container-child",
-		"builtin:component-file",
+		"builtin:ref-file",
 		"builtin:file-table",
 		"builtin:object-catalog",
 		"builtin:file-catalog",
@@ -92,7 +92,7 @@ func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -118,7 +118,7 @@ func TestResolveProviderByMetaDoesNotRouteWholeTableWithoutScopeProvider(t *test
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -140,7 +140,7 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -166,7 +166,7 @@ func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "nfs"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -193,7 +193,7 @@ func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -221,7 +221,7 @@ func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -248,7 +248,7 @@ func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{},
+		Locator: &catalogview.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -286,31 +286,36 @@ func TestStringAttributeReadsPartitionedStorageOnly(t *testing.T) {
 
 func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	attrs := map[string]interface{}{
-		"component_files": []interface{}{"legacy/a.shp"},
+		"refs": []interface{}{
+			map[string]interface{}{"path": "legacy/a.shp"},
+		},
 		"item": map[string]interface{}{
-			"component_files": []interface{}{"bucket/roads/roads.shp", "bucket/roads/roads.dbf"},
+			"refs": []interface{}{
+				map[string]interface{}{"path": "bucket/roads/roads.shp"},
+				map[string]interface{}{"path": "bucket/roads/roads.dbf"},
+			},
 		},
 		"storage": map[string]interface{}{
 			"total_size": float64(42),
 		},
 	}
 
-	files := stringSliceAttribute(attrs, "component_files")
-	if len(files) != 2 || files[0] != "bucket/roads/roads.shp" {
-		t.Fatalf("component_files = %#v, want partitioned files", files)
+	refs := refRefsFromAttributes(attrs)
+	if len(refs) != 2 || refs[0].Path != "bucket/roads/roads.shp" {
+		t.Fatalf("refs = %#v, want partitioned refs", refs)
 	}
 	if got := int64Attribute(attrs, "total_size"); got != 42 {
 		t.Fatalf("total_size = %d, want 42", got)
 	}
-	if got := stringSliceAttribute(map[string]interface{}{"component_files": []interface{}{"legacy/a.shp"}}, "component_files"); len(got) != 0 {
-		t.Fatalf("legacy flat component_files = %#v, want empty", got)
+	if got := refRefsFromAttributes(map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": "legacy/a.shp"}}}); len(got) != 0 {
+		t.Fatalf("legacy flat refs = %#v, want empty", got)
 	}
 }
 
 func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{
+		Locator: &catalogview.ResourceLocator{
 			Path: []string{"bucket", "table.parquet"},
 		},
 		Engine:       &commonModels.Engine{EngineType: "minio"},
@@ -328,7 +333,7 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 func TestConvertToLegacyRequestKeepsChildName(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{Path: []string{"bucket", "test.xlsx"}},
+		Locator: &catalogview.ResourceLocator{Path: []string{"bucket", "test.xlsx"}},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{"data_type": "container", "format": "excel"},
@@ -345,7 +350,7 @@ func TestConvertToLegacyRequestKeepsChildName(t *testing.T) {
 
 func TestConvertToLegacyRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 	req := &PreviewResolverRequest{
-		Locator: &resource.ResourceLocator{
+		Locator: &catalogview.ResourceLocator{
 			Path: []string{"bucket", "dataset"},
 		},
 		Engine: &commonModels.Engine{EngineType: "minio"},
@@ -372,7 +377,7 @@ func TestConvertToLegacyRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator:  &resource.ResourceLocator{},
+		Locator:  &catalogview.ResourceLocator{},
 		Engine:   &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{}},
 		ItemType: "object",

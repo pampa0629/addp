@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
 type tableProviderView struct {
@@ -37,7 +37,7 @@ type containerProviderView struct {
 
 type containerChildResolverView struct {
 	formatType FormatType
-	resolve    func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
+	resolve    func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
 }
 
 func (p tableProviderView) Format() FormatType {
@@ -183,7 +183,7 @@ func (p containerChildResolverView) Capabilities() FormatCapability {
 	}
 }
 
-func (p containerChildResolverView) ResolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {
+func (p containerChildResolverView) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {
 	return p.resolve(ctx, parent, parentRef, child, options)
 }
 

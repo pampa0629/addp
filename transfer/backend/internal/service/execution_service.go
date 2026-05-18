@@ -369,18 +369,13 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		"progress":     100,
 	}
 
-	if errorMsg != "" {
-		updates["error_details"] = commonModels.JSONMap{
-			"message": errorMsg,
-		}
-	} else if status == models.ExecutionStatusSuccess {
-		updates["error_details"] = commonModels.JSONMap{}
-	}
-
 	// 获取执行记录
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
 	if err != nil {
 		return err
+	}
+	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, errorMsg); changed {
+		updates["error_details"] = errorDetails
 	}
 
 	// 计算执行时间
@@ -391,6 +386,28 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 	}
 
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
+}
+
+func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionStatus, errorMsg string) (commonModels.JSONMap, bool) {
+	if existing == nil {
+		existing = commonModels.JSONMap{}
+	}
+	next := commonModels.JSONMap{}
+	for key, value := range existing {
+		next[key] = value
+	}
+	if errorMsg != "" {
+		next["message"] = errorMsg
+		return next, true
+	}
+	if status == models.ExecutionStatusSuccess {
+		if _, ok := next["message"]; ok {
+			delete(next, "message")
+			return next, true
+		}
+		return next, len(next) > 0
+	}
+	return next, false
 }
 
 // RetryExecution 重试失败的执行

@@ -631,7 +631,7 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 	}
 }
 
-func TestResolveContainerChildrenForPreviewGroupsShapefileComponents(t *testing.T) {
+func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 	info := &format.ContainerInfo{
 		Format:       format.FormatZIP,
 		ChildCount:   5,
@@ -651,8 +651,8 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileComponents(t *testing.
 		t.Fatalf("children = %#v, want shapefile child + markdown child", resolved)
 	}
 	child := resolved.Children[0]
-	if child.Organization != "multi" || child.Format != format.FormatShapefile || len(child.Components) != 4 {
-		t.Fatalf("first child = %#v, want multi shapefile with components", child)
+	if child.Organization != "multi" || child.Format != format.FormatShapefile || len(child.Refs) != 4 {
+		t.Fatalf("first child = %#v, want multi shapefile with refs", child)
 	}
 }
 

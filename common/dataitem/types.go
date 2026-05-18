@@ -1,6 +1,6 @@
 package dataitem
 
-import "github.com/addp/common/resource"
+import "github.com/addp/common/contentio"
 
 type Organization string
 
@@ -22,19 +22,19 @@ const (
 	DataTypeUnknown   DataType = "unknown"
 )
 
-type ComponentMatchScope string
+type RefMatchScope string
 
 const (
-	ComponentMatchScopeSameDirectory ComponentMatchScope = "same_directory"
-	ComponentMatchScopeSamePrefix    ComponentMatchScope = "same_prefix"
-	ComponentMatchScopeRecursive     ComponentMatchScope = "recursive"
+	RefMatchScopeSameDirectory RefMatchScope = "same_directory"
+	RefMatchScopeSamePrefix    RefMatchScope = "same_prefix"
+	RefMatchScopeRecursive     RefMatchScope = "recursive"
 )
 
-type ComponentMatchKey string
+type RefMatchKey string
 
 const (
-	ComponentMatchKeyBaseName ComponentMatchKey = "base_name"
-	ComponentMatchKeyManifest ComponentMatchKey = "manifest"
+	RefMatchKeyBaseName RefMatchKey = "base_name"
+	RefMatchKeyManifest RefMatchKey = "manifest"
 )
 
 type ScopeKind string
@@ -71,7 +71,7 @@ type ResolveOptions struct {
 	IgnorePolicy    IgnorePolicy
 }
 
-type ComponentRef struct {
+type ItemRef struct {
 	Role      string
 	Path      string
 	Required  bool
@@ -84,9 +84,9 @@ type EntryRule struct {
 	MIMETypes  []string
 }
 
-type ComponentRule struct {
-	MatchScope         ComponentMatchScope
-	MatchKey           ComponentMatchKey
+type RefRule struct {
+	MatchScope         RefMatchScope
+	MatchKey           RefMatchKey
 	RequiredExtensions []string
 	OptionalExtensions []string
 	EntryExtension     string
@@ -110,11 +110,11 @@ type FormatRule struct {
 	Organization Organization
 	Priority     int
 
-	Entry          EntryRule
-	Components     *ComponentRule
-	Container      *ContainerRule
-	WholeScope     *WholeScopeRule
-	ComponentSpecs []resource.ComponentSpec
+	Entry           EntryRule
+	Refs            *RefRule
+	Container       *ContainerRule
+	WholeScope      *WholeScopeRule
+	RelatedRefSpecs []contentio.RelatedRefSpec
 }
 
 type ResolvedItem struct {
@@ -125,9 +125,9 @@ type ResolvedItem struct {
 	DataType     DataType
 	Format       string
 
-	EntryPath      string
-	ComponentPaths map[string]string
-	ComponentList  []ComponentRef
+	EntryPath string
+	RefPaths  map[string]string
+	RefList   []ItemRef
 
 	SizeBytes *int64
 
@@ -147,18 +147,17 @@ type IgnoredCandidate struct {
 	Reason    string
 }
 
-func (item ResolvedItem) ResourceComponents() []resource.ComponentRef {
-	components := make([]resource.ComponentRef, 0, len(item.ComponentList))
-	for _, component := range item.ComponentList {
-		role := component.Role
+func (item ResolvedItem) ContentRefs() []contentio.Ref {
+	refs := make([]contentio.Ref, 0, len(item.RefList))
+	for _, itemRef := range item.RefList {
+		role := itemRef.Role
 		if role == "" {
-			role = component.Extension
+			role = itemRef.Extension
 		}
-		components = append(components, resource.ComponentRef{
-			ResourceRef:   resource.NewResourceRef(component.Path, resource.ResourceRoleComponent),
-			ComponentRole: role,
-			Required:      component.Required,
-		})
+		contentRef := contentio.NewRef(itemRef.Path, role)
+		contentRef.Required = itemRef.Required
+		contentRef.Primary = itemRef.Primary
+		refs = append(refs, contentRef)
 	}
-	return components
+	return refs
 }

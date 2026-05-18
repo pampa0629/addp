@@ -98,7 +98,7 @@ addp://engine/1/path/bucket/folder/file.txt?type=object  # 对象存储
 - ✅ URL 编码处理特殊字符（中文、空格等）
 
 **实现**:
-- 后端: `common/resource/locator.go` (148 行)
+- 后端: `common/catalogview/locator.go` (148 行)
 - 前端: `common-frontend/basic/src/types/resourceLocator.js`
 - 测试: 45 个单元测试全部通过
 
@@ -180,14 +180,14 @@ Response:
 | 参数 | 语义 | 示例 |
 |---|---|---|
 | `child_name` | 当前容器第一层 child | `Sheet1`、`cities`、`inner.zip` |
-| `component_path` | multi 格式 child 的组件路径 | `roads.shp`、`roads.dbf` |
+| `ref_path` | multi 格式 child 的ref 路径 | `roads.shp`、`roads.dbf` |
 | `nested_child_path` | 当前 child 是容器时，其内部 child 相对路径 | `data/cities.csv`、`middle.zip/data/cities.csv` |
 
 示例：
 
 ```text
 GET /api/v1/manager/preview?locator={zip-uri}&child_name=inner.zip&nested_child_path=data/cities.csv
-GET /api/v1/manager/preview?locator={zip-uri}&child_name=roads.shp&component_path=roads.dbf
+GET /api/v1/manager/preview?locator={zip-uri}&child_name=roads.shp&ref_path=roads.dbf
 ```
 
 ### 3. 前端 Pinia Store
@@ -204,7 +204,7 @@ GET /api/v1/manager/preview?locator={zip-uri}&child_name=roads.shp&component_pat
   expandedLocators: Set,    // 展开的节点
   refreshingLocators: Set,  // 正在刷新的节点
   selectedChildName: '',       // 当前容器第一层 child
-  selectedComponentPath: '',   // multi 格式组件路径
+  selectedRefPath: '',   // multi 格式ref 路径
   selectedNestedChildPath: '', // 嵌套容器内部 child 路径
   previewData: null,           // 预览数据
   previewLoading: false,       // 预览加载状态
@@ -217,7 +217,7 @@ GET /api/v1/manager/preview?locator={zip-uri}&child_name=roads.shp&component_pat
 loadEngines()              // 加载引擎列表
 loadTree(engineId)         // 加载资源树
 refreshNode(locator)       // 刷新节点
-loadPreview(locator, page, childName, componentPath, nestedChildPath) // 加载预览
+loadPreview(locator, page, childName, refPath, nestedChildPath) // 加载预览
 selectNode(locator)        // 选择节点
 expandNode(locator)        // 展开节点
 ```
@@ -249,8 +249,8 @@ type PreviewResolver struct {
     engineConnector *EngineConnector
 }
 
-// 根据 locator URI 和可选 child/component/nested child 选择预览数据
-func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error)
+// 根据 locator URI 和可选 child/ref/nested child 选择预览数据
+func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error)
 ```
 
 #### EngineConnector (连接管理)
@@ -268,10 +268,10 @@ func (c *EngineConnector) GetConnection(engineID uint) (*gorm.DB, error)
 ## 📦 新增文件清单
 
 ### 后端 (Common)
-- `common/resource/locator.go` - ResourceLocator 核心实现
-- `common/resource/locator_test.go` - 单元测试 (45 个测试)
-- `common/resource/tree_builder.go` - TreeBuilder 资源树构建器
-- `common/resource/tree_builder_test.go` - 单元测试
+- `common/catalogview/locator.go` - ResourceLocator 核心实现
+- `common/catalogview/locator_test.go` - 单元测试 (45 个测试)
+- `common/catalogview/tree_builder.go` - TreeBuilder 资源树构建器
+- `common/catalogview/tree_builder_test.go` - 单元测试
 
 ### 后端 (Manager)
 - `manager/backend/internal/service/explorer_service.go` - ExplorerService
@@ -344,21 +344,21 @@ await store.loadPreview(locator, 1)
 
 ```go
 import (
-    "github.com/addp/common/resource"
+    "github.com/addp/common/catalogview"
     commonModels "github.com/addp/common/models"
 )
 
 // 解析 locator URI
-loc, err := resource.ParseURI("addp://engine/1/path/public/users?type=table")
+loc, err := catalogview.ParseURI("addp://engine/1/path/public/users?type=table")
 // loc.EngineID = 1
 // loc.Path = ["public", "users"]
 // loc.Type = "table"
 
 // 构建 locator URI
-loc := &resource.ResourceLocator{
+loc := &catalogview.ResourceLocator{
     EngineID: 1,
     Path:     []string{"public", "users"},
-    Type:     resource.TypeTable,
+    Type:     catalogview.TypeTable,
 }
 uri := loc.ToURI()
 // 结果: addp://engine/1/path/public/users?type=table
@@ -388,9 +388,9 @@ addp://engine/1/path/数据库/用户表?type=table
 ### Q3: 如何在其他模块复用 TreeBuilder？
 A: 导入 Common 模块的 TreeBuilder，传入 MetaClient 即可：
 ```go
-import "github.com/addp/common/resource"
+import "github.com/addp/common/catalogview"
 
-treeBuilder := resource.NewTreeBuilder(metaClient)
+treeBuilder := catalogview.NewTreeBuilder(metaClient)
 tree, err := treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth)
 ```
 

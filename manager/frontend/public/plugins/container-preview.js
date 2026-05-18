@@ -140,7 +140,7 @@
         if (!name) return
         this.$emit('child-change', {
           childName: name,
-          componentPath: child?.componentPath || '',
+          refPath: child?.refPath || '',
           nestedChildPath: child?.nestedChildPath || ''
         })
       },

@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 const defaultBatchSize = 1000
@@ -44,9 +44,9 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 	return info
 }
 
-func resourceRefFromCatalogPath(path engineplugin.CatalogPath) resource.ResourceRef {
+func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {
 	stringPath := path.StringPath()
-	return resource.NewResourceRef(stringPath, resource.ResourceRoleMain)
+	return contentio.NewRef(stringPath, contentio.RoleMain)
 }
 
 func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptions) {

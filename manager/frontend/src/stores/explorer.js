@@ -21,7 +21,7 @@ export const useExplorerStore = defineStore('explorer', {
     // 节点选择
     selectedLocator: null,
     selectedChildName: '',
-    selectedComponentPath: '',
+    selectedRefPath: '',
     selectedNestedChildPath: '',
 
     // 展开的节点（使用 locator URI 作为 key）
@@ -222,14 +222,14 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1, childName = '', componentPath = '', nestedChildPath = '') {
+    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '') {
       this.selectedLocator = locator
       this.pagination.page = page
       const normalizedChildName = childName || ''
-      const normalizedComponentPath = componentPath || ''
+      const normalizedRefPath = refPath || ''
       const normalizedNestedChildPath = nestedChildPath || ''
       this.selectedChildName = normalizedChildName
-      this.selectedComponentPath = normalizedComponentPath
+      this.selectedRefPath = normalizedRefPath
       this.selectedNestedChildPath = normalizedNestedChildPath
       if (normalizedChildName) {
         this.activeChildPreviewData = null
@@ -248,8 +248,8 @@ export const useExplorerStore = defineStore('explorer', {
         if (normalizedChildName) {
           params.child_name = normalizedChildName
         }
-        if (normalizedComponentPath) {
-          params.component_path = normalizedComponentPath
+        if (normalizedRefPath) {
+          params.ref_path = normalizedRefPath
         }
         if (normalizedNestedChildPath) {
           params.nested_child_path = normalizedNestedChildPath
@@ -361,7 +361,7 @@ export const useExplorerStore = defineStore('explorer', {
     reset() {
       this.selectedLocator = null
       this.selectedChildName = ''
-      this.selectedComponentPath = ''
+      this.selectedRefPath = ''
       this.selectedNestedChildPath = ''
       this.previewData = null
       this.activeChildPreviewData = null

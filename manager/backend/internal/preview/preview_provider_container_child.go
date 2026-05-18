@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -29,12 +29,12 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	if req == nil || strings.TrimSpace(req.ChildName) == "" {
 		return nil, fmt.Errorf("container child preview requires child_name")
 	}
-	resourceCtx, err := (&FileTablePreviewProvider{}).resourceContextForPreview(req)
+	contentCtx, err := (&FileTablePreviewProvider{}).contentContextForPreview(req)
 	if err != nil {
 		return nil, err
 	}
 	parentFormat := normalizeFileTableFormat(stringAttribute(req.Attributes, "format"))
-	child, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, req)
+	child, err := resolvePreviewContainerChild(ctx, contentCtx.reader, contentCtx.path, parentFormat, req)
 	if err != nil {
 		return nil, err
 	}
@@ -48,9 +48,9 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		}
 		child = resolved
 	}
-	if componentPath := strings.Trim(strings.TrimSpace(req.ComponentPath), "/"); componentPath != "" {
-		componentChild := childInfoForComponentPath(child, componentPath)
-		resolved, err := resolvePreviewContainerChild(ctx, resourceCtx.reader, resourceCtx.path, parentFormat, previewRequestForComponent(req, componentChild))
+	if refPath := strings.Trim(strings.TrimSpace(req.RefPath), "/"); refPath != "" {
+		refChild := childInfoForRefPath(child, refPath)
+		resolved, err := resolvePreviewContainerChild(ctx, contentCtx.reader, contentCtx.path, parentFormat, previewRequestForRef(req, refChild))
 		if err != nil {
 			return nil, err
 		}
@@ -58,13 +58,13 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	}
 	switch strings.ToLower(strings.TrimSpace(child.DataType)) {
 	case format.FormatDataTypeTable:
-		return p.previewTableChild(ctx, req, resourceCtx.bucket, child)
+		return p.previewTableChild(ctx, req, contentCtx.bucket, child)
 	case format.FormatDataTypeContainer:
-		return p.previewContainerChild(ctx, req, resourceCtx.bucket, child)
+		return p.previewContainerChild(ctx, req, contentCtx.bucket, child)
 	case format.FormatDataTypeDocument, format.FormatDataTypeMedia, format.FormatDataTypeFile, "":
-		return p.previewObjectChild(ctx, req, resourceCtx.bucket, child)
+		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
 	default:
-		return p.previewObjectChild(ctx, req, resourceCtx.bucket, child)
+		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
 	}
 }
 
@@ -74,7 +74,7 @@ func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.Cont
 		return parent, nil
 	}
 	childInfo := childInfoForNestedContainerPath(nestedPath)
-	resolved, directErr := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForComponent(req, childInfo))
+	resolved, directErr := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForRef(req, childInfo))
 	if directErr == nil {
 		return resolved, nil
 	}
@@ -85,7 +85,7 @@ func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.Cont
 			continue
 		}
 		prefixInfo := childInfoForNestedContainerPath(prefix)
-		prefixChild, err := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForComponent(req, prefixInfo))
+		prefixChild, err := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForRef(req, prefixInfo))
 		if err != nil || !isContainerChildResource(prefixChild) {
 			continue
 		}
@@ -94,7 +94,7 @@ func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.Cont
 	return nil, directErr
 }
 
-func resolveOpenablePreviewContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
+func resolveOpenablePreviewContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
 	child, err := resolvePreviewContainerChildFromResource(ctx, parent, parentRef, parentFormat, req)
 	if err != nil {
 		return nil, err
@@ -131,9 +131,9 @@ func isContainerChildResource(child *format.ContainerChildResource) bool {
 	return ok && descriptor.DataType == format.FormatDataTypeContainer
 }
 
-func childInfoForNestedContainerPath(componentPath string) map[string]interface{} {
-	name := strings.Trim(componentPath, "/")
-	preview := previewHintForComponentDescriptor(nil, name)
+func childInfoForNestedContainerPath(refPath string) map[string]interface{} {
+	name := strings.Trim(refPath, "/")
+	preview := previewHintForRefDescriptor(nil, name)
 	result := map[string]interface{}{
 		"name":         name,
 		"key":          name,
@@ -150,10 +150,10 @@ func childInfoForNestedContainerPath(componentPath string) map[string]interface{
 	return result
 }
 
-func childInfoForComponentPath(parent *format.ContainerChildResource, componentPath string) map[string]interface{} {
-	name := strings.Trim(componentPath, "/")
-	descriptor := componentDescriptorForPath(parent, name)
-	preview := previewHintForComponentDescriptor(descriptor, name)
+func childInfoForRefPath(parent *format.ContainerChildResource, refPath string) map[string]interface{} {
+	name := strings.Trim(refPath, "/")
+	descriptor := refDescriptorForPath(parent, name)
+	preview := previewHintForRefDescriptor(descriptor, name)
 	result := map[string]interface{}{
 		"name":         name,
 		"key":          name,
@@ -173,7 +173,7 @@ func childInfoForComponentPath(parent *format.ContainerChildResource, componentP
 		result["preview_material"] = preview.Material
 		result["preview_renderer"] = preview.Renderer
 		result["previewable"] = preview.Previewable
-		result["component_preview"] = true
+		result["ref_preview"] = true
 	}
 	if result["content_type"] == "application/octet-stream" {
 		delete(result, "content_type")
@@ -188,13 +188,13 @@ func previewContentType(formatType format.FormatType, name string) string {
 	return format.FormatToMIME(formatType)
 }
 
-func componentDescriptorForPath(parent *format.ContainerChildResource, componentPath string) *format.ComponentDescriptor {
-	if parent == nil || len(parent.Components) == 0 {
+func refDescriptorForPath(parent *format.ContainerChildResource, refPath string) *format.RefDescriptor {
+	if parent == nil || len(parent.Refs) == 0 {
 		return nil
 	}
-	descriptors := format.DescribeComponents(parent.Format, parent.Components)
+	descriptors := format.DescribeRefs(parent.Format, parent.Refs)
 	for _, descriptor := range descriptors {
-		if componentPathMatches(descriptor.Path, componentPath) {
+		if refPathMatches(descriptor.Path, refPath) {
 			current := descriptor
 			return &current
 		}
@@ -202,7 +202,7 @@ func componentDescriptorForPath(parent *format.ContainerChildResource, component
 	return nil
 }
 
-func componentPathMatches(candidate, target string) bool {
+func refPathMatches(candidate, target string) bool {
 	candidate = strings.Trim(strings.TrimSpace(candidate), "/")
 	target = strings.Trim(strings.TrimSpace(target), "/")
 	if candidate == "" || target == "" {
@@ -227,7 +227,7 @@ func resourceBase(path string) string {
 	return path
 }
 
-func previewHintForComponentDescriptor(descriptor *format.ComponentDescriptor, path string) previewHint {
+func previewHintForRefDescriptor(descriptor *format.RefDescriptor, path string) previewHint {
 	if descriptor == nil {
 		return inferPreviewHint(previewHintInput{
 			Name: path,
@@ -243,13 +243,13 @@ func previewHintForComponentDescriptor(descriptor *format.ComponentDescriptor, p
 	return hint
 }
 
-func previewRequestForComponent(req *PreviewRequest, child map[string]interface{}) *PreviewRequest {
+func previewRequestForRef(req *PreviewRequest, child map[string]interface{}) *PreviewRequest {
 	next := *req
 	next.ChildName = strings.Trim(strings.TrimSpace(commonJSON.InterfaceString(child["path"])), "/")
 	if next.ChildName == "" {
 		next.ChildName = strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	}
-	next.ComponentPath = ""
+	next.RefPath = ""
 	next.NestedChildPath = ""
 	next.Attributes = map[string]interface{}{}
 	for key, value := range req.Attributes {
@@ -275,8 +275,8 @@ func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, r
 	if opts == nil {
 		opts = format.ChildTableParseOptions(req.ChildName, containerChildForRequest(req.Attributes, req.ChildName))
 	}
-	if componentProvider, ok := provider.(format.ComponentTableProvider); ok && len(child.Components) > 0 {
-		return (&FileTablePreviewProvider{}).previewComponents(ctx, resource.NewStaticComponentReader(child.Reader, child.Components), bucket, child.Format, componentProvider, opts, req)
+	if refProvider, ok := provider.(format.MultiTableProvider); ok && len(child.Refs) > 0 {
+		return (&FileTablePreviewProvider{}).previewRefs(ctx, contentio.NewStaticMultiReader(child.Reader, child.Refs), bucket, child.Format, refProvider, opts, req)
 	}
 	return (&FileTablePreviewProvider{}).previewStreamable(ctx, child.Reader, bucket, child.Ref.Path, child.Format, provider, opts, req)
 }

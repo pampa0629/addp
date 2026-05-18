@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -91,11 +91,11 @@ func readDBFHeader(path string, encodingName string) (*dbfHeaderInfo, error) {
 	}, nil
 }
 
-func componentExtensions(components []resource.ComponentRef) []string {
+func refExtensions(refs []contentio.Ref) []string {
 	seen := map[string]bool{}
-	extensions := make([]string, 0, len(components))
-	for _, component := range components {
-		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(component.Path)), ".")
+	extensions := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(ref.Path)), ".")
 		if ext == "" || seen[ext] {
 			continue
 		}

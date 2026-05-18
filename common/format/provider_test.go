@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
 func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
@@ -173,23 +173,43 @@ func (p providerTestTableReaderProvider) OpenTableReader(context.Context, io.Rea
 	return nil, nil
 }
 
-type providerTestComponentTableWriterProvider struct {
+type providerTestMultiTableReaderProvider struct {
 	formatType FormatType
 }
 
-func (p providerTestComponentTableWriterProvider) Format() FormatType {
+func (p providerTestMultiTableReaderProvider) Format() FormatType {
 	return p.formatType
 }
 
-func (p providerTestComponentTableWriterProvider) Capabilities() FormatCapability {
+func (p providerTestMultiTableReaderProvider) Capabilities() FormatCapability {
 	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
 }
 
-func (p providerTestComponentTableWriterProvider) ComponentSpecs() []resource.ComponentSpec {
-	return []resource.ComponentSpec{{Extension: ".main", Role: "main", Required: true}}
+func (p providerTestMultiTableReaderProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
+	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
 }
 
-func (p providerTestComponentTableWriterProvider) OpenComponentTableWriter(context.Context, resource.ComponentWriter, resource.ResourceRef, *TableInfo, *WriteOptions) (TableWriter, error) {
+func (p providerTestMultiTableReaderProvider) OpenMultiTableReader(context.Context, contentio.MultiReader, *ParseOptions) (TableReader, error) {
+	return nil, nil
+}
+
+type providerTestMultiTableWriterProvider struct {
+	formatType FormatType
+}
+
+func (p providerTestMultiTableWriterProvider) Format() FormatType {
+	return p.formatType
+}
+
+func (p providerTestMultiTableWriterProvider) Capabilities() FormatCapability {
+	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+}
+
+func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
+	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
+}
+
+func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.MultiWriter, contentio.Ref, *TableInfo, *WriteOptions) (TableWriter, error) {
 	return nil, nil
 }
 
@@ -205,15 +225,27 @@ func TestRegisterTableReaderProvider(t *testing.T) {
 	}
 }
 
-func TestRegisterComponentTableWriterProvider(t *testing.T) {
+func TestRegisterMultiTableReaderProvider(t *testing.T) {
 	registry := NewProviderRegistry()
-	formatType := FormatType("component_table_writer_only")
+	formatType := FormatType("multi_table_reader_only")
 
-	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: formatType}); err != nil {
-		t.Fatalf("RegisterComponentTableWriterProvider() error = %v", err)
+	if err := registry.RegisterMultiTableReaderProvider(providerTestMultiTableReaderProvider{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterMultiTableReaderProvider() error = %v", err)
 	}
-	if got, err := registry.GetComponentTableWriterProvider(formatType); err != nil || got.Format() != formatType {
-		t.Fatalf("GetComponentTableWriterProvider() = %#v, %v; want component_table_writer_only", got, err)
+	if got, err := registry.GetMultiTableReaderProvider(formatType); err != nil || got.Format() != formatType {
+		t.Fatalf("GetMultiTableReaderProvider() = %#v, %v; want multi_table_reader_only", got, err)
+	}
+}
+
+func TestRegisterMultiTableWriterProvider(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("multi_table_writer_only")
+
+	if err := registry.RegisterMultiTableWriterProvider(providerTestMultiTableWriterProvider{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterMultiTableWriterProvider() error = %v", err)
+	}
+	if got, err := registry.GetMultiTableWriterProvider(formatType); err != nil || got.Format() != formatType {
+		t.Fatalf("GetMultiTableWriterProvider() = %#v, %v; want multi_table_writer_only", got, err)
 	}
 }
 
@@ -297,19 +329,35 @@ func TestListTableReaderProviderFormatsSorted(t *testing.T) {
 	}
 }
 
-func TestListComponentTableWriterProviderFormatsSorted(t *testing.T) {
+func TestListMultiTableReaderProviderFormatsSorted(t *testing.T) {
 	registry := NewProviderRegistry()
-	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: FormatType("zeta")}); err != nil {
-		t.Fatalf("RegisterComponentTableWriterProvider(zeta) error = %v", err)
+	if err := registry.RegisterMultiTableReaderProvider(providerTestMultiTableReaderProvider{formatType: FormatType("zeta")}); err != nil {
+		t.Fatalf("RegisterMultiTableReaderProvider(zeta) error = %v", err)
 	}
-	if err := registry.RegisterComponentTableWriterProvider(providerTestComponentTableWriterProvider{formatType: FormatType("alpha")}); err != nil {
-		t.Fatalf("RegisterComponentTableWriterProvider(alpha) error = %v", err)
+	if err := registry.RegisterMultiTableReaderProvider(providerTestMultiTableReaderProvider{formatType: FormatType("alpha")}); err != nil {
+		t.Fatalf("RegisterMultiTableReaderProvider(alpha) error = %v", err)
 	}
 
-	got := registry.ListComponentTableWriterProviderFormats()
+	got := registry.ListMultiTableReaderProviderFormats()
 	want := []FormatType{"alpha", "zeta"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListComponentTableWriterProviderFormats() = %#v, want %#v", got, want)
+		t.Fatalf("ListMultiTableReaderProviderFormats() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListMultiTableWriterProviderFormatsSorted(t *testing.T) {
+	registry := NewProviderRegistry()
+	if err := registry.RegisterMultiTableWriterProvider(providerTestMultiTableWriterProvider{formatType: FormatType("zeta")}); err != nil {
+		t.Fatalf("RegisterMultiTableWriterProvider(zeta) error = %v", err)
+	}
+	if err := registry.RegisterMultiTableWriterProvider(providerTestMultiTableWriterProvider{formatType: FormatType("alpha")}); err != nil {
+		t.Fatalf("RegisterMultiTableWriterProvider(alpha) error = %v", err)
+	}
+
+	got := registry.ListMultiTableWriterProviderFormats()
+	want := []FormatType{"alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListMultiTableWriterProviderFormats() = %#v, want %#v", got, want)
 	}
 }
 
@@ -364,7 +412,7 @@ func TestRegisterContainerChildResolver(t *testing.T) {
 	registry := NewProviderRegistry()
 	resolver := NewContainerChildResolver(
 		FormatType("container_child_test"),
-		func(_ context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child ContainerChildInfo, _ *ParseOptions) (*ContainerChildResource, error) {
+		func(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, _ *ParseOptions) (*ContainerChildResource, error) {
 			return NativeContainerChildResource(parent, parentRef, FormatType("container_child_test"), child, ChildTableParseOptions(child.Name, nil)), nil
 		},
 	)

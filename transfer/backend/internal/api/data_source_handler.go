@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/resource"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,13 +13,13 @@ import (
 // 为 Transfer 前端提供统一的数据源访问接口
 // 调用 common 的 DataSourceService 实现核心逻辑
 type DataSourceHandler struct {
-	dataSourceService *resource.DataSourceService
+	dataSourceService *catalogview.DataSourceService
 }
 
 // NewDataSourceHandler 创建数据源处理器
-func NewDataSourceHandler(systemClient resource.SystemClient, metaClient resource.MetaClient) *DataSourceHandler {
+func NewDataSourceHandler(systemClient catalogview.SystemClient, metaClient catalogview.MetaClient) *DataSourceHandler {
 	return &DataSourceHandler{
-		dataSourceService: resource.NewDataSourceService(systemClient, metaClient),
+		dataSourceService: catalogview.NewDataSourceService(systemClient, metaClient),
 	}
 }
 
@@ -42,7 +42,7 @@ func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 	}
 
 	// 解析过滤条件
-	var filters resource.EngineFilters
+	var filters catalogview.EngineFilters
 
 	// 引擎类型过滤
 	if engineTypesStr := c.Query("engine_types"); engineTypesStr != "" {
@@ -262,6 +262,6 @@ func NewDataSourceHandlerWithClients(systemClient *commonClient.SystemClient, me
 
 	// 使用 DataSourceService
 	return &DataSourceHandler{
-		dataSourceService: resource.NewDataSourceService(systemClient, metaClient),
+		dataSourceService: catalogview.NewDataSourceService(systemClient, metaClient),
 	}
 }

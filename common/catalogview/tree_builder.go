@@ -1,4 +1,4 @@
-package resource
+package catalogview
 
 import (
 	"encoding/json"

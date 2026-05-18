@@ -89,10 +89,11 @@ type TableTransferExecutor struct {
 	SourceFormatProvider       format.TableSampleReader
 	SourceTableReadProvider    format.TableReaderProvider
 	SourceInfoProvider         format.TableInfoProvider
-	SourceComponentProvider    componentTableSourceProvider
+	SourceMultiReadProvider    format.MultiTableReaderProvider
+	SourceMultiProvider        multiTableSourceProvider
 	TargetContentWriter        engineplugin.ContentWritableProvider
 	TargetFormatProvider       format.TableWriterProvider
-	TargetComponentProvider    format.ComponentTableWriterProvider
+	TargetMultiProvider        format.MultiTableWriterProvider
 	TargetDeleteProvider       engineplugin.ResourceDeleteProvider
 	TargetNativePreparer       engineplugin.TableWritePreparer
 	TargetNativeWriter         engineplugin.BatchWritableProvider
@@ -121,11 +122,12 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		executor.SourceFormatProvider, _ = format.GetTableSampleProvider(sourceFormat)
 		executor.SourceInfoProvider, _ = format.GetTableInfoProvider(sourceFormat)
 		executor.SourceTableReadProvider, _ = format.GetTableReaderProvider(sourceFormat)
-		if componentReader, err := format.GetComponentTableProvider(sourceFormat); err == nil {
-			executor.SourceComponentProvider, _ = componentReader.(componentTableSourceProvider)
+		executor.SourceMultiReadProvider, _ = format.GetMultiTableReaderProvider(sourceFormat)
+		if multiReader, err := format.GetMultiTableProvider(sourceFormat); err == nil {
+			executor.SourceMultiProvider, _ = multiReader.(multiTableSourceProvider)
 		}
 		if executor.SourceTableReadProvider != nil {
-			executor.SourceComponentProvider = nil
+			executor.SourceMultiProvider = nil
 		}
 	}
 
@@ -135,9 +137,9 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 	executor.TargetDeleteProvider, _ = targetPlugin.(engineplugin.ResourceDeleteProvider)
 	if targetFormat != "" {
 		executor.TargetFormatProvider, _ = format.GetTableWriterProvider(targetFormat)
-		executor.TargetComponentProvider, _ = format.GetComponentTableWriterProvider(targetFormat)
+		executor.TargetMultiProvider, _ = format.GetMultiTableWriterProvider(targetFormat)
 		if executor.TargetFormatProvider != nil {
-			executor.TargetComponentProvider = nil
+			executor.TargetMultiProvider = nil
 		}
 	}
 	executor.TargetNativePreparer, _ = targetPlugin.(engineplugin.TableWritePreparer)
@@ -188,19 +190,20 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}
-		if e.SourceTableReadProvider == nil && e.SourceComponentProvider == nil && e.SourceFormatProvider == nil {
+		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil && e.SourceMultiProvider == nil && e.SourceFormatProvider == nil {
 			return nil, fmt.Errorf("encoded table source requires table reader provider")
 		}
 		return &encodedContentTableSource{
-			reader:            e.SourceContentReader,
-			tableProvider:     e.SourceTableReadProvider,
-			componentProvider: e.SourceComponentProvider,
-			sampleProvider:    e.SourceFormatProvider,
-			infoProvider:      e.SourceInfoProvider,
-			connInfo:          plan.ConnInfo,
-			path:              plan.Path,
-			readOptions:       plan.ContentRead,
-			parseOptions:      plan.ParseOptions,
+			reader:              e.SourceContentReader,
+			tableProvider:       e.SourceTableReadProvider,
+			multiReaderProvider: e.SourceMultiReadProvider,
+			multiProvider:       e.SourceMultiProvider,
+			sampleProvider:      e.SourceFormatProvider,
+			infoProvider:        e.SourceInfoProvider,
+			connInfo:            plan.ConnInfo,
+			path:                plan.Path,
+			readOptions:         plan.ContentRead,
+			parseOptions:        plan.ParseOptions,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table source kind %q", plan.Kind)
@@ -217,18 +220,18 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 		if e.TargetContentWriter == nil {
 			return nil, fmt.Errorf("encoded table target requires content writer")
 		}
-		if e.TargetFormatProvider == nil && e.TargetComponentProvider == nil {
+		if e.TargetFormatProvider == nil && e.TargetMultiProvider == nil {
 			return nil, fmt.Errorf("encoded table target requires table writer provider")
 		}
 		return &encodedContentTableTarget{
-			writer:            e.TargetContentWriter,
-			deleter:           deleter,
-			formatProvider:    e.TargetFormatProvider,
-			componentProvider: e.TargetComponentProvider,
-			connInfo:          plan.ConnInfo,
-			path:              plan.Path,
-			writeOptions:      plan.ContentWrite,
-			formatOptions:     plan.FormatOptions,
+			writer:         e.TargetContentWriter,
+			deleter:        deleter,
+			formatProvider: e.TargetFormatProvider,
+			multiProvider:  e.TargetMultiProvider,
+			connInfo:       plan.ConnInfo,
+			path:           plan.Path,
+			writeOptions:   plan.ContentWrite,
+			formatOptions:  plan.FormatOptions,
 		}, nil
 	case TableEndpointNative:
 		if e.TargetNativeWriter == nil {

@@ -9,15 +9,15 @@ type FormatProviderDescriptor = formatregistry.ProviderDescriptor
 type FormatContentReader = string
 
 const (
-	ContentReaderTableSample          FormatContentReader = formatregistry.ContentReaderTableSample
-	ContentReaderComponentTableSample FormatContentReader = formatregistry.ContentReaderComponentTableSample
-	ContentReaderScopeTableSample     FormatContentReader = formatregistry.ContentReaderScopeTableSample
-	ContentReaderDocumentText         FormatContentReader = formatregistry.ContentReaderDocumentText
-	ContentReaderRawContent           FormatContentReader = formatregistry.ContentReaderRawContent
-	ContentReaderRangeContent         FormatContentReader = formatregistry.ContentReaderRangeContent
-	ContentReaderMediaThumbnail       FormatContentReader = formatregistry.ContentReaderMediaThumbnail
-	ContentReaderContainerEntry       FormatContentReader = formatregistry.ContentReaderContainerEntry
-	ContentReaderGraphSample          FormatContentReader = formatregistry.ContentReaderGraphSample
+	ContentReaderTableSample      FormatContentReader = formatregistry.ContentReaderTableSample
+	ContentReaderMultiTableSample FormatContentReader = formatregistry.ContentReaderMultiTableSample
+	ContentReaderScopeTableSample FormatContentReader = formatregistry.ContentReaderScopeTableSample
+	ContentReaderDocumentText     FormatContentReader = formatregistry.ContentReaderDocumentText
+	ContentReaderRawContent       FormatContentReader = formatregistry.ContentReaderRawContent
+	ContentReaderRangeContent     FormatContentReader = formatregistry.ContentReaderRangeContent
+	ContentReaderMediaThumbnail   FormatContentReader = formatregistry.ContentReaderMediaThumbnail
+	ContentReaderContainerEntry   FormatContentReader = formatregistry.ContentReaderContainerEntry
+	ContentReaderGraphSample      FormatContentReader = formatregistry.ContentReaderGraphSample
 )
 
 type FormatDescriptor struct {

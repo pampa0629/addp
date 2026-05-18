@@ -48,13 +48,13 @@ func NewImportService(
 
 // ImportShapefileRequest 导入 Shapefile 请求
 type ImportShapefileRequest struct {
-	FileContent     []byte // 文件内容（.zip 或 .shp）
-	FileName        string // 原始文件名
-	TargetEngineID  uint   // 目标数据库引擎 ID
-	TargetSchema    string // 目标 schema（默认 public）
-	TargetTable     string // 目标表名（可选，默认使用文件名）
-	Encoding        string // DBF 编码（默认 UTF-8）
-	TenantID        uint   // 租户 ID
+	FileContent    []byte // 文件内容（.zip 或 .shp）
+	FileName       string // 原始文件名
+	TargetEngineID uint   // 目标数据库引擎 ID
+	TargetSchema   string // 目标 schema（默认 public）
+	TargetTable    string // 目标表名（可选，默认使用文件名）
+	Encoding       string // DBF 编码（默认 UTF-8）
+	TenantID       uint   // 租户 ID
 }
 
 // ImportResult 导入结果

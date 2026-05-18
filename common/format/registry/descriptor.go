@@ -39,15 +39,15 @@ const (
 )
 
 const (
-	ContentReaderTableSample          = "table_sample"
-	ContentReaderComponentTableSample = "component_table_sample"
-	ContentReaderScopeTableSample     = "scope_table_sample"
-	ContentReaderDocumentText         = "document_text"
-	ContentReaderRawContent           = "raw_content"
-	ContentReaderRangeContent         = "range_content"
-	ContentReaderMediaThumbnail       = "media_thumbnail"
-	ContentReaderContainerEntry       = "container_entry"
-	ContentReaderGraphSample          = "graph_sample"
+	ContentReaderTableSample      = "table_sample"
+	ContentReaderMultiTableSample = "multi_table_sample"
+	ContentReaderScopeTableSample = "scope_table_sample"
+	ContentReaderDocumentText     = "document_text"
+	ContentReaderRawContent       = "raw_content"
+	ContentReaderRangeContent     = "range_content"
+	ContentReaderMediaThumbnail   = "media_thumbnail"
+	ContentReaderContainerEntry   = "container_entry"
+	ContentReaderGraphSample      = "graph_sample"
 )
 
 type Identification struct {
@@ -57,16 +57,16 @@ type Identification struct {
 }
 
 type ProviderDescriptor struct {
-	FormatInfo     bool `json:"format_info,omitempty"`
-	TableInfo      bool `json:"table_info,omitempty"`
-	TableSample    bool `json:"table_sample,omitempty"`
-	Table          bool `json:"table,omitempty"`
-	ComponentTable bool `json:"component_table,omitempty"`
-	ScopeTable     bool `json:"scope_table,omitempty"`
-	ContentIndex   bool `json:"content_index,omitempty"`
-	DocumentInfo   bool `json:"document_info,omitempty"`
-	MediaInfo      bool `json:"media_info,omitempty"`
-	ContainerInfo  bool `json:"container_info,omitempty"`
+	FormatInfo    bool `json:"format_info,omitempty"`
+	TableInfo     bool `json:"table_info,omitempty"`
+	TableSample   bool `json:"table_sample,omitempty"`
+	Table         bool `json:"table,omitempty"`
+	MultiTable    bool `json:"multi_table,omitempty"`
+	ScopeTable    bool `json:"scope_table,omitempty"`
+	ContentIndex  bool `json:"content_index,omitempty"`
+	DocumentInfo  bool `json:"document_info,omitempty"`
+	MediaInfo     bool `json:"media_info,omitempty"`
+	ContainerInfo bool `json:"container_info,omitempty"`
 }
 
 type Descriptor struct {

@@ -163,7 +163,7 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	}
 }
 
-func TestEnrichZIPContainerChildrenGroupsMultiComponents(t *testing.T) {
+func TestEnrichZIPContainerChildrenGroupsMultiRefs(t *testing.T) {
 	t.Parallel()
 
 	data := zipContainerBytes(t, map[string]string{
@@ -189,9 +189,9 @@ func TestEnrichZIPContainerChildrenGroupsMultiComponents(t *testing.T) {
 	if multi["organization"] != string(dataitem.OrganizationMulti) {
 		t.Fatalf("organization = %#v, want multi: %#v", multi["organization"], multi)
 	}
-	components, ok := multi["components"].([]map[string]interface{})
-	if !ok || len(components) != 3 {
-		t.Fatalf("components = %#v, want 3 component descriptors", multi["components"])
+	refs, ok := multi["refs"].([]map[string]interface{})
+	if !ok || len(refs) != 3 {
+		t.Fatalf("refs = %#v, want 3 ref descriptors", multi["refs"])
 	}
 	formatInfo := attrs["format_info"].(map[string]interface{})[string(format.FormatZIP)].(map[string]interface{})
 	if formatInfo["resolved_children"] != true {

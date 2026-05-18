@@ -176,7 +176,7 @@ func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	}
 }
 
-func TestBuildTableTransferPlanAllowsShapefileComponentTableWriter(t *testing.T) {
+func TestBuildTableTransferPlanAllowsShapefileMultiTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatShapefile
 	spec.Target.Resource = ResourceSpec{Kind: resourceKindFile, Path: "exports/roads.shp"}

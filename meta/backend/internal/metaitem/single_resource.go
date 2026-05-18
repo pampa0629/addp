@@ -48,7 +48,7 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 		DataType:      dataitem.InferDataType(formatName, input.ContentType),
 		Format:        formatName,
 		EntryPath:     input.Path,
-		ComponentList: ComponentRefsFromPaths([]string{input.Path}),
+		RefList: ItemRefsFromPaths([]string{input.Path}),
 		SizeBytes:     &input.Size,
 	}
 	if resolved != nil && len(resolved.Items) > 0 {

@@ -13,10 +13,13 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 
 `jsonmap` 不承载 `meta_item.attributes` 业务规范；attributes 标准分区、normalizer 和落库构造属于 Meta 模块。
 
-### resource
-平台级资源定位、资源树、单资源读取和多组件资源读取抽象。
+### contentio
+基于 Go `io` 之上的内容定位和读写抽象，提供 `Ref`、`Reader`、`Writer`、`RangeReader`、`MultiReader`、`MultiWriter` 和 `RelatedRefSpec`。
 
-对象存储读取通过 `resource/objectstore.Reader` 适配到 `ResourceReader`，上层应优先依赖 `ResourceReader` / `ComponentReader`，不要绕过引擎和资源抽象直接引入具体存储客户端。
+`contentio` 不依赖 engine，也不解析格式；engine 到 contentio 的适配放在 `common/engine/contentadapter`。
+
+### catalogview
+目录展示和路径定位相关能力，包括 `ResourceLocator`、资源树构建和 DataSourceService 编排。
 
 ### sqldialect
 跨 SQL 引擎的轻量方言工具，用于标识符引用、命名空间表名拼接、基础 SELECT / COUNT 和 LIMIT / OFFSET 分页 SQL 生成。

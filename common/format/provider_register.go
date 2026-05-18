@@ -61,8 +61,8 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			}
 		}
 	}
-	if provider, ok := plugin.(ComponentTableProvider); ok {
-		if err := r.RegisterComponentTableProvider(provider); err != nil {
+	if provider, ok := plugin.(MultiTableProvider); ok {
+		if err := r.RegisterMultiTableProvider(provider); err != nil {
 			return err
 		}
 	}
@@ -71,13 +71,18 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			return err
 		}
 	}
+	if reader, ok := plugin.(MultiTableReaderProvider); ok {
+		if err := r.RegisterMultiTableReaderProvider(reader); err != nil {
+			return err
+		}
+	}
 	if writer, ok := plugin.(TableWriterProvider); ok {
 		if err := r.RegisterTableWriterProvider(writer); err != nil {
 			return err
 		}
 	}
-	if writer, ok := plugin.(ComponentTableWriterProvider); ok {
-		if err := r.RegisterComponentTableWriterProvider(writer); err != nil {
+	if writer, ok := plugin.(MultiTableWriterProvider); ok {
+		if err := r.RegisterMultiTableWriterProvider(writer); err != nil {
 			return err
 		}
 	}

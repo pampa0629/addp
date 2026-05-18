@@ -1963,8 +1963,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "multi child 内的组件路径 | Component path inside a multi child",
-                        "name": "component_path",
+                        "description": "multi child 内的 ref 路径 | Ref path inside a multi child",
+                        "name": "ref_path",
                         "in": "query"
                     },
                     {

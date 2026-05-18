@@ -7,7 +7,7 @@ import (
 	_ "github.com/addp/common/format/builtin"
 )
 
-func TestResolveItemsGroupsShapefileComponents(t *testing.T) {
+func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 	t.Parallel()
 
 	size := int64(10)
@@ -31,11 +31,11 @@ func TestResolveItemsGroupsShapefileComponents(t *testing.T) {
 	if item.Organization != OrganizationMulti || item.Format != "shapefile" || item.EntryPath != "roads.shp" {
 		t.Fatalf("first item = %#v, want multi shapefile", item)
 	}
-	if len(item.ComponentList) != 4 {
-		t.Fatalf("components = %#v, want 4", item.ComponentList)
+	if len(item.RefList) != 4 {
+		t.Fatalf("refs = %#v, want 4", item.RefList)
 	}
 	if !result.Claims["roads.shp"] || !result.Claims["roads.shx"] || !result.Claims["roads.dbf"] {
-		t.Fatalf("claims = %#v, want shapefile components claimed", result.Claims)
+		t.Fatalf("claims = %#v, want shapefile refs claimed", result.Claims)
 	}
 	if result.Items[1].Organization != OrganizationSingle || result.Items[1].DataType != DataTypeDocument {
 		t.Fatalf("second item = %#v, want document single", result.Items[1])
@@ -125,7 +125,7 @@ func TestResolveItemsKeepsSiblingTablesAsSingles(t *testing.T) {
 	}
 }
 
-func TestResolveItemsDoesNotFoldClaimedMultiComponentsIntoWholeScope(t *testing.T) {
+func TestResolveItemsDoesNotFoldClaimedMultiRefsIntoWholeScope(t *testing.T) {
 	t.Parallel()
 
 	size := int64(10)
@@ -151,9 +151,9 @@ func TestResolveItemsDoesNotFoldClaimedMultiComponentsIntoWholeScope(t *testing.
 		t.Fatalf("items = %#v, want multi before whole", result.Items)
 	}
 	if result.Items[1].SizeBytes == nil || *result.Items[1].SizeBytes != 20 {
-		t.Fatalf("whole item size = %#v, want only parquet component sizes", result.Items[1].SizeBytes)
+		t.Fatalf("whole item size = %#v, want only parquet ref sizes", result.Items[1].SizeBytes)
 	}
 	if !result.Claims["dataset/roads.shp"] || !result.Claims["dataset/part-001.parquet"] {
-		t.Fatalf("claims = %#v, want both multi and whole components claimed", result.Claims)
+		t.Fatalf("claims = %#v, want both multi and whole refs claimed", result.Claims)
 	}
 }

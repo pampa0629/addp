@@ -123,7 +123,7 @@ Meta Detector 是 data item 识别的唯一入口。
 - 当前扫描范围能生成几个 data item。
 - 每个 data item 的组织方式是什么。
 - 主资源或 whole scope 根范围是什么。
-- 组件资源有哪些。
+- ref 资源有哪些。
 - 哪些资源已被 claims 认领。
 - 当前范围是否 exclusive。
 
@@ -163,9 +163,9 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 | 分区 | 写入内容 |
 |---|---|
 | `storage` | 引擎侧存储属性，例如 path、bucket、size、etag、last_modified_at |
-| `item` | organization、data_type、format、component_files、scope_exclusive |
+| `item` | organization、data_type、format、refs、scope_exclusive |
 | `type_info` | data type 通用元数据，例如 table fields、document page_count、media width |
-| `format_info` | 文件格式私有信息，例如 csv delimiter、shapefile components |
+| `format_info` | 文件格式私有信息，例如 csv delimiter、shapefile refs |
 | `content_index` | 内容读取索引，例如 table sparse row index |
 | `capabilities` | spatial、temporal、statistics、extraction 等横切事实 |
 

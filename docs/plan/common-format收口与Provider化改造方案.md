@@ -88,46 +88,46 @@
 
 同时已经补上 `common/format` 的第一版 provider 基础入口：
 
-- 新增 `Provider` / `TableProvider` / `ComponentTableProvider` / `ScopeTableProvider` / `ProviderRegistry`。
+- 新增 `Provider` / `TableProvider` / `MultiTableProvider` / `ScopeTableProvider` / `ProviderRegistry`。
 - 内置 CSV、Excel、JSON 空间扩展、Shapefile、Parquet 直接注册为 `TableProvider`。
 - Manager 文件表预览已调整为调用 `GetTableProvider`。
 - Manager 启动显式导入 `common/format/builtin`，确保内置格式 provider 注册稳定。
 - 新增 `builtin:file-table` 预览插件声明，避免文件表 provider 只存在于代码工厂而没有插件声明。
 - 旧文件表注册 API 已删除。
 
-这不是最终接口，只是先把表格格式的主路径切到 provider。Shapefile 多组件读取和 Parquet scope 读取已经先迁到同一套 provider 语义；Transfer batch 读写后续单独处理。
+这不是最终接口，只是先把表格格式的主路径切到 provider。Shapefile 多 ref 读取和 Parquet scope 读取已经先迁到同一套 provider 语义；Transfer batch 读写后续单独处理。
 
-`common/resource` 也已经补上最小读取抽象，并用 Manager Shapefile 预览验证了多组件链路：
+`common/contentio` 也已经补上最小读取抽象，并用 Manager Shapefile 预览验证了多 ref 链路：
 
 ```text
 engine ContentReadableProvider
-  -> common/resource.ResourceReader
-  -> common/resource.ComponentReader
-  -> format.ComponentTableProvider
+  -> contentio.Reader
+  -> contentio.MultiReader
+  -> format.MultiTableProvider
   -> Manager 面向前端的 DTO
 ```
 
-Shapefile 的组件物化已经从 Manager 下沉到 FormatPlugin / table content reader，Manager 只负责把 engine provider 适配为 `ResourceReader / ComponentReader`。
+Shapefile 的ref 物化已经从 Manager 下沉到 FormatPlugin / table content reader，Manager 只负责把 engine provider 适配为 `contentio.Reader / contentio.MultiReader`。
 
 Parquet lake table 预览也已经验证 scope 链路：
 
 ```text
 engine CatalogProvider + ContentReadableProvider
-  -> common/resource.ResourceReader
+  -> contentio.Reader
   -> format.ScopeTableProvider
   -> Manager 面向前端的 DTO
 ```
 
-`common/format/plugins/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `ResourceReader` 提供。
+`common/format/plugins/parquet` 不再保留直接依赖 engine plugin 的预览 helper；目录列举和内容打开由上层编排层通过 `contentio.Reader` 提供。
 
 Meta 的 lake table schema 提取也已经改为通过 `format.GetTableProvider(format.FormatParquet)` 调用 Parquet provider，不再直接 new Parquet parser。
 
 Manager object content 中的 GeoJSON / Parquet 内容预览也已经改为通过 `TableProvider` 提取表语义，Manager 只保留 preview content DTO 组装。
 
-Manager lake table 预览已经按 engine 类型选择 `ResourceReader`：
+Manager lake table 预览已经按 engine 类型选择 `contentio.Reader`：
 
-- 对象存储 lake table 使用 `objectStorageResourceReader`。
-- 文件系统 lake table 使用 `fileSystemResourceReader`。
+- 对象存储 lake table 使用 `object storage content reader`。
+- 文件系统 lake table 使用 `file system content reader`。
 
 Manager 使用 `builtin:scope-table` 路由目录型表格资源。它是 scope 表预览 provider 名称，不是 item type。
 
@@ -188,7 +188,7 @@ Manager FileTablePreviewProvider
 
 - item organization
 - claims / exclusive
-- whole scope / multi component 路由
+- whole scope / multi ref 路由
 
 ### 第四阶段：目录结构清理
 
@@ -253,19 +253,19 @@ parser registry 已删除。当前保留两类事实源：
 
 ### 5. `common/format/plugins/shapefile/*`
 
-Shapefile 是典型的多组件格式，适合验证：
+Shapefile 是典型的多refs格式，适合验证：
 
-- component 读取
-- component 写出
-- manifest / 主资源 / 组件角色
+- multi read
+- multi write
+- manifest / 主资源 / refs角色
 
 它适合作为后续 provider 化的样板。
 
-当前 Shapefile 已经作为 `ComponentTableProvider` 样板落地：组件集合由上层根据 layout 或 Meta attributes 提供，组件物化与解析由 FormatPlugin / table content reader 内部完成。
+当前 Shapefile 已经作为 `MultiTableProvider` 样板落地：ref 集合由上层根据 layout 或 Meta attributes 提供，ref 物化与解析由 FormatPlugin / table content reader 内部完成。
 
 ## 与上层的关系
 
-- `common/resource` 负责读取抽象
+- `common/contentio` 负责读取抽象
 - `common/format` 负责格式能力和格式编解码
 - `meta` 负责 item 归并
 - `manager` 负责预览组装
@@ -274,7 +274,7 @@ Shapefile 是典型的多组件格式，适合验证：
 顺序上应是：
 
 1. 先收 `common/format`
-2. 再接 `common/resource`
+2. 再接 `common/contentio`
 3. 再收 `manager`
 4. 再收 `transfer`
 

@@ -43,8 +43,8 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	if info.EntryPath != "dataset" {
 		t.Fatalf("EntryPath = %q, want dataset", info.EntryPath)
 	}
-	if len(info.ComponentFiles) != 2 {
-		t.Fatalf("ComponentFiles len = %d, want 2", len(info.ComponentFiles))
+	if len(info.RefFiles) != 2 {
+		t.Fatalf("RefFiles len = %d, want 2", len(info.RefFiles))
 	}
 	if mode := commonJSON.String(info.Attributes, "format_info.parquet", "mode"); mode != "whole" {
 		t.Fatalf("mode = %v, want whole", mode)
@@ -128,8 +128,8 @@ func TestTableFileResolverAllowsAuxiliaryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractTableFileWholeScopeInfo() error = %v", err)
 	}
-	if len(info.ComponentFiles) != 1 || info.ComponentFiles[0] != "dataset/part-000.parquet" {
-		t.Fatalf("ComponentFiles = %#v, want only parquet data file", info.ComponentFiles)
+	if len(info.RefFiles) != 1 || info.RefFiles[0] != "dataset/part-000.parquet" {
+		t.Fatalf("RefFiles = %#v, want only parquet data file", info.RefFiles)
 	}
 	if info.SizeBytes == nil || *info.SizeBytes != 10 {
 		t.Fatalf("SizeBytes = %v, want 10", info.SizeBytes)
@@ -184,7 +184,7 @@ func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 		t.Fatal("expected directory tree result to be exclusive")
 	}
 	if !result.Claims["dataset/dt=2026-05-05/part-000.parquet"] {
-		t.Fatalf("claims = %#v, want recursive parquet component", result.Claims)
+		t.Fatalf("claims = %#v, want recursive parquet ref", result.Claims)
 	}
 }
 

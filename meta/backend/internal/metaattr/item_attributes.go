@@ -26,10 +26,9 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	if item.PhysicalPath != "" {
 		storageAttrs["physical_path"] = item.PhysicalPath
 	}
-	componentFiles := item.ComponentFilePaths()
-	if item.Organization == dataitem.OrganizationMulti && len(componentFiles) > 0 {
-		itemAttrs["component_files"] = componentFiles
-		itemAttrs["file_count"] = len(componentFiles)
+	if item.Organization == dataitem.OrganizationMulti && len(item.RefList) > 0 {
+		itemAttrs["refs"] = refAttributes(item.RefList)
+		itemAttrs["file_count"] = len(item.RefList)
 	}
 	if item.Organization == dataitem.OrganizationWhole {
 		itemAttrs["scope_exclusive"] = true
@@ -41,6 +40,33 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	attrs["item"] = mergeAttributeSection(attrs["item"], itemAttrs)
 	attrs["storage"] = mergeAttributeSection(attrs["storage"], storageAttrs)
 	return attrs
+}
+
+func refAttributes(refs []dataitem.ItemRef) []map[string]interface{} {
+	if len(refs) == 0 {
+		return nil
+	}
+	items := make([]map[string]interface{}, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Path == "" {
+			continue
+		}
+		item := map[string]interface{}{"path": ref.Path}
+		if ref.Role != "" {
+			item["role"] = ref.Role
+		}
+		if ref.Extension != "" {
+			item["extension"] = ref.Extension
+		}
+		if ref.Required {
+			item["required"] = true
+		}
+		if ref.Primary {
+			item["primary"] = true
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func MergeDataItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {

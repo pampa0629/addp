@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/common/resource"
 	parquetgo "github.com/parquet-go/parquet-go"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
 )
@@ -670,7 +670,7 @@ func jsonString(value interface{}) string {
 	}
 }
 
-func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*format.TableInfo, error) {
 	refs, err := listParquetResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
@@ -719,7 +719,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader resource.Resourc
 	return merged, nil
 }
 
-func (p *Plugin) SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	refs, err := listParquetResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err

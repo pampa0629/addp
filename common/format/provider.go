@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
 // Provider 是格式层能力实现的基础接口。
@@ -79,6 +79,16 @@ type TableReader interface {
 	Close(ctx context.Context) error
 }
 
+// MultiTableReaderProvider 表示多 ref 格式能够打开连续 table 行读取会话。
+//
+// 它面向 Transfer 等全量读取场景；与 MultiTableProvider 的 SampleMultiTable
+// 不同，TableReader 持有一次ref 读取状态，调用方循环 ReadRows 直到返回空结果。
+type MultiTableReaderProvider interface {
+	Provider
+	RelatedRefSpecs() []contentio.RelatedRefSpec
+	OpenMultiTableReader(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (TableReader, error)
+}
+
 // TableProvider 是兼容旧调用方的组合接口。
 //
 // 新代码优先按 TableInfoProvider / TableSampleReader 分别表达调用意图；
@@ -97,15 +107,15 @@ type TableWriterProvider interface {
 	OpenTableWriter(ctx context.Context, output io.Writer, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
-// ComponentTableWriterProvider 表示格式能够把 table 数据写出为多组件资源。
+// MultiTableWriterProvider 表示格式能够把 table 数据写出为多 ref 资源。
 //
-// 典型场景是 Shapefile 这类天然由 .shp/.shx/.dbf 等组件共同构成的格式。
-// target 表示目标主资源，provider 基于它和 ComponentSpecs 派生组件路径；
-// output 负责把组件写入具体 engine/resource。
-type ComponentTableWriterProvider interface {
+// 典型场景是 Shapefile 这类天然由 .shp/.shx/.dbf 等相关 ref 共同构成的格式。
+// target 表示目标主资源，provider 基于它和 RelatedRefSpecs 派生ref 路径；
+// output 负责把ref 写入具体 engine/resource。
+type MultiTableWriterProvider interface {
 	Provider
-	ComponentSpecs() []resource.ComponentSpec
-	OpenComponentTableWriter(ctx context.Context, output resource.ComponentWriter, target resource.ResourceRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+	RelatedRefSpecs() []contentio.RelatedRefSpec
+	OpenMultiTableWriter(ctx context.Context, output contentio.MultiWriter, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
 type TableWriter interface {
@@ -167,22 +177,22 @@ type MediaInfoProvider interface {
 // MediaProvider 是旧命名兼容别名，新代码应使用 MediaInfoProvider。
 type MediaProvider = MediaInfoProvider
 
-type ComponentTableProvider interface {
+type MultiTableProvider interface {
 	TableProvider
-	DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *ParseOptions) (*TableInfo, error)
-	SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+	DescribeMultiTable(ctx context.Context, refs contentio.MultiReader, options *ParseOptions) (*TableInfo, error)
+	SampleMultiTable(ctx context.Context, refs contentio.MultiReader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
-// ComponentSpecProvider 表示格式能够声明多组件资源的组件规格。
+// RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。
 //
-// 该接口只描述组件角色和必需性，调用方仍负责 data item 边界识别、
-// 资源路径发现与 ResourceReader 构造。
-type ComponentSpecProvider interface {
+// 该接口只描述 ref 角色和必需性，调用方仍负责 data item 边界识别、
+// 资源路径发现与 contentio.Reader 构造。
+type RelatedRefSpecProvider interface {
 	Provider
-	ComponentSpecs() []resource.ComponentSpec
+	RelatedRefSpecs() []contentio.RelatedRefSpec
 }
 
-type ComponentDescriptor struct {
+type RefDescriptor struct {
 	Key       string     `json:"key,omitempty"`
 	Path      string     `json:"path"`
 	Role      string     `json:"role,omitempty"`
@@ -194,17 +204,17 @@ type ComponentDescriptor struct {
 	Extension string     `json:"extension,omitempty"`
 }
 
-// ComponentDescriptorProvider 表示格式能够解释 multi item 的组件。
+// RefDescriptorProvider 表示格式能够解释 multi item 的 refs。
 //
-// 该接口只提供用户可理解的组件描述，不参与 data item 边界识别；
-// Meta、Manager、前端不得硬编码某个格式的组件语义。
-type ComponentDescriptorProvider interface {
+// 该接口只提供用户可理解的 ref 描述，不参与 data item 边界识别；
+// Meta、Manager、前端不得硬编码某个格式的 ref 语义。
+type RefDescriptorProvider interface {
 	Provider
-	DescribeComponents(components []resource.ComponentRef) []ComponentDescriptor
+	DescribeRefs(refs []contentio.Ref) []RefDescriptor
 }
 
 type ScopeTableProvider interface {
 	TableProvider
-	DescribeTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, options *ParseOptions) (*TableInfo, error)
-	SampleTableScope(ctx context.Context, reader resource.ResourceReader, scope resource.ResourceRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
+	SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }

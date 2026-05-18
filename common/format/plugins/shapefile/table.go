@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 	commonSpatial "github.com/addp/common/spatial"
 )
 
@@ -26,13 +26,13 @@ func NewPlugin(opts *format.ParseOptions) *Plugin {
 	return &Plugin{options: opts}
 }
 
-// DescribeTable rejects single-stream input because Shapefile is a multi-component format.
+// DescribeTable rejects single-stream input because Shapefile is a multi-ref format.
 func (plugin *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	return nil, fmt.Errorf("shapefile requires component input; use DescribeTableComponents with .shp/.shx/.dbf components")
+	return nil, fmt.Errorf("shapefile requires multi-ref input; use DescribeMultiTable with .shp/.shx/.dbf refs")
 }
 
-func (plugin *Plugin) DescribeTableComponents(ctx context.Context, components resource.ComponentReader, options *format.ParseOptions) (*format.TableInfo, error) {
-	_, basePath, cleanup, err := materializeComponents(ctx, components)
+func (plugin *Plugin) DescribeMultiTable(ctx context.Context, refs contentio.MultiReader, options *format.ParseOptions) (*format.TableInfo, error) {
+	_, basePath, cleanup, err := materializeRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
@@ -49,17 +49,17 @@ func (plugin *Plugin) DescribeTableComponents(ctx context.Context, components re
 			opts.Encoding = cpgEncoding
 		}
 	}
-	return plugin.describeTableInfoFromHeaders(basePath, components.Components(), opts)
+	return plugin.describeTableInfoFromHeaders(basePath, refs.Refs(), opts)
 }
 
-// SampleTable rejects single-stream input because Shapefile is a multi-component format.
+// SampleTable rejects single-stream input because Shapefile is a multi-ref format.
 func (plugin *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	return nil, fmt.Errorf("shapefile requires component input; use SampleTableComponents with .shp/.shx/.dbf components")
+	return nil, fmt.Errorf("shapefile requires multi-ref input; use SampleMultiTable with .shp/.shx/.dbf refs")
 }
 
-func (plugin *Plugin) SampleTableComponents(ctx context.Context, components resource.ComponentReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (plugin *Plugin) SampleMultiTable(ctx context.Context, refs contentio.MultiReader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	opts := plugin.resolveOptions(options)
-	if rows, ok, err := plugin.sampleTableComponentsIndexed(ctx, components, offset, limit, opts); ok {
+	if rows, ok, err := plugin.sampleMultiTableIndexed(ctx, refs, offset, limit, opts); ok {
 		if err == nil {
 			return rows, nil
 		}
@@ -68,7 +68,7 @@ func (plugin *Plugin) SampleTableComponents(ctx context.Context, components reso
 		}
 	}
 
-	_, basePath, cleanup, err := materializeComponents(ctx, components)
+	_, basePath, cleanup, err := materializeRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 	}, nil
 }
 
-func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, components []resource.ComponentRef, opts *format.ParseOptions) (*format.TableInfo, error) {
+func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []contentio.Ref, opts *format.ParseOptions) (*format.TableInfo, error) {
 	shpHeader, err := readSHPHeader(basePath + ".shp")
 	if err != nil {
 		return nil, err
@@ -232,13 +232,13 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, components [
 	}
 
 	info := &Info{
-		BaseName:            filepath.Base(basePath),
-		ComponentExtensions: componentExtensions(components),
-		HasPRJ:              shapefileInfo.HasPRJ,
-		HasCPG:              shapefileInfo.HasCPG,
-		ShapeType:           geomType,
-		DBFVersion:          dbfHeader.Version,
-		Encoding:            shapefileInfo.Encoding,
+		BaseName:      filepath.Base(basePath),
+		RefExtensions: refExtensions(refs),
+		HasPRJ:        shapefileInfo.HasPRJ,
+		HasCPG:        shapefileInfo.HasCPG,
+		ShapeType:     geomType,
+		DBFVersion:    dbfHeader.Version,
+		Encoding:      shapefileInfo.Encoding,
 	}
 	return &format.TableInfo{
 		Name:        "shapefile_data",

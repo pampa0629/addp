@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -135,7 +135,7 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *te
 	}
 }
 
-func TestFileTablePreviewProviderResourceContextUsesFileCatalogReader(t *testing.T) {
+func TestFileTablePreviewProviderContentContextUsesFileCatalogReader(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
 	plugin.Register(enginePlugin)
@@ -156,18 +156,18 @@ func TestFileTablePreviewProviderResourceContextUsesFileCatalogReader(t *testing
 		PhysicalPath: "/gis-data/sample.csv",
 	}
 
-	resourceCtx, err := provider.resourceContextForPreview(req)
+	contentCtx, err := provider.contentContextForPreview(req)
 	if err != nil {
-		t.Fatalf("resourceContextForPreview() error = %v", err)
+		t.Fatalf("contentContextForPreview() error = %v", err)
 	}
-	if _, ok := resourceCtx.reader.(*fileCatalogResourceReader); !ok {
-		t.Fatalf("reader = %T, want *fileCatalogResourceReader", resourceCtx.reader)
+	if _, ok := contentCtx.reader.(*fileCatalogContentReader); !ok {
+		t.Fatalf("reader = %T, want *fileCatalogContentReader", contentCtx.reader)
 	}
-	if resourceCtx.path != "gis-data/sample.csv" {
-		t.Fatalf("path = %q, want gis-data/sample.csv", resourceCtx.path)
+	if contentCtx.path != "gis-data/sample.csv" {
+		t.Fatalf("path = %q, want gis-data/sample.csv", contentCtx.path)
 	}
 
-	rc, err := resourceCtx.reader.Open(context.Background(), resource.NewResourceRef(resourceCtx.path, resource.ResourceRoleMain))
+	rc, err := contentCtx.reader.Open(context.Background(), contentio.NewRef(contentCtx.path, contentio.RoleMain))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -176,11 +176,11 @@ func TestFileTablePreviewProviderResourceContextUsesFileCatalogReader(t *testing
 		t.Fatalf("opened path = %q, want gis-data/sample.csv", got)
 	}
 
-	rangeReader, ok := resourceCtx.reader.(resource.RangeReader)
+	rangeReader, ok := contentCtx.reader.(contentio.RangeReader)
 	if !ok {
-		t.Fatalf("reader = %T, want resource.RangeReader", resourceCtx.reader)
+		t.Fatalf("reader = %T, want contentio.RangeReader", contentCtx.reader)
 	}
-	rc, err = rangeReader.OpenRange(context.Background(), resource.NewResourceRef(resourceCtx.path, resource.ResourceRoleMain), 10, 20)
+	rc, err = rangeReader.OpenRange(context.Background(), contentio.NewRef(contentCtx.path, contentio.RoleMain), 10, 20)
 	if err != nil {
 		t.Fatalf("OpenRange() error = %v", err)
 	}
@@ -193,13 +193,13 @@ func TestFileTablePreviewProviderResourceContextUsesFileCatalogReader(t *testing
 	}
 }
 
-func TestObjectCatalogResourceReaderStripsBucketPrefixFromComponentPath(t *testing.T) {
+func TestObjectCatalogContentReaderStripsBucketPrefixFromRefPath(t *testing.T) {
 	t.Parallel()
 
-	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component"}
-	reader := newObjectCatalogResourceReader(enginePlugin, nil, nil, 9, "addp")
+	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-ref"}
+	reader := newObjectCatalogContentReader(enginePlugin, nil, nil, 9, "addp")
 
-	rc, err := reader.Open(context.Background(), resource.NewResourceRef("addp/gis/规划用地.dbf", resource.ResourceRoleComponent))
+	rc, err := reader.Open(context.Background(), contentio.NewRef("addp/gis/规划用地.dbf", contentio.RoleAuxiliary))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -216,13 +216,13 @@ func TestObjectCatalogResourceReaderStripsBucketPrefixFromComponentPath(t *testi
 	}
 }
 
-func TestObjectCatalogResourceReaderOpenRangeStripsBucketPrefixFromComponentPath(t *testing.T) {
+func TestObjectCatalogContentReaderOpenRangeStripsBucketPrefixFromRefPath(t *testing.T) {
 	t.Parallel()
 
-	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-component-range"}
-	reader := newObjectCatalogResourceReader(enginePlugin, nil, nil, 9, "addp")
+	enginePlugin := &recordingContentPlugin{engineType: "minio-preview-ref-range"}
+	reader := newObjectCatalogContentReader(enginePlugin, nil, nil, 9, "addp")
 
-	rc, err := reader.OpenRange(context.Background(), resource.NewResourceRef("addp/gis/规划用地.shx", resource.ResourceRoleComponent), 100, 8)
+	rc, err := reader.OpenRange(context.Background(), contentio.NewRef("addp/gis/规划用地.shx", contentio.RoleAuxiliary), 100, 8)
 	if err != nil {
 		t.Fatalf("OpenRange() error = %v", err)
 	}
@@ -266,7 +266,7 @@ func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) 
 
 	preview, err := provider.previewStreamable(
 		context.Background(),
-		staticResourceReader{content: []byte("name\tage\nAlice\t25\nBob\t30\n")},
+		staticContentReader{content: []byte("name\tage\nAlice\t25\nBob\t30\n")},
 		"manager",
 		"manager/test.tsv",
 		format.FormatTSV,
@@ -295,7 +295,7 @@ func TestFileTablePreviewProviderPreviewStreamableReturnsTableModeAndFirstPage(t
 
 	preview, err := provider.previewStreamable(
 		context.Background(),
-		staticResourceReader{content: []byte("mock")},
+		staticContentReader{content: []byte("mock")},
 		"manager",
 		"manager/test.parquet",
 		format.FormatParquet,
@@ -343,7 +343,7 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 
 	preview, err := provider.previewStreamable(
 		context.Background(),
-		staticResourceReader{content: []byte("mock")},
+		staticContentReader{content: []byte("mock")},
 		"manager",
 		"manager/test.csv",
 		format.FormatCSV,
@@ -397,7 +397,7 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 
 	preview, err := provider.previewStreamable(
 		context.Background(),
-		staticResourceReader{content: []byte("mock")},
+		staticContentReader{content: []byte("mock")},
 		"manager",
 		"manager/sample.db",
 		format.FormatSQLite,
@@ -777,7 +777,7 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T)
 
 	preview, err := provider.previewStreamable(
 		context.Background(),
-		staticResourceReader{content: []byte("mock")},
+		staticContentReader{content: []byte("mock")},
 		"manager",
 		"manager/roads.json",
 		format.FormatJSON,
@@ -831,39 +831,39 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 	t.Parallel()
 
 	provider := &FileTablePreviewProvider{}
-	componentProvider := &recordingComponentTableProvider{}
+	refProvider := &recordingMultiTableProvider{}
 	req := &PreviewRequest{
 		Page:     1,
 		PageSize: 2,
 		Table:    "gis/roads.shp",
 	}
 
-	preview, err := provider.previewComponents(
+	preview, err := provider.previewRefs(
 		context.Background(),
-		emptyComponentReader{},
+		emptyRefReader{},
 		"bucket",
 		format.FormatShapefile,
-		componentProvider,
+		refProvider,
 		nil,
 		req,
 	)
 	if err != nil {
-		t.Fatalf("previewComponents() error = %v", err)
+		t.Fatalf("previewRefs() error = %v", err)
 	}
 	if preview.Mode != PreviewModeTable {
 		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
 	}
-	if componentProvider.sampleOffset != 0 {
-		t.Fatalf("sample offset = %d, want 0 for first page", componentProvider.sampleOffset)
+	if refProvider.sampleOffset != 0 {
+		t.Fatalf("sample offset = %d, want 0 for first page", refProvider.sampleOffset)
 	}
 	if preview.Page != 1 {
 		t.Fatalf("Page = %d, want 1", preview.Page)
 	}
 }
 
-func TestFileTablePreviewProviderPreviewComponentsUsesAttributesTableInfo(t *testing.T) {
+func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
-	componentProvider := &recordingComponentTableProvider{}
+	refProvider := &recordingMultiTableProvider{}
 	req := &PreviewRequest{
 		Page:     2,
 		PageSize: 3,
@@ -880,70 +880,70 @@ func TestFileTablePreviewProviderPreviewComponentsUsesAttributesTableInfo(t *tes
 		},
 	}
 
-	preview, err := provider.previewComponents(
+	preview, err := provider.previewRefs(
 		context.Background(),
-		emptyComponentReader{},
+		emptyRefReader{},
 		"bucket",
 		format.FormatShapefile,
-		componentProvider,
+		refProvider,
 		nil,
 		req,
 	)
 	if err != nil {
-		t.Fatalf("previewComponents() error = %v", err)
+		t.Fatalf("previewRefs() error = %v", err)
 	}
-	if componentProvider.describeCalls != 0 {
-		t.Fatalf("DescribeTableComponents calls = %d, want 0 when attributes have table info", componentProvider.describeCalls)
+	if refProvider.describeCalls != 0 {
+		t.Fatalf("DescribeMultiTable calls = %d, want 0 when attributes have table info", refProvider.describeCalls)
 	}
-	if componentProvider.sampleOffset != 3 {
-		t.Fatalf("sample offset = %d, want 3", componentProvider.sampleOffset)
+	if refProvider.sampleOffset != 3 {
+		t.Fatalf("sample offset = %d, want 3", refProvider.sampleOffset)
 	}
 	if preview.Total != 9 {
 		t.Fatalf("Total = %d, want 9", preview.Total)
 	}
 }
 
-func TestComponentReaderForPreviewUsesMetaComponentFiles(t *testing.T) {
-	reader := componentReaderForPreview(staticResourceReader{}, "bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
+func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
+	reader := refReaderForPreview(staticContentReader{}, "bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
 		"item": map[string]interface{}{
-			"component_files": []interface{}{
-				"bucket/roads/roads.dbf",
-				"bucket/roads/roads.prj",
-				"bucket/roads/roads.shp",
-				"bucket/roads/roads.shx",
+			"refs": []interface{}{
+				map[string]interface{}{"path": "bucket/roads/roads.dbf", "role": "attributes", "required": true},
+				map[string]interface{}{"path": "bucket/roads/roads.prj", "role": "projection"},
+				map[string]interface{}{"path": "bucket/roads/roads.shp", "role": "main", "required": true, "primary": true},
+				map[string]interface{}{"path": "bucket/roads/roads.shx", "role": "index", "required": true},
 			},
 		},
 	})
 
-	components := reader.Components()
-	got := make(map[string]resource.ComponentRef, len(components))
-	for _, component := range components {
-		got[component.ComponentRole] = component
+	refs := reader.Refs()
+	got := make(map[string]contentio.Ref, len(refs))
+	for _, ref := range refs {
+		got[ref.Role] = ref
 	}
 
 	for _, role := range []string{"main", "index", "attributes", "projection"} {
 		if _, ok := got[role]; !ok {
-			t.Fatalf("missing component role %q in %#v", role, components)
+			t.Fatalf("missing ref role %q in %#v", role, refs)
 		}
 	}
 	if !got["main"].Required || !got["index"].Required || !got["attributes"].Required {
 		t.Fatalf("required flags = main:%v index:%v attributes:%v", got["main"].Required, got["index"].Required, got["attributes"].Required)
 	}
 	if got["projection"].Required {
-		t.Fatalf("projection component should be optional")
+		t.Fatalf("projection ref should be optional")
 	}
 	if got["main"].Path != "bucket/roads/roads.shp" {
 		t.Fatalf("main path = %q", got["main"].Path)
 	}
 }
 
-func TestComponentReaderForPreviewFallsBackToSameBasenameComponents(t *testing.T) {
-	reader := componentReaderForPreview(staticResourceReader{}, "bucket/roads/roads.shp", format.FormatShapefile, nil)
-	components := reader.Components()
+func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
+	reader := refReaderForPreview(staticContentReader{}, "bucket/roads/roads.shp", format.FormatShapefile, nil)
+	refs := reader.Refs()
 	required := map[string]bool{}
-	for _, component := range components {
-		if component.Required {
-			required[component.Path] = true
+	for _, ref := range refs {
+		if ref.Required {
+			required[ref.Path] = true
 		}
 	}
 	want := map[string]bool{
@@ -952,23 +952,23 @@ func TestComponentReaderForPreviewFallsBackToSameBasenameComponents(t *testing.T
 		"bucket/roads/roads.dbf": true,
 	}
 	if !reflect.DeepEqual(required, want) {
-		t.Fatalf("required fallback components = %#v, want %#v", required, want)
+		t.Fatalf("required fallback refs = %#v, want %#v", required, want)
 	}
 }
 
-type staticResourceReader struct {
+type staticContentReader struct {
 	content []byte
 }
 
-func (r staticResourceReader) Open(context.Context, resource.ResourceRef) (io.ReadCloser, error) {
+func (r staticContentReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
 
-func (r staticResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r staticContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
 	return nil, nil
 }
 
-func (r staticResourceReader) List(context.Context, resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r staticContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, nil
 }
 
@@ -1001,17 +1001,17 @@ func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, off
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
 
-type recordingComponentTableProvider struct {
+type recordingMultiTableProvider struct {
 	recordingTableProvider
 	sampleOffset  int64
 	describeCalls int
 }
 
-func (p *recordingComponentTableProvider) Format() format.FormatType {
+func (p *recordingMultiTableProvider) Format() format.FormatType {
 	return format.FormatShapefile
 }
 
-func (p *recordingComponentTableProvider) DescribeTableComponents(context.Context, resource.ComponentReader, *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.MultiReader, *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
 	rowCount := int64(1)
 	return &format.TableInfo{
@@ -1020,29 +1020,29 @@ func (p *recordingComponentTableProvider) DescribeTableComponents(context.Contex
 	}, nil
 }
 
-func (p *recordingComponentTableProvider) SampleTableComponents(_ context.Context, _ resource.ComponentReader, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.MultiReader, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
 
-type emptyComponentReader struct{}
+type emptyRefReader struct{}
 
-func (emptyComponentReader) Components() []resource.ComponentRef {
+func (emptyRefReader) Refs() []contentio.Ref {
 	return nil
 }
 
-func (emptyComponentReader) OpenComponent(context.Context, resource.ComponentRef) (io.ReadCloser, error) {
-	return nil, resource.ErrResourceNotFound
+func (emptyRefReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
+	return nil, contentio.ErrContentNotFound
 }
 
-func (emptyComponentReader) OpenComponentRole(context.Context, string) (io.ReadCloser, error) {
-	return nil, resource.ErrResourceNotFound
+func (emptyRefReader) OpenRole(context.Context, string) (io.ReadCloser, error) {
+	return nil, contentio.ErrContentNotFound
 }
 
 var _ format.TableProvider = (*recordingTableProvider)(nil)
-var _ format.ComponentTableProvider = (*recordingComponentTableProvider)(nil)
-var _ resource.ResourceReader = staticResourceReader{}
-var _ resource.ComponentReader = emptyComponentReader{}
+var _ format.MultiTableProvider = (*recordingMultiTableProvider)(nil)
+var _ contentio.Reader = staticContentReader{}
+var _ contentio.MultiReader = emptyRefReader{}
 
 type recordingContentPlugin struct {
 	engineType      string
@@ -1099,22 +1099,22 @@ func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 	}
 }
 
-func TestMapToContainerChildInfoKeepsComponents(t *testing.T) {
+func TestMapToContainerChildInfoKeepsRefs(t *testing.T) {
 	child := mapToContainerChildInfo(map[string]interface{}{
 		"name":         "roads.shp",
 		"kind":         "multi",
 		"data_type":    "table",
 		"format":       "shapefile",
 		"organization": "multi",
-		"components": []interface{}{
+		"refs": []interface{}{
 			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
 			map[string]interface{}{"role": "index", "path": "roads.shx", "required": true, "extension": ".shx"},
 		},
 	})
-	if child.Format != format.FormatShapefile || child.Organization != "multi" || len(child.Components) != 2 {
-		t.Fatalf("child = %#v, want shapefile multi components", child)
+	if child.Format != format.FormatShapefile || child.Organization != "multi" || len(child.Refs) != 2 {
+		t.Fatalf("child = %#v, want shapefile multi refs", child)
 	}
-	if !child.Components[0].Primary || child.Components[0].Path != "roads.shp" {
-		t.Fatalf("primary component = %#v, want roads.shp", child.Components[0])
+	if !child.Refs[0].Primary || child.Refs[0].Path != "roads.shp" {
+		t.Fatalf("primary ref = %#v, want roads.shp", child.Refs[0])
 	}
 }

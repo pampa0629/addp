@@ -15,9 +15,9 @@ import (
 // 管理 MvtTask 任务定义（CRUD），执行时复用 QuickViewService 逻辑
 // 并将执行记录写入 common.task_executions
 type MvtTaskService struct {
-	mvtTaskRepo    *repository.MvtTaskRepository
-	quickViewSvc   *QuickViewService
-	taskExecRepo   *commonRepo.TaskExecutionRepository
+	mvtTaskRepo  *repository.MvtTaskRepository
+	quickViewSvc *QuickViewService
+	taskExecRepo *commonRepo.TaskExecutionRepository
 }
 
 // NewMvtTaskService 创建服务

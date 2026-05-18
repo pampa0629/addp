@@ -24,9 +24,10 @@ type FormatImplementationStatus struct {
 	TableInfoProvider      bool `json:"table_info_provider,omitempty"`
 	TableSampleReader      bool `json:"table_sample_reader,omitempty"`
 	TableReaderProvider    bool `json:"table_reader_provider,omitempty"`
+	MultiTableReader       bool `json:"multi_table_reader_provider,omitempty"`
 	TableWriterProvider    bool `json:"table_writer_provider,omitempty"`
-	ComponentTableWriter   bool `json:"component_table_writer_provider,omitempty"`
-	ComponentTableProvider bool `json:"component_table_provider,omitempty"`
+	MultiTableWriter       bool `json:"multi_table_writer_provider,omitempty"`
+	MultiTableProvider     bool `json:"multi_table_provider,omitempty"`
 	ScopeTableProvider     bool `json:"scope_table_provider,omitempty"`
 	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
 	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
@@ -85,7 +86,7 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if provider, err := GetTableProvider(formatType); err == nil {
 		status.TableProvider = true
-		_, status.ComponentTableProvider = provider.(ComponentTableProvider)
+		_, status.MultiTableProvider = provider.(MultiTableProvider)
 		_, status.ScopeTableProvider = provider.(ScopeTableProvider)
 	}
 	if _, err := GetFormatInfoProvider(formatType); err == nil {
@@ -100,11 +101,14 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	if _, err := GetTableReaderProvider(formatType); err == nil {
 		status.TableReaderProvider = true
 	}
+	if _, err := GetMultiTableReaderProvider(formatType); err == nil {
+		status.MultiTableReader = true
+	}
 	if _, err := GetTableWriterProvider(formatType); err == nil {
 		status.TableWriterProvider = true
 	}
-	if _, err := GetComponentTableWriterProvider(formatType); err == nil {
-		status.ComponentTableWriter = true
+	if _, err := GetMultiTableWriterProvider(formatType); err == nil {
+		status.MultiTableWriter = true
 	}
 	if _, err := GetDocumentInfoProvider(formatType); err == nil {
 		status.DocumentInfoProvider = true

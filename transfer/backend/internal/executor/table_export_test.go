@@ -235,7 +235,7 @@ func TestTableTransferExecutorPrefersNativeTableReadSession(t *testing.T) {
 	}
 }
 
-func TestTableTransferExecutorWritesShapefileComponents(t *testing.T) {
+func TestTableTransferExecutorWritesShapefileRefs(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
@@ -253,9 +253,9 @@ func TestTableTransferExecutorWritesShapefileComponents(t *testing.T) {
 	}
 	writer := &fakeContentWriter{files: map[string][]byte{}}
 	exec := &TableTransferExecutor{
-		SourceNativeReader:      reader,
-		TargetContentWriter:     writer,
-		TargetComponentProvider: shapefileformat.NewPlugin(nil),
+		SourceNativeReader:  reader,
+		TargetContentWriter: writer,
+		TargetMultiProvider: shapefileformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -283,7 +283,7 @@ func TestTableTransferExecutorWritesShapefileComponents(t *testing.T) {
 	}
 	for _, path := range []string{"exports/cities.shp", "exports/cities.shx", "exports/cities.dbf", "exports/cities.cpg"} {
 		if len(writer.files[path]) == 0 {
-			t.Fatalf("component %s was not written", path)
+			t.Fatalf("ref %s was not written", path)
 		}
 	}
 }

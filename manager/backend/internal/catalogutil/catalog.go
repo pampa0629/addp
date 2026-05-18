@@ -101,7 +101,7 @@ func Int64Stat(stats map[string]interface{}, key string) int64 {
 
 func attributeSectionsForKey(key string) []string {
 	switch key {
-	case "organization", "data_type", "format", "component_files", "file_count", "scope_exclusive", "claim_policy":
+	case "organization", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
 		return []string{"item"}
 	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}

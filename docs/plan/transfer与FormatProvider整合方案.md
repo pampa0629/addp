@@ -2,7 +2,7 @@
 
 更新时间：2026-05-09
 
-本文定义 Transfer 后续如何组合 engine capability、`common/resource`、FormatPlugin、info provider 和 content reader。它是目标设计文档，不描述具体迁移进度。
+本文定义 Transfer 后续如何组合 engine capability、`common/contentio`、FormatPlugin、info provider 和 content reader。它是目标设计文档，不描述具体迁移进度。
 
 > 注：本文早期使用过旧的 provider 统称。后续阅读时统一按正式规范理解为 FormatPlugin、info provider 和 content reader。
 
@@ -22,7 +22,7 @@
 TransferTask
   -> TransferPlanner
   -> SourceEndpoint
-      -> EngineProvider / ResourceReader / NativeCursor
+      -> EngineProvider / contentio.Reader / NativeCursor
       -> FormatProvider(optional)
       -> info provider / content reader
   -> pipeline.Reader
@@ -37,7 +37,7 @@ Transform[]
   -> TargetEndpoint
       -> info provider / content reader
       -> FormatProvider(optional)
-      -> ResourceWriter / EngineProvider / NativeBatchWriter
+      -> contentio.Writer / EngineProvider / NativeBatchWriter
   -> CommitPolicy
 ```
 
@@ -51,7 +51,7 @@ Transfer source / target 应拆成稳定的 endpoint：
 TransferEndpoint
   Direction: source | target
   EngineRef
-  ResourceRef | NativeObjectRef
+  contentio.Ref | NativeObjectRef
   DataType
   Format(optional)
   Organization(optional)
@@ -74,7 +74,7 @@ TransferEndpoint
 
 Transfer 不应把 `engine_type` 直接当作 reader / writer 类型。它只用于选择 engine provider 和资源适配器。
 
-### ResourceRef / NativeObjectRef
+### contentio.Ref / NativeObjectRef
 
 说明读写对象是什么。
 
@@ -82,7 +82,7 @@ Transfer 不应把 `engine_type` 直接当作 reader / writer 类型。它只用
 
 - path
 - bucket / prefix
-- component refs
+- refs
 - scope path
 - physical path
 
@@ -165,7 +165,7 @@ TransferPlan
 `PlannedEndpoint` 应包含：
 
 - 已选定的 engine provider。
-- 已构造的 `ResourceReader` / `ResourceWriter` / `NativeCursor`。
+- 已构造的 `contentio.Reader` / `contentio.Writer` / `NativeCursor`。
 - 已选定的 FormatPlugin。
 - 已确认的 info provider / content reader。
 - 已确认的 schema 和 spatial facts。
@@ -178,14 +178,14 @@ TransferPlan
 | 来源形态 | 示例 | engine 责任 | format 责任 | 输出 |
 |---|---|---|---|---|
 | engine-native table | PostgreSQL table、MySQL table | SQL / cursor / batch read | 无 | DataBatch |
-| single / multi 文件表 | CSV、JSON、Shapefile、单 Parquet | 打开资源或组件 | 解码为表批次 | DataBatch |
+| single / multi 文件表 | CSV、JSON、Shapefile、单 Parquet | 打开资源或refs | 解码为表批次 | DataBatch |
 | scope 表 | Parquet 目录、未来 Iceberg/Delta/Hudi | list scope、打开 manifest / data files | 解码 scope 表 | DataBatch |
 
 ### 文件读取
 
 ```text
 engine capability
-  -> ResourceReader.Open / List
+  -> contentio.Reader.Open / List
   -> format.TableProvider / BatchReader
   -> TransferDataBatchAdapter
 ```
@@ -194,7 +194,7 @@ engine capability
 
 - engine 支持 content read。
 - 如果是 scope，engine 支持 list。
-- 如果是 multi，Meta 或 format layout 能提供 component refs。
+- 如果是 multi，Meta 或 format layout 能提供 refs。
 - format 支持 sample / describe / batch read。
 
 ### 原生表读取
@@ -215,13 +215,13 @@ engine capability
 |---|---|---|---|---|
 | engine-native table | PostgreSQL / MySQL table | 无 | batch insert / copy / transaction | engine transaction |
 | single 文件 | CSV、JSON、Parquet 单文件 | 编码单个资源 | 写对象 / 文件 | 单资源提交 |
-| multi / scope | Shapefile、Parquet 分片目录 | 编码组件或分片 | 提交组件集合 / scope | 组件整体提交 |
+| multi / scope | Shapefile、Parquet 分片目录 | 编码refs或分片 | 提交ref 集合 / scope | refs整体提交 |
 
 ### 文件写出
 
 ```text
 DataBatch
-  -> format BatchWriter / ComponentWriter
+  -> format BatchWriter / contentio.MultiWriter
   -> ResourceWriteSession
   -> CommitPolicy
 ```
@@ -229,7 +229,7 @@ DataBatch
 format writer 只负责把批次编码成资源产物：
 
 - 单文件产物。
-- 多组件产物。
+- 多refs产物。
 - scope 分片产物。
 - manifest 或辅助资源。
 
@@ -259,7 +259,7 @@ Transfer planner 必须同时校验 engine 与 format。
 | 校验项 | engine 要求 | format 要求 |
 |---|---|---|
 | 单文件读取 | content read | batch read |
-| 多组件读取 | component open 或多个 resource open | component read |
+| 多 ref 读取 | ref open 或多个 resource open | multi read |
 | scope 读取 | list + open | scope read / manifest read |
 | checkpoint | seek / cursor / range / list checkpoint | row group / record offset / file boundary 恢复 |
 | schema | catalog / source schema 可选 | describe table |
@@ -269,7 +269,7 @@ Transfer planner 必须同时校验 engine 与 format。
 | 校验项 | engine 要求 | format 要求 |
 |---|---|---|
 | 单文件写出 | content write / staging | batch write |
-| 多组件写出 | component commit / atomic group | component write |
+| 多 ref 写出 | ref commit / atomic group | multi write |
 | scope 写出 | list path / partition path / manifest commit | partition write / manifest write |
 | 并行写 | 多连接 / 多对象写 | 是否允许多 writer |
 | 回滚 | transaction / delete staging | 可丢弃未提交产物 |
@@ -283,7 +283,7 @@ Transfer planner 必须同时校验 engine 与 format。
 | 策略 | 适用场景 | 说明 |
 |---|---|---|
 | `single_object` | CSV、JSON、单 Parquet | format 生成一个对象，engine 提交一个对象 |
-| `component_group` | Shapefile | format 生成多个组件，engine 整体提交 |
+| `ref_group` | Shapefile | format 生成多个refs，engine 整体提交 |
 | `scope_replace` | Parquet 目录、未来 lakehouse scope | staging 目录完成后整体替换 |
 | `native_transaction` | 数据库原生表 | engine 事务提交 |
 | `native_bulk_load` | PostgreSQL COPY、Doris load 等 | engine 原生批量加载 |
@@ -302,7 +302,7 @@ checkpoint 不能只靠一个整数 offset 长期支撑所有场景。
 | CSV / JSONL | byte offset 或 record offset |
 | Parquet | file key + row group + row offset |
 | 多文件目录 | file index / file key + file 内 offset |
-| Shapefile | record index + component version |
+| Shapefile | record index + ref version |
 | scope 表 | manifest version + data file + row group |
 
 第一阶段可继续适配到 `Reader.SeekTo(offset)`，但 plan 中应保留更丰富的 checkpoint state，避免以后再破坏任务表结构。
@@ -361,7 +361,7 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 
 - FormatPlugin、info provider、content reader 不返回 Manager 面向前端的 DTO。
 - Transfer 不复用 Manager 面向前端的 DTO 做批量读取。
-- 二者可以共享 `ResourceReader`、`ComponentReader`、`TableProvider.Describe/Sample`。
+- 二者可以共享 `contentio.Reader`、`contentio.MultiReader`、`TableProvider.Describe/Sample`。
 - Transfer 需要额外的 `ReadBatch/WriteBatch/CommitPolicy`。
 
 ## 目标任务配置方向
@@ -413,6 +413,6 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 4. S3 / MinIO / NFS Parquet 单文件 / 目录 -> PostgreSQL。
 5. PostgreSQL -> Parquet 单文件 / 目录。
 6. Shapefile -> PostgreSQL。
-7. PostgreSQL -> Shapefile 组件集合。
+7. PostgreSQL -> Shapefile ref 集合。
 
 完成这些后，再处理 GeoPackage、SQLite、Excel、document / media / graph 等非主线场景。

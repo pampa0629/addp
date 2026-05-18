@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 	parquetgo "github.com/parquet-go/parquet-go"
 )
 
@@ -180,11 +180,11 @@ func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 
 func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	plugin := NewPlugin()
-	reader := parquetMemoryResourceReader{data: map[string][]byte{
+	reader := parquetMemoryContentReader{data: map[string][]byte{
 		"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"}),
 		"dataset/part-001.parquet": buildParquetRows(t, testParquetRow{ID: 3, Name: "Carol"}, testParquetRow{ID: 4, Name: "Dan"}),
 	}}
-	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
 
 	info, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
 	if err != nil {
@@ -218,7 +218,7 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 func TestParquetPluginSampleScopeUsesRowCountHintsToSkipFiles(t *testing.T) {
 	plugin := NewPlugin()
 	openCounts := map[string]int{}
-	reader := parquetMemoryResourceReader{
+	reader := parquetMemoryContentReader{
 		data: map[string][]byte{
 			"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"}),
 			"dataset/part-001.parquet": buildParquetRows(t, testParquetRow{ID: 3, Name: "Carol"}, testParquetRow{ID: 4, Name: "Dan"}),
@@ -226,7 +226,7 @@ func TestParquetPluginSampleScopeUsesRowCountHintsToSkipFiles(t *testing.T) {
 		},
 		openCounts: openCounts,
 	}
-	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
 	opts := format.DefaultParseOptions()
 	opts.ExtraParams = map[string]interface{}{
 		FileRowCountsOption: map[string]int64{
@@ -255,11 +255,11 @@ func TestParquetPluginSampleScopeUsesRowCountHintsToSkipFiles(t *testing.T) {
 
 func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	plugin := NewPlugin()
-	reader := parquetMemoryResourceReader{data: map[string][]byte{
+	reader := parquetMemoryContentReader{data: map[string][]byte{
 		"dataset/dt=2026-05-05/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
 		"dataset/dt=2026-05-06/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 2, Name: "Bob"}),
 	}}
-	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
 
 	info, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
 	if err != nil {
@@ -272,11 +272,11 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 
 func TestParquetPluginScopeRejectsIncompatibleSchema(t *testing.T) {
 	plugin := NewPlugin()
-	reader := parquetMemoryResourceReader{data: map[string][]byte{
+	reader := parquetMemoryContentReader{data: map[string][]byte{
 		"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
 		"dataset/part-001.parquet": buildAlternateParquetData(t),
 	}}
-	scope := resource.NewResourceRef("dataset", resource.ResourceRoleScope)
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
 
 	_, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
 	if err == nil {
@@ -328,15 +328,15 @@ func rowNames(rows []map[string]interface{}) []string {
 	return names
 }
 
-type parquetMemoryResourceReader struct {
+type parquetMemoryContentReader struct {
 	data       map[string][]byte
 	openCounts map[string]int
 }
 
-func (r parquetMemoryResourceReader) Open(_ context.Context, ref resource.ResourceRef) (io.ReadCloser, error) {
+func (r parquetMemoryContentReader) Open(_ context.Context, ref contentio.Ref) (io.ReadCloser, error) {
 	data, ok := r.data[ref.Path]
 	if !ok {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	if r.openCounts != nil {
 		r.openCounts[ref.Path]++
@@ -344,15 +344,15 @@ func (r parquetMemoryResourceReader) Open(_ context.Context, ref resource.Resour
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (r parquetMemoryResourceReader) Stat(_ context.Context, ref resource.ResourceRef) (*resource.ResourceMetadata, error) {
+func (r parquetMemoryContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Metadata, error) {
 	_, ok := r.data[ref.Path]
-	return &resource.ResourceMetadata{Ref: ref, Exists: ok}, nil
+	return &contentio.Metadata{Ref: ref, Exists: ok}, nil
 }
 
-func (r parquetMemoryResourceReader) List(_ context.Context, scope resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref) ([]contentio.Ref, error) {
 	scopePath := strings.Trim(scope.Path, "/")
 	dirs := map[string]bool{}
-	files := make([]resource.ResourceRef, 0)
+	files := make([]contentio.Ref, 0)
 	for path := range r.data {
 		trimmed := strings.Trim(path, "/")
 		if !strings.HasPrefix(trimmed, scopePath+"/") {
@@ -364,16 +364,16 @@ func (r parquetMemoryResourceReader) List(_ context.Context, scope resource.Reso
 			dirs[dir] = true
 			continue
 		}
-		files = append(files, resource.NewResourceRef(trimmed, resource.ResourceRoleMain))
+		files = append(files, contentio.NewRef(trimmed, contentio.RoleMain))
 	}
 	for dir := range dirs {
-		files = append(files, resource.NewResourceRef(dir, resource.ResourceRoleScope))
+		files = append(files, contentio.NewRef(dir, contentio.RoleScope))
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	if len(files) == 0 {
-		return nil, resource.ErrResourceNotFound
+		return nil, contentio.ErrContentNotFound
 	}
 	return files, nil
 }
 
-var _ resource.ResourceReader = parquetMemoryResourceReader{}
+var _ contentio.Reader = parquetMemoryContentReader{}

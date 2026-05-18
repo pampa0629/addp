@@ -102,8 +102,8 @@ func (r *QuickViewRepository) UpdateGenerationResultWithPreferredMode(id uint, r
 		"total_tiles":     result.TotalTiles,
 		"cached_tiles":    result.CachedTiles,
 		"completed_at":    gorm.Expr("NOW()"),
-		"preferred_mode":  "mvt",    // 第三步：自动启用 MVT
-		"error_message":   "",       // 清除错误信息（任务成功完成）
+		"preferred_mode":  "mvt", // 第三步：自动启用 MVT
+		"error_message":   "",    // 清除错误信息（任务成功完成）
 	}
 
 	return r.db.Model(&models.QuickView{}).Where("id = ?", id).Updates(updates).Error
@@ -117,9 +117,9 @@ func (r *QuickViewRepository) UpdateResult(id uint, result UpdateResultParams) e
 
 // UpdateResultParams 更新结果参数
 type UpdateResultParams struct {
-	ActualMaxZoom     int
-	TotalTiles        int
-	CachedTiles       int
+	ActualMaxZoom int
+	TotalTiles    int
+	CachedTiles   int
 }
 
 // ListAll 列出所有快显任务
@@ -385,4 +385,3 @@ func (r *QuickViewRepository) GetPreparationStatus(
 
 	return qv.PreparationStatus, nil
 }
-

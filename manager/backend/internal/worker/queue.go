@@ -12,8 +12,8 @@ import (
 
 // TaskType 定义任务类型常量
 const (
-	TypeQuickViewTask            = "manager:quick_view"
-	TypePrepareForCreateMVTTask  = "manager:prepare_for_mvt"
+	TypeQuickViewTask           = "manager:quick_view"
+	TypePrepareForCreateMVTTask = "manager:prepare_for_mvt"
 )
 
 // TaskQueue 任务队列管理器
@@ -42,29 +42,29 @@ func NewTaskQueue(redisAddr, redisPassword string) *TaskQueue {
 
 // QuickViewTaskPayload 快显任务载荷
 type QuickViewTaskPayload struct {
-	TenantID           uint                                  `json:"tenant_id"`
-	EngineID           uint                                  `json:"engine_id"`
-	SchemaName         string                                `json:"schema_name"`
-	TableName          string                                `json:"table_name"`
-	GeomColumn         string                                `json:"geom_column"`
-	SRID               int                                   `json:"srid"`
-	PrimaryKey         string                                `json:"primary_key"`
-	Extent             []float64                             `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	MinZoom            int                                   `json:"min_zoom"`
-	MaxZoom            int                                   `json:"max_zoom"`
-	Concurrency        int                                   `json:"concurrency"`
-	Fingerprint        string                                `json:"fingerprint"`
-	OptimizationConfig *commonModels.OptimizationConfig      `json:"optimization_config,omitempty"` // v2.0
+	TenantID           uint                             `json:"tenant_id"`
+	EngineID           uint                             `json:"engine_id"`
+	SchemaName         string                           `json:"schema_name"`
+	TableName          string                           `json:"table_name"`
+	GeomColumn         string                           `json:"geom_column"`
+	SRID               int                              `json:"srid"`
+	PrimaryKey         string                           `json:"primary_key"`
+	Extent             []float64                        `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	MinZoom            int                              `json:"min_zoom"`
+	MaxZoom            int                              `json:"max_zoom"`
+	Concurrency        int                              `json:"concurrency"`
+	Fingerprint        string                           `json:"fingerprint"`
+	OptimizationConfig *commonModels.OptimizationConfig `json:"optimization_config,omitempty"` // v2.0
 }
 
 // PrepareForCreateMVTTaskPayload 准备创建MVT任务载荷
 type PrepareForCreateMVTTaskPayload struct {
-	TenantID   uint   `json:"tenant_id"`
-	EngineID   uint   `json:"engine_id"`
-	SchemaName string `json:"schema_name"`
-	TableName  string `json:"table_name"`
+	TenantID    uint   `json:"tenant_id"`
+	EngineID    uint   `json:"engine_id"`
+	SchemaName  string `json:"schema_name"`
+	TableName   string `json:"table_name"`
 	Fingerprint string `json:"fingerprint"`
-	GeomColumn string `json:"geom_column"` // 实际的空间字段名（从Meta模块获取）
+	GeomColumn  string `json:"geom_column"` // 实际的空间字段名（从Meta模块获取）
 }
 
 // EnqueueQuickViewTask 将快显任务加入队列

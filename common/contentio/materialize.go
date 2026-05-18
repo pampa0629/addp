@@ -1,4 +1,4 @@
-package resource
+package contentio
 
 import (
 	"context"
@@ -11,12 +11,12 @@ import (
 
 type MaterializeResult struct {
 	LocalDir string
-	Files    map[ResourceRef]string
+	Files    map[Ref]string
 }
 
-func MaterializeResourceScope(ctx context.Context, reader ResourceReader, scope ResourceRef, localDir string) (*MaterializeResult, error) {
+func MaterializeScope(ctx context.Context, reader Reader, scope Ref, localDir string) (*MaterializeResult, error) {
 	if reader == nil {
-		return nil, fmt.Errorf("resource reader is required")
+		return nil, fmt.Errorf("content reader is required")
 	}
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func MaterializeResourceScope(ctx context.Context, reader ResourceReader, scope 
 	scopePrefix := EnsurePrefix(strings.Trim(scope.Path, "/"))
 	result := &MaterializeResult{
 		LocalDir: localDir,
-		Files:    make(map[ResourceRef]string, len(refs)),
+		Files:    make(map[Ref]string, len(refs)),
 	}
 	for _, ref := range refs {
 		relativePath := strings.TrimPrefix(strings.Trim(ref.Path, "/"), scopePrefix)
@@ -37,18 +37,18 @@ func MaterializeResourceScope(ctx context.Context, reader ResourceReader, scope 
 			continue
 		}
 		localPath := filepath.Join(localDir, filepath.FromSlash(relativePath))
-		if err := materializeResource(ctx, reader, ref, localPath); err != nil {
+		if err := materializeContent(ctx, reader, ref, localPath); err != nil {
 			return nil, err
 		}
 		result.Files[ref] = localPath
 	}
 	if len(result.Files) == 0 {
-		return nil, ErrResourceNotFound
+		return nil, ErrContentNotFound
 	}
 	return result, nil
 }
 
-func materializeResource(ctx context.Context, reader ResourceReader, ref ResourceRef, localPath string) error {
+func materializeContent(ctx context.Context, reader Reader, ref Ref, localPath string) error {
 	rc, err := reader.Open(ctx, ref)
 	if err != nil {
 		return err

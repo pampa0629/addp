@@ -1571,9 +1571,9 @@ paths:
         in: query
         name: child_name
         type: string
-      - description: multi child 内的组件路径 | Component path inside a multi child
+      - description: multi child 内的 ref 路径 | Ref path inside a multi child
         in: query
-        name: component_path
+        name: ref_path
         type: string
       - description: 嵌套容器内部 child 相对路径 | Relative child path inside a nested container
         in: query

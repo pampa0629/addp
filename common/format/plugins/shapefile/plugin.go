@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 func (plugin *Plugin) Format() format.FormatType {
@@ -21,8 +21,8 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.FormatLayoutMulti},
 		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{".shp"}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
-		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ComponentTable: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderComponentTableSample), string(format.ContentReaderRawContent)},
+		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, MultiTable: true},
+		ContentReaders: []string{string(format.ContentReaderMultiTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
 		TransferWrite:  true,
 		Parse:          true,
@@ -36,30 +36,30 @@ func (plugin *Plugin) Capabilities() format.FormatCapability {
 	return capability
 }
 
-func (plugin *Plugin) ComponentSpecs() []resource.ComponentSpec {
-	return ComponentSpecs()
+func (plugin *Plugin) RelatedRefSpecs() []contentio.RelatedRefSpec {
+	return RelatedRefSpecs()
 }
 
-func (plugin *Plugin) DescribeComponents(components []resource.ComponentRef) []format.ComponentDescriptor {
-	return DescribeComponents(components)
+func (plugin *Plugin) DescribeRefs(refs []contentio.Ref) []format.RefDescriptor {
+	return DescribeRefs(refs)
 }
 
-func DescribeComponents(components []resource.ComponentRef) []format.ComponentDescriptor {
-	descriptors := make([]format.ComponentDescriptor, 0, len(components))
-	for _, component := range components {
-		ext := strings.ToLower(filepath.Ext(component.Path))
-		role := strings.TrimSpace(component.ComponentRole)
+func DescribeRefs(refs []contentio.Ref) []format.RefDescriptor {
+	descriptors := make([]format.RefDescriptor, 0, len(refs))
+	for _, ref := range refs {
+		ext := strings.ToLower(filepath.Ext(ref.Path))
+		role := strings.TrimSpace(ref.Role)
 		if role == "" {
 			role = roleForExtension(ext)
 		}
-		dataType, formatType := componentTypeForRole(role)
-		descriptors = append(descriptors, format.ComponentDescriptor{
+		dataType, formatType := refTypeForRole(role)
+		descriptors = append(descriptors, format.RefDescriptor{
 			Key:       role,
-			Path:      component.Path,
+			Path:      ref.Path,
 			Role:      role,
 			Label:     labelForRole(role, ext),
-			Required:  component.Required,
-			Primary:   component.Role == resource.ResourceRoleMain,
+			Required:  ref.Required,
+			Primary:   ref.Role == contentio.RoleMain,
 			DataType:  dataType,
 			Format:    formatType,
 			Extension: ext,
@@ -68,7 +68,7 @@ func DescribeComponents(components []resource.ComponentRef) []format.ComponentDe
 	return descriptors
 }
 
-func componentTypeForRole(role string) (string, format.FormatType) {
+func refTypeForRole(role string) (string, format.FormatType) {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "projection", "encoding":
 		return format.FormatDataTypeDocument, format.FormatText
@@ -78,8 +78,8 @@ func componentTypeForRole(role string) (string, format.FormatType) {
 }
 
 func roleForExtension(ext string) string {
-	for _, spec := range ComponentSpecs() {
-		if strings.EqualFold(resource.NormalizeExtension(spec.Extension), ext) {
+	for _, spec := range RelatedRefSpecs() {
+		if strings.EqualFold(contentio.NormalizeExtension(spec.Extension), ext) {
 			return spec.Role
 		}
 	}
@@ -104,6 +104,6 @@ func labelForRole(role, ext string) string {
 		if ext != "" {
 			return strings.ToUpper(strings.TrimPrefix(ext, ".")) + " 文件"
 		}
-		return "组件文件"
+		return "相关文件"
 	}
 }

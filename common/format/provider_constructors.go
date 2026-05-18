@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
 func NewFormatInfoProvider(
@@ -75,10 +75,10 @@ func NewContainerInfoProvider(
 
 func NewContainerChildResolver(
 	formatType FormatType,
-	resolve func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error),
+	resolve func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error),
 ) ContainerChildResolver {
 	if resolve == nil {
-		resolve = func(context.Context, resource.ResourceReader, resource.ResourceRef, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error) {
+		resolve = func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error) {
 			return nil, fmt.Errorf("container child resolver %s does not implement ResolveContainerChild", formatType)
 		}
 	}

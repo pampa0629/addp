@@ -26,11 +26,11 @@ type QuickViewMetadata struct {
 	Fingerprint      string                    `json:"fingerprint"`
 	TableName        string                    `json:"table_name"`
 	Schema           string                    `json:"schema"`
-	Extent           []float64                 `json:"extent"`            // [minLng, minLat, maxLng, maxLat]
+	Extent           []float64                 `json:"extent"` // [minLng, minLat, maxLng, maxLat]
 	SRID             int                       `json:"srid"`
 	RowCount         int64                     `json:"row_count"`
 	GeometryTypes    []string                  `json:"geometry_types"`
-	ZoomLevels       map[string]ZoomLevelStats `json:"zoom_levels"`       // "0", "1", ... "maxZoom"
+	ZoomLevels       map[string]ZoomLevelStats `json:"zoom_levels"` // "0", "1", ... "maxZoom"
 	MaxZoomGenerated int                       `json:"max_zoom_generated"`
 	StopReason       string                    `json:"stop_reason"` // "max_zoom_reached" or "adaptive_threshold"
 	TotalTiles       int                       `json:"total_tiles"`

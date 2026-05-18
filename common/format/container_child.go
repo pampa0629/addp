@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 )
 
 const (
@@ -16,7 +16,7 @@ const (
 
 // ContainerChildResource is a resolved nested resource inside a container.
 //
-// Stream children expose an independent ResourceReader/ResourceRef, for example
+// Stream children expose an independent contentio.Reader/contentio.Ref, for example
 // a ZIP entry. Native children reuse the parent resource with format-specific
 // options, for example an Excel sheet or SQLite table.
 type ContainerChildResource struct {
@@ -25,12 +25,12 @@ type ContainerChildResource struct {
 	DataType      string
 	Format        FormatType
 	Organization  string
-	Components    []resource.ComponentRef
+	Refs          []contentio.Ref
 	ResourceKind  string
-	Reader        resource.ResourceReader
-	Ref           resource.ResourceRef
-	ParentReader  resource.ResourceReader
-	ParentRef     resource.ResourceRef
+	Reader        contentio.Reader
+	Ref           contentio.Ref
+	ParentReader  contentio.Reader
+	ParentRef     contentio.Ref
 	ParentFormat  FormatType
 	ParentOptions *ParseOptions
 	Properties    map[string]interface{}
@@ -55,17 +55,17 @@ func (r *ContainerChildResource) Open(ctx context.Context) (io.ReadCloser, error
 	return reader.Open(ctx, ref)
 }
 
-// ContainerChildResolver resolves a child locator into a nested resource.
+// ContainerChildResolver resolves a child locator into a nested contentio.
 //
 // The resolver does not connect to engines. The caller supplies the parent
-// ResourceReader and ResourceRef that already include permissions, credentials,
+// contentio.Reader and contentio.Ref that already include permissions, credentials,
 // auditing and storage-specific read behavior.
 type ContainerChildResolver interface {
 	ContentReader
-	ResolveContainerChild(ctx context.Context, parent resource.ResourceReader, parentRef resource.ResourceRef, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error)
+	ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error)
 }
 
-func NativeContainerChildResource(parent resource.ResourceReader, parentRef resource.ResourceRef, parentFormat FormatType, child ContainerChildInfo, options *ParseOptions) *ContainerChildResource {
+func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.Ref, parentFormat FormatType, child ContainerChildInfo, options *ParseOptions) *ContainerChildResource {
 	childFormat := childFormatOrParent(child, parentFormat)
 	return &ContainerChildResource{
 		Name:          child.Name,
@@ -81,14 +81,14 @@ func NativeContainerChildResource(parent resource.ResourceReader, parentRef reso
 	}
 }
 
-func StreamContainerChildResource(reader resource.ResourceReader, ref resource.ResourceRef, child ContainerChildInfo) *ContainerChildResource {
+func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, child ContainerChildInfo) *ContainerChildResource {
 	return &ContainerChildResource{
 		Name:         child.Name,
 		Kind:         child.Kind,
 		DataType:     child.DataType,
 		Format:       childFormatOrParent(child, FormatUnknown),
 		Organization: child.Organization,
-		Components:   childResourceComponents(child),
+		Refs:         childContentRefs(child),
 		ResourceKind: ContainerChildResourceStream,
 		Reader:       reader,
 		Ref:          ref,
@@ -111,23 +111,25 @@ func childFormatOrParent(child ContainerChildInfo, parentFormat FormatType) Form
 	return FormatUnknown
 }
 
-func childResourceComponents(child ContainerChildInfo) []resource.ComponentRef {
-	if len(child.Components) == 0 {
+func childContentRefs(child ContainerChildInfo) []contentio.Ref {
+	if len(child.Refs) == 0 {
 		return nil
 	}
-	components := make([]resource.ComponentRef, 0, len(child.Components))
-	for _, component := range child.Components {
-		role := resource.ResourceRoleComponent
-		if component.Primary {
-			role = resource.ResourceRoleMain
+	refs := make([]contentio.Ref, 0, len(child.Refs))
+	for _, itemRef := range child.Refs {
+		role := contentio.RoleAuxiliary
+		if itemRef.Primary {
+			role = contentio.RoleMain
 		}
-		components = append(components, resource.ComponentRef{
-			ResourceRef:   resource.NewResourceRef(component.Path, role),
-			ComponentRole: component.Role,
-			Required:      component.Required,
-		})
+		contentRef := contentio.NewRef(itemRef.Path, role)
+		if itemRef.Role != "" {
+			contentRef.Role = itemRef.Role
+		}
+		contentRef.Required = itemRef.Required
+		contentRef.Primary = itemRef.Primary
+		refs = append(refs, contentRef)
 	}
-	return components
+	return refs
 }
 
 func cloneStringInterfaceMap(input map[string]interface{}) map[string]interface{} {

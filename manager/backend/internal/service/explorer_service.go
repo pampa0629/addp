@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resource"
 	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -23,7 +23,7 @@ import (
 type ExplorerService struct {
 	systemClient    *commonClient.SystemClient
 	metaClient      *commonClient.MetaClient
-	treeBuilder     *resource.TreeBuilder
+	treeBuilder     *catalogview.TreeBuilder
 	previewResolver *preview.PreviewResolver
 }
 
@@ -33,7 +33,7 @@ func NewExplorerService(
 	metaClient *commonClient.MetaClient,
 	previewResolver *preview.PreviewResolver,
 ) *ExplorerService {
-	treeBuilder := resource.NewTreeBuilder(metaClient)
+	treeBuilder := catalogview.NewTreeBuilder(metaClient)
 
 	return &ExplorerService{
 		systemClient:    systemClient,
@@ -51,7 +51,7 @@ func NewExplorerService(
 //   - expandDepth: 展开深度（-1 表示全部展开）
 //
 // 返回: 资源树根节点
-func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID uint, expandDepth int) (*resource.TreeNode, error) {
+func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID uint, expandDepth int) (*catalogview.TreeNode, error) {
 	// 1. 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
@@ -92,9 +92,9 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 //   - locator: ResourceLocator URI
 //
 // 返回: 刷新后的节点信息
-func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string) (*resource.TreeNode, error) {
+func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string) (*catalogview.TreeNode, error) {
 	// 1. 解析 Locator
-	loc, err := resource.ParseURI(locatorURI)
+	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
@@ -164,7 +164,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	return nil, fmt.Errorf("node not found: %s", locatorURI)
 }
 
-func refreshScanOptions(loc *resource.ResourceLocator) commonClient.MetaScanOptions {
+func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanOptions {
 	opts := commonClient.MetaScanOptions{
 		EngineID:    loc.EngineID,
 		ScanDepth:   "deep",
@@ -176,12 +176,12 @@ func refreshScanOptions(loc *resource.ResourceLocator) commonClient.MetaScanOpti
 	}
 	metaID := *loc.MetaID
 	switch loc.Type {
-	case resource.TypeTable, resource.TypeCollection, resource.TypeLabel, resource.TypeRelationship, resource.TypeObject, resource.TypeFile:
+	case catalogview.TypeTable, catalogview.TypeCollection, catalogview.TypeLabel, catalogview.TypeRelationship, catalogview.TypeObject, catalogview.TypeFile:
 		if metaID >= 100000 {
 			opts.ItemID = metaID - 100000
 			return opts
 		}
-	case resource.TypeSchema, resource.TypeDatabase, resource.TypeBucket, resource.TypeDirectory, resource.TypeRoot, resource.TypeDir:
+	case catalogview.TypeSchema, catalogview.TypeDatabase, catalogview.TypeBucket, catalogview.TypeDirectory, catalogview.TypeRoot, catalogview.TypeDir:
 		opts.NodeID = metaID
 		return opts
 	}
@@ -262,9 +262,9 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 //   - expandDepth: 展开深度（1=直接子节点，-1=全部展开）
 //
 // 返回: 包含父节点 locator 和子节点列表的结构
-func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, engineID uint, locatorURI string, expandDepth int) (*resource.TreeNode, error) {
+func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, engineID uint, locatorURI string, expandDepth int) (*catalogview.TreeNode, error) {
 	// 1. 解析 Locator
-	loc, err := resource.ParseURI(locatorURI)
+	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
@@ -324,7 +324,7 @@ func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, e
 //   - limit: 返回数量限制
 //
 // 返回: 搜索结果列表和总数
-func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engineID uint, keyword string, nodeTypes []string, limit int) ([]*resource.TreeNode, int, error) {
+func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engineID uint, keyword string, nodeTypes []string, limit int) ([]*catalogview.TreeNode, int, error) {
 	// 1. 验证引擎权限
 	if s.systemClient == nil {
 		return nil, 0, fmt.Errorf("system client not available")
@@ -353,7 +353,7 @@ func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engin
 
 	// 4. 在树中搜索节点（简单实现：遍历所有节点）
 	// TODO: 使用专门的 TreeSearchService 实现更高效的搜索
-	results := make([]*resource.TreeNode, 0)
+	results := make([]*catalogview.TreeNode, 0)
 	s.searchInTree(tree, keyword, nodeTypes, &results)
 
 	// 5. 限制返回数量
@@ -372,7 +372,7 @@ func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engin
 }
 
 // findNodeByLocator 在树中查找指定 locator 的节点（递归）
-func (s *ExplorerService) findNodeByLocator(node *resource.TreeNode, locator string) *resource.TreeNode {
+func (s *ExplorerService) findNodeByLocator(node *catalogview.TreeNode, locator string) *catalogview.TreeNode {
 	if node.Locator == locator {
 		return node
 	}
@@ -387,7 +387,7 @@ func (s *ExplorerService) findNodeByLocator(node *resource.TreeNode, locator str
 }
 
 // searchInTree 在树中递归搜索节点
-func (s *ExplorerService) searchInTree(node *resource.TreeNode, keyword string, nodeTypes []string, results *[]*resource.TreeNode) {
+func (s *ExplorerService) searchInTree(node *catalogview.TreeNode, keyword string, nodeTypes []string, results *[]*catalogview.TreeNode) {
 	// 检查节点类型过滤
 	typeMatch := len(nodeTypes) == 0
 	if !typeMatch {
@@ -688,21 +688,21 @@ func toInt64(v interface{}) int64 {
 }
 
 // buildEngineRootNode 构建引擎根节点（降级方案）
-func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *resource.TreeNode {
+func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *catalogview.TreeNode {
 	locator := fmt.Sprintf("addp://engine/%d/path/?type=database", engine.ID)
-	return &resource.TreeNode{
+	return &catalogview.TreeNode{
 		ID:      locator,
 		Locator: locator,
 		Label:   engine.Name,
 		Type:    "engine",
-		Icon:    resource.EngineIcon(engine),
+		Icon:    catalogview.EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":      engine.ID,
 			"engine_type":    engine.EngineType,
 			"capabilities":   engine.Capabilities,
 			"meta_available": false,
 		},
-		Children: []*resource.TreeNode{},
+		Children: []*catalogview.TreeNode{},
 	}
 }
 

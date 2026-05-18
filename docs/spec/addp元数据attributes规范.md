@@ -37,9 +37,9 @@ attributes 分区统一采用以下概念：
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | physical_path、bucket、path、etag、content_type、last_modified_at、total_size |
-| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、component_files、file_count、scope_exclusive |
+| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、refs、file_count、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
-| `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile components、sqlite version |
+| `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile refs、sqlite version |
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
@@ -56,7 +56,7 @@ attributes 分区统一采用以下概念：
 | fingerprint | `meta_item.fingerprint` | 不写入 attributes |
 | 大小 | `meta_item.size_bytes` + `attributes.storage.total_size` | 表列用于列表和排序，attributes 保存源存储视角 |
 | 修改时间 | `meta_item.data_updated_at` + `attributes.storage.last_modified_at` | `scanned_at` 不进入 attributes |
-| data item 核心语义 | `attributes.item` | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
+| data item 核心语义 | `attributes.item` | organization、data_type、format、refs、file_count、scope_exclusive、claim_policy |
 | 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
 | 内容访问索引 | `attributes.content_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
@@ -71,7 +71,7 @@ attributes 分区统一采用以下概念：
 | 分区 | 写入来源 | 内容 |
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
-| `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、component_files、file_count、scope_exclusive、claim_policy |
+| `item` | Meta 扫描、Meta item normalizer | organization、data_type、format、refs、file_count、scope_exclusive、claim_policy |
 | `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile 组件、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
@@ -81,14 +81,14 @@ attributes 分区统一采用以下概念：
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
 2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `organization`。
-3. data item 的资源组织方式、识别逻辑、claims、exclusive、`component_files`、`meta_item.full_name` 决策见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
+3. data item 的资源组织方式、识别逻辑、claims、exclusive、`refs`、`meta_item.full_name` 决策见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
 4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、format plugin、info provider、content reader 和 analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
 5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
 6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
 7. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
 8. 空间、时间、统计、提取、语义、分区、索引等不应进入 `data_type` 或 `format_info`，应作为横切能力写入 `capabilities`。
 9. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
-10. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，组件资源写入 `item.component_files`。
+10. 对 `organization=multi` 的 item，主文件或主资源应直接作为 `meta_item.full_name`，ref 资源写入 `item.refs`。
 11. 对 `organization=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
 12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。
 13. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。

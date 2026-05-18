@@ -17,14 +17,14 @@ const (
 
 // TaskInfo 任务信息
 type TaskInfo struct {
-	TaskID     string
-	Status     TaskStatus
-	Message    string
-	StartTime  time.Time
-	EndTime    *time.Time
-	Progress   int // 0-100
-	Result     interface{}
-	Error      string
+	TaskID    string
+	Status    TaskStatus
+	Message   string
+	StartTime time.Time
+	EndTime   *time.Time
+	Progress  int // 0-100
+	Result    interface{}
+	Error     string
 }
 
 // TaskTracker 任务跟踪器（内存缓存）

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -34,7 +34,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	catalogProvider, _ := plug.(plugin.CatalogProvider)
 
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	reader, err := scopeTableResourceReader(req, contentReader, catalogProvider, connInfo)
+	reader, err := scopeTableContentReader(req, contentReader, catalogProvider, connInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		if contentReader == nil {
 			err = fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
 		} else {
-			ref := resource.NewResourceRef(req.PhysicalPath, resource.ResourceRoleMain)
+			ref := contentio.NewRef(req.PhysicalPath, contentio.RoleMain)
 			input, openErr := reader.Open(ctx, ref)
 			if openErr != nil {
 				err = openErr
@@ -97,7 +97,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		if catalogProvider == nil || contentReader == nil {
 			err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
 		} else {
-			scope := resource.NewResourceRef(dirPath, resource.ResourceRoleScope)
+			scope := contentio.NewRef(dirPath, contentio.RoleScope)
 			tableInfo, err = scopeTableInfoFromAttributes(req.Attributes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read scope table attributes: %w", err)
@@ -181,7 +181,7 @@ func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format
 	return optionsProvider.SampleOptionsFromAttributes(attrs)
 }
 
-func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo) (resource.ResourceReader, error) {
+func scopeTableContentReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo) (contentio.Reader, error) {
 	if req == nil || req.Engine == nil {
 		return nil, fmt.Errorf("engine is required")
 	}
@@ -190,9 +190,9 @@ func scopeTableResourceReader(req *PreviewRequest, contentReader plugin.ContentR
 		if err != nil {
 			return nil, err
 		}
-		return newObjectCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
+		return newObjectCatalogContentReader(contentReader, catalogProvider, connInfo, req.Engine.ID, bucket), nil
 	}
-	return newFileCatalogResourceReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
+	return newFileCatalogContentReader(contentReader, catalogProvider, connInfo, req.Engine.ID), nil
 }
 
 func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {

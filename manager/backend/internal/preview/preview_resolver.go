@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -51,17 +51,17 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator         *resource.ResourceLocator // 资源定位符
-	Engine          *commonModels.Engine      // 引擎信息
-	Metadata        *commonModels.MetaNode    // 可选：Meta 节点数据
-	Pagination      *Pagination               // 分页参数
-	TenantID        *uint                     // 租户 ID
-	ItemType        string                    // 数据项类型（如 "table"），来自 MetaItem
-	PhysicalPath    string                    // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath       string                    // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName       string                    // 容器内部 child 名称，例如 Excel sheet
-	ComponentPath   string                    // multi child 内的单个组件路径，指向容器内原始对象
-	NestedChildPath string                    // 当前 child 是容器时，继续寻址其内部 child 的相对路径
+	Locator         *catalogview.ResourceLocator // 资源定位符
+	Engine          *commonModels.Engine         // 引擎信息
+	Metadata        *commonModels.MetaNode       // 可选：Meta 节点数据
+	Pagination      *Pagination                  // 分页参数
+	TenantID        *uint                        // 租户 ID
+	ItemType        string                       // 数据项类型（如 "table"），来自 MetaItem
+	PhysicalPath    string                       // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath       string                       // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName       string                       // 容器内部 child 名称，例如 Excel sheet
+	RefPath         string                       // multi child 内的单个ref 路径，指向容器内原始对象
+	NestedChildPath string                       // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 }
 
 // Pagination 分页参数
@@ -116,8 +116,8 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 			Metadata:    r.buildMetadata(req),
 		}, nil
 	}
-	if componentProvider := r.resolveComponentPreviewProvider(req, legacyReq); componentProvider != nil {
-		provider = componentProvider
+	if refProvider := r.resolveRefPreviewProvider(req, legacyReq); refProvider != nil {
+		provider = refProvider
 	}
 
 	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI(), "item_type", req.ItemType)
@@ -137,17 +137,17 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	return result, nil
 }
 
-func (r *PreviewResolver) resolveComponentPreviewProvider(req *PreviewResolverRequest, legacyReq *PreviewRequest) PreviewProvider {
+func (r *PreviewResolver) resolveRefPreviewProvider(req *PreviewResolverRequest, legacyReq *PreviewRequest) PreviewProvider {
 	if r == nil || r.registry == nil || req == nil || legacyReq == nil {
 		return nil
 	}
-	if strings.TrimSpace(req.ChildName) != "" || strings.TrimSpace(req.ComponentPath) == "" {
+	if strings.TrimSpace(req.ChildName) != "" || strings.TrimSpace(req.RefPath) == "" {
 		return nil
 	}
 	if !isContentFileItemType(legacyReq.ItemType) {
 		return nil
 	}
-	if provider, err := r.registry.GetByName("builtin:component-file"); err == nil {
+	if provider, err := r.registry.GetByName("builtin:ref-file"); err == nil {
 		return provider
 	}
 	return nil
@@ -158,9 +158,9 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 	return r.PreviewFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, "", "", tenantID)
 }
 
-func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, componentPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error) {
+func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
-	loc, err := resource.ParseURI(locatorURI)
+	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
@@ -296,7 +296,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		},
 		TenantID:        tenantID,
 		ChildName:       strings.TrimSpace(childName),
-		ComponentPath:   strings.Trim(strings.TrimSpace(componentPath), "/"),
+		RefPath:         strings.Trim(strings.TrimSpace(refPath), "/"),
 		NestedChildPath: strings.Trim(strings.TrimSpace(nestedChildPath), "/"),
 	}
 
@@ -415,7 +415,7 @@ func isPreviewItemType(itemType string) bool {
 }
 
 // DetectPreviewType 检测预览类型
-func (r *PreviewResolver) DetectPreviewType(loc *resource.ResourceLocator, engine *commonModels.Engine) string {
+func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, engine *commonModels.Engine) string {
 	req := &PreviewResolverRequest{
 		Locator: loc,
 		Engine:  engine,
@@ -507,7 +507,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		PhysicalPath:    req.PhysicalPath,
 		ScopePath:       req.ScopePath,
 		ChildName:       req.ChildName,
-		ComponentPath:   req.ComponentPath,
+		RefPath:         req.RefPath,
 		NestedChildPath: req.NestedChildPath,
 		Attributes:      req.MetadataAttributes(),
 	}

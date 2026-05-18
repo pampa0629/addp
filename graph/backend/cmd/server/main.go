@@ -17,10 +17,10 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	resourceobjectstore "github.com/addp/common/engine/contentadapter/objectstore"
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonLogger "github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
-	resourceobjectstore "github.com/addp/common/resource/objectstore"
 	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/resource"
+	"github.com/addp/common/contentio"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -26,17 +26,17 @@ type FieldInfo struct {
 }
 
 type Info struct {
-	BaseName            string   `json:"base_name,omitempty"`
-	ComponentExtensions []string `json:"component_extensions,omitempty"`
-	HasPRJ              bool     `json:"has_prj,omitempty"`
-	HasCPG              bool     `json:"has_cpg,omitempty"`
-	ShapeType           string   `json:"shape_type,omitempty"`
-	DBFVersion          byte     `json:"dbf_version,omitempty"`
-	Encoding            string   `json:"encoding,omitempty"`
+	BaseName      string   `json:"base_name,omitempty"`
+	RefExtensions []string `json:"ref_extensions,omitempty"`
+	HasPRJ        bool     `json:"has_prj,omitempty"`
+	HasCPG        bool     `json:"has_cpg,omitempty"`
+	ShapeType     string   `json:"shape_type,omitempty"`
+	DBFVersion    byte     `json:"dbf_version,omitempty"`
+	Encoding      string   `json:"encoding,omitempty"`
 }
 
-func ComponentSpecs() []resource.ComponentSpec {
-	return []resource.ComponentSpec{
+func RelatedRefSpecs() []contentio.RelatedRefSpec {
+	return []contentio.RelatedRefSpec{
 		{Extension: ".shp", Role: "main", Required: true, Primary: true},
 		{Extension: ".shx", Role: "index", Required: true},
 		{Extension: ".dbf", Role: "attributes", Required: true},
@@ -55,8 +55,8 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 	if i.BaseName != "" {
 		attrs["base_name"] = i.BaseName
 	}
-	if len(i.ComponentExtensions) > 0 {
-		attrs["component_extensions"] = append([]string(nil), i.ComponentExtensions...)
+	if len(i.RefExtensions) > 0 {
+		attrs["ref_extensions"] = append([]string(nil), i.RefExtensions...)
 	}
 	attrs["has_prj"] = i.HasPRJ
 	attrs["has_cpg"] = i.HasCPG

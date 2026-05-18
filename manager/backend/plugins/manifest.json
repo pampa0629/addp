@@ -33,9 +33,9 @@
       "builtin": "container-child"
     },
     {
-      "name": "builtin:component-file",
+      "name": "builtin:ref-file",
       "type": "builtin",
-      "builtin": "component-file"
+      "builtin": "ref-file"
     },
     {
       "name": "builtin:file-table",

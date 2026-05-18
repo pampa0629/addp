@@ -147,7 +147,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
-// @Param component_path query string false "multi child 内的组件路径 | Component path inside a multi child"
+// @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"
 // @Param nested_child_path query string false "嵌套容器内部 child 相对路径 | Relative child path inside a nested container"
 // @Success 200 {object} map[string]interface{} "预览数据 | Preview data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -182,12 +182,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	}
 
 	childName := c.Query("child_name")
-	componentPath := c.Query("component_path")
+	refPath := c.Query("ref_path")
 	nestedChildPath := c.Query("nested_child_path")
-	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize, "child_name", childName, "component_path", componentPath, "nested_child_path", nestedChildPath)
+	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize, "child_name", childName, "ref_path", refPath, "nested_child_path", nestedChildPath)
 
 	// 调用 PreviewResolver
-	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, componentPath, nestedChildPath, tenantID)
+	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, tenantID)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")

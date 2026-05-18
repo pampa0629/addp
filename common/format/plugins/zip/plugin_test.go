@@ -7,9 +7,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
-	"github.com/addp/common/resource"
 )
 
 func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
@@ -88,7 +88,7 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 	data := zipBytes(t, map[string]string{
 		"data/cities.csv": "id,name\n1,Hangzhou\n",
 	})
-	parentReader := singleTestResourceReader{data: data}
+	parentReader := singleTestContentReader{data: data}
 	child := format.ContainerChildInfo{
 		Name:     "data/cities.csv",
 		Kind:     "file",
@@ -98,7 +98,7 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 			"format": string(format.FormatCSV),
 		},
 	}
-	resolved, err := NewPlugin(nil).ResolveContainerChild(context.Background(), parentReader, resource.NewResourceRef("outer.zip", resource.ResourceRoleMain), child, nil)
+	resolved, err := NewPlugin(nil).ResolveContainerChild(context.Background(), parentReader, contentio.NewRef("outer.zip", contentio.RoleMain), child, nil)
 	if err != nil {
 		t.Fatalf("ResolveContainerChild() error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 	}
 }
 
-func TestResolveContainerChildComponentsUseParentQualifiedRefs(t *testing.T) {
+func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 	t.Parallel()
 
 	data := zipBytes(t, map[string]string{
@@ -127,7 +127,7 @@ func TestResolveContainerChildComponentsUseParentQualifiedRefs(t *testing.T) {
 		"roads.shx": "index",
 		"roads.dbf": "attrs",
 	})
-	parentReader := singleTestResourceReader{data: data}
+	parentReader := singleTestContentReader{data: data}
 	child := format.ContainerChildInfo{
 		Name:     "roads.shp",
 		Kind:     "file",
@@ -137,33 +137,33 @@ func TestResolveContainerChildComponentsUseParentQualifiedRefs(t *testing.T) {
 			"path":   "roads.shp",
 			"format": string(format.FormatShapefile),
 		},
-		Components: []format.ContainerChildComponent{
+		Refs: []format.ContainerChildRef{
 			{Role: "main", Path: "roads.shp", Primary: true, Required: true},
 			{Role: "index", Path: "roads.shx", Required: true},
 			{Role: "attributes", Path: "roads.dbf", Required: true},
 		},
 	}
-	resolved, err := NewPlugin(nil).ResolveContainerChild(context.Background(), parentReader, resource.NewResourceRef("outer.zip", resource.ResourceRoleMain), child, nil)
+	resolved, err := NewPlugin(nil).ResolveContainerChild(context.Background(), parentReader, contentio.NewRef("outer.zip", contentio.RoleMain), child, nil)
 	if err != nil {
 		t.Fatalf("ResolveContainerChild() error = %v", err)
 	}
-	if len(resolved.Components) != 3 {
-		t.Fatalf("components = %#v, want 3", resolved.Components)
+	if len(resolved.Refs) != 3 {
+		t.Fatalf("refs = %#v, want 3", resolved.Refs)
 	}
-	if got := resolved.Components[0].Path; got != "outer.zip/roads.shp" {
-		t.Fatalf("main component path = %q, want parent-qualified path", got)
+	if got := resolved.Refs[0].Path; got != "outer.zip/roads.shp" {
+		t.Fatalf("main ref path = %q, want parent-qualified path", got)
 	}
-	rc, err := resolved.Reader.Open(context.Background(), resolved.Components[1].ResourceRef)
+	rc, err := resolved.Reader.Open(context.Background(), resolved.Refs[1])
 	if err != nil {
-		t.Fatalf("open index component: %v", err)
+		t.Fatalf("open index ref: %v", err)
 	}
 	defer rc.Close()
 	body, err := io.ReadAll(rc)
 	if err != nil {
-		t.Fatalf("read index component: %v", err)
+		t.Fatalf("read index ref: %v", err)
 	}
 	if string(body) != "index" {
-		t.Fatalf("index component body = %q", body)
+		t.Fatalf("index ref body = %q", body)
 	}
 }
 
@@ -187,18 +187,18 @@ func zipBytes(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-type singleTestResourceReader struct {
+type singleTestContentReader struct {
 	data []byte
 }
 
-func (r singleTestResourceReader) Open(context.Context, resource.ResourceRef) (io.ReadCloser, error) {
+func (r singleTestContentReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.data)), nil
 }
 
-func (r singleTestResourceReader) Stat(context.Context, resource.ResourceRef) (*resource.ResourceMetadata, error) {
-	return &resource.ResourceMetadata{Exists: true, Size: int64(len(r.data))}, nil
+func (r singleTestContentReader) Stat(context.Context, contentio.Ref) (*contentio.Metadata, error) {
+	return &contentio.Metadata{Exists: true, Size: int64(len(r.data))}, nil
 }
 
-func (r singleTestResourceReader) List(context.Context, resource.ResourceRef) ([]resource.ResourceRef, error) {
+func (r singleTestContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, nil
 }

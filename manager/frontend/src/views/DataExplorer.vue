@@ -189,7 +189,7 @@ const handlePageChange = async (payload) => {
   }
 
   try {
-    await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedComponentPath, store.selectedNestedChildPath)
+    await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedRefPath, store.selectedNestedChildPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
@@ -197,12 +197,12 @@ const handlePageChange = async (payload) => {
 
 const handleChildChange = async (payload) => {
   const childName = typeof payload === 'string' ? payload : payload?.childName
-  const componentPath = typeof payload === 'object' ? payload?.componentPath || '' : ''
+  const refPath = typeof payload === 'object' ? payload?.refPath || '' : ''
   const nestedChildPath = typeof payload === 'object' ? payload?.nestedChildPath || '' : ''
-  const componentSwitch = typeof payload === 'object' && payload?.componentSwitch
-  if (!store.selectedLocator || (!childName && !componentPath && !nestedChildPath && !componentSwitch)) return
+  const refSwitch = typeof payload === 'object' && payload?.refSwitch
+  if (!store.selectedLocator || (!childName && !refPath && !nestedChildPath && !refSwitch)) return
   try {
-    await store.loadPreview(store.selectedLocator, 1, childName, componentPath, nestedChildPath)
+    await store.loadPreview(store.selectedLocator, 1, childName, refPath, nestedChildPath)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }

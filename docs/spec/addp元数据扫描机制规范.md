@@ -80,7 +80,7 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 - `meta_item` 身份字段：`item_type`、`name`、`full_name`、`fingerprint`、`node_id`。
 - `attributes.schema_version`。
 - `attributes.storage` 中由 catalog 直接返回的事实，例如 bucket、path、name、size、etag、last_modified_at、content_type。
-- `attributes.item` 中无需读取内容即可判断的事实，例如 `organization`、`data_type`、`format`。如果 `component_files`、`file_count`、`scope_exclusive` 可由 catalog、manifest 或路径规则直接判断，也可以写入；需要打开 file/object 内容才能判断的，一律归 deep。
+- `attributes.item` 中无需读取内容即可判断的事实，例如 `organization`、`data_type`、`format`。如果 `refs`、`file_count`、`scope_exclusive` 可由 catalog、manifest 或路径规则直接判断，也可以写入；需要打开 file/object 内容才能判断的，一律归 deep。
 - 轻量格式判断：扩展名、MIME、catalog 声明。若确实需要读取极小 header，必须有读取上限和明确理由。
 
 不应写入：
@@ -269,7 +269,7 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 对于 item 目标，Meta 内部负责确定最小扫描上下文：
 
 - single item：扫描该 item。
-- multi item：根据 `component_files` 或父 node 构造组件上下文。
+- multi item：根据 `refs` 或父 node 构造组件上下文。
 - whole item：扫描 whole scope。
 
 这个复杂度留在 Meta 内部，Manager 不关心。

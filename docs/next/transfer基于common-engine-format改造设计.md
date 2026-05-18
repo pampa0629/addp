@@ -2,7 +2,7 @@
 
 更新时间：2026-05-18
 
-本文记录 Transfer 模块基于 `common/engine`、`common/format`、`common/resource` 重构后的当前状态和后续路线。当前口径采用 clean break：不兼容旧任务 JSON，不保留 Transfer 私有 reader / writer 插件体系，不为历史 pipeline 做兼容分支。
+本文记录 Transfer 模块基于 `common/engine`、`common/format`、`common/contentio` 重构后的当前状态和后续路线。当前口径采用 clean break：不兼容旧任务 JSON，不保留 Transfer 私有 reader / writer 插件体系，不为历史 pipeline 做兼容分支。
 
 稳定后的通用规则应继续沉淀到 `docs/spec/`；本文只保留正在推进中的设计、进展和下一步。
 
@@ -19,7 +19,7 @@ common 负责可复用读写与格式能力
 
 - engine-native 读写能力归 `common/engine`，例如 PostgreSQL cursor / COPY、NFS / S3 / MinIO content read-write、DeleteResource。
 - format / data type 读写能力归 `common/format`，例如 CSV / JSON / Parquet / Shapefile 对 table data type 的 reader / writer。
-- 资源定位、多组件、range、component 读写归 `common/resource`。
+- content 定位、多 ref、range、multi 读写归 `common/contentio`；engine 到 contentio 的适配归 `common/engine/contentadapter`。
 - Transfer 只保留任务配置、planner、policy、transform 编排、worker、checkpoint、日志、指标、重试和写后 Meta 扫描触发。
 
 旧 Transfer `plugins/readers`、`plugins/writers`、`pkg/plugin_loader`、旧 `pkg/pipeline` 和旧 transform API 不作为新主路径保留。已经删除的旧入口不再恢复。
@@ -47,7 +47,7 @@ endpoint 只决定 reader / writer 来自哪里：
 |---|---|
 | native table | `common/engine` table reader / writer |
 | encoded file/object | `common/engine` content reader / writer + `common/format` table reader / writer |
-| multi component file/object | `common/resource` component writer + `common/format` component table writer |
+| multi ref file/object | `common/contentio` multi writer + `common/format` multi table writer |
 
 因此：
 
@@ -69,10 +69,21 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 `common/format` 的实现目录按格式组织，但能力接口面向 data type：
 
 - table reader / writer：`TableReaderProvider`、`TableWriterProvider`
-- table component writer：`ComponentTableWriterProvider`
+- multi table writer：`MultiTableWriterProvider`
+- multi table reader：`MultiTableReaderProvider`
 - table sample / info：`TableSampleReader`、`TableInfoProvider`
 
 不要再引入 `FormatRecordReader`、`TableFormatWriter` 这类混淆命名。
+
+多 ref table 能力的边界如下：
+
+| 接口 | 语义 | 主要使用方 |
+|---|---|---|
+| `MultiTableProvider` | 多 ref table 的 info / sample 能力，面向预览、探查和少量样本读取。 | Meta、Manager、Transfer 探查兜底 |
+| `MultiTableReaderProvider` | 多 ref table 的连续读取会话，面向全量批处理。 | Transfer 主链路 |
+| `MultiTableWriterProvider` | 多 ref table 的连续写出会话。 | Transfer 写侧 |
+
+因此 `MultiTableReaderProvider` 不是重复定义 `MultiTableProvider`，而是把“按样本窗口读取”和“打开一次、连续按批读取”拆开。Shapefile 这类格式在 Transfer 中优先使用连续 reader；sample provider 保留给预览和兜底。
 
 ## 三、新任务 JSON 口径
 
@@ -127,7 +138,7 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 5. `format` 只用于 encoded endpoint，例如 `csv`、`jsonl`、`parquet`、`shapefile`。
 6. native endpoint 不写 `format=table`。
 7. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
-8. Shapefile 输出按 `format=shapefile` 表达，并通过 multi component writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等组件。
+8. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关文件。
 9. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
 10. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
 
@@ -191,14 +202,14 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
 | Parquet | 最小 `TableReaderProvider` 已有 | 最小 `TableWriterProvider` 已有 | 已能跑通基础 table transfer；row group / 分区数据集仍待增强。 |
-| Shapefile | component table info / sample 读侧已接入 Transfer 主链路 | `ComponentTableWriterProvider` 已有 | multi component 读写已可用于 Transfer；后续只保留连续 stateful component reader / 大文件性能增强。 |
+| Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 顺序读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口，避免每批重新 materialize 组件。 |
 
 ### 4.3 Transfer
 
 | 能力 | 状态 |
 |---|---|
 | 新 endpoint JSON | 创建、编辑、详情、执行已切换到新结构。 |
-| planner | 已能规划 native table、encoded table file/object、multi component export、native table import。 |
+| planner | 已能规划 native table、encoded table file/object、multi ref export、native table import。 |
 | executor | 已统一走 common engine / format / resource 能力。 |
 | worker | Asynq worker 保留，执行入口已切到 planner + executor。 |
 | field mapping transform | 已进入 `config.transforms[type=field_mapping]`，executor 可执行投影、重命名、默认值、目标类型和 geometry schema 同步。 |
@@ -218,10 +229,10 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 | PostgreSQL table -> PostgreSQL table | 已收敛到统一 table reader / writer 链路 | 不保留 native-to-native 专用通道；空间字段类型已修复。 |
 | PostgreSQL spatial table -> PostgreSQL spatial table | 已修复空间字段类型保真 | 旧目标表可直接删除后重建，不做兼容迁移。 |
 | PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到。 |
-| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、组件文件、Meta scan 和 Manager preview。 |
-| NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi component 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session。 |
-| MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi component 读侧可导入 native table。 |
-| NFS Shapefile -> MinIO Shapefile | 已手动验证通过 | multi component 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities。 |
+| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关文件、Meta scan 和 Manager preview。 |
+| NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session。 |
+| MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table。 |
+| NFS Shapefile -> MinIO Shapefile | 已手动验证通过 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities。 |
 
 ## 六、写后 Meta 扫描规则
 
@@ -234,9 +245,9 @@ Transfer 成功写出目标后，如果 `auto_scan_metadata=true`，必须立即
 | PostgreSQL native table | `public.roads` | `public` |
 | NFS 顶层文件 | `roads.csv` | `/` |
 | NFS 子目录文件 | `exports/roads.csv` | `exports` |
-| NFS Shapefile | `shp/a3.shp` + components | `shp` |
+| NFS Shapefile | `shp/a3.shp` + refs | `shp` |
 | MinIO object | `addp/exports/roads.csv` | `addp/exports` |
-| MinIO Shapefile | `addp/gis/a3.shp` + components | `addp/gis` |
+| MinIO Shapefile | `addp/gis/a3.shp` + refs | `addp/gis` |
 
 文件型引擎的特别规则见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md)：NFS root `name="/"`，`full_name=""`，`path` 是 Meta 内部节点链，`.` 不进入业务路径。
 
@@ -280,8 +291,9 @@ batch checkpoint 最小结构：
 | 层 | 负责 | 不负责 |
 |---|---|---|
 | `common/engine` | 引擎连接、能力声明、catalog、metadata、content read/write、range read、table batch/session read/write、DeleteResource、query、stream / CDC 扩展点 | Transfer 任务、写入模式、调度、执行历史、重试策略 |
-| `common/resource` | ResourceRef、ResourceReader、RangeReader、ComponentReader、ComponentWriter、多组件提交边界 | 格式解析、任务策略 |
-| `common/format` | 格式身份、descriptor、capability view、data type reader / writer、编码解码、schema / sample / component 能力 | engine 连接、worker、任务记录 |
+| `common/contentio` | Ref、Reader、RangeReader、Writer、MultiReader / MultiWriter、多 ref 提交边界 | 格式解析、任务策略、engine 连接 |
+| `common/engine/contentadapter` | engine content provider 到 contentio 的适配、CatalogPath 与 Ref 的映射 | 格式解析、任务策略 |
+| `common/format` | 格式身份、descriptor、capability view、data type reader / writer、编码解码、schema / sample / multi 能力 | engine 连接、worker、任务记录 |
 | `transfer` | 任务 JSON、planner、policy、field mapping / transform、worker、checkpoint、logs、metrics、写后 Meta scan | 具体 engine reader / writer、具体 format reader / writer |
 
 边界判断原则：
@@ -301,7 +313,7 @@ batch checkpoint 最小结构：
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
 | Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection、分区数据集读取仍待补。 |
-| Shapefile 读取 | Transfer 主链路已验收通过；连续 stateful component reader、按批保持打开句柄、超大文件性能仍待增强。 |
+| Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；当前 indexed reader 支持 Point / Polyline / Polygon / MultiPoint，Z/M 类型和更复杂几何仍需补齐。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
 | transform 扩展 | `field_mapping` 已进入主链路；过滤、派生字段、表达式、空间坐标转换等更完整 ETL transform 尚未设计。 |
@@ -310,8 +322,8 @@ batch checkpoint 最小结构：
 
 ### 近期优先级
 
-1. **增强 Shapefile 大文件读侧性能**  
-   当前主链路已通过，但仍可把 component sample path 演进为 stateful component reader，避免每批重新打开 / 定位组件文件。
+1. **补 Shapefile reader 的几何覆盖和集成验收**  
+   当前 Transfer 已优先走连续 multi table reader；下一步补 PointZ / PolylineZ / PolygonZ / MultiPointZ 等几何解析，并把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。
 
 2. **补 Transfer 验收用例沉淀**  
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、NFS / MinIO Shapefile -> PostgreSQL table 形成可重复的集成测试或操作清单。
@@ -347,5 +359,5 @@ batch checkpoint 最小结构：
 - 不新增 format 泛化 record reader / writer。
 - 不为 native->native、file->object 等组合建立专用执行通道。
 - GeoJSON 不是顶层 format，而是 JSON 的空间编码策略。
-- Shapefile 是 multi component table format，Transfer 通过 component writer 写出。
+- Shapefile 是 multi table format，Transfer 通过 multi writer 写出。
 - NFS root 是结构上必须存在、语义路径上为空、展示上可透明的节点；具体规范已移入 `docs/spec/addp存储引擎路径体系规范.md`。

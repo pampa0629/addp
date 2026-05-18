@@ -192,23 +192,23 @@ func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 		// 计算 2^z 用于scale和cell size计算
 		shift := 1 << uint(z)
 		tileMatrices[z] = map[string]interface{}{
-			"id":                fmt.Sprintf("%d", z),
-			"scaleDenominator":  559082264.029 / float64(shift),
-			"cellSize":          156543.033928041 / float64(shift),
-			"cornerOfOrigin":    "topLeft",
-			"pointOfOrigin":     []float64{-20037508.3427892, 20037508.3427892},
-			"tileWidth":         256,
-			"tileHeight":        256,
-			"matrixWidth":       shift,
-			"matrixHeight":      shift,
+			"id":               fmt.Sprintf("%d", z),
+			"scaleDenominator": 559082264.029 / float64(shift),
+			"cellSize":         156543.033928041 / float64(shift),
+			"cornerOfOrigin":   "topLeft",
+			"pointOfOrigin":    []float64{-20037508.3427892, 20037508.3427892},
+			"tileWidth":        256,
+			"tileHeight":       256,
+			"matrixWidth":      shift,
+			"matrixHeight":     shift,
 		}
 	}
 
 	tileMatrixSet := map[string]interface{}{
-		"id":    "WebMercatorQuad",
-		"title": "Web Mercator",
-		"uri":   "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad",
-		"crs":   "http://www.opengis.net/def/crs/EPSG/0/3857",
+		"id":           "WebMercatorQuad",
+		"title":        "Web Mercator",
+		"uri":          "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad",
+		"crs":          "http://www.opengis.net/def/crs/EPSG/0/3857",
 		"tileMatrices": tileMatrices,
 	}
 
@@ -257,7 +257,7 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 			"dataType":    "vector",
 			"tileMatrixSetLinks": []map[string]string{
 				{
-					"tileMatrixSet": "WebMercatorQuad",
+					"tileMatrixSet":    "WebMercatorQuad",
 					"tileMatrixSetURI": "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad",
 				},
 			},
@@ -265,8 +265,8 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 				{
 					"href": fmt.Sprintf("http://%s/ogc/tiles/%s/tiles/%s/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}",
 						host, serviceName, layer.LayerName),
-					"rel":      "item",
-					"type":     "application/vnd.mapbox-vector-tile",
+					"rel":       "item",
+					"type":      "application/vnd.mapbox-vector-tile",
 					"templated": "true",
 				},
 			},

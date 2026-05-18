@@ -26,11 +26,11 @@ type ContainerChildInfo struct {
 	ColumnCount  *int
 	HasHeader    *bool
 	Fields       []FieldInfo
-	Components   []ContainerChildComponent
+	Refs         []ContainerChildRef
 	Properties   map[string]interface{}
 }
 
-type ContainerChildComponent struct {
+type ContainerChildRef struct {
 	Role      string
 	Path      string
 	Required  bool

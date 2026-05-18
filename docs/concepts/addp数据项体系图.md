@@ -102,12 +102,12 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 | 组织方式 | 含义 | 示例 |
 |---|---|---|
 | `single` | 一个引擎资源对应一个 data item | 数据库 table、对象存储 object、文件系统 file |
-| `multi` | 多个明确组件资源共同组成一个 data item | Shapefile 多对象 / 多文件、主资源加同级索引资源 |
+| `multi` | 多个明确相关 ref 共同组成一个 data item | Shapefile 多对象 / 多文件、主 ref 加同级索引 ref |
 | `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB 场景目录、完整数据集 prefix |
 
 `single` 不等于单文件。数据库表也是 `single`。SQLite、ZIP、RAR 等虽然内部包含子对象，但外层 data item 通常仍是 `single`。
 
-`multi` 只认领明确匹配的组件资源，不独占整个目录或 prefix。Shapefile 是典型 `multi`。
+`multi` 只认领明确匹配的相关 ref，不独占整个目录或 prefix。Shapefile 是典型 `multi`。
 
 `whole` 表示整段范围构成一个 data item，不再逐个顾忌范围内的文件和子目录。只有规范明确声明的格式或引擎原生边界才应使用 `whole`。
 
@@ -126,13 +126,13 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 
 ## 模块职责边界
 
-数据项体系跨越 Meta、Manager、Transfer、common/format、common/resource 和 engine plugin。为了避免重复推断和事实源分裂，模块职责按以下顺序分层：
+数据项体系跨越 Meta、Manager、Transfer、common/format、common/contentio 和 engine plugin。为了避免重复推断和事实源分裂，模块职责按以下顺序分层：
 
 ```text
 engine capability
   -> Meta detector 确定 data item
   -> Meta normalizer 写 attributes
-  -> common/resource 提供读取抽象
+  -> common/contentio 提供内容 I/O 抽象
   -> common/format 提供格式和数据类型能力
   -> Manager / Transfer / Asset / Search 消费
 ```
@@ -141,10 +141,10 @@ engine capability
 |---|---|---|
 | engine plugin | 连接、catalog、元数据、内容读写、批次读写等 engine capability | 判断最终 `data_type`、归并 multi / whole item、写最终 attributes |
 | `meta` | 资源树扫描、detector 调度、data item 识别、claims / exclusive 合并、attributes normalizer、落库 | Manager 面向前端的 DTO、Transfer 执行计划、format plugin 内部解析细节 |
-| `common/resource` | `ResourceRef`、`ResourceReader`、`ComponentReader`、`NativeCursor` 等读取抽象 | 连接凭据管理、格式解析、面向前端的 DTO |
+| `common/contentio` | `Ref`、`Reader`、`RangeReader`、`MultiReader`、`Writer`、`MultiWriter` 等内容 I/O 抽象 | 连接凭据管理、格式解析、面向前端的 DTO |
 | `common/format` | 文件格式枚举、FormatPlugin、格式身份、格式能力、info provider、content reader | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
 | `manager` | 消费已入库 data item 和标准 attributes，基于 reader / provider 组装管理端内容结果 | 重新判断 organization、重新猜 format、重新枚举 sibling 组件 |
-| `transfer` | 基于 data item、engine capability、resource 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别组件、绕过 provider 硬编码格式 |
+| `transfer` | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别组件、绕过 provider 硬编码格式 |
 | `asset` / `search` | 消费标准 attributes 做资产治理、索引和检索 | 自行识别 data item 或重写格式解析规则 |
 | frontend | 基于后端 DTO 展示内容和交互 | 决定 data item 边界、直接访问 engine、复刻后端格式解析规则 |
 
@@ -183,7 +183,7 @@ meta item + attributes
   -> Manager 组装管理端 DTO
 ```
 
-Manager 不重新识别 item。multi 读取使用 `attributes.item.component_files`；whole 读取使用已入库 whole scope。
+Manager 不重新识别 item。multi 读取使用 `attributes.item.refs`；whole 读取使用已入库 whole scope。
 
 ### Transfer
 
@@ -203,6 +203,6 @@ Transfer 可以根据目标能力选择编码格式，但不能绕过标准字�
 1. 同一事实只在一个模块裁决，并写入一个规范位置。
 2. `manager`、`transfer`、`asset`、`search` 只消费已入库 data item，不复刻 Meta detector。
 3. `common/format` 可以声明 layout 能力，但不直接决定最终 `organization` 和 claims。
-4. `common/resource` 不进入格式语义，也不承载面向前端的 DTO。
+4. `common/contentio` 不进入格式语义，也不承载面向前端的 DTO。
 5. FormatPlugin 不接 `engine_id`，不反向构造 engine reader。
 6. 私有格式字段必须进入命名空间，不能覆盖平台标准字段。

@@ -2,15 +2,17 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/contentio"
+	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
 	jsonformat "github.com/addp/common/format/plugins/json"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
-	"github.com/addp/common/resource"
 )
 
 func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
@@ -59,13 +61,13 @@ func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	}
 }
 
-func TestTableTransferExecutorReadsShapefileComponents(t *testing.T) {
+func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
-	resourceWriter := resource.NewEngineContentWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
-	componentWriter := resource.NewStaticComponentWriter(resourceWriter, resource.SameBasenameComponents(target.StringPath(), shapefilePlugin.ComponentSpecs()))
-	tableWriter, err := shapefilePlugin.OpenComponentTableWriter(context.Background(), componentWriter, resourceRefFromCatalogPath(target), &format.TableInfo{
+	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
+	multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs()))
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), multiWriter, contentRefFromCatalogPath(target), &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
 			{Name: "name", Type: format.FieldTypeString, Size: 32},
@@ -77,7 +79,7 @@ func TestTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 		},
 	}, nil)
 	if err != nil {
-		t.Fatalf("OpenComponentTableWriter failed: %v", err)
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
 	if err := tableWriter.WriteRows(context.Background(), []map[string]interface{}{
 		{"id": 1, "name": "Alpha", "geom": "POINT (120 30)"},
@@ -93,7 +95,8 @@ func TestTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 	exec := &TableTransferExecutor{
 		SourceContentReader:     source,
 		TargetContentWriter:     output,
-		SourceComponentProvider: shapefilePlugin,
+		SourceMultiReadProvider: shapefilePlugin,
+		SourceMultiProvider:     shapefilePlugin,
 		TargetFormatProvider:    csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -112,6 +115,61 @@ func TestTableTransferExecutorReadsShapefileComponents(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("csv output = %q, missing %q", got, want)
 		}
+	}
+}
+
+func TestTableTransferExecutorPrefersMultiReaderProvider(t *testing.T) {
+	source := &fakeContentWriter{files: map[string][]byte{}}
+	shapefilePlugin := shapefileformat.NewPlugin(nil)
+	target := engineplugin.FileItemPath(7, "imports/cities.shp")
+	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
+	multiWriter := contentio.NewStaticMultiWriter(contentWriter, contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs()))
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), multiWriter, contentRefFromCatalogPath(target), &format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "id", Type: format.FieldTypeInt},
+			{Name: "name", Type: format.FieldTypeString, Size: 32},
+			{Name: "geom", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{
+			GeometryColumn: "geom",
+			GeometryType:   "Point",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
+	}
+	if err := tableWriter.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "Alpha", "geom": "POINT (120 30)"},
+		{"id": 2, "name": "Beta", "geom": "POINT (121 31)"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := tableWriter.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	output := &fakeContentWriter{}
+	sampleOnly := &failingMultiTableProvider{MultiTableProvider: shapefilePlugin, specs: shapefilePlugin.RelatedRefSpecs()}
+	exec := &TableTransferExecutor{
+		SourceContentReader:     source,
+		TargetContentWriter:     output,
+		SourceMultiReadProvider: shapefilePlugin,
+		SourceMultiProvider:     sampleOnly,
+		TargetFormatProvider:    csvformat.NewPlugin(nil),
+	}
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: target, Format: format.FormatShapefile},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if sampleOnly.sampleCalled {
+		t.Fatal("sample multi provider was called; want continuous multi reader path")
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 2 {
+		t.Fatalf("metrics = %#v, want 2 read/written and 2 batches", metrics)
 	}
 }
 
@@ -141,4 +199,19 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 	if exec.TargetFormatProvider.Format() != format.FormatJSON {
 		t.Fatalf("table writer provider = %q, want json", exec.TargetFormatProvider.Format())
 	}
+}
+
+type failingMultiTableProvider struct {
+	format.MultiTableProvider
+	specs        []contentio.RelatedRefSpec
+	sampleCalled bool
+}
+
+func (p *failingMultiTableProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
+	return append([]contentio.RelatedRefSpec(nil), p.specs...)
+}
+
+func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.MultiReader, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
+	p.sampleCalled = true
+	return nil, fmt.Errorf("sample multi provider should not be called")
 }

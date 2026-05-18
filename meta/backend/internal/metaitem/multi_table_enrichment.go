@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/common/resource"
 )
 
 func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
@@ -50,9 +50,9 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 			continue
 		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
-		enrichComponentTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
+		enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
 		result.Items = append(result.Items, detected)
-		for _, path := range detected.ComponentFilePaths() {
+		for _, path := range detected.RefFilePaths() {
 			result.Claims[path] = true
 		}
 	}
@@ -74,8 +74,8 @@ func fileEntriesToCandidates(files []plugin.FileEntry) []dataitem.Candidate {
 }
 
 func detectedItemFromResolvedItem(physicalPath string, item dataitem.ResolvedItem) *DetectedItem {
-	sort.Slice(item.ComponentList, func(i, j int) bool {
-		return item.ComponentList[i].Path < item.ComponentList[j].Path
+	sort.Slice(item.RefList, func(i, j int) bool {
+		return item.RefList[i].Path < item.RefList[j].Path
 	})
 
 	return &DetectedItem{
@@ -84,7 +84,7 @@ func detectedItemFromResolvedItem(physicalPath string, item dataitem.ResolvedIte
 	}
 }
 
-func enrichComponentTableInfo(
+func enrichRefTableInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -100,54 +100,54 @@ func enrichComponentTableInfo(
 	if err != nil {
 		return
 	}
-	componentProvider, ok := provider.(format.ComponentTableProvider)
+	refProvider, ok := provider.(format.MultiTableProvider)
 	if !ok {
 		return
 	}
-	tableInfo, err := componentProvider.DescribeTableComponents(ctx, newMetaComponentReader(contentReader, connInfo, engineID, catalogPathFor, item.ResourceComponents()), nil)
+	tableInfo, err := refProvider.DescribeMultiTable(ctx, newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor, item.ContentRefs()), nil)
 	if err != nil {
 		return
 	}
 	detected.Fields = tableInfo.Fields
-	upsertComponentTableInfo(detected, tableInfo)
+	upsertRefTableInfo(detected, tableInfo)
 }
 
-type metaComponentReader struct {
+type metaRefReader struct {
 	contentReader  plugin.ContentReadableProvider
 	connInfo       plugin.ConnectionInfo
 	engineID       uint
 	catalogPathFor func(path string) plugin.CatalogPath
-	components     []resource.ComponentRef
+	refs           []contentio.Ref
 }
 
-func newMetaComponentReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath, components []resource.ComponentRef) *metaComponentReader {
-	return &metaComponentReader{
+func newMetaRefReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath, refs []contentio.Ref) *metaRefReader {
+	return &metaRefReader{
 		contentReader:  contentReader,
 		connInfo:       connInfo,
 		engineID:       engineID,
 		catalogPathFor: catalogPathFor,
-		components:     append([]resource.ComponentRef(nil), components...),
+		refs:           append([]contentio.Ref(nil), refs...),
 	}
 }
 
-func (r *metaComponentReader) Components() []resource.ComponentRef {
-	return append([]resource.ComponentRef(nil), r.components...)
+func (r *metaRefReader) Refs() []contentio.Ref {
+	return append([]contentio.Ref(nil), r.refs...)
 }
 
-func (r *metaComponentReader) OpenComponent(ctx context.Context, component resource.ComponentRef) (io.ReadCloser, error) {
-	return r.contentReader.OpenContent(ctx, r.connInfo, resolveCatalogPath(r.engineID, component.Path, r.catalogPathFor), plugin.ReadOptions{})
+func (r *metaRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	return r.contentReader.OpenContent(ctx, r.connInfo, resolveCatalogPath(r.engineID, ref.Path, r.catalogPathFor), plugin.ReadOptions{})
 }
 
-func (r *metaComponentReader) OpenComponentRole(ctx context.Context, role string) (io.ReadCloser, error) {
-	for _, component := range r.components {
-		if strings.EqualFold(component.ComponentRole, role) {
-			return r.OpenComponent(ctx, component)
+func (r *metaRefReader) OpenRole(ctx context.Context, role string) (io.ReadCloser, error) {
+	for _, ref := range r.refs {
+		if strings.EqualFold(ref.Role, role) {
+			return r.Open(ctx, ref)
 		}
 	}
-	return nil, resource.ErrComponentNotFound
+	return nil, contentio.ErrContentNotFound
 }
 
-func upsertComponentTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
+func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
 	if item == nil || tableInfo == nil {
 		return
 	}

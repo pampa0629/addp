@@ -23,22 +23,22 @@ func (r *ProviderRegistry) RegisterTableProvider(provider TableProvider) error {
 	return nil
 }
 
-func RegisterComponentTableProvider(provider ComponentTableProvider) error {
-	return globalProviderRegistry.RegisterComponentTableProvider(provider)
+func RegisterMultiTableProvider(provider MultiTableProvider) error {
+	return globalProviderRegistry.RegisterMultiTableProvider(provider)
 }
 
-func (r *ProviderRegistry) RegisterComponentTableProvider(provider ComponentTableProvider) error {
+func (r *ProviderRegistry) RegisterMultiTableProvider(provider MultiTableProvider) error {
 	if provider == nil {
-		return fmt.Errorf("component table provider cannot be nil")
+		return fmt.Errorf("multi table provider cannot be nil")
 	}
 	formatType := provider.Format()
-	if err := validateProviderFormat(formatType, "component table provider"); err != nil {
+	if err := validateProviderFormat(formatType, "multi table provider"); err != nil {
 		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.componentTableProviders[formatType] = provider
+	r.multiTableProviders[formatType] = provider
 	return nil
 }
 
@@ -99,6 +99,25 @@ func (r *ProviderRegistry) RegisterTableReaderProvider(provider TableReaderProvi
 	return nil
 }
 
+func RegisterMultiTableReaderProvider(provider MultiTableReaderProvider) error {
+	return globalProviderRegistry.RegisterMultiTableReaderProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterMultiTableReaderProvider(provider MultiTableReaderProvider) error {
+	if provider == nil {
+		return fmt.Errorf("multi table reader provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "multi table reader provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.multiTableReaders[formatType] = provider
+	return nil
+}
+
 func RegisterTableWriterProvider(provider TableWriterProvider) error {
 	return globalProviderRegistry.RegisterTableWriterProvider(provider)
 }
@@ -118,21 +137,21 @@ func (r *ProviderRegistry) RegisterTableWriterProvider(provider TableWriterProvi
 	return nil
 }
 
-func RegisterComponentTableWriterProvider(provider ComponentTableWriterProvider) error {
-	return globalProviderRegistry.RegisterComponentTableWriterProvider(provider)
+func RegisterMultiTableWriterProvider(provider MultiTableWriterProvider) error {
+	return globalProviderRegistry.RegisterMultiTableWriterProvider(provider)
 }
 
-func (r *ProviderRegistry) RegisterComponentTableWriterProvider(provider ComponentTableWriterProvider) error {
+func (r *ProviderRegistry) RegisterMultiTableWriterProvider(provider MultiTableWriterProvider) error {
 	if provider == nil {
-		return fmt.Errorf("component table writer provider cannot be nil")
+		return fmt.Errorf("multi table writer provider cannot be nil")
 	}
 	formatType := provider.Format()
-	if err := validateProviderFormat(formatType, "component table writer provider"); err != nil {
+	if err := validateProviderFormat(formatType, "multi table writer provider"); err != nil {
 		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.componentTableWriters[formatType] = provider
+	r.multiTableWriters[formatType] = provider
 	return nil
 }

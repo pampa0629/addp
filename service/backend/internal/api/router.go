@@ -4,17 +4,17 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
+	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	"github.com/addp/service/internal/config"
+	_ "github.com/addp/service/docs"
 	_ "github.com/addp/service/i18n"
+	"github.com/addp/service/internal/config"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/service/docs"
+	"gorm.io/gorm"
 )
 
 func SetupRouter(

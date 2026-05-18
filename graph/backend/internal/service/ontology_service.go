@@ -10,10 +10,10 @@ import (
 )
 
 type OntologyService struct {
-	ontologyRepo      *repository.OntologyRepository
-	entityTypeRepo    *repository.EntityTypeRepository
-	relationTypeRepo  *repository.RelationTypeRepository
-	versionRepo       *repository.OntologyVersionRepository
+	ontologyRepo     *repository.OntologyRepository
+	entityTypeRepo   *repository.EntityTypeRepository
+	relationTypeRepo *repository.RelationTypeRepository
+	versionRepo      *repository.OntologyVersionRepository
 }
 
 func NewOntologyService(

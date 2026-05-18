@@ -129,7 +129,7 @@ func hasTableExportWriter(formatType format.FormatType) bool {
 	if _, err := format.GetTableWriterProvider(formatType); err == nil {
 		return true
 	}
-	if _, err := format.GetComponentTableWriterProvider(formatType); err == nil {
+	if _, err := format.GetMultiTableWriterProvider(formatType); err == nil {
 		return true
 	}
 	return false
@@ -570,7 +570,7 @@ func hasTableTransferReader(formatType format.FormatType) bool {
 	if _, err := format.GetTableReaderProvider(formatType); err == nil {
 		return true
 	}
-	if _, err := format.GetComponentTableProvider(formatType); err == nil {
+	if _, err := format.GetMultiTableProvider(formatType); err == nil {
 		return true
 	}
 	return false
