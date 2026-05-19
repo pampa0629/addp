@@ -106,7 +106,7 @@ func (s *TaskProviderRegistryService) sendRegistration(req *TaskProviderRegistra
 	}
 
 	// 注册到 task_providers Internal API（使用 Internal API Key 认证）
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/internal/task-providers/register", bytes.NewReader(bodyJSON))
+	httpReq, err := http.NewRequest("POST", s.systemURL+"/api/v1/internal/task-providers/register", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

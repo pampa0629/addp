@@ -53,7 +53,7 @@ func TestEnrichExcelContainerChildrenWritesSheets(t *testing.T) {
 		t.Fatalf("child_count = %v, want 2", container["child_count"])
 	}
 	children := container["children"].([]map[string]interface{})
-	if len(children) != 2 || children[0]["kind"] != "sheet" {
+	if len(children) != 2 || children[0]["child_kind"] != "sheet" {
 		t.Fatalf("children = %#v", children)
 	}
 }
@@ -113,7 +113,7 @@ func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) 
 
 	container := attrs["type_info"].(map[string]interface{})["container"].(map[string]interface{})
 	children := container["children"].([]map[string]interface{})
-	if len(children) != 1 || children[0]["kind"] != "layer" || children[0]["name"] != "Road Layer" {
+	if len(children) != 1 || children[0]["child_kind"] != "layer" || children[0]["name"] != "Road Layer" {
 		t.Fatalf("children = %#v", children)
 	}
 	if container["child_count"] != 1 {
@@ -192,6 +192,11 @@ func TestEnrichZIPContainerChildrenGroupsMultiRefs(t *testing.T) {
 	refs, ok := multi["refs"].([]map[string]interface{})
 	if !ok || len(refs) != 3 {
 		t.Fatalf("refs = %#v, want 3 ref descriptors", multi["refs"])
+	}
+	for _, key := range []string{"ref_paths", "components", "component_paths", "organization"} {
+		if _, exists := multi[key]; exists {
+			t.Fatalf("grouped multi child should not carry %s: %#v", key, multi)
+		}
 	}
 	formatInfo := attrs["format_info"].(map[string]interface{})[string(format.FormatZIP)].(map[string]interface{})
 	if formatInfo["resolved_children"] != true {

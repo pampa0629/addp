@@ -35,6 +35,12 @@ type objectCatalogNodeAggregate struct {
 	TotalSize int64
 }
 
+type objectCatalogPathTarget struct {
+	Bucket string
+	Prefix string
+	Object string
+}
+
 func ensureObjectCatalogNodeAggregate(stats map[uint]*objectCatalogNodeAggregate, node *models.MetaNode) *objectCatalogNodeAggregate {
 	if agg, ok := stats[node.ID]; ok {
 		return agg
@@ -81,6 +87,45 @@ func listObjectCatalogItems(
 		}
 	}
 	return objects, nil
+}
+
+func resolveObjectCatalogTarget(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	rawPath string,
+) (objectCatalogPathTarget, error) {
+	bucketName, objectPath := metapath.SplitObjectPath(rawPath)
+	target := objectCatalogPathTarget{Bucket: bucketName}
+	if bucketName == "" {
+		return target, nil
+	}
+	if objectPath == "" {
+		return target, nil
+	}
+	node, err := catalogProvider.ResolvePath(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucketName, objectPath))
+	if err == nil && node != nil && node.IsItem {
+		target.Object = objectPath
+		return target, nil
+	}
+	target.Prefix = objectPath
+	return target, nil
+}
+
+func readObjectCatalogItem(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	catalogProvider plugin.CatalogProvider,
+	bucketName, objectPath string,
+) ([]plugin.CatalogNode, error) {
+	node, err := catalogProvider.ResolvePath(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucketName, objectPath))
+	if err != nil {
+		return nil, err
+	}
+	if node == nil || !node.IsItem {
+		return nil, nil
+	}
+	return []plugin.CatalogNode{*node}, nil
 }
 
 func objectCatalogNodesToStorageResources(
@@ -247,7 +292,25 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
 		}
-		bucketName, prefix := metapath.SplitObjectPath(rawPath)
+		target, err := resolveObjectCatalogTarget(context.Background(), resource, catalogProvider, rawPath)
+		if err != nil {
+			s.log.Warn("对象 catalog 路径解析失败",
+				"engine_id", engineID,
+				"tenant_id", tenantID,
+				"path", rawPath,
+				"error", err,
+			)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 解析失败: %v", rawPath, err))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
+			continue
+		}
+		bucketName := target.Bucket
+		prefix := target.Prefix
 		if bucketName == "" {
 			s.log.Warn("对象 catalog 路径缺少 bucket，跳过刷新", "path", rawPath)
 			if reporter != nil {
@@ -260,7 +323,12 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		objects, err := listObjectCatalogItems(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
+		var objects []plugin.CatalogNode
+		if target.Object != "" {
+			objects, err = readObjectCatalogItem(context.Background(), resource, catalogProvider, bucketName, target.Object)
+		} else {
+			objects, err = listObjectCatalogItems(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
+		}
 		if err != nil {
 			s.log.Warn("对象 catalog 路径扫描失败",
 				"engine_id", engineID,
@@ -291,7 +359,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			totalBuckets++
 		}
 
-		fullBucket := prefix == ""
+		fullBucket := prefix == "" && target.Object == ""
 		if fullBucket {
 			if !processedBuckets[bucketName] {
 				if err := s.repo.ResetNodeState(bucketNode, "running"); err != nil {
@@ -317,6 +385,9 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 
 		// 传递扫描路径前缀，用于正确计算fullName
 		scanPathPrefix := prefix
+		if target.Object != "" {
+			scanPathPrefix = metacatalog.ParentObjectPath(target.Object)
+		}
 		s.log.Info("传递scanPathPrefix到persistObjectResources",
 			"rawPath", rawPath,
 			"bucketName", bucketName,

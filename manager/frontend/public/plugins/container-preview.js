@@ -53,14 +53,13 @@
       key,
       name: child?.name || key,
       label: child?.label || child?.name || child?.table || key,
-      kind: child?.kind || 'child',
+      childKind: child?.child_kind || 'child',
       dataType: child?.data_type || child?.dataType || 'unknown',
       format: child?.format || '',
       layout: child?.layout || '',
       rowCount: numberOrUndefined(child?.row_count ?? child?.rowCount),
       columnCount: numberOrUndefined(child?.column_count ?? child?.columnCount ?? columns.length),
       hasHeader: child?.has_header ?? child?.hasHeader,
-      components: Array.isArray(child?.components) ? child.components : [],
       columns,
       columnTypes,
       rows: []
@@ -78,7 +77,7 @@
 
   const component = {
     name: 'GenericContainerPreview',
-    props: ['data', 'activeChildPreview', 'activeChildLoading'],
+    props: ['data', 'activeChildPreview', 'activeChildLoading', 'selectedChildName', 'selectedChildKey'],
     emits: ['child-change', 'page-change'],
     computed: {
       content() {
@@ -98,7 +97,7 @@
         return list.map(normalizeChild)
       },
       defaultChildKey() {
-        return this.json.active_child || this.json.default_child || this.children[0]?.key || ''
+        return this.selectedChildKey || this.selectedChildName || this.json.active_child || this.json.default_child || this.children[0]?.key || ''
       },
       selectorLabel() {
         return '子项'
@@ -136,10 +135,11 @@
     },
     methods: {
       handleChildChange(child) {
-        const name = child?.name || child?.key
+        const name = child?.name || child?.table || child?.key
         if (!name) return
         this.$emit('child-change', {
           childName: name,
+          childKey: child?.key || name,
           refPath: child?.refPath || '',
           nestedChildPath: child?.nestedChildPath || ''
         })
@@ -162,6 +162,7 @@
         activeChildPreview: this.activeChildPreview,
         activeChildLoading: Boolean(this.activeChildLoading),
         activeChildPreviewComponent: this.activeChildPreviewComponent,
+        selectedChildKey: this.selectedChildKey || this.selectedChildName || '',
         truncated: this.childrenTruncated,
         emptyText: this.emptyText,
         onChildChange: this.handleChildChange,

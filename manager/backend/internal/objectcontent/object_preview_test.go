@@ -542,7 +542,7 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 				"children": []interface{}{
 					map[string]interface{}{
 						"name":         "Cities",
-						"kind":         "sheet",
+						"child_kind":   "sheet",
 						"row_count":    int64(7),
 						"column_count": int64(2),
 						"has_header":   true,
@@ -568,7 +568,7 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	if !ok || len(children) != 1 {
 		t.Fatalf("children = %#v, want one child", preview["children"])
 	}
-	if children[0]["name"] != "Cities" || children[0]["kind"] != "sheet" {
+	if children[0]["name"] != "Cities" || children[0]["child_kind"] != "sheet" {
 		t.Fatalf("child summary = %#v, want Cities sheet", children[0])
 	}
 	if _, ok := preview["sheets"]; ok {
@@ -593,11 +593,11 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 				"child_count": int64(1),
 				"children": []interface{}{
 					map[string]interface{}{
-						"name":      "Cities",
-						"table":     "city_table",
-						"kind":      "table",
-						"data_type": "table",
-						"row_count": int64(7),
+						"name":       "Cities",
+						"table":      "city_table",
+						"child_kind": "table",
+						"data_type":  "table",
+						"row_count":  int64(7),
 					},
 				},
 			},
@@ -637,11 +637,11 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 		ChildCount:   5,
 		DefaultChild: "roads.shp",
 		Children: []format.ContainerChildInfo{
-			{Name: "roads.shp", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shp", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.shx", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shx", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.dbf", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.dbf", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.prj", Kind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "readme.md", Kind: "file", DataType: "document", Properties: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
+			{Name: "roads.shp", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shp", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.shx", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shx", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.dbf", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.dbf", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.prj", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "readme.md", ChildKind: "file", DataType: "document", Properties: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
 		},
 		FormatInfo: map[string]interface{}{},
 	}
@@ -658,11 +658,11 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 
 func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
 	child := containerChildPreviewMap(format.ContainerChildInfo{
-		Name:     "roads.shp",
-		Kind:     "file",
-		DataType: "table",
-		Format:   format.FormatShapefile,
-		Layout:   "multi",
+		Name:      "roads.shp",
+		ChildKind: "file",
+		DataType:  "table",
+		Format:    format.FormatShapefile,
+		Layout:    "multi",
 		Refs: []format.ContainerChildRef{
 			{Path: "roads.shp", Role: "main", Required: true, Primary: true},
 			{Path: "roads.dbf", Role: "attributes", Required: true},
@@ -680,6 +680,50 @@ func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
 	}
 	if refs[0]["path"] != "roads.shp" || refs[0]["label"] == "" {
 		t.Fatalf("first ref = %#v, want described main ref", refs[0])
+	}
+	if _, ok := child["ref_paths"]; ok {
+		t.Fatalf("preview child should not carry ref_paths: %#v", child)
+	}
+}
+
+func TestBuildContainerPreviewFromAttributesKeepsResolvedMultiChild(t *testing.T) {
+	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+		"format": "zip",
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"children": []interface{}{
+					map[string]interface{}{
+						"name":       "roads/roads.shp",
+						"child_kind": "multi",
+						"data_type":  "table",
+						"format":     "shapefile",
+						"layout":     "multi",
+						"path":       "roads/roads.shp",
+						"ref_paths":  map[string]interface{}{"main": "roads/roads.shp"},
+						"refs": []interface{}{
+							map[string]interface{}{"role": "main", "path": "roads/roads.shp", "required": true, "primary": true, "extension": ".shp"},
+							map[string]interface{}{"role": "index", "path": "roads/roads.shx", "required": true, "extension": ".shx"},
+							map[string]interface{}{"role": "attributes", "path": "roads/roads.dbf", "required": true, "extension": ".dbf"},
+						},
+					},
+				},
+			},
+		},
+	}, 0)
+
+	children, ok := preview["children"].([]map[string]interface{})
+	if !ok || len(children) != 1 {
+		t.Fatalf("children = %#v, want one resolved child", preview["children"])
+	}
+	child := children[0]
+	if child["layout"] != "multi" || child["child_kind"] != "multi" || child["format"] != "shapefile" {
+		t.Fatalf("child = %#v, want resolved multi shapefile", child)
+	}
+	if refs, ok := child["refs"].([]map[string]interface{}); !ok || len(refs) != 3 {
+		t.Fatalf("refs = %#v, want normalized descriptors", child["refs"])
+	}
+	if _, ok := child["ref_paths"]; ok {
+		t.Fatalf("preview child should not carry ref_paths: %#v", child)
 	}
 }
 

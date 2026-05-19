@@ -315,7 +315,7 @@ const tableColumnLabelKeys = {
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
   native_type: 'manager.explorer.attributes.tableColumns.nativeType',
-  kind: 'manager.explorer.attributes.tableColumns.kind',
+  child_kind: 'manager.explorer.attributes.tableColumns.childKind',
   data_type: 'manager.explorer.attributes.tableColumns.dataType',
   format: 'manager.explorer.attributes.tableColumns.format',
   path: 'manager.explorer.attributes.tableColumns.path',
@@ -331,6 +331,20 @@ const tableColumnLabelKeys = {
   nullable: 'manager.explorer.attributes.tableColumns.nullable',
   primary_key: 'manager.explorer.attributes.tableColumns.primaryKey',
   comment: 'manager.explorer.attributes.tableColumns.comment'
+}
+
+const tableColumnLabelProfiles = {
+  fields: {
+    name: 'manager.explorer.attributes.tableColumns.fieldName',
+    type: 'manager.explorer.attributes.tableColumns.fieldType',
+    native_type: 'manager.explorer.attributes.tableColumns.nativeType'
+  },
+  children: {
+    name: 'manager.explorer.attributes.tableColumns.childName',
+    child_kind: 'manager.explorer.attributes.tableColumns.childKind',
+    data_type: 'manager.explorer.attributes.tableColumns.childDataType',
+    table: 'manager.explorer.attributes.tableColumns.tableName'
+  }
 }
 
 const itemTypeLabel = computed(() => {
@@ -525,7 +539,7 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 
 const buildFieldTable = (pathParts, rows) => {
   const preferredColumns = ['name', 'type', 'native_type', 'nullable', 'primary_key', 'comment']
-  return buildObjectArrayTable(pathParts, rows, preferredColumns)
+  return buildObjectArrayTable(pathParts, rows, preferredColumns, 'fields')
 }
 
 const preferredColumnsForObjectTable = (pathParts) => {
@@ -536,13 +550,20 @@ const preferredColumnsForObjectTable = (pathParts) => {
     case 'geometry_columns':
       return ['name', 'type', 'geometry_type', 'srid', 'dimension', 'nullable', 'primary']
     case 'children':
-      return ['name', 'kind', 'data_type', 'format', 'path', 'row_count', 'column_count']
+      return ['name', 'child_kind', 'data_type', 'row_count', 'column_count', 'table', 'format', 'path']
     default:
       return ['name', 'type', 'path', 'role', 'format', 'data_type']
   }
 }
 
-const buildObjectArrayTable = (pathParts, rows, preferredColumns = []) => {
+const tableLabelProfileForPath = (pathParts) => {
+  const key = pathParts[pathParts.length - 1]
+  if (key === 'fields') return 'fields'
+  if (key === 'children') return 'children'
+  return ''
+}
+
+const buildObjectArrayTable = (pathParts, rows, preferredColumns = [], labelProfile = tableLabelProfileForPath(pathParts)) => {
   const rowObjects = rows.filter(isPlainObject)
   const discoveredColumns = [...new Set(rowObjects.flatMap(row => Object.keys(row)))]
   const columns = [
@@ -562,9 +583,18 @@ const buildObjectArrayTable = (pathParts, rows, preferredColumns = []) => {
     }),
     columns: columns.map(column => ({
       key: column,
-      label: translateFromMap(tableColumnLabelKeys, column, formatAttributeSegment(column))
+      label: tableColumnLabel(labelProfile, column)
     }))
   }
+}
+
+const tableColumnLabel = (profile, column) => {
+  const profileMap = tableColumnLabelProfiles[profile]
+  if (profileMap?.[column]) {
+    const translated = t(profileMap[column])
+    if (translated !== profileMap[column]) return translated
+  }
+  return translateFromMap(tableColumnLabelKeys, column, formatAttributeSegment(column))
 }
 
 const isPlainObject = (value) => {

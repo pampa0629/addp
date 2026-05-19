@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -81,6 +82,43 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 	}
 	if _, ok := stats[parentNode.ID]; !ok {
 		t.Fatalf("gis prefix aggregate was not initialized")
+	}
+}
+
+func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
+	t.Parallel()
+
+	provider := objectScanTargetProvider{
+		items: map[string]plugin.CatalogNode{
+			"addp/contain/shapefile.zip": {
+				Name:   "shapefile.zip",
+				Path:   plugin.ObjectItemPath(9, "addp", "contain/shapefile.zip"),
+				Kind:   plugin.CatalogKindObject,
+				Term:   plugin.CatalogTermObject,
+				IsItem: true,
+				Stats:  map[string]interface{}{"size_bytes": int64(100)},
+				Attributes: map[string]interface{}{
+					"path": "addp/contain/shapefile.zip",
+				},
+			},
+		},
+	}
+	resource := &commonModels.Engine{ID: 9, EngineType: provider.Type()}
+
+	objectTarget, err := resolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain/shapefile.zip")
+	if err != nil {
+		t.Fatalf("resolve object target: %v", err)
+	}
+	if objectTarget.Bucket != "addp" || objectTarget.Object != "contain/shapefile.zip" || objectTarget.Prefix != "" {
+		t.Fatalf("object target = %#v, want exact object", objectTarget)
+	}
+
+	prefixTarget, err := resolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain")
+	if err != nil {
+		t.Fatalf("resolve prefix target: %v", err)
+	}
+	if prefixTarget.Bucket != "addp" || prefixTarget.Prefix != "contain" || prefixTarget.Object != "" {
+		t.Fatalf("prefix target = %#v, want prefix", prefixTarget)
 	}
 }
 
@@ -172,4 +210,35 @@ func (r staticObjectContentReader) StoreSemantics() plugin.StoreSemantics {
 }
 func (r staticObjectContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(r.content)), nil
+}
+
+type objectScanTargetProvider struct {
+	items map[string]plugin.CatalogNode
+}
+
+func (p objectScanTargetProvider) Type() string         { return "object-scan-target-test" }
+func (p objectScanTargetProvider) DisplayName() string  { return "object scan target test" }
+func (p objectScanTargetProvider) EngineOrigin() string { return "general" }
+func (p objectScanTargetProvider) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p objectScanTargetProvider) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (p objectScanTargetProvider) DefaultPort() int                                   { return 0 }
+func (p objectScanTargetProvider) RequiredFields() []string                           { return nil }
+func (p objectScanTargetProvider) SensitiveFields() []string                          { return nil }
+func (p objectScanTargetProvider) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (p objectScanTargetProvider) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p objectScanTargetProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
+	return nil, nil
+}
+func (p objectScanTargetProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+	node, ok := p.items[path.StringPath()]
+	if !ok {
+		return nil, nil
+	}
+	return &node, nil
 }

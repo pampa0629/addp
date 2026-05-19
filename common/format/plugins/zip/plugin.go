@@ -143,7 +143,7 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Rea
 	if entryPath == "" {
 		return nil, fmt.Errorf("zip child resolver requires child path")
 	}
-	if child.Kind == "directory" {
+	if child.ChildKind == "directory" {
 		return nil, fmt.Errorf("zip child %s is a directory", entryPath)
 	}
 
@@ -301,7 +301,7 @@ func zipEntryToContainerChild(entry *zip.File, isDir bool) format.ContainerChild
 	}
 	return format.ContainerChildInfo{
 		Name:       name,
-		Kind:       kind,
+		ChildKind:  kind,
 		DataType:   dataType,
 		Properties: properties,
 	}

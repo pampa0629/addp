@@ -33,7 +33,7 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 		t.Fatalf("DefaultChild = %q, want first sorted file", info.DefaultChild)
 	}
 	child := info.Children[0]
-	if child.Name != "data/cities.csv" || child.Kind != "file" || child.DataType != format.FormatDataTypeTable {
+	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != format.FormatDataTypeTable {
 		t.Fatalf("child = %#v, want CSV table entry", child)
 	}
 	if child.Properties["format"] != string(format.FormatCSV) {
@@ -90,9 +90,9 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 	})
 	parentReader := singleTestContentReader{data: data}
 	child := format.ContainerChildInfo{
-		Name:     "data/cities.csv",
-		Kind:     "file",
-		DataType: format.FormatDataTypeTable,
+		Name:      "data/cities.csv",
+		ChildKind: "file",
+		DataType:  format.FormatDataTypeTable,
 		Properties: map[string]interface{}{
 			"path":   "data/cities.csv",
 			"format": string(format.FormatCSV),
@@ -129,10 +129,10 @@ func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 	})
 	parentReader := singleTestContentReader{data: data}
 	child := format.ContainerChildInfo{
-		Name:     "roads.shp",
-		Kind:     "file",
-		DataType: format.FormatDataTypeTable,
-		Format:   format.FormatShapefile,
+		Name:      "roads.shp",
+		ChildKind: "file",
+		DataType:  format.FormatDataTypeTable,
+		Format:    format.FormatShapefile,
 		Properties: map[string]interface{}{
 			"path":   "roads.shp",
 			"format": string(format.FormatShapefile),

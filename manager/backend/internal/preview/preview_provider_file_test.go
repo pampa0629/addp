@@ -117,9 +117,9 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *te
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":  "Road Layer",
-							"table": "roads",
-							"kind":  "layer",
+							"name":       "Road Layer",
+							"table":      "roads",
+							"child_kind": "layer",
 						},
 					},
 				},
@@ -388,7 +388,7 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 						map[string]interface{}{
 							"name":       "Cities",
 							"table":      "city_table",
-							"kind":       "table",
+							"child_kind": "table",
 							"row_count":  int64(7),
 							"has_header": true,
 						},
@@ -460,11 +460,11 @@ func TestFileTablePreviewProviderResolvesZIPEntryBeforeTablePreview(t *testing.T
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":      "data/cities.csv",
-							"kind":      "file",
-							"data_type": "table",
-							"format":    string(format.FormatCSV),
-							"path":      "data/cities.csv",
+							"name":       "data/cities.csv",
+							"child_kind": "file",
+							"data_type":  "table",
+							"format":     string(format.FormatCSV),
+							"path":       "data/cities.csv",
 						},
 					},
 				},
@@ -517,11 +517,11 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":      "docs/readme.txt",
-							"kind":      "file",
-							"data_type": "document",
-							"format":    string(format.FormatText),
-							"path":      "docs/readme.txt",
+							"name":       "docs/readme.txt",
+							"child_kind": "file",
+							"data_type":  "document",
+							"format":     string(format.FormatText),
+							"path":       "docs/readme.txt",
 						},
 					},
 				},
@@ -538,6 +538,149 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 	}
 	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "hello nested document" {
 		t.Fatalf("content = %#v, want text entry", preview.Object.Content)
+	}
+}
+
+func TestContainerChildPreviewProviderResolvesZIPChinesePDFEntry(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	childName := "曾志明-测绘正高职称证书.pdf"
+	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		childName: []byte("%PDF-1.4\n"),
+	})
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    childName,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":         childName,
+							"child_kind":   "file",
+							"data_type":    "document",
+							"format":       string(format.FormatPDF),
+							"path":         childName,
+							"content_type": "application/pdf",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object content", preview)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindPDF {
+		t.Fatalf("content = %#v, want PDF entry", preview.Object.Content)
+	}
+}
+
+func TestContainerChildPreviewProviderPreviewsZIPMultiTableChildRefs(t *testing.T) {
+	previousEngine, previousEngineErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousEngineErr == nil {
+			plugin.Register(previousEngine)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"roads.shp": []byte("shape"),
+		"roads.shx": []byte("index"),
+		"roads.dbf": []byte("attrs"),
+	})
+	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
+	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
+	refProvider := &recordingMultiTableProvider{}
+	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
+	}
+	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
+	}
+	defer func() {
+		if previousInfoErr == nil {
+			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
+		}
+		if previousSampleErr == nil {
+			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
+		}
+	}()
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "roads.shp",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":       "roads.shp",
+							"child_kind": "multi",
+							"data_type":  "table",
+							"format":     string(format.FormatShapefile),
+							"layout":     "multi",
+							"path":       "roads.shp",
+							"refs": []interface{}{
+								map[string]interface{}{"path": "roads.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
+								map[string]interface{}{"path": "roads.shx", "role": "index", "required": true, "extension": ".shx"},
+								map[string]interface{}{"path": "roads.dbf", "role": "attributes", "required": true, "extension": ".dbf"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("mode = %q, want table preview: %#v", preview.Mode, preview.Object)
+	}
+	if len(preview.Columns) == 0 || len(preview.Rows) == 0 {
+		t.Fatalf("preview columns/rows = %#v/%#v, want table data", preview.Columns, preview.Rows)
+	}
+	if refProvider.describeCalls != 1 {
+		t.Fatalf("DescribeMultiTable calls = %d, want 1", refProvider.describeCalls)
 	}
 }
 
@@ -577,11 +720,11 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":      "inner.zip",
-							"kind":      "file",
-							"data_type": "container",
-							"format":    string(format.FormatZIP),
-							"path":      "inner.zip",
+							"name":       "inner.zip",
+							"child_kind": "file",
+							"data_type":  "container",
+							"format":     string(format.FormatZIP),
+							"path":       "inner.zip",
 						},
 					},
 				},
@@ -652,11 +795,11 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByNestedChildPath(t 
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":      "inner.zip",
-							"kind":      "file",
-							"data_type": "container",
-							"format":    string(format.FormatZIP),
-							"path":      "inner.zip",
+							"name":       "inner.zip",
+							"child_kind": "file",
+							"data_type":  "container",
+							"format":     string(format.FormatZIP),
+							"path":       "inner.zip",
 						},
 					},
 				},
@@ -721,11 +864,11 @@ func TestContainerChildPreviewProviderPreviewsDeepNestedZIPEntryByNestedChildPat
 				"container": map[string]interface{}{
 					"children": []interface{}{
 						map[string]interface{}{
-							"name":      "inner.zip",
-							"kind":      "file",
-							"data_type": "container",
-							"format":    string(format.FormatZIP),
-							"path":      "inner.zip",
+							"name":       "inner.zip",
+							"child_kind": "file",
+							"data_type":  "container",
+							"format":     string(format.FormatZIP),
+							"path":       "inner.zip",
 						},
 					},
 				},
@@ -1095,16 +1238,24 @@ func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, off
 
 type recordingMultiTableProvider struct {
 	recordingTableProvider
+	formatType    format.FormatType
 	sampleOffset  int64
 	describeCalls int
 }
 
 func (p *recordingMultiTableProvider) Format() format.FormatType {
+	if p.formatType != "" {
+		return p.formatType
+	}
 	return format.FormatShapefile
 }
 
 func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
-	return nil
+	return []format.RelatedRefSpec{
+		{Extension: ".shp", Role: "main", Required: true, Primary: true},
+		{Extension: ".shx", Role: "index", Required: true},
+		{Extension: ".dbf", Role: "attributes", Required: true},
+	}
 }
 
 func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []format.RelatedRef, *format.ParseOptions) (*format.TableInfo, error) {
@@ -1195,11 +1346,11 @@ func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 
 func TestMapToContainerChildInfoKeepsRefs(t *testing.T) {
 	child := mapToContainerChildInfo(map[string]interface{}{
-		"name":      "roads.shp",
-		"kind":      "multi",
-		"data_type": "table",
-		"format":    "shapefile",
-		"layout":    "multi",
+		"name":       "roads.shp",
+		"child_kind": "multi",
+		"data_type":  "table",
+		"format":     "shapefile",
+		"layout":     "multi",
 		"refs": []interface{}{
 			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
 			map[string]interface{}{"role": "index", "path": "roads.shx", "required": true, "extension": ".shx"},

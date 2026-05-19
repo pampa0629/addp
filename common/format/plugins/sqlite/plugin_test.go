@@ -89,7 +89,7 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 		t.Fatalf("children_truncated = %#v, want false for filtered gpkg system tables", info.FormatInfo["children_truncated"])
 	}
 	child := info.Children[0]
-	if child.Name != "Road Layer" || child.Kind != "layer" || child.DataType != format.FormatDataTypeTable {
+	if child.Name != "Road Layer" || child.ChildKind != "layer" || child.DataType != format.FormatDataTypeTable {
 		t.Fatalf("child = %#v, want Road Layer layer", child)
 	}
 	if child.Properties["table"] != "roads" {

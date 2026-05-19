@@ -38,20 +38,6 @@
             :value="child.key"
           />
         </el-select>
-        <el-select
-          v-if="componentOptions.length"
-          v-model="activeComponentPath"
-          size="small"
-          class="component-select"
-          @change="handleComponentSelect"
-        >
-          <el-option
-            v-for="component in componentOptions"
-            :key="component.key"
-            :label="component.label"
-            :value="component.path"
-          />
-        </el-select>
       </div>
 
       <template v-if="activeChild">
@@ -121,11 +107,6 @@
             />
           </div>
         </div>
-
-        <div v-if="selectedComponent" class="component-hint">
-          <span>{{ selectedComponent.label }}</span>
-          <span class="component-path">{{ selectedComponent.path }}</span>
-        </div>
       </template>
     </div>
 
@@ -149,6 +130,10 @@ const props = defineProps({
     default: () => []
   },
   defaultChildKey: {
+    type: String,
+    default: ''
+  },
+  selectedChildKey: {
     type: String,
     default: ''
   },
@@ -181,7 +166,6 @@ const props = defineProps({
 const emit = defineEmits(['child-change', 'page-change'])
 
 const activeChildKey = ref('')
-const activeComponentPath = ref('')
 
 const normalizedChildren = computed(() => {
   return props.children.filter(child => child && child.key)
@@ -197,15 +181,12 @@ const ensureActiveChild = () => {
     activeChildKey.value = ''
     return
   }
-  const target = list.find(child => child.key === props.defaultChildKey) || list[0]
+  const preferredKey = props.selectedChildKey || props.defaultChildKey
+  const target = list.find(child => child.key === preferredKey || child.name === preferredKey || child.table === preferredKey) || list[0]
   activeChildKey.value = target.key
 }
 
-watch([children, () => props.defaultChildKey], ensureActiveChild, { immediate: true })
-
-watch(activeChildKey, () => {
-  activeComponentPath.value = ''
-})
+watch([children, () => props.defaultChildKey, () => props.selectedChildKey], ensureActiveChild, { immediate: true })
 
 const activeChild = computed(() => {
   return children.value.find(child => child.key === activeChildKey.value) || children.value[0] || null
@@ -249,57 +230,6 @@ const activeColumnPairs = computed(() => {
   return child.columns.map((header, index) => [header, types[index] || 'string'])
 })
 
-const activeComponents = computed(() => {
-  const components = activeChild.value?.components
-  if (!Array.isArray(components)) return []
-  return components.map((component, index) => ({
-    key: component?.key || component?.role || component?.path || String(index),
-    label: componentOptionLabel(component, index),
-    role: component?.role || '—',
-    path: component?.path || '',
-    previewable: component?.previewable !== false
-  }))
-})
-
-const componentFileName = (path) => {
-  if (!path) return ''
-  const parts = String(path).split(/[\\/]/).filter(Boolean)
-  return parts.pop() || String(path)
-}
-
-const componentOptionLabel = (component, index) => {
-  const path = component?.path || ''
-  const fileName = componentFileName(path)
-  const label = component?.label || component?.role || component?.key || fileName || String(index)
-  if (fileName && !String(label).includes(fileName)) {
-    return `${label} · ${fileName}`
-  }
-  return String(label)
-}
-
-const componentOptions = computed(() => {
-  if (!activeComponents.value.length) return []
-  return [
-    {
-      key: '__combined__',
-      label: t('containerPreview.combinedPreview'),
-      path: ''
-    },
-    ...activeComponents.value
-      .filter(component => component.path)
-      .map(component => ({
-        key: component.key,
-        label: component.label,
-        path: component.path
-      }))
-  ]
-})
-
-const selectedComponent = computed(() => {
-  if (!activeComponentPath.value) return null
-  return activeComponents.value.find(component => component.path === activeComponentPath.value) || null
-})
-
 const activeChildNoPreviewText = computed(() => {
   if (!activeChild.value) return t('containerPreview.noPreview')
   const dataType = activeChild.value.dataType || activeChild.value.data_type || ''
@@ -314,10 +244,19 @@ const formatNumber = (value) => {
   return new Intl.NumberFormat().format(value)
 }
 
+const displayedChildRowCount = (child) => {
+  if (!child) return undefined
+  if (activeChild.value?.key === child.key && Number(props.activeChildPreview?.total) > 0) {
+    return Number(props.activeChildPreview.total)
+  }
+  return typeof child.rowCount === 'number' && child.rowCount > 0 ? child.rowCount : undefined
+}
+
 const childLabel = (child) => {
   const label = child.label || child.name || child.key
-  if (typeof child.rowCount === 'number') {
-    return `${label} (${t('containerPreview.rowCount', { count: formatNumber(child.rowCount) })})`
+  const rowCount = displayedChildRowCount(child)
+  if (typeof rowCount === 'number') {
+    return `${label} (${t('containerPreview.rowCount', { count: formatNumber(rowCount) })})`
   }
   return label
 }
@@ -325,24 +264,13 @@ const childLabel = (child) => {
 const handleChildSelect = (key) => {
   const child = children.value.find(item => item.key === key)
   if (!child) return
-  activeComponentPath.value = ''
-  emit('child-change', { ...child, componentPath: '', nestedChildPath: '' })
-}
-
-const handleComponentSelect = (path) => {
-  activeComponentPath.value = path || ''
-  if (!activeChild.value) return
-  emit('child-change', {
-    ...activeChild.value,
-    componentPath: path || '',
-    nestedChildPath: ''
-  })
+  emit('child-change', { ...child, nestedChildPath: '' })
 }
 
 const handleNestedChildChange = (payload) => {
   if (!activeChild.value) return
   const childName = typeof payload === 'string' ? payload : payload?.childName || payload?.name || payload?.key
-  const childPath = typeof payload === 'object' ? payload?.nestedChildPath || payload?.componentPath || '' : ''
+  const childPath = typeof payload === 'object' ? payload?.nestedChildPath || '' : ''
   const nestedPath = [childName, childPath]
     .map(value => String(value || '').replace(/^\/+|\/+$/g, ''))
     .filter(Boolean)
@@ -350,7 +278,6 @@ const handleNestedChildChange = (payload) => {
   if (!nestedPath) return
   emit('child-change', {
     ...activeChild.value,
-    componentPath: '',
     nestedChildPath: nestedPath
   })
 }
@@ -423,10 +350,6 @@ const handlePageChange = (page) => {
   width: min(360px, 100%);
 }
 
-.component-select {
-  width: min(280px, 100%);
-}
-
 .child-meta {
   margin-bottom: 12px;
 }
@@ -442,20 +365,6 @@ const handlePageChange = (page) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.component-hint {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--addp-text-secondary);
-}
-
-.component-path {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-  color: var(--addp-text-tertiary);
 }
 
 .child-pagination {

@@ -302,7 +302,7 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.Cont
 		hasHeader := sheet.HasHeader
 		children = append(children, format.ContainerChildInfo{
 			Name:        sheet.Name,
-			Kind:        "sheet",
+			ChildKind:   "sheet",
 			DataType:    format.FormatDataTypeTable,
 			RowCount:    &rowCount,
 			ColumnCount: &columnCount,

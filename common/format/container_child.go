@@ -69,7 +69,7 @@ func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.R
 	childFormat := childFormatOrParent(child, parentFormat)
 	return &ContainerChildResource{
 		Name:          child.Name,
-		Kind:          child.Kind,
+		Kind:          child.ChildKind,
 		DataType:      child.DataType,
 		Format:        childFormat,
 		ResourceKind:  ContainerChildResourceNative,
@@ -84,7 +84,7 @@ func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.R
 func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, child ContainerChildInfo) *ContainerChildResource {
 	return &ContainerChildResource{
 		Name:         child.Name,
-		Kind:         child.Kind,
+		Kind:         child.ChildKind,
 		DataType:     child.DataType,
 		Format:       childFormatOrParent(child, FormatUnknown),
 		Layout:       child.Layout,

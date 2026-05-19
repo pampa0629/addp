@@ -448,28 +448,12 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 	if properties == nil {
 		properties = map[string]interface{}{}
 	}
+	delete(properties, "refs")
+	delete(properties, "ref_paths")
 	properties["path"] = item.EntryPath
-	properties["format"] = item.Format
-	properties["layout"] = string(item.Layout)
-	if len(item.RefList) > 0 {
-		refs := make([]map[string]interface{}, 0, len(item.RefList))
-		refPaths := map[string]interface{}{}
-		for _, ref := range item.RefList {
-			refs = append(refs, map[string]interface{}{
-				"role":      ref.Role,
-				"path":      ref.Path,
-				"required":  ref.Required,
-				"primary":   ref.Primary,
-				"extension": ref.Extension,
-			})
-			refPaths[ref.Role] = ref.Path
-		}
-		properties["refs"] = refs
-		properties["ref_paths"] = refPaths
-	}
 	return format.ContainerChildInfo{
 		Name:       item.Name,
-		Kind:       kind,
+		ChildKind:  kind,
 		DataType:   string(item.DataType),
 		Format:     format.FormatType(item.Format),
 		Layout:     string(item.Layout),

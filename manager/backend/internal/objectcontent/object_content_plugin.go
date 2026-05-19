@@ -753,7 +753,11 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		return nil
 	}
 
-	if resolved := resolveContainerAttributeChildrenForPreview(formatName, children); resolved != nil && len(resolved.Children) > 0 {
+	resolved := normalizeContainerAttributeChildrenForPreview(formatName, children)
+	if resolved == nil {
+		resolved = resolveContainerAttributeChildrenForPreview(formatName, children)
+	}
+	if resolved != nil && len(resolved.Children) > 0 {
 		summary := buildContainerSummary(formatName, containerAttrs, formatAttrs, sizeBytes)
 		applyContainerChildrenSummary(summary, resolved)
 		defaultChild := containerDefaultChild(formatName, formatAttrs, resolved.Children)
@@ -768,7 +772,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		}
 		name := commonJSON.InterfaceString(child["name"])
 		tableName := commonJSON.InterfaceString(child["table"])
-		kind := commonJSON.InterfaceString(child["kind"])
+		childKind := containerChildKindFromMap(child)
 		columnCount := commonJSON.InterfaceInt64(child["column_count"])
 		childMap := map[string]interface{}{
 			"key":          containerChildKey(name, tableName, index),
@@ -776,7 +780,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 			"label":        name,
 			"table":        tableName,
 			"index":        index,
-			"kind":         kind,
+			"child_kind":   childKind,
 			"data_type":    commonJSON.InterfaceString(child["data_type"]),
 			"row_count":    commonJSON.InterfaceInt64(child["row_count"]),
 			"column_count": columnCount,
@@ -807,6 +811,128 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	return buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
 }
 
+func normalizeContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {
+	if len(children) == 0 {
+		return nil
+	}
+	normalized := make([]map[string]interface{}, 0, len(children))
+	skippedCount := 0
+	hasResolvedChild := false
+	for index, item := range children {
+		child := rawMapAttribute(item)
+		if len(child) == 0 {
+			skippedCount++
+			continue
+		}
+		if !containerAttributeChildIsResolved(child) {
+			return nil
+		}
+		childInfo := mapToContainerChildInfo(child)
+		if childInfo.Format == "" && formatName != "" {
+			childInfo.Format = format.FormatType(formatName)
+		}
+		normalized = append(normalized, containerChildPreviewMap(childInfo, index))
+		if childInfo.Layout != "" || len(childInfo.Refs) > 0 {
+			hasResolvedChild = true
+		}
+	}
+	if len(normalized) == 0 || !hasResolvedChild {
+		return nil
+	}
+	return &containerPreviewChildren{
+		Children:      normalized,
+		RawCount:      len(children),
+		VisibleCount:  len(normalized),
+		FilteredCount: skippedCount,
+		Resolved:      true,
+	}
+}
+
+func containerAttributeChildIsResolved(child map[string]interface{}) bool {
+	if len(child) == 0 {
+		return false
+	}
+	if strings.TrimSpace(commonJSON.InterfaceString(child["layout"])) != "" {
+		return true
+	}
+	return len(interfaceSlice(child["refs"])) > 0
+}
+
+func containerChildKindFromMap(child map[string]interface{}) string {
+	return strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
+}
+
+func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChildInfo {
+	if child == nil {
+		child = map[string]interface{}{}
+	}
+	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
+	childKind := containerChildKindFromMap(child)
+	dataType := strings.TrimSpace(commonJSON.InterfaceString(child["data_type"]))
+	properties := make(map[string]interface{}, len(child))
+	for key, value := range child {
+		switch key {
+		case "name", "child_kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
+			continue
+		default:
+			properties[key] = value
+		}
+	}
+	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
+	var rowCount *int64
+	if rowCountValue > 0 {
+		rowCount = &rowCountValue
+	}
+	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
+	var columnCount *int
+	if columnCountValue > 0 {
+		columnCount = &columnCountValue
+	}
+	var hasHeader *bool
+	if _, ok := child["has_header"]; ok {
+		value := commonJSON.InterfaceBool(child["has_header"])
+		hasHeader = &value
+	}
+	return format.ContainerChildInfo{
+		Name:        name,
+		ChildKind:   childKind,
+		DataType:    dataType,
+		Format:      format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
+		Layout:      strings.TrimSpace(commonJSON.InterfaceString(child["layout"])),
+		Refs:        containerChildRefsFromMap(child),
+		RowCount:    rowCount,
+		ColumnCount: columnCount,
+		HasHeader:   hasHeader,
+		Properties:  properties,
+	}
+}
+
+func containerChildRefsFromMap(child map[string]interface{}) []format.ContainerChildRef {
+	values := interfaceSlice(child["refs"])
+	if len(values) == 0 {
+		return nil
+	}
+	refs := make([]format.ContainerChildRef, 0, len(values))
+	for _, value := range values {
+		ref := rawMapAttribute(value)
+		if len(ref) == 0 {
+			continue
+		}
+		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
+		if path == "" {
+			continue
+		}
+		refs = append(refs, format.ContainerChildRef{
+			Role:      strings.TrimSpace(commonJSON.InterfaceString(ref["role"])),
+			Path:      path,
+			Required:  commonJSON.InterfaceBool(ref["required"]),
+			Primary:   commonJSON.InterfaceBool(ref["primary"]),
+			Extension: strings.TrimSpace(commonJSON.InterfaceString(ref["extension"])),
+		})
+	}
+	return refs
+}
+
 func resolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {
 	if len(children) == 0 {
 		return nil
@@ -820,12 +946,12 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 			skippedCount++
 			continue
 		}
-		kind := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(child["kind"])))
-		if kind == "directory" {
+		childKind := strings.ToLower(containerChildKindFromMap(child))
+		if childKind == "directory" {
 			skippedCount++
 			continue
 		}
-		if kind != "" && kind != "file" && kind != "object" && kind != "entry" && kind != "multi" {
+		if childKind != "" && childKind != "file" && childKind != "object" && childKind != "entry" && childKind != "multi" {
 			continue
 		}
 		pathValue := commonJSON.InterfaceString(child["path"])
@@ -893,16 +1019,19 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), index)
 	child := make(map[string]interface{}, len(childInfo.Properties)+8)
 	for key, value := range childInfo.Properties {
+		if isContainerChildInternalProperty(key) {
+			continue
+		}
 		child[key] = value
 	}
 	for key, value := range map[string]interface{}{
-		"key":       key,
-		"name":      childInfo.Name,
-		"label":     childInfo.Name,
-		"kind":      childInfo.Kind,
-		"data_type": childInfo.DataType,
-		"format":    string(childInfo.Format),
-		"layout":    childInfo.Layout,
+		"key":        key,
+		"name":       childInfo.Name,
+		"label":      childInfo.Name,
+		"child_kind": childInfo.ChildKind,
+		"data_type":  childInfo.DataType,
+		"format":     string(childInfo.Format),
+		"layout":     childInfo.Layout,
 	} {
 		child[key] = value
 	}
@@ -919,6 +1048,15 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 		child["refs"] = containerChildRefDescriptors(childInfo)
 	}
 	return child
+}
+
+func isContainerChildInternalProperty(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "refs", "ref_paths", "components", "component_paths", "organization":
+		return true
+	default:
+		return false
+	}
 }
 
 func containerChildRefDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
@@ -1310,7 +1448,7 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 	}
 	skippedCount := 0
 	for _, child := range info.Children {
-		kind := strings.ToLower(strings.TrimSpace(child.Kind))
+		kind := strings.ToLower(strings.TrimSpace(child.ChildKind))
 		if kind == "directory" {
 			skippedCount++
 			continue

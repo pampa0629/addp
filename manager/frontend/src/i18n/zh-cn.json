@@ -307,7 +307,13 @@
           "schemaVersion": "规范版本"
         },
         "tableColumns": {
-          "name": "字段名",
+          "name": "名称",
+          "fieldName": "字段名",
+          "fieldType": "字段类型",
+          "childName": "子项",
+          "childKind": "子项类型",
+          "childDataType": "数据类型",
+          "tableName": "表名",
           "type": "类型",
           "nativeType": "原生类型",
           "kind": "类型",

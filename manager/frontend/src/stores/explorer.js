@@ -21,6 +21,7 @@ export const useExplorerStore = defineStore('explorer', {
     // 节点选择
     selectedLocator: null,
     selectedChildName: '',
+    selectedChildKey: '',
     selectedRefPath: '',
     selectedNestedChildPath: '',
 
@@ -35,6 +36,8 @@ export const useExplorerStore = defineStore('explorer', {
     activeChildPreviewData: null,
     previewLoading: false,
     childPreviewLoading: false,
+    previewRequestSeq: 0,
+    childPreviewRequestSeq: 0,
 
     // 分页
     pagination: {
@@ -222,20 +225,28 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '') {
-      this.selectedLocator = locator
-      this.pagination.page = page
+    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '', childKey = '') {
       const normalizedChildName = childName || ''
+      const normalizedChildKey = childKey || normalizedChildName
       const normalizedRefPath = refPath || ''
       const normalizedNestedChildPath = nestedChildPath || ''
+      const isChildPreview = Boolean(normalizedChildName)
+      const requestSeq = isChildPreview ? ++this.childPreviewRequestSeq : ++this.previewRequestSeq
+
+      this.selectedLocator = locator
+      this.pagination.page = page
       this.selectedChildName = normalizedChildName
+      this.selectedChildKey = normalizedChildKey
       this.selectedRefPath = normalizedRefPath
       this.selectedNestedChildPath = normalizedNestedChildPath
-      if (normalizedChildName) {
+      if (isChildPreview) {
         this.activeChildPreviewData = null
         this.childPreviewLoading = true
       } else {
+        this.childPreviewRequestSeq += 1
         this.previewLoading = true
+        this.childPreviewLoading = false
+        this.previewData = null
         this.activeChildPreviewData = null
       }
 
@@ -260,9 +271,27 @@ export const useExplorerStore = defineStore('explorer', {
         // 后端返回 PreviewResult: { preview_type, data, metadata }。
         // createAPIClient 已经抽取过 HTTP response.data，这里只在确实存在 PreviewResult.data 时再拆包。
         const preview = response?.preview_type && response?.data ? response.data : (response?.data || response)
-        if (normalizedChildName) {
+        if (isChildPreview) {
+          if (
+            requestSeq !== this.childPreviewRequestSeq ||
+            this.selectedLocator !== locator ||
+            this.selectedChildName !== normalizedChildName ||
+            this.selectedRefPath !== normalizedRefPath ||
+            this.selectedNestedChildPath !== normalizedNestedChildPath
+          ) {
+            return null
+          }
           this.activeChildPreviewData = preview
           return preview
+        }
+        if (
+          requestSeq !== this.previewRequestSeq ||
+          this.selectedLocator !== locator ||
+          this.selectedChildName !== normalizedChildName ||
+          this.selectedRefPath !== normalizedRefPath ||
+          this.selectedNestedChildPath !== normalizedNestedChildPath
+        ) {
+          return null
         }
         this.previewData = preview
         const defaultChild = this.defaultContainerChildName(preview)
@@ -274,10 +303,14 @@ export const useExplorerStore = defineStore('explorer', {
         console.error('加载预览失败:', error)
         throw error
       } finally {
-        if (normalizedChildName) {
-          this.childPreviewLoading = false
+        if (isChildPreview) {
+          if (requestSeq === this.childPreviewRequestSeq) {
+            this.childPreviewLoading = false
+          }
         } else {
-          this.previewLoading = false
+          if (requestSeq === this.previewRequestSeq) {
+            this.previewLoading = false
+          }
         }
       }
     },
@@ -361,10 +394,15 @@ export const useExplorerStore = defineStore('explorer', {
     reset() {
       this.selectedLocator = null
       this.selectedChildName = ''
+      this.selectedChildKey = ''
       this.selectedRefPath = ''
       this.selectedNestedChildPath = ''
       this.previewData = null
       this.activeChildPreviewData = null
+      this.previewLoading = false
+      this.childPreviewLoading = false
+      this.previewRequestSeq += 1
+      this.childPreviewRequestSeq += 1
       this.pagination.page = 1
     },
 

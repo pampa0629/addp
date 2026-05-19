@@ -66,8 +66,8 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 				"container": map[string]interface{}{
 					"child_count": int64(2),
 					"children": []interface{}{
-						map[string]interface{}{"name": "cities", "table": "cities", "kind": "table", "data_type": "table", "row_count": int64(3), "column_count": int64(2)},
-						map[string]interface{}{"name": "roads", "table": "roads", "kind": "table", "data_type": "table", "row_count": int64(4), "column_count": int64(5)},
+						map[string]interface{}{"name": "cities", "table": "cities", "child_kind": "table", "data_type": "table", "row_count": int64(3), "column_count": int64(2)},
+						map[string]interface{}{"name": "roads", "table": "roads", "child_kind": "table", "data_type": "table", "row_count": int64(4), "column_count": int64(5)},
 					},
 				},
 			},

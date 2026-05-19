@@ -470,13 +470,24 @@ func scanTargetFromNode(node models.MetaNode) []string {
 }
 
 func scanTargetFromItem(item models.MetaItem) []string {
-	if idx := strings.LastIndex(item.FullName, "."); idx > 0 {
-		return []string{item.FullName[:idx]}
+	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
+	if fullName == "" {
+		return nil
 	}
-	if item.FullName != "" {
-		return []string{item.FullName}
+	switch item.ItemType {
+	case plugin.CatalogTermFile:
+		if idx := strings.LastIndex(fullName, "/"); idx >= 0 {
+			return []string{fullName[:idx]}
+		}
+		return nil
+	case plugin.CatalogTermObject:
+		return []string{fullName}
+	case plugin.CatalogTermTable, plugin.CatalogTermCollection, plugin.CatalogTermLabel, plugin.CatalogTermRelationship:
+		if idx := strings.LastIndex(fullName, "."); idx > 0 {
+			return []string{fullName[:idx]}
+		}
 	}
-	return nil
+	return []string{fullName}
 }
 
 func scanTargetFromLocator(locator string) []string {

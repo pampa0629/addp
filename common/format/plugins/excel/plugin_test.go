@@ -62,7 +62,7 @@ func TestPluginDescribeContainer(t *testing.T) {
 	if cities == nil {
 		t.Fatalf("Cities child missing: %#v", info.Children)
 	}
-	if cities.Kind != "sheet" || cities.DataType != format.FormatDataTypeTable {
+	if cities.ChildKind != "sheet" || cities.DataType != format.FormatDataTypeTable {
 		t.Fatalf("Cities child = %#v", cities)
 	}
 	if cities.RowCount == nil {

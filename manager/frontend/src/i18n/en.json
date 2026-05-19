@@ -307,10 +307,15 @@
           "schemaVersion": "Schema Version"
         },
         "tableColumns": {
-          "name": "Field",
+          "name": "Name",
+          "fieldName": "Field",
+          "fieldType": "Field Type",
+          "childName": "Child",
+          "childKind": "Child Kind",
+          "childDataType": "Data Type",
+          "tableName": "Table",
           "type": "Type",
           "nativeType": "Native Type",
-          "kind": "Kind",
           "dataType": "Data Type",
           "format": "Format",
           "path": "Path",

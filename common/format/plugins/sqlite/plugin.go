@@ -149,7 +149,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		}
 		children = append(children, format.ContainerChildInfo{
 			Name:        name,
-			Kind:        kind,
+			ChildKind:   kind,
 			DataType:    format.FormatDataTypeTable,
 			RowCount:    table.RowCount,
 			ColumnCount: &columnCount,

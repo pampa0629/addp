@@ -483,7 +483,9 @@ const previewComponentProps = computed(() => {
   if (previewPluginName.value === 'container-preview') {
     return {
       activeChildPreview: store.activeChildPreviewData,
-      activeChildLoading: store.childPreviewLoading
+      activeChildLoading: store.childPreviewLoading,
+      selectedChildName: store.selectedChildName,
+      selectedChildKey: store.selectedChildKey
     }
   }
   return {}
@@ -589,10 +591,32 @@ const refKey = computed(() => {
   const nodePath = props.selectedNode.path || props.selectedNode.table || ''
   const objectPath = props.previewData?.object?.path || props.previewData?.object?.object_key || ''
   const contentType = props.previewData?.object?.content_type || ''
-  const contentKind = props.previewData?.object?.content?.kind || ''
+  const content = props.previewData?.object?.content || {}
+  const contentKind = content.kind || ''
+  const contentJson = content.json || content.JSON || {}
+  const contentFormat = contentJson?.format || content.metadata?.format || ''
+  const defaultChild = contentJson?.active_child || contentJson?.default_child || ''
+  const childrenSignature = Array.isArray(contentJson?.children)
+    ? contentJson.children.map((child) => child?.key || child?.name || child?.table || '').filter(Boolean).join('|')
+    : ''
   const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
 
-  return `preview-${pluginName}-${nodeId}-${nodePath}-${objectPath}-${store.selectedRefPath}-${store.selectedNestedChildPath}-${contentType}-${contentKind}`
+  return [
+    'preview',
+    pluginName,
+    nodeId,
+    nodePath,
+    objectPath,
+    store.selectedChildName,
+    store.selectedChildKey,
+    store.selectedRefPath,
+    store.selectedNestedChildPath,
+    contentType,
+    contentKind,
+    contentFormat,
+    defaultChild,
+    childrenSignature
+  ].join('-')
 })
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
@@ -613,7 +637,7 @@ const fallbackDownloadUrl = computed(() => {
   if (!path || !engineId.value) {
     return ''
   }
-  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIRef(path)}`
+  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIComponent(path)}`
 })
 
 const downloadInfo = computed(() => {
@@ -777,7 +801,7 @@ const loadGraphSchema = async () => {
   const database = props.selectedNode.schema || ''
   graphSchemaLoading.value = true
   try {
-    const data = await client.get(`/manager/graph-schema/${engineId}?database=${encodeURIRef(database)}`)
+    const data = await client.get(`/manager/graph-schema/${engineId}?database=${encodeURIComponent(database)}`)
     graphSchemaData.value = data
   } catch (error) {
     console.error('加载图 Schema 失败:', error)
@@ -958,11 +982,13 @@ const title = computed(() => {
 
   const node = props.selectedNode
   const nodeType = node.nodeType || node.type
+  const childName = store.selectedChildName || store.selectedChildKey
 
   // 对象/文件系统类型
   if (['object', 'file', 'directory', 'bucket', 'prefix'].includes(nodeType)) {
     const displayPath = node.path || node.table || node.label || node.schema || ''
-    return `${displayPath} - ${t('manager.explorer.dataPreview')}`
+    const childSuffix = childName ? ` / ${childName}` : ''
+    return `${displayPath}${childSuffix} - ${t('manager.explorer.dataPreview')}`
   }
 
   // 表格类型

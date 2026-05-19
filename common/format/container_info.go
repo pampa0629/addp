@@ -18,7 +18,7 @@ type ContainerInfo struct {
 // ContainerChildInfo 描述容器内部的一个子对象，例如 Excel sheet、SQLite table。
 type ContainerChildInfo struct {
 	Name        string
-	Kind        string
+	ChildKind   string
 	DataType    string
 	Format      FormatType
 	Layout      string
@@ -72,9 +72,13 @@ func ChildTableParseOptions(childName string, child map[string]interface{}) *Par
 	opts.ExtraParams = map[string]interface{}{
 		ChildNameParam:  childName,
 		ChildTableParam: tableName,
-		ChildKindParam:  strings.TrimSpace(interfaceString(child["kind"])),
+		ChildKindParam:  containerChildKindFromMap(child),
 	}
 	return opts
+}
+
+func containerChildKindFromMap(child map[string]interface{}) string {
+	return strings.TrimSpace(interfaceString(child["child_kind"]))
 }
 
 func interfaceString(value interface{}) string {

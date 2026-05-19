@@ -785,12 +785,12 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 		child = map[string]interface{}{}
 	}
 	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
-	kind := strings.TrimSpace(commonJSON.InterfaceString(child["kind"]))
+	childKind := containerChildKindFromMap(child)
 	dataType := strings.TrimSpace(commonJSON.InterfaceString(child["data_type"]))
 	properties := make(map[string]interface{}, len(child))
 	for key, value := range child {
 		switch key {
-		case "name", "kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
+		case "name", "child_kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
 			continue
 		default:
 			properties[key] = value
@@ -813,7 +813,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	}
 	return format.ContainerChildInfo{
 		Name:        name,
-		Kind:        kind,
+		ChildKind:   childKind,
 		DataType:    dataType,
 		Format:      format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
 		Layout:      strings.TrimSpace(commonJSON.InterfaceString(child["layout"])),
@@ -823,6 +823,10 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 		HasHeader:   hasHeader,
 		Properties:  properties,
 	}
+}
+
+func containerChildKindFromMap(child map[string]interface{}) string {
+	return strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
 }
 
 func containerChildRefsFromMap(child map[string]interface{}) []format.ContainerChildRef {

@@ -124,6 +124,9 @@ func BuildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 }
 
 func ResolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {
+	if resolved := normalizeContainerAttributeChildrenForPreview(formatName, children); resolved != nil {
+		return resolved
+	}
 	return resolveContainerAttributeChildrenForPreview(formatName, children)
 }
 

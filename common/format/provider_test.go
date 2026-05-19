@@ -398,9 +398,9 @@ func TestRegisterContainerInfoProvider(t *testing.T) {
 				ChildCount:   1,
 				DefaultChild: "Sheet1",
 				Children: []ContainerChildInfo{{
-					Name:     "Sheet1",
-					Kind:     "sheet",
-					DataType: FormatDataTypeTable,
+					Name:      "Sheet1",
+					ChildKind: "sheet",
+					DataType:  FormatDataTypeTable,
 				}},
 			}, nil
 		},

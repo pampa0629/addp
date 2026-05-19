@@ -53,9 +53,18 @@ func enrichContainerChildrenFromProvider(
 	children := make([]map[string]interface{}, 0, len(info.Children))
 	for _, child := range info.Children {
 		attrs := map[string]interface{}{
-			"name":      child.Name,
-			"kind":      child.Kind,
-			"data_type": child.DataType,
+			"name":       child.Name,
+			"child_kind": child.ChildKind,
+			"data_type":  child.DataType,
+		}
+		if child.Format != "" {
+			attrs["format"] = string(child.Format)
+		}
+		if child.Layout != "" {
+			attrs["layout"] = child.Layout
+		}
+		if len(child.Refs) > 0 {
+			attrs["refs"] = containerChildRefAttributes(child.Refs)
 		}
 		if child.RowCount != nil {
 			attrs["row_count"] = *child.RowCount
@@ -67,6 +76,9 @@ func enrichContainerChildrenFromProvider(
 			attrs["has_header"] = *child.HasHeader
 		}
 		for key, value := range child.Properties {
+			if isContainerChildProtocolProperty(key) {
+				continue
+			}
 			attrs[key] = value
 		}
 		children = append(children, attrs)
@@ -83,13 +95,44 @@ func enrichContainerChildrenFromProvider(
 	return nil
 }
 
+func containerChildRefAttributes(refs []format.ContainerChildRef) []map[string]interface{} {
+	if len(refs) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(refs))
+	for _, ref := range refs {
+		item := map[string]interface{}{
+			"path":     ref.Path,
+			"required": ref.Required,
+			"primary":  ref.Primary,
+		}
+		if ref.Role != "" {
+			item["role"] = ref.Role
+		}
+		if ref.Extension != "" {
+			item["extension"] = ref.Extension
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func isContainerChildProtocolProperty(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "name", "child_kind", "data_type", "format", "layout", "refs", "ref_paths", "components", "component_paths", "organization":
+		return true
+	default:
+		return false
+	}
+}
+
 func resolveContainerChildren(info *format.ContainerInfo) *format.ContainerInfo {
 	if info == nil || len(info.Children) == 0 {
 		return info
 	}
 	candidates := make([]dataitem.Candidate, 0, len(info.Children))
 	for _, child := range info.Children {
-		kind := strings.ToLower(strings.TrimSpace(child.Kind))
+		kind := strings.ToLower(strings.TrimSpace(child.ChildKind))
 		if kind == "directory" {
 			continue
 		}
