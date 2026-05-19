@@ -221,7 +221,7 @@ const groupOrder = [
 const fieldOrder = [
   'data_type',
   'format',
-  'organization',
+  'layout',
   'file_count',
   'refs',
   'physical_path',
@@ -281,7 +281,7 @@ const fieldLabelKeys = {
   scanned_at: 'meta.scannedAt',
   data_type: 'manager.explorer.attributes.fields.dataType',
   format: 'manager.explorer.attributes.fields.format',
-  organization: 'manager.explorer.attributes.fields.organization',
+  layout: 'manager.explorer.attributes.fields.layout',
   file_count: 'manager.explorer.attributes.fields.fileCount',
   refs: 'manager.explorer.attributes.fields.refs',
   physical_path: 'manager.explorer.attributes.fields.physicalPath',

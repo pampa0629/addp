@@ -165,7 +165,7 @@ func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket strin
 				content.Metadata = map[string]interface{}{}
 			}
 			content.Metadata["refs"] = refs
-			content.Metadata["organization"] = "multi"
+			content.Metadata["layout"] = "multi"
 		}
 	}
 	return &models.TablePreview{

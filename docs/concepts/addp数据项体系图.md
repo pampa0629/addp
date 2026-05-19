@@ -18,7 +18,7 @@ engine -> node -> data item
 
 一句话概括：
 
-**engine 管连接，node 管资源树，data item 管平台语义；组织方式管资源如何成为 item，数据类型管用户如何理解 item，文件格式管编码，横切能力管跨类型附加能力。**
+**engine 管连接，node 管资源树，data item 管平台语义；内容布局管资源如何成为 item，数据类型管用户如何理解 item，文件格式管编码，横切能力管跨类型附加能力。**
 
 ## 总览
 
@@ -28,14 +28,14 @@ graph LR
     Node --> Item[Data Item 数据项 / Meta Item]
 
     Item --> Identity[身份字段]
-    Item --> Organization[组织方式]
+    Item --> Layout[内容布局]
     Item --> DataType[数据类型]
     Item --> Format[文件格式]
     Item --> Attributes[Attributes]
 
-    Organization --> Single[single]
-    Organization --> Multi[multi]
-    Organization --> Whole[whole]
+    Layout --> Single[single]
+    Layout --> Multi[multi]
+    Layout --> Whole[whole]
 
     Attributes --> Storage[storage]
     Attributes --> ItemAttrs[item]
@@ -95,11 +95,11 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 
 一个 data item 内部可以包含子对象，例如 SQLite 的内部 table、Excel 的 sheet、GeoPackage 的 layer、压缩包中的文件。当前概念上这些子对象默认写入 attributes；只有当需要独立授权、检索、血缘、传输或生命周期管理时，才讨论是否升格为独立 data item。
 
-## 组织方式
+## 内容布局
 
-组织方式回答：**引擎中的文件、目录、表、prefix 等资源如何组织成一个 data item。**
+内容布局回答：**引擎中的文件、目录、表、prefix 等资源如何组织成一个 data item。**
 
-| 组织方式 | 含义 | 示例 |
+| 内容布局 | 含义 | 示例 |
 |---|---|---|
 | `single` | 一个引擎资源对应一个 data item | 数据库 table、对象存储 object、文件系统 file |
 | `multi` | 多个明确相关 ref 共同组成一个 data item | Shapefile 多对象 / 多文件、主 ref 加同级索引 ref |
@@ -143,8 +143,8 @@ engine capability
 | `meta` | 资源树扫描、detector 调度、data item 识别、claims / exclusive 合并、attributes normalizer、落库 | Manager 面向前端的 DTO、Transfer 执行计划、format plugin 内部解析细节 |
 | `common/contentio` | `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader`、`Stat` 等内容 I/O 抽象 | 连接凭据管理、格式解析、multi item 组织规则、面向前端的 DTO |
 | `common/format` | 文件格式枚举、FormatPlugin、格式身份、格式能力、info provider、content reader | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
-| `manager` | 消费已入库 data item 和标准 attributes，基于 reader / provider 组装管理端内容结果 | 重新判断 organization、重新猜 format、重新枚举 sibling 组件 |
-| `transfer` | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别组件、绕过 provider 硬编码格式 |
+| `manager` | 消费已入库 data item 和标准 attributes，基于 reader / provider 组装管理端内容结果 | 重新判断 layout、重新猜 format、重新枚举 sibling related refs |
+| `transfer` | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别 related refs、绕过 provider 硬编码格式 |
 | `asset` / `search` | 消费标准 attributes 做资产治理、索引和检索 | 自行识别 data item 或重写格式解析规则 |
 | frontend | 基于后端 DTO 展示内容和交互 | 决定 data item 边界、直接访问 engine、复刻后端格式解析规则 |
 
@@ -153,7 +153,7 @@ engine capability
 | 事实 | 事实源 |
 |---|---|
 | 术语定义 | [ADDP 术语表](addp术语表.md) |
-| data item 边界、主资源、组件、whole scope、claims / exclusive | [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md) |
+| data item 边界、primary content / ref、related refs、whole scope、claims / exclusive | [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md) |
 | attributes 分区和字段归属 | [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md) |
 | 数据类型、文件格式、FormatPlugin、info provider、content reader | [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) |
 | 内容定位和 I/O 抽象 | [ADDP 内容 I/O 抽象规范](../spec/addp内容IO抽象规范.md) |
@@ -202,7 +202,7 @@ Transfer 可以根据目标能力选择编码格式，但不能绕过标准字�
 
 1. 同一事实只在一个模块裁决，并写入一个规范位置。
 2. `manager`、`transfer`、`asset`、`search` 只消费已入库 data item，不复刻 Meta detector。
-3. `common/format` 可以声明 layout 能力，但不直接决定最终 `organization` 和 claims。
+3. `common/format` 可以声明 layout 能力，但不直接决定最终 `layout` 和 claims。
 4. `common/contentio` 不进入格式语义，也不承载面向前端的 DTO。
 5. FormatPlugin 不接 `engine_id`，不反向构造 engine reader。
 6. 私有格式字段必须进入命名空间，不能覆盖平台标准字段。

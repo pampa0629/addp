@@ -8,10 +8,10 @@ import (
 
 func TestValidateFormatRuleRejectsMissingPrimaryRelatedRefSpec(t *testing.T) {
 	rule := FormatRule{
-		Format:       "bad_multi",
-		DataType:     DataTypeTable,
-		Organization: OrganizationMulti,
-		Entry:        EntryRule{Extensions: []string{".main"}},
+		Format:   "bad_multi",
+		DataType: DataTypeTable,
+		Layout:   LayoutMulti,
+		Entry:    EntryRule{Extensions: []string{".main"}},
 		RelatedRefSpecs: []format.RelatedRefSpec{
 			{Extension: ".main", Role: "main", Required: true},
 		},
@@ -24,10 +24,10 @@ func TestValidateFormatRuleRejectsMissingPrimaryRelatedRefSpec(t *testing.T) {
 
 func TestValidateFormatRuleAcceptsSinglePrimaryRelatedRefSpec(t *testing.T) {
 	rule := FormatRule{
-		Format:       "good_multi",
-		DataType:     DataTypeTable,
-		Organization: OrganizationMulti,
-		Entry:        EntryRule{Extensions: []string{".main"}},
+		Format:   "good_multi",
+		DataType: DataTypeTable,
+		Layout:   LayoutMulti,
+		Entry:    EntryRule{Extensions: []string{".main"}},
 		RelatedRefSpecs: []format.RelatedRefSpec{
 			{Extension: ".main", Role: "main", Required: true, Primary: true},
 			{Extension: ".side", Role: "side", Required: true},

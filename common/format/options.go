@@ -1,5 +1,14 @@
 package format
 
+// GeometryEncoding 描述表格行值中 geometry 字段的编码形式。
+type GeometryEncoding string
+
+const (
+	GeometryEncodingWKT  GeometryEncoding = "wkt"
+	GeometryEncodingWKB  GeometryEncoding = "wkb"
+	GeometryEncodingEWKB GeometryEncoding = "ewkb"
+)
+
 // ParseOptions 解析选项。
 type ParseOptions struct {
 	Encoding         string
@@ -12,7 +21,8 @@ type ParseOptions struct {
 	Delimiter rune
 	HasHeader bool
 
-	SpatialRefSys string
+	SpatialRefSys    string
+	GeometryEncoding GeometryEncoding
 
 	SheetName   string
 	SheetIndex  int
@@ -61,5 +71,6 @@ func DefaultParseOptions() *ParseOptions {
 		HasHeader:        true,
 		SheetIndex:       0,
 		ContentIndexStep: 5000,
+		GeometryEncoding: GeometryEncodingWKT,
 	}
 }

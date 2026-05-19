@@ -56,7 +56,7 @@ endpoint 只决定 reader / writer 来自哪里：
 - NFS Shapefile -> MinIO Shapefile 不应有 file-to-object 专用 executor。
 - MinIO CSV -> MinIO Parquet 也应是 table reader + table writer 的同一条链。
 
-确实需要分叉时，只能按 data type / representation / organization 分叉，而不是按具体引擎组合分叉。
+确实需要分叉时，只能按 data type / representation / layout 分叉，而不是按具体引擎组合分叉。
 
 ### 2.2 不新增无价值 adapter
 
@@ -79,11 +79,12 @@ adapter 只有在跨层语义确实不同、且无法通过 common 抽象表达�
 
 | 接口 | 语义 | 主要使用方 |
 |---|---|---|
-| `MultiTableProvider` | 多 ref table 的 info / sample 能力，面向预览、探查和少量样本读取。 | Meta、Manager、Transfer 探查兜底 |
+| `MultiTableInfoProvider` | 多 ref table 的 info 能力，面向元数据和 schema 探查。 | Meta、Manager、Transfer 探查 |
+| `MultiTableSampleReader` | 多 ref table 的 sample 能力，面向预览、探查和少量样本读取。 | Manager、Transfer 探查兜底 |
 | `MultiTableReaderProvider` | 多 ref table 的连续读取会话，面向全量批处理。 | Transfer 主链路 |
 | `MultiTableWriterProvider` | 多 ref table 的连续写出会话。 | Transfer 写侧 |
 
-因此 `MultiTableReaderProvider` 不是重复定义 `MultiTableProvider`，而是把“按样本窗口读取”和“打开一次、连续按批读取”拆开。Shapefile 这类格式在 Transfer 中优先使用连续 reader；sample provider 保留给预览和兜底。
+因此 `MultiTableReaderProvider` 不是重复定义 sample reader，而是把“按样本窗口读取”和“打开一次、连续按批读取”拆开。Shapefile 这类格式在 Transfer 中优先使用连续 reader；sample reader 保留给预览和兜底。
 
 ### 2.4 原生字段类型不得进入执行决策
 

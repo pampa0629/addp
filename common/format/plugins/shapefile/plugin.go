@@ -20,7 +20,7 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.FormatLayoutMulti},
 		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{".shp"}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
-		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, MultiTable: true},
+		Providers:      format.FormatProviderDescriptor{MultiTable: true},
 		ContentReaders: []string{string(format.ContentReaderMultiTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
 		TransferWrite:  true,

@@ -61,9 +61,6 @@ type TableSampleReader interface {
 	SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
-// TableSampleProvider 是旧命名兼容别名，新代码应使用 TableSampleReader。
-type TableSampleProvider = TableSampleReader
-
 // TableReaderProvider 表示格式能够从外部提供的资源流中打开连续 table 行读取会话。
 //
 // 它面向 Transfer 等全量读取场景；与 TableSampleReader 的逻辑窗口读取不同，
@@ -79,23 +76,40 @@ type TableReader interface {
 	Close(ctx context.Context) error
 }
 
+// MultiTableInfoProvider 表示多 ref table 格式能够提取 table 类型信息。
+type MultiTableInfoProvider interface {
+	Provider
+	RelatedRefSpecs() []RelatedRefSpec
+	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+}
+
+// MultiTableSampleReader 表示多 ref table 格式能够读取 table 样本数据。
+type MultiTableSampleReader interface {
+	ContentReader
+	RelatedRefSpecs() []RelatedRefSpec
+	SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+
 // MultiTableReaderProvider 表示多 ref 格式能够打开连续 table 行读取会话。
 //
-// 它面向 Transfer 等全量读取场景；与 MultiTableProvider 的 SampleMultiTable
-// 不同，TableReader 持有一次ref 读取状态，调用方循环 ReadRows 直到返回空结果。
+// 它面向 Transfer 等全量读取场景；与 MultiTableSampleReader 的 SampleMultiTable
+// 不同，TableReader 持有一次 ref 读取状态，调用方循环 ReadRows 直到返回空结果。
 type MultiTableReaderProvider interface {
 	Provider
 	RelatedRefSpecs() []RelatedRefSpec
 	OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (TableReader, error)
 }
 
-// TableProvider 是兼容旧调用方的组合接口。
-//
-// 新代码优先按 TableInfoProvider / TableSampleReader 分别表达调用意图；
-// 已有 plugin 同时实现两者时仍可注册为 TableProvider。
-type TableProvider interface {
-	TableInfoProvider
-	TableSampleReader
+// ScopeTableInfoProvider 表示 whole scope table 格式能够提取 table 类型信息。
+type ScopeTableInfoProvider interface {
+	Provider
+	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
+}
+
+// ScopeTableSampleReader 表示 whole scope table 格式能够读取 table 样本数据。
+type ScopeTableSampleReader interface {
+	ContentReader
+	SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
 // TableWriterProvider 表示格式能够把 table 数据写出为该格式编码。
@@ -164,24 +178,9 @@ type DocumentTextReader interface {
 	ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error)
 }
 
-// DocumentProvider 是兼容期组合接口，等价于同时具备 DocumentInfoProvider 和 DocumentTextReader。
-type DocumentProvider interface {
-	DocumentInfoProvider
-	DocumentTextReader
-}
-
 type MediaInfoProvider interface {
 	Provider
 	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaInfo, error)
-}
-
-// MediaProvider 是旧命名兼容别名，新代码应使用 MediaInfoProvider。
-type MediaProvider = MediaInfoProvider
-
-type MultiTableProvider interface {
-	TableProvider
-	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
-	SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。
@@ -212,10 +211,4 @@ type RefDescriptor struct {
 type RefDescriptorProvider interface {
 	Provider
 	DescribeRefs(refs []RelatedRef) []RefDescriptor
-}
-
-type ScopeTableProvider interface {
-	TableProvider
-	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
-	SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }

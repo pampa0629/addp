@@ -56,13 +56,13 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 	}
 	basePath := filepath.Join(tempDir, baseName)
 
-	writer, err := Create(basePath+".shp", shapeType)
+	writer, err := create(basePath+".shp", shapeType)
 	if err != nil {
 		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("create shapefile writer: %w", err)
 	}
 	dbfSchema := shapefileDBFSchema(schema, geometryField)
-	if err := writer.SetFields(dbfSchema.fields); err != nil {
+	if err := writer.setFields(dbfSchema.fields); err != nil {
 		writer.Close()
 		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("set shapefile fields: %w", err)
@@ -86,7 +86,7 @@ type multiTableWriter struct {
 	refs          []format.RelatedRef
 	tempDir       string
 	basePath      string
-	writer        *Writer
+	writer        *writer
 	geometryField string
 	fieldNames    []string
 	fields        []shp.Field
@@ -111,7 +111,7 @@ func (w *multiTableWriter) writeRow(row map[string]interface{}) error {
 	if !exists {
 		return fmt.Errorf("geometry field '%s' not found", w.geometryField)
 	}
-	shape, err := ToShapefileGeometry(geomValue)
+	shape, err := toShapefileGeometry(geomValue)
 	if err != nil {
 		return fmt.Errorf("failed to convert geometry: %w", err)
 	}
@@ -390,15 +390,11 @@ func shapefileDBFSchema(schema *format.TableInfo, geometryField string) shapefil
 		originalNames: make([]string, 0, len(schema.Fields)),
 	}
 	used := map[string]int{}
-	mapper := format.GetTypeMapper("shapefile")
 	for _, field := range schema.Fields {
 		if strings.EqualFold(field.Name, geometryField) || format.IsGeometryType(field.Type) {
 			continue
 		}
-		dbfType, size, precision := "C", 254, 0
-		if mapper != nil {
-			dbfType, size, precision = mapper.FromCommon(field.Type)
-		}
+		dbfType, size, precision := commonTypeToDBFNative(field.Type)
 		if field.Size > 0 {
 			size = field.Size
 		}

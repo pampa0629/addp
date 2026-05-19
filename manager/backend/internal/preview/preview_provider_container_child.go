@@ -141,7 +141,7 @@ func childInfoForNestedContainerPath(refPath string) map[string]interface{} {
 		"kind":         "file",
 		"data_type":    preview.DataType,
 		"format":       string(preview.Format),
-		"organization": "single",
+		"layout":       "single",
 		"content_type": previewContentType(preview.Format, name),
 	}
 	if result["content_type"] == "application/octet-stream" {
@@ -161,7 +161,7 @@ func childInfoForRefPath(parent *format.ContainerChildResource, refPath string) 
 		"kind":         "file",
 		"data_type":    preview.DataType,
 		"format":       string(preview.Format),
-		"organization": "single",
+		"layout":       "single",
 		"content_type": previewContentType(preview.Format, name),
 	}
 	if descriptor != nil {
@@ -267,18 +267,27 @@ func previewRequestForRef(req *PreviewRequest, child map[string]interface{}) *Pr
 }
 
 func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {
-	provider, err := format.GetTableProvider(child.Format)
-	if err != nil {
-		return p.previewObjectChild(ctx, req, bucket, child)
-	}
 	opts := child.ParentOptions
 	if opts == nil {
 		opts = format.ChildTableParseOptions(req.ChildName, containerChildForRequest(req.Attributes, req.ChildName))
 	}
-	if refProvider, ok := provider.(format.MultiTableProvider); ok && len(child.Refs) > 0 {
-		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, bucket, child.Format, refProvider, opts, req)
+	if len(child.Refs) > 0 {
+		infoProvider, err := format.GetMultiTableInfoProvider(child.Format)
+		if err != nil {
+			return p.previewObjectChild(ctx, req, bucket, child)
+		}
+		sampleReader, err := format.GetMultiTableSampleReader(child.Format)
+		if err != nil {
+			return nil, fmt.Errorf("no multi table sample reader for child format %s: %w", child.Format, err)
+		}
+		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, bucket, child.Format, infoProvider, sampleReader, opts, req)
 	}
-	return (&FileTablePreviewProvider{}).previewStreamable(ctx, child.Reader, bucket, child.Ref.Path, child.Format, provider, opts, req)
+	infoProvider, _ := format.GetTableInfoProvider(child.Format)
+	sampleReader, err := format.GetTableSampleReader(child.Format)
+	if err != nil {
+		return p.previewObjectChild(ctx, req, bucket, child)
+	}
+	return (&FileTablePreviewProvider{}).previewStreamable(ctx, child.Reader, bucket, child.Ref.Path, child.Format, infoProvider, sampleReader, opts, req)
 }
 
 func (p *ContainerChildPreviewProvider) previewContainerChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {

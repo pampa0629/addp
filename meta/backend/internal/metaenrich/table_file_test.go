@@ -37,8 +37,8 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractTableFileWholeScopeInfo() error = %v", err)
 	}
-	if info.Organization != dataitem.OrganizationWhole {
-		t.Fatalf("Organization = %q, want %q", info.Organization, dataitem.OrganizationWhole)
+	if info.Layout != dataitem.LayoutWhole {
+		t.Fatalf("Layout = %q, want %q", info.Layout, dataitem.LayoutWhole)
 	}
 	if info.EntryPath != "dataset" {
 		t.Fatalf("EntryPath = %q, want dataset", info.EntryPath)
@@ -94,12 +94,12 @@ func TestTableFileResolverRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 	seenWhole := false
 	for _, rule := range rules {
 		if err := dataitem.ValidateFormatRule(rule); err != nil {
-			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.Organization, err)
+			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.Layout, err)
 		}
-		switch rule.Organization {
-		case dataitem.OrganizationSingle:
+		switch rule.Layout {
+		case dataitem.LayoutSingle:
 			seenSingle = true
-		case dataitem.OrganizationWhole:
+		case dataitem.LayoutWhole:
 			seenWhole = true
 			if rule.WholeScope == nil || !rule.WholeScope.ExclusiveOnStrongHit {
 				t.Fatalf("whole scope rule = %#v, want explicit exclusive rule", rule.WholeScope)
@@ -174,8 +174,8 @@ func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 		t.Fatalf("ResolveItems() = %#v, want one item", result)
 	}
 	item := result.Items[0]
-	if item.Organization != dataitem.OrganizationWhole {
-		t.Fatalf("Organization = %q, want whole", item.Organization)
+	if item.Layout != dataitem.LayoutWhole {
+		t.Fatalf("Layout = %q, want whole", item.Layout)
 	}
 	if item.EntryPath != "dataset" || item.PhysicalPath != "dataset" {
 		t.Fatalf("paths = entry %q physical %q, want dataset", item.EntryPath, item.PhysicalPath)

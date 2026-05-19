@@ -133,7 +133,7 @@ type RangeReader interface {
 - `dataitem` / Meta detector：决定哪些 content 最终组成一个 data item。
 - Manager / Transfer：根据已确认 refs 构造 reader / writer 并调用 format provider。
 
-`format.Layouts` 是格式可支持的 content layout 声明；`dataitem.Organization` 复用同一组值，表示某个已识别 item 的最终 layout。字段名保留 `organization` 是因为它写入 `attributes.item.organization`，但它不再是一套独立取值体系。
+`format.Layouts` 是格式可支持的 content layout 声明；`dataitem.Layout` 复用同一组值，表示某个已识别 item 的最终 layout。字段名保留 `layout` 是因为它写入 `attributes.item.layout`，但它不再是一套独立取值体系。
 
 关键原则不是“contentio 只能处理单 content”，而是：
 

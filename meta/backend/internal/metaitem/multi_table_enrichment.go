@@ -45,7 +45,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		return result, nil
 	}
 	for _, item := range resolved.Items {
-		if item.Organization != dataitem.OrganizationMulti {
+		if item.Layout != dataitem.LayoutMulti {
 			continue
 		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
@@ -95,12 +95,8 @@ func enrichRefTableInfo(
 	if contentReader == nil || detected == nil || item.Format == "" {
 		return
 	}
-	provider, err := format.GetTableProvider(format.FormatType(item.Format))
+	refProvider, err := format.GetMultiTableInfoProvider(format.FormatType(item.Format))
 	if err != nil {
-		return
-	}
-	refProvider, ok := provider.(format.MultiTableProvider)
-	if !ok {
 		return
 	}
 	reader := newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor)

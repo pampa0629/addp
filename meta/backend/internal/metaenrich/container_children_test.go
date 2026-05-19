@@ -186,8 +186,8 @@ func TestEnrichZIPContainerChildrenGroupsMultiRefs(t *testing.T) {
 		t.Fatalf("children = %#v, want grouped multi item + text item", children)
 	}
 	multi := children[0]
-	if multi["organization"] != string(dataitem.OrganizationMulti) {
-		t.Fatalf("organization = %#v, want multi: %#v", multi["organization"], multi)
+	if multi["layout"] != string(dataitem.LayoutMulti) {
+		t.Fatalf("layout = %#v, want multi: %#v", multi["layout"], multi)
 	}
 	refs, ok := multi["refs"].([]map[string]interface{})
 	if !ok || len(refs) != 3 {

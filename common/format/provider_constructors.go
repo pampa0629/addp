@@ -21,32 +21,40 @@ func NewFormatInfoProvider(
 	}
 }
 
-func NewTableProvider(
+func NewTableInfoProvider(
 	formatType FormatType,
 	describe func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error),
-	sample func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error),
-) TableProvider {
+) TableInfoProvider {
 	if describe == nil {
 		describe = func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
-			return nil, fmt.Errorf("table provider %s does not implement DescribeTable", formatType)
+			return nil, fmt.Errorf("table info provider %s does not implement DescribeTable", formatType)
 		}
 	}
-	if sample == nil {
-		sample = func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
-			return nil, fmt.Errorf("table provider %s does not implement SampleTable", formatType)
-		}
-	}
-	return tableProviderView{
+	return tableInfoProviderView{
 		formatType: formatType,
 		describe:   describe,
+	}
+}
+
+func NewTableSampleReader(
+	formatType FormatType,
+	sample func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error),
+) TableSampleReader {
+	if sample == nil {
+		sample = func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
+			return nil, fmt.Errorf("table sample reader %s does not implement SampleTable", formatType)
+		}
+	}
+	return tableSampleReaderView{
+		formatType: formatType,
 		sample:     sample,
 	}
 }
 
-func NewMediaProvider(
+func NewMediaInfoProvider(
 	formatType FormatType,
 	describe func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error),
-) MediaProvider {
+) MediaInfoProvider {
 	if describe == nil {
 		describe = func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error) {
 			return nil, fmt.Errorf("media provider %s does not implement DescribeMedia", formatType)
@@ -88,24 +96,32 @@ func NewContainerChildResolver(
 	}
 }
 
-func NewDocumentProvider(
+func NewDocumentInfoProvider(
 	formatType FormatType,
 	describe func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error),
-	extract func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error),
-) DocumentProvider {
+) DocumentInfoProvider {
 	if describe == nil {
 		describe = func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error) {
-			return nil, fmt.Errorf("document provider %s does not implement DescribeDocument", formatType)
+			return nil, fmt.Errorf("document info provider %s does not implement DescribeDocument", formatType)
 		}
 	}
-	if extract == nil {
-		extract = func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error) {
-			return "", false, fmt.Errorf("document provider %s does not implement ReadDocumentText", formatType)
-		}
-	}
-	return documentProviderView{
+	return documentInfoProviderView{
 		formatType: formatType,
 		describe:   describe,
+	}
+}
+
+func NewDocumentTextReader(
+	formatType FormatType,
+	extract func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error),
+) DocumentTextReader {
+	if extract == nil {
+		extract = func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error) {
+			return "", false, fmt.Errorf("document text reader %s does not implement ReadDocumentText", formatType)
+		}
+	}
+	return documentTextReaderView{
+		formatType: formatType,
 		extract:    extract,
 	}
 }

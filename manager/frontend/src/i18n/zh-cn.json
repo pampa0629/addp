@@ -276,7 +276,7 @@
         "fields": {
           "dataType": "数据类型",
           "format": "格式",
-          "organization": "组织方式",
+          "layout": "内容布局",
           "fileCount": "文件数",
           "componentFiles": "组件文件",
           "physicalPath": "物理路径",

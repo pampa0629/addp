@@ -22,8 +22,8 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 	attrs := BuildAttributes(item)
 	itemAttrs := attrs["item"].(map[string]interface{})
-	if itemAttrs["organization"] != string(dataitem.OrganizationSingle) {
-		t.Fatalf("item.organization = %v, want %s", itemAttrs["organization"], dataitem.OrganizationSingle)
+	if itemAttrs["layout"] != string(dataitem.LayoutSingle) {
+		t.Fatalf("item.layout = %v, want %s", itemAttrs["layout"], dataitem.LayoutSingle)
 	}
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) {
 		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], dataitem.DataTypeTable)
@@ -48,10 +48,10 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Organization: dataitem.OrganizationWhole,
-			DataType:     dataitem.DataTypeTable,
-			Format:       "parquet",
-			SizeBytes:    int64PtrForTest(128),
+			Layout:    dataitem.LayoutWhole,
+			DataType:  dataitem.DataTypeTable,
+			Format:    "parquet",
+			SizeBytes: int64PtrForTest(128),
 		},
 		PhysicalPath: "/lake/sales",
 	}
@@ -66,8 +66,8 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Organization: dataitem.OrganizationSingle,
-			DataType:     dataitem.DataTypeDocument,
+			Layout:   dataitem.LayoutSingle,
+			DataType: dataitem.DataTypeDocument,
 		},
 		Attributes: map[string]interface{}{
 			"path": "legacy/path",

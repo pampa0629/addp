@@ -11,7 +11,7 @@ ADDP 的数据类型与格式模型已经收口为：
 - `item_type=table`
 - `item.data_type=table`
 - `item.format=parquet/orc/avro/...`
-- `item.organization=single/multi/whole`
+- `item.layout=single/multi/whole`
 
 因此，`lake_table` 不再应该作为基础 item type 暴露给上层模块。
 
@@ -45,7 +45,7 @@ ADDP 的数据类型与格式模型已经收口为：
 问题：
 
 - 新扫描结果不会再产出 `item_type=lake_table`。
-- `lake_mode` 与当前 `organization=single/whole` 重叠。
+- `lake_mode` 与当前 `layout=single/whole` 重叠。
 - `detectLakeMode()` 继续查旧 item type 会导致新元数据无法识别为目录型/文件型表格资源。
 
 ### 2. `develop` DuckDB 联邦查询
@@ -68,7 +68,7 @@ ADDP 的数据类型与格式模型已经收口为：
 
 问题：
 
-- Develop 的数据源枚举会漏掉新的 `item_type=table + format=parquet + organization=single/whole`。
+- Develop 的数据源枚举会漏掉新的 `item_type=table + format=parquet + layout=single/whole`。
 - `TableRef.ItemType` 继续承载旧概念，无法区分“原生关系表”和“文件/目录型表格资源”。
 - Swagger 文档仍向外暴露旧枚举。
 
@@ -91,7 +91,7 @@ ADDP 的数据类型与格式模型已经收口为：
 问题：
 
 - 这里有一半已经按新模型走，一半仍是旧命名。
-- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.organization`、`meta_item.full_name` 和 contentio.Reader / FormatPlugin / content reader。
+- `BuildLakeTableS3Path()` 是通过 schema/table/lake_mode 推导路径；新模型更应该直接使用 `storage.physical_path`、`item.layout`、`meta_item.full_name` 和 contentio.Reader / FormatPlugin / content reader。
 
 ## 目标模型
 
@@ -102,7 +102,7 @@ ADDP 的数据类型与格式模型已经收口为：
 - 用标准 attributes 判断文件/目录型表格资源：
   - `item.data_type == "table"`
   - `item.format in ["parquet", "orc", "avro"]`
-  - `item.organization == "single" | "whole"`
+  - `item.layout == "single" | "whole"`
   - `storage.physical_path`
   - `item.refs`
 - DuckDB 查询路径不再基于旧 `schema/table/lake_mode` 猜路径，而是基于 Meta 已确认的物理路径和组织形态生成。
@@ -112,8 +112,8 @@ ADDP 的数据类型与格式模型已经收口为：
 | 旧概念 | 新概念 |
 | --- | --- |
 | `lake_table` item type | `table` item type |
-| `lake_mode=directory` | `organization=whole` |
-| `lake_mode=file` | `organization=single` |
+| `lake_mode=directory` | `layout=whole` |
+| `lake_mode=file` | `layout=single` |
 | `getLakeTables` | `getFileTables` / `getObjectTableItems` |
 | `BuildLakeTableMap` | `BuildObjectTableMap` / `BuildFileTableMap` |
 | `engineLakeTables` | `engineObjectTables` / `engineFileTables` |
@@ -132,14 +132,14 @@ type DuckDBTableRef struct {
     SchemaName   string
     DataType     string
     Format       string
-    Organization string
+    Layout string
     PhysicalPath string
     EntryPath    string
     SourceKind   string // native_table / object_table / file_table
 }
 ```
 
-`SourceKind` 是 DuckDB 编排内部概念，不应写回 Meta，也不应替代 `data_type/format/organization`。
+`SourceKind` 是 DuckDB 编排内部概念，不应写回 Meta，也不应替代 `data_type/format/layout`。
 
 ### 第二步：替换 Meta 查询条件
 
@@ -155,7 +155,7 @@ item.ItemType == "lake_table"
 item.ItemType == "table"
 item.attributes.item.data_type == "table"
 item.attributes.item.format in ("parquet", "orc", "avro")
-item.attributes.item.organization in ("single", "whole")
+item.attributes.item.layout in ("single", "whole")
 ```
 
 如果 attributes 暂时不完整，应优先修 Meta 扫描与重扫，而不是保留旧兼容分支。
@@ -166,8 +166,8 @@ item.attributes.item.organization in ("single", "whole")
 
 后续路径来源应为：
 
-- `organization=single`：使用 `storage.physical_path` 或 `entry_path` 指向单文件。
-- `organization=whole`：使用 `storage.physical_path` 作为 scope，再由 format/resource 规则决定读取表达。
+- `layout=single`：使用 `storage.physical_path` 或 `entry_path` 指向单文件。
+- `layout=whole`：使用 `storage.physical_path` 作为 scope，再由 format/resource 规则决定读取表达。
 - 多 ref：使用 `item.refs`，由 DuckDB 适配层决定是否展开成 `read_parquet([...])` 或 glob。
 
 ### 第四步：调整 `service` 查询服务配置
@@ -187,7 +187,7 @@ item.attributes.item.organization in ("single", "whole")
   "source": {
     "kind": "object_table",
     "format": "parquet",
-    "organization": "whole",
+    "layout": "whole",
     "physical_path": "bucket/path"
   }
 }
@@ -198,8 +198,8 @@ item.attributes.item.organization in ("single", "whole")
 ### 第五步：调整前端和 Swagger
 
 - 前端选择项删除 `lake_table`。
-- 选择逻辑改为“可查询 table item”，再用 format / organization 展示来源差异。
-- Swagger 中 `"table" 或 "lake_table"` 改为 `table`，并在字段说明中描述 `format` 与 `organization`。
+- 选择逻辑改为“可查询 table item”，再用 format / layout 展示来源差异。
+- Swagger 中 `"table" 或 "lake_table"` 改为 `table`，并在字段说明中描述 `format` 与 `layout`。
 - API 描述中的“湖表 + 关系型表”改为“对象/文件表格资源 + 原生关系表”。
 
 ### 第六步：删除旧命名
@@ -224,7 +224,7 @@ item.attributes.item.organization in ("single", "whole")
 - 前端可能仍按 `lake_table` 节点类型过滤可选资源。
 - Develop 的 SQL 自动补全与样例 SQL 依赖 `TableRef.ItemType`。
 - DuckDB rewrite 目前对 Parquet 路径有内置假设，只支持 `*.parquet` 风格。
-- 如果 Meta 未重扫，旧数据仍可能没有 `item.format`、`item.organization`、`storage.physical_path` 等标准属性。
+- 如果 Meta 未重扫，旧数据仍可能没有 `item.format`、`item.layout`、`storage.physical_path` 等标准属性。
 
 ## 暂定验收标准
 

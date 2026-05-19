@@ -56,7 +56,7 @@
       kind: child?.kind || 'child',
       dataType: child?.data_type || child?.dataType || 'unknown',
       format: child?.format || '',
-      organization: child?.organization || '',
+      layout: child?.layout || '',
       rowCount: numberOrUndefined(child?.row_count ?? child?.rowCount),
       columnCount: numberOrUndefined(child?.column_count ?? child?.columnCount ?? columns.length),
       hasHeader: child?.has_header ?? child?.hasHeader,

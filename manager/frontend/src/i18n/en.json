@@ -276,7 +276,7 @@
         "fields": {
           "dataType": "Data Type",
           "format": "Format",
-          "organization": "Organization",
+          "layout": "Layout",
           "fileCount": "File Count",
           "componentFiles": "Component Files",
           "physicalPath": "Physical Path",

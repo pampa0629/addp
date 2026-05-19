@@ -2,43 +2,85 @@ package format
 
 import "fmt"
 
-func RegisterTableProvider(provider TableProvider) error {
-	return globalProviderRegistry.RegisterTableProvider(provider)
+func RegisterMultiTableInfoProvider(provider MultiTableInfoProvider) error {
+	return globalProviderRegistry.RegisterMultiTableInfoProvider(provider)
 }
 
-func (r *ProviderRegistry) RegisterTableProvider(provider TableProvider) error {
+func (r *ProviderRegistry) RegisterMultiTableInfoProvider(provider MultiTableInfoProvider) error {
 	if provider == nil {
-		return fmt.Errorf("table provider cannot be nil")
+		return fmt.Errorf("multi table info provider cannot be nil")
 	}
 	formatType := provider.Format()
-	if err := validateProviderFormat(formatType, "table provider"); err != nil {
+	if err := validateProviderFormat(formatType, "multi table info provider"); err != nil {
+		return err
+	}
+	if err := validateRelatedRefSpecProvider(provider, "multi table info provider"); err != nil {
 		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tableProviders[formatType] = provider
-	r.tableInfoProviders[formatType] = provider
-	r.tableSampleProviders[formatType] = provider
+	r.multiTableInfoProviders[formatType] = provider
 	return nil
 }
 
-func RegisterMultiTableProvider(provider MultiTableProvider) error {
-	return globalProviderRegistry.RegisterMultiTableProvider(provider)
+func RegisterMultiTableSampleReader(reader MultiTableSampleReader) error {
+	return globalProviderRegistry.RegisterMultiTableSampleReader(reader)
 }
 
-func (r *ProviderRegistry) RegisterMultiTableProvider(provider MultiTableProvider) error {
-	if provider == nil {
-		return fmt.Errorf("multi table provider cannot be nil")
+func (r *ProviderRegistry) RegisterMultiTableSampleReader(reader MultiTableSampleReader) error {
+	if reader == nil {
+		return fmt.Errorf("multi table sample reader cannot be nil")
 	}
-	formatType := provider.Format()
-	if err := validateProviderFormat(formatType, "multi table provider"); err != nil {
+	formatType := reader.Format()
+	if err := validateProviderFormat(formatType, "multi table sample reader"); err != nil {
+		return err
+	}
+	if err := validateRelatedRefSpecProvider(reader, "multi table sample reader"); err != nil {
 		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.multiTableProviders[formatType] = provider
+	r.multiTableSampleReaders[formatType] = reader
+	return nil
+}
+
+func RegisterScopeTableInfoProvider(provider ScopeTableInfoProvider) error {
+	return globalProviderRegistry.RegisterScopeTableInfoProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterScopeTableInfoProvider(provider ScopeTableInfoProvider) error {
+	if provider == nil {
+		return fmt.Errorf("scope table info provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "scope table info provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scopeTableInfoProviders[formatType] = provider
+	return nil
+}
+
+func RegisterScopeTableSampleReader(reader ScopeTableSampleReader) error {
+	return globalProviderRegistry.RegisterScopeTableSampleReader(reader)
+}
+
+func (r *ProviderRegistry) RegisterScopeTableSampleReader(reader ScopeTableSampleReader) error {
+	if reader == nil {
+		return fmt.Errorf("scope table sample reader cannot be nil")
+	}
+	formatType := reader.Format()
+	if err := validateProviderFormat(formatType, "scope table sample reader"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scopeTableSampleReaders[formatType] = reader
 	return nil
 }
 
@@ -61,11 +103,11 @@ func (r *ProviderRegistry) RegisterTableInfoProvider(provider TableInfoProvider)
 	return nil
 }
 
-func RegisterTableSampleProvider(provider TableSampleProvider) error {
-	return globalProviderRegistry.RegisterTableSampleProvider(provider)
+func RegisterTableSampleReader(provider TableSampleReader) error {
+	return globalProviderRegistry.RegisterTableSampleReader(provider)
 }
 
-func (r *ProviderRegistry) RegisterTableSampleProvider(provider TableSampleProvider) error {
+func (r *ProviderRegistry) RegisterTableSampleReader(provider TableSampleReader) error {
 	if provider == nil {
 		return fmt.Errorf("table sample provider cannot be nil")
 	}

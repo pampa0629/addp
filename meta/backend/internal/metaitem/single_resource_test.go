@@ -30,8 +30,8 @@ func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
 		Size: 42,
 	})
 
-	if item.Organization != dataitem.OrganizationSingle {
-		t.Fatalf("Organization = %q, want %q", item.Organization, dataitem.OrganizationSingle)
+	if item.Layout != dataitem.LayoutSingle {
+		t.Fatalf("Layout = %q, want %q", item.Layout, dataitem.LayoutSingle)
 	}
 	if item.DataType != dataitem.DataTypeContainer {
 		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)

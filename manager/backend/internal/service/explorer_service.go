@@ -748,8 +748,8 @@ func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.J
 		return true
 	}
 	formatName := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "format", "item")))
-	organization := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "organization", "item")))
-	return formatName != "" && organization != ""
+	layout := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "layout", "item")))
+	return formatName != "" && layout != ""
 }
 
 // convertManagerEngineToCommon 将 Manager 的 Engine 转换为 Common 的 Engine

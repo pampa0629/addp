@@ -72,7 +72,7 @@ full_name 以 bucket 开头，包含完整的层级路径：
 | prefix 节点 | `addp/image` |
 | object 数据项 | `addp/image/photo.jpg` |
 
-对象存储的 item 叶子类型固定为 `object`。CSV、Shapefile、Parquet、WPS、PDF、图片等格式只改变 `attributes.item.data_type`、`attributes.item.format` 和 `attributes.item.organization`，不改变 `meta_item.item_type=object`。
+对象存储的 item 叶子类型固定为 `object`。CSV、Shapefile、Parquet、WPS、PDF、图片等格式只改变 `attributes.item.data_type`、`attributes.item.format` 和 `attributes.item.layout`，不改变 `meta_item.item_type=object`。
 
 ### 文件系统（NFS）
 
@@ -341,7 +341,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 4. 扫描非根目录时，先按 `catalog_paths` 确保从 root 到目标目录的 `dir meta_node` 链存在，再把扫描上下文切换到该目录 node。
 5. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`。
 6. 文件创建 `meta_item`（`item_type = file`），`node_id` 指向所在目录 node，`full_name = 文件相对路径`。
-7. 文件格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区。
+7. 文件格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.layout` 等 attributes 分区。
 
 ### 对象存储扫描流程
 
@@ -349,7 +349,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 2. 通过 `CatalogProvider.ListChildren(bucket/prefix)` 获取 prefix 和 object
 3. prefix 创建 `meta_node`（`node_type = prefix`），`full_name = bucket + "/" + prefix`
 4. object 创建 `meta_item`（`item_type = object`），`full_name = bucket + "/" + object_key`
-5. object 的格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.organization` 等 attributes 分区
+5. object 的格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.layout` 等 attributes 分区
 
 ### 关系型数据库扫描流程
 

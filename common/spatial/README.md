@@ -1,15 +1,18 @@
 # common/spatial
 
-`common/spatial` 负责空间预览场景下的坐标转换 facade，并承载 PostGIS 空间 SQL 表达式、MVT、WKB 等空间数据通用能力。
+`common/spatial` 负责空间预览场景下的坐标转换 facade，并承载 PostGIS 空间 SQL 表达式、MVT、WKT / WKB / EWKB 几何编码等空间数据通用能力。
 
 PostGIS 相关工具包括：
 
 - 引擎类型判断和连接池获取
 - 标识符引用和 PostGIS 表名拼接
 - WKT / GeoJSON / 渲染用 GeoJSON 表达式
+- `geom.T` 与 WKT、WKB、EWKB、hex WKB / EWKB 之间的通用转换
 - MVT、GeoJSON 分页、范围、SRID、物化视图和 GIST 索引 SQL 构造
 
 跨引擎 SQL 方言差异属于 `common/sqldialect`；PostGIS 这类空间扩展能力属于本包。
+
+格式 native 几何类型不属于本包。例如 Shapefile 的 `shp.Shape` 到 `geom.T` 的转换留在 `common/format/plugins/shapefile` 内部；本包只接收通用 `geom.T` 或标准编码值。
 
 当前 executor 优先级：
 

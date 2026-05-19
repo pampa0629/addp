@@ -32,6 +32,17 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 	}
 }
 
+func TestDescriptorDeclaresOnlyMultiTableProvider(t *testing.T) {
+	descriptor := NewPlugin(nil).Descriptor()
+
+	if !descriptor.Providers.MultiTable {
+		t.Fatalf("providers = %#v, want multi_table", descriptor.Providers)
+	}
+	if descriptor.Providers.FormatInfo || descriptor.Providers.TableInfo || descriptor.Providers.TableSample || descriptor.Providers.Table {
+		t.Fatalf("providers = %#v, shapefile must not declare single table providers", descriptor.Providers)
+	}
+}
+
 func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	plugin := NewPlugin(nil)
 	target := contentio.NewRef("exports/cities.shp", contentio.RoleMain)

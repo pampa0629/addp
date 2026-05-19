@@ -6,7 +6,7 @@ import (
 	_ "github.com/addp/common/format/mappers/postgresql"
 	_ "github.com/addp/common/format/mappers/spatialite"
 
-	// 导入内置 TableProvider，触发 init() 自动注册
+	// 导入内置 table 格式能力，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/avro"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/excel"

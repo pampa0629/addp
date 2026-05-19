@@ -779,7 +779,7 @@ func (s *ObjectStorageCatalogScanService) enrichObjectCatalogTableFileAttributes
 	if readableProvider == nil || item == nil {
 		return nil, nil
 	}
-	if item.Organization != dataitem.OrganizationSingle {
+	if item.Layout != dataitem.LayoutSingle {
 		return nil, nil
 	}
 	physicalPath := catalogResource.FullPath

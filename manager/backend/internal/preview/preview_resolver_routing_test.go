@@ -86,7 +86,7 @@ func TestLoadPreviewPluginsCanDisableDefaultProvider(t *testing.T) {
 	}
 }
 
-func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {
+func TestResolveProviderByMetaUsesWholeTableLayout(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
 	resolver := NewPreviewResolver(registry, nil, nil)
@@ -96,9 +96,9 @@ func TestResolveProviderByMetaUsesWholeTableOrganization(t *testing.T) {
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"data_type":    "table",
-				"format":       "parquet",
-				"organization": "whole",
+				"data_type": "table",
+				"format":    "parquet",
+				"layout":    "whole",
 			},
 		}},
 		ItemType: "table",
@@ -122,9 +122,9 @@ func TestResolveProviderByMetaDoesNotRouteWholeTableWithoutScopeProvider(t *test
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"data_type":    "table",
-				"format":       "orc",
-				"organization": "whole",
+				"data_type": "table",
+				"format":    "orc",
+				"layout":    "whole",
 			},
 		}},
 		ItemType: "table",
@@ -170,9 +170,9 @@ func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.
 		Engine:  &commonModels.Engine{EngineType: "nfs"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"data_type":    "table",
-				"format":       "csv",
-				"organization": "single",
+				"data_type": "table",
+				"format":    "csv",
+				"layout":    "single",
 			},
 		}},
 		ItemType: "file",
@@ -197,9 +197,9 @@ func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"data_type":    "container",
-				"format":       "excel",
-				"organization": "single",
+				"data_type": "container",
+				"format":    "excel",
+				"layout":    "single",
 			},
 		}},
 		ItemType:  "object",
@@ -225,9 +225,9 @@ func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"data_type":    "container",
-				"format":       "sqlite",
-				"organization": "single",
+				"data_type": "container",
+				"format":    "sqlite",
+				"layout":    "single",
 			},
 		}},
 		ItemType:  "object",
@@ -359,7 +359,7 @@ func TestConvertToLegacyRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 				"physical_path": "bucket/dataset",
 			},
 			"item": map[string]interface{}{
-				"organization": "whole",
+				"layout": "whole",
 			},
 		}},
 		ItemType: "table",

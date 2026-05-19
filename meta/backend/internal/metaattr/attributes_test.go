@@ -17,7 +17,7 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		"schema":           map[string]interface{}{"fields": []interface{}{"id"}},
 		"extensions":       map[string]interface{}{"document": map[string]interface{}{"title": "old"}},
 		"storage":          map[string]interface{}{"bucket": "addp", "path": "roads/"},
-		"item":             map[string]interface{}{"organization": "single", "data_type": "table", "format": "json"},
+		"item":             map[string]interface{}{"layout": "single", "data_type": "table", "format": "json"},
 		"type_info":        map[string]interface{}{"table": map[string]interface{}{"fields": []interface{}{"id"}}},
 		"format_info":      map[string]interface{}{"json": map[string]interface{}{"feature_count": 10}},
 		"capabilities":     map[string]interface{}{"spatial": map[string]interface{}{"primary_geometry_column": "geometry"}},
@@ -38,7 +38,7 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		}
 	}
 	item := normalized["item"].(map[string]interface{})
-	if item["organization"] != "single" || item["data_type"] != "table" || item["format"] != "json" {
+	if item["layout"] != "single" || item["data_type"] != "table" || item["format"] != "json" {
 		t.Fatalf("item section = %#v, want new item semantics", item)
 	}
 	if item["composition_type"] != nil || item["data_family"] != nil || item["entry_path"] != nil {
@@ -54,7 +54,7 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 
 	attrs := models.JSONMap{}
 	SetStorage(attrs, "physical_path", "bucket/data.parquet")
-	SetItem(attrs, "organization", "single")
+	SetItem(attrs, "layout", "single")
 	SetItem(attrs, "data_type", "table")
 	SetItem(attrs, "format", "parquet")
 	SetExtension(attrs, "media", "width", 800)
@@ -71,7 +71,7 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 		t.Fatalf("storage.physical_path = %v", storage["physical_path"])
 	}
 	item := attrs["item"].(map[string]interface{})
-	if item["organization"] != "single" || item["data_type"] != "table" || item["format"] != "parquet" {
+	if item["layout"] != "single" || item["data_type"] != "table" || item["format"] != "parquet" {
 		t.Fatalf("item section = %#v", item)
 	}
 	typeInfo := attrs["type_info"].(map[string]interface{})

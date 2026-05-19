@@ -97,7 +97,7 @@ func hasTableReader(formatType format.FormatType) bool {
 	if _, err := format.GetTableReaderProvider(formatType); err == nil {
 		return true
 	}
-	if _, err := format.GetMultiTableProvider(formatType); err == nil {
+	if _, err := format.GetMultiTableReaderProvider(formatType); err == nil {
 		return true
 	}
 	return false

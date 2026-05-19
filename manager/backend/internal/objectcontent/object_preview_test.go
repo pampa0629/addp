@@ -651,18 +651,18 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 		t.Fatalf("children = %#v, want shapefile child + markdown child", resolved)
 	}
 	child := resolved.Children[0]
-	if child.Organization != "multi" || child.Format != format.FormatShapefile || len(child.Refs) != 4 {
+	if child.Layout != "multi" || child.Format != format.FormatShapefile || len(child.Refs) != 4 {
 		t.Fatalf("first child = %#v, want multi shapefile with refs", child)
 	}
 }
 
 func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
 	child := containerChildPreviewMap(format.ContainerChildInfo{
-		Name:         "roads.shp",
-		Kind:         "file",
-		DataType:     "table",
-		Format:       format.FormatShapefile,
-		Organization: "multi",
+		Name:     "roads.shp",
+		Kind:     "file",
+		DataType: "table",
+		Format:   format.FormatShapefile,
+		Layout:   "multi",
 		Refs: []format.ContainerChildRef{
 			{Path: "roads.shp", Role: "main", Required: true, Primary: true},
 			{Path: "roads.dbf", Role: "attributes", Required: true},

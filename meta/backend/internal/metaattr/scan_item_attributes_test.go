@@ -112,7 +112,7 @@ func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	ApplyNamespaceItemAttributes(attrs, "collection")
 
 	item := attrs["item"].(map[string]interface{})
-	if item["organization"] != "single" || item["data_type"] != "table" {
+	if item["layout"] != "single" || item["data_type"] != "table" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if item["format"] != nil {

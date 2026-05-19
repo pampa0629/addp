@@ -17,8 +17,8 @@ import (
 	"github.com/addp/manager/internal/objectcontent"
 )
 
-// FileTablePreviewProvider 通用文件表预览 Provider
-// 自动支持所有实现了 format.TableProvider 的文件格式（CSV、Excel、Shapefile、JSON 空间扩展、Parquet 等）
+// FileTablePreviewProvider 通用文件表预览 Provider。
+// 按 format 层拆分后的能力入口读取 table 信息和样本数据。
 type FileTablePreviewProvider struct{}
 
 type tablePreviewContentContext struct {
@@ -79,15 +79,13 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		}
 	}
 
-	// 获取对应的格式 provider。provider 只负责从外部提供的内容流中提取 table 语义。
-	provider, err := format.GetTableProvider(formatType)
-	if err != nil {
-		return nil, fmt.Errorf("no table provider for format %s: %w", formatType, err)
-	}
-
-	if refProvider, ok := provider.(format.MultiTableProvider); ok {
+	if refInfoProvider, err := format.GetMultiTableInfoProvider(formatType); err == nil {
+		refSampleReader, err := format.GetMultiTableSampleReader(formatType)
+		if err != nil {
+			return nil, fmt.Errorf("no multi table sample reader for format %s: %w", formatType, err)
+		}
 		refs := refsForPreview(fullPath, formatType, req.Attributes)
-		preview, err := p.previewRefs(ctx, contentReader, refs, contentCtx.bucket, formatType, refProvider, opts, req)
+		preview, err := p.previewRefs(ctx, contentReader, refs, contentCtx.bucket, formatType, refInfoProvider, refSampleReader, opts, req)
 		if err != nil {
 			return nil, err
 		}
@@ -95,10 +93,16 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return preview, nil
 	}
 
+	infoProvider, _ := format.GetTableInfoProvider(formatType)
+	sampleReader, err := format.GetTableSampleReader(formatType)
+	if err != nil {
+		return nil, fmt.Errorf("no table sample reader for format %s: %w", formatType, err)
+	}
+
 	p.ensureContentIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
 
 	// 其他格式：流式处理
-	return p.previewStreamable(ctx, contentReader, contentCtx.bucket, fullPath, formatType, provider, opts, req)
+	return p.previewStreamable(ctx, contentReader, contentCtx.bucket, fullPath, formatType, infoProvider, sampleReader, opts, req)
 }
 
 func resolvePreviewContainerChild(ctx context.Context, parent contentio.Reader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
@@ -167,7 +171,8 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	contentReader contentio.Reader,
 	bucket, fullPath string,
 	formatType format.FormatType,
-	provider format.TableProvider,
+	infoProvider format.TableInfoProvider,
+	sampleReader format.TableSampleReader,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
@@ -176,6 +181,9 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		return nil, err
 	}
 	if tableInfo == nil {
+		if infoProvider == nil {
+			return nil, fmt.Errorf("no table info provider for format %s", formatType)
+		}
 		// 获取对象流
 		object, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
 		if err != nil {
@@ -184,7 +192,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		defer object.Close()
 
 		// 解析 TableInfo（获取列信息和总行数）
-		tableInfo, err = provider.DescribeTable(ctx, object, opts)
+		tableInfo, err = infoProvider.DescribeTable(ctx, object, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse table info: %w", err)
 		}
@@ -220,7 +228,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	defer object.Close()
 
 	// 读取分页数据
-	rows, err := provider.SampleTable(ctx, object, int64(offset), int64(pageSize), sampleOpts)
+	rows, err := sampleReader.SampleTable(ctx, object, int64(offset), int64(pageSize), sampleOpts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
@@ -596,7 +604,8 @@ func (p *FileTablePreviewProvider) previewRefs(
 	refs []format.RelatedRef,
 	bucket string,
 	formatType format.FormatType,
-	provider format.MultiTableProvider,
+	infoProvider format.MultiTableInfoProvider,
+	sampleReader format.MultiTableSampleReader,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
@@ -606,7 +615,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		return nil, err
 	}
 	if tableInfo == nil {
-		tableInfo, err = provider.DescribeMultiTable(ctx, reader, refs, opts)
+		tableInfo, err = infoProvider.DescribeMultiTable(ctx, reader, refs, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
@@ -636,7 +645,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	offset := (page - 1) * pageSize
 
 	// 读取分页数据
-	rows, err := provider.SampleMultiTable(ctx, reader, refs, int64(offset), int64(pageSize), opts)
+	rows, err := sampleReader.SampleMultiTable(ctx, reader, refs, int64(offset), int64(pageSize), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read %s ref table data: %w", formatType, err)
 	}
@@ -684,7 +693,7 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 		preview.Object.Content.Metadata = map[string]interface{}{}
 	}
 	preview.Object.Content.Metadata["refs"] = preview.Object.Attributes["refs"]
-	preview.Object.Content.Metadata["organization"] = "multi"
+	preview.Object.Content.Metadata["layout"] = "multi"
 }
 
 func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {
@@ -781,7 +790,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	properties := make(map[string]interface{}, len(child))
 	for key, value := range child {
 		switch key {
-		case "name", "kind", "data_type", "format", "organization", "refs", "row_count", "column_count", "has_header":
+		case "name", "kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
 			continue
 		default:
 			properties[key] = value
@@ -803,16 +812,16 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 		hasHeader = &value
 	}
 	return format.ContainerChildInfo{
-		Name:         name,
-		Kind:         kind,
-		DataType:     dataType,
-		Format:       format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
-		Organization: strings.TrimSpace(commonJSON.InterfaceString(child["organization"])),
-		Refs:         containerChildRefsFromMap(child),
-		RowCount:     rowCount,
-		ColumnCount:  columnCount,
-		HasHeader:    hasHeader,
-		Properties:   properties,
+		Name:        name,
+		Kind:        kind,
+		DataType:    dataType,
+		Format:      format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
+		Layout:      strings.TrimSpace(commonJSON.InterfaceString(child["layout"])),
+		Refs:        containerChildRefsFromMap(child),
+		RowCount:    rowCount,
+		ColumnCount: columnCount,
+		HasHeader:   hasHeader,
+		Properties:  properties,
 	}
 }
 

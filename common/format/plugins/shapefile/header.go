@@ -45,7 +45,7 @@ type dbfHeaderInfo struct {
 	RecordCount  int32
 	HeaderLength int
 	RecordLength int
-	Fields       []FieldInfo
+	Fields       []dbfFieldInfo
 }
 
 func readDBFHeader(path string, encodingName string) (*dbfHeaderInfo, error) {
@@ -65,7 +65,7 @@ func readDBFHeader(path string, encodingName string) (*dbfHeaderInfo, error) {
 		return nil, fmt.Errorf("invalid DBF header length: %d", headerLength)
 	}
 	fieldCount := (headerLength - 33) / 32
-	fields := make([]FieldInfo, 0, fieldCount)
+	fields := make([]dbfFieldInfo, 0, fieldCount)
 	for i := 0; i < fieldCount; i++ {
 		var desc [32]byte
 		if _, err := io.ReadFull(file, desc[:]); err != nil {
@@ -74,9 +74,9 @@ func readDBFHeader(path string, encodingName string) (*dbfHeaderInfo, error) {
 		var name [11]byte
 		copy(name[:], desc[0:11])
 		fieldType := desc[11]
-		fields = append(fields, FieldInfo{
+		fields = append(fields, dbfFieldInfo{
 			Name:      decodeDBFName(name, encodingName),
-			Type:      DecodeDBFFieldType(fieldType),
+			Type:      decodeDBFFieldType(fieldType),
 			RawType:   string(fieldType),
 			Size:      int(desc[16]),
 			Precision: int(desc[17]),

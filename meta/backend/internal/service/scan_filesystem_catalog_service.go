@@ -379,7 +379,7 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		"path", dirPath,
 		"full_name", itemPlan.FullName,
 		"item_type", itemPlan.ItemType,
-		"organization", detected.Organization,
+		"layout", detected.Layout,
 		"data_type", detected.DataType,
 		"name", itemPlan.ItemName,
 	)
@@ -398,7 +398,7 @@ func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.Organization == dataitem.OrganizationSingle {
+	if detected.Layout == dataitem.LayoutSingle {
 		enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex, func(string) plugin.CatalogPath {
 			return file.CatalogPath
 		})

@@ -19,16 +19,17 @@ type FormatCapabilityView struct {
 
 type FormatImplementationStatus struct {
 	FormatPlugin           bool `json:"format_plugin,omitempty"`
-	TableProvider          bool `json:"table_provider,omitempty"`
 	FormatInfoProvider     bool `json:"format_info_provider,omitempty"`
 	TableInfoProvider      bool `json:"table_info_provider,omitempty"`
 	TableSampleReader      bool `json:"table_sample_reader,omitempty"`
+	MultiTableInfoProvider bool `json:"multi_table_info_provider,omitempty"`
+	MultiTableSampleReader bool `json:"multi_table_sample_reader,omitempty"`
+	ScopeTableInfoProvider bool `json:"scope_table_info_provider,omitempty"`
+	ScopeTableSampleReader bool `json:"scope_table_sample_reader,omitempty"`
 	TableReaderProvider    bool `json:"table_reader_provider,omitempty"`
 	MultiTableReader       bool `json:"multi_table_reader_provider,omitempty"`
 	TableWriterProvider    bool `json:"table_writer_provider,omitempty"`
 	MultiTableWriter       bool `json:"multi_table_writer_provider,omitempty"`
-	MultiTableProvider     bool `json:"multi_table_provider,omitempty"`
-	ScopeTableProvider     bool `json:"scope_table_provider,omitempty"`
 	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
 	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
 	MediaInfoProvider      bool `json:"media_info_provider,omitempty"`
@@ -84,19 +85,26 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	if _, err := GetFormatPlugin(formatType); err == nil {
 		status.FormatPlugin = true
 	}
-	if provider, err := GetTableProvider(formatType); err == nil {
-		status.TableProvider = true
-		_, status.MultiTableProvider = provider.(MultiTableProvider)
-		_, status.ScopeTableProvider = provider.(ScopeTableProvider)
-	}
 	if _, err := GetFormatInfoProvider(formatType); err == nil {
 		status.FormatInfoProvider = true
 	}
 	if _, err := GetTableInfoProvider(formatType); err == nil {
 		status.TableInfoProvider = true
 	}
-	if _, err := GetTableSampleProvider(formatType); err == nil {
+	if _, err := GetTableSampleReader(formatType); err == nil {
 		status.TableSampleReader = true
+	}
+	if _, err := GetMultiTableInfoProvider(formatType); err == nil {
+		status.MultiTableInfoProvider = true
+	}
+	if _, err := GetMultiTableSampleReader(formatType); err == nil {
+		status.MultiTableSampleReader = true
+	}
+	if _, err := GetScopeTableInfoProvider(formatType); err == nil {
+		status.ScopeTableInfoProvider = true
+	}
+	if _, err := GetScopeTableSampleReader(formatType); err == nil {
+		status.ScopeTableSampleReader = true
 	}
 	if _, err := GetTableReaderProvider(formatType); err == nil {
 		status.TableReaderProvider = true

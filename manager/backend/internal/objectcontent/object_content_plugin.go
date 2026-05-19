@@ -129,7 +129,10 @@ func isTableObjectContentRequest(req *ObjectContentRequest) bool {
 		formatType = format.DetectFormat("file"+req.Extension, nil)
 	}
 	if formatType != "" && formatType != format.FormatUnknown {
-		if _, err := format.GetTableProvider(formatType); err == nil {
+		if _, err := format.GetTableSampleReader(formatType); err == nil {
+			return true
+		}
+		if _, err := format.GetMultiTableSampleReader(formatType); err == nil {
 			return true
 		}
 	}
@@ -660,12 +663,16 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 
 func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, bool) {
 	opts := format.DefaultParseOptions()
-	provider, err := format.GetTableProvider(format.FormatJSON)
+	infoProvider, err := format.GetTableInfoProvider(format.FormatJSON)
+	if err != nil {
+		return nil, false
+	}
+	sampleReader, err := format.GetTableSampleReader(format.FormatJSON)
 	if err != nil {
 		return nil, false
 	}
 
-	tableInfo, err := provider.DescribeTable(ctx, bytes.NewReader(data), opts)
+	tableInfo, err := infoProvider.DescribeTable(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, false
 	}
@@ -673,7 +680,7 @@ func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{
 		return nil, false
 	}
 
-	sampleRecords, _ := provider.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
+	sampleRecords, _ := sampleReader.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
 
 	metadata := make(map[string]interface{})
 	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
@@ -859,7 +866,7 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 	groupedRefCount := 0
 	for index, item := range resolved.Items {
 		childInfo := commondataitem.ContainerChildInfoFromResolvedItem(item)
-		if item.Organization == commondataitem.OrganizationMulti {
+		if item.Layout == commondataitem.LayoutMulti {
 			groupedItemCount++
 			if len(item.RefList) > 1 {
 				groupedRefCount += len(item.RefList) - 1
@@ -889,13 +896,13 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 		child[key] = value
 	}
 	for key, value := range map[string]interface{}{
-		"key":          key,
-		"name":         childInfo.Name,
-		"label":        childInfo.Name,
-		"kind":         childInfo.Kind,
-		"data_type":    childInfo.DataType,
-		"format":       string(childInfo.Format),
-		"organization": childInfo.Organization,
+		"key":       key,
+		"name":      childInfo.Name,
+		"label":     childInfo.Name,
+		"kind":      childInfo.Kind,
+		"data_type": childInfo.DataType,
+		"format":    string(childInfo.Format),
+		"layout":    childInfo.Layout,
 	} {
 		child[key] = value
 	}
@@ -1008,7 +1015,7 @@ func applyContainerChildrenSummary(summary map[string]interface{}, resolved *con
 		summary["grouped_ref_count"] = resolved.GroupedRefCount
 	}
 	if resolved.Resolved {
-		summary["organization_resolved"] = true
+		summary["layout_resolved"] = true
 	}
 }
 
@@ -1351,7 +1358,7 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 	groupedItemCount := 0
 	groupedRefCount := 0
 	for _, item := range resolved.Items {
-		if item.Organization == commondataitem.OrganizationMulti {
+		if item.Layout == commondataitem.LayoutMulti {
 			groupedItemCount++
 			if len(item.RefList) > 1 {
 				groupedRefCount += len(item.RefList) - 1
@@ -1591,12 +1598,16 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	defer f.Close()
 
 	opts := format.DefaultParseOptions()
-	provider, err := format.GetTableProvider(formatType)
+	infoProvider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
-		return nil, false, fmt.Errorf("获取 %s Provider 失败: %w", formatType, err)
+		return nil, false, fmt.Errorf("获取 %s table info provider 失败: %w", formatType, err)
+	}
+	sampleReader, err := format.GetTableSampleReader(formatType)
+	if err != nil {
+		return nil, false, fmt.Errorf("获取 %s table sample reader 失败: %w", formatType, err)
 	}
 
-	tableInfo, err := provider.DescribeTable(ctx, f, opts)
+	tableInfo, err := infoProvider.DescribeTable(ctx, f, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
@@ -1612,7 +1623,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	if rowLimit <= 0 {
 		rowLimit = defaultParquetRowLimit
 	}
-	rows, err := provider.SampleTable(ctx, f2, 0, rowLimit, opts)
+	rows, err := sampleReader.SampleTable(ctx, f2, 0, rowLimit, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("读取 %s 预览数据失败: %w", formatType, err)
 	}
@@ -1662,12 +1673,16 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	}
 
 	opts := format.DefaultParseOptions()
-	provider, err := format.GetTableProvider(formatType)
+	infoProvider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
-		return nil, false, fmt.Errorf("获取 %s Provider 失败: %w", formatType, err)
+		return nil, false, fmt.Errorf("获取 %s table info provider 失败: %w", formatType, err)
+	}
+	sampleReader, err := format.GetTableSampleReader(formatType)
+	if err != nil {
+		return nil, false, fmt.Errorf("获取 %s table sample reader 失败: %w", formatType, err)
 	}
 
-	tableInfo, err := provider.DescribeTable(ctx, bytes.NewReader(data), opts)
+	tableInfo, err := infoProvider.DescribeTable(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
@@ -1676,7 +1691,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	if rowLimit <= 0 {
 		rowLimit = defaultParquetRowLimit
 	}
-	rows, err := provider.SampleTable(ctx, bytes.NewReader(data), 0, rowLimit, opts)
+	rows, err := sampleReader.SampleTable(ctx, bytes.NewReader(data), 0, rowLimit, opts)
 	if err != nil {
 		return nil, false, fmt.Errorf("读取 %s 预览数据失败: %w", formatType, err)
 	}

@@ -9,16 +9,17 @@ import (
 type ProviderRegistry struct {
 	mu                      sync.RWMutex
 	formatPlugins           map[FormatType]FormatPlugin
-	tableProviders          map[FormatType]TableProvider
-	multiTableProviders     map[FormatType]MultiTableProvider
+	multiTableInfoProviders map[FormatType]MultiTableInfoProvider
+	multiTableSampleReaders map[FormatType]MultiTableSampleReader
+	scopeTableInfoProviders map[FormatType]ScopeTableInfoProvider
+	scopeTableSampleReaders map[FormatType]ScopeTableSampleReader
 	formatInfoProviders     map[FormatType]FormatInfoProvider
 	tableInfoProviders      map[FormatType]TableInfoProvider
-	tableSampleProviders    map[FormatType]TableSampleProvider
+	tableSampleProviders    map[FormatType]TableSampleReader
 	tableReaderProviders    map[FormatType]TableReaderProvider
 	multiTableReaders       map[FormatType]MultiTableReaderProvider
 	tableWriterProviders    map[FormatType]TableWriterProvider
 	multiTableWriters       map[FormatType]MultiTableWriterProvider
-	documentProviders       map[FormatType]DocumentProvider
 	documentInfoProviders   map[FormatType]DocumentInfoProvider
 	documentTextReaders     map[FormatType]DocumentTextReader
 	mediaInfoProviders      map[FormatType]MediaInfoProvider
@@ -31,16 +32,17 @@ var globalProviderRegistry = NewProviderRegistry()
 func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
 		formatPlugins:           make(map[FormatType]FormatPlugin),
-		tableProviders:          make(map[FormatType]TableProvider),
-		multiTableProviders:     make(map[FormatType]MultiTableProvider),
+		multiTableInfoProviders: make(map[FormatType]MultiTableInfoProvider),
+		multiTableSampleReaders: make(map[FormatType]MultiTableSampleReader),
+		scopeTableInfoProviders: make(map[FormatType]ScopeTableInfoProvider),
+		scopeTableSampleReaders: make(map[FormatType]ScopeTableSampleReader),
 		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
 		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
-		tableSampleProviders:    make(map[FormatType]TableSampleProvider),
+		tableSampleProviders:    make(map[FormatType]TableSampleReader),
 		tableReaderProviders:    make(map[FormatType]TableReaderProvider),
 		multiTableReaders:       make(map[FormatType]MultiTableReaderProvider),
 		tableWriterProviders:    make(map[FormatType]TableWriterProvider),
 		multiTableWriters:       make(map[FormatType]MultiTableWriterProvider),
-		documentProviders:       make(map[FormatType]DocumentProvider),
 		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
 		documentTextReaders:     make(map[FormatType]DocumentTextReader),
 		mediaInfoProviders:      make(map[FormatType]MediaInfoProvider),
@@ -65,20 +67,36 @@ func (r *ProviderRegistry) GetFormatInfoProvider(formatType FormatType) (FormatI
 	return providerFromMap(r, r.formatInfoProviders, formatType, "format info provider")
 }
 
-func GetTableProvider(formatType FormatType) (TableProvider, error) {
-	return globalProviderRegistry.GetTableProvider(formatType)
+func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
+	return globalProviderRegistry.GetMultiTableInfoProvider(formatType)
 }
 
-func (r *ProviderRegistry) GetTableProvider(formatType FormatType) (TableProvider, error) {
-	return providerFromMap(r, r.tableProviders, formatType, "table provider")
+func (r *ProviderRegistry) GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
+	return providerFromMap(r, r.multiTableInfoProviders, formatType, "multi table info provider")
 }
 
-func GetMultiTableProvider(formatType FormatType) (MultiTableProvider, error) {
-	return globalProviderRegistry.GetMultiTableProvider(formatType)
+func GetMultiTableSampleReader(formatType FormatType) (MultiTableSampleReader, error) {
+	return globalProviderRegistry.GetMultiTableSampleReader(formatType)
 }
 
-func (r *ProviderRegistry) GetMultiTableProvider(formatType FormatType) (MultiTableProvider, error) {
-	return providerFromMap(r, r.multiTableProviders, formatType, "multi table provider")
+func (r *ProviderRegistry) GetMultiTableSampleReader(formatType FormatType) (MultiTableSampleReader, error) {
+	return providerFromMap(r, r.multiTableSampleReaders, formatType, "multi table sample reader")
+}
+
+func GetScopeTableInfoProvider(formatType FormatType) (ScopeTableInfoProvider, error) {
+	return globalProviderRegistry.GetScopeTableInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetScopeTableInfoProvider(formatType FormatType) (ScopeTableInfoProvider, error) {
+	return providerFromMap(r, r.scopeTableInfoProviders, formatType, "scope table info provider")
+}
+
+func GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, error) {
+	return globalProviderRegistry.GetScopeTableSampleReader(formatType)
+}
+
+func (r *ProviderRegistry) GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, error) {
+	return providerFromMap(r, r.scopeTableSampleReaders, formatType, "scope table sample reader")
 }
 
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
@@ -89,11 +107,11 @@ func (r *ProviderRegistry) GetTableInfoProvider(formatType FormatType) (TableInf
 	return providerFromMap(r, r.tableInfoProviders, formatType, "table info provider")
 }
 
-func GetTableSampleProvider(formatType FormatType) (TableSampleProvider, error) {
-	return globalProviderRegistry.GetTableSampleProvider(formatType)
+func GetTableSampleReader(formatType FormatType) (TableSampleReader, error) {
+	return globalProviderRegistry.GetTableSampleReader(formatType)
 }
 
-func (r *ProviderRegistry) GetTableSampleProvider(formatType FormatType) (TableSampleProvider, error) {
+func (r *ProviderRegistry) GetTableSampleReader(formatType FormatType) (TableSampleReader, error) {
 	return providerFromMap(r, r.tableSampleProviders, formatType, "table sample provider")
 }
 
@@ -129,14 +147,6 @@ func (r *ProviderRegistry) GetMultiTableWriterProvider(formatType FormatType) (M
 	return providerFromMap(r, r.multiTableWriters, formatType, "multi table writer provider")
 }
 
-func GetDocumentProvider(formatType FormatType) (DocumentProvider, error) {
-	return globalProviderRegistry.GetDocumentProvider(formatType)
-}
-
-func (r *ProviderRegistry) GetDocumentProvider(formatType FormatType) (DocumentProvider, error) {
-	return providerFromMap(r, r.documentProviders, formatType, "document provider")
-}
-
 func GetDocumentInfoProvider(formatType FormatType) (DocumentInfoProvider, error) {
 	return globalProviderRegistry.GetDocumentInfoProvider(formatType)
 }
@@ -151,14 +161,6 @@ func GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
 
 func (r *ProviderRegistry) GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
 	return providerFromMap(r, r.documentTextReaders, formatType, "document text reader")
-}
-
-func GetMediaProvider(formatType FormatType) (MediaProvider, error) {
-	return globalProviderRegistry.GetMediaProvider(formatType)
-}
-
-func (r *ProviderRegistry) GetMediaProvider(formatType FormatType) (MediaProvider, error) {
-	return r.GetMediaInfoProvider(formatType)
 }
 
 func GetMediaInfoProvider(formatType FormatType) (MediaInfoProvider, error) {
@@ -213,20 +215,36 @@ func (r *ProviderRegistry) ListFormatInfoProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.formatInfoProviders)
 }
 
-func ListTableProviderFormats() []FormatType {
-	return globalProviderRegistry.ListTableProviderFormats()
+func ListMultiTableInfoProviderFormats() []FormatType {
+	return globalProviderRegistry.ListMultiTableInfoProviderFormats()
 }
 
-func (r *ProviderRegistry) ListTableProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.tableProviders)
+func (r *ProviderRegistry) ListMultiTableInfoProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.multiTableInfoProviders)
 }
 
-func ListMultiTableProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMultiTableProviderFormats()
+func ListMultiTableSampleReaderFormats() []FormatType {
+	return globalProviderRegistry.ListMultiTableSampleReaderFormats()
 }
 
-func (r *ProviderRegistry) ListMultiTableProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.multiTableProviders)
+func (r *ProviderRegistry) ListMultiTableSampleReaderFormats() []FormatType {
+	return sortedMapKeys(r, r.multiTableSampleReaders)
+}
+
+func ListScopeTableInfoProviderFormats() []FormatType {
+	return globalProviderRegistry.ListScopeTableInfoProviderFormats()
+}
+
+func (r *ProviderRegistry) ListScopeTableInfoProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.scopeTableInfoProviders)
+}
+
+func ListScopeTableSampleReaderFormats() []FormatType {
+	return globalProviderRegistry.ListScopeTableSampleReaderFormats()
+}
+
+func (r *ProviderRegistry) ListScopeTableSampleReaderFormats() []FormatType {
+	return sortedMapKeys(r, r.scopeTableSampleReaders)
 }
 
 func ListTableInfoProviderFormats() []FormatType {
@@ -237,11 +255,11 @@ func (r *ProviderRegistry) ListTableInfoProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableInfoProviders)
 }
 
-func ListTableSampleProviderFormats() []FormatType {
-	return globalProviderRegistry.ListTableSampleProviderFormats()
+func ListTableSampleReaderFormats() []FormatType {
+	return globalProviderRegistry.ListTableSampleReaderFormats()
 }
 
-func (r *ProviderRegistry) ListTableSampleProviderFormats() []FormatType {
+func (r *ProviderRegistry) ListTableSampleReaderFormats() []FormatType {
 	return sortedMapKeys(r, r.tableSampleProviders)
 }
 
@@ -277,14 +295,6 @@ func (r *ProviderRegistry) ListMultiTableWriterProviderFormats() []FormatType {
 	return sortedMapKeys(r, r.multiTableWriters)
 }
 
-func ListDocumentProviderFormats() []FormatType {
-	return globalProviderRegistry.ListDocumentProviderFormats()
-}
-
-func (r *ProviderRegistry) ListDocumentProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.documentProviders)
-}
-
 func ListDocumentInfoProviderFormats() []FormatType {
 	return globalProviderRegistry.ListDocumentInfoProviderFormats()
 }
@@ -299,14 +309,6 @@ func ListDocumentTextReaderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListDocumentTextReaderFormats() []FormatType {
 	return sortedMapKeys(r, r.documentTextReaders)
-}
-
-func ListMediaProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMediaProviderFormats()
-}
-
-func (r *ProviderRegistry) ListMediaProviderFormats() []FormatType {
-	return r.ListMediaInfoProviderFormats()
 }
 
 func ListMediaInfoProviderFormats() []FormatType {

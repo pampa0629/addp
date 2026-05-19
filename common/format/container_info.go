@@ -17,17 +17,17 @@ type ContainerInfo struct {
 
 // ContainerChildInfo 描述容器内部的一个子对象，例如 Excel sheet、SQLite table。
 type ContainerChildInfo struct {
-	Name         string
-	Kind         string
-	DataType     string
-	Format       FormatType
-	Organization string
-	RowCount     *int64
-	ColumnCount  *int
-	HasHeader    *bool
-	Fields       []FieldInfo
-	Refs         []ContainerChildRef
-	Properties   map[string]interface{}
+	Name        string
+	Kind        string
+	DataType    string
+	Format      FormatType
+	Layout      string
+	RowCount    *int64
+	ColumnCount *int
+	HasHeader   *bool
+	Fields      []FieldInfo
+	Refs        []ContainerChildRef
+	Properties  map[string]interface{}
 }
 
 type ContainerChildRef struct {

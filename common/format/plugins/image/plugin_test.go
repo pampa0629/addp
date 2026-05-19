@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestImageMediaProviderDescribePNG(t *testing.T) {
+func TestImageMediaInfoProviderDescribePNG(t *testing.T) {
 	var buf bytes.Buffer
 	img := stdimage.NewRGBA(stdimage.Rect(0, 0, 2, 3))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
@@ -19,9 +19,9 @@ func TestImageMediaProviderDescribePNG(t *testing.T) {
 		t.Fatalf("encode png: %v", err)
 	}
 
-	provider, err := format.GetMediaProvider(format.FormatPNG)
+	provider, err := format.GetMediaInfoProvider(format.FormatPNG)
 	if err != nil {
-		t.Fatalf("GetMediaProvider(png) error = %v", err)
+		t.Fatalf("GetMediaInfoProvider(png) error = %v", err)
 	}
 	info, err := provider.DescribeMedia(context.Background(), bytes.NewReader(buf.Bytes()), nil)
 	if err != nil {
@@ -41,11 +41,11 @@ func TestImageMediaProviderDescribePNG(t *testing.T) {
 	}
 }
 
-func TestListImageMediaProviders(t *testing.T) {
-	formats := format.ListMediaProviderFormats()
+func TestListImageMediaInfoProviders(t *testing.T) {
+	formats := format.ListMediaInfoProviderFormats()
 	for _, want := range []format.FormatType{format.FormatImage, format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF} {
 		if !containsFormat(formats, want) {
-			t.Fatalf("ListMediaProviderFormats() = %#v, want %s", formats, want)
+			t.Fatalf("ListMediaInfoProviderFormats() = %#v, want %s", formats, want)
 		}
 	}
 }

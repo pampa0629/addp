@@ -54,7 +54,7 @@ TransferEndpoint
   contentio.Ref | NativeObjectRef
   DataType
   Format(optional)
-  Organization(optional)
+  Layout(optional)
   Schema(optional)
   Spatial(optional)
   FormatOptions

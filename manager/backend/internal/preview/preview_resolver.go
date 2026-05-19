@@ -382,7 +382,7 @@ func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, sc
 	if physPath == "" {
 		return "", ""
 	}
-	switch stringAttribute(attrs, "organization") {
+	switch stringAttribute(attrs, "layout") {
 	case "single":
 		return physPath, ""
 	case "whole":
@@ -549,7 +549,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	}
 	dataType := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_type")))
 	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
-	organization := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "organization")))
+	layout := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "layout")))
 
 	switch itemType {
 	case "collection":
@@ -574,7 +574,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 
 	switch dataType {
 	case "table":
-		if organization == "whole" && hasScopeTableProvider(formatName) {
+		if layout == "whole" && hasScopeTableProvider(formatName) {
 			return []string{"builtin:scope-table"}
 		}
 		if legacyReq != nil && isFileTableFormat(formatName) && isContentFileItemType(itemType) {
@@ -636,8 +636,13 @@ func isFileTableFormat(formatName string) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
-	_, err := format.GetTableProvider(formatType)
-	return err == nil
+	if _, err := format.GetTableSampleReader(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetMultiTableSampleReader(formatType); err == nil {
+		return true
+	}
+	return false
 }
 
 func hasScopeTableProvider(formatName string) bool {
@@ -645,12 +650,8 @@ func hasScopeTableProvider(formatName string) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
-	provider, err := format.GetTableProvider(formatType)
-	if err != nil {
-		return false
-	}
-	_, ok := provider.(format.ScopeTableProvider)
-	return ok
+	_, err := format.GetScopeTableSampleReader(formatType)
+	return err == nil
 }
 
 // convertToNewResult 将旧的 TablePreview 转换为新的 PreviewResult

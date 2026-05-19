@@ -173,7 +173,7 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		item := ResolvedItem{
 			Name:            entry.Name,
 			FullName:        entry.Path,
-			Organization:    OrganizationMulti,
+			Layout:          LayoutMulti,
 			DataType:        rule.DataType,
 			Format:          rule.Format,
 			EntryPath:       entry.Path,
@@ -282,7 +282,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	return ResolvedItem{
 		Name:            name,
 		FullName:        scopePath,
-		Organization:    OrganizationWhole,
+		Layout:          LayoutWhole,
 		DataType:        rule.DataType,
 		Format:          rule.Format,
 		EntryPath:       scopePath,
@@ -337,7 +337,7 @@ func resolveSingleItems(candidates []Candidate, result *ResolveResult, input Res
 		item := ResolvedItem{
 			Name:            candidate.Name,
 			FullName:        candidate.Path,
-			Organization:    OrganizationSingle,
+			Layout:          LayoutSingle,
 			DataType:        dataType,
 			Format:          formatName,
 			EntryPath:       candidate.Path,
@@ -441,7 +441,7 @@ func cloneMap(input map[string]interface{}) map[string]interface{} {
 
 func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChildInfo {
 	kind := "file"
-	if item.Organization == OrganizationMulti {
+	if item.Layout == LayoutMulti {
 		kind = "multi"
 	}
 	properties := cloneMap(item.Properties)
@@ -450,7 +450,7 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 	}
 	properties["path"] = item.EntryPath
 	properties["format"] = item.Format
-	properties["organization"] = string(item.Organization)
+	properties["layout"] = string(item.Layout)
 	if len(item.RefList) > 0 {
 		refs := make([]map[string]interface{}, 0, len(item.RefList))
 		refPaths := map[string]interface{}{}
@@ -468,13 +468,13 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 		properties["ref_paths"] = refPaths
 	}
 	return format.ContainerChildInfo{
-		Name:         item.Name,
-		Kind:         kind,
-		DataType:     string(item.DataType),
-		Format:       format.FormatType(item.Format),
-		Organization: string(item.Organization),
-		Refs:         containerChildRefs(item),
-		Properties:   properties,
+		Name:       item.Name,
+		Kind:       kind,
+		DataType:   string(item.DataType),
+		Format:     format.FormatType(item.Format),
+		Layout:     string(item.Layout),
+		Refs:       containerChildRefs(item),
+		Properties: properties,
 	}
 }
 

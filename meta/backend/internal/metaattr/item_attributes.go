@@ -18,7 +18,7 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	itemAttrs := map[string]interface{}{}
 	storageAttrs := map[string]interface{}{}
 
-	itemAttrs["organization"] = string(item.Organization)
+	itemAttrs["layout"] = string(item.Layout)
 	itemAttrs["data_type"] = string(item.DataType)
 	if item.Format != "" {
 		itemAttrs["format"] = item.Format
@@ -26,11 +26,11 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	if item.PhysicalPath != "" {
 		storageAttrs["physical_path"] = item.PhysicalPath
 	}
-	if item.Organization == dataitem.OrganizationMulti && len(item.RefList) > 0 {
+	if item.Layout == dataitem.LayoutMulti && len(item.RefList) > 0 {
 		itemAttrs["refs"] = refAttributes(item.RefList)
 		itemAttrs["file_count"] = len(item.RefList)
 	}
-	if item.Organization == dataitem.OrganizationWhole {
+	if item.Layout == dataitem.LayoutWhole {
 		itemAttrs["scope_exclusive"] = true
 		itemAttrs["claim_policy"] = "whole_scope"
 	}

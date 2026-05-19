@@ -128,8 +128,11 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
 	}
-	if err := RegisterDocumentProvider(NewDocumentProvider(formatType, nil, nil)); err != nil {
-		t.Fatalf("RegisterDocumentProvider() error = %v", err)
+	if err := RegisterDocumentInfoProvider(NewDocumentInfoProvider(formatType, nil)); err != nil {
+		t.Fatalf("RegisterDocumentInfoProvider() error = %v", err)
+	}
+	if err := RegisterDocumentTextReader(NewDocumentTextReader(formatType, nil)); err != nil {
+		t.Fatalf("RegisterDocumentTextReader() error = %v", err)
 	}
 	if err := RegisterFormatPlugin(discoveryDocumentPlugin{formatType: formatType}); err != nil {
 		t.Fatalf("RegisterFormatPlugin() error = %v", err)
@@ -164,22 +167,32 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
 	}
-	if err := RegisterTableProvider(discoveryScopeTableProvider{formatType: formatType}); err != nil {
-		t.Fatalf("RegisterTableProvider() error = %v", err)
+	provider := discoveryScopeTableProvider{formatType: formatType}
+	if err := RegisterTableInfoProvider(provider); err != nil {
+		t.Fatalf("RegisterTableInfoProvider() error = %v", err)
+	}
+	if err := RegisterTableSampleReader(provider); err != nil {
+		t.Fatalf("RegisterTableSampleReader() error = %v", err)
+	}
+	if err := RegisterScopeTableInfoProvider(provider); err != nil {
+		t.Fatalf("RegisterScopeTableInfoProvider() error = %v", err)
+	}
+	if err := RegisterScopeTableSampleReader(provider); err != nil {
+		t.Fatalf("RegisterScopeTableSampleReader() error = %v", err)
 	}
 
 	view, ok := GetFormatCapabilityView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
-	if !view.Implementations.TableProvider || !view.Implementations.ScopeTableProvider {
-		t.Fatalf("implementations = %#v, want table and scope table providers", view.Implementations)
-	}
 	if !view.Implementations.TableInfoProvider || !view.Implementations.TableSampleReader {
 		t.Fatalf("implementations = %#v, want table info and sample providers", view.Implementations)
 	}
-	if view.Implementations.MultiTableProvider {
-		t.Fatalf("implementations = %#v, did not expect multi table provider", view.Implementations)
+	if !view.Implementations.ScopeTableInfoProvider || !view.Implementations.ScopeTableSampleReader {
+		t.Fatalf("implementations = %#v, want scope table info and sample readers", view.Implementations)
+	}
+	if view.Implementations.MultiTableInfoProvider || view.Implementations.MultiTableSampleReader {
+		t.Fatalf("implementations = %#v, did not expect multi table providers", view.Implementations)
 	}
 }
 
@@ -207,8 +220,8 @@ func TestFormatCapabilityViewReportsMediaInfoProvider(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
 	}
-	if err := RegisterMediaProvider(NewMediaProvider(formatType, nil)); err != nil {
-		t.Fatalf("RegisterMediaProvider() error = %v", err)
+	if err := RegisterMediaInfoProvider(NewMediaInfoProvider(formatType, nil)); err != nil {
+		t.Fatalf("RegisterMediaInfoProvider() error = %v", err)
 	}
 
 	view, ok := GetFormatCapabilityView(formatType)

@@ -296,7 +296,7 @@ func stringAttribute(attrs map[string]interface{}, key string) string {
 
 func attributeSectionsForKey(key string) []string {
 	switch key {
-	case "organization", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
+	case "layout", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
 		return []string{"item"}
 	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}

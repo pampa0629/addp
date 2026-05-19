@@ -31,7 +31,7 @@ Meta 目前已经在做两类工作：
 
    这部分决定：
 
-   - `organization=single|multi|whole`
+   - `layout=single|multi|whole`
    - `claimed resources`
    - `exclusive`
    - `refs`
@@ -119,7 +119,7 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 | 目录型表格预览 | scope 表 | `TableProvider.Sample` 经 `contentio.Reader` + scope list |
 | 数据库表预览 | engine-native 表 | `TableProvider.Sample` 经 `NativeCursor` |
 
-Parquet/ORC/Avro 这类表格文件或目录型表格 scope 不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.organization=single/whole` 区分单文件表和目录型表。
+Parquet/ORC/Avro 这类表格文件或目录型表格 scope 不应作为独立 item type 暴露给上层消费者。新扫描结果应表达为 `item_type=table`，并通过 `item.format=parquet/orc/avro` 与 `item.layout=single/whole` 区分单文件表和目录型表。
 
 因此 Manager 后端至少需要以下 provider 形态：
 
@@ -398,7 +398,7 @@ TransferPlan
 
 这些是合理的起点，但后续不应继续把更多格式分支写进 Meta。
 
-Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`、`claims`、`exclusive` 决定后续动作。
+Meta 应只负责调度已注册的 resolver，并根据返回的 `layout`、`claims`、`exclusive` 决定后续动作。
 
 ### 问题 3：Manager 仍在按 engine type / format type 做路由
 
@@ -457,7 +457,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `organization`
 
 | 消费面 | 真实需要的能力 |
 |---|---|
-| Meta item 识别 | format 识别、组织方式规则、claims、exclusive |
+| Meta item 识别 | format 识别、内容布局规则、claims、exclusive |
 | Meta 元数据提取 | table schema、document info、media info、container info、spatial info |
 | Manager 表格预览 | table schema、preview |
 | Manager 文档预览 | document info、text extraction |

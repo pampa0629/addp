@@ -13,7 +13,7 @@ import (
 )
 
 // ScopeTablePreviewProvider 目录型表格预览 Provider。
-// 当前主要服务 organization=whole 的 Parquet/ORC/Avro 表格资源。
+// 当前主要服务 layout=whole 的 Parquet/ORC/Avro 表格资源。
 type ScopeTablePreviewProvider struct{}
 
 func NewScopeTablePreviewProvider() PreviewProvider {
@@ -52,13 +52,21 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	limit := int64(pageSize)
 
 	formatType := resolveScopeTableFormat(req)
-	provider, err := format.GetTableProvider(formatType)
-	if err != nil {
-		return nil, fmt.Errorf("no table provider for %s: %w", formatType, err)
+	infoProvider, err := format.GetTableInfoProvider(formatType)
+	if err != nil && req.PhysicalPath != "" {
+		return nil, fmt.Errorf("no table info provider for %s: %w", formatType, err)
 	}
-	tableProvider, ok := provider.(format.ScopeTableProvider)
-	if !ok {
-		return nil, fmt.Errorf("%s provider does not implement scope table provider", formatType)
+	sampleReader, err := format.GetTableSampleReader(formatType)
+	if err != nil && req.PhysicalPath != "" {
+		return nil, fmt.Errorf("no table sample reader for %s: %w", formatType, err)
+	}
+	scopeInfoProvider, err := format.GetScopeTableInfoProvider(formatType)
+	if err != nil && req.PhysicalPath == "" {
+		return nil, fmt.Errorf("no scope table info provider for %s: %w", formatType, err)
+	}
+	scopeSampleReader, err := format.GetScopeTableSampleReader(formatType)
+	if err != nil && req.PhysicalPath == "" {
+		return nil, fmt.Errorf("no scope table sample reader for %s: %w", formatType, err)
 	}
 
 	var tableInfo *format.TableInfo
@@ -73,7 +81,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			if openErr != nil {
 				err = openErr
 			} else {
-				tableInfo, err = provider.DescribeTable(ctx, input, nil)
+				tableInfo, err = infoProvider.DescribeTable(ctx, input, nil)
 				input.Close()
 			}
 			if err == nil {
@@ -81,7 +89,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 				if openErr != nil {
 					err = openErr
 				} else {
-					rows, err = provider.SampleTable(ctx, input, offset, limit, nil)
+					rows, err = sampleReader.SampleTable(ctx, input, offset, limit, nil)
 					input.Close()
 				}
 			}
@@ -104,10 +112,10 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			}
 			sampleOptions := scopeTableSampleOptionsFromAttributes(req.Attributes)
 			if tableInfo == nil {
-				tableInfo, err = tableProvider.DescribeTableScope(ctx, reader, scope, nil)
+				tableInfo, err = scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
 			}
 			if err == nil {
-				rows, err = tableProvider.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)
+				rows, err = scopeSampleReader.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)
 			}
 		}
 		if err != nil {
@@ -168,11 +176,19 @@ func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format
 	if formatName == "" {
 		return nil
 	}
-	provider, err := format.GetTableProvider(format.FormatType(formatName))
+	plugin, err := format.GetFormatPlugin(format.FormatType(formatName))
+	if err == nil {
+		if optionsProvider, ok := plugin.(interface {
+			SampleOptionsFromAttributes(map[string]interface{}) *format.ParseOptions
+		}); ok {
+			return optionsProvider.SampleOptionsFromAttributes(attrs)
+		}
+	}
+	infoProvider, err := format.GetScopeTableInfoProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil
 	}
-	optionsProvider, ok := provider.(interface {
+	optionsProvider, ok := infoProvider.(interface {
 		SampleOptionsFromAttributes(map[string]interface{}) *format.ParseOptions
 	})
 	if !ok {

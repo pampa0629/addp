@@ -24,7 +24,7 @@ type ContainerChildResource struct {
 	Kind          string
 	DataType      string
 	Format        FormatType
-	Organization  string
+	Layout        string
 	Refs          []RelatedRef
 	ResourceKind  string
 	Reader        contentio.Reader
@@ -87,7 +87,7 @@ func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, ch
 		Kind:         child.Kind,
 		DataType:     child.DataType,
 		Format:       childFormatOrParent(child, FormatUnknown),
-		Organization: child.Organization,
+		Layout:       child.Layout,
 		Refs:         childRelatedRefs(child),
 		ResourceKind: ContainerChildResourceStream,
 		Reader:       reader,

@@ -37,7 +37,7 @@ func (plugin *Plugin) sampleMultiTableIndexed(ctx context.Context, reader conten
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	return source.readRows(ctx, offset, limit)
+	return source.readRows(ctx, offset, limit, sridFromParseOptions(opts))
 }
 
 type indexedMultiTableReadSource struct {
@@ -49,6 +49,7 @@ type indexedMultiTableReadSource struct {
 	dbfHeader     *dbfHeaderInfo
 	encodingName  string
 	geometryField string
+	opts          *format.ParseOptions
 }
 
 func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []format.RelatedRef, rangeReader contentio.RangeReader, opts *format.ParseOptions) (*indexedMultiTableReadSource, bool, error) {
@@ -85,6 +86,7 @@ func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []
 		dbfHeader:     dbfHeader,
 		encodingName:  encodingName,
 		geometryField: plugin.getGeometryFieldName(),
+		opts:          opts,
 	}, true, nil
 }
 
@@ -106,15 +108,10 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
 	})
-	mapper := format.GetTypeMapper("shapefile")
 	for _, field := range s.dbfHeader.Fields {
-		fieldType := format.FieldTypeUnknown
-		if mapper != nil {
-			fieldType = mapper.ToCommon(field.RawType)
-		}
 		fields = append(fields, format.FieldInfo{
 			Name:      field.Name,
-			Type:      fieldType,
+			Type:      dbfNativeTypeToCommon(field.RawType),
 			Nullable:  true,
 			Size:      field.Size,
 			Precision: field.Precision,
@@ -161,7 +158,7 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 	}, nil
 }
 
-func (s *indexedMultiTableReadSource) readRows(ctx context.Context, offset, limit int64) ([]map[string]interface{}, bool, error) {
+func (s *indexedMultiTableReadSource) readRows(ctx context.Context, offset, limit int64, srid int) ([]map[string]interface{}, bool, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -196,8 +193,8 @@ func (s *indexedMultiTableReadSource) readRows(ctx context.Context, offset, limi
 		row := rows[i]
 		shape := shapes[i]
 		if shape != nil {
-			if wktValue, err := ShapeToWKT(shape); err == nil {
-				row[s.geometryField] = wktValue
+			if geometryValue, err := shapeToRowValue(shape, s.opts, srid); err == nil {
+				row[s.geometryField] = geometryValue
 			} else {
 				row[s.geometryField] = nil
 			}
@@ -330,16 +327,16 @@ func parseDBFHeaderBytes(data []byte, encodingName string) (*dbfHeaderInfo, erro
 		return nil, fmt.Errorf("invalid DBF header length: %d", headerLength)
 	}
 	fieldCount := (headerLength - 33) / 32
-	fields := make([]FieldInfo, 0, fieldCount)
+	fields := make([]dbfFieldInfo, 0, fieldCount)
 	for i := 0; i < fieldCount; i++ {
 		start := 32 + i*32
 		desc := data[start : start+32]
 		var name [11]byte
 		copy(name[:], desc[0:11])
 		fieldType := desc[11]
-		fields = append(fields, FieldInfo{
+		fields = append(fields, dbfFieldInfo{
 			Name:      decodeDBFName(name, encodingName),
-			Type:      DecodeDBFFieldType(fieldType),
+			Type:      decodeDBFFieldType(fieldType),
 			RawType:   string(fieldType),
 			Size:      int(desc[16]),
 			Precision: int(desc[17]),
@@ -395,7 +392,7 @@ func parseDBFRecordBytes(data []byte, header *dbfHeaderInfo, encodingName string
 		if raw == "" {
 			row[field.Name] = nil
 		} else {
-			row[field.Name] = ParseDBFAttribute([]byte(field.RawType)[0], raw)
+			row[field.Name] = parseDBFAttribute([]byte(field.RawType)[0], raw)
 		}
 		pos += field.Size
 	}

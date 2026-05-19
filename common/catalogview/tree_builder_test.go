@@ -311,7 +311,7 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 			ScanStatus:   "completed",
 			Attributes: map[string]interface{}{
 				"item": map[string]interface{}{
-					"organization": "whole",
+					"layout": "whole",
 					"data_type":    "table",
 					"format":       "parquet",
 				},

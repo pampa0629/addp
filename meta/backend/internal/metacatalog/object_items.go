@@ -120,8 +120,8 @@ func InferObjectCatalogDataItem(resource StorageResource, objectName string) *me
 
 func ObjectCatalogCompositeName(composite ObjectCatalogCompositeItem) (name, objectPath string) {
 	if composite.Item != nil {
-		switch composite.Item.Organization {
-		case dataitem.OrganizationSingle, dataitem.OrganizationMulti:
+		switch composite.Item.Layout {
+		case dataitem.LayoutSingle, dataitem.LayoutMulti:
 			if composite.Item.EntryPath != "" {
 				objectPath = ObjectPathFromClaim(composite.Bucket, composite.Item.EntryPath)
 				if objectPath != "" {
@@ -143,12 +143,12 @@ func ObjectCatalogCompositeMode(item *metaitem.DetectedItem) string {
 	if item == nil {
 		return "directory"
 	}
-	switch item.Organization {
-	case dataitem.OrganizationSingle:
+	switch item.Layout {
+	case dataitem.LayoutSingle:
 		return "single"
-	case dataitem.OrganizationMulti:
+	case dataitem.LayoutMulti:
 		return "multi"
-	case dataitem.OrganizationWhole:
+	case dataitem.LayoutWhole:
 		return "whole"
 	default:
 		return "directory"

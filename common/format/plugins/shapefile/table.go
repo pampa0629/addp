@@ -3,7 +3,6 @@ package shapefile
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,11 +25,6 @@ func NewPlugin(opts *format.ParseOptions) *Plugin {
 	return &Plugin{options: opts}
 }
 
-// DescribeTable rejects single-stream input because Shapefile is a multi-ref format.
-func (plugin *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
-	return nil, fmt.Errorf("shapefile requires multi-ref input; use DescribeMultiTable with .shp/.shx/.dbf refs")
-}
-
 func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*format.TableInfo, error) {
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
@@ -38,23 +32,8 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	}
 	defer cleanup()
 
-	opts := plugin.resolveOptions(options)
-	if opts.SpatialRefSys == "" {
-		if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
-			opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
-		}
-	}
-	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
-		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
-			opts.Encoding = cpgEncoding
-		}
-	}
+	opts := plugin.resolveMaterializedOptions(basePath, options)
 	return plugin.describeTableInfoFromHeaders(basePath, refs, opts)
-}
-
-// SampleTable rejects single-stream input because Shapefile is a multi-ref format.
-func (plugin *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	return nil, fmt.Errorf("shapefile requires multi-ref input; use SampleMultiTable with .shp/.shx/.dbf refs")
 }
 
 func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -74,98 +53,8 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 	}
 	defer cleanup()
 
-	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
-		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
-			opts.Encoding = cpgEncoding
-		}
-	}
+	applyMaterializedSidecarOptions(basePath, opts)
 	return plugin.sampleTableFromPath(ctx, basePath+".shp", offset, limit, opts)
-}
-
-func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseOptions) (*format.TableInfo, error) {
-	encodingName := ""
-	if opts != nil {
-		encodingName = opts.Encoding
-	}
-	reader, err := OpenWithEncoding(shpPath, encodingName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open shapefile: %w", err)
-	}
-	defer reader.Close()
-
-	shpSchema := reader.GetSchema()
-	geometryField := plugin.getGeometryFieldName()
-	fields := make([]format.FieldInfo, 0, len(shpSchema)+1)
-	fields = append(fields, format.FieldInfo{
-		Name:         geometryField,
-		Type:         format.FieldTypeGeometry,
-		Nullable:     false,
-		IsPrimaryKey: false,
-		Comment:      "Shapefile geometry field",
-	})
-	for _, field := range shpSchema {
-		fields = append(fields, format.FieldInfo{
-			Name:         field.Name,
-			Type:         mapShapefileTypeToFieldType(field.Type),
-			Nullable:     true,
-			IsPrimaryKey: false,
-			Comment:      "",
-		})
-	}
-
-	recordCount := int64(0)
-	for reader.Next() {
-		recordCount++
-	}
-
-	reader2, err := Open(shpPath)
-	if err != nil {
-		return &format.TableInfo{
-			Name:       "shapefile_data",
-			RowCount:   &recordCount,
-			Fields:     fields,
-			PrimaryKey: []string{},
-		}, nil
-	}
-	defer reader2.Close()
-
-	geomType := determineShapefileGeometryType(reader2.GeometryType)
-	if geomType == "Geometry" && reader2.Next() {
-		_, shape := reader2.Shape()
-		geomType = determineShapeGeometryType(shape)
-	}
-
-	spatialInfo := &format.SpatialInfo{
-		GeometryColumn: geometryField,
-		GeometryType:   geomType,
-		SRID:           0,
-		Dimension:      2,
-	}
-	if opts != nil && opts.SpatialRefSys != "" {
-		if srid := commonSpatial.ParseSRID(opts.SpatialRefSys); srid > 0 {
-			spatialInfo.SRID = srid
-		}
-	}
-
-	shapefileInfo := &FormatInfo{
-		Encoding:   "",
-		ShapeType:  geomType,
-		HasPRJ:     fileExists(strings.TrimSuffix(shpPath, filepath.Ext(shpPath)) + ".prj"),
-		HasCPG:     fileExists(strings.TrimSuffix(shpPath, filepath.Ext(shpPath)) + ".cpg"),
-		DBFVersion: 0,
-	}
-	if opts != nil {
-		shapefileInfo.Encoding = opts.Encoding
-	}
-
-	return &format.TableInfo{
-		Name:        "shapefile_data",
-		RowCount:    &recordCount,
-		Fields:      fields,
-		PrimaryKey:  []string{},
-		SpatialInfo: spatialInfo,
-		FormatInfo:  map[string]interface{}{"shapefile": shapefileInfo},
-	}, nil
 }
 
 func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, error) {
@@ -188,15 +77,10 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
 	})
-	mapper := format.GetTypeMapper("shapefile")
 	for _, field := range dbfHeader.Fields {
-		fieldType := format.FieldTypeUnknown
-		if mapper != nil {
-			fieldType = mapper.ToCommon(field.RawType)
-		}
 		fields = append(fields, format.FieldInfo{
 			Name:      field.Name,
-			Type:      fieldType,
+			Type:      dbfNativeTypeToCommon(field.RawType),
 			Nullable:  true,
 			Size:      field.Size,
 			Precision: field.Precision,
@@ -267,7 +151,7 @@ func (plugin *Plugin) sampleTableFromPath(ctx context.Context, shpPath string, o
 			encodingName = cpgEncoding
 		}
 	}
-	reader, err := OpenWithEncoding(shpPath, encodingName)
+	reader, err := openWithEncoding(shpPath, encodingName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shapefile: %w", err)
 	}
@@ -298,18 +182,18 @@ func (plugin *Plugin) sampleTableFromPath(ctx context.Context, shpPath string, o
 		_, shape := reader.Shape()
 		record := make(map[string]interface{}, len(fields)+1)
 		for i, field := range fields {
-			fieldName := reader.TrimDBFFieldName(field.Name)
-			rawValue := strings.TrimSpace(reader.ReadAttributeDecoded(recordIndex, i))
+			fieldName := reader.trimDBFFieldName(field.Name)
+			rawValue := strings.TrimSpace(reader.readAttributeDecoded(recordIndex, i))
 			if rawValue == "" {
 				record[fieldName] = nil
 			} else {
-				record[fieldName] = ParseDBFAttribute(field.Fieldtype, rawValue)
+				record[fieldName] = parseDBFAttribute(field.Fieldtype, rawValue)
 			}
 		}
 		if shape != nil {
-			wkt, err := ShapeToWKT(shape)
+			geometryValue, err := shapeToRowValue(shape, opts, sridFromParseOptions(opts))
 			if err == nil {
-				record[geometryField] = wkt
+				record[geometryField] = geometryValue
 			} else {
 				record[geometryField] = nil
 			}
@@ -335,23 +219,25 @@ func (plugin *Plugin) resolveOptions(options *format.ParseOptions) *format.Parse
 	return format.DefaultParseOptions()
 }
 
-// mapShapefileTypeToFieldType 将 Shapefile 字段类型映射到 FieldType
-func mapShapefileTypeToFieldType(shpType string) format.FieldType {
-	switch shpType {
-	case "Integer", "Long":
-		return format.FieldTypeInt
-	case "Float", "Double":
-		return format.FieldTypeFloat
-	case "Boolean":
-		return format.FieldTypeBool
-	case "Date":
-		return format.FieldTypeDate
-	case "DateTime":
-		return format.FieldTypeTimestamp
-	case "String", "Text":
-		return format.FieldTypeString
-	default:
-		return format.FieldTypeString
+func (plugin *Plugin) resolveMaterializedOptions(basePath string, options *format.ParseOptions) *format.ParseOptions {
+	opts := plugin.resolveOptions(options)
+	applyMaterializedSidecarOptions(basePath, opts)
+	return opts
+}
+
+func applyMaterializedSidecarOptions(basePath string, opts *format.ParseOptions) {
+	if opts == nil {
+		return
+	}
+	if opts.SpatialRefSys == "" {
+		if prjBytes, readErr := os.ReadFile(basePath + ".prj"); readErr == nil {
+			opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
+		}
+	}
+	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
+		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
+			opts.Encoding = cpgEncoding
+		}
 	}
 }
 

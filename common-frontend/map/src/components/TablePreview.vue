@@ -285,7 +285,7 @@ const hiddenMetadataKeys = new Set([
   'components',
   'component',
   'component_descriptors',
-  'organization',
+  'layout',
   'preview_material',
   'preview_renderer',
   'frontend_renderer',

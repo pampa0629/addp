@@ -37,11 +37,6 @@ type TableBatchWriter interface {
 	Abort(ctx context.Context) error
 }
 
-type multiTableSourceProvider interface {
-	format.MultiTableProvider
-	format.RelatedRefSpecProvider
-}
-
 type targetResourceDeleter interface {
 	DeleteTarget(ctx context.Context) error
 }
@@ -312,7 +307,8 @@ type encodedContentTableSource struct {
 	reader              engineplugin.ContentReadableProvider
 	tableProvider       format.TableReaderProvider
 	multiReaderProvider format.MultiTableReaderProvider
-	multiProvider       multiTableSourceProvider
+	multiInfoProvider   format.MultiTableInfoProvider
+	multiSampleReader   format.MultiTableSampleReader
 	sampleProvider      format.TableSampleReader
 	infoProvider        format.TableInfoProvider
 	connInfo            engineplugin.ConnectionInfo
@@ -334,18 +330,18 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}, nil
 	}
 
-	if s.multiProvider != nil {
-		reader, refs := s.refReader(s.multiProvider.RelatedRefSpecs())
-		schema, err := s.multiProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
+	if s.multiInfoProvider != nil && s.multiSampleReader != nil {
+		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
+		schema, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("describe encoded source table refs: %w", err)
 		}
 		return &multiEncodedTableBatchReader{
-			reader:       reader,
-			refs:         refs,
-			provider:     s.multiProvider,
-			schema:       schema,
-			parseOptions: s.parseOptions,
+			reader:         reader,
+			refs:           refs,
+			readerProvider: s.multiSampleReader,
+			schema:         schema,
+			parseOptions:   s.parseOptions,
 		}, nil
 	}
 
@@ -473,13 +469,13 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 }
 
 type multiEncodedTableBatchReader struct {
-	reader       contentio.Reader
-	refs         []format.RelatedRef
-	provider     format.MultiTableProvider
-	schema       *format.TableInfo
-	parseOptions *format.ParseOptions
-	offset       int64
-	done         bool
+	reader         contentio.Reader
+	refs           []format.RelatedRef
+	readerProvider format.MultiTableSampleReader
+	schema         *format.TableInfo
+	parseOptions   *format.ParseOptions
+	offset         int64
+	done           bool
 }
 
 func (r *multiEncodedTableBatchReader) Schema() *format.TableInfo {
@@ -490,7 +486,7 @@ func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int)
 	if r.done {
 		return &engineplugin.BatchData{}, nil
 	}
-	rows, err := r.provider.SampleMultiTable(ctx, r.reader, r.refs, r.offset, int64(limit), r.parseOptions)
+	rows, err := r.readerProvider.SampleMultiTable(ctx, r.reader, r.refs, r.offset, int64(limit), r.parseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("sample encoded source table refs at offset %d: %w", r.offset, err)
 	}

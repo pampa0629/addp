@@ -2,7 +2,7 @@
 
 本文定义 ADDP 数据项探测器的设计边界、统一入口和格式规则声明方式。术语以 [ADDP 术语表](../concepts/addp术语表.md) 和 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 为准。
 
-本文是 data item 组织方式识别、claims / exclusive 合并、`refs` 决策和 `FormatRule` 声明的唯一规范来源。扫描深度、覆盖策略、刷新机制和跨模块触发规则见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)。其他文档如需引用 detector 规则，只保留链接和一句话摘要，不重复展开。
+本文是 data item 内容布局识别、claims / exclusive 合并、`refs` 决策和 `FormatRule` 声明的唯一规范来源。扫描深度、覆盖策略、刷新机制和跨模块触发规则见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)。其他文档如需引用 detector 规则，只保留链接和一句话摘要，不重复展开。
 
 ## 本文边界
 
@@ -11,7 +11,7 @@
 | 本文负责 | 不在本文定义 |
 |---|---|
 | 扫描范围如何解析为 `0..N` 个 data item | `attributes` 的完整 JSON schema |
-| `organization`、主资源、ref 资源和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
+| `layout`、primary content / ref、related refs 和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
 | `claims`、`exclusive` 如何合并 | contentio.Reader / Writer 与 `[]format.RelatedRef` 的具体接口 |
 | `meta_item.name/full_name/item_type` 的来源规则 | Manager 面向前端的 DTO 或 Transfer plan |
 | `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser、provider、reader 字段细节 |
@@ -23,7 +23,7 @@ attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attri
 
 detector 不能等同于目录 detector，也不能按单一格式局部修补。detector 是从资源候选集合中识别 `0..N` 个 data item 的统一入口。
 
-detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `organization`、`data_type`、`format`、主资源和ref 资源，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。主资源或 whole scope 根范围应成为 `meta_item.full_name`。
+detector 只负责回答“哪些资源组成哪些 data item”。它可以给出 `layout`、`data_type`、`format`、primary content / ref 和 related refs，但不得把 node、目录、prefix 或容器内部对象直接等同于独立 meta item，除非规范明确声明。primary content 或 whole scope 根范围应成为 `meta_item.full_name`。
 
 候选集合组织规则可以进入 `common/dataitem` 复用。Meta 仍拥有扫描调度、detector 编排、claims / exclusive 最终合并、`refs` 决策、attributes normalizer 和落库裁决。跨模块需要已入库 item 结果时应通过 Meta Client 消费 meta item，不得绕过 Meta 对外部目录、prefix 或 schema 重新落库。
 
@@ -78,7 +78,7 @@ type DetectionResult struct {
 
 - `Items`：本轮识别出的 data item。
 - `Claims`：detector 已认领的源资源路径。已认领资源不再作为普通资源重复落 item。
-- `Exclusive`：当前扫描范围整体已被一个 item 认领。仅 `organization=whole` 等明确场景允许使用；该范围内其他资源不得再生成独立 item。
+- `Exclusive`：当前扫描范围整体已被一个 item 认领。仅 `layout=whole` 等明确场景允许使用；该范围内其他资源不得再生成独立 item。
 
 ## item 身份规则
 
@@ -86,40 +86,40 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 | 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 | 说明 |
 |---|---|---|---|
-| `organization=single` 对象 / 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | MinIO / S3 中 `item_type=object`；NFS / 本地文件系统中 `item_type=file` |
-| `organization=single` 引擎原生资源 | 引擎原生名称 | 引擎内唯一逻辑全名 | PostgreSQL table、MongoDB collection 等 |
-| `organization=multi` | 主资源名，保留扩展名 | 主资源完整路径 | Shapefile 使用 `.shp` 作为主资源；item_type 仍跟随承载引擎的叶子术语 |
-| `organization=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB 场景目录等 |
+| `layout=single` 对象 / 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | MinIO / S3 中 `item_type=object`；NFS / 本地文件系统中 `item_type=file` |
+| `layout=single` 引擎原生资源 | 引擎原生名称 | 引擎内唯一逻辑全名 | PostgreSQL table、MongoDB collection 等 |
+| `layout=multi` | primary content 名，保留扩展名 | primary content 完整路径 | Shapefile 使用 `.shp` 作为 primary content；item_type 仍跟随承载引擎的叶子术语 |
+| `layout=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB 场景目录等 |
 
 规则：
 
-1. 主资源或 whole scope 根范围最终写入 `meta_item.full_name`。
+1. primary content 或 whole scope 根范围最终写入 `meta_item.full_name`。
 2. attributes 不再定义通用 `entry_path`。
-3. `refs` 只表达 multi 或需要记录关键 ref的 whole item 的ref 资源，不替代 `full_name`。
+3. `refs` 只表达 multi 或需要记录关键 ref 的 whole item 的 related refs，不替代 `full_name`。
 4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
 5. `meta_item.item_type` 跟随引擎 catalog / 路径模型的原生叶子术语，不因 `data_type`、`format` 或 Manager 预览方式改变。
 6. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
 
 ## 递归观察资源
 
-`whole` 组织方式 detector 需要递归观察资源时，由扫描入口提供 `RecursiveFiles` / `RecursiveSubdirs`。格式 detector 只消费候选资源，不自行访问存储引擎递归拉取目录。
+`whole` 内容布局 detector 需要递归观察资源时，由扫描入口提供 `RecursiveFiles` / `RecursiveSubdirs`。格式 detector 只消费候选资源，不自行访问存储引擎递归拉取目录。
 
 递归观察资源只表示 detector 可见的候选集合，不改变 item 身份生成规则。
 
 ## detector 分类
 
-| 类别 | 典型来源 | 组织方式 | 独占范围 |
+| 类别 | 典型来源 | 内容布局 | 独占范围 |
 |---|---|---|---|
 | Native item detector | 数据库表、文档集合、图 label / relationship | `single` 或引擎规范声明 | 由引擎原生边界决定 |
 | Single-resource detector | CSV、PDF、图片、SQLite、Excel、ZIP | `single` | 不独占目录 |
 | Sibling multi-resource detector | Shapefile、主文件 + 索引文件 + 元数据文件 | `multi` | 只认领匹配 ref，不独占目录 |
 | Whole-scope detector | Iceberg 表目录、OSGB 场景目录、完整数据集 prefix | `whole` | 强匹配时可独占扫描范围 |
 
-容器文件是 `data_type=container`，不是单独组织方式。SQLite、GeoPackage、Excel、ZIP 等通常由 single-resource detector 识别为 `organization=single`、`data_type=container`，内部对象先写入 attributes。
+容器文件是 `data_type=container`，不是单独内容布局。SQLite、GeoPackage、Excel、ZIP 等通常由 single-resource detector 识别为 `layout=single`、`data_type=container`，内部对象先写入 attributes。
 
 Shapefile 必须归入 sibling multi-resource，不得作为 whole-scope detector。
 
-`mixed_collection` 暂不作为基础 detector 类别。只认领部分资源时使用 `multi`；整体认领时使用 `whole`。未来确实出现无法表达的复杂组织方式，再单独修订规范。
+`mixed_collection` 暂不作为基础 detector 类别。只认领部分资源时使用 `multi`；整体认领时使用 `whole`。未来确实出现无法表达的复杂内容布局，再单独修订规范。
 
 ## 识别优先级
 
@@ -136,13 +136,13 @@ Shapefile 必须归入 sibling multi-resource，不得作为 whole-scope detecto
 
 ## FormatRule
 
-格式实现层通过规则声明一次性回答自己的组织方式、数据类型、主资源、refs和优先级：
+格式实现层通过规则声明一次性回答自己的内容布局、数据类型、primary content / ref、related refs 和优先级：
 
 ```go
 type FormatRule struct {
     Format       string
     DataType     DataType
-    Organization Organization
+    Layout Layout
     Priority     int
 
     Entry           EntryRule
@@ -155,15 +155,15 @@ type FormatRule struct {
 
 条件约束：
 
-| `organization` | 必填规则 | 禁止或忽略规则 |
+| `layout` | 必填规则 | 禁止或忽略规则 |
 |---|---|---|
 | `single` | `Entry` | `Refs`、`WholeScope` |
 | `multi` | `Entry`、`Refs` 或 `RelatedRefSpecs` | `Container`、`WholeScope` |
 | `whole` | `WholeScope` | `Entry`、`Refs`、`Container` |
 
-`ContainerRule` 只描述容器型数据的内部枚举、默认入口和内部子 item 表达方式，不改变 `organization`。一个容器文件自身仍应按 `single` 组织方式生成外层 data item。
+`ContainerRule` 只描述容器型数据的内部枚举、默认入口和内部子 item 表达方式，不改变 `layout`。一个容器文件自身仍应按 `single` 内容布局生成外层 data item。
 
-统一入口只负责提供候选资源、执行优先级、合并结果和处理 claimed resources。一套文件到底需要哪些后缀、主文件是哪一个、可选 refs有哪些，必须由格式实现层声明。主文件或 whole scope 根范围最终应写入 `meta_item.full_name`，不得再写入通用 `attributes.item.entry_path`。
+统一入口只负责提供候选资源、执行优先级、合并结果和处理 claimed resources。一套文件到底需要哪些后缀、primary ref 是哪一个、可选 refs 有哪些，必须由格式实现层声明。primary content 或 whole scope 根范围最终应写入 `meta_item.full_name`，不得再写入通用 `attributes.item.entry_path`。
 
 ## claims 与 exclusive 规则
 
@@ -172,7 +172,7 @@ type FormatRule struct {
 | 场景 | Claims | Exclusive |
 |---|---|---|
 | `single` | 入口资源 | 通常为 `false` |
-| `multi` | 主资源 + 已匹配ref 资源 | 必须为 `false`，不得独占目录或 prefix |
+| `multi` | primary content + 已匹配 related refs | 必须为 `false`，不得独占目录或 prefix |
 | `whole` | whole scope 根范围和规范要求的关键资源 | 强匹配时可为 `true` |
 | 容器内部对象 | 默认不进入外部扫描 claims | 不影响外层扫描范围 |
 
@@ -198,10 +198,10 @@ type FormatRule struct {
 期望：
 
 1. `/shp/` 是 node，不是 Shapefile item。
-2. `farmland.*` 生成一个 `data_type=table`、`organization=multi`、`format=shapefile` item。
-3. `roads.*` 生成另一个 `data_type=table`、`organization=multi`、`format=shapefile` item。
-4. `readme.pdf` 生成 `data_type=document`、`organization=single` item。
-5. `raw.csv` 生成 `data_type=table`、`organization=single` item。
+2. `farmland.*` 生成一个 `data_type=table`、`layout=multi`、`format=shapefile` item。
+3. `roads.*` 生成另一个 `data_type=table`、`layout=multi`、`format=shapefile` item。
+4. `readme.pdf` 生成 `data_type=document`、`layout=single` item。
+5. `raw.csv` 生成 `data_type=table`、`layout=single` item。
 6. 两个 Shapefile item 的 `full_name` 分别来自入口文件全路径。
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
 8. Shapefile 内容读取使用 `meta_item.full_name` 和 `item.refs`，不得重新枚举 sibling 后猜测。

@@ -247,7 +247,7 @@ func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{}
 }
 
 func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {
-	SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
+	SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	switch itemType {
 	case "collection":
 		SetItem(attrs, "data_type", string(dataitem.DataTypeTable))

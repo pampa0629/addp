@@ -7,8 +7,7 @@ import (
 	"github.com/twpayne/go-geom"
 )
 
-// ShapeToGeoJSON 将 shapefile 几何转换为 GeoJSON 格式
-func ShapeToGeoJSON(shape shp.Shape) (map[string]interface{}, error) {
+func shapeToGeoJSON(shape shp.Shape) (map[string]interface{}, error) {
 	switch g := shape.(type) {
 	case *shp.Point:
 		return geoJSONPoint(g.X, g.Y), nil

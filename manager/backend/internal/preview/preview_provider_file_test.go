@@ -259,9 +259,9 @@ func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) 
 			},
 		},
 	}
-	tableProvider, err := format.GetTableProvider(format.FormatTSV)
+	tableProvider, err := format.GetTableSampleReader(format.FormatTSV)
 	if err != nil {
-		t.Fatalf("GetTableProvider(tsv) failed: %v", err)
+		t.Fatalf("GetTableSampleReader(tsv) failed: %v", err)
 	}
 
 	preview, err := provider.previewStreamable(
@@ -270,6 +270,7 @@ func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) 
 		"manager",
 		"manager/test.tsv",
 		format.FormatTSV,
+		nil,
 		tableProvider,
 		provider.buildParseOptions(format.FormatTSV),
 		req,
@@ -299,6 +300,7 @@ func TestFileTablePreviewProviderPreviewStreamableReturnsTableModeAndFirstPage(t
 		"manager",
 		"manager/test.parquet",
 		format.FormatParquet,
+		tableProvider,
 		tableProvider,
 		nil,
 		req,
@@ -347,6 +349,7 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 		"manager",
 		"manager/test.csv",
 		format.FormatCSV,
+		tableProvider,
 		tableProvider,
 		nil,
 		req,
@@ -401,6 +404,7 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 		"manager",
 		"manager/sample.db",
 		format.FormatSQLite,
+		tableProvider,
 		tableProvider,
 		provider.buildParseOptions(format.FormatSQLite, req),
 		req,
@@ -782,6 +786,7 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T)
 		"manager/roads.json",
 		format.FormatJSON,
 		tableProvider,
+		tableProvider,
 		nil,
 		req,
 	)
@@ -845,6 +850,7 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 		"bucket",
 		format.FormatShapefile,
 		refProvider,
+		refProvider,
 		nil,
 		req,
 	)
@@ -887,6 +893,7 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 		nil,
 		"bucket",
 		format.FormatShapefile,
+		refProvider,
 		refProvider,
 		nil,
 		req,
@@ -1007,9 +1014,9 @@ func TestRefFilePreviewProviderOpensSelectedRelatedRef(t *testing.T) {
 		RefPath:  "bucket/roads/roads.prj",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
-				"format":       string(format.FormatShapefile),
-				"data_type":    "table",
-				"organization": "multi",
+				"format":    string(format.FormatShapefile),
+				"data_type": "table",
+				"layout":    "multi",
 				"refs": []interface{}{
 					map[string]interface{}{"path": "bucket/roads/roads.shp", "role": "main", "required": true, "primary": true},
 					map[string]interface{}{"path": "bucket/roads/roads.shx", "role": "index", "required": true},
@@ -1036,8 +1043,8 @@ func TestRefFilePreviewProviderOpensSelectedRelatedRef(t *testing.T) {
 	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "EPSG:4326" {
 		t.Fatalf("content = %#v, want text projection content", preview.Object.Content)
 	}
-	if preview.Object.Content.Metadata["organization"] != "multi" {
-		t.Fatalf("content metadata = %#v, want multi organization", preview.Object.Content.Metadata)
+	if preview.Object.Content.Metadata["layout"] != "multi" {
+		t.Fatalf("content metadata = %#v, want multi layout", preview.Object.Content.Metadata)
 	}
 	refs, ok := preview.Object.Content.Metadata["refs"].([]map[string]interface{})
 	if !ok || len(refs) != 4 {
@@ -1096,6 +1103,10 @@ func (p *recordingMultiTableProvider) Format() format.FormatType {
 	return format.FormatShapefile
 }
 
+func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
+	return nil
+}
+
 func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []format.RelatedRef, *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
 	rowCount := int64(1)
@@ -1120,8 +1131,10 @@ func (emptyRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, err
 	return nil, contentio.ErrContentNotFound
 }
 
-var _ format.TableProvider = (*recordingTableProvider)(nil)
-var _ format.MultiTableProvider = (*recordingMultiTableProvider)(nil)
+var _ format.TableInfoProvider = (*recordingTableProvider)(nil)
+var _ format.TableSampleReader = (*recordingTableProvider)(nil)
+var _ format.MultiTableInfoProvider = (*recordingMultiTableProvider)(nil)
+var _ format.MultiTableSampleReader = (*recordingMultiTableProvider)(nil)
 var _ contentio.Reader = staticContentReader{}
 var _ contentio.Reader = emptyRefReader{}
 
@@ -1182,17 +1195,17 @@ func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 
 func TestMapToContainerChildInfoKeepsRefs(t *testing.T) {
 	child := mapToContainerChildInfo(map[string]interface{}{
-		"name":         "roads.shp",
-		"kind":         "multi",
-		"data_type":    "table",
-		"format":       "shapefile",
-		"organization": "multi",
+		"name":      "roads.shp",
+		"kind":      "multi",
+		"data_type": "table",
+		"format":    "shapefile",
+		"layout":    "multi",
 		"refs": []interface{}{
 			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
 			map[string]interface{}{"role": "index", "path": "roads.shx", "required": true, "extension": ".shx"},
 		},
 	})
-	if child.Format != format.FormatShapefile || child.Organization != "multi" || len(child.Refs) != 2 {
+	if child.Format != format.FormatShapefile || child.Layout != "multi" || len(child.Refs) != 2 {
 		t.Fatalf("child = %#v, want shapefile multi refs", child)
 	}
 	if !child.Refs[0].Primary || child.Refs[0].Path != "roads.shp" {

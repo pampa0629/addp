@@ -48,7 +48,7 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 	if result.Items[1].EntryPath != "/shp/roads.shp" {
 		t.Fatalf("second EntryPath = %q, want /shp/roads.shp", result.Items[1].EntryPath)
 	}
-	if result.Items[0].Organization != dataitem.OrganizationMulti || result.Items[0].DataType != dataitem.DataTypeTable {
+	if result.Items[0].Layout != dataitem.LayoutMulti || result.Items[0].DataType != dataitem.DataTypeTable {
 		t.Fatalf("first item = %#v, want multi table", result.Items[0])
 	}
 	if result.Items[0].Format != string(format.FormatShapefile) {

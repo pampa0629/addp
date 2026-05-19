@@ -54,8 +54,8 @@ func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 		Prefix: "lake",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				Organization: commondataitem.OrganizationSingle,
-				EntryPath:    "addp/lake/sales.parquet",
+				Layout:    commondataitem.LayoutSingle,
+				EntryPath: "addp/lake/sales.parquet",
 			},
 		},
 	})
@@ -135,10 +135,10 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 		Prefix: "datasets/roads",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				DataType:     commondataitem.DataTypeTable,
-				Organization: commondataitem.OrganizationMulti,
-				EntryPath:    "addp/datasets/roads/roads.shp",
-				SizeBytes:    int64PtrForTest(256),
+				DataType:  commondataitem.DataTypeTable,
+				Layout:    commondataitem.LayoutMulti,
+				EntryPath: "addp/datasets/roads/roads.shp",
+				SizeBytes: int64PtrForTest(256),
 			},
 			Fields: []format.FieldInfo{{
 				Name: "id",

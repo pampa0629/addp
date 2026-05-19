@@ -394,7 +394,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableType(tableInfo), tableComment(tableInfo))
 		}
 	}
-	metaattr.SetItem(attrs, "organization", string(dataitem.OrganizationSingle))
+	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": tableInfo.RowCount})
 	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": tableInfo.RowCount})

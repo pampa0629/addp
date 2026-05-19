@@ -5,20 +5,9 @@ import (
 
 	"github.com/jonas-p/go-shp"
 	"github.com/twpayne/go-geom"
-	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
-// ShapeToWKB converts shapefile geometry to WKB format
-func ShapeToWKB(shape shp.Shape) ([]byte, error) {
-	geometry, err := ShapeToGeom(shape)
-	if err != nil {
-		return nil, err
-	}
-	return wkb.Marshal(geometry, wkb.NDR)
-}
-
-// ShapeToGeom converts shapefile geometry to go-geom geometry
-func ShapeToGeom(shape shp.Shape) (geom.T, error) {
+func shapeToGeom(shape shp.Shape) (geom.T, error) {
 	switch s := shape.(type) {
 	case *shp.Point:
 		return geom.NewPointFlat(geom.XY, []float64{s.X, s.Y}), nil
@@ -163,7 +152,7 @@ func ensureRingClosed(points []shp.Point) []shp.Point {
 	}
 	first := points[0]
 	last := points[len(points)-1]
-	if AlmostEqual(first.X, last.X) && AlmostEqual(first.Y, last.Y) {
+	if almostEqual(first.X, last.X) && almostEqual(first.Y, last.Y) {
 		return points
 	}
 	return append(points, first)

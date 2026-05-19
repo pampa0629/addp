@@ -218,13 +218,20 @@ func TestTSVPlugin_DescribeAndSampleTable(t *testing.T) {
 	}
 }
 
-func TestTSVPluginRegisteredAsTableProvider(t *testing.T) {
-	provider, err := format.GetTableProvider(format.FormatTSV)
+func TestTSVPluginRegisteredAsTableInfoAndSampleProviders(t *testing.T) {
+	infoProvider, err := format.GetTableInfoProvider(format.FormatTSV)
 	if err != nil {
-		t.Fatalf("GetTableProvider(tsv) failed: %v", err)
+		t.Fatalf("GetTableInfoProvider(tsv) failed: %v", err)
 	}
-	if provider.Format() != format.FormatTSV {
-		t.Fatalf("provider format = %q, want tsv", provider.Format())
+	if infoProvider.Format() != format.FormatTSV {
+		t.Fatalf("info provider format = %q, want tsv", infoProvider.Format())
+	}
+	sampleReader, err := format.GetTableSampleReader(format.FormatTSV)
+	if err != nil {
+		t.Fatalf("GetTableSampleReader(tsv) failed: %v", err)
+	}
+	if sampleReader.Format() != format.FormatTSV {
+		t.Fatalf("sample reader format = %q, want tsv", sampleReader.Format())
 	}
 	writerProvider, err := format.GetTableWriterProvider(format.FormatTSV)
 	if err != nil {

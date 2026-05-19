@@ -2,14 +2,6 @@ package format
 
 import "fmt"
 
-func RegisterMediaProvider(provider MediaProvider) error {
-	return globalProviderRegistry.RegisterMediaProvider(provider)
-}
-
-func (r *ProviderRegistry) RegisterMediaProvider(provider MediaProvider) error {
-	return r.RegisterMediaInfoProvider(provider)
-}
-
 func RegisterMediaInfoProvider(provider MediaInfoProvider) error {
 	return globalProviderRegistry.RegisterMediaInfoProvider(provider)
 }

@@ -11,7 +11,7 @@
 ## 一句话流程
 
 ```text
-判断 data item 组织方式
+判断 data item 内容布局
   -> 判断 data type 和 format
   -> 实现 FormatPlugin
   -> 实现需要的 info provider / content reader
@@ -35,21 +35,21 @@
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
 
-## 2. 判断组织方式
+## 2. 判断内容布局
 
-组织方式决定 Meta 如何把资源归并成 data item。
+内容布局决定 Meta 如何把资源归并成 data item。
 
-| 组织方式 | 判断标准 | 需要补的规则 |
+| 内容布局 | 判断标准 | 需要补的规则 |
 |---|---|---|
 | `single` | 一个引擎资源就是一个 data item | entry 识别规则、`meta_item.full_name` 来源 |
 | `multi` | 多个明确相关 ref 共同组成一个 data item | 主 ref、必需 ref、可选 ref、claims |
 | `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item | whole scope 根范围、manifest / 关键资源、exclusive 策略 |
 
-容器不是组织方式。Excel、SQLite、GeoPackage、ZIP 等外层通常仍是 `single + container`。
+容器不是内容布局。Excel、SQLite、GeoPackage、ZIP 等外层通常仍是 `single + container`。
 
 规则归属：
 
-- 组织方式、主资源、组件、claims / exclusive 写入 [ADDP 数据项探测器规范](addp数据项探测器规范.md) 或对应实现。
+- 内容布局、主资源、组件、claims / exclusive 写入 [ADDP 数据项探测器规范](addp数据项探测器规范.md) 或对应实现。
 - 首批内置格式的确定性规则写入 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)。
 
 ## 3. 实现 FormatPlugin
@@ -93,7 +93,7 @@ func (p *Plugin) Capabilities() format.FormatCapability
 
 ## 4. 实现 provider 和 reader
 
-按 data type、组织方式和消费意图实现对应接口，不要把 info、sample、连续读写混在一起。详细矩阵见 `common/format/README.md`。
+按 data type、内容布局和消费意图实现对应接口，不要把 info、sample、连续读写混在一起。详细矩阵见 `common/format/README.md`。
 
 | 场景 | 必需 / 推荐接口 | 注册后主要消费者 |
 |---|---|---|
@@ -103,11 +103,13 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | 单资源表格样本 | `TableSampleReader` | Manager、Transfer 探查 |
 | 单资源表格全量读取 | `TableReaderProvider` | Transfer 主链路 |
 | 单资源表格写出 | `TableWriterProvider` | Transfer 写侧 |
-| 多组件表格元信息 / 样本 | `MultiTableProvider` | Meta、Manager、Transfer 探查兜底 |
+| 多组件表格元信息 | `MultiTableInfoProvider` | Meta、Manager、Transfer 探查 |
+| 多组件表格样本 | `MultiTableSampleReader` | Manager、Transfer 探查兜底 |
 | 多组件表格全量读取 | `MultiTableReaderProvider` | Transfer 主链路 |
 | 多组件表格写出 | `MultiTableWriterProvider` | Transfer 写侧 |
 | 多组件规格 / 展示描述 | `RelatedRefSpecProvider`、`RefDescriptorProvider` | Meta item detector、Manager |
-| scope 表格元信息 / 样本 | `ScopeTableProvider` | Meta、Manager、Transfer 探查 |
+| scope 表格元信息 | `ScopeTableInfoProvider` | Meta、Manager、Transfer 探查 |
+| scope 表格样本 | `ScopeTableSampleReader` | Manager、Transfer 探查 |
 | 文档元信息 | `DocumentInfoProvider` | Meta、Manager、Search |
 | 文档文本片段 | `DocumentTextReader` | Manager、Search |
 | 文档仅前端解析 | descriptor 声明 `raw_content` / `range_content`，后端不实现 `DocumentTextReader` | Manager |
@@ -116,13 +118,7 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 空间横切事实 | 在 table/media info 中提供候选事实，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 
-历史组合接口：
-
-- `TableProvider` = `TableInfoProvider` + `TableSampleReader`
-- `DocumentProvider` = `DocumentInfoProvider` + `DocumentTextReader`
-- `MediaProvider` 是 `MediaInfoProvider` 的旧别名
-
-新增实现优先直接使用拆分后的接口。`MultiTableProvider` 和 `ScopeTableProvider` 只表达 info / sample，不表达连续全量读取；全量批处理读取应使用 `TableReaderProvider` 或 `MultiTableReaderProvider`。后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得继续扩展组合接口职责。
+新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得引入组合 provider。
 
 ## 5. 注册方式
 
@@ -149,7 +145,7 @@ func init() {
 | `RegisterFormatDescriptor` | 只新增格式身份声明，暂时没有 Go 实现 |
 | `RegisterFormatInfoProvider` | 只提供 `format_info.<format>` |
 | `RegisterTableInfoProvider` | 只提供 `type_info.table` |
-| `RegisterTableSampleProvider` | 只提供 table sample content reader |
+| `RegisterTableSampleReader` | 只提供 table sample content reader |
 | `RegisterTableReaderProvider` | 只提供单资源 table 连续读取 |
 | `RegisterMultiTableReaderProvider` | 只提供多组件 table 连续读取 |
 | `RegisterTableWriterProvider` | 只提供单资源 table 写出 |
@@ -207,7 +203,7 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 5. `attributes.item/type_info/format_info/content_index/capabilities` 没有重复事实源。
 6. multi / whole 场景没有重复落库。
 7. Manager 只消费已入库 data item，不按引擎类型或后缀硬编码新格式。
-8. Transfer 不重复推断字段类型、组件或组织方式。
+8. Transfer 不重复推断字段类型、组件或内容布局。
 
 推荐测试：
 

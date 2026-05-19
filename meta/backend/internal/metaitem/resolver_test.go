@@ -30,8 +30,8 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextResolver(t *testing.T) {
 		priority: 20,
 		result: &DetectionResult{
 			Items: []*DetectedItem{detectedItemForTest(dataitem.ResolvedItem{
-				Organization: dataitem.OrganizationMulti,
-				EntryPath:    "/shp/roads.shp",
+				Layout:    dataitem.LayoutMulti,
+				EntryPath: "/shp/roads.shp",
 			})},
 			Claims: ResourceClaimSet{"/shp/roads.shp": true},
 		},

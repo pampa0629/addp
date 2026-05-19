@@ -104,11 +104,11 @@ func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 		return FormatRule{}, false
 	}
 	rule := FormatRule{
-		Format:       string(capability.Format),
-		DataType:     dataType,
-		Organization: OrganizationSingle,
-		Priority:     10,
-		Entry:        EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+		Format:   string(capability.Format),
+		DataType: dataType,
+		Layout:   LayoutSingle,
+		Priority: 10,
+		Entry:    EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
 	}
 	if dataType == DataTypeContainer {
 		rule.Priority = 20
@@ -130,7 +130,7 @@ func BuiltinMultiRules() []FormatRule {
 		rules = append(rules, FormatRule{
 			Format:          string(capability.Format),
 			DataType:        dataTypeFromString(capability.DataType),
-			Organization:    OrganizationMulti,
+			Layout:          LayoutMulti,
 			Priority:        100,
 			Entry:           EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
 			Refs:            refRuleFromSpecs(specs),
@@ -157,11 +157,11 @@ func BuiltinWholeScopeRules() []FormatRule {
 			continue
 		}
 		rules = append(rules, FormatRule{
-			Format:       string(capability.Format),
-			DataType:     dataType,
-			Organization: OrganizationWhole,
-			Priority:     80,
-			Entry:        EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+			Format:   string(capability.Format),
+			DataType: dataType,
+			Layout:   LayoutWhole,
+			Priority: 80,
+			Entry:    EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
 			WholeScope: &WholeScopeRule{
 				AllowRecursive:       true,
 				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
@@ -180,10 +180,17 @@ func BuiltinWholeScopeRules() []FormatRule {
 }
 
 func RelatedRefSpecs(formatType format.FormatType) []format.RelatedRefSpec {
-	if provider, err := format.GetTableProvider(formatType); err == nil {
-		if specProvider, ok := provider.(format.RelatedRefSpecProvider); ok {
-			return specProvider.RelatedRefSpecs()
-		}
+	if provider, err := format.GetMultiTableInfoProvider(formatType); err == nil {
+		return provider.RelatedRefSpecs()
+	}
+	if reader, err := format.GetMultiTableSampleReader(formatType); err == nil {
+		return reader.RelatedRefSpecs()
+	}
+	if reader, err := format.GetMultiTableReaderProvider(formatType); err == nil {
+		return reader.RelatedRefSpecs()
+	}
+	if writer, err := format.GetMultiTableWriterProvider(formatType); err == nil {
+		return writer.RelatedRefSpecs()
 	}
 	if plugin, err := format.GetFormatPlugin(formatType); err == nil {
 		if specProvider, ok := plugin.(format.RelatedRefSpecProvider); ok {
@@ -200,18 +207,18 @@ func ValidateFormatRule(rule FormatRule) error {
 	if rule.DataType == "" {
 		return fmt.Errorf("format rule %s requires DataType", rule.Format)
 	}
-	if rule.Organization == "" {
-		return fmt.Errorf("format rule %s requires Organization", rule.Format)
+	if rule.Layout == "" {
+		return fmt.Errorf("format rule %s requires Layout", rule.Format)
 	}
-	if len(rule.Entry.Extensions) == 0 && len(rule.Entry.MIMETypes) == 0 && rule.Organization != OrganizationWhole {
+	if len(rule.Entry.Extensions) == 0 && len(rule.Entry.MIMETypes) == 0 && rule.Layout != LayoutWhole {
 		return fmt.Errorf("format rule %s requires Entry", rule.Format)
 	}
-	switch rule.Organization {
-	case OrganizationSingle:
+	switch rule.Layout {
+	case LayoutSingle:
 		if rule.Refs != nil || rule.WholeScope != nil {
 			return fmt.Errorf("single rule %s must not declare Refs or WholeScope", rule.Format)
 		}
-	case OrganizationMulti:
+	case LayoutMulti:
 		if rule.Refs == nil && len(rule.RelatedRefSpecs) == 0 {
 			return fmt.Errorf("multi rule %s requires Refs", rule.Format)
 		}
@@ -231,7 +238,7 @@ func ValidateFormatRule(rule FormatRule) error {
 		if rule.Container != nil || rule.WholeScope != nil {
 			return fmt.Errorf("multi rule %s must not declare Container or WholeScope", rule.Format)
 		}
-	case OrganizationWhole:
+	case LayoutWhole:
 		if rule.WholeScope == nil {
 			return fmt.Errorf("whole rule %s requires WholeScope", rule.Format)
 		}
@@ -239,7 +246,7 @@ func ValidateFormatRule(rule FormatRule) error {
 			return fmt.Errorf("whole rule %s must not declare Refs or Container", rule.Format)
 		}
 	default:
-		return fmt.Errorf("format rule %s has unsupported Organization %q", rule.Format, rule.Organization)
+		return fmt.Errorf("format rule %s has unsupported Layout %q", rule.Format, rule.Layout)
 	}
 	return nil
 }

@@ -8,9 +8,13 @@ import (
 	"github.com/addp/common/contentio"
 )
 
-type tableProviderView struct {
+type tableInfoProviderView struct {
 	formatType FormatType
 	describe   func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error)
+}
+
+type tableSampleReaderView struct {
+	formatType FormatType
 	sample     func(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error)
 }
 
@@ -19,9 +23,13 @@ type formatInfoProviderView struct {
 	describe   func(context.Context, io.Reader, *ParseOptions) (map[string]interface{}, error)
 }
 
-type documentProviderView struct {
+type documentInfoProviderView struct {
 	formatType FormatType
 	describe   func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error)
+}
+
+type documentTextReaderView struct {
+	formatType FormatType
 	extract    func(context.Context, io.Reader, int64, *ParseOptions) (string, bool, error)
 }
 
@@ -40,11 +48,11 @@ type containerChildResolverView struct {
 	resolve    func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
 }
 
-func (p tableProviderView) Format() FormatType {
+func (p tableInfoProviderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p tableProviderView) Descriptor() FormatDescriptor {
+func (p tableInfoProviderView) Descriptor() FormatDescriptor {
 	descriptor, ok := GetFormatDescriptor(p.formatType)
 	if ok {
 		return descriptor
@@ -57,7 +65,7 @@ func (p tableProviderView) Descriptor() FormatDescriptor {
 	}
 }
 
-func (p tableProviderView) Capabilities() FormatCapability {
+func (p tableInfoProviderView) Capabilities() FormatCapability {
 	capability, ok := GetFormatCapability(p.formatType)
 	if ok {
 		return capability
@@ -71,11 +79,29 @@ func (p tableProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p tableProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error) {
+func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
-func (p tableProviderView) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error) {
+func (p tableSampleReaderView) Format() FormatType {
+	return p.formatType
+}
+
+func (p tableSampleReaderView) Capabilities() FormatCapability {
+	capability, ok := GetFormatCapability(p.formatType)
+	if ok {
+		return capability
+	}
+	return FormatCapability{
+		Format:        p.formatType,
+		DataType:      FormatDataTypeTable,
+		Layouts:       []string{FormatLayoutSingle},
+		ProviderHints: []string{FormatProviderTable},
+		Parse:         true,
+	}
+}
+
+func (p tableSampleReaderView) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error) {
 	return p.sample(ctx, input, offset, limit, options)
 }
 
@@ -98,11 +124,11 @@ func (p formatInfoProviderView) DescribeFormat(ctx context.Context, input io.Rea
 	return p.describe(ctx, input, options)
 }
 
-func (p documentProviderView) Format() FormatType {
+func (p documentInfoProviderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p documentProviderView) Capabilities() FormatCapability {
+func (p documentInfoProviderView) Capabilities() FormatCapability {
 	capability, ok := GetFormatCapability(p.formatType)
 	if ok {
 		return capability
@@ -115,11 +141,28 @@ func (p documentProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p documentProviderView) DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error) {
+func (p documentInfoProviderView) DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
-func (p documentProviderView) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error) {
+func (p documentTextReaderView) Format() FormatType {
+	return p.formatType
+}
+
+func (p documentTextReaderView) Capabilities() FormatCapability {
+	capability, ok := GetFormatCapability(p.formatType)
+	if ok {
+		return capability
+	}
+	return FormatCapability{
+		Format:        p.formatType,
+		DataType:      FormatDataTypeDocument,
+		Layouts:       []string{FormatLayoutSingle},
+		ProviderHints: []string{FormatProviderDocument},
+	}
+}
+
+func (p documentTextReaderView) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error) {
 	return p.extract(ctx, input, limit, options)
 }
 

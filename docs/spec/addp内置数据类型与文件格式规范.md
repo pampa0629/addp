@@ -12,7 +12,7 @@
 
 | 小节 | 必须说明 |
 |---|---|
-| 识别与组织 | `organization`、`data_type`、`format`、主资源或 whole scope、ref 规则 |
+| 识别与组织 | `layout`、`data_type`、`format`、主资源或 whole scope、ref 规则 |
 | attributes 写入 | `storage`、`item`、`type_info`、`format_info`、`capabilities` 的事实归属 |
 | 消费要求 | Manager、Transfer、Search 等模块应如何消费已入库 meta item |
 | 格式约束 | 不得重复推断、不得写入错误分区、不得保留旧字段等约束 |
@@ -23,7 +23,7 @@
 
 除非具体格式小节另有说明，内置格式统一遵守以下规则：
 
-1. `attributes.item` 只写 data item 核心语义，例如 `organization`、`data_type`、`format`、`refs`、`scope_exclusive`、`claim_policy`。
+1. `attributes.item` 只写 data item 核心语义，例如 `layout`、`data_type`、`format`、`refs`、`scope_exclusive`、`claim_policy`。
 2. `type_info.<data_type>` 只写对应数据类型的通用元信息，例如表字段、文档页数、媒体宽高、容器 children。
 3. `format_info.<format>` 只写格式私有信息，例如分隔符、ref 摘要、footer、EXIF、容器版本。
 4. `capabilities.<capability>` 只写横切能力，例如 spatial、statistics、extraction、partitioning。
@@ -33,7 +33,7 @@
 
 ## 总览
 
-| 格式 / 场景 | `organization` | `data_type` | `format` | 说明 |
+| 格式 / 场景 | `layout` | `data_type` | `format` | 说明 |
 |---|---|---|---|---|
 | CSV | `single` | `table` | `csv` | 单资源表格文件 |
 | TSV | `single` | `table` | `tsv` | 单资源表格文件 |
@@ -63,7 +63,7 @@
 
 | 维度 | CSV | TSV |
 |---|---|---|
-| `organization` | `single` | `single` |
+| `layout` | `single` | `single` |
 | `data_type` | `table` | `table` |
 | `format` | `csv` | `tsv` |
 | 主资源 | `meta_item.full_name` 指向文件资源 | `meta_item.full_name` 指向文件资源 |
@@ -74,7 +74,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | `fields`、`row_count`、`primary_key`、采样信息 |
 | `format_info.csv` / `format_info.tsv` | `encoding`、`delimiter`、`has_header`、`quote_char` 等格式私有信息 |
 | `capabilities.statistics` | 采样统计、画像摘要、空值率等可选统计能力 |
@@ -90,7 +90,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `container` |
 | `format` | `excel` |
 | 主资源 | `meta_item.full_name` 指向工作簿文件 |
@@ -101,7 +101,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.container` | `children`、`default_child`、`child_count`、sheet 摘要 |
 | `format_info.excel` | 工作簿版本、sheet 数量、默认 sheet、表头判断、采样策略等 |
 
@@ -118,7 +118,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 
 ### 识别与组织
 
-| 场景 | `organization` | `data_type` | `format` |
+| 场景 | `layout` | `data_type` | `format` |
 |---|---|---|---|
 | records array | `single` | `table` | `json` |
 | JSON Lines | `single` | `table` | `json` |
@@ -131,7 +131,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数、采样信息 |
 | `type_info.document` | 文档型 JSON 的标题、摘要、语言、文本片段等可选信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
@@ -150,7 +150,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `multi` |
+| `layout` | `multi` |
 | `data_type` | `table` |
 | `format` | `shapefile` |
 | 主资源 | `.shp`，即 `meta_item.full_name` |
@@ -163,7 +163,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization=multi`、`data_type=table`、`format=shapefile`、`refs`、`file_count` |
+| `item` | `layout=multi`、`data_type=table`、`format=shapefile`、`refs`、`file_count` |
 | `type_info.table` | `.dbf` 非空间字段、平台统一几何字段、`row_count`、`primary_key` |
 | `format_info.shapefile` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、`shape_type`、DBF 私有信息 |
 | `capabilities.spatial` | `geometry_columns`、`primary_geometry_column`、`srid` 或 `crs`、`extent`、`has_spatial_index` |
@@ -172,6 +172,8 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 
 - `.dbf` 提供非空间字段。
 - `.shp` 提供平台统一几何字段。
+- 平台统一几何字段的字段类型为 `geometry`。默认 sample 行值为 WKT 字符串；连续读取可通过 `ParseOptions.GeometryEncoding` 请求 `wkb` 或 `ewkb`，行值为 `[]byte`。
+- `ewkb` 可以携带 SRID；Shapefile 的 SRID / CRS 事实仍以 `.prj` 解析结果和 `capabilities.spatial` / `TableInfo.SpatialInfo` 为准。
 - 字段类型映射为 ADDP 通用字段类型。原始 DBF 类型属于 Shapefile format plugin 内部事实；如需给 Manager 展示，只能写入只读 attributes，不能进入 Transfer / engine / format writer 的执行决策。
 - 记录数来自真实 Shapefile 记录数，不写固定占位值。
 
@@ -185,7 +187,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
     "total_size": 3069403
   },
   "item": {
-    "organization": "multi",
+    "layout": "multi",
     "data_type": "table",
     "format": "shapefile",
     "refs": [
@@ -252,7 +254,7 @@ Manager 内容读取必须使用 `meta_item.full_name` 作为主内容路径，�
 
 ### 识别与组织
 
-| 场景 | `organization` | `data_type` | `format` |
+| 场景 | `layout` | `data_type` | `format` |
 |---|---|---|---|
 | 单个 Parquet 文件 | `single` | `table` | `parquet` |
 | 一组明确归并的 sibling Parquet 文件 | `multi` | `table` | `parquet` |
@@ -260,13 +262,13 @@ Manager 内容读取必须使用 `meta_item.full_name` 作为主内容路径，�
 | 单个 Avro 文件 | `single` | `table` | `avro` |
 | Iceberg 表目录 | `whole` | `table` | `iceberg` |
 
-Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“湖表”。一组同类 Parquet 文件只有在有明确ref 规则或 manifest 规则时才能归并为 `multi` item。Iceberg 等表格式目录由规范声明后可作为 `organization=whole` 的 table item。
+Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“湖表”。一组同类 Parquet 文件只有在有明确ref 规则或 manifest 规则时才能归并为 `multi` item。Iceberg 等表格式目录由规范声明后可作为 `layout=whole` 的 table item。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
+| `item` | `layout`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
 | `type_info.table` | 字段、原始字段类型、行数或估算行数、采样信息 |
 | `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要等格式私有信息 |
 | `capabilities.partitioning` | 分区字段、分区数量、分区样例 |
@@ -276,7 +278,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 表格读取
 
-上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 contentio 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableProvider` / `ScopeTableProvider`，预览探查走 sample reader，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
+上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 contentio 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableInfoProvider` / `ScopeTableInfoProvider`，预览探查走 `TableSampleReader` / `MultiTableSampleReader` / `ScopeTableSampleReader`，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
 
 ### 格式约束
 
@@ -288,7 +290,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 识别与组织
 
-| 格式 | `organization` | `data_type` | `format` | 主资源 |
+| 格式 | `layout` | `data_type` | `format` | 主资源 |
 |---|---|---|---|---|
 | SQLite | `single` | `container` | `sqlite` | SQLite 文件 |
 | GeoPackage | `single` | `container` | `geopackage` | GeoPackage 文件 |
@@ -299,7 +301,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 | 分区 | SQLite | GeoPackage |
 |---|---|---|
-| `item` | `organization`、`data_type`、`format` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` | `layout`、`data_type`、`format` |
 | `type_info.container` | 内部表、view、默认入口、对象数量 | 内部 layer、表、默认入口、对象数量 |
 | `format_info.sqlite` | SQLite 版本、内部表数量、表清单、pragma 摘要 | 不适用 |
 | `format_info.geopackage` | 不适用 | gpkg 容器级元数据和 layer / table 统计摘要 |
@@ -321,7 +323,7 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `container` |
 | `format` | `zip` |
 | 主资源 | `meta_item.full_name` 指向 ZIP 文件 |
@@ -332,7 +334,7 @@ ZIP 压缩包先作为一个容器 item。压缩包内部 entry 是内部子对�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.container` | entry 轻量 `children`、`default_child`、`child_count` |
 | `format_info.zip` | `entry_count`、`file_count`、`directory_count`、`sampled_children`、`children_truncated` 等容器统计 |
 
@@ -354,7 +356,7 @@ Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个普通文
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `media` |
 | `format` | `jpeg`、`png`、`gif`、`tiff`、`image` |
 | 主资源 | `meta_item.full_name` 指向图片文件 |
@@ -367,7 +369,7 @@ WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descr
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.media` | `kind=image`、宽高、颜色模式、方向、编码、帧数或页数等媒体信息 |
 | `format_info.<format>` | EXIF、TIFF tag、压缩方式等格式私有信息 |
 | `capabilities.spatial` | 图片 GPS 或 GeoTIFF 可确定空间信息 |
@@ -392,7 +394,7 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `media` |
 | `format` | `mp4`、`mov`、`mkv`、`avi`、`webm`、`video` |
 | 主资源 | `meta_item.full_name` 指向视频文件 |
@@ -405,7 +407,7 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.media` | `kind=video`、宽高、时长、视频编码、音频编码、帧率、码率、轨道数等媒体信息 |
 | `format_info.<format>` | 容器版本、轨道摘要、metadata atom、字幕轨、封面帧等格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确抽帧、OCR、语音转写或字幕提取任务状态时写入 |
@@ -428,7 +430,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `media` |
 | `format` | `mp3`、`wav`、`flac`、`aac`、`ogg`、`audio` |
 | 主资源 | `meta_item.full_name` 指向音频文件 |
@@ -439,7 +441,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.media` | `kind=audio`、时长、编码、采样率、声道数、码率等媒体信息 |
 | `format_info.<format>` | ID3 / Vorbis comment / RIFF chunk / 封面图等格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确语音转写、音乐识别或摘要任务状态时写入 |
@@ -459,7 +461,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 
 | 维度 | 取值 |
 |---|---|
-| `organization` | `single` |
+| `layout` | `single` |
 | `data_type` | `document` |
 | `format` | `pdf` |
 | 主资源 | `meta_item.full_name` 指向 PDF 文件 |
@@ -468,7 +470,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.document` | 页数、标题、作者、语言、加密状态、摘要等文档元信息 |
 | `format_info.pdf` | PDF 版本、producer、字体、页面结构等格式私有信息 |
 | `capabilities.extraction` | 文本提取状态、OCR 状态、文本片段、摘要、外部索引引用 |
@@ -488,7 +490,7 @@ Manager 文档内容读取消费 `type_info.document` 和 `capabilities.extracti
 
 | 维度 | DOCX | PPTX | WPS |
 |---|---|---|---|
-| `organization` | `single` | `single` | `single` |
+| `layout` | `single` | `single` | `single` |
 | `data_type` | `document` | `document` | `document` |
 | `format` | `docx` | `pptx` | `wps` |
 | 主资源 | `meta_item.full_name` 指向 DOCX 文件 | `meta_item.full_name` 指向 PPTX 文件 | `meta_item.full_name` 指向 WPS 文件 |
@@ -499,7 +501,7 @@ DOCX / PPTX / WPS 是单资源文档文件。第一阶段内置规范只要求�
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `organization`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format` |
 | `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、作者、语言、加密状态等文档元信息；没有解析事实时不得写入空壳对象 |
 | `format_info.docx` / `format_info.pptx` / `format_info.wps` | 仅在后端已有确定解析事实时写入格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确文本提取、转换、OCR、摘要或外部索引任务状态时写入 |

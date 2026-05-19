@@ -199,7 +199,7 @@ endpoint.write_policy
 
 Transfer 应消费 Meta 已经确认的事实，而不是重复推断：
 
-- `attributes.item.organization`
+- `attributes.item.layout`
 - `attributes.item.data_type`
 - `attributes.item.format`
 - `attributes.item.refs`

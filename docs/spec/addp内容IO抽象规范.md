@@ -120,9 +120,9 @@ Meta / Manager / Transfer 编排层
 
 ## 多 content 调用方式
 
-multi 是 data item / format 层的组织方式，不是 `contentio` 的底层 I/O 原语。
+multi 是 data item / format 层的内容布局，不是 `contentio` 的底层 I/O 原语。
 
-`format.Layouts` 声明某个格式可能支持的 content layout；`attributes.item.organization` 使用同一组取值表达某个已识别 data item 的最终组织结果。也就是说，layout 是格式能力声明，organization 是 item 识别结果，不应维护两套不同取值。
+`layout` 是 content 如何组成 data item 的统一布局维度。`format.Layouts` 声明某个格式可能支持的 content layout 列表；`attributes.item.layout` 使用同一组取值表达某个已识别 data item 的最终 layout。二者不再维护两套术语或取值。
 
 当一个格式需要多个 content 时，调用方应显式传递：
 

@@ -45,24 +45,33 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			return err
 		}
 	}
-	if provider, ok := plugin.(TableProvider); ok {
-		if err := r.RegisterTableProvider(provider); err != nil {
+	if provider, ok := plugin.(TableInfoProvider); ok {
+		if err := r.RegisterTableInfoProvider(provider); err != nil {
 			return err
 		}
-	} else {
-		if provider, ok := plugin.(TableInfoProvider); ok {
-			if err := r.RegisterTableInfoProvider(provider); err != nil {
-				return err
-			}
-		}
-		if reader, ok := plugin.(TableSampleProvider); ok {
-			if err := r.RegisterTableSampleProvider(reader); err != nil {
-				return err
-			}
+	}
+	if reader, ok := plugin.(TableSampleReader); ok {
+		if err := r.RegisterTableSampleReader(reader); err != nil {
+			return err
 		}
 	}
-	if provider, ok := plugin.(MultiTableProvider); ok {
-		if err := r.RegisterMultiTableProvider(provider); err != nil {
+	if provider, ok := plugin.(MultiTableInfoProvider); ok {
+		if err := r.RegisterMultiTableInfoProvider(provider); err != nil {
+			return err
+		}
+	}
+	if reader, ok := plugin.(MultiTableSampleReader); ok {
+		if err := r.RegisterMultiTableSampleReader(reader); err != nil {
+			return err
+		}
+	}
+	if provider, ok := plugin.(ScopeTableInfoProvider); ok {
+		if err := r.RegisterScopeTableInfoProvider(provider); err != nil {
+			return err
+		}
+	}
+	if reader, ok := plugin.(ScopeTableSampleReader); ok {
+		if err := r.RegisterScopeTableSampleReader(reader); err != nil {
 			return err
 		}
 	}
@@ -86,20 +95,14 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 			return err
 		}
 	}
-	if provider, ok := plugin.(DocumentProvider); ok {
-		if err := r.RegisterDocumentProvider(provider); err != nil {
+	if provider, ok := plugin.(DocumentInfoProvider); ok {
+		if err := r.RegisterDocumentInfoProvider(provider); err != nil {
 			return err
 		}
-	} else {
-		if provider, ok := plugin.(DocumentInfoProvider); ok {
-			if err := r.RegisterDocumentInfoProvider(provider); err != nil {
-				return err
-			}
-		}
-		if reader, ok := plugin.(DocumentTextReader); ok {
-			if err := r.RegisterDocumentTextReader(reader); err != nil {
-				return err
-			}
+	}
+	if reader, ok := plugin.(DocumentTextReader); ok {
+		if err := r.RegisterDocumentTextReader(reader); err != nil {
+			return err
 		}
 	}
 	if provider, ok := plugin.(MediaInfoProvider); ok {

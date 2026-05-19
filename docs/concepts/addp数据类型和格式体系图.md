@@ -88,7 +88,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - GeoPackage。
 - ZIP / RAR / TAR。
 
-容器是数据类型，不是组织方式。大多数容器文件外层仍是 `organization=single`，内部对象默认写入 `type_info.container.children`。
+容器是数据类型，不是内容布局。大多数容器文件外层仍是 `layout=single`，内部对象默认写入 `type_info.container.children`。
 
 ### graph
 
@@ -123,13 +123,13 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - `pdf`、`wps`
 - `jpeg`、`png`、`tiff`
 
-文件格式不等于数据类型，也不等于组织方式：
+文件格式不等于数据类型，也不等于内容布局：
 
-- Shapefile = `data_type=table` + `organization=multi` + `format=shapefile` + `spatial`。
-- GeoJSON = `data_type=table` + `organization=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `spatial`。
-- GeoTIFF = `data_type=media` + `organization=single` + `format=tiff` + `spatial`。
-- Excel = `data_type=container` + `organization=single` + `format=excel`。
-- Iceberg = `data_type=table` + `organization=whole` + `format=iceberg`。
+- Shapefile = `data_type=table` + `layout=multi` + `format=shapefile` + `spatial`。
+- GeoJSON = `data_type=table` + `layout=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `spatial`。
+- GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `spatial`。
+- Excel = `data_type=container` + `layout=single` + `format=excel`。
+- Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
 
 ## 类型信息与格式信息
 
@@ -165,11 +165,11 @@ FormatPlugin 可以声明或提供：
 
 - 格式身份：稳定格式 ID、名称、默认数据类型。
 - 格式探测：扩展名、MIME、magic bytes、内容签名。
-- 布局能力：single / multi / whole、主资源、组件规则、manifest 规则。
+- 布局能力：single / multi / whole、primary ref、related refs 规则、manifest 规则。
 - info provider：数据类型信息和格式信息。
 - content reader：样本、文本片段、缩略图、原始内容、范围内容。
 - 横切能力事实：spatial、temporal、statistics、extraction 等候选事实。
-- transfer 相关能力：批量读写、组件写入、提交边界。
+- transfer 相关能力：批量读写、related refs 写入、提交边界。
 
 FormatPlugin 不负责：
 
@@ -183,34 +183,34 @@ FormatPlugin 不负责：
 
 `format identity` 定义“平台支持的这个格式是谁”。它是静态注册事实，通常由 `FormatDescriptor` 或 `FormatPlugin` 表达。
 
-`format detection` 是“给定一个资源，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或组件上下文，输出指向某个 format identity 的识别结果。
+`format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
 
 | 维度 | Format Identity | Format Detection |
 |---|---|---|
-| 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前资源看起来是什么格式 |
+| 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前 content 看起来是什么格式 |
 | 性质 | 静态注册事实 | 动态识别过程 |
-| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、组件上下文 |
+| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、ref 上下文 |
 | 输出 | format descriptor / capability | detection result，指向某个 format |
 | 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
 
-Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta detector 根据 format layout 和资源上下文决定。
+Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta detector 根据 format layout 和候选 content 上下文决定。
 
 ## Provider 与 Reader 矩阵
 
 `provider` / `reader` 的命名跟随消费意图：info provider 提供元信息，sample / text reader 提供轻量内容，reader provider 打开连续读取会话，writer provider 打开连续写出会话。它们不应混用。
 
-| 数据类型 / 组织方式 | info provider | sample / text reader | continuous reader / writer |
+| 数据类型 / 内容布局 | info provider | sample / text reader | continuous reader / writer |
 |---|---|---|---|
 | `table` + `single` | `TableInfoProvider` | `TableSampleReader` | `TableReaderProvider`、`TableWriterProvider` |
-| `table` + `multi` | `MultiTableProvider` | `MultiTableProvider` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
-| `table` + `whole` | `ScopeTableProvider` | `ScopeTableProvider` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
+| `table` + `multi` | `MultiTableInfoProvider` | `MultiTableSampleReader` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
+| `table` + `whole` | `ScopeTableInfoProvider` | `ScopeTableSampleReader` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
 | `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
 | `graph` | 后续 `GraphInfoProvider` | 后续 `GraphSampleReader` | 图查询读取由 graph / engine 能力表达 |
 | 横切能力 | spatial 等横切事实进入对应 data type info | 不替代 data type reader | 不替代 data type reader / writer |
 
-当前代码中的 `TableProvider`、`DocumentProvider`、`MultiTableProvider`、`ScopeTableProvider` 是历史组合接口。新实现应按 info、sample、continuous reader、writer 拆开设计。
+新实现应按 info、sample、continuous reader、writer 拆开设计，不新增同时表达多种消费意图的组合 provider。
 
 ## 横切能力
 
@@ -242,7 +242,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 {
   "storage": {},
   "item": {
-    "organization": "single|multi|whole",
+    "layout": "single|multi|whole",
     "data_type": "table|document|media|container|graph|unknown",
     "format": "..."
   },
@@ -256,7 +256,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
-| `item` | 这个 data item 的核心语义是什么 | organization、data_type、format、refs、scope_exclusive |
+| `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile refs、SQLite version |
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |

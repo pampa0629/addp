@@ -14,8 +14,8 @@ func TestFileCatalogDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
 
 	name, fullName := FileCatalogDetectedItemName("/shp", &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Organization: dataitem.OrganizationMulti,
-			EntryPath:    "/shp/farmland.shp",
+			Layout:    dataitem.LayoutMulti,
+			EntryPath: "/shp/farmland.shp",
 		},
 	})
 
@@ -32,8 +32,8 @@ func TestFileCatalogDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 
 	name, fullName := FileCatalogDetectedItemName("/lake/sales", &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Organization: dataitem.OrganizationWhole,
-			EntryPath:    "/lake/sales/_metadata",
+			Layout:    dataitem.LayoutWhole,
+			EntryPath: "/lake/sales/_metadata",
 		},
 	})
 
@@ -51,11 +51,11 @@ func TestPlanFileCatalogDetectedItemBuildsStablePlan(t *testing.T) {
 	size := int64(42)
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Format:       "csv",
-			DataType:     dataitem.DataTypeTable,
-			Organization: dataitem.OrganizationSingle,
-			EntryPath:    "/tables/sales.csv",
-			SizeBytes:    &size,
+			Format:    "csv",
+			DataType:  dataitem.DataTypeTable,
+			Layout:    dataitem.LayoutSingle,
+			EntryPath: "/tables/sales.csv",
+			SizeBytes: &size,
 		},
 	}
 

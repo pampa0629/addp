@@ -206,11 +206,11 @@ func isWholeScopeItemNode(node *models.MetaNode) bool {
 	if node == nil {
 		return false
 	}
-	organization := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(node.Attributes, "organization", "item")))
-	if organization == "" {
-		organization = strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(node.Attributes["organization"])))
+	layout := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(node.Attributes, "layout", "item")))
+	if layout == "" {
+		layout = strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(node.Attributes["layout"])))
 	}
-	return organization == "whole"
+	return layout == "whole"
 }
 
 func sameResourceFullName(left, right string) bool {

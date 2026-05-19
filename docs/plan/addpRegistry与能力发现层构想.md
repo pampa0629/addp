@@ -2,7 +2,7 @@
 
 更新时间：2026-05-06
 
-本文是基于 next 阶段数据类型、组织方式、文件格式和插件化规范的构想文档，不作为最终规范。
+本文是基于 next 阶段数据类型、内容布局、文件格式和插件化规范的构想文档，不作为最终规范。
 
 ## 背景
 
@@ -15,7 +15,7 @@ ADDP 存在多个 registry：engine、dataitem、format、preview、object conte
 | Registry | 职责 |
 |---|---|
 | engine registry | 连接、catalog、读取和引擎能力 |
-| dataitem registry | detector、organization 识别、claims |
+| dataitem registry | detector、layout 识别、claims |
 | format registry | format plugin、info provider、content reader、type_info、format_info、capabilities |
 | preview registry | 已识别 data item 的展示能力 |
 | transfer registry | 导入、导出、转换和传输能力 |
@@ -29,7 +29,7 @@ ADDP 存在多个 registry：engine、dataitem、format、preview、object conte
   "plugin_id": "builtin-shapefile",
   "detects": [
     {
-      "organization": "multi",
+      "layout": "multi",
       "data_type": "table",
       "format": "shapefile"
     }

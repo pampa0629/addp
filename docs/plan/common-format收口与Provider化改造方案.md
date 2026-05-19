@@ -133,15 +133,15 @@ Manager 使用 `builtin:scope-table` 路由目录型表格资源。它是 scope 
 
 当前 Manager 已先区分单文件 `PhysicalPath` 和目录型 `ScopePath`：
 
-- `item.organization=single` 时，`storage.physical_path` 进入 `PhysicalPath`。
-- `item.organization=whole` 时，`storage.physical_path` 进入 `ScopePath`。
+- `item.layout=single` 时，`storage.physical_path` 进入 `PhysicalPath`。
+- `item.layout=whole` 时，`storage.physical_path` 进入 `ScopePath`。
 
 Manager provider 选择也已经改为看标准 attributes：
 
-- `item.data_type=table` 且 `item.organization=whole` 时，走 `builtin:scope-table`。
-- `item.data_type=table` 且 `item.organization=single` / 文件表格式时，走 `builtin:file-table`。
+- `item.data_type=table` 且 `item.layout=whole` 时，走 `builtin:scope-table`。
+- `item.data_type=table` 且 `item.layout=single` / 文件表格式时，走 `builtin:file-table`。
 
-新扫描结果不再产出 `item_type=lake_table`。Parquet / ORC / Avro 这类表格文件或目录型表格 scope 只是 `item_type=table + item.format=parquet/orc/avro + item.organization=single/whole` 的组合语义。
+新扫描结果不再产出 `item_type=lake_table`。Parquet / ORC / Avro 这类表格文件或目录型表格 scope 只是 `item_type=table + item.format=parquet/orc/avro + item.layout=single/whole` 的组合语义。
 
 ### 第一阶段：能力声明收口
 
@@ -176,7 +176,7 @@ Manager FileTablePreviewProvider
 
 ### 第三阶段：检测逻辑收敛
 
-`DetectFormat` 保留为辅助工具，但不再承担组织方式判断。
+`DetectFormat` 保留为辅助工具，但不再承担内容布局判断。
 
 它应该只回答：
 
@@ -186,7 +186,7 @@ Manager FileTablePreviewProvider
 
 它不应该再决定：
 
-- item organization
+- item layout
 - claims / exclusive
 - whole scope / multi ref 路由
 

@@ -28,7 +28,7 @@ const (
 // Layout describes how a format can organize the content that forms a data item.
 //
 // Format capability uses layout as a declared possibility; data item detection
-// uses the same values as the resolved item organization.
+// uses the same values as the resolved item layout.
 type Layout = string
 
 const (

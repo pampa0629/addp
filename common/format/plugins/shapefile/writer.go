@@ -1,22 +1,16 @@
 package shapefile
 
 import (
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
 	"github.com/twpayne/go-geom"
-	"github.com/twpayne/go-geom/encoding/ewkb"
-	"github.com/twpayne/go-geom/encoding/wkb"
-	"github.com/twpayne/go-geom/encoding/wkbcommon"
-	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
-// Writer wraps go-shp Writer with additional functionality
-type Writer struct {
+type writer struct {
 	*shp.Writer
 	filePath      string
 	geometryField string
@@ -24,21 +18,19 @@ type Writer struct {
 	recordCount   int
 }
 
-// Create creates a new shapefile for writing
-func Create(filename string, shapeType shp.ShapeType) (*Writer, error) {
-	writer, err := shp.Create(filename, shapeType)
+func create(filename string, shapeType shp.ShapeType) (*writer, error) {
+	shpWriter, err := shp.Create(filename, shapeType)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Writer{
-		Writer:   writer,
+	return &writer{
+		Writer:   shpWriter,
 		filePath: filename,
 	}, nil
 }
 
-// SetFields sets the DBF fields (must be called before writing features)
-func (w *Writer) SetFields(fields []shp.Field) error {
+func (w *writer) setFields(fields []shp.Field) error {
 	if err := w.Writer.SetFields(fields); err != nil {
 		return err
 	}
@@ -51,7 +43,7 @@ func (w *Writer) SetFields(fields []shp.Field) error {
 }
 
 // fixDbfFilename fixes the DBF filename bug in go-shp library
-func (w *Writer) fixDbfFilename() {
+func (w *writer) fixDbfFilename() {
 	basePath := w.filePath
 	if strings.HasSuffix(strings.ToLower(basePath), ".shp") {
 		basePath = basePath[:len(basePath)-4]
@@ -67,120 +59,12 @@ func (w *Writer) fixDbfFilename() {
 	}
 }
 
-// WriteFeature writes a single feature
-func (w *Writer) WriteFeature(feature Feature) error {
-	// Write geometry
-	w.Writer.Write(feature.Geometry)
-
-	// Write attributes
-	for i, field := range w.fields {
-		fieldName := TrimDBFFieldName(field.Name)
-		var val interface{}
-		if v, ok := feature.Properties[fieldName]; ok {
-			val = v
-		}
-		w.Writer.WriteAttribute(w.recordCount, i, val)
-	}
-
-	w.recordCount++
-	return nil
-}
-
-// WriteFeatureFromMap writes a feature from a map (for pipeline compatibility)
-func (w *Writer) WriteFeatureFromMap(row map[string]interface{}, geometryField string) error {
-	// Extract geometry value
-	geomValue, exists := findGeometryValue(row, geometryField)
-	if !exists {
-		return fmt.Errorf("geometry field '%s' not found", geometryField)
-	}
-
-	// Convert to shapefile geometry
-	shape, err := ToShapefileGeometry(geomValue)
+func toShapefileGeometry(geomValue interface{}) (shp.Shape, error) {
+	geometry, err := commonSpatial.ParseGeometryValue(geomValue)
 	if err != nil {
-		return fmt.Errorf("failed to convert geometry: %w", err)
+		return nil, err
 	}
-
-	// Write geometry
-	w.Writer.Write(shape)
-
-	// Write attributes
-	for i, field := range w.fields {
-		fieldName := TrimDBFFieldName(field.Name)
-		var val interface{}
-		if v, ok := row[fieldName]; ok {
-			val = v
-		}
-		w.Writer.WriteAttribute(w.recordCount, i, val)
-	}
-
-	w.recordCount++
-	return nil
-}
-
-// ToShapefileGeometry converts various geometry formats to shp.Shape
-func ToShapefileGeometry(geomValue interface{}) (shp.Shape, error) {
-	var geometry geom.T
-
-	switch v := geomValue.(type) {
-	case []byte:
-		var err error
-		geometry, err = parseBinaryGeometry(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse WKB/EWKB: %w", err)
-		}
-
-	case string:
-		data := v
-		if len(data) > 2 && (strings.HasPrefix(data, "0x") || strings.HasPrefix(data, "0X")) {
-			data = data[2:]
-		}
-
-		if decoded, err := hex.DecodeString(data); err == nil && len(decoded) > 0 {
-			geometry, err = parseBinaryGeometry(decoded)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse hex WKB/EWKB: %w", err)
-			}
-			break
-		}
-
-		var err error
-		geometry, err = wkt.Unmarshal(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse WKT: %w", err)
-		}
-
-	default:
-		return nil, fmt.Errorf("unsupported geometry value type: %T", geomValue)
-	}
-
-	// Convert to shapefile geometry
 	return geomToShape(geometry)
-}
-
-func parseBinaryGeometry(data []byte) (geom.T, error) {
-	geometry, err := wkb.Unmarshal(data)
-	if err == nil {
-		return geometry, nil
-	}
-
-	if shouldFallbackToEWKB(err) {
-		return ewkb.Unmarshal(data)
-	}
-	return nil, err
-}
-
-func shouldFallbackToEWKB(err error) bool {
-	var unknownType wkbcommon.ErrUnknownType
-	if errors.As(err, &unknownType) {
-		return true
-	}
-
-	var unsupportedType wkbcommon.ErrUnsupportedType
-	if errors.As(err, &unsupportedType) {
-		return true
-	}
-
-	return false
 }
 
 func geomToShape(geometry geom.T) (shp.Shape, error) {
@@ -336,7 +220,7 @@ func closeCoordsIfNeeded(coords []geom.Coord) []geom.Coord {
 	}
 	first := coords[0]
 	last := coords[len(coords)-1]
-	if AlmostEqual(first.X(), last.X()) && AlmostEqual(first.Y(), last.Y()) {
+	if almostEqual(first.X(), last.X()) && almostEqual(first.Y(), last.Y()) {
 		return coords
 	}
 	return append(coords, geom.Coord{first.X(), first.Y()})

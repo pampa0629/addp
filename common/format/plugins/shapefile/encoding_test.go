@@ -50,15 +50,20 @@ func TestDecodeDBFTextGB18030(t *testing.T) {
 	}
 }
 
-func TestShapefileSingleStreamTableProviderIsRejected(t *testing.T) {
+func TestShapefileRegistersOnlyMultiTableProviders(t *testing.T) {
 	t.Parallel()
 
-	plugin := NewPlugin(nil)
-	if _, err := plugin.DescribeTable(context.Background(), strings.NewReader(""), nil); err == nil || !strings.Contains(err.Error(), "requires multi-ref input") {
-		t.Fatalf("DescribeTable() error = %v, want multi-ref input error", err)
+	if _, err := format.GetTableInfoProvider(format.FormatShapefile); err == nil {
+		t.Fatal("GetTableInfoProvider(shapefile) succeeded, want no single table info provider")
 	}
-	if _, err := plugin.SampleTable(context.Background(), strings.NewReader(""), 0, 1, nil); err == nil || !strings.Contains(err.Error(), "requires multi-ref input") {
-		t.Fatalf("SampleTable() error = %v, want multi-ref input error", err)
+	if _, err := format.GetTableSampleReader(format.FormatShapefile); err == nil {
+		t.Fatal("GetTableSampleReader(shapefile) succeeded, want no single table sample reader")
+	}
+	if _, err := format.GetMultiTableInfoProvider(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableInfoProvider(shapefile) failed: %v", err)
+	}
+	if _, err := format.GetMultiTableSampleReader(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableSampleReader(shapefile) failed: %v", err)
 	}
 }
 
@@ -66,15 +71,15 @@ func TestShapefileReaderUsesCPGForDBFAttributes(t *testing.T) {
 	t.Parallel()
 
 	base := createEncodedPointShapefile(t, "GBK", "北京")
-	reader, err := Open(base + ".shp")
+	reader, err := open(base + ".shp")
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open() error = %v", err)
 	}
 	defer reader.Close()
 
-	features, err := reader.ReadAllFeatures(10)
+	features, err := reader.readAllFeatures(10)
 	if err != nil {
-		t.Fatalf("ReadAllFeatures() error = %v", err)
+		t.Fatalf("readAllFeatures() error = %v", err)
 	}
 	if len(features) != 1 {
 		t.Fatalf("feature count = %d, want 1", len(features))

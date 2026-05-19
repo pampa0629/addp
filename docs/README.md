@@ -45,7 +45,7 @@
 
 ## 数据类型与格式主题
 
-处理数据类型、组织方式、文件格式、attributes、provider 或内容 I/O 抽象时，建议按以下顺序阅读：
+处理数据类型、内容布局、文件格式、attributes、provider 或内容 I/O 抽象时，建议按以下顺序阅读：
 
 1. [术语表](concepts/addp术语表.md)：先统一 data item、data type、format、detector 等术语。
 2. [数据项体系图](concepts/addp数据项体系图.md)：确认 engine、node、data item 链条和模块职责边界。

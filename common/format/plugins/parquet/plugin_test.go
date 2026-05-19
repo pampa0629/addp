@@ -21,8 +21,10 @@ type testParquetRow struct {
 func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	plugin := NewPlugin()
 	var _ format.FormatPlugin = plugin
-	var _ format.TableProvider = plugin
-	var _ format.ScopeTableProvider = plugin
+	var _ format.TableInfoProvider = plugin
+	var _ format.TableSampleReader = plugin
+	var _ format.ScopeTableInfoProvider = plugin
+	var _ format.ScopeTableSampleReader = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
 }

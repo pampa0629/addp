@@ -2,27 +2,6 @@ package format
 
 import "fmt"
 
-func RegisterDocumentProvider(provider DocumentProvider) error {
-	return globalProviderRegistry.RegisterDocumentProvider(provider)
-}
-
-func (r *ProviderRegistry) RegisterDocumentProvider(provider DocumentProvider) error {
-	if provider == nil {
-		return fmt.Errorf("document provider cannot be nil")
-	}
-	formatType := provider.Format()
-	if err := validateProviderFormat(formatType, "document provider"); err != nil {
-		return err
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.documentProviders[formatType] = provider
-	r.documentInfoProviders[formatType] = provider
-	r.documentTextReaders[formatType] = provider
-	return nil
-}
-
 func RegisterDocumentInfoProvider(provider DocumentInfoProvider) error {
 	return globalProviderRegistry.RegisterDocumentInfoProvider(provider)
 }

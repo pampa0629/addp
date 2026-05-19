@@ -11,7 +11,7 @@
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 声明格式 capability，例如 data type、layout、info provider、content reader、是否可 parse、是否支持 transfer read/write。
 - 提供 `TableInfo`、`FieldInfo`、`FieldType` 等跨模块可复用的结构化语义模型。
-- 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`，以及历史组合接口 `TableProvider`、`DocumentProvider`、`MultiTableProvider`、`ScopeTableProvider`。
+- 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`。
 - 提供跨数据源的 `TypeMapper`，把原生类型映射到 ADDP 通用字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
@@ -36,7 +36,7 @@
 | 格式身份 descriptor 与能力发现 | `descriptor.go`、`discovery.go`、`registry/` | 运行时注册、查询、冲突诊断和 capability view；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
-| provider / reader 注册表 | `provider_registry.go`、`provider_register*.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider、content reader 和 writer；`TableProvider`、`DocumentProvider`、`MultiTableProvider`、`ScopeTableProvider` 是历史组合接口。 |
+| provider / reader 注册表 | `provider_registry.go`、`provider_register*.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider、content reader 和 writer。 |
 | data type 通用 info 模型 | `data_info.go`、`field_type.go`、`container_info.go`、`container_child.go` | 表、字段类型、容器、内容索引等跨模块结构。内容样本不进入这些 info。 |
 | 格式私有 info 与横切事实候选 | `plugins/<format>/`、`data_info.go` | 具体格式私有结构留在对应插件目录；`TableInfo` 只提供通用 `FormatInfo`、`SpatialInfo`、`ContentIndex` 承载，由 Meta 映射到 `format_info.*`、`capabilities.*`、`content_index.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
@@ -129,7 +129,7 @@ type FormatCapability struct {
 | `I18nKey` | 展示层可使用的国际化 key |
 | `Extensions` | 常见 content 扩展名，用于识别和展示 |
 | `DataType` | 默认可映射的数据类型，例如 `table`、`document`、`media` |
-| `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；data item 落库时同一组值写入 `organization` |
+| `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；data item 落库时同一组值写入 `layout` |
 | `ProviderHints` | 可用 provider 类型提示，例如 `table`、`spatial` |
 | `Spatial` | 是否天然包含空间语义 |
 | `TransferRead` | 是否适合作为 Transfer 读取格式 |
@@ -195,13 +195,11 @@ manifest 当前最小结构：
 
 Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`format_info.*` 或 `capabilities.*`。Content reader 读取内容数据，主要服务 Manager、Transfer 或其他上层消费方。
 
-`TableProvider` 是历史组合接口，等价于同时具备 `TableInfoProvider` 和 `TableSampleReader`。新实现应优先按 info provider 与 content reader 分开设计。
-
 ### Provider 选择矩阵
 
-选择 provider 时先看 data type，再看组织方式，最后看消费意图。format 只决定具体解码 / 编码实现，不改变这些接口的基本语义。
+选择 provider 时先看 data type，再看内容布局，最后看消费意图。format 只决定具体解码 / 编码实现，不改变这些接口的基本语义。
 
-| Provider / Reader | Data type | 组织方式 | 输入 / 输出 | 核心能力 | 主要消费者 | 适合的 format |
+| Provider / Reader | Data type | 内容布局 | 输入 / 输出 | 核心能力 | 主要消费者 | 适合的 format |
 |---|---|---|---|---|---|---|
 | `FormatPlugin` | 任意 | 任意 | 无内容输入 | 声明格式身份、descriptor、capability；自动注册已实现的 provider / reader。 | Meta、Manager、Transfer、能力发现 | 所有稳定 format |
 | `FormatInfoProvider` | 任意 | 通常 `single`，也可服务 `multi` / `whole` 的格式私有摘要 | `io.Reader` | 返回 `format_info.<format>` 候选事实，不写类型信息。 | Meta | CSV delimiter、PDF 版本、图片 EXIF、压缩方式等 |
@@ -209,10 +207,12 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableReaderProvider` | `table` | `single` | `io.Reader` -> `TableReader` | 打开一次连续读取会话，按批读取全量行。 | Transfer 主链路、批处理导出/导入 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableWriterProvider` | `table` | `single` | `io.Writer` + `TableInfo` -> `TableWriter` | 打开一次连续写出会话，按批编码写入。 | Transfer 写侧 | CSV、JSON/JSONL、Parquet 单文件 |
-| `MultiTableProvider` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` | 多 ref table 的 info / sample 能力。 | Meta、Manager、Transfer 探查兜底 | Shapefile |
+| `MultiTableInfoProvider` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` | 多 ref table 类型信息。 | Meta、Manager、Transfer 探查 | Shapefile |
+| `MultiTableSampleReader` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` | 多 ref table 样本读取。 | Manager、Transfer 探查兜底 | Shapefile |
 | `MultiTableReaderProvider` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` -> `TableReader` | 多 ref table 的连续全量读取会话。 | Transfer 主链路 | Shapefile |
 | `MultiTableWriterProvider` | `table` | `multi` | `contentio.Writer` + `[]RelatedRef` + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
-| `ScopeTableProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 的 info / sample 能力。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
+| `ScopeTableInfoProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 类型信息。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
+| `ScopeTableSampleReader` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 样本读取。 | Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、未来 PDF/DOCX 解析 |
 | `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、未来 PDF/DOCX 解析 |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
@@ -237,13 +237,13 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 
 ### 命名规则与现状评估
 
-命名采用三段式：`[组织方式前缀][DataType][能力后缀]`。
+命名采用三段式：`[内容布局前缀][DataType][能力后缀]`。
 
 | 命名片段 | 含义 |
 |---|---|
 | 无前缀 | single content / single stream 输入，例如 `TableReaderProvider`。 |
-| `Multi` | 多 ref 组织方式，例如 Shapefile。 |
-| `Scope` | whole scope / 目录 / prefix 组织方式。 |
+| `Multi` | 多 ref 内容布局，例如 Shapefile。 |
+| `Scope` | whole scope / 目录 / prefix 内容布局。 |
 | `Table`、`Document`、`Media`、`Container` | data type 或容器父类型。 |
 | `InfoProvider` | 类型元信息 provider，只返回 info。 |
 | `SampleReader` | 读取少量样本或片段，面向预览 / 探查。 |
@@ -252,17 +252,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `Resolver` | 把容器内部定位解析成可继续读取的 content。 |
 | `RefDescriptorProvider` / `RelatedRefSpecProvider` | 提供 ref 描述或相关 ref 推导规则，不读取内容。 |
 
-当前命名基本可继续使用，但有三个历史兼容项容易混淆：
-
-| 名称 | 问题 | 规则 |
-|---|---|---|
-| `TableProvider` | 名称过泛，实际只是 `TableInfoProvider + TableSampleReader`。 | 仅作为兼容组合接口；新实现优先分别实现 `TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`。 |
-| `DocumentProvider` | 名称过泛，实际只是 `DocumentInfoProvider + DocumentTextReader`。 | 仅作为兼容组合接口；新实现优先分别实现 `DocumentInfoProvider`、`DocumentTextReader`。 |
-| `TableSampleProvider` / `MediaProvider` | 旧命名别名，`Provider` 后缀和当前 `Reader` / `InfoProvider` 规则不一致。 | 新代码使用 `TableSampleReader`、`MediaInfoProvider`。 |
-
-`MultiTableProvider` 和 `ScopeTableProvider` 也是历史组合接口：它们表达 info / sample，不表达连续全量读写。为避免继续扩大歧义，新增全量能力必须使用 `MultiTableReaderProvider`、`MultiTableWriterProvider` 或后续明确的 `ScopeTableReaderProvider` / `ScopeTableWriterProvider`，不要把更多职责塞进组合接口。
-
-治理策略：新代码优先使用更窄的 info、sample、continuous reader、writer 接口；历史组合接口只作为已有实现的聚合形态，不继续扩展职责。后续如果需要进一步收窄，可把 `MultiTableProvider` 拆成明确的 multi table info / sample reader 接口。
+治理策略：新代码使用明确的 info、sample、continuous reader、writer 接口；不得新增 `*Provider` 组合接口来同时表达多种消费意图。
 
 ```go
 type Provider interface {
@@ -281,12 +271,18 @@ type TableSampleReader interface {
 }
 ```
 
-多 ref table 格式按读取意图拆分接口。`MultiTableProvider` 提供 info / sample 能力，面向元数据、预览和少量样本读取：
+多 ref table 格式按读取意图拆分接口。info 和 sample 分别注册，面向元数据、预览和少量样本读取：
 
 ```go
-type MultiTableProvider interface {
-    TableProvider
+type MultiTableInfoProvider interface {
+    Provider
+    RelatedRefSpecs() []RelatedRefSpec
     DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+}
+
+type MultiTableSampleReader interface {
+    Provider
+    RelatedRefSpecs() []RelatedRefSpec
     SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 ```
@@ -307,12 +303,18 @@ type MultiTableWriterProvider interface {
 }
 ```
 
-目录 scope 格式使用 `ScopeTableProvider`：
+空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实仍以 `TableInfo.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代 schema 事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
+
+目录 scope 格式同样拆成 info 和 sample：
 
 ```go
-type ScopeTableProvider interface {
-    TableProvider
+type ScopeTableInfoProvider interface {
+    Provider
     DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
+}
+
+type ScopeTableSampleReader interface {
+    Provider
     SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 ```
@@ -332,7 +334,7 @@ if err != nil {
     return err
 }
 
-reader, err := format.GetTableSampleProvider(format.FormatParquet)
+reader, err := format.GetTableSampleReader(format.FormatParquet)
 if err != nil {
     return err
 }
@@ -353,7 +355,7 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 
 ## Document Info Provider / Text Reader
 
-文档 data type 的格式层入口拆成 `DocumentInfoProvider` 和 `DocumentTextReader`：前者返回文档元信息，后者返回文本片段。历史组合接口 `DocumentProvider` 只是二者的组合接口。它们消费调用方传入的 `io.Reader`，不直接读取 engine，也不返回 Manager 面向前端的 DTO。
+文档 data type 的格式层入口拆成 `DocumentInfoProvider` 和 `DocumentTextReader`：前者返回文档元信息，后者返回文本片段。它们消费调用方传入的 `io.Reader`，不直接读取 engine，也不返回 Manager 面向前端的 DTO。
 
 ```go
 type DocumentInfoProvider interface {

@@ -3,28 +3,22 @@ package shapefile
 import (
 	"fmt"
 
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
-	"github.com/twpayne/go-geom"
-	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
-// ShapeToWKT 将 shapefile 几何转换为 WKT 格式。
-func ShapeToWKT(shape shp.Shape) (string, error) {
-	geom, err := ShapeToGeom(shape)
+func shapeToWKT(shape shp.Shape) (string, error) {
+	geom, err := shapeToGeom(shape)
 	if err != nil {
 		return "", err
 	}
 
-	wkt, err := geomToWKT(geom)
+	wkt, err := commonSpatial.GeomToWKT(geom)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert geometry to WKT: %w", err)
 	}
 
 	return wkt, nil
-}
-
-func geomToWKT(geometry geom.T) (string, error) {
-	return wkt.Marshal(geometry)
 }
 
 func determineShapefileGeometryType(shapeType shp.ShapeType) string {

@@ -96,7 +96,6 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 		SourceContentReader:     source,
 		TargetContentWriter:     output,
 		SourceMultiReadProvider: shapefilePlugin,
-		SourceMultiProvider:     shapefilePlugin,
 		TargetFormatProvider:    csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -149,12 +148,13 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	}
 
 	output := &fakeContentWriter{}
-	sampleOnly := &failingMultiTableProvider{MultiTableProvider: shapefilePlugin, specs: shapefilePlugin.RelatedRefSpecs()}
+	sampleOnly := &failingMultiTableProvider{formatType: shapefilePlugin.Format(), specs: shapefilePlugin.RelatedRefSpecs()}
 	exec := &TableTransferExecutor{
 		SourceContentReader:     source,
 		TargetContentWriter:     output,
 		SourceMultiReadProvider: shapefilePlugin,
-		SourceMultiProvider:     sampleOnly,
+		SourceMultiInfoProvider: shapefilePlugin,
+		SourceMultiSampleReader: sampleOnly,
 		TargetFormatProvider:    csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -202,9 +202,18 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 }
 
 type failingMultiTableProvider struct {
-	format.MultiTableProvider
+	formatType   format.FormatType
 	specs        []format.RelatedRefSpec
 	sampleCalled bool
+}
+
+func (p *failingMultiTableProvider) Format() format.FormatType {
+	return p.formatType
+}
+
+func (p *failingMultiTableProvider) Capabilities() format.FormatCapability {
+	capability, _ := format.GetFormatCapability(p.formatType)
+	return capability
 }
 
 func (p *failingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {

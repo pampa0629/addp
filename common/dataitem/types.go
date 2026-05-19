@@ -5,17 +5,17 @@ import (
 	"github.com/addp/common/format"
 )
 
-// Organization is the resolved data item organization.
+// Layout is the resolved data item layout.
 //
 // It reuses format.Layout values deliberately: format capability declares which
 // layouts a format can support, while dataitem resolves one concrete layout for
-// an item and stores it as organization.
-type Organization = format.Layout
+// an item and stores it as layout.
+type Layout = format.Layout
 
 const (
-	OrganizationSingle Organization = format.FormatLayoutSingle
-	OrganizationMulti  Organization = format.FormatLayoutMulti
-	OrganizationWhole  Organization = format.FormatLayoutWhole
+	LayoutSingle Layout = format.FormatLayoutSingle
+	LayoutMulti  Layout = format.FormatLayoutMulti
+	LayoutWhole  Layout = format.FormatLayoutWhole
 )
 
 type DataType string
@@ -113,10 +113,10 @@ type WholeScopeRule struct {
 }
 
 type FormatRule struct {
-	Format       string
-	DataType     DataType
-	Organization Organization
-	Priority     int
+	Format   string
+	DataType DataType
+	Layout   Layout
+	Priority int
 
 	Entry           EntryRule
 	Refs            *RefRule
@@ -126,12 +126,12 @@ type FormatRule struct {
 }
 
 type ResolvedItem struct {
-	Name         string
-	FullName     string
-	ItemType     string
-	Organization Organization
-	DataType     DataType
-	Format       string
+	Name     string
+	FullName string
+	ItemType string
+	Layout   Layout
+	DataType DataType
+	Format   string
 
 	EntryPath string
 	RefPaths  map[string]string

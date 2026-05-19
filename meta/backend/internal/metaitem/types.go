@@ -10,14 +10,14 @@ import (
 
 // CompositeItemInfo 是 Meta resolver 提取出的 data item 元信息。
 type CompositeItemInfo struct {
-	Fields       []format.FieldInfo
-	Attributes   map[string]interface{}
-	Organization dataitem.Organization
-	DataType     dataitem.DataType
-	Format       string
-	EntryPath    string
-	RefFiles     []string
-	SizeBytes    *int64
+	Fields     []format.FieldInfo
+	Attributes map[string]interface{}
+	Layout     dataitem.Layout
+	DataType   dataitem.DataType
+	Format     string
+	EntryPath  string
+	RefFiles   []string
+	SizeBytes  *int64
 }
 
 // ResourceClaimSet 记录 Meta resolver 已认领的源资源路径。
@@ -68,12 +68,12 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 	}
 	return &DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Organization: info.Organization,
-			DataType:     info.DataType,
-			Format:       info.Format,
-			EntryPath:    info.EntryPath,
-			SizeBytes:    &sizeBytes,
-			RefList:      ItemRefsFromPaths(info.RefFiles),
+			Layout:    info.Layout,
+			DataType:  info.DataType,
+			Format:    info.Format,
+			EntryPath: info.EntryPath,
+			SizeBytes: &sizeBytes,
+			RefList:   ItemRefsFromPaths(info.RefFiles),
 		},
 		PhysicalPath: physicalPath,
 		Fields:       info.Fields,

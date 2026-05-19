@@ -5,7 +5,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-// SingleResourceInput 是 single 组织方式 item 推断的输入。
+// SingleResourceInput 是 single 内容布局 item 推断的输入。
 type SingleResourceInput struct {
 	Name        string
 	Path        string
@@ -44,12 +44,12 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	})
 	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
 	item := dataitem.ResolvedItem{
-		Organization:  dataitem.OrganizationSingle,
-		DataType:      dataitem.InferDataType(formatName, input.ContentType),
-		Format:        formatName,
-		EntryPath:     input.Path,
-		RefList: ItemRefsFromPaths([]string{input.Path}),
-		SizeBytes:     &input.Size,
+		Layout:    dataitem.LayoutSingle,
+		DataType:  dataitem.InferDataType(formatName, input.ContentType),
+		Format:    formatName,
+		EntryPath: input.Path,
+		RefList:   ItemRefsFromPaths([]string{input.Path}),
+		SizeBytes: &input.Size,
 	}
 	if resolved != nil && len(resolved.Items) > 0 {
 		item = resolved.Items[0]

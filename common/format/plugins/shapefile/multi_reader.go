@@ -26,6 +26,7 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 			return &indexedMultiTableReader{
 				source: source,
 				schema: schema,
+				opts:   opts,
 			}, nil
 		}
 	}
@@ -39,12 +40,8 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 	if err != nil {
 		return nil, err
 	}
-	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {
-		if cpgEncoding := readCPGEncoding(basePath); cpgEncoding != "" {
-			opts.Encoding = cpgEncoding
-		}
-	}
-	shpReader, err := OpenWithEncoding(basePath+".shp", opts.Encoding)
+	applyMaterializedSidecarOptions(basePath, opts)
+	shpReader, err := openWithEncoding(basePath+".shp", opts.Encoding)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("open shapefile ref table reader: %w", err)
@@ -54,12 +51,14 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 		schema:        schema,
 		cleanup:       cleanup,
 		geometryField: plugin.getGeometryFieldName(),
+		opts:          opts,
 	}, nil
 }
 
 type indexedMultiTableReader struct {
 	source *indexedMultiTableReadSource
 	schema *format.TableInfo
+	opts   *format.ParseOptions
 	offset int64
 	done   bool
 }
@@ -75,7 +74,7 @@ func (r *indexedMultiTableReader) ReadRows(ctx context.Context, limit int) ([]ma
 	if limit < 0 {
 		return nil, fmt.Errorf("read shapefile rows limit must be non-negative")
 	}
-	rows, _, err := r.source.readRows(ctx, r.offset, int64(limit))
+	rows, _, err := r.source.readRows(ctx, r.offset, int64(limit), spatialSRID(r.schema))
 	if err != nil {
 		if isIndexedSampleFallbackError(err) {
 			return nil, fmt.Errorf("indexed shapefile reader does not support this geometry type: %w", err)
@@ -94,10 +93,11 @@ func (r *indexedMultiTableReader) Close(context.Context) error {
 }
 
 type sequentialMultiTableReader struct {
-	reader        *Reader
+	reader        *reader
 	schema        *format.TableInfo
 	cleanup       func()
 	geometryField string
+	opts          *format.ParseOptions
 	recordIndex   int
 	closed        bool
 }
@@ -124,17 +124,17 @@ func (r *sequentialMultiTableReader) ReadRows(ctx context.Context, limit int) ([
 		_, shape := r.reader.Shape()
 		row := make(map[string]interface{}, len(fields)+1)
 		for i, field := range fields {
-			fieldName := r.reader.TrimDBFFieldName(field.Name)
-			rawValue := r.reader.ReadAttributeDecoded(r.recordIndex, i)
+			fieldName := r.reader.trimDBFFieldName(field.Name)
+			rawValue := r.reader.readAttributeDecoded(r.recordIndex, i)
 			if rawValue == "" {
 				row[fieldName] = nil
 				continue
 			}
-			row[fieldName] = ParseDBFAttribute(field.Fieldtype, rawValue)
+			row[fieldName] = parseDBFAttribute(field.Fieldtype, rawValue)
 		}
 		if shape != nil {
-			if wktValue, err := ShapeToWKT(shape); err == nil {
-				row[r.geometryField] = wktValue
+			if geometryValue, err := shapeToRowValue(shape, r.opts, spatialSRID(r.schema)); err == nil {
+				row[r.geometryField] = geometryValue
 			} else {
 				row[r.geometryField] = nil
 			}

@@ -44,11 +44,11 @@ func FileCatalogDetectedItemName(dirPath string, item *metaitem.DetectedItem) (n
 	if item == nil {
 		return inferFileCatalogItemName(dirPath)
 	}
-	if item.Organization != dataitem.OrganizationWhole && item.EntryPath != "" {
+	if item.Layout != dataitem.LayoutWhole && item.EntryPath != "" {
 		cleaned := strings.Trim(item.EntryPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}
-	if item.PhysicalPath != "" && item.Organization != dataitem.OrganizationWhole {
+	if item.PhysicalPath != "" && item.Layout != dataitem.LayoutWhole {
 		cleaned := strings.Trim(item.PhysicalPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}

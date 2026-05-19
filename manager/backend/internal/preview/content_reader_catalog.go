@@ -189,15 +189,21 @@ func refRefsFromAttributes(attrs map[string]interface{}) []format.RelatedRef {
 }
 
 func refSpecsForPreviewFormat(formatType format.FormatType) []format.RelatedRefSpec {
-	provider, err := format.GetTableProvider(formatType)
-	if err != nil {
-		return nil
+	if provider, err := format.GetMultiTableInfoProvider(formatType); err == nil {
+		return provider.RelatedRefSpecs()
 	}
-	specProvider, ok := provider.(format.RelatedRefSpecProvider)
-	if !ok {
-		return nil
+	if reader, err := format.GetMultiTableSampleReader(formatType); err == nil {
+		return reader.RelatedRefSpecs()
 	}
-	return specProvider.RelatedRefSpecs()
+	if reader, err := format.GetMultiTableReaderProvider(formatType); err == nil {
+		return reader.RelatedRefSpecs()
+	}
+	if plugin, err := format.GetFormatPlugin(formatType); err == nil {
+		if specProvider, ok := plugin.(format.RelatedRefSpecProvider); ok {
+			return specProvider.RelatedRefSpecs()
+		}
+	}
+	return nil
 }
 
 func refRoleForPreviewFormat(formatType format.FormatType, ext string) (string, bool) {

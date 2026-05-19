@@ -90,7 +90,8 @@ type TableTransferExecutor struct {
 	SourceTableReadProvider    format.TableReaderProvider
 	SourceInfoProvider         format.TableInfoProvider
 	SourceMultiReadProvider    format.MultiTableReaderProvider
-	SourceMultiProvider        multiTableSourceProvider
+	SourceMultiInfoProvider    format.MultiTableInfoProvider
+	SourceMultiSampleReader    format.MultiTableSampleReader
 	TargetContentWriter        engineplugin.ContentWritableProvider
 	TargetFormatProvider       format.TableWriterProvider
 	TargetMultiProvider        format.MultiTableWriterProvider
@@ -119,15 +120,15 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		executor.SourceContentReader = reader
 	}
 	if sourceFormat != "" {
-		executor.SourceFormatProvider, _ = format.GetTableSampleProvider(sourceFormat)
+		executor.SourceFormatProvider, _ = format.GetTableSampleReader(sourceFormat)
 		executor.SourceInfoProvider, _ = format.GetTableInfoProvider(sourceFormat)
 		executor.SourceTableReadProvider, _ = format.GetTableReaderProvider(sourceFormat)
 		executor.SourceMultiReadProvider, _ = format.GetMultiTableReaderProvider(sourceFormat)
-		if multiReader, err := format.GetMultiTableProvider(sourceFormat); err == nil {
-			executor.SourceMultiProvider, _ = multiReader.(multiTableSourceProvider)
-		}
-		if executor.SourceTableReadProvider != nil {
-			executor.SourceMultiProvider = nil
+		executor.SourceMultiInfoProvider, _ = format.GetMultiTableInfoProvider(sourceFormat)
+		executor.SourceMultiSampleReader, _ = format.GetMultiTableSampleReader(sourceFormat)
+		if executor.SourceMultiReadProvider != nil {
+			executor.SourceMultiInfoProvider = nil
+			executor.SourceMultiSampleReader = nil
 		}
 	}
 
@@ -190,14 +191,15 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}
-		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil && e.SourceMultiProvider == nil && e.SourceFormatProvider == nil {
+		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil && (e.SourceMultiInfoProvider == nil || e.SourceMultiSampleReader == nil) && e.SourceFormatProvider == nil {
 			return nil, fmt.Errorf("encoded table source requires table reader provider")
 		}
 		return &encodedContentTableSource{
 			reader:              e.SourceContentReader,
 			tableProvider:       e.SourceTableReadProvider,
 			multiReaderProvider: e.SourceMultiReadProvider,
-			multiProvider:       e.SourceMultiProvider,
+			multiInfoProvider:   e.SourceMultiInfoProvider,
+			multiSampleReader:   e.SourceMultiSampleReader,
 			sampleProvider:      e.SourceFormatProvider,
 			infoProvider:        e.SourceInfoProvider,
 			connInfo:            plan.ConnInfo,
