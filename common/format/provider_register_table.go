@@ -111,6 +111,9 @@ func (r *ProviderRegistry) RegisterMultiTableReaderProvider(provider MultiTableR
 	if err := validateProviderFormat(formatType, "multi table reader provider"); err != nil {
 		return err
 	}
+	if err := validateRelatedRefSpecProvider(provider, "multi table reader provider"); err != nil {
+		return err
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,9 +152,22 @@ func (r *ProviderRegistry) RegisterMultiTableWriterProvider(provider MultiTableW
 	if err := validateProviderFormat(formatType, "multi table writer provider"); err != nil {
 		return err
 	}
+	if err := validateRelatedRefSpecProvider(provider, "multi table writer provider"); err != nil {
+		return err
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.multiTableWriters[formatType] = provider
+	return nil
+}
+
+func validateRelatedRefSpecProvider(provider RelatedRefSpecProvider, label string) error {
+	if provider == nil {
+		return fmt.Errorf("%s cannot be nil", label)
+	}
+	if err := ValidateRelatedRefSpecs(provider.RelatedRefSpecs()); err != nil {
+		return fmt.Errorf("%s %s has invalid related ref specs: %w", label, provider.Format(), err)
+	}
 	return nil
 }

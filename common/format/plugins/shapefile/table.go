@@ -31,7 +31,7 @@ func (plugin *Plugin) DescribeTable(ctx context.Context, input io.Reader, option
 	return nil, fmt.Errorf("shapefile requires multi-ref input; use DescribeMultiTable with .shp/.shx/.dbf refs")
 }
 
-func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *format.ParseOptions) (*format.TableInfo, error) {
+func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*format.TableInfo, error) {
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (plugin *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, 
 	return nil, fmt.Errorf("shapefile requires multi-ref input; use SampleMultiTable with .shp/.shx/.dbf refs")
 }
 
-func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	opts := plugin.resolveOptions(options)
 	if rows, ok, err := plugin.sampleMultiTableIndexed(ctx, reader, refs, offset, limit, opts); ok {
 		if err == nil {
@@ -168,7 +168,7 @@ func (plugin *Plugin) parseTableInfoFromPath(shpPath string, opts *format.ParseO
 	}, nil
 }
 
-func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []contentio.Ref, opts *format.ParseOptions) (*format.TableInfo, error) {
+func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, error) {
 	shpHeader, err := readSHPHeader(basePath + ".shp")
 	if err != nil {
 		return nil, err

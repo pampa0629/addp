@@ -294,6 +294,7 @@
     "empty": "No previewable children",
     "rowCount": "{count} rows",
     "components": "Components",
+    "refs": "Related Content",
     "combinedPreview": "Combined preview",
     "componentLabel": "Name",
     "componentRole": "Role",

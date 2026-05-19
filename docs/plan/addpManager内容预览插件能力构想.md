@@ -15,7 +15,7 @@ Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套�
 
 对 Manager 来说，它们只是同一类 `table preview` 的不同来源路径：
 
-- `filetable`：单文件或多相关文件形成的表格来源。
+- `filetable`：单 content 或多相关内容形成的表格来源。
 - `laketable`：目录型或范围型表格来源。
 - `native table`：引擎原生表格来源。
 
@@ -43,7 +43,7 @@ Manager 请求层已经新增 `ScopePath`，用于承载 `organization=whole` �
 - `attributes.capabilities`
 
 其中，插件不应直接依赖 `engine id` 构造读取器，也不应自己找 sibling refs。
-应由上层编排层先构造 `contentio.Reader`、`[]contentio.Ref` 或 `NativeCursor`，再交给插件或其依赖的 provider。
+应由上层编排层先构造 `contentio.Reader`、`[]format.RelatedRef` 或 `NativeCursor`，再交给插件或其依赖的 provider。
 对于表预览，编排层可以根据资源组织方式选择不同读取计划，但对插件暴露的仍应是统一的表格输入。
 
 ## manifest 构想

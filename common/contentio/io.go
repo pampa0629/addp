@@ -9,6 +9,9 @@ import (
 type Reader interface {
 	Open(ctx context.Context, ref Ref) (io.ReadCloser, error)
 	Stat(ctx context.Context, ref Ref) (*Stat, error)
+}
+
+type Lister interface {
 	List(ctx context.Context, scope Ref) ([]Ref, error)
 }
 

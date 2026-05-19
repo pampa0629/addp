@@ -19,7 +19,7 @@ common 负责可复用读写与格式能力
 
 - engine-native 读写能力归 `common/engine`，例如 PostgreSQL cursor / COPY、NFS / S3 / MinIO content read-write、DeleteResource。
 - format / data type 读写能力归 `common/format`，例如 CSV / JSON / Parquet / Shapefile 对 table data type 的 reader / writer。
-- content 定位、多 ref、range、multi 读写归 `common/contentio`；engine 到 contentio 的适配归 `common/engine/contentadapter`。
+- content 定位、stream open/create、scope list、range read 归 `common/contentio`；multi ref 的组织规则和读写语义归 `common/format` / `common/dataitem` / Transfer 编排层；engine 到 contentio 的适配归 `common/engine/contentadapter`。
 - Transfer 只保留任务配置、planner、policy、transform 编排、worker、checkpoint、日志、指标、重试和写后 Meta 扫描触发。
 
 旧 Transfer `plugins/readers`、`plugins/writers`、`pkg/plugin_loader`、旧 `pkg/pipeline` 和旧 transform API 不作为新主路径保留。已经删除的旧入口不再恢复。
@@ -47,7 +47,7 @@ endpoint 只决定 reader / writer 来自哪里：
 |---|---|
 | native table | `common/engine` table reader / writer |
 | encoded file/object | `common/engine` content reader / writer + `common/format` table reader / writer |
-| multi ref file/object | `common/contentio` multi writer + `common/format` multi table writer |
+| multi ref file/object | `common/contentio.Writer` + `[]format.RelatedRef` + `common/format` multi table writer |
 
 因此：
 
@@ -158,7 +158,7 @@ format / engine native field type
 6. `format` 只用于 encoded endpoint，例如 `csv`、`jsonl`、`parquet`、`shapefile`。
 7. native endpoint 不写 `format=table`。
 8. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
-9. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关文件。
+9. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关内容。
 10. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
 11. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
 
@@ -249,7 +249,7 @@ format / engine native field type
 | PostgreSQL table -> PostgreSQL table | 已收敛到统一 table reader / writer 链路 | 不保留 native-to-native 专用通道；空间字段类型已修复。 |
 | PostgreSQL spatial table -> PostgreSQL spatial table | 已修复空间字段类型保真 | 旧目标表可直接删除后重建，不做兼容迁移。 |
 | PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到。 |
-| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关文件、Meta scan 和 Manager preview。 |
+| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关内容、Meta scan 和 Manager preview。 |
 | NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session。 |
 | MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table。 |
 | NFS Shapefile -> MinIO Shapefile | 已手动验证通过 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities。 |
@@ -311,7 +311,7 @@ batch checkpoint 最小结构：
 | 层 | 负责 | 不负责 |
 |---|---|---|
 | `common/engine` | 引擎连接、能力声明、catalog、metadata、content read/write、range read、table batch/session read/write、DeleteResource、query、stream / CDC 扩展点 | Transfer 任务、写入模式、调度、执行历史、重试策略 |
-| `common/contentio` | Ref、Reader、RangeReader、Writer、MultiReader / MultiWriter、多 ref 提交边界 | 格式解析、任务策略、engine 连接 |
+| `common/contentio` | Ref、Reader、Writer、Lister、RangeReader、Stat 等内容 I/O 原语 | 格式解析、multi item 组织规则、任务策略、engine 连接 |
 | `common/engine/contentadapter` | engine content provider 到 contentio 的适配、CatalogPath 与 Ref 的映射 | 格式解析、任务策略 |
 | `common/format` | 格式身份、descriptor、capability view、data type reader / writer、编码解码、schema / sample / multi 能力 | engine 连接、worker、任务记录 |
 | `transfer` | 任务 JSON、planner、policy、field mapping / transform、worker、checkpoint、logs、metrics、写后 Meta scan | 具体 engine reader / writer、具体 format reader / writer |

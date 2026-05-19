@@ -3,7 +3,6 @@ package contentio
 import (
 	"context"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -55,27 +54,13 @@ func (r *memoryRangeReader) OpenRange(_ context.Context, ref Ref, offset, length
 	return io.NopCloser(strings.NewReader(value[offset:end])), nil
 }
 
-func TestSameBasenameRefs(t *testing.T) {
-	got := SameBasenameRefs("datasets/roads/roads.shp", []RelatedRefSpec{
-		{Extension: ".shp", Role: RoleMain, Required: true, Primary: true},
-		{Extension: "dbf", Required: true},
-	})
-	want := []Ref{
-		{Path: "datasets/roads/roads.shp", Name: "roads.shp", Role: RoleMain, Required: true, Primary: true},
-		{Path: "datasets/roads/roads.dbf", Name: "roads.dbf", Role: "dbf", Required: true},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("SameBasenameRefs() = %#v, want %#v", got, want)
-	}
-}
-
 func TestRangeReaderOpenRange(t *testing.T) {
 	backing := &memoryRangeReader{
 		memoryReader: memoryReader{data: map[string]string{
 			"roads.shx": "0123456789",
 		}},
 	}
-	ref := Ref{Path: "roads.shx", Name: "roads.shx", Role: "index", Required: true}
+	ref := Ref{Path: "roads.shx", Role: "index"}
 
 	rc, err := backing.OpenRange(context.Background(), ref, 2, 4)
 	if err != nil {
@@ -113,7 +98,7 @@ func (w nopWriteCloser) Close() error {
 
 func TestWriterCreatesRef(t *testing.T) {
 	backing := &memoryWriter{}
-	ref := Ref{Path: "roads.dbf", Name: "roads.dbf", Role: "attributes", Required: true}
+	ref := Ref{Path: "roads.dbf", Role: "attributes"}
 	if _, err := backing.Create(context.Background(), ref); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}

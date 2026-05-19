@@ -25,10 +25,16 @@ const (
 	EngineFamilyDocument = formatregistry.EngineFamilyDocument
 )
 
+// Layout describes how a format can organize the content that forms a data item.
+//
+// Format capability uses layout as a declared possibility; data item detection
+// uses the same values as the resolved item organization.
+type Layout = string
+
 const (
-	FormatLayoutSingle = formatregistry.LayoutSingle
-	FormatLayoutMulti  = formatregistry.LayoutMulti
-	FormatLayoutWhole  = formatregistry.LayoutWhole
+	FormatLayoutSingle Layout = formatregistry.LayoutSingle
+	FormatLayoutMulti  Layout = formatregistry.LayoutMulti
+	FormatLayoutWhole  Layout = formatregistry.LayoutWhole
 )
 
 const (

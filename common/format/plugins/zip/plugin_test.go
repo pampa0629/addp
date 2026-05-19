@@ -150,10 +150,10 @@ func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 	if len(resolved.Refs) != 3 {
 		t.Fatalf("refs = %#v, want 3", resolved.Refs)
 	}
-	if got := resolved.Refs[0].Path; got != "outer.zip/roads.shp" {
+	if got := resolved.Refs[0].Ref.Path; got != "outer.zip/roads.shp" {
 		t.Fatalf("main ref path = %q, want parent-qualified path", got)
 	}
-	rc, err := resolved.Reader.Open(context.Background(), resolved.Refs[1])
+	rc, err := resolved.Reader.Open(context.Background(), resolved.Refs[1].Ref)
 	if err != nil {
 		t.Fatalf("open index ref: %v", err)
 	}
@@ -197,8 +197,4 @@ func (r singleTestContentReader) Open(context.Context, contentio.Ref) (io.ReadCl
 
 func (r singleTestContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return &contentio.Stat{Exists: true, Size: int64(len(r.data))}, nil
-}
-
-func (r singleTestContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	return nil, nil
 }

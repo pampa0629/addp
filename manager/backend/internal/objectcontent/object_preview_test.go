@@ -656,6 +656,33 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
+	child := containerChildPreviewMap(format.ContainerChildInfo{
+		Name:         "roads.shp",
+		Kind:         "file",
+		DataType:     "table",
+		Format:       format.FormatShapefile,
+		Organization: "multi",
+		Refs: []format.ContainerChildRef{
+			{Path: "roads.shp", Role: "main", Required: true, Primary: true},
+			{Path: "roads.dbf", Role: "attributes", Required: true},
+		},
+		Properties: map[string]interface{}{
+			"refs": []interface{}{
+				map[string]interface{}{"path": "raw-should-not-win.dbf"},
+			},
+		},
+	}, 0)
+
+	refs, ok := child["refs"].([]map[string]interface{})
+	if !ok || len(refs) != 2 {
+		t.Fatalf("refs = %#v, want normalized descriptors", child["refs"])
+	}
+	if refs[0]["path"] != "roads.shp" || refs[0]["label"] == "" {
+		t.Fatalf("first ref = %#v, want described main ref", refs[0])
+	}
+}
+
 func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
 	registry := NewObjectContentRegistry()
 	LoadObjectContentPlugins(registry, "../../plugins/manifest.json")

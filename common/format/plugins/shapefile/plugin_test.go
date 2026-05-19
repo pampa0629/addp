@@ -11,25 +11,10 @@ import (
 )
 
 func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
-	descriptors := DescribeRefs([]contentio.Ref{
-		{
-			Path:     "roads.shp",
-			Name:     "roads.shp",
-			Role:     contentio.RoleMain,
-			Required: true,
-			Primary:  true,
-		},
-		{
-			Path:     "roads.dbf",
-			Name:     "roads.dbf",
-			Role:     "attributes",
-			Required: true,
-		},
-		{
-			Path: "roads.prj",
-			Name: "roads.prj",
-			Role: "projection",
-		},
+	descriptors := DescribeRefs([]format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef("roads.shp", contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef("roads.dbf", "attributes"), true, false),
+		format.NewRelatedRef(contentio.NewRef("roads.prj", "projection"), false, false),
 	})
 
 	byRole := map[string]format.RefDescriptor{}
@@ -50,7 +35,7 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	plugin := NewPlugin(nil)
 	target := contentio.NewRef("exports/cities.shp", contentio.RoleMain)
-	refs := contentio.SameBasenameRefs(target.Path, RelatedRefSpecs())
+	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
 	output := newMemoryRefStore()
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
@@ -65,7 +50,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 		},
 	}
 
-	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, target, schema, nil)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, nil)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -100,6 +85,43 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	}
 }
 
+func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
+	plugin := NewPlugin(nil)
+	schema := &format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "geom", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{
+			GeometryColumn: "geom",
+			GeometryType:   "Point",
+		},
+	}
+
+	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, schema, nil); err == nil {
+		t.Fatal("OpenMultiTableWriter succeeded without refs")
+	}
+}
+
+func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
+	plugin := NewPlugin(nil)
+	refs := []format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef("exports/cities.dbf", "attributes"), true, false),
+	}
+	schema := &format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "geom", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{
+			GeometryColumn: "geom",
+			GeometryType:   "Point",
+		},
+	}
+
+	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, schema, nil); err == nil {
+		t.Fatal("OpenMultiTableWriter succeeded without primary ref")
+	}
+}
+
 type memoryRefStore struct {
 	files map[string][]byte
 }
@@ -126,10 +148,6 @@ func (w *memoryRefStore) Open(ctx context.Context, ref contentio.Ref) (io.ReadCl
 
 func (w *memoryRefStore) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, nil
-}
-
-func (w *memoryRefStore) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	return nil, contentio.ErrContentNotFound
 }
 
 type memoryWriteCloser struct {

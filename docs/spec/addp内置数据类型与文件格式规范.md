@@ -240,7 +240,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 
 ### ref 读取
 
-Manager 内容读取必须使用 `meta_item.full_name` 作为主文件路径，并使用 `attributes.item.refs` 读取相关文件。Transfer 写出 Shapefile 时必须明确ref 提交边界，不能只写 `.shp`。
+Manager 内容读取必须使用 `meta_item.full_name` 作为主内容路径，并使用 `attributes.item.refs` 读取相关内容。Transfer 写出 Shapefile 时必须明确 ref 提交边界，不能只写 `.shp`。
 
 ### 格式约束
 

@@ -271,7 +271,7 @@
           "json": "JSON",
           "geojson": "GeoJSON",
           "parquet": "Parquet",
-          "refs": "Related Files"
+          "refs": "Related Content"
         },
         "fields": {
           "dataType": "Data Type",
@@ -298,8 +298,8 @@
           "shapeType": "Shape Type",
           "encoding": "Encoding",
           "baseName": "Base Name",
-          "refs": "Related Files",
-          "refExtensions": "Related File Extensions",
+          "refs": "Related Content",
+          "refExtensions": "Related Content Extensions",
           "dbfVersion": "DBF Version",
           "hasCpg": "Has CPG",
           "hasPrj": "Has PRJ",

@@ -115,7 +115,7 @@ Manager 后端预览的真实需求不是“知道文件后缀”，而是：
 
 | 当前路径 | 长期来源形态 | 长期入口 |
 |---|---|---|
-| 文件表预览 | single / multi 文件表 | `TableProvider.Sample` 经 `contentio.Reader`，multi 时另传 `[]contentio.Ref` |
+| 文件表预览 | single / multi 文件表 | `TableProvider.Sample` 经 `contentio.Reader`，multi 时另传 `[]format.RelatedRef` |
 | 目录型表格预览 | scope 表 | `TableProvider.Sample` 经 `contentio.Reader` + scope list |
 | 数据库表预览 | engine-native 表 | `TableProvider.Sample` 经 `NativeCursor` |
 

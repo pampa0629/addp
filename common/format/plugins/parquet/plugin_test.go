@@ -377,3 +377,4 @@ func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref)
 }
 
 var _ contentio.Reader = parquetMemoryContentReader{}
+var _ contentio.Lister = parquetMemoryContentReader{}

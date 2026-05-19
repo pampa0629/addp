@@ -696,7 +696,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		}
 		if merged == nil {
 			merged = &format.TableInfo{
-				Name:       scope.Name,
+				Name:       contentio.BaseName(scope),
 				Fields:     append([]format.FieldInfo(nil), info.Fields...),
 				PrimaryKey: append([]string(nil), info.PrimaryKey...),
 			}

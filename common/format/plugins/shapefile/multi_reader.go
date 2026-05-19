@@ -10,7 +10,7 @@ import (
 
 var _ format.MultiTableReaderProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *format.ParseOptions) (format.TableReader, error) {
+func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (format.TableReader, error) {
 	opts := plugin.resolveOptions(options)
 
 	if rangeReader, ok := reader.(contentio.RangeReader); ok {

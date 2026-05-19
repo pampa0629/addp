@@ -17,12 +17,19 @@ import (
 
 var _ format.MultiTableWriterProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if output == nil {
 		return nil, fmt.Errorf("ref writer cannot be nil")
 	}
 	if schema == nil {
 		return nil, fmt.Errorf("shapefile table writer requires schema")
+	}
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("shapefile table writer requires related refs")
+	}
+	primaryRef, err := format.PrimaryRelatedRef(refs)
+	if err != nil {
+		return nil, fmt.Errorf("shapefile table writer requires valid related refs: %w", err)
 	}
 
 	opts := format.DefaultWriteOptions()
@@ -42,10 +49,7 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 	if err != nil {
 		return nil, fmt.Errorf("create shapefile temp dir: %w", err)
 	}
-	baseName := target.Name
-	if baseName == "" {
-		baseName = filepath.Base(target.Path)
-	}
+	baseName := contentio.BaseName(primaryRef.Ref)
 	baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	if baseName == "" || baseName == "." {
 		baseName = "data"
@@ -66,11 +70,10 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 
 	return &multiTableWriter{
 		output:        output,
-		target:        target,
 		tempDir:       tempDir,
 		basePath:      basePath,
 		writer:        writer,
-		refs:          append([]contentio.Ref(nil), refs...),
+		refs:          append([]format.RelatedRef(nil), refs...),
 		geometryField: geometryField,
 		fieldNames:    dbfSchema.originalNames,
 		fields:        dbfSchema.fields,
@@ -80,8 +83,7 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 
 type multiTableWriter struct {
 	output        contentio.Writer
-	target        contentio.Ref
-	refs          []contentio.Ref
+	refs          []format.RelatedRef
 	tempDir       string
 	basePath      string
 	writer        *Writer
@@ -260,11 +262,7 @@ func (w *multiTableWriter) Close(ctx context.Context) error {
 	if err := w.writeSidecarFiles(); err != nil {
 		return err
 	}
-	refs := w.refs
-	if len(refs) == 0 {
-		refs = contentio.SameBasenameRefs(w.target.Path, RelatedRefSpecs())
-	}
-	for _, ref := range refs {
+	for _, ref := range w.refs {
 		if !ref.Required && !fileExists(refPath(w.basePath, ref)) {
 			continue
 		}
@@ -293,17 +291,17 @@ func (w *multiTableWriter) writeSidecarFiles() error {
 	return nil
 }
 
-func copyRef(ctx context.Context, output contentio.Writer, basePath string, ref contentio.Ref) error {
+func copyRef(ctx context.Context, output contentio.Writer, basePath string, ref format.RelatedRef) error {
 	sourcePath := refPath(basePath, ref)
 	source, err := os.Open(sourcePath)
 	if err != nil {
-		return fmt.Errorf("open shapefile ref %s: %w", ref.Role, err)
+		return fmt.Errorf("open shapefile ref %s: %w", ref.Ref.Role, err)
 	}
 	defer source.Close()
 
-	target, err := output.Create(ctx, ref)
+	target, err := output.Create(ctx, ref.Ref)
 	if err != nil {
-		return fmt.Errorf("create shapefile ref %s: %w", ref.Role, err)
+		return fmt.Errorf("create shapefile ref %s: %w", ref.Ref.Role, err)
 	}
 	targetClosed := false
 	defer func() {
@@ -312,17 +310,17 @@ func copyRef(ctx context.Context, output contentio.Writer, basePath string, ref 
 		}
 	}()
 	if _, err := io.Copy(target, source); err != nil {
-		return fmt.Errorf("copy shapefile ref %s: %w", ref.Role, err)
+		return fmt.Errorf("copy shapefile ref %s: %w", ref.Ref.Role, err)
 	}
 	if err := target.Close(); err != nil {
-		return fmt.Errorf("close shapefile ref %s: %w", ref.Role, err)
+		return fmt.Errorf("close shapefile ref %s: %w", ref.Ref.Role, err)
 	}
 	targetClosed = true
 	return nil
 }
 
-func refPath(basePath string, ref contentio.Ref) string {
-	return basePath + filepath.Ext(ref.Path)
+func refPath(basePath string, ref format.RelatedRef) string {
+	return basePath + filepath.Ext(ref.Ref.Path)
 }
 
 func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOptions) string {

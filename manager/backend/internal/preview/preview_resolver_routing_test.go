@@ -301,7 +301,7 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	}
 
 	refs := refRefsFromAttributes(attrs)
-	if len(refs) != 2 || refs[0].Path != "bucket/roads/roads.shp" {
+	if len(refs) != 2 || refs[0].Ref.Path != "bucket/roads/roads.shp" {
 		t.Fatalf("refs = %#v, want partitioned refs", refs)
 	}
 	if got := int64Attribute(attrs, "total_size"); got != 42 {

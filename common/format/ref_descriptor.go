@@ -6,7 +6,7 @@ import (
 	"github.com/addp/common/contentio"
 )
 
-func DescribeRefs(formatType FormatType, refs []contentio.Ref) []RefDescriptor {
+func DescribeRefs(formatType FormatType, refs []RelatedRef) []RefDescriptor {
 	plugin, err := GetFormatPlugin(formatType)
 	if err == nil {
 		if provider, ok := plugin.(RefDescriptorProvider); ok {
@@ -16,26 +16,27 @@ func DescribeRefs(formatType FormatType, refs []contentio.Ref) []RefDescriptor {
 	return defaultRefDescriptors(refs)
 }
 
-func defaultRefDescriptors(refs []contentio.Ref) []RefDescriptor {
+func defaultRefDescriptors(refs []RelatedRef) []RefDescriptor {
 	descriptors := make([]RefDescriptor, 0, len(refs))
 	for _, ref := range refs {
-		extension := strings.ToLower(strings.TrimSpace(contentio.NormalizeExtension(resourceExtension(ref.Path))))
-		role := strings.TrimSpace(ref.Role)
+		contentRef := ref.Ref
+		extension := strings.ToLower(strings.TrimSpace(NormalizeExtension(resourceExtension(contentRef.Path))))
+		role := strings.TrimSpace(contentRef.Role)
 		key := role
 		if key == "" {
 			key = extension
 		}
 		label := role
 		if label == "" {
-			label = ref.Name
+			label = contentio.BaseName(ref.Ref)
 		}
 		descriptors = append(descriptors, RefDescriptor{
 			Key:       key,
-			Path:      ref.Path,
+			Path:      contentRef.Path,
 			Role:      role,
 			Label:     label,
 			Required:  ref.Required,
-			Primary:   ref.Primary || ref.Role == contentio.RoleMain,
+			Primary:   ref.Primary,
 			DataType:  FormatDataTypeFile,
 			Format:    FormatUnknown,
 			Extension: extension,

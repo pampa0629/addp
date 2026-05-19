@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 )
 
@@ -180,7 +179,7 @@ func BuiltinWholeScopeRules() []FormatRule {
 	return rules
 }
 
-func RelatedRefSpecs(formatType format.FormatType) []contentio.RelatedRefSpec {
+func RelatedRefSpecs(formatType format.FormatType) []format.RelatedRefSpec {
 	if provider, err := format.GetTableProvider(formatType); err == nil {
 		if specProvider, ok := provider.(format.RelatedRefSpecProvider); ok {
 			return specProvider.RelatedRefSpecs()
@@ -216,6 +215,11 @@ func ValidateFormatRule(rule FormatRule) error {
 		if rule.Refs == nil && len(rule.RelatedRefSpecs) == 0 {
 			return fmt.Errorf("multi rule %s requires Refs", rule.Format)
 		}
+		if len(rule.RelatedRefSpecs) > 0 {
+			if err := format.ValidateRelatedRefSpecs(rule.RelatedRefSpecs); err != nil {
+				return fmt.Errorf("multi rule %s has invalid RelatedRefSpecs: %w", rule.Format, err)
+			}
+		}
 		if rule.Refs != nil {
 			if len(rule.Refs.RequiredExtensions) == 0 {
 				return fmt.Errorf("multi rule %s requires RequiredExtensions", rule.Format)
@@ -246,9 +250,9 @@ func NormalizeCandidate(candidate Candidate) Candidate {
 	if candidate.Name == "" && candidate.Path != "" {
 		candidate.Name = filepath.Base(candidate.Path)
 	}
-	candidate.Extension = contentio.NormalizeExtension(candidate.Extension)
+	candidate.Extension = format.NormalizeExtension(candidate.Extension)
 	if candidate.Extension == "" {
-		candidate.Extension = contentio.NormalizeExtension(filepath.Ext(candidate.Name))
+		candidate.Extension = format.NormalizeExtension(filepath.Ext(candidate.Name))
 	}
 	candidate.BaseName = strings.TrimSpace(candidate.BaseName)
 	if candidate.BaseName == "" && candidate.Name != "" {
@@ -278,7 +282,7 @@ func dataTypeFromString(value string) DataType {
 	}
 }
 
-func refRuleFromSpecs(specs []contentio.RelatedRefSpec) *RefRule {
+func refRuleFromSpecs(specs []format.RelatedRefSpec) *RefRule {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -286,7 +290,7 @@ func refRuleFromSpecs(specs []contentio.RelatedRefSpec) *RefRule {
 	optional := []string{}
 	entry := ""
 	for _, spec := range specs {
-		ext := contentio.NormalizeExtension(spec.Extension)
+		ext := format.NormalizeExtension(spec.Extension)
 		if ext == "" {
 			continue
 		}

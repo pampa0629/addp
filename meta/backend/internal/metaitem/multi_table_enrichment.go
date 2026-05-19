@@ -104,7 +104,7 @@ func enrichRefTableInfo(
 		return
 	}
 	reader := newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor)
-	tableInfo, err := refProvider.DescribeMultiTable(ctx, reader, item.ContentRefs(), nil)
+	tableInfo, err := refProvider.DescribeMultiTable(ctx, reader, item.RelatedRefs(), nil)
 	if err != nil {
 		return
 	}
@@ -133,10 +133,6 @@ func (r *metaRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadClo
 }
 
 func (r *metaRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
-	return nil, contentio.ErrContentNotFound
-}
-
-func (r *metaRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, contentio.ErrContentNotFound
 }
 

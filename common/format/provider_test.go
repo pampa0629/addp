@@ -175,6 +175,7 @@ func (p providerTestTableReaderProvider) OpenTableReader(context.Context, io.Rea
 
 type providerTestMultiTableReaderProvider struct {
 	formatType FormatType
+	specs      []RelatedRefSpec
 }
 
 func (p providerTestMultiTableReaderProvider) Format() FormatType {
@@ -185,16 +186,20 @@ func (p providerTestMultiTableReaderProvider) Capabilities() FormatCapability {
 	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
 }
 
-func (p providerTestMultiTableReaderProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
-	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
+func (p providerTestMultiTableReaderProvider) RelatedRefSpecs() []RelatedRefSpec {
+	if p.specs != nil {
+		return p.specs
+	}
+	return []RelatedRefSpec{{Extension: ".main", Role: "main", Required: true, Primary: true}}
 }
 
-func (p providerTestMultiTableReaderProvider) OpenMultiTableReader(context.Context, contentio.Reader, []contentio.Ref, *ParseOptions) (TableReader, error) {
+func (p providerTestMultiTableReaderProvider) OpenMultiTableReader(context.Context, contentio.Reader, []RelatedRef, *ParseOptions) (TableReader, error) {
 	return nil, nil
 }
 
 type providerTestMultiTableWriterProvider struct {
 	formatType FormatType
+	specs      []RelatedRefSpec
 }
 
 func (p providerTestMultiTableWriterProvider) Format() FormatType {
@@ -205,11 +210,14 @@ func (p providerTestMultiTableWriterProvider) Capabilities() FormatCapability {
 	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
 }
 
-func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
-	return []contentio.RelatedRefSpec{{Extension: ".main", Role: "main", Required: true}}
+func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []RelatedRefSpec {
+	if p.specs != nil {
+		return p.specs
+	}
+	return []RelatedRefSpec{{Extension: ".main", Role: "main", Required: true, Primary: true}}
 }
 
-func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.Writer, []contentio.Ref, contentio.Ref, *TableInfo, *WriteOptions) (TableWriter, error) {
+func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.Writer, []RelatedRef, *TableInfo, *WriteOptions) (TableWriter, error) {
 	return nil, nil
 }
 
@@ -237,6 +245,21 @@ func TestRegisterMultiTableReaderProvider(t *testing.T) {
 	}
 }
 
+func TestRegisterMultiTableReaderProviderRejectsInvalidRelatedRefSpecs(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("multi_table_reader_invalid_refs")
+
+	err := registry.RegisterMultiTableReaderProvider(providerTestMultiTableReaderProvider{
+		formatType: formatType,
+		specs: []RelatedRefSpec{
+			{Extension: ".main", Role: "main", Required: true},
+		},
+	})
+	if err == nil {
+		t.Fatal("RegisterMultiTableReaderProvider() succeeded with invalid related ref specs")
+	}
+}
+
 func TestRegisterMultiTableWriterProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	formatType := FormatType("multi_table_writer_only")
@@ -246,6 +269,21 @@ func TestRegisterMultiTableWriterProvider(t *testing.T) {
 	}
 	if got, err := registry.GetMultiTableWriterProvider(formatType); err != nil || got.Format() != formatType {
 		t.Fatalf("GetMultiTableWriterProvider() = %#v, %v; want multi_table_writer_only", got, err)
+	}
+}
+
+func TestRegisterMultiTableWriterProviderRejectsInvalidRelatedRefSpecs(t *testing.T) {
+	registry := NewProviderRegistry()
+	formatType := FormatType("multi_table_writer_invalid_refs")
+
+	err := registry.RegisterMultiTableWriterProvider(providerTestMultiTableWriterProvider{
+		formatType: formatType,
+		specs: []RelatedRefSpec{
+			{Extension: ".main", Role: "main", Required: true},
+		},
+	})
+	if err == nil {
+		t.Fatal("RegisterMultiTableWriterProvider() succeeded with invalid related ref specs")
 	}
 }
 

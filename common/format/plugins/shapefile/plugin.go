@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 )
 
@@ -36,30 +35,30 @@ func (plugin *Plugin) Capabilities() format.FormatCapability {
 	return capability
 }
 
-func (plugin *Plugin) RelatedRefSpecs() []contentio.RelatedRefSpec {
+func (plugin *Plugin) RelatedRefSpecs() []format.RelatedRefSpec {
 	return RelatedRefSpecs()
 }
 
-func (plugin *Plugin) DescribeRefs(refs []contentio.Ref) []format.RefDescriptor {
+func (plugin *Plugin) DescribeRefs(refs []format.RelatedRef) []format.RefDescriptor {
 	return DescribeRefs(refs)
 }
 
-func DescribeRefs(refs []contentio.Ref) []format.RefDescriptor {
+func DescribeRefs(refs []format.RelatedRef) []format.RefDescriptor {
 	descriptors := make([]format.RefDescriptor, 0, len(refs))
 	for _, ref := range refs {
-		ext := strings.ToLower(filepath.Ext(ref.Path))
-		role := strings.TrimSpace(ref.Role)
+		ext := strings.ToLower(filepath.Ext(ref.Ref.Path))
+		role := strings.TrimSpace(ref.Ref.Role)
 		if role == "" {
 			role = roleForExtension(ext)
 		}
 		dataType, formatType := refTypeForRole(role)
 		descriptors = append(descriptors, format.RefDescriptor{
 			Key:       role,
-			Path:      ref.Path,
+			Path:      ref.Ref.Path,
 			Role:      role,
 			Label:     labelForRole(role, ext),
 			Required:  ref.Required,
-			Primary:   ref.Role == contentio.RoleMain,
+			Primary:   ref.Primary,
 			DataType:  dataType,
 			Format:    formatType,
 			Extension: ext,
@@ -79,7 +78,7 @@ func refTypeForRole(role string) (string, format.FormatType) {
 
 func roleForExtension(ext string) string {
 	for _, spec := range RelatedRefSpecs() {
-		if strings.EqualFold(contentio.NormalizeExtension(spec.Extension), ext) {
+		if strings.EqualFold(format.NormalizeExtension(spec.Extension), ext) {
 			return spec.Role
 		}
 	}
@@ -102,8 +101,8 @@ func labelForRole(role, ext string) string {
 		return "空间索引"
 	default:
 		if ext != "" {
-			return strings.ToUpper(strings.TrimPrefix(ext, ".")) + " 文件"
+			return strings.ToUpper(strings.TrimPrefix(ext, ".")) + " 内容"
 		}
-		return "相关文件"
+		return "相关内容"
 	}
 }

@@ -593,7 +593,7 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 func (p *FileTablePreviewProvider) previewRefs(
 	ctx context.Context,
 	reader contentio.Reader,
-	refs []contentio.Ref,
+	refs []format.RelatedRef,
 	bucket string,
 	formatType format.FormatType,
 	provider format.MultiTableProvider,
@@ -669,7 +669,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	}, nil
 }
 
-func attachMultiRefPreview(preview *models.TablePreview, formatType format.FormatType, refs []contentio.Ref) {
+func attachMultiRefPreview(preview *models.TablePreview, formatType format.FormatType, refs []format.RelatedRef) {
 	if preview == nil || preview.Object == nil || len(refs) == 0 {
 		return
 	}
@@ -687,7 +687,7 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 	preview.Object.Content.Metadata["organization"] = "multi"
 }
 
-func refPreviewDescriptors(formatType format.FormatType, refs []contentio.Ref) []map[string]interface{} {
+func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {
 	descriptors := format.DescribeRefs(formatType, refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
 	for index, descriptor := range descriptors {

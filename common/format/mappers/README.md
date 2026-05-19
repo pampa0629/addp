@@ -48,7 +48,7 @@ fieldType := mapper.ToCommon("varchar(255)")
 | `common/format/mappers` | 字段类型转换 |
 | `common/engine/plugin` | engine capability、连接、目录、内容读写和原生查询 |
 
-新增映射器不应引入 engine 连接参数，也不应直接依赖具体 engine provider。需要连接、鉴权、列举、读取或写入时，应由上层通过 engine/resource 能力完成。
+新增映射器不应引入 engine 连接参数，也不应直接依赖具体 engine provider。需要连接、鉴权、列举、读取或写入时，应由上层通过 engine capability 和 contentio 适配能力完成。
 
 ## 新增映射器
 

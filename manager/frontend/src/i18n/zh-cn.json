@@ -271,7 +271,7 @@
           "json": "JSON",
           "geojson": "GeoJSON",
           "parquet": "Parquet",
-          "refs": "相关文件"
+          "refs": "相关内容"
         },
         "fields": {
           "dataType": "数据类型",
@@ -298,8 +298,8 @@
           "shapeType": "图形类型",
           "encoding": "编码",
           "baseName": "基础名称",
-          "refs": "相关文件",
-          "refExtensions": "相关文件扩展名",
+          "refs": "相关内容",
+          "refExtensions": "相关内容扩展名",
           "dbfVersion": "DBF 版本",
           "hasCpg": "包含 CPG",
           "hasPrj": "包含 PRJ",

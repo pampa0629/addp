@@ -85,8 +85,8 @@ type TableReader interface {
 // 不同，TableReader 持有一次ref 读取状态，调用方循环 ReadRows 直到返回空结果。
 type MultiTableReaderProvider interface {
 	Provider
-	RelatedRefSpecs() []contentio.RelatedRefSpec
-	OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (TableReader, error)
+	RelatedRefSpecs() []RelatedRefSpec
+	OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (TableReader, error)
 }
 
 // TableProvider 是兼容旧调用方的组合接口。
@@ -101,7 +101,7 @@ type TableProvider interface {
 // TableWriterProvider 表示格式能够把 table 数据写出为该格式编码。
 //
 // Provider 是可注册的无状态能力入口；TableWriter 是一次输出会话的状态对象。
-// 调用方负责基于 engine/resource 打开 io.Writer，再交给格式 writer 编码。
+// 调用方负责打开 io.Writer，再交给格式 writer 编码。
 type TableWriterProvider interface {
 	Provider
 	OpenTableWriter(ctx context.Context, output io.Writer, schema *TableInfo, options *WriteOptions) (TableWriter, error)
@@ -110,12 +110,13 @@ type TableWriterProvider interface {
 // MultiTableWriterProvider 表示格式能够把 table 数据写出为多 ref 资源。
 //
 // 典型场景是 Shapefile 这类天然由 .shp/.shx/.dbf 等相关 ref 共同构成的格式。
-// target 表示目标主资源，provider 基于它和 RelatedRefSpecs 派生ref 路径；
-// output 负责把ref 写入具体 engine/resource。
+// 调用方负责根据 RelatedRefSpecs 解析或构造 refs；provider 只消费这些 refs，
+// 并通过调用方提供的 writer 写入对应 content。主输出语义由 refs 中的 Primary
+// 标记表达，不额外传递 target，避免 provider 承担资源发现或 engine 路径判断。
 type MultiTableWriterProvider interface {
 	Provider
-	RelatedRefSpecs() []contentio.RelatedRefSpec
-	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+	RelatedRefSpecs() []RelatedRefSpec
+	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
 type TableWriter interface {
@@ -179,8 +180,8 @@ type MediaProvider = MediaInfoProvider
 
 type MultiTableProvider interface {
 	TableProvider
-	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (*TableInfo, error)
-	SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+	SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。
@@ -189,7 +190,7 @@ type MultiTableProvider interface {
 // 资源路径发现与 contentio.Reader 构造。
 type RelatedRefSpecProvider interface {
 	Provider
-	RelatedRefSpecs() []contentio.RelatedRefSpec
+	RelatedRefSpecs() []RelatedRefSpec
 }
 
 type RefDescriptor struct {
@@ -210,7 +211,7 @@ type RefDescriptor struct {
 // Meta、Manager、前端不得硬编码某个格式的 ref 语义。
 type RefDescriptorProvider interface {
 	Provider
-	DescribeRefs(refs []contentio.Ref) []RefDescriptor
+	DescribeRefs(refs []RelatedRef) []RefDescriptor
 }
 
 type ScopeTableProvider interface {

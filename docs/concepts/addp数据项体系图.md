@@ -141,7 +141,7 @@ engine capability
 |---|---|---|
 | engine plugin | 连接、catalog、元数据、内容读写、批次读写等 engine capability | 判断最终 `data_type`、归并 multi / whole item、写最终 attributes |
 | `meta` | 资源树扫描、detector 调度、data item 识别、claims / exclusive 合并、attributes normalizer、落库 | Manager 面向前端的 DTO、Transfer 执行计划、format plugin 内部解析细节 |
-| `common/contentio` | `Ref`、`Reader`、`RangeReader`、`MultiReader`、`Writer`、`MultiWriter` 等内容 I/O 抽象 | 连接凭据管理、格式解析、面向前端的 DTO |
+| `common/contentio` | `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader`、`Stat` 等内容 I/O 抽象 | 连接凭据管理、格式解析、multi item 组织规则、面向前端的 DTO |
 | `common/format` | 文件格式枚举、FormatPlugin、格式身份、格式能力、info provider、content reader | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
 | `manager` | 消费已入库 data item 和标准 attributes，基于 reader / provider 组装管理端内容结果 | 重新判断 organization、重新猜 format、重新枚举 sibling 组件 |
 | `transfer` | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别组件、绕过 provider 硬编码格式 |

@@ -250,10 +250,6 @@ func (r *zipChildContentReader) Stat(context.Context, contentio.Ref) (*contentio
 	return r.stat, nil
 }
 
-func (r *zipChildContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	return nil, nil
-}
-
 // entryLimit returns the default sampling limit when unspecified.
 // An explicit zero means "unlimited", matching other container providers.
 func (p *Plugin) entryLimit(options *format.ParseOptions) int {
@@ -323,40 +319,34 @@ func zipChildPath(child format.ContainerChildInfo, options *format.ParseOptions)
 	return strings.Trim(strings.TrimSpace(child.Name), "/")
 }
 
-func zipChildRefs(child format.ContainerChildInfo, basePath string) []contentio.Ref {
+func zipChildRefs(child format.ContainerChildInfo, basePath string) []format.RelatedRef {
 	if len(child.Refs) == 0 {
 		return nil
 	}
-	refs := make([]contentio.Ref, 0, len(child.Refs))
+	refs := make([]format.RelatedRef, 0, len(child.Refs))
 	for _, itemRef := range child.Refs {
-		role := contentio.RoleAuxiliary
-		if itemRef.Primary {
-			role = contentio.RoleMain
+		role := itemRef.Role
+		if role == "" {
+			role = contentio.RoleAuxiliary
 		}
 		refPath := strings.TrimSpace(itemRef.Path)
 		if basePath != "" && refPath != "" {
 			refPath = path.Join(basePath, refPath)
 		}
 		contentRef := contentio.NewRef(refPath, role)
-		if itemRef.Role != "" {
-			contentRef.Role = itemRef.Role
-		}
-		contentRef.Required = itemRef.Required
-		contentRef.Primary = itemRef.Primary
-		refs = append(refs, contentRef)
+		refs = append(refs, format.NewRelatedRef(contentRef, itemRef.Required, itemRef.Primary))
 	}
 	return refs
 }
 
-func zipPrimaryRefPath(refs []contentio.Ref, fallback string) string {
-	for _, ref := range refs {
-		if ref.Role == contentio.RoleMain || ref.Primary {
-			return ref.Path
-		}
+func zipPrimaryRefPath(refs []format.RelatedRef, fallback string) string {
+	primaryRef, err := format.PrimaryRelatedRef(refs)
+	if err == nil {
+		return primaryRef.Ref.Path
 	}
 	for _, ref := range refs {
-		if strings.TrimSpace(ref.Path) != "" {
-			return ref.Path
+		if strings.TrimSpace(ref.Ref.Path) != "" {
+			return ref.Ref.Path
 		}
 	}
 	return fallback

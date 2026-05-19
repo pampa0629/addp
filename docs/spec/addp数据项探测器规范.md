@@ -12,7 +12,7 @@
 |---|---|
 | 扫描范围如何解析为 `0..N` 个 data item | `attributes` 的完整 JSON schema |
 | `organization`、主资源、ref 资源和 whole scope 如何确定 | FormatPlugin、info provider、content reader 的接口形态 |
-| `claims`、`exclusive` 如何合并 | contentio.Reader / Writer 与 `[]contentio.Ref` 的具体接口 |
+| `claims`、`exclusive` 如何合并 | contentio.Reader / Writer 与 `[]format.RelatedRef` 的具体接口 |
 | `meta_item.name/full_name/item_type` 的来源规则 | Manager 面向前端的 DTO 或 Transfer plan |
 | `FormatRule` 如何声明 item 组织规则 | 具体格式的 parser、provider、reader 字段细节 |
 | detector 如何裁决 item 边界 | `scan_depth`、`force`、`scanned_depth` 和任务触发策略 |
@@ -64,7 +64,7 @@ detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Me
 2. `ResolveItems()` 统一执行 multi ref 归并、whole scope 识别和 single fallback。
 3. `BuiltinSingleResourceRules()`、`BuiltinMultiRules()`、`BuiltinWholeScopeRules()` 从 `common/format` capability 派生基础规则。
 4. `DefaultIgnorePolicy` 过滤空名称、目录项、`.DS_Store` 和 `__MACOSX` 等系统噪声。
-5. `ResolvedItem.ContentRefs()` 将 multi refs 转换为内容读取层可消费的 `contentio.Ref`。
+5. `ResolvedItem.RelatedRefs()` 将 multi refs 转换为格式层可消费的 `format.RelatedRef`。
 
 `common/dataitem` 不负责扫描调度、递归遍历、任务状态、`meta_item` 落库、fingerprint、node 绑定、attributes normalizer、engine reader 构造、内容读取或 Manager 前端 DTO。Meta 扫描入口负责把 `ResolvedItem` 转成可落库 item；Manager 仅可在容器动态预览中临时消费解析结果。
 
@@ -149,7 +149,7 @@ type FormatRule struct {
     Refs            *RefRule
     Container       *ContainerRule
     WholeScope      *WholeScopeRule
-    RelatedRefSpecs []contentio.RelatedRefSpec
+    RelatedRefSpecs []format.RelatedRefSpec
 }
 ```
 

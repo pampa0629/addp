@@ -1,13 +1,21 @@
 package dataitem
 
-import "github.com/addp/common/contentio"
+import (
+	"github.com/addp/common/contentio"
+	"github.com/addp/common/format"
+)
 
-type Organization string
+// Organization is the resolved data item organization.
+//
+// It reuses format.Layout values deliberately: format capability declares which
+// layouts a format can support, while dataitem resolves one concrete layout for
+// an item and stores it as organization.
+type Organization = format.Layout
 
 const (
-	OrganizationSingle Organization = "single"
-	OrganizationMulti  Organization = "multi"
-	OrganizationWhole  Organization = "whole"
+	OrganizationSingle Organization = format.FormatLayoutSingle
+	OrganizationMulti  Organization = format.FormatLayoutMulti
+	OrganizationWhole  Organization = format.FormatLayoutWhole
 )
 
 type DataType string
@@ -114,7 +122,7 @@ type FormatRule struct {
 	Refs            *RefRule
 	Container       *ContainerRule
 	WholeScope      *WholeScopeRule
-	RelatedRefSpecs []contentio.RelatedRefSpec
+	RelatedRefSpecs []format.RelatedRefSpec
 }
 
 type ResolvedItem struct {
@@ -147,17 +155,15 @@ type IgnoredCandidate struct {
 	Reason    string
 }
 
-func (item ResolvedItem) ContentRefs() []contentio.Ref {
-	refs := make([]contentio.Ref, 0, len(item.RefList))
+func (item ResolvedItem) RelatedRefs() []format.RelatedRef {
+	refs := make([]format.RelatedRef, 0, len(item.RefList))
 	for _, itemRef := range item.RefList {
 		role := itemRef.Role
 		if role == "" {
 			role = itemRef.Extension
 		}
 		contentRef := contentio.NewRef(itemRef.Path, role)
-		contentRef.Required = itemRef.Required
-		contentRef.Primary = itemRef.Primary
-		refs = append(refs, contentRef)
+		refs = append(refs, format.NewRelatedRef(contentRef, itemRef.Required, itemRef.Primary))
 	}
 	return refs
 }

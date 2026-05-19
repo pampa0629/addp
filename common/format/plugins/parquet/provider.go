@@ -13,7 +13,11 @@ func listParquetResources(ctx context.Context, reader contentio.Reader, scope co
 	if reader == nil {
 		return nil, contentio.ErrContentNotFound
 	}
-	refs, err := listParquetResourcesRecursive(ctx, reader, scope, map[string]bool{})
+	lister, ok := reader.(contentio.Lister)
+	if !ok {
+		return nil, contentio.ErrContentNotFound
+	}
+	refs, err := listParquetResourcesRecursive(ctx, reader, lister, scope, map[string]bool{})
 	if err != nil {
 		return nil, err
 	}
@@ -26,19 +30,19 @@ func listParquetResources(ctx context.Context, reader contentio.Reader, scope co
 	return refs, nil
 }
 
-func listParquetResourcesRecursive(ctx context.Context, reader contentio.Reader, scope contentio.Ref, seen map[string]bool) ([]contentio.Ref, error) {
+func listParquetResourcesRecursive(ctx context.Context, reader contentio.Reader, lister contentio.Lister, scope contentio.Ref, seen map[string]bool) ([]contentio.Ref, error) {
 	if seen[scope.Path] {
 		return nil, nil
 	}
 	seen[scope.Path] = true
-	refs, err := reader.List(ctx, scope)
+	refs, err := lister.List(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]contentio.Ref, 0, len(refs))
 	for _, ref := range refs {
 		if ref.Role == contentio.RoleScope {
-			children, err := listParquetResourcesRecursive(ctx, reader, ref, seen)
+			children, err := listParquetResourcesRecursive(ctx, reader, lister, ref, seen)
 			if err != nil {
 				return nil, err
 			}

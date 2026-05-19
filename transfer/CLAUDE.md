@@ -9,7 +9,7 @@ Transfer 模块是 ADDP 的数据传输中枢，负责导入、导出、同步�
 - Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
 - 具体 engine-native 读写由 `common/engine` 提供。
 - 具体格式和数据类型读写由 `common/format` 提供。
-- content 的定位、range 和 multi refs 读写由 `common/contentio` 表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
+- content 的定位、读取、写入、range 和 scope list 由 `common/contentio` 表达；multi ref 的组织规则和读写语义由 `common/format` / `common/dataitem` / Transfer 编排层表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
 - 旧 Transfer 私有 reader / writer 插件体系、旧 `pkg/pipeline`、旧 `pkg/plugin_loader` 不作为新功能入口。
 
 ## 技术栈与端口
@@ -59,7 +59,7 @@ transfer/
 - 新任务配置必须使用 source / target endpoint JSON，旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / organization 分叉，不按具体引擎组合分叉。
 - encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。
-- Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]contentio.Ref` 与 `common/format` multi table provider 接入。
+- Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
 - 大数据传输要优先考虑批大小、流式读取、Checkpoint、进度日志和幂等重试。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。

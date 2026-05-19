@@ -204,8 +204,8 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `table` + `single` | `TableInfoProvider` | `TableSampleReader` | `TableReaderProvider`、`TableWriterProvider` |
 | `table` + `multi` | `MultiTableProvider` | `MultiTableProvider` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
 | `table` + `whole` | `ScopeTableProvider` | `ScopeTableProvider` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
-| `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 engine/resource 或后续 reader 表达 |
-| `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 engine/resource 或后续 reader 表达 |
+| `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
+| `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
 | `graph` | 后续 `GraphInfoProvider` | 后续 `GraphSampleReader` | 图查询读取由 graph / engine 能力表达 |
 | 横切能力 | spatial 等横切事实进入对应 data type info | 不替代 data type reader | 不替代 data type reader / writer |

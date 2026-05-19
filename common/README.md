@@ -14,9 +14,9 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 `jsonmap` 不承载 `meta_item.attributes` 业务规范；attributes 标准分区、normalizer 和落库构造属于 Meta 模块。
 
 ### contentio
-基于 Go `io` 之上的内容定位和读写抽象，提供 `Ref`、`Reader`、`Writer`、`RangeReader`、`MultiReader`、`MultiWriter` 和 `RelatedRefSpec`。
+基于 Go `io` 之上的内容定位和读写抽象，提供 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader` 和 `Stat`。
 
-`contentio` 不依赖 engine，也不解析格式；engine 到 contentio 的适配放在 `common/engine/contentadapter`。
+`contentio` 不依赖 engine，也不解析格式；多 content 的组织规则属于 `common/format`、`common/dataitem` 或调用编排层，engine 到 contentio 的适配放在 `common/engine/contentadapter`。
 
 ### catalogview
 目录展示和路径定位相关能力，包括 `ResourceLocator`、资源树构建和 DataSourceService 编排。

@@ -66,8 +66,8 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
-	refs := contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
-	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, contentRefFromCatalogPath(target), &format.TableInfo{
+	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
 			{Name: "name", Type: format.FieldTypeString, Size: 32},
@@ -118,13 +118,13 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	}
 }
 
-func TestTableTransferExecutorPrefersMultiReaderProvider(t *testing.T) {
+func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
 	target := engineplugin.FileItemPath(7, "imports/cities.shp")
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
-	refs := contentio.SameBasenameRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
-	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, contentRefFromCatalogPath(target), &format.TableInfo{
+	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
 		Fields: []format.FieldInfo{
 			{Name: "id", Type: format.FieldTypeInt},
 			{Name: "name", Type: format.FieldTypeString, Size: 32},
@@ -203,15 +203,15 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 
 type failingMultiTableProvider struct {
 	format.MultiTableProvider
-	specs        []contentio.RelatedRefSpec
+	specs        []format.RelatedRefSpec
 	sampleCalled bool
 }
 
-func (p *failingMultiTableProvider) RelatedRefSpecs() []contentio.RelatedRefSpec {
-	return append([]contentio.RelatedRefSpec(nil), p.specs...)
+func (p *failingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
+	return append([]format.RelatedRefSpec(nil), p.specs...)
 }
 
-func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.Reader, []contentio.Ref, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.Reader, []format.RelatedRef, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleCalled = true
 	return nil, fmt.Errorf("sample multi provider should not be called")
 }

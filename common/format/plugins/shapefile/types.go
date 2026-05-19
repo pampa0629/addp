@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/contentio"
+	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -35,8 +35,8 @@ type Info struct {
 	Encoding      string   `json:"encoding,omitempty"`
 }
 
-func RelatedRefSpecs() []contentio.RelatedRefSpec {
-	return []contentio.RelatedRefSpec{
+func RelatedRefSpecs() []format.RelatedRefSpec {
+	return []format.RelatedRefSpec{
 		{Extension: ".shp", Role: "main", Required: true, Primary: true},
 		{Extension: ".shx", Role: "index", Required: true},
 		{Extension: ".dbf", Role: "attributes", Required: true},

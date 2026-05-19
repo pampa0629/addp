@@ -40,14 +40,15 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	}
 	refDescriptors := refPreviewDescriptors(formatType, refs)
 	descriptor := refDescriptorForRef(formatType, ref)
-	preview := previewHintForRefDescriptor(descriptor, ref.Path)
+	preview := previewHintForRefDescriptor(descriptor, ref.Ref.Path)
+	refName := contentio.BaseName(ref.Ref)
 	contentReq := &objectcontent.ObjectContentRequest{
 		Bucket:      contentCtx.bucket,
 		Path:        "",
-		Name:        ref.Name,
+		Name:        refName,
 		Format:      string(preview.Format),
-		Extension:   defaultExtension(ref.Path),
-		ContentType: previewContentType(preview.Format, ref.Name),
+		Extension:   defaultExtension(ref.Ref.Path),
+		ContentType: previewContentType(preview.Format, refName),
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": preview.DataType,
@@ -82,7 +83,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		if handler != nil {
 			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, func() (io.ReadCloser, error) {
-					return contentCtx.reader.Open(ctx, ref)
+					return contentCtx.reader.Open(ctx, ref.Ref)
 				})
 				if err != nil {
 					return nil, err
@@ -95,7 +96,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 				}
 			}
 			content, truncated, err := handler.Handle(ctx, contentReq, func(limit int64) ([]byte, bool, error) {
-				reader, err := contentCtx.reader.Open(ctx, ref)
+				reader, err := contentCtx.reader.Open(ctx, ref.Ref)
 				if err != nil {
 					return nil, false, err
 				}
@@ -119,36 +120,36 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 
 	return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, &models.ObjectPreviewContent{
 		Kind:     models.ObjectPreviewKindUnsupported,
-		Text:     "暂不支持该相关文件的在线预览，请下载后查看。",
+		Text:     "暂不支持该相关内容的在线预览，请下载后查看。",
 		Metadata: map[string]interface{}{"format": preview.Format, "data_type": preview.DataType},
 	}), nil
 }
 
-func refForPreviewPath(formatType format.FormatType, refs []contentio.Ref, target string) (contentio.Ref, bool) {
+func refForPreviewPath(formatType format.FormatType, refs []format.RelatedRef, target string) (format.RelatedRef, bool) {
 	target = strings.Trim(strings.TrimSpace(target), "/")
 	if target == "" {
-		return contentio.Ref{}, false
+		return format.RelatedRef{}, false
 	}
 	for _, ref := range refs {
-		if refPathMatches(ref.Path, target) {
+		if refPathMatches(ref.Ref.Path, target) {
 			return ref, true
 		}
 	}
 	for _, descriptor := range format.DescribeRefs(formatType, refs) {
 		if refPathMatches(descriptor.Path, target) {
 			for _, ref := range refs {
-				if refPathMatches(ref.Path, descriptor.Path) {
+				if refPathMatches(ref.Ref.Path, descriptor.Path) {
 					return ref, true
 				}
 			}
 		}
 	}
-	return contentio.Ref{}, false
+	return format.RelatedRef{}, false
 }
 
-func refDescriptorForRef(formatType format.FormatType, ref contentio.Ref) *format.RefDescriptor {
-	for _, descriptor := range format.DescribeRefs(formatType, []contentio.Ref{ref}) {
-		if refPathMatches(descriptor.Path, ref.Path) {
+func refDescriptorForRef(formatType format.FormatType, ref format.RelatedRef) *format.RefDescriptor {
+	for _, descriptor := range format.DescribeRefs(formatType, []format.RelatedRef{ref}) {
+		if refPathMatches(descriptor.Path, ref.Ref.Path) {
 			current := descriptor
 			return &current
 		}
@@ -156,7 +157,7 @@ func refDescriptorForRef(formatType format.FormatType, ref contentio.Ref) *forma
 	return nil
 }
 
-func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref contentio.Ref, preview previewHint, refs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
+func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref format.RelatedRef, preview previewHint, refs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
 	if content != nil {
 		objectcontent.DecoratePreviewContent(content)
 		if len(refs) > 0 {
@@ -175,10 +176,10 @@ func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket strin
 		Rows:     []map[string]interface{}{},
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
-			Path:        ref.Path,
-			ObjectKey:   ref.Path,
+			Path:        ref.Ref.Path,
+			ObjectKey:   ref.Ref.Path,
 			NodeType:    "object",
-			ContentType: previewContentType(preview.Format, ref.Name),
+			ContentType: previewContentType(preview.Format, contentio.BaseName(ref.Ref)),
 			Attributes: models.JSONMap{
 				"item": map[string]interface{}{
 					"data_type": preview.DataType,

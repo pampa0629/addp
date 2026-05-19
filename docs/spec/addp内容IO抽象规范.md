@@ -14,10 +14,11 @@
 
 - `Ref`：一个已确定 content 的定位器。
 - `Reader` / `Writer`：按 `Ref` 打开内容流或创建输出流。
+- `Lister`：按 scope `Ref` 列举子 content。
 - `RangeReader`：按 `Ref` 打开字节范围内容。
-- `RelatedRefSpec`：从主 `Ref` 推导相关 refs 的规则。
 
-多个 content 共同组成一个 format item 时，不在 `contentio` 内引入独立的 multi 读写器，而是由 format / dataitem / 调用编排层显式传递 `[]Ref`。
+多个 content 共同组成一个 format item 时，不在 `contentio` 内引入独立的 multi 读写器，而是由 format / dataitem / 调用编排层显式传递 `[]format.RelatedRef`。
+从 primary ref 推导 related refs 的规则属于 `common/format.RelatedRefSpec`，不属于 `contentio`。
 
 `common/catalogview` 已退出。目录展示、资源树、`ResourceLocator`、DataSourceService 等偏目录视图和服务编排的能力归入 `common/catalogview`；内容 I/O 归入 `common/contentio`；engine 到 contentio 的适配归入 `common/engine/contentadapter`。
 
@@ -36,7 +37,7 @@ engine 到 contentio 的适配放在 `common/engine/contentadapter`。该包可�
 ```text
 Meta / Manager / Transfer 编排层
   -> 根据 engine capability 构造 contentio.Reader / Writer
-  -> 对多 content 格式同时传递 []contentio.Ref
+  -> 对多 content 格式同时传递 []format.RelatedRef
   -> 将内容 I/O 抽象交给 common/format provider
   -> FormatPlugin 解码 / 提取 / 编码
   -> info provider / content reader 归一为平台语义或内容数据
@@ -57,12 +58,11 @@ Meta / Manager / Transfer 编排层
 `Ref` 至少表达：
 
 - `path`：内容路径。
-- `name`：显示或辅助识别名称。
 - `role`：该 content 在当前读取链路中的角色。
-- `required`：多 content 场景下是否必需。
-- `primary`：是否为主 content。
 
-`Ref` 是定位器。需要多个 content 时，使用 `[]Ref`；不再把底层内容组合抽象成独立的 `Part`。
+`Ref` 是定位器。它不携带 `required`、`primary`、显示名、格式类型、数据类型或其他集合 / 展示语义。需要多个 content 时，使用上层结构显式组织一组 `Ref`；不再把底层内容组合抽象成独立的 `Part`。
+
+`contentio.NewRef` 是带默认规范化的构造器：去除路径首尾 `/`，并将 `role` 规范为小写。它不根据 `role` 推导 `primary`，也不保存显示名；如果调用方需要显示名，应按需从 `path` 派生，例如使用 `contentio.BaseName(ref)`。如果调用方需要必需性或 primary 标记，应放在 `format.RelatedRef`、`dataitem.ItemRef` 或模块 DTO 中。
 
 角色建议：
 
@@ -74,11 +74,11 @@ Meta / Manager / Transfer 编排层
 | `auxiliary` | 辅助 content |
 | 格式自定义角色 | 如 Shapefile 的 `index`、`attributes`、`projection`、`encoding` |
 
-旧内容组合兼容命名已删除。新代码统一使用 `Ref`、`Reader` / `Writer`、`[]Ref` 这一组语义。
+旧内容组合兼容命名已删除。底层内容 I/O 统一使用 `Ref`、`Reader` / `Writer`；多 content 格式使用 `format.RelatedRef` 显式携带集合语义。
 
-## RelatedRefSpec
+## 格式相关 Ref 规则
 
-`RelatedRefSpec` 不是定位器，而是从一个主 `Ref` 推导相关 refs 的规则。
+`format.RelatedRefSpec` 不是定位器，而是格式层从一个 primary ref 推导 related refs 的规则。
 
 典型例子是 Shapefile：
 
@@ -90,17 +90,25 @@ Meta / Manager / Transfer 编排层
 | `.prj` | `projection` | 否 | 否 |
 | `.cpg` | `encoding` | 否 | 否 |
 
-编排层可以用 `SameBasenameRefs` 从主路径推导默认相关 refs。但真实读取时，应优先使用 Meta 已确认并入库的 refs，避免重新猜测 sibling 文件。
+`format.RelatedRefSpec` 本身也必须有且只有一个 `Primary=true`。格式插件注册 multi table reader / writer provider 时会校验该约束；data item detector 使用 specs 识别 multi item 前也会校验该约束。没有 primary 或多个 primary 的 specs 都是不合法的格式规则。
+
+`format.RelatedRef` 表示一个已解析的相关引用：其中的 `contentio.Ref` 只负责定位，`Required` / `Primary` 描述该 ref 在当前集合中的约束和主次关系。
+
+一个可被 format provider 消费的 `[]format.RelatedRef` 必须有且只有一个 `Primary=true` 的 ref。调用方可使用 `format.ValidateRelatedRefs` 校验集合，用 `format.PrimaryRelatedRef` 获取 primary ref。缺失或存在多个 primary 都表示上层 item 识别或 attributes 数据不可信，应回退到 format 规则重新构造 refs，或直接返回错误。
+
+编排层可以用 `format.SameBasenameRelatedRefs` 从 primary path 和 `RelatedRefSpec` 推导默认 related refs。但真实读取时，应优先使用 Meta 已确认并入库的 refs，避免重新猜测 sibling content。
 
 ## Reader / Writer
 
-`Reader` 负责按 `Ref` 打开内容、读取轻量元数据、列举 scope。
+`Reader` 负责按 `Ref` 打开内容、读取轻量状态。
 
 `Writer` 负责按 `Ref` 创建输出流。
 
+`Lister` 负责按 scope `Ref` 列举子 content。它是独立接口，不嵌入 `Reader`，调用方只有在 scope / 目录型格式需要列举时才断言使用。
+
 `RangeReader` 在 `Reader` 基础上提供字节范围读取，适用于 Shapefile `.shx` 索引读取、媒体头部读取、大文件局部采样等场景。
 
-`Reader.List` 只表达对一个 scope ref 的内容列举能力。按扩展名选择、临时目录物化、本地缓存和格式探测等编排工具不属于 `contentio` 核心，应放在 format、dataitem 或具体模块中。
+按扩展名选择、临时目录物化、本地缓存和格式探测等编排工具不属于 `contentio` 核心，应放在 format、dataitem 或具体模块中。
 
 这些接口不负责：
 
@@ -114,19 +122,20 @@ Meta / Manager / Transfer 编排层
 
 multi 是 data item / format 层的组织方式，不是 `contentio` 的底层 I/O 原语。
 
+`format.Layouts` 声明某个格式可能支持的 content layout；`attributes.item.organization` 使用同一组取值表达某个已识别 data item 的最终组织结果。也就是说，layout 是格式能力声明，organization 是 item 识别结果，不应维护两套不同取值。
+
 当一个格式需要多个 content 时，调用方应显式传递：
 
 ```go
 reader contentio.Reader
-refs   []contentio.Ref
+refs   []format.RelatedRef
 ```
 
 写入时显式传递：
 
 ```go
 writer contentio.Writer
-refs   []contentio.Ref
-target contentio.Ref
+refs   []format.RelatedRef
 ```
 
 Shapefile 这类格式应在 `common/format` 层声明相关 ref 规则，并由调用编排层生成或读取已确认的 refs；格式实现只按 `Ref` 打开 / 创建内容。
@@ -143,8 +152,8 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 | 来源形态 | 典型场景 | 读取抽象 | 是否经过 FormatPlugin |
 |---|---|---|---|
-| single / multi 文件表 | CSV、JSON、Excel、Shapefile、单 Parquet | `Reader`，多 content 时另传 `[]Ref` | 是 |
-| scope 表 | Parquet 目录、Iceberg/Delta/Hudi 类目录表 | `Reader` + scope ref/list，必要时加 manifest ref | 是 |
+| single / multi content table | CSV、JSON、Excel、Shapefile、单 Parquet | `Reader`，多 content 时另传 `[]format.RelatedRef` | 是 |
+| scope 表 | Parquet 目录、Iceberg/Delta/Hudi 类目录表 | `Reader` + `Lister` + scope ref，必要时加 manifest ref | 是 |
 | engine-native 表 | PostgreSQL、MySQL、MongoDB collection、Neo4j 查询结果 | engine-native batch/session | 通常否 |
 
 上层统一调用 `TableInfoProvider` / `TableSampleReader` / `TableReaderProvider` 获取字段信息、样本、分页、空间字段等平台语义或内容数据。
@@ -157,8 +166,8 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 | 能力 | 当前接口 | 作用 |
 |---|---|---|
-| catalog | `CatalogProvider` | 列举和解析资源路径 |
-| metadata | `ItemMetadataProvider` | 获取引擎原生资源元数据 |
+| catalog | `CatalogProvider` | 列举和解析 engine catalog path |
+| metadata | `ItemMetadataProvider` | 获取 engine-native item metadata |
 | stream read | `ContentReadableProvider` | 打开完整内容流 |
 | range read | `RangeReadableProvider` | 打开范围内容流 |
 | stream write | `ContentWritableProvider` | 写入完整内容流 |
@@ -180,18 +189,18 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 
 ```text
 Meta 已确认 refs
-  -> `contentio.Reader` + `[]contentio.Ref`
+  -> `contentio.Reader` + `[]format.RelatedRef`
   -> FormatPlugin
   -> info provider / content reader
 ```
 
-multi 读取必须优先使用 Meta 已确认的refs。Manager 和 Transfer 不得按扩展名重新枚举 sibling 后猜 refs。
+multi 读取必须优先使用 Meta 已确认的 refs。Manager 和 Transfer 不得按扩展名重新枚举 sibling content 后猜 refs。
 
 ### scope
 
 ```text
 Meta 已确认 scope ref
-  -> contentio.Reader + scope list
+  -> contentio.Reader + contentio.Lister + scope ref
   -> FormatPlugin
   -> info provider / content reader
 ```

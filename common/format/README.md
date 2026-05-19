@@ -17,14 +17,14 @@
 
 `common/format` 不负责：
 
-- 不决定一个资源是不是一个 Meta item，也不做多文件归并。
+- 不决定哪些 content 组成一个 Meta item，也不做 related refs 归并。
 - 不接收 engine id，不读取 engine 配置，不创建 engine 连接。
 - 不定义展示协议，不返回 Manager 面向前端的 DTO，不推荐前端渲染器。
 - 不决定 Transfer 任务计划、提交边界、批量并发策略。
 - 不把 `.geojson` 当作独立顶层格式；它是 `FormatJSON` 的空间结构能力。
 - `ExtractInput` 等 provider 输入不携带 `EngineID`，调用方需要的引擎上下文应留在编排层。
 
-上层模块应先基于 engine capability 或本地文件系统能力构造 `common/contentio` 内容 I/O 抽象，再把 `io.Reader`、`contentio.Reader`，以及多 content 场景下的 `[]contentio.Ref` 交给 FormatPlugin、info provider 或 content reader。
+上层模块应先基于 engine capability 或本地文件系统能力构造 `common/contentio` 内容 I/O 抽象，再把 `io.Reader`、`contentio.Reader`，以及多 content 场景下的 `[]format.RelatedRef` 交给 FormatPlugin、info provider 或 content reader。
 
 ## 职责清单与目录归位
 
@@ -32,7 +32,7 @@
 
 | 职责 | 代码位置 | 说明 |
 | --- | --- | --- |
-| 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示资源编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册。 |
+| 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示 content 编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册。 |
 | 格式身份 descriptor 与能力发现 | `descriptor.go`、`discovery.go`、`registry/` | 运行时注册、查询、冲突诊断和 capability view；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
@@ -88,14 +88,14 @@ func GuessContentType(filename string, peek []byte) string
 
 - `.json` 和 `.geojson` 都返回 `FormatJSON`。
 - `application/json`、`application/geo+json`、`application/vnd.geo+json` 都返回 `FormatJSON`。
-- Shapefile 只有主资源 `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等相关文件不单独代表完整 Shapefile，ref 归并由上层基于 format capability 和资源组织规则完成。
+- Shapefile 只有 primary content `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等 related content 不单独代表完整 Shapefile，ref 归并由上层基于 format capability 和 item 组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。
 
 ## Format Identity 与 Detection
 
 `format identity` 定义平台支持的格式是谁，以及它默认属于什么 data type、支持什么 layout、info provider 和 content reader。它由 `FormatPlugin` / `FormatDescriptor` 表达。
 
-`format detection` 是给定文件名、MIME、magic bytes 或内容签名后，判断某个资源看起来是什么格式。Detection 输出 format identity 的引用，不决定 data item 边界。
+`format detection` 是给定文件名、MIME、magic bytes 或内容签名后，判断某个 content 看起来是什么格式。Detection 输出 format identity 的引用，不决定 data item 边界。
 
 Shapefile 这类 multi 格式需要特别区分：`.shp/.dbf/.shx` 的识别不等于 item 归并；归并属于 Meta item detector。
 
@@ -127,9 +127,9 @@ type FormatCapability struct {
 | --- | --- |
 | `Format` | 顶层格式事实，例如 `csv`、`json`、`parquet`、`shapefile` |
 | `I18nKey` | 展示层可使用的国际化 key |
-| `Extensions` | 常见文件扩展名，用于识别和展示 |
+| `Extensions` | 常见 content 扩展名，用于识别和展示 |
 | `DataType` | 默认可映射的数据类型，例如 `table`、`document`、`media` |
-| `Layouts` | 资源组织形态：`single`、`multi`、`whole` |
+| `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；data item 落库时同一组值写入 `organization` |
 | `ProviderHints` | 可用 provider 类型提示，例如 `table`、`spatial` |
 | `Spatial` | 是否天然包含空间语义 |
 | `TransferRead` | 是否适合作为 Transfer 读取格式 |
@@ -209,24 +209,24 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableReaderProvider` | `table` | `single` | `io.Reader` -> `TableReader` | 打开一次连续读取会话，按批读取全量行。 | Transfer 主链路、批处理导出/导入 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableWriterProvider` | `table` | `single` | `io.Writer` + `TableInfo` -> `TableWriter` | 打开一次连续写出会话，按批编码写入。 | Transfer 写侧 | CSV、JSON/JSONL、Parquet 单文件 |
-| `MultiTableProvider` | `table` | `multi` | `contentio.Reader` + `[]contentio.Ref` | 多 ref table 的 info / sample 能力。 | Meta、Manager、Transfer 探查兜底 | Shapefile |
-| `MultiTableReaderProvider` | `table` | `multi` | `contentio.Reader` + `[]contentio.Ref` -> `TableReader` | 多 ref table 的连续全量读取会话。 | Transfer 主链路 | Shapefile |
-| `MultiTableWriterProvider` | `table` | `multi` | `contentio.Writer` + `[]contentio.Ref` + 主 ref + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
+| `MultiTableProvider` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` | 多 ref table 的 info / sample 能力。 | Meta、Manager、Transfer 探查兜底 | Shapefile |
+| `MultiTableReaderProvider` | `table` | `multi` | `contentio.Reader` + `[]RelatedRef` -> `TableReader` | 多 ref table 的连续全量读取会话。 | Transfer 主链路 | Shapefile |
+| `MultiTableWriterProvider` | `table` | `multi` | `contentio.Writer` + `[]RelatedRef` + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
 | `ScopeTableProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 的 info / sample 能力。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、未来 PDF/DOCX 解析 |
 | `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、未来 PDF/DOCX 解析 |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
 | `ContainerInfoProvider` | `container` | 通常 `single` | `io.Reader` | 描述容器内部 child 列表和默认入口。 | Meta、Manager | zip、excel、sqlite、geopackage |
-| `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的资源。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
-| `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明相关 ref 的角色、扩展名、必需性。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多文件格式 |
-| `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]contentio.Ref` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关文件展示 |
+| `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的 content。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
+| `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
+| `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |
 
 ### 实现要求
 
 所有 provider / reader 实现必须遵守以下边界：
 
 - 不接收 engine id，不读取 engine 配置，不创建 engine 连接；调用方先用 `common/engine` / `common/engine/contentadapter` / `common/contentio` 打开内容或 ref 集合。
-- 不决定 data item 边界；`single` / `multi` / `whole` 的归并由 Meta detector 和资源组织规则负责。
+- 不决定 data item 边界；`single` / `multi` / `whole` 的归并由 Meta detector 和 item 组织规则负责。
 - 不返回 Manager DTO、前端渲染 hint 或 Transfer 任务结构；只返回通用 info、样本、文本、媒体信息或 reader/writer 会话。
 - Info provider 不返回内容样本；content reader 不写 `type_info` / `format_info`。
 - `FormatInfoProvider` 只承载格式私有事实；跨格式事实进入 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等类型模型，再由 Meta 映射到标准 attributes。
@@ -241,7 +241,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 
 | 命名片段 | 含义 |
 |---|---|
-| 无前缀 | 单资源 / 单 stream 输入，例如 `TableReaderProvider`。 |
+| 无前缀 | single content / single stream 输入，例如 `TableReaderProvider`。 |
 | `Multi` | 多 ref 组织方式，例如 Shapefile。 |
 | `Scope` | whole scope / 目录 / prefix 组织方式。 |
 | `Table`、`Document`、`Media`、`Container` | data type 或容器父类型。 |
@@ -249,7 +249,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `SampleReader` | 读取少量样本或片段，面向预览 / 探查。 |
 | `ReaderProvider` | 打开连续全量读取会话。 |
 | `WriterProvider` | 打开连续写出会话。 |
-| `Resolver` | 把容器内部定位解析成可继续读取的资源。 |
+| `Resolver` | 把容器内部定位解析成可继续读取的 content。 |
 | `RefDescriptorProvider` / `RelatedRefSpecProvider` | 提供 ref 描述或相关 ref 推导规则，不读取内容。 |
 
 当前命名基本可继续使用，但有三个历史兼容项容易混淆：
@@ -286,8 +286,8 @@ type TableSampleReader interface {
 ```go
 type MultiTableProvider interface {
     TableProvider
-    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (*TableInfo, error)
-    SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+    SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 ```
 
@@ -296,14 +296,14 @@ type MultiTableProvider interface {
 ```go
 type MultiTableReaderProvider interface {
     Provider
-    RelatedRefSpecs() []contentio.RelatedRefSpec
-    OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []contentio.Ref, options *ParseOptions) (TableReader, error)
+    RelatedRefSpecs() []RelatedRefSpec
+    OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (TableReader, error)
 }
 
 type MultiTableWriterProvider interface {
     Provider
-    RelatedRefSpecs() []contentio.RelatedRefSpec
-    OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []contentio.Ref, target contentio.Ref, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+    RelatedRefSpecs() []RelatedRefSpec
+    OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
 }
 ```
 
@@ -342,10 +342,10 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 使用约束：
 
 - 单文件 provider 接收 `io.Reader`。
-- multi provider 接收 `contentio.Reader` / `contentio.Writer` 与显式 `[]contentio.Ref`。
+- multi provider 接收 `contentio.Reader` / `contentio.Writer` 与显式 `[]RelatedRef`；`RelatedRef` 中的 `Ref` 是底层定位器，`Required` / `Primary` 是 ref 集合标注。
 - 目录 scope provider 接收 `contentio.Reader` 和 `contentio.Ref`。
 - `SampleTable` 的 `offset` / `limit` 是逻辑数据行窗口，不是字节偏移。行号从数据区第 0 行开始；CSV 等有表头的格式不把表头计入数据行。
-- `SampleTable` 的 `input` 默认表示资源起点。调用方也可以传入从某个 record boundary 开始的局部流，但必须通过 `ParseOptions.TableSample` 提供 `InputStartsAtRow`、`Fields` 等上下文，让格式 plugin 在内部完成剩余行跳过和解析。
+- `SampleTable` 的 `input` 默认表示 content 起点。调用方也可以传入从某个 record boundary 开始的局部流，但必须通过 `ParseOptions.TableSample` 提供 `InputStartsAtRow`、`Fields` 等上下文，让格式 plugin 在内部完成剩余行跳过和解析。
 - `content_index` 是上层 attributes 中的通用访问索引，可用于帮助 engine range reader 打开局部流；`common/format` 只定义索引结构和 reader 选项，不直接调用 engine。
 - engine 鉴权、连接池、对象列举、内容打开、重试和审计都在上层或 engine/contentadapter 层完成。
 - Manager 可按自身协议把 `TableInfo + rows` 组装为面向前端的 DTO；该协议不属于 `common/format`。

@@ -41,10 +41,3 @@ func (r *singleContentReader) Stat(_ context.Context, ref contentio.Ref) (*conte
 		Exists:      true,
 	}, nil
 }
-
-func (r *singleContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	if r == nil {
-		return nil, contentio.ErrContentNotFound
-	}
-	return []contentio.Ref{r.ref}, nil
-}

@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 )
 
@@ -69,11 +68,14 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 	if len(specs) == 0 {
 		return nil
 	}
-	knownExts := map[string]contentio.RelatedRefSpec{}
+	if err := format.ValidateRelatedRefSpecs(specs); err != nil {
+		return nil
+	}
+	knownExts := map[string]format.RelatedRefSpec{}
 	requiredExts := map[string]bool{}
 	primaryExt := ""
 	for _, spec := range specs {
-		ext := contentio.NormalizeExtension(spec.Extension)
+		ext := format.NormalizeExtension(spec.Extension)
 		if ext == "" {
 			continue
 		}
@@ -87,7 +89,7 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 	}
 	if primaryExt == "" {
 		for _, spec := range specs {
-			ext := contentio.NormalizeExtension(spec.Extension)
+			ext := format.NormalizeExtension(spec.Extension)
 			if ext != "" && spec.Required {
 				primaryExt = ext
 				break
@@ -291,23 +293,23 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	}, true
 }
 
-func refSpecsFromRule(rule FormatRule) []contentio.RelatedRefSpec {
+func refSpecsFromRule(rule FormatRule) []format.RelatedRefSpec {
 	if rule.Refs == nil {
 		return nil
 	}
-	specs := make([]contentio.RelatedRefSpec, 0, len(rule.Refs.RequiredExtensions)+len(rule.Refs.OptionalExtensions))
-	entryExt := contentio.NormalizeExtension(rule.Refs.EntryExtension)
+	specs := make([]format.RelatedRefSpec, 0, len(rule.Refs.RequiredExtensions)+len(rule.Refs.OptionalExtensions))
+	entryExt := format.NormalizeExtension(rule.Refs.EntryExtension)
 	for _, ext := range rule.Refs.RequiredExtensions {
-		normalized := contentio.NormalizeExtension(ext)
-		specs = append(specs, contentio.RelatedRefSpec{
+		normalized := format.NormalizeExtension(ext)
+		specs = append(specs, format.RelatedRefSpec{
 			Extension: normalized,
 			Required:  true,
 			Primary:   normalized == entryExt,
 		})
 	}
 	for _, ext := range rule.Refs.OptionalExtensions {
-		normalized := contentio.NormalizeExtension(ext)
-		specs = append(specs, contentio.RelatedRefSpec{
+		normalized := format.NormalizeExtension(ext)
+		specs = append(specs, format.RelatedRefSpec{
 			Extension: normalized,
 			Required:  false,
 			Primary:   normalized == entryExt,
@@ -369,7 +371,7 @@ func multiGroupKey(candidate Candidate) string {
 func ruleExtensionSet(extensions []string) map[string]bool {
 	result := map[string]bool{}
 	for _, ext := range extensions {
-		normalized := contentio.NormalizeExtension(ext)
+		normalized := format.NormalizeExtension(ext)
 		if normalized != "" {
 			result[normalized] = true
 		}

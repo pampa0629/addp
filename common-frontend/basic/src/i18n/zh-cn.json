@@ -294,6 +294,7 @@
     "empty": "暂无可预览的子项",
     "rowCount": "{count} 行",
     "components": "组件",
+    "refs": "相关内容",
     "combinedPreview": "组合预览",
     "componentLabel": "名称",
     "componentRole": "角色",

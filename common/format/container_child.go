@@ -25,7 +25,7 @@ type ContainerChildResource struct {
 	DataType      string
 	Format        FormatType
 	Organization  string
-	Refs          []contentio.Ref
+	Refs          []RelatedRef
 	ResourceKind  string
 	Reader        contentio.Reader
 	Ref           contentio.Ref
@@ -88,7 +88,7 @@ func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, ch
 		DataType:     child.DataType,
 		Format:       childFormatOrParent(child, FormatUnknown),
 		Organization: child.Organization,
-		Refs:         childContentRefs(child),
+		Refs:         childRelatedRefs(child),
 		ResourceKind: ContainerChildResourceStream,
 		Reader:       reader,
 		Ref:          ref,
@@ -111,23 +111,18 @@ func childFormatOrParent(child ContainerChildInfo, parentFormat FormatType) Form
 	return FormatUnknown
 }
 
-func childContentRefs(child ContainerChildInfo) []contentio.Ref {
+func childRelatedRefs(child ContainerChildInfo) []RelatedRef {
 	if len(child.Refs) == 0 {
 		return nil
 	}
-	refs := make([]contentio.Ref, 0, len(child.Refs))
+	refs := make([]RelatedRef, 0, len(child.Refs))
 	for _, itemRef := range child.Refs {
-		role := contentio.RoleAuxiliary
-		if itemRef.Primary {
-			role = contentio.RoleMain
+		role := itemRef.Role
+		if role == "" {
+			role = contentio.RoleAuxiliary
 		}
 		contentRef := contentio.NewRef(itemRef.Path, role)
-		if itemRef.Role != "" {
-			contentRef.Role = itemRef.Role
-		}
-		contentRef.Required = itemRef.Required
-		contentRef.Primary = itemRef.Primary
-		refs = append(refs, contentRef)
+		refs = append(refs, NewRelatedRef(contentRef, itemRef.Required, itemRef.Primary))
 	}
 	return refs
 }

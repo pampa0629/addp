@@ -12,7 +12,7 @@ common/
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── config/         # .env 加载和服务配置
 ├── catalogview/    # 目录展示、资源树和路径定位相关能力
-├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、MultiReader/MultiWriter
+├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
 ├── engine/contentadapter/ # engine provider 到 contentio 的适配
 ├── jsonmap/        # decoded JSON map 通用读取工具
 ├── format/         # 文件格式、类型信息、格式信息、parser / analyzer

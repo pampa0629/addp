@@ -63,7 +63,7 @@ type multiTargetResourceDeleter struct {
 	provider engineplugin.ResourceDeleteProvider
 	connInfo engineplugin.ConnectionInfo
 	basePath engineplugin.CatalogPath
-	refs     []contentio.Ref
+	refs     []format.RelatedRef
 }
 
 func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
@@ -71,7 +71,7 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 		return nil
 	}
 	for _, ref := range d.refs {
-		path, err := contentadapter.CatalogPath(d.basePath, ref)
+		path, err := contentadapter.CatalogPath(d.basePath, ref.Ref)
 		if err != nil {
 			return err
 		}
@@ -474,7 +474,7 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 
 type multiEncodedTableBatchReader struct {
 	reader       contentio.Reader
-	refs         []contentio.Ref
+	refs         []format.RelatedRef
 	provider     format.MultiTableProvider
 	schema       *format.TableInfo
 	parseOptions *format.ParseOptions
@@ -557,8 +557,8 @@ func (s *encodedContentTableSource) contentReader() contentio.Reader {
 	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.FixedPathMapper(s.path), s.readOptions)
 }
 
-func (s *encodedContentTableSource) refReader(specs []contentio.RelatedRefSpec) (contentio.Reader, []contentio.Ref) {
-	return contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions), contentio.SameBasenameRefs(s.path.StringPath(), specs)
+func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (contentio.Reader, []format.RelatedRef) {
+	return contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions), format.SameBasenameRelatedRefs(s.path.StringPath(), specs)
 }
 
 type nativeTableBatchTarget struct {
@@ -718,7 +718,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *format.Tab
 	}
 	if t.multiProvider != nil {
 		writer, refs := t.refWriter(t.multiProvider.RelatedRefSpecs())
-		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, writer, refs, contentRefFromCatalogPath(t.path), schema, t.formatOptions)
+		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, writer, refs, schema, t.formatOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded multi table writer: %w", err)
 		}
@@ -748,7 +748,7 @@ func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) er
 		provider: t.deleter.provider,
 		connInfo: t.deleter.connInfo,
 		basePath: t.path,
-		refs:     contentio.SameBasenameRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()),
+		refs:     format.SameBasenameRelatedRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()),
 	}
 	if err := multiDeleter.DeleteTarget(ctx); err != nil {
 		return fmt.Errorf("delete encoded multi target before write: %w", err)
@@ -760,8 +760,8 @@ func (t *encodedContentTableTarget) contentWriter() contentio.Writer {
 	return contentadapter.NewMappedWriter(t.writer, t.connInfo, contentadapter.FixedPathMapper(t.path), t.writeOptions)
 }
 
-func (t *encodedContentTableTarget) refWriter(specs []contentio.RelatedRefSpec) (contentio.Writer, []contentio.Ref) {
-	return contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions), contentio.SameBasenameRefs(t.path.StringPath(), specs)
+func (t *encodedContentTableTarget) refWriter(specs []format.RelatedRefSpec) (contentio.Writer, []format.RelatedRef) {
+	return contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions), format.SameBasenameRelatedRefs(t.path.StringPath(), specs)
 }
 
 type emptyContentBatchWriter struct {

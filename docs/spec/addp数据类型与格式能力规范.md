@@ -11,7 +11,7 @@
 | format capability 表达格式实现能做什么 | data item 如何归并和 claims 如何合并 |
 | FormatPlugin 如何声明格式身份、能力和布局 | `meta_item.name/full_name/item_type` 来源规则 |
 | info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
-| content reader 如何提供内容数据 | contentio Reader / Writer 与 `[]Ref` 的具体接口 |
+| content reader 如何提供内容数据 | contentio Reader / Writer 与 `[]format.RelatedRef` 的具体接口 |
 
 item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
@@ -65,7 +65,7 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 - 它可以声明“CSV 是 `format=csv`，默认 `data_type=table`，支持 `single`，有 `table_sample` reader”。
 - 它不能决定“当前某个文件最终是不是一个 data item”。
 - 它不能决定 Shapefile refs如何归并成最终 item；只能声明ref 布局能力，最终归并由 Meta detector 裁决。
-- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader`，并在多 content 场景下显式传递 `[]contentio.Ref`。
+- 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader`，并在多 content 场景下显式传递 `[]format.RelatedRef`。
 
 ### FormatDescriptor
 
@@ -209,7 +209,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 建议说明：
 
-- `ScopeKind`：单文件、相关文件、目录、prefix、schema、manifest scope。
+- `ScopeKind`：单 content、相关内容、目录、prefix、schema、manifest scope。
 - `PrimaryResourceRole`：主资源是普通文件、manifest、目录入口，还是整个范围本身。
 - `RequiredRefs`：必须出现哪些 ref。
 - `OptionalRefs`：可以出现哪些附加 ref。

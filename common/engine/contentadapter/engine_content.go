@@ -71,10 +71,6 @@ func (r *engineContentReader) Stat(context.Context, contentio.Ref) (*contentio.S
 	return nil, contentio.ErrContentNotFound
 }
 
-func (r *engineContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	return nil, contentio.ErrContentNotFound
-}
-
 func (r *engineContentReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
 	if r == nil || r.rangeReader == nil {
 		return nil, contentio.ErrContentNotFound

@@ -917,9 +917,9 @@ func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 		},
 	})
 
-	got := make(map[string]contentio.Ref, len(refs))
+	got := make(map[string]format.RelatedRef, len(refs))
 	for _, ref := range refs {
-		got[ref.Role] = ref
+		got[ref.Ref.Role] = ref
 	}
 
 	for _, role := range []string{"main", "index", "attributes", "projection"} {
@@ -933,8 +933,8 @@ func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 	if got["projection"].Required {
 		t.Fatalf("projection ref should be optional")
 	}
-	if got["main"].Path != "bucket/roads/roads.shp" {
-		t.Fatalf("main path = %q", got["main"].Path)
+	if got["main"].Ref.Path != "bucket/roads/roads.shp" {
+		t.Fatalf("main path = %q", got["main"].Ref.Path)
 	}
 }
 
@@ -943,7 +943,7 @@ func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
 	required := map[string]bool{}
 	for _, ref := range refs {
 		if ref.Required {
-			required[ref.Path] = true
+			required[ref.Ref.Path] = true
 		}
 	}
 	want := map[string]bool{
@@ -956,6 +956,95 @@ func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
 	}
 }
 
+func TestRefReaderForPreviewFallsBackWhenMetaRefsHaveNoPrimary(t *testing.T) {
+	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
+		"item": map[string]interface{}{
+			"refs": []interface{}{
+				map[string]interface{}{"path": "bucket/custom/roads.dbf", "role": "attributes", "required": true},
+				map[string]interface{}{"path": "bucket/custom/roads.shp", "role": "main", "required": true},
+				map[string]interface{}{"path": "bucket/custom/roads.shx", "role": "index", "required": true},
+			},
+		},
+	})
+
+	primary, err := format.PrimaryRelatedRef(refs)
+	if err != nil {
+		t.Fatalf("fallback refs primary error = %v", err)
+	}
+	if primary.Ref.Path != "bucket/roads/roads.shp" {
+		t.Fatalf("primary fallback path = %q, want bucket/roads/roads.shp", primary.Ref.Path)
+	}
+}
+
+func TestRefFilePreviewProviderOpensSelectedRelatedRef(t *testing.T) {
+	previous, previousErr := plugin.Get("minio-ref-preview-selected")
+	enginePlugin := &recordingContentPlugin{
+		engineType: "minio-ref-preview-selected",
+		content:    []byte("EPSG:4326"),
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "")
+	provider := NewRefFilePreviewProvider(contentRegistry)
+	req := &PreviewRequest{
+		Engine: &models.Engine{
+			ID:             9,
+			EngineType:     enginePlugin.Type(),
+			ConnectionInfo: models.ConnectionInfo{"bucket": "bucket"},
+		},
+		ItemType: "object",
+		NodeType: "object",
+		Schema:   "bucket",
+		Table:    "roads/roads.shp",
+		RefPath:  "bucket/roads/roads.prj",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":       string(format.FormatShapefile),
+				"data_type":    "table",
+				"organization": "multi",
+				"refs": []interface{}{
+					map[string]interface{}{"path": "bucket/roads/roads.shp", "role": "main", "required": true, "primary": true},
+					map[string]interface{}{"path": "bucket/roads/roads.shx", "role": "index", "required": true},
+					map[string]interface{}{"path": "bucket/roads/roads.dbf", "role": "attributes", "required": true},
+					map[string]interface{}{"path": "bucket/roads/roads.prj", "role": "projection"},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if got := enginePlugin.openedPath.StringPath(); got != "bucket/roads/roads.prj" {
+		t.Fatalf("opened path = %q, want selected projection ref", got)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object preview with content", preview)
+	}
+	if preview.Object.Path != "bucket/roads/roads.prj" || preview.Object.ObjectKey != "bucket/roads/roads.prj" {
+		t.Fatalf("object path/key = %q/%q, want selected ref path", preview.Object.Path, preview.Object.ObjectKey)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "EPSG:4326" {
+		t.Fatalf("content = %#v, want text projection content", preview.Object.Content)
+	}
+	if preview.Object.Content.Metadata["organization"] != "multi" {
+		t.Fatalf("content metadata = %#v, want multi organization", preview.Object.Content.Metadata)
+	}
+	refs, ok := preview.Object.Content.Metadata["refs"].([]map[string]interface{})
+	if !ok || len(refs) != 4 {
+		t.Fatalf("content refs metadata = %#v, want four ref descriptors", preview.Object.Content.Metadata["refs"])
+	}
+}
+
 type staticContentReader struct {
 	content []byte
 }
@@ -965,10 +1054,6 @@ func (r staticContentReader) Open(context.Context, contentio.Ref) (io.ReadCloser
 }
 
 func (r staticContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
-	return nil, nil
-}
-
-func (r staticContentReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, nil
 }
 
@@ -1011,7 +1096,7 @@ func (p *recordingMultiTableProvider) Format() format.FormatType {
 	return format.FormatShapefile
 }
 
-func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []contentio.Ref, *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []format.RelatedRef, *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
 	rowCount := int64(1)
 	return &format.TableInfo{
@@ -1020,7 +1105,7 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, conten
 	}, nil
 }
 
-func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []contentio.Ref, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
@@ -1032,10 +1117,6 @@ func (emptyRefReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error
 }
 
 func (emptyRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
-	return nil, contentio.ErrContentNotFound
-}
-
-func (emptyRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
 	return nil, contentio.ErrContentNotFound
 }
 

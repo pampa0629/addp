@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
@@ -178,21 +179,17 @@ func newLocalRefReader(base string) *localRefReader {
 	return &localRefReader{base: base}
 }
 
-func (r *localRefReader) refs() []contentio.Ref {
-	return []contentio.Ref{
-		{Path: r.base + ".shp", Name: filepath.Base(r.base + ".shp"), Role: contentio.RoleMain, Required: true, Primary: true},
-		{Path: r.base + ".shx", Name: filepath.Base(r.base + ".shx"), Role: "index", Required: true},
-		{Path: r.base + ".dbf", Name: filepath.Base(r.base + ".dbf"), Role: "attributes", Required: true},
-		{Path: r.base + ".cpg", Name: filepath.Base(r.base + ".cpg"), Role: "encoding"},
+func (r *localRefReader) refs() []format.RelatedRef {
+	return []format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef(r.base+".shp", contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef(r.base+".shx", "index"), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+".dbf", "attributes"), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+".cpg", "encoding"), false, false),
 	}
 }
 
 func (r *localRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
 	return nil, nil
-}
-
-func (r *localRefReader) List(context.Context, contentio.Ref) ([]contentio.Ref, error) {
-	return nil, contentio.ErrContentNotFound
 }
 
 func (r *localRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {

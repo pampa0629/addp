@@ -97,10 +97,10 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 				"row_count": rowCount,
 				"fields": []interface{}{
 					map[string]interface{}{
-						"name":          "id",
-						"type":          "bigint",
+						"name":        "id",
+						"type":        "bigint",
 						"native_type": "int64",
-						"nullable":      false,
+						"nullable":    false,
 					},
 				},
 			},

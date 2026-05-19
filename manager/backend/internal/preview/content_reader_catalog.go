@@ -138,16 +138,16 @@ func (r *fileCatalogContentReader) List(ctx context.Context, scope contentio.Ref
 	return refs, nil
 }
 
-func refsForPreview(mainPath string, formatType format.FormatType, attrs map[string]interface{}) []contentio.Ref {
+func refsForPreview(mainPath string, formatType format.FormatType, attrs map[string]interface{}) []format.RelatedRef {
 	specs := refSpecsForPreviewFormat(formatType)
 	refs := refRefsFromAttributes(attrs)
-	if len(refs) == 0 {
-		return contentio.SameBasenameRefs(mainPath, specs)
+	if len(refs) == 0 || format.ValidateRelatedRefs(refs) != nil {
+		return format.SameBasenameRelatedRefs(mainPath, specs)
 	}
 	return refs
 }
 
-func refRefsFromAttributes(attrs map[string]interface{}) []contentio.Ref {
+func refRefsFromAttributes(attrs map[string]interface{}) []format.RelatedRef {
 	itemAttrs := sectionAttributes(attrs, "item")
 	if len(itemAttrs) == 0 {
 		return nil
@@ -156,7 +156,7 @@ func refRefsFromAttributes(attrs map[string]interface{}) []contentio.Ref {
 	if len(values) == 0 {
 		return nil
 	}
-	refs := make([]contentio.Ref, 0, len(values))
+	refs := make([]format.RelatedRef, 0, len(values))
 	for _, value := range values {
 		item := rawMapAttribute(value)
 		if len(item) == 0 {
@@ -167,26 +167,28 @@ func refRefsFromAttributes(attrs map[string]interface{}) []contentio.Ref {
 			continue
 		}
 		role := strings.TrimSpace(commonJSON.InterfaceString(item["role"]))
-		extension := contentio.NormalizeExtension(commonJSON.InterfaceString(item["extension"]))
+		extension := format.NormalizeExtension(commonJSON.InterfaceString(item["extension"]))
 		if extension == "" {
-			extension = contentio.NormalizeExtension(filepath.Ext(path))
+			extension = format.NormalizeExtension(filepath.Ext(path))
 		}
 		if role == "" {
 			role = strings.TrimPrefix(extension, ".")
 		}
 		ref := contentio.NewRef(path, role)
+		required := false
 		if _, ok := item["required"]; ok {
-			ref.Required = commonJSON.InterfaceBool(item["required"])
+			required = commonJSON.InterfaceBool(item["required"])
 		}
+		primary := false
 		if _, ok := item["primary"]; ok {
-			ref.Primary = commonJSON.InterfaceBool(item["primary"])
+			primary = commonJSON.InterfaceBool(item["primary"])
 		}
-		refs = append(refs, ref)
+		refs = append(refs, format.NewRelatedRef(ref, required, primary))
 	}
 	return refs
 }
 
-func refSpecsForPreviewFormat(formatType format.FormatType) []contentio.RelatedRefSpec {
+func refSpecsForPreviewFormat(formatType format.FormatType) []format.RelatedRefSpec {
 	provider, err := format.GetTableProvider(formatType)
 	if err != nil {
 		return nil
@@ -199,9 +201,9 @@ func refSpecsForPreviewFormat(formatType format.FormatType) []contentio.RelatedR
 }
 
 func refRoleForPreviewFormat(formatType format.FormatType, ext string) (string, bool) {
-	ext = contentio.NormalizeExtension(ext)
+	ext = format.NormalizeExtension(ext)
 	for _, spec := range refSpecsForPreviewFormat(formatType) {
-		if contentio.NormalizeExtension(spec.Extension) == ext {
+		if format.NormalizeExtension(spec.Extension) == ext {
 			return spec.Role, true
 		}
 	}
@@ -209,9 +211,9 @@ func refRoleForPreviewFormat(formatType format.FormatType, ext string) (string, 
 }
 
 func refRequiredForPreviewFormat(formatType format.FormatType, ext string) bool {
-	ext = contentio.NormalizeExtension(ext)
+	ext = format.NormalizeExtension(ext)
 	for _, spec := range refSpecsForPreviewFormat(formatType) {
-		if contentio.NormalizeExtension(spec.Extension) == ext {
+		if format.NormalizeExtension(spec.Extension) == ext {
 			return spec.Required
 		}
 	}

@@ -2,57 +2,77 @@
 
 更新时间：2026-05-18
 
-本文记录 `common/contentio` 边界整理过程。当前代码、format provider、engine adapter、Manager / Meta / Transfer 主要调用链已完成收敛；正式结论已同步到 `docs/spec/addp内容IO抽象规范.md`，本文保留为迁移设计记录。
+本文记录 `common/contentio` 边界整理后的稳定结论和迁移摘要。正式规范以 `docs/spec/addp内容IO抽象规范.md` 为准。
 
-## 一、核心问题
+## 一、稳定结论
 
-`common/contentio` 的根本价值不是定义数据项、格式组织方式或元数据模型，而是在 engine 和 format 之间提供一个足够小的内容 I/O 边界：
+`common/contentio` 是 ADDP 基于 Go `io` 之上的平台内容 I/O 抽象层。
+
+它只负责在 engine 和 format 之间表达底层内容访问边界：
 
 ```text
 engine plugin
-  -> CatalogPath / ConnectionInfo / OpenContent / CreateContent / OpenRange
   -> contentadapter
-  -> contentio.Ref + Reader / Writer / RangeReader
+  -> contentio.Ref + Reader / Writer / Lister / RangeReader
   -> format provider
 ```
 
-换句话说，`contentio` 只解决“给定一个 content 定位器，如何打开或创建内容流”的问题。
+`contentio` 不负责：
 
-它让 format 层不需要知道：
+- data item 边界识别。
+- format 相关 refs 推导规则。
+- Manager / Frontend DTO。
+- engine registry、连接信息、权限、连接池。
+- 本地临时目录物化、按扩展名选择、格式探测等编排工具。
 
-- engine id
-- engine registry
-- 连接信息和凭据
-- engine-specific CatalogPath
-- 权限校验和连接池
-- NFS / S3 / MinIO / 本地文件系统等具体实现
-
-## 二、应该保留的底层概念
+## 二、保留概念
 
 ### Ref
 
-`Ref` 是一个 content 的定位器。
+`Ref` 是一个已确定 content 的定位器。
 
-它不是 data item，不是 catalog node，也不是 ADDP Meta。它只表达“要打开哪个 content”，可以携带 role 作为辅助信息。
+它不是 data item，不是 catalog node，也不是 ADDP Meta。它只表达“要打开哪个 content”。
 
-当前字段方向可以保留：
+当前字段：
 
 - `Path`
-- `Name`
 - `Role`
-- `Required`
-- `Primary`
 
 其中 `Role` 只表达当前格式或调用链里这个 content 的角色，例如 `main`、`index`、`attributes`。它不能上升为 item 组织模型。
 
-### Reader / Writer / RangeReader
+`NewRef` 是带默认规范化的构造器：去除路径首尾 `/`，并将 `Role` 规范为小写。它不保存显示名，也不根据 `Role` 推导 `Primary`；显示名可按需从 `Path` 派生。
 
-`Reader` 和 `Writer` 是 contentio 的核心：
+`Required` / `Primary` 已从 `contentio.Ref` 迁出。它们本质上描述的是“某个 ref 在一个 ref 集合中的约束和主次关系”，不是单 content 的定位事实。目前由以下上层结构承载：
+
+- `common/dataitem.ItemRef`：Meta detector 识别出的 item refs。
+- `meta` attributes：写入 `attributes.item.refs`。
+- `common/format.RelatedRef`：format provider 的 multi ref 入参。
+- `manager`：从 attributes 构造 `RelatedRef`，展示相关内容、选择 ref 预览。
+- `transfer`：从 format 规格推导目标 `RelatedRef`。
+- `common/format`：描述 refs、物化 multi refs、写出 optional sidecar。
+
+`format.RelatedRef` 是当前共享的“已解析 ref + 集合标注”结构：
+
+```go
+type RelatedRef struct {
+    Ref      contentio.Ref
+    Required bool
+    Primary  bool
+}
+```
+
+### I/O 接口
+
+当前接口边界：
 
 ```go
 type Reader interface {
     Open(ctx context.Context, ref Ref) (io.ReadCloser, error)
     Stat(ctx context.Context, ref Ref) (*Stat, error)
+}
+
+type Lister interface {
+    List(ctx context.Context, scope Ref) ([]Ref, error)
 }
 
 type Writer interface {
@@ -65,142 +85,99 @@ type RangeReader interface {
 }
 ```
 
-当前实现中 `RangeReader` 嵌入 `Reader`，表示同一个内容读取器在完整读取之外额外支持范围读取。
+`Lister` 独立于 `Reader`，只有 scope / 目录型格式需要列举时才按需使用。
 
 ### Stat
 
-`Stat` 采用 Go / Unix 的 `stat` 语义：查询 content 的轻量状态。
+`Stat` 采用 Go / Unix 的 `stat` 语义，表示单 content 的轻量 I/O 状态。
 
-它不是 statistics，也不是 static，更不是 ADDP Meta。它只应包含 I/O 层事实：
+它只包含：
 
-- 是否存在
-- 大小
-- MIME / content type
-- 修改时间
-- 子项计数等轻量状态
+- 是否存在。
+- 大小。
+- MIME / content type。
+- 修改时间。
 
-不应包含：
+它不包含：
 
-- format
-- data type
-- field schema
-- spatial info
-- ADDP Meta attributes
-- engine-native field type
+- format。
+- data type。
+- field schema。
+- spatial info。
+- ADDP Meta attributes。
+- engine-native field type。
+- scope 子项计数。
 
-## 三、当前不应继续放在 contentio 的概念
+## 三、迁出概念
 
-### MultiReader / MultiWriter
+以下概念已从 `contentio` 迁出或删除：
 
-`multi` 更像 data item / format 层的组织方式，不是 contentio 的底层 I/O 原语。
+| 概念 | 处理 | 归属 |
+|---|---|---|
+| multi reader / writer 组合对象 | 删除 | 多 content 通过 `Reader/Writer + []format.RelatedRef` 显式传递 |
+| 静态 multi 包装器 | 删除 | 调用编排层直接持有 `[]format.RelatedRef` |
+| `OpenRole` / `Refs` / `Commit` / `Abort` | 删除 | format writer 会话或 engine / 模块编排层 |
+| `RelatedRefSpec` | 迁出 | `common/format` |
+| `SameBasenameRefs` | 删除 | 使用 `common/format.SameBasenameRelatedRefs` |
+| `NormalizeExtension` | 迁出 | `common/format` |
+| `FirstByExtension` | 删除 | 如需恢复，应放到具体编排层或纯 `[]Ref` 工具 |
+| scope 物化到本地目录 | 删除 | 如需恢复，应放到 format / manager / transfer 编排层 |
+| `Required` / `Primary` | 已迁出 | dataitem / format / 调用编排层的 ref 集合结构 |
 
-Shapefile 需要 `.shp/.shx/.dbf/.prj/.cpg`，这是 Shapefile format 对多个 content 的组织规则。Parquet directory、Zip child、container child 也都是上层组织语义。
+## 四、分层判断
 
-contentio 不应固化“多个 content 是一个 multi item”这个概念。更自然的 Go 表达是：
+多 content 的职责分层如下：
 
-```go
-reader contentio.Reader
-refs   []contentio.Ref
-```
+- `contentio`：按 `Ref` 打开、创建、range 读取、按 scope 列举 content。
+- `format`：声明某个格式有哪些相关 refs，以及如何读写这些 refs。
+- `dataitem` / Meta detector：决定哪些 content 最终组成一个 data item。
+- Manager / Transfer：根据已确认 refs 构造 reader / writer 并调用 format provider。
 
-format provider 如果需要多个 refs，可以在 `common/format` 层定义调用参数，或者直接接收 `contentio.Reader` / `contentio.Writer` 加 `[]contentio.Ref`。
+`format.Layouts` 是格式可支持的 content layout 声明；`dataitem.Organization` 复用同一组值，表示某个已识别 item 的最终 layout。字段名保留 `organization` 是因为它写入 `attributes.item.organization`，但它不再是一套独立取值体系。
 
-### StaticMultiReader / StaticMultiWriter
+关键原则不是“contentio 只能处理单 content”，而是：
 
-迁移前 `StaticMultiReader` / `StaticMultiWriter` 的实际含义是：
+`contentio` 可以按多个 `Ref` 打开多个 content，但不定义这些 content 如何组成 item 或 format 语义。
 
-- 底层只有 `Reader.Open(ref)` / `Writer.Create(ref)`。
-- 调用方已经知道一组 refs。
-- 包装器把 reader/writer 和 refs 绑在一起，额外提供 `Refs()`、`OpenRole()`、`Commit()`、`Abort()`。
+## 五、当前代码职责定位
 
-这里的 `Static` 是“refs 静态给定”的意思，不是静态文件，也不是静态类型。这个名字表达实现细节，不表达架构职责。
+当前代码中，“相关内容从哪里来、如何映射到 engine、由谁消费”的职责如下：
 
-从边界上看，它不应作为 `contentio` 概念保留。当前代码已删除这组临时实现，改由 format 层或调用编排层显式传递 `Reader/Writer + []Ref`。
+| 职责 | 当前归属 | 代码定位 |
+|---|---|---|
+| 声明某格式需要哪些相关内容 | `common/format` 及具体 format plugin | `common/format.RelatedRefSpec`；`common/format/plugins/shapefile.RelatedRefSpecs` |
+| 扫描期识别哪些 content 组成一个 item | `common/dataitem`，由 Meta detector 调用 | `common/dataitem.ResolveItems`、`resolveMultiItems`、`matchMultiRule`；`meta/backend/internal/metaitem/commonDataItemResolver` |
+| 预览期获取 multi refs | Manager preview | 优先读取 `attributes.item.refs`；缺失时由 `refsForPreview` 调用 `format.SameBasenameRelatedRefs` 兜底 |
+| Transfer 读写期构造 multi refs | Transfer executor | `encodedContentTableSource.refReader`、`encodedContentTableTarget.refWriter`、`multiTargetResourceDeleter` |
+| 同 basename 的纯路径推导 | `common/format` | `format.SameBasenameRelatedRefs` |
+| scope / 目录列举 | `contentio.Lister` 的具体实现 | Manager preview 的 catalog reader、Meta table file reader；format provider 只按需消费 `Lister` |
+| `contentio.Ref` 到 engine catalog path 的映射 | `common/engine/contentadapter` 或模块内 reader | `contentadapter.CatalogPath`、`NewReader`、`NewMappedReader`、`FixedPathMapper`、`ObjectPathMapper` |
+| 真实内容读写 | engine plugin | `ContentReadableProvider.OpenContent`、`ContentWritableProvider.CreateContent` |
+| format 解析/写出 | format provider | `OpenMultiTableReader`、`DescribeMultiTable`、`SampleMultiTable`、`OpenMultiTableWriter` |
 
-### FirstByExtension / MaterializeScope
+边界原则：
 
-这类函数不是底层 I/O 原语，而是基于一组 refs 或 scope 的选择 / 物化工具。
+- format provider 可以声明 `RelatedRefSpecs`，但不负责目录列举、sibling content 搜索、engine path 拼接或访问策略判断。
+- `format.SameBasenameRelatedRefs` 只是纯路径便利函数，应由 Manager / Transfer / 测试等编排层显式调用。
+- `RelatedRefSpec` 和已解析的 `RelatedRef` 集合都必须有且只有一个 primary；公共校验函数在 `common/format`，不下沉到 `contentio`。
+- engine plugin 不依赖 `contentio`；`contentadapter` 是 `contentio.Ref` 与 engine `CatalogPath` 之间的边界。
+- 已扫描入库的 item 应优先使用 Meta 中保存的 refs，避免预览阶段重新猜测 item 边界。
 
-它们是否保留在 `contentio` 需要单独判断：
+## 六、当前状态
 
-当前已从 `contentio` 删除。后续如果确实需要类似能力，应按使用场景放到 format / manager / transfer 编排层，或沉淀为只处理 `[]Ref` 的纯函数工具，不能重新把格式猜测、本地临时目录和 scope 物化塞回底层 I/O 包。
+代码已完成主要迁移：
 
-## 四、推荐边界
+- `common/contentio` 保留 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader`、`Stat`。
+- `common/format` 承担相关 ref 规则，并用 `RelatedRef` 承载 format provider 的 multi ref 入参。
+- `common/dataitem` / Meta 承担 item 组织识别。
+- Manager / Transfer 使用 `Reader/Writer + []format.RelatedRef` 调用 format provider。
 
-`common/contentio` 只保留：
+后续如需新增内容 I/O 能力，应先判断它是底层 I/O 原语，还是 format / item / 模块编排语义。只有前者可以进入 `common/contentio`。
 
-- `Ref`
-- `NewRef`
-- `NormalizeExtension`
-- `SameBasenameRefs`
-- `Reader`
-- `Writer`
-- `RangeReader`
-- `Stat`
-- 基础错误，例如 `ErrContentNotFound`
+## 七、后续检查建议
 
-`common/contentio` 不保留：
+后续主要检查点不再是迁移字段，而是防止边界回流：
 
-- MultiReader / MultiWriter 作为核心接口
-- StaticMultiReader / StaticMultiWriter 作为长期概念
-- format / data type hint
-- ADDP Meta 相关命名
-- engine registry / CatalogPath / ConnectionInfo
-- Manager / Frontend DTO
-- item / container / dataset 组织模型
-
-## 五、对 format 和 engine 的作用
-
-### 对 engine
-
-engine plugin 继续负责真实存储访问：
-
-- `CatalogProvider`
-- `ContentReadableProvider`
-- `ContentWritableProvider`
-- `RangeReadableProvider`
-- `ResourceDeleteProvider`
-
-`common/engine/contentadapter` 负责把 engine 能力适配为 contentio：
-
-```text
-CatalogPath + ConnectionInfo + engine provider
-  -> contentio.Reader / Writer / RangeReader
-```
-
-### 对 format
-
-format provider 只消费 contentio，不反向依赖 engine：
-
-```text
-contentio.Reader + Ref
-  -> decode / describe / sample / read table
-
-contentio.Writer + Ref
-  -> encode / write table
-```
-
-如果某个 format 需要多个 content，format 层应显式接收：
-
-```go
-reader contentio.Reader
-refs   []contentio.Ref
-```
-
-或者在 `common/format` 内定义一个非常薄的调用参数结构。命名要谨慎，避免为了包装而制造新术语。
-
-## 六、迁移方向
-
-1. 先保持现有功能可用，不在 `docs/spec/` 宣布未完成规范。
-2. 已在 `common/format` 梳理 multi-table provider 的输入，把 `contentio.MultiReader/MultiWriter` 从 provider 接口中迁出。
-3. 已将 Transfer / Manager / Meta 改为构造 `Reader/Writer + []Ref`。
-4. 已将 Shapefile provider 改为用 refs 的 role/path 查找对应文件，不依赖 contentio multi 接口。
-5. 已删除 `StaticMultiReader/StaticMultiWriter`。
-6. 已删除 `FirstByExtension`、`MaterializeScope`；`Reader.List` 暂时保留为 scope content 列举接口。
-7. 已把稳定结论同步到 `docs/spec/addp内容IO抽象规范.md`。
-
-## 七、暂定结论
-
-`contentio` 的边界应越小越好：它是基于 Go `io` 的平台内容流抽象，不是数据项组织模型，不是格式能力模型，也不是 ADDP Meta 模型。
-
-多个 content 如何组成一个 item，应由 Meta / data item / format 层表达；contentio 只负责按 ref 打开或创建内容。
+1. 新增内容 I/O 能力时，先判断它是否是底层 I/O 原语；不是则放到 format、dataitem 或具体模块。
+2. 新增 multi 格式时，优先声明 `RelatedRefSpec`，并通过 `RelatedRef` 传递已解析 refs。
+3. 不再向 `contentio.Ref` 添加显示名、必需性、primary、format、data type、schema 等上层语义字段。

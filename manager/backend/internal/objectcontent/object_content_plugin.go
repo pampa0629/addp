@@ -884,7 +884,11 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 
 func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) map[string]interface{} {
 	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), index)
-	child := map[string]interface{}{
+	child := make(map[string]interface{}, len(childInfo.Properties)+8)
+	for key, value := range childInfo.Properties {
+		child[key] = value
+	}
+	for key, value := range map[string]interface{}{
 		"key":          key,
 		"name":         childInfo.Name,
 		"label":        childInfo.Name,
@@ -892,6 +896,8 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 		"data_type":    childInfo.DataType,
 		"format":       string(childInfo.Format),
 		"organization": childInfo.Organization,
+	} {
+		child[key] = value
 	}
 	if childInfo.RowCount != nil {
 		child["row_count"] = *childInfo.RowCount
@@ -905,29 +911,18 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 	if len(childInfo.Refs) > 0 {
 		child["refs"] = containerChildRefDescriptors(childInfo)
 	}
-	for key, value := range childInfo.Properties {
-		child[key] = value
-	}
-	if len(childInfo.Refs) > 0 {
-		child["refs"] = containerChildRefDescriptors(childInfo)
-	}
 	return child
 }
 
 func containerChildRefDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
-	refs := make([]contentio.Ref, 0, len(childInfo.Refs))
+	refs := make([]format.RelatedRef, 0, len(childInfo.Refs))
 	for _, ref := range childInfo.Refs {
-		role := contentio.RoleAuxiliary
-		if ref.Primary {
-			role = contentio.RoleMain
+		role := ref.Role
+		if role == "" {
+			role = contentio.RoleAuxiliary
 		}
-		ref := contentio.NewRef(ref.Path, role)
-		if ref.Role != "" {
-			ref.Role = ref.Role
-		}
-		ref.Required = ref.Required
-		ref.Primary = ref.Primary
-		refs = append(refs, ref)
+		contentRef := contentio.NewRef(ref.Path, role)
+		refs = append(refs, format.NewRelatedRef(contentRef, ref.Required, ref.Primary))
 	}
 	descriptors := format.DescribeRefs(childInfo.Format, refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
