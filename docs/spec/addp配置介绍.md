@@ -69,6 +69,39 @@ ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
 # 回退配置已注释 (仅在集成禁用时使用)
 ```
 
+### Manager 上传导入中转对象存储
+
+Manager 的 Shapefile 上传导入不是由 Manager 自己解析写库。Manager 只负责接收 ZIP 包、上传到中转对象存储，然后创建 Transfer 新 endpoint 任务：
+
+```json
+{
+  "source": {
+    "engine": {"scope": "system", "id": 9},
+    "resource": {"kind": "object", "path": {"bucket": "manager", "path": "temp/<uuid>/roads.shp"}},
+    "data_type": "table",
+    "representation": "encoded",
+    "format": "shapefile"
+  }
+}
+```
+
+这里的 source engine id 必须指向 System 中登记的对象存储引擎。Transfer 会通过 System engine resolver 获取 engine type 和 connection info；Manager 不在任务 JSON 中声明 engine type，也不根据 S3 / MinIO 做写死分支。
+
+相关环境变量：
+
+```bash
+# 可选。Manager 上传导入 Shapefile 时使用的中转对象存储 engine id。
+# 留空时，Manager 会按 MINIO_SYSTEM_ENDPOINT / bucket / access key 在 System 对象存储引擎中自动匹配。
+MANAGER_IMPORT_SOURCE_ENGINE_ID=
+```
+
+匹配规则：
+
+1. 如果配置了 `MANAGER_IMPORT_SOURCE_ENGINE_ID`，Manager 会优先使用该 engine id；启用 System 集成时会校验该引擎处于 active 状态。
+2. 如果未配置，Manager 通过 System 列出对象存储引擎，按中转 MinIO endpoint、bucket 和 access key 匹配。
+3. 如果匹配不到或匹配到多个对象存储引擎，导入会失败并提示显式配置 `MANAGER_IMPORT_SOURCE_ENGINE_ID`。
+4. 当前上传入口只接受一个 Shapefile ZIP 包；包内 `.shp/.dbf/.shx` 必须同 basename，不能混入多套 Shapefile。
+
 ## 配置
 
 ### 环境变量

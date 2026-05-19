@@ -3,18 +3,23 @@ package shapefile
 import (
 	"bytes"
 	"context"
-	"io"
-	"testing"
-
+	"errors"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
+	"github.com/jonas-p/go-shp"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 	descriptors := DescribeRefs([]format.RelatedRef{
-		format.NewRelatedRef(contentio.NewRef("roads.shp", contentio.RoleMain), true, true),
-		format.NewRelatedRef(contentio.NewRef("roads.dbf", "attributes"), true, false),
-		format.NewRelatedRef(contentio.NewRef("roads.prj", "projection"), false, false),
+		format.NewRelatedRef(contentio.NewRef("roads"+extSHP, contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef("roads"+extDBF, roleAttributes), true, false),
+		format.NewRelatedRef(contentio.NewRef("roads"+extPRJ, roleProjection), false, false),
 	})
 
 	byRole := map[string]format.RefDescriptor{}
@@ -24,10 +29,10 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 	if got := byRole["main"].Format; got != format.FormatUnknown {
 		t.Fatalf("main ref format = %s, want unknown ref file format", got)
 	}
-	if got := byRole["attributes"].Format; got != format.FormatUnknown {
+	if got := byRole[roleAttributes].Format; got != format.FormatUnknown {
 		t.Fatalf("attributes ref format = %s, want unknown ref file format", got)
 	}
-	if got := byRole["projection"].Format; got != format.FormatText {
+	if got := byRole[roleProjection].Format; got != format.FormatText {
 		t.Fatalf("projection format = %s, want text", got)
 	}
 }
@@ -45,7 +50,7 @@ func TestDescriptorDeclaresOnlyMultiTableProvider(t *testing.T) {
 
 func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	plugin := NewPlugin(nil)
-	target := contentio.NewRef("exports/cities.shp", contentio.RoleMain)
+	target := contentio.NewRef("exports/cities"+extSHP, contentio.RoleMain)
 	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
 	output := newMemoryRefStore()
 	schema := &format.TableInfo{
@@ -76,7 +81,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	for _, path := range []string{"exports/cities.shp", "exports/cities.shx", "exports/cities.dbf", "exports/cities.cpg"} {
+	for _, path := range []string{"exports/cities" + extSHP, "exports/cities" + extSHX, "exports/cities" + extDBF, "exports/cities" + extCPG} {
 		if len(output.files[path]) == 0 {
 			t.Fatalf("ref %s was not written", path)
 		}
@@ -116,7 +121,7 @@ func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 	plugin := NewPlugin(nil)
 	refs := []format.RelatedRef{
-		format.NewRelatedRef(contentio.NewRef("exports/cities.dbf", "attributes"), true, false),
+		format.NewRelatedRef(contentio.NewRef("exports/cities"+extDBF, roleAttributes), true, false),
 	}
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
@@ -171,4 +176,433 @@ func (w *memoryWriteCloser) Close() error {
 		w.onClose(w.Bytes())
 	}
 	return nil
+}
+
+func TestShapefileRegistersOnlyMultiTableProviders(t *testing.T) {
+	t.Parallel()
+
+	if _, err := format.GetTableInfoProvider(format.FormatShapefile); err == nil {
+		t.Fatal("GetTableInfoProvider(shapefile) succeeded, want no single table info provider")
+	}
+	if _, err := format.GetTableSampleReader(format.FormatShapefile); err == nil {
+		t.Fatal("GetTableSampleReader(shapefile) succeeded, want no single table sample reader")
+	}
+	if _, err := format.GetMultiTableInfoProvider(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableInfoProvider(shapefile) failed: %v", err)
+	}
+	if _, err := format.GetMultiTableSampleReader(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableSampleReader(shapefile) failed: %v", err)
+	}
+	if _, err := format.GetMultiTableReaderProvider(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableReaderProvider(shapefile) failed: %v", err)
+	}
+	if _, err := format.GetMultiTableWriterProvider(format.FormatShapefile); err != nil {
+		t.Fatalf("GetMultiTableWriterProvider(shapefile) failed: %v", err)
+	}
+}
+
+func TestShapefileCapabilityViewMatchesMultiTableContract(t *testing.T) {
+	t.Parallel()
+
+	view, ok := format.GetFormatCapabilityView(format.FormatShapefile)
+	if !ok {
+		t.Fatal("expected shapefile capability view")
+	}
+	if !view.Providers.MultiTable {
+		t.Fatalf("providers = %#v, want multi_table", view.Providers)
+	}
+	if view.Providers.TableInfo || view.Providers.TableSample || view.Providers.Table {
+		t.Fatalf("providers = %#v, shapefile must not declare single table providers", view.Providers)
+	}
+	if !view.Implementations.MultiTableInfoProvider ||
+		!view.Implementations.MultiTableSampleReader ||
+		!view.Implementations.MultiTableReader ||
+		!view.Implementations.MultiTableWriter {
+		t.Fatalf("implementations = %#v, want complete multi table implementations", view.Implementations)
+	}
+	if view.Implementations.TableInfoProvider ||
+		view.Implementations.TableSampleReader ||
+		view.Implementations.TableReaderProvider ||
+		view.Implementations.TableWriterProvider {
+		t.Fatalf("implementations = %#v, shapefile must not register single table implementations", view.Implementations)
+	}
+}
+
+func TestShapefileSequentialReaderUsesCPGForDBFAttributes(t *testing.T) {
+	t.Parallel()
+
+	base := createEncodedPointShapefile(t, "GBK", "北京")
+	refReader := newOpenOnlyRefReader(base)
+	refs := refReader.refs()
+	plugin := NewPlugin(nil)
+	tableReader, err := plugin.OpenMultiTableReader(context.Background(), refReader, refs, nil)
+	if err != nil {
+		t.Fatalf("OpenMultiTableReader() error = %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	rows, err := tableReader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("row count = %d, want 1", len(rows))
+	}
+	if got := rows[0]["NAME"]; got != "北京" {
+		t.Fatalf("decoded row value = %#v, want 北京", got)
+	}
+}
+
+func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
+	t.Parallel()
+
+	base := createEncodedPointShapefile(t, "GBK", "北京")
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeMultiTable(context.Background(), reader, refs, nil)
+	if err != nil {
+		t.Fatalf("DescribeMultiTable() error = %v", err)
+	}
+	shpAttrs, _ := info.FormatInfo["shapefile"].(map[string]interface{})
+	if shpAttrs["encoding"] != "gbk" {
+		t.Fatalf("shapefile encoding = %#v, want gbk", shpAttrs["encoding"])
+	}
+
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 10, nil)
+	if err != nil {
+		t.Fatalf("SampleMultiTable() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("row count = %d, want 1", len(rows))
+	}
+	if got := rows[0]["NAME"]; got != "北京" {
+		t.Fatalf("decoded row value = %#v, want 北京", got)
+	}
+}
+
+func TestShapefilePluginUsesSHXIndexedRefSample(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a", "b", "c"})
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 2, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleMultiTable() error = %v", err)
+	}
+	if reader.rangeReads == 0 {
+		t.Fatalf("rangeReads = 0, want indexed ref sample path")
+	}
+	if reader.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref reads for indexed sample path", reader.openReads)
+	}
+	if reader.rangeReads > 6 {
+		t.Fatalf("rangeReads = %d, want page-level range reads", reader.rangeReads)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("row count = %d, want 1", len(rows))
+	}
+	if got := rows[0]["NAME"]; got != "c" {
+		t.Fatalf("NAME = %#v, want c", got)
+	}
+	if got := rows[0]["geometry"]; got != "POINT (3 4)" {
+		t.Fatalf("geometry = %#v, want POINT (3 4)", got)
+	}
+}
+
+func TestShapefileReadUsesCallGeometryFieldOption(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a"})
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+	opts := format.DefaultParseOptions()
+	opts.ExtraParams = map[string]interface{}{"geometry_field": "geom"}
+
+	info, err := plugin.DescribeMultiTable(context.Background(), reader, refs, opts)
+	if err != nil {
+		t.Fatalf("DescribeMultiTable() error = %v", err)
+	}
+	if info.SpatialInfo == nil || info.SpatialInfo.GeometryColumn != "geom" {
+		t.Fatalf("geometry column = %#v, want geom", info.SpatialInfo)
+	}
+	if info.Fields[0].Name != "geom" || info.Fields[0].Type != format.FieldTypeGeometry {
+		t.Fatalf("first field = %#v, want geom geometry field", info.Fields[0])
+	}
+
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, opts)
+	if err != nil {
+		t.Fatalf("SampleMultiTable() error = %v", err)
+	}
+	if _, ok := rows[0]["geom"]; !ok {
+		t.Fatalf("sample row = %#v, want geom field", rows[0])
+	}
+	if _, ok := rows[0]["geometry"]; ok {
+		t.Fatalf("sample row = %#v, did not expect default geometry field", rows[0])
+	}
+}
+
+func TestShapefileTableReaderUsesCallGeometryFieldOption(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a"})
+	refReader := newOpenOnlyRefReader(base)
+	refs := refReader.refs()
+	plugin := NewPlugin(nil)
+	opts := format.DefaultParseOptions()
+	opts.ExtraParams = map[string]interface{}{"geometry_field": "geom"}
+
+	tableReader, err := plugin.OpenMultiTableReader(context.Background(), refReader, refs, opts)
+	if err != nil {
+		t.Fatalf("OpenMultiTableReader() error = %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	if schema := tableReader.Schema(); schema.SpatialInfo == nil || schema.SpatialInfo.GeometryColumn != "geom" {
+		t.Fatalf("schema spatial info = %#v, want geom geometry column", schema.SpatialInfo)
+	}
+	rows, err := tableReader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows() error = %v", err)
+	}
+	if _, ok := rows[0]["geom"]; !ok {
+		t.Fatalf("row = %#v, want geom field", rows[0])
+	}
+	if _, ok := rows[0]["geometry"]; ok {
+		t.Fatalf("row = %#v, did not expect default geometry field", rows[0])
+	}
+}
+
+func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredRefReadFails(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a", "b"})
+	reader := newFailingRangeRefReader(base, extDBF)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+
+	if _, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, nil); err == nil {
+		t.Fatal("SampleMultiTable() error = nil, want indexed read error")
+	}
+	if reader.openReads != 0 {
+		t.Fatalf("openReads = %d, want no full ref fallback on indexed read failure", reader.openReads)
+	}
+}
+
+func TestShapefilePluginReportsMissingRequiredRef(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a"})
+	reader := newMissingRefReader(base, extDBF)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+
+	_, err := plugin.DescribeMultiTable(context.Background(), reader, refs, nil)
+	if err == nil {
+		t.Fatal("DescribeMultiTable() error = nil, want missing required ref error")
+	}
+	if !strings.Contains(err.Error(), "failed to read required ref") || !strings.Contains(err.Error(), extDBF) {
+		t.Fatalf("DescribeMultiTable() error = %v, want missing required .dbf ref", err)
+	}
+}
+
+func createEncodedPointShapefile(t *testing.T, cpg string, value string) string {
+	t.Helper()
+
+	base := filepath.Join(t.TempDir(), "sample")
+	writer, err := shp.Create(base+extSHP, shp.POINT)
+	if err != nil {
+		t.Fatalf("create shapefile failed: %v", err)
+	}
+	writer.SetFields([]shp.Field{shp.StringField("NAME", 16)})
+	row := writer.Write(&shp.Point{X: 1, Y: 2})
+	if err := writer.WriteAttribute(int(row), 0, value); err != nil {
+		t.Fatalf("write attribute failed: %v", err)
+	}
+	writer.Close()
+	normalizeGoShpDBFPath(t, base)
+
+	encoded, err := simplifiedchinese.GBK.NewEncoder().String(value)
+	if err != nil {
+		t.Fatalf("encode GBK failed: %v", err)
+	}
+	patchFirstDBFAttribute(t, base+extDBF, encoded, 16)
+	if err := os.WriteFile(base+extCPG, []byte(cpg), 0o644); err != nil {
+		t.Fatalf("write cpg failed: %v", err)
+	}
+	return base
+}
+
+func createPointShapefileRows(t *testing.T, values []string) string {
+	t.Helper()
+
+	base := filepath.Join(t.TempDir(), "rows")
+	writer, err := shp.Create(base+extSHP, shp.POINT)
+	if err != nil {
+		t.Fatalf("create shapefile failed: %v", err)
+	}
+	writer.SetFields([]shp.Field{shp.StringField("NAME", 16)})
+	for i, value := range values {
+		row := writer.Write(&shp.Point{X: float64(i + 1), Y: float64(i + 2)})
+		if err := writer.WriteAttribute(int(row), 0, value); err != nil {
+			t.Fatalf("write attribute failed: %v", err)
+		}
+	}
+	writer.Close()
+	normalizeGoShpDBFPath(t, base)
+	return base
+}
+
+func normalizeGoShpDBFPath(t *testing.T, base string) {
+	t.Helper()
+
+	if _, err := os.Stat(base + "dbf"); err == nil {
+		if err := os.Rename(base+"dbf", base+extDBF); err != nil {
+			t.Fatalf("rename dbf failed: %v", err)
+		}
+	}
+}
+
+func patchFirstDBFAttribute(t *testing.T, path string, value string, width int) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read dbf failed: %v", err)
+	}
+	if len(data) < 33 {
+		t.Fatalf("dbf too small: %d", len(data))
+	}
+	headerLength := int(data[8]) | int(data[9])<<8
+	if len(data) < headerLength+1+width {
+		t.Fatalf("dbf length = %d, need at least %d", len(data), headerLength+1+width)
+	}
+	field := make([]byte, width)
+	copy(field, []byte(value))
+	for i := len(value); i < width; i++ {
+		field[i] = ' '
+	}
+	copy(data[headerLength+1:headerLength+1+width], field)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write dbf failed: %v", err)
+	}
+}
+
+type localRefReader struct {
+	base       string
+	rangeReads int
+	openReads  int
+}
+
+func newLocalRefReader(base string) *localRefReader {
+	return &localRefReader{base: base}
+}
+
+func (r *localRefReader) refs() []format.RelatedRef {
+	return []format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef(r.base+extSHP, contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef(r.base+extSHX, roleIndex), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+extDBF, roleAttributes), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+extCPG, roleEncoding), false, false),
+	}
+}
+
+func (r *localRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, nil
+}
+
+func (r *localRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	r.openReads++
+	return os.Open(r.base + filepath.Ext(ref.Path))
+}
+
+func (r *localRefReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	r.rangeReads++
+	file, err := os.Open(r.base + filepath.Ext(ref.Path))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.LimitReader(file, length),
+		Closer: file,
+	}, nil
+}
+
+type openOnlyRefReader struct {
+	base      string
+	openReads int
+}
+
+func newOpenOnlyRefReader(base string) *openOnlyRefReader {
+	return &openOnlyRefReader{base: base}
+}
+
+func (r *openOnlyRefReader) refs() []format.RelatedRef {
+	return []format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef(r.base+extSHP, contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef(r.base+extSHX, roleIndex), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+extDBF, roleAttributes), true, false),
+		format.NewRelatedRef(contentio.NewRef(r.base+extCPG, roleEncoding), false, false),
+	}
+}
+
+func (r *openOnlyRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, nil
+}
+
+func (r *openOnlyRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	r.openReads++
+	return os.Open(r.base + filepath.Ext(ref.Path))
+}
+
+type failingRangeRefReader struct {
+	*localRefReader
+	failExt string
+}
+
+func newFailingRangeRefReader(base string, failExt string) *failingRangeRefReader {
+	return &failingRangeRefReader{
+		localRefReader: newLocalRefReader(base),
+		failExt:        failExt,
+	}
+}
+
+func (r *failingRangeRefReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(ref.Path), r.failExt) {
+		r.rangeReads++
+		return nil, contentio.ErrContentNotFound
+	}
+	return r.localRefReader.OpenRange(ctx, ref, offset, length)
+}
+
+type missingRefReader struct {
+	*localRefReader
+	missingExt string
+}
+
+func newMissingRefReader(base string, missingExt string) *missingRefReader {
+	return &missingRefReader{
+		localRefReader: newLocalRefReader(base),
+		missingExt:     missingExt,
+	}
+}
+
+func (r *missingRefReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	if strings.EqualFold(filepath.Ext(ref.Path), r.missingExt) {
+		r.openReads++
+		return nil, errors.New("ref missing")
+	}
+	return r.localRefReader.Open(ctx, ref)
 }

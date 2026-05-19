@@ -243,8 +243,49 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	if got := result.Plan.Target.Path.StringPath(); got != "public/roads" {
 		t.Fatalf("target path = %q, want public/roads", got)
 	}
-	if result.Plan.Target.TableWrite.Method != "copy" {
-		t.Fatalf("write method = %q, want postgresql import default copy", result.Plan.Target.TableWrite.Method)
+	if result.Plan.Target.TableWrite.Method != "" {
+		t.Fatalf("write method = %q, want planner to leave native writer default", result.Plan.Target.TableWrite.Method)
+	}
+}
+
+func TestBuildTableTransferPlanRequestsEWKBForSpatialEncodedImportToNativeTarget(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = format.FormatShapefile
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/roads.shp"}
+	spec.Source.Options = map[string]interface{}{"encoding": "GBK"}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "native_table_target"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil {
+		t.Fatal("source parse options is nil")
+	}
+	if result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("geometry encoding = %q, want ewkb", result.Plan.Source.ParseOptions.GeometryEncoding)
+	}
+	if result.Plan.Source.ParseOptions.Encoding != "GBK" {
+		t.Fatalf("encoding = %q, want GBK", result.Plan.Source.ParseOptions.Encoding)
+	}
+}
+
+func TestBuildTableTransferPlanKeepsDefaultGeometryEncodingForNonSpatialEncodedImport(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = format.FormatCSV
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/roads.csv"}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "native_table_target"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions != nil && result.Plan.Source.ParseOptions.GeometryEncoding == format.GeometryEncodingEWKB {
+		t.Fatalf("geometry encoding = %q, want no spatial EWKB override", result.Plan.Source.ParseOptions.GeometryEncoding)
 	}
 }
 
@@ -343,8 +384,8 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	if !result.Plan.Target.DeleteBeforeWrite {
 		t.Fatal("target delete before write = false, want true")
 	}
-	if result.Plan.Target.TableWrite.Method != "copy" {
-		t.Fatalf("write method = %q, want copy", result.Plan.Target.TableWrite.Method)
+	if result.Plan.Target.TableWrite.Method != "" {
+		t.Fatalf("write method = %q, want planner to leave native writer default", result.Plan.Target.TableWrite.Method)
 	}
 }
 

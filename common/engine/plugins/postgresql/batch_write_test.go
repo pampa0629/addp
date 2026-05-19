@@ -59,7 +59,7 @@ func TestBuildPostgresInsertSQL(t *testing.T) {
 		{"id": 2, `city"name`: "Shanghai"},
 	}
 
-	sql, args := buildPostgresInsertSQL("public", "target table", []string{"id", `city"name`}, rows)
+	sql, args := buildPostgresInsertSQL("public", "target table", []string{"id", `city"name`}, rows, nil)
 	wantSQL := `INSERT INTO "public"."target table" ("id", "city""name") VALUES ($1, $2), ($3, $4)`
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
@@ -67,6 +67,42 @@ func TestBuildPostgresInsertSQL(t *testing.T) {
 	wantArgs := []interface{}{1, "Hangzhou", 2, "Shanghai"}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", args, wantArgs)
+	}
+}
+
+func TestBuildPostgresInsertSQLNormalizesGeometryBytes(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": 1, "geom": []byte{0x01, 0x02, 0x0f}},
+	}
+	geometryColumns := map[string]struct{}{"geom": {}}
+
+	sql, args := buildPostgresInsertSQL("public", "roads", []string{"id", "geom"}, rows, geometryColumns)
+	wantSQL := `INSERT INTO "public"."roads" ("id", "geom") VALUES ($1, $2)`
+	if sql != wantSQL {
+		t.Fatalf("sql = %q, want %q", sql, wantSQL)
+	}
+	wantArgs := []interface{}{1, "01020f"}
+	if !reflect.DeepEqual(args, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", args, wantArgs)
+	}
+}
+
+func TestPostgresGeometryColumns(t *testing.T) {
+	fields := []plugin.FieldInfo{
+		{Name: "id", Type: "int"},
+		{Name: "geom", Type: "geometry"},
+		{Name: "shape", Type: "polygon"},
+	}
+
+	got := postgresGeometryColumns(fields)
+	if _, ok := got["geom"]; !ok {
+		t.Fatal("geom was not detected as geometry")
+	}
+	if _, ok := got["shape"]; !ok {
+		t.Fatal("shape was not detected as geometry")
+	}
+	if _, ok := got["id"]; ok {
+		t.Fatal("id was detected as geometry")
 	}
 }
 
@@ -81,6 +117,9 @@ func TestTablePathPartsRequiresSchemaAndTable(t *testing.T) {
 }
 
 func TestShouldUseCopyBatchWrite(t *testing.T) {
+	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{}, nil) {
+		t.Fatal("shouldUseCopyBatchWrite(empty) = false, want writer default copy")
+	}
 	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{Method: "copy"}, nil) {
 		t.Fatal("shouldUseCopyBatchWrite(copy) = false, want true")
 	}

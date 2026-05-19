@@ -1,6 +1,6 @@
 # Transfer 基于 common engine / format 的改造进展
 
-更新时间：2026-05-18
+更新时间：2026-05-19
 
 本文记录 Transfer 模块基于 `common/engine`、`common/format`、`common/contentio` 重构后的当前状态和后续路线。当前口径采用 clean break：不兼容旧任务 JSON，不保留 Transfer 私有 reader / writer 插件体系，不为历史 pipeline 做兼容分支。
 
@@ -162,10 +162,24 @@ format / engine native field type
 9. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关内容。
 10. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
 11. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
+12. endpoint 的 `engine.type` 不是必填事实。生产链路应以 `engine.id` 为身份，Transfer 通过 System engine resolver 获取 engine type 和 connection info；`engine.type` 只作为测试或诊断时的可选一致性校验，不应由上游模块硬编码。
 
 旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等不再兼容，出现即拒绝。
 
-### 3.1 field_mapping transform
+### 3.1 Manager 上传导入 Shapefile
+
+Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，导入到目标 native table”。该入口已经切到新 endpoint config：
+
+- Manager 只负责接收 ZIP、校验一套同 basename 的 `.shp/.dbf/.shx`、上传到中转对象存储。
+- source endpoint 使用 `representation=encoded`、`format=shapefile`、`resource.kind=object`。
+- target endpoint 使用 `representation=native`、`resource.kind=native_table`。
+- DBF 编码通过 source endpoint `options.encoding` 传递给 Transfer planner，再进入 format `ParseOptions.Encoding`。
+- source 对象存储 engine id 来自 `MANAGER_IMPORT_SOURCE_ENGINE_ID`，或由 Manager 按中转 MinIO endpoint / bucket / access key 在 System 对象存储引擎中自动匹配。
+- Manager 不在 Transfer 任务 JSON 中声明 source engine type；Transfer 根据 System engine id 解析真实 engine type 和 connection info。
+
+这一路径本质上仍是标准 Transfer 任务，不是 Manager 私有导入协议。
+
+### 3.2 field_mapping transform
 
 字段映射是第一类正式进入新主链路的 Transfer transform。它取代旧的任务外层 `mappings` / `field_mappings` 附属表语义，但用户界面仍可继续叫“字段映射”。
 
@@ -210,6 +224,8 @@ format / engine native field type
 | PostgreSQL `TableWriteSessionProvider` | 已补跨批次 COPY session。 |
 | PostgreSQL `TableWritePreparer` | 已收敛为 ensure / create table，不承载追加 / 覆盖策略。 |
 | PostgreSQL 空间字段元数据 | 已从 catalog 读取字段类型，可保留 `geometry(MultiPolygon,4326)` 等类型。 |
+| PostgreSQL 空间写入 | 已支持 geometry 字段写入 WKT 以及 WKB / EWKB `[]byte`；Transfer 对 encoded 空间表导入 PostgreSQL 时可请求 `ewkb`。 |
+| Shapefile 空间写出 | 已根据 `SpatialInfo.GeometryType` / `SpatialInfo.Dimension` 选择二维或 Z shape type；writer 内部负责 `geom.T` 到 Shapefile native geometry 的转换。 |
 | NFS `ContentWritableProvider` | 已支持单 writer 会话写入，不再每批次删除目标文件。 |
 | S3 / MinIO `ContentWritableProvider` | 已升级为 streaming multipart，不再依赖 OS 临时文件。 |
 | NFS / S3 / MinIO / PostgreSQL `DeleteResource` | 已补原子删除能力，Transfer overwrite 先调用删除再写入。 |
@@ -249,11 +265,11 @@ format / engine native field type
 | CSV / TSV file/object -> PostgreSQL table | 已接入第一版 import | PostgreSQL 目标默认优先 COPY session。 |
 | PostgreSQL table -> PostgreSQL table | 已收敛到统一 table reader / writer 链路 | 不保留 native-to-native 专用通道；空间字段类型已修复。 |
 | PostgreSQL spatial table -> PostgreSQL spatial table | 已修复空间字段类型保真 | 旧目标表可直接删除后重建，不做兼容迁移。 |
-| PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到。 |
-| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关内容、Meta scan 和 Manager preview。 |
-| NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session。 |
-| MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table。 |
-| NFS Shapefile -> MinIO Shapefile | 已手动验证通过 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities。 |
+| PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到；native source 的 `dimension=3` 可驱动 Shapefile writer 写出 Z shape 并读回三维 WKT。 |
+| PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关内容、Meta scan 和 Manager preview；同一套 schema / row value 协议适用于对象存储目标。 |
+| NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session；空间行值可走 EWKB；已补默认跳过的 PostGIS 集成测试，覆盖二维 Point 以及 PointZ / PolylineZ / PolygonZ / MultiPointZ。 |
+| MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table；空间行值可走 EWKB。 |
+| NFS Shapefile -> MinIO Shapefile | 已手动验证通过，默认测试已覆盖核心 format 链路 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities；executor 半集成测试已覆盖 Shapefile encoded source -> Shapefile encoded target，并校验 refs、`SpatialInfo.Dimension=3` 和 Z WKT。 |
 
 ## 六、写后 Meta 扫描规则
 
@@ -307,7 +323,7 @@ batch checkpoint 最小结构：
 5. 当前版本只记录进度和故障定位信息，不承诺从 checkpoint 自动恢复。
 6. 进度百分比在无法预知总行数时只表示执行活跃度：运行中从 0 递增但不超过 99，成功后统一置为 100。
 
-## 七、职责边界
+## 八、职责边界
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
@@ -325,7 +341,7 @@ batch checkpoint 最小结构：
 4. 删除指定资源是 common engine 原子能力。
 5. 格式 reader / writer 只能属于 common format，不能回到 Transfer 私有插件。
 
-## 八、仍然不足
+## 九、仍然不足
 
 | 方向 | 当前不足 |
 |---|---|
@@ -339,15 +355,15 @@ batch checkpoint 最小结构：
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
 | transform 扩展 | `field_mapping` 已进入主链路；过滤、派生字段、表达式、空间坐标转换等更完整 ETL transform 尚未设计。 |
 
-## 九、下一步建议
+## 十、下一步建议
 
 ### 近期优先级
 
 1. **补 Shapefile reader 的几何覆盖和集成验收**  
-   当前 Transfer 已优先走连续 multi table reader；下一步补 PointZ / PolylineZ / PolygonZ / MultiPointZ 等几何解析，并把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。
+   当前 Transfer 已优先走连续 multi table reader；encoded spatial source -> native table target 的默认行值协议已按 format capability 选择 `ewkb`，不再根据具体 target engine type 硬编码。Shapefile -> PostgreSQL/PostGIS 的 EWKB 写入已有默认跳过的集成测试，可通过 `ADDP_POSTGRES_INTEGRATION=1 go test ./internal/executor -run 'TestIntegrationShapefile.*Z.*Postgres|TestIntegrationShapefileToPostgresWritesEWKBGeometry' -count=1` 验证。PointZ / PolylineZ / PolygonZ / MultiPointZ 已真实验收；Shapefile 写侧已按 `SpatialInfo.Dimension` 输出 Z shape。下一步补 M 值处理策略，并继续把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。
 
 2. **补 Transfer 验收用例沉淀**  
-   将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、NFS / MinIO Shapefile -> PostgreSQL table 形成可重复的集成测试或操作清单。
+   将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
 
 3. **设计 checkpoint 恢复语义**  
    明确哪些 source reader 支持 seek / cursor 恢复、哪些 target writer 可幂等续写，再决定恢复执行是否进入主链路。
@@ -370,7 +386,7 @@ batch checkpoint 最小结构：
 3. graph：明确 graph native export / query result table 化 / 子图导出三类路径。
 4. 当第二个非 table data type 或 CDC 真正进入 executor 后，再讨论是否新增 `common/transferio` 或更通用的 RecordBatch。
 
-## 十、压缩后的历史结论
+## 十一、压缩后的历史结论
 
 以下内容不再展开保留，只保留结论：
 

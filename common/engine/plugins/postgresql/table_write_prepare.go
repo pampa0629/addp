@@ -126,11 +126,27 @@ func postgresSpatialTypeForField(field plugin.FieldInfo) string {
 	if geometryType == "" {
 		return ""
 	}
+	geometryType = postgresGeometryTypeWithDimension(geometryType, commonJSON.InterfaceInt64(field.Attributes["dimension"]))
 	srid := commonJSON.InterfaceInt64(field.Attributes["srid"])
 	if srid > 0 {
 		return fmt.Sprintf("GEOMETRY(%s,%d)", geometryType, srid)
 	}
 	return fmt.Sprintf("GEOMETRY(%s)", geometryType)
+}
+
+func postgresGeometryTypeWithDimension(geometryType string, dimension int64) string {
+	if dimension != 3 {
+		return geometryType
+	}
+	normalized := strings.TrimSpace(geometryType)
+	if normalized == "" {
+		return geometryType
+	}
+	lower := strings.ToLower(normalized)
+	if strings.HasSuffix(lower, "z") || strings.HasSuffix(lower, "m") {
+		return normalized
+	}
+	return normalized + "Z"
 }
 
 func postgresSQLTypeForCommonType(fieldType string) (string, bool) {

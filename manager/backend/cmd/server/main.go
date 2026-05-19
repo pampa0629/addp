@@ -222,6 +222,9 @@ func main() {
 		cfg.MinioEndpoint,
 		cfg.MinioAccessKey,
 		cfg.MinioSecretKey,
+		cfg.ImportSourceEngineID,
+		cfg.ImportSourceEngineIDSet,
+		systemClient,
 		transferClient,
 	)
 	importHandler := api.NewImportHandler(importService)

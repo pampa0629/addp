@@ -176,6 +176,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded {
 		sourcePlan.ReadOptions = readOptionsForTarget(targetPlan.Format, targetPlan.FormatOptions)
 	}
+	applySourceGeometryEncodingForTarget(&sourcePlan, targetPlan)
 	return &TableTransferBuildResult{
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
@@ -186,6 +187,26 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 			BatchSize:  spec.BatchSize,
 		},
 	}, nil
+}
+
+func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan) {
+	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointNative {
+		return
+	}
+	if !formatHasSpatialRows(sourcePlan.Format) {
+		return
+	}
+	if sourcePlan.ParseOptions == nil {
+		sourcePlan.ParseOptions = format.DefaultParseOptions()
+	}
+	if sourcePlan.ParseOptions.GeometryEncoding == "" || sourcePlan.ParseOptions.GeometryEncoding == format.GeometryEncodingWKT {
+		sourcePlan.ParseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+	}
+}
+
+func formatHasSpatialRows(formatType format.FormatType) bool {
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	return ok && descriptor.Spatial
 }
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableSourcePlan, error) {
@@ -231,7 +252,6 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		if err != nil {
 			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
 		}
-		targetType := effectiveEngineType(engine, endpoint.Engine)
 		return executor.TableTargetPlan{
 			Kind:              executor.TableEndpointNative,
 			ConnInfo:          engine.ConnInfo,
@@ -239,7 +259,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			DeleteBeforeWrite: writeMode(endpoint.Policy) == defaultWriteMode,
 			TablePrepare:      engineplugin.TableWriteOptions{},
 			TableWrite: engineplugin.BatchWriteOptions{
-				Method: importWriteMethod(endpoint.Policy, targetType),
+				Method: importWriteMethod(endpoint.Policy),
 			},
 		}, nil
 	case representationEncoded:
@@ -602,15 +622,8 @@ func validateTransferWritableTableFormat(formatType format.FormatType) error {
 	return nil
 }
 
-func importWriteMethod(policy map[string]interface{}, targetEngineType string) string {
-	value := strings.ToLower(stringValue(policy, "write_method"))
-	if value != "" {
-		return value
-	}
-	if targetEngineType == "postgresql" {
-		return "copy"
-	}
-	return ""
+func importWriteMethod(policy map[string]interface{}) string {
+	return strings.ToLower(stringValue(policy, "write_method"))
 }
 
 func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType) *format.WriteOptions {
@@ -661,6 +674,9 @@ func tableParseOptions(raw map[string]interface{}, formatType format.FormatType)
 		return opts
 	}
 	opts.ExtraParams = extraParams(raw, "header", "delimiter")
+	if encoding := stringValue(raw, "encoding"); encoding != "" {
+		opts.Encoding = encoding
+	}
 	if header, ok := raw["header"].(bool); ok {
 		opts.HasHeader = header
 	}

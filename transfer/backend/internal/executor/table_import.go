@@ -1,13 +1,15 @@
 package executor
 
 import (
+	"strings"
+
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
 
 func isCopyWriteMethod(method string) bool {
-	switch method {
-	case "copy", "postgres_copy":
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "", "copy", "postgres_copy":
 		return true
 	default:
 		return false
@@ -48,6 +50,9 @@ func fieldAttributes(info *format.TableInfo, field format.FieldInfo) map[string]
 	}
 	if info.SpatialInfo.SRID > 0 {
 		attrs["srid"] = info.SpatialInfo.SRID
+	}
+	if info.SpatialInfo.Dimension > 0 {
+		attrs["dimension"] = info.SpatialInfo.Dimension
 	}
 	if len(attrs) == 0 {
 		return nil

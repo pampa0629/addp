@@ -117,6 +117,92 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testing.T) {
+	source := &fakeContentWriter{files: map[string][]byte{}}
+	shapefilePlugin := shapefileformat.NewPlugin(nil)
+	sourcePath := engineplugin.FileItemPath(7, "imports/cities_z.shp")
+	sourceWriter := contentadapter.NewWriter(source, nil, sourcePath, engineplugin.WriteOptions{Overwrite: true})
+	sourceRefs := format.SameBasenameRelatedRefs(sourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), sourceWriter, sourceRefs, &format.TableInfo{
+		Fields: []format.FieldInfo{
+			{Name: "id", Type: format.FieldTypeInt},
+			{Name: "name", Type: format.FieldTypeString, Size: 32},
+			{Name: "geometry", Type: format.FieldTypeGeometry},
+		},
+		SpatialInfo: &format.SpatialInfo{
+			GeometryColumn: "geometry",
+			GeometryType:   "Point",
+			SRID:           4326,
+			Dimension:      3,
+		},
+	}, &format.WriteOptions{
+		Encoding: "utf-8",
+		ExtraParams: map[string]interface{}{
+			"spatial_ref_sys": "EPSG:4326",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
+	}
+	if err := tableWriter.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "Alpha", "geometry": "POINT Z (120 30 99.5)"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := tableWriter.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	output := &fakeContentWriter{files: map[string][]byte{}}
+	targetPath := engineplugin.FileItemPath(8, "exports/cities_z.shp")
+	exec := &TableTransferExecutor{
+		SourceContentReader:     source,
+		TargetContentWriter:     output,
+		SourceMultiReadProvider: shapefilePlugin,
+		TargetMultiProvider:     shapefilePlugin,
+	}
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: sourcePath, Format: format.FormatShapefile},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Path: targetPath, Format: format.FormatShapefile},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 || metrics.Batches != 1 {
+		t.Fatalf("metrics = %#v, want 1 read/written and 1 batch", metrics)
+	}
+	for _, path := range []string{"exports/cities_z.shp", "exports/cities_z.shx", "exports/cities_z.dbf"} {
+		if len(output.files[path]) == 0 {
+			t.Fatalf("ref %s was not written", path)
+		}
+	}
+
+	targetReader := contentadapter.NewReader(output, nil, targetPath, engineplugin.ReadOptions{})
+	targetRefs := format.SameBasenameRelatedRefs(targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	info, err := shapefilePlugin.DescribeMultiTable(context.Background(), targetReader, targetRefs, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("DescribeMultiTable failed: %v", err)
+	}
+	if info.SpatialInfo == nil || info.SpatialInfo.Dimension != 3 || info.SpatialInfo.GeometryType != "Point" {
+		t.Fatalf("spatial info = %#v, want Point dimension 3", info.SpatialInfo)
+	}
+	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), targetReader, targetRefs, 0, 1, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("SampleMultiTable failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %#v, want one row", rows)
+	}
+	got, ok := rows[0][info.SpatialInfo.GeometryColumn].(string)
+	if !ok {
+		t.Fatalf("geometry value = %#v, want WKT string", rows[0][info.SpatialInfo.GeometryColumn])
+	}
+	if got != "POINT Z (120 30 99.5)" {
+		t.Fatalf("geometry = %q, want POINT Z", got)
+	}
+}
+
 func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)

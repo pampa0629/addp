@@ -45,16 +45,17 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 	}
 
 	return &postgresTableWriteSession{
-		db:      db,
-		tx:      tx,
-		stmt:    stmt,
-		columns: columns,
+		db:              db,
+		tx:              tx,
+		stmt:            stmt,
+		columns:         columns,
+		geometryColumns: postgresGeometryColumns(opts.Fields),
 	}, nil
 }
 
 func shouldUseCopyWriteMethod(method string) bool {
 	switch strings.ToLower(strings.TrimSpace(method)) {
-	case "copy", "postgres_copy":
+	case "", "copy", "postgres_copy":
 		return true
 	default:
 		return false
@@ -79,11 +80,12 @@ func fieldColumns(fields []plugin.FieldInfo) []string {
 }
 
 type postgresTableWriteSession struct {
-	db      *sql.DB
-	tx      *sql.Tx
-	stmt    *sql.Stmt
-	columns []string
-	closed  bool
+	db              *sql.DB
+	tx              *sql.Tx
+	stmt            *sql.Stmt
+	columns         []string
+	geometryColumns map[string]struct{}
+	closed          bool
 }
 
 func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
@@ -99,7 +101,8 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 			return err
 		}
 		for i, column := range s.columns {
-			values[i] = row[column]
+			_, isGeometry := s.geometryColumns[column]
+			values[i] = postgresWriteValue(row[column], isGeometry)
 		}
 		if _, err := s.stmt.ExecContext(ctx, values...); err != nil {
 			return fmt.Errorf("copy postgresql row: %w", err)

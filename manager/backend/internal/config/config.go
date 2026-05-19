@@ -53,7 +53,9 @@ type Config struct {
 	MinioUseSSL    bool
 
 	// Transfer 服务配置（用于数据导入任务创建）
-	TransferServiceURL string
+	TransferServiceURL      string
+	ImportSourceEngineID    uint
+	ImportSourceEngineIDSet bool
 
 	// MVT 预缓存配置
 	PreCache PreCacheConfig
@@ -162,6 +164,14 @@ func Load() *Config {
 
 	// Transfer 服务配置
 	cfg.TransferServiceURL = commonConfig.GetEnv("TRANSFER_URL", "http://localhost:8083")
+	if rawSourceEngineID := strings.TrimSpace(commonConfig.GetEnv("MANAGER_IMPORT_SOURCE_ENGINE_ID", "")); rawSourceEngineID != "" {
+		if parsed, err := strconv.ParseUint(rawSourceEngineID, 10, 32); err == nil && parsed > 0 {
+			cfg.ImportSourceEngineID = uint(parsed)
+			cfg.ImportSourceEngineIDSet = true
+		} else {
+			log.Printf("⚠️  MANAGER_IMPORT_SOURCE_ENGINE_ID 无效: %s", rawSourceEngineID)
+		}
+	}
 
 	// MVT 预缓存配置
 	concurrency := commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10)

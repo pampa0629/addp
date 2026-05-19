@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
@@ -285,6 +286,78 @@ func TestTableTransferExecutorWritesShapefileRefs(t *testing.T) {
 		if len(writer.files[path]) == 0 {
 			t.Fatalf("ref %s was not written", path)
 		}
+	}
+}
+
+func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []engineplugin.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326, "dimension": 3}},
+				},
+				Rows: []map[string]interface{}{
+					{"id": 1, "geom": "POINT Z (120 30 99.5)"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{files: map[string][]byte{}}
+	shapefilePlugin := shapefileformat.NewPlugin(nil)
+	exec := &TableTransferExecutor{
+		SourceNativeReader:  reader,
+		TargetContentWriter: writer,
+		TargetMultiProvider: shapefilePlugin,
+	}
+
+	targetPath := engineplugin.FileItemPath(2, "exports/cities_z.shp")
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointNative},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Path:         targetPath,
+			ContentWrite: engineplugin.WriteOptions{Overwrite: true},
+			Format:       format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"geometry_field": "geom",
+				},
+			},
+		},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want 1 read/written", metrics)
+	}
+
+	contentReader := contentadapter.NewReader(writer, nil, targetPath, engineplugin.ReadOptions{})
+	refs := format.SameBasenameRelatedRefs(targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	info, err := shapefilePlugin.DescribeMultiTable(context.Background(), contentReader, refs, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("DescribeMultiTable failed: %v", err)
+	}
+	if info.SpatialInfo == nil || info.SpatialInfo.Dimension != 3 {
+		t.Fatalf("spatial info = %#v, want dimension 3", info.SpatialInfo)
+	}
+	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), contentReader, refs, 0, 1, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("SampleMultiTable failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %#v, want one row", rows)
+	}
+	geometryColumn := info.SpatialInfo.GeometryColumn
+	got, ok := rows[0][geometryColumn].(string)
+	if !ok {
+		t.Fatalf("geometry value = %#v, want WKT string", rows[0][geometryColumn])
+	}
+	if got != "POINT Z (120 30 99.5)" {
+		t.Fatalf("geometry = %q, want POINT Z", got)
 	}
 }
 

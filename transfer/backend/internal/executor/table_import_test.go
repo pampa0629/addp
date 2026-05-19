@@ -99,6 +99,7 @@ func TestTableInfoFieldsCarriesStandardSpatialAttributes(t *testing.T) {
 			GeometryColumn: "geom",
 			GeometryType:   "Polygon",
 			SRID:           4326,
+			Dimension:      3,
 		},
 	})
 
@@ -107,6 +108,9 @@ func TestTableInfoFieldsCarriesStandardSpatialAttributes(t *testing.T) {
 	}
 	if fields[0].Attributes["geometry_type"] != "Polygon" || fields[0].Attributes["srid"] != 4326 {
 		t.Fatalf("attributes = %#v, want standard spatial attributes", fields[0].Attributes)
+	}
+	if fields[0].Attributes["dimension"] != 3 {
+		t.Fatalf("attributes = %#v, want dimension", fields[0].Attributes)
 	}
 }
 
@@ -180,6 +184,39 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T
 	}
 	if len(writer.sessionOptions.Fields) != 2 || writer.sessionOptions.Fields[0].Name != "id" {
 		t.Fatalf("session fields = %#v, want prepared fields", writer.sessionOptions.Fields)
+	}
+}
+
+func TestTableTransferExecutorPrefersNativeTableWriteSessionForDefaultMethod(t *testing.T) {
+	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
+	writer := &fakeBatchWriter{}
+	preparer := &fakeTableWritePreparer{}
+	exec := &TableTransferExecutor{
+		SourceContentReader:        reader,
+		SourceFormatProvider:       csvformat.NewPlugin(nil),
+		SourceInfoProvider:         csvformat.NewPlugin(nil),
+		SourceTableReadProvider:    csvformat.NewPlugin(nil),
+		TargetNativePreparer:       preparer,
+		TargetNativeWriter:         writer,
+		TargetTableSessionProvider: writer,
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target:    TableTargetPlan{Kind: TableEndpointNative},
+		BatchSize: 2,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(writer.batches) != 0 {
+		t.Fatalf("direct batches = %d, want 0 when session is used", len(writer.batches))
+	}
+	if len(writer.sessionBatches) != 1 {
+		t.Fatalf("session batches = %d, want 1", len(writer.sessionBatches))
+	}
+	if writer.sessionOptions.Method != "" {
+		t.Fatalf("session method = %q, want empty writer default", writer.sessionOptions.Method)
 	}
 }
 

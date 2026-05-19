@@ -1,6 +1,6 @@
 # common/format
 
-`common/format` 是 ADDP 后端共享的格式基础包，负责格式身份、格式识别、格式能力声明、轻量 schema、类型映射、info provider 和 content reader 注册。
+`common/format` 是 ADDP 后端共享的格式基础包，负责格式身份、格式识别、格式能力声明、轻量 schema、info provider 和 content reader 注册。
 
 它只表达“格式自身能提供什么”，不负责 Meta item 归并、不负责 Manager 面向前端的 DTO、不直接连接 engine，也不承担 Transfer 任务编排。
 
@@ -12,7 +12,7 @@
 - 声明格式 capability，例如 data type、layout、info provider、content reader、是否可 parse、是否支持 transfer read/write。
 - 提供 `TableInfo`、`FieldInfo`、`FieldType` 等跨模块可复用的结构化语义模型。
 - 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`。
-- 提供跨数据源的 `TypeMapper`，把原生类型映射到 ADDP 通用字段类型。
+- 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
 `common/format` 不负责：
@@ -40,7 +40,7 @@
 | data type 通用 info 模型 | `data_info.go`、`field_type.go`、`container_info.go`、`container_child.go` | 表、字段类型、容器、内容索引等跨模块结构。内容样本不进入这些 info。 |
 | 格式私有 info 与横切事实候选 | `plugins/<format>/`、`data_info.go` | 具体格式私有结构留在对应插件目录；`TableInfo` 只提供通用 `FormatInfo`、`SpatialInfo`、`ContentIndex` 承载，由 Meta 映射到 `format_info.*`、`capabilities.*`、`content_index.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
-| 类型映射 | `type_mapper.go`、`mappers/` | 把数据库或格式原生字段类型映射到 ADDP 通用字段类型。 |
+| 类型映射注册机制 | `type_mapper.go`、`mappers/`、`plugins/<format>/` | 根包只提供注册表和通用接口；数据库 engine 映射位于 `mappers/`，格式私有映射留在对应 `plugins/<format>/` 目录内。 |
 | 内置格式加载入口 | `builtin/` | 统一 blank import 内置格式插件和 type mapper。 |
 | 具体格式实现 | `plugins/<format>/` | 一个稳定文件格式一个目录；descriptor、provider、reader 和测试尽量在目录内闭合。 |
 

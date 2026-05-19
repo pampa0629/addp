@@ -255,6 +255,7 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 - `wkb` / `ewkb` 行值使用 `[]byte` 表达，供 Transfer 等批处理链路在目标 writer 明确支持时使用；调用方不得假定所有 engine writer 都能直接接收二进制几何参数。
 - SRID 优先由 `SpatialInfo.SRID` 表达；`ewkb` 可以携带 SRID，但不能替代 schema 级空间事实。
 - 各格式 native 几何类型必须在对应 format plugin 内转换为 ADDP 通用几何值，不得把 `shp.Shape` 等 native 类型暴露到 format 根接口、engine 或 Transfer 执行层。
+- 格式写出空间数据时，应根据 `SpatialInfo.GeometryType` 和 `SpatialInfo.Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
 
 注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。
 
@@ -512,6 +513,10 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 1. info provider / content reader 提供待写入的结构语义或内容数据。
 2. format 把批次编码成目标格式。
 3. engine 负责对象写入、目录提交或原生表写入。
+
+空间表写入原生 engine 时，Transfer planner 只根据 endpoint 表示方式和源 format capability 选择行值协议，不根据具体 engine 名称硬编码分支。encoded spatial source 写入 native table target 时，planner 可以请求 `ewkb` 作为批量传输默认编码；目标 engine writer 必须基于标准字段类型、`SpatialInfo` 派生 attributes 和实际行值类型进行消费，支持则写入，不支持则返回明确错误。不得在 planner 中用某个 engine type 为某种编码开白名单。
+
+空间表写入 encoded format 时，planner / executor 只传递标准 schema、标准行值和 format 写出选项。具体 format writer 负责把 `SpatialInfo` 映射为自己的 native 几何组织方式，不能让上层为了某个格式写出而硬编码 native shape type。
 
 批量读写需要额外确认：
 

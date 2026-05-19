@@ -64,6 +64,9 @@ func applySpatialInfoFromField(info *format.TableInfo, field engineplugin.FieldI
 	if info.SpatialInfo.SRID == 0 {
 		info.SpatialInfo.SRID = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
 	}
+	if info.SpatialInfo.Dimension == 0 {
+		info.SpatialInfo.Dimension = int(commonJSON.InterfaceInt64(field.Attributes["dimension"]))
+	}
 }
 
 func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {

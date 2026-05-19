@@ -312,39 +312,40 @@ curl -X POST http://localhost:8083/api/tasks/{task_id}/retry
 
 ## API 使用示例
 
-### 创建高性能导入任务
+### 创建导入任务
 
 ```bash
-curl -X POST http://localhost:8083/api/tasks \
+curl -X POST http://localhost:8083/api/v1/transfer/tasks \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Import 10M POI Data",
-    "source_config": {
-      "type": "spatialite_parallel",
-      "config": {
-        "file_path": "/data/poi.sqlite",
-        "table": "poi",
-        "num_workers": 8,
-        "batch_size": 5000
+    "task_type": "import",
+    "config": {
+      "mode": "batch",
+      "source": {
+        "engine": {"scope": "system", "id": 10},
+        "resource": {
+          "kind": "object",
+          "path": {"bucket": "manager", "path": "temp/<uuid>/poi.shp"}
+        },
+        "data_type": "table",
+        "representation": "encoded",
+        "format": "shapefile",
+        "options": {"encoding": "UTF-8"}
       },
-      "batch_size": 5000
-    },
-    "target_config": {
-      "type": "postgres_copy",
-      "config": {
-        "host": "192.168.1.92",
-        "port": 5433,
-        "database": "business",
-        "username": "business",
-        "password": "business_password",
-        "table": "spatial.poi",
-        "batch_size": 10000,
-        "max_connections": 4,
-        "srid": 4326
+      "target": {
+        "engine": {"scope": "system", "id": 2},
+        "resource": {
+          "kind": "native_table",
+          "path": {"schema": "spatial", "table": "poi"}
+        },
+        "data_type": "table",
+        "representation": "native",
+        "policy": {"write_mode": "overwrite"}
       },
       "batch_size": 10000
     },
-    "execution_mode": "parallel"
+    "batch_size": 10000
   }'
 ```
 

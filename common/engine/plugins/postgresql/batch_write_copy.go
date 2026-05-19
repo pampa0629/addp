@@ -8,7 +8,7 @@ import (
 	"github.com/lib/pq"
 )
 
-func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, chunkSize int) error {
+func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, chunkSize int, geometryColumns map[string]struct{}) error {
 	if chunkSize <= 0 {
 		chunkSize = postgresDefaultInsertChunkSize
 	}
@@ -17,14 +17,14 @@ func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, s
 		if end > len(rows) {
 			end = len(rows)
 		}
-		if err := writePostgresCopyChunk(ctx, db, schema, table, columns, rows[start:end]); err != nil {
+		if err := writePostgresCopyChunk(ctx, db, schema, table, columns, rows[start:end], geometryColumns); err != nil {
 			return fmt.Errorf("execute postgresql copy rows %d-%d: %w", start, end, err)
 		}
 	}
 	return nil
 }
 
-func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}) error {
+func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin postgresql copy transaction: %w", err)
@@ -40,7 +40,8 @@ func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table strin
 	values := make([]interface{}, len(columns))
 	for _, row := range rows {
 		for i, column := range columns {
-			values[i] = row[column]
+			_, isGeometry := geometryColumns[column]
+			values[i] = postgresWriteValue(row[column], isGeometry)
 		}
 		if _, err := stmt.ExecContext(ctx, values...); err != nil {
 			return fmt.Errorf("copy postgresql row: %w", err)

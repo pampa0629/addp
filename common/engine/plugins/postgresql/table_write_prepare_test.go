@@ -32,6 +32,7 @@ func TestPostgresSQLTypeForField(t *testing.T) {
 		want  string
 	}{
 		{name: "standard spatial attributes map", field: plugin.FieldInfo{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}}, want: "GEOMETRY(MultiPolygon,4326)"},
+		{name: "standard spatial dimension z", field: plugin.FieldInfo{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326, "dimension": 3}}, want: "GEOMETRY(PointZ,4326)"},
 		{name: "common int", field: plugin.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
 		{name: "unknown defaults text", field: plugin.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
 	}

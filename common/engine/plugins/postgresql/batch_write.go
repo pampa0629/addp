@@ -48,8 +48,9 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 			chunkSize = value
 		}
 	}
+	geometryColumns := postgresGeometryColumns(batch.Fields)
 	if shouldUseCopyBatchWrite(opts, batch) {
-		return p.writeBatchWithCopy(ctx, db, schema, table, columns, batch.Rows, chunkSize)
+		return p.writeBatchWithCopy(ctx, db, schema, table, columns, batch.Rows, chunkSize, geometryColumns)
 	}
 	chunkSize = effectivePostgresInsertChunkSize(len(columns), chunkSize)
 
@@ -64,7 +65,7 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end])
+		insertSQL, args := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end], geometryColumns)
 		if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
 			return fmt.Errorf("execute postgresql batch insert rows %d-%d: %w", start, end, err)
 		}
@@ -83,7 +84,7 @@ func shouldUseCopyBatchWrite(opts plugin.BatchWriteOptions, batch *plugin.BatchD
 			method = strings.ToLower(strings.TrimSpace(value))
 		}
 	}
-	return method == "copy" || method == "postgres_copy"
+	return method == "" || method == "copy" || method == "postgres_copy"
 }
 
 func tablePathParts(path plugin.CatalogPath) (string, string, error) {
@@ -149,7 +150,7 @@ func effectivePostgresInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}) (string, []interface{}) {
+func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) (string, []interface{}) {
 	dialect := sqldialect.ForEngine("postgresql")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -170,7 +171,8 @@ func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[s
 		group := make([]string, 0, len(columns))
 		for _, column := range columns {
 			group = append(group, fmt.Sprintf("$%d", placeholder))
-			args = append(args, row[column])
+			_, isGeometry := geometryColumns[column]
+			args = append(args, postgresWriteValue(row[column], isGeometry))
 			placeholder++
 		}
 		valueGroups = append(valueGroups, "("+strings.Join(group, ", ")+")")

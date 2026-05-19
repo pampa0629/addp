@@ -1,21 +1,21 @@
 package shapefile
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"strings"
-
-	commonSpatial "github.com/addp/common/spatial"
+	"github.com/addp/common/contentio"
+	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
-	"github.com/twpayne/go-geom"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 type writer struct {
 	*shp.Writer
-	filePath      string
-	geometryField string
-	fields        []shp.Field
-	recordCount   int
+	filePath  string
+	shapeType shp.ShapeType
 }
 
 func create(filename string, shapeType shp.ShapeType) (*writer, error) {
@@ -25,8 +25,9 @@ func create(filename string, shapeType shp.ShapeType) (*writer, error) {
 	}
 
 	return &writer{
-		Writer:   shpWriter,
-		filePath: filename,
+		Writer:    shpWriter,
+		filePath:  filename,
+		shapeType: shapeType,
 	}, nil
 }
 
@@ -34,274 +35,238 @@ func (w *writer) setFields(fields []shp.Field) error {
 	if err := w.Writer.SetFields(fields); err != nil {
 		return err
 	}
-	w.fields = fields
 
-	// WORKAROUND: go-shp v0.1.1 bug - creates "filenamedbf" instead of "filename.dbf"
-	w.fixDbfFilename()
+	w.normalizeDBFFilePath()
 
 	return nil
 }
 
-// fixDbfFilename fixes the DBF filename bug in go-shp library
-func (w *writer) fixDbfFilename() {
+func (w *writer) normalizeDBFFilePath() {
 	basePath := w.filePath
-	if strings.HasSuffix(strings.ToLower(basePath), ".shp") {
-		basePath = basePath[:len(basePath)-4]
+	if strings.HasSuffix(strings.ToLower(basePath), extSHP) {
+		basePath = basePath[:len(basePath)-len(extSHP)]
 	}
 
-	wrongDbfPath := basePath + "dbf"    // Bug: missing dot
-	correctDbfPath := basePath + ".dbf" // Correct filename
+	undottedDBFPath := basePath + "dbf"
+	dottedDBFPath := basePath + extDBF
 
-	if _, err := os.Stat(wrongDbfPath); err == nil {
-		if err := os.Rename(wrongDbfPath, correctDbfPath); err == nil {
-			// Silent fix
-		}
+	if _, err := os.Stat(undottedDBFPath); err != nil {
+		return
 	}
+	_ = os.Rename(undottedDBFPath, dottedDBFPath)
 }
 
-func toShapefileGeometry(geomValue interface{}) (shp.Shape, error) {
-	geometry, err := commonSpatial.ParseGeometryValue(geomValue)
+var _ format.MultiTableWriterProvider = (*Plugin)(nil)
+
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+	if output == nil {
+		return nil, fmt.Errorf("ref writer cannot be nil")
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("shapefile table writer requires schema")
+	}
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("shapefile table writer requires related refs")
+	}
+	primaryRef, err := format.PrimaryRelatedRef(refs)
+	if err != nil {
+		return nil, fmt.Errorf("shapefile table writer requires valid related refs: %w", err)
+	}
+
+	opts := format.DefaultWriteOptions()
+	if options != nil {
+		*opts = *options
+	}
+	geometryField := multiWriterGeometryField(schema, opts)
+	if geometryField == "" {
+		return nil, fmt.Errorf("shapefile table writer requires geometry field")
+	}
+	shapeType, err := shapeTypeFromSchema(schema)
 	if err != nil {
 		return nil, err
 	}
-	return geomToShape(geometry)
-}
 
-func geomToShape(geometry geom.T) (shp.Shape, error) {
-	switch g := geometry.(type) {
-	case *geom.Point:
-		return &shp.Point{X: g.X(), Y: g.Y()}, nil
-
-	case *geom.LineString:
-		return lineStringToShapefile(g)
-
-	case *geom.MultiLineString:
-		return multiLineStringToShapefile(g)
-
-	case *geom.Polygon:
-		return polygonToShapefile(g)
-
-	case *geom.MultiPolygon:
-		return multiPolygonToShapefile(g)
-
-	case *geom.MultiPoint:
-		numPoints := g.NumPoints()
-		points := make([]shp.Point, numPoints)
-		for i := 0; i < numPoints; i++ {
-			p := g.Point(i)
-			points[i] = shp.Point{X: p.X(), Y: p.Y()}
-		}
-		return &shp.MultiPoint{
-			Box:       calculateBox(points),
-			NumPoints: int32(numPoints),
-			Points:    points,
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("unsupported geometry type: %T", geometry)
+	tempDir, err := os.MkdirTemp("", "addp-shapefile-write-*")
+	if err != nil {
+		return nil, fmt.Errorf("create shapefile temp dir: %w", err)
 	}
-}
+	baseName := contentio.BaseName(primaryRef.Ref)
+	baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	if baseName == "" || baseName == "." {
+		baseName = "data"
+	}
+	basePath := filepath.Join(tempDir, baseName)
 
-func lineStringToShapefile(line *geom.LineString) (*shp.PolyLine, error) {
-	if line.NumCoords() < 2 {
-		return nil, fmt.Errorf("linestring requires at least two points")
+	writer, err := create(basePath+extSHP, shapeType)
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, fmt.Errorf("create shapefile writer: %w", err)
+	}
+	dbfSchema := shapefileDBFSchema(schema, geometryField)
+	if err := writer.setFields(dbfSchema.fields); err != nil {
+		writer.Close()
+		_ = os.RemoveAll(tempDir)
+		return nil, fmt.Errorf("set shapefile fields: %w", err)
 	}
 
-	points := coordsToShpPoints(line.Coords())
-	return &shp.PolyLine{
-		Box:       calculateBox(points),
-		NumParts:  1,
-		NumPoints: int32(len(points)),
-		Parts:     []int32{0},
-		Points:    points,
+	return &multiTableWriter{
+		output:        output,
+		tempDir:       tempDir,
+		basePath:      basePath,
+		writer:        writer,
+		refs:          append([]format.RelatedRef(nil), refs...),
+		geometryField: geometryField,
+		fieldNames:    dbfSchema.originalNames,
+		fields:        dbfSchema.fields,
+		options:       opts,
 	}, nil
 }
 
-func multiLineStringToShapefile(multiline *geom.MultiLineString) (*shp.PolyLine, error) {
-	if multiline.NumLineStrings() == 0 {
-		return nil, fmt.Errorf("multilinestring has no parts")
+type multiTableWriter struct {
+	output        contentio.Writer
+	refs          []format.RelatedRef
+	tempDir       string
+	basePath      string
+	writer        *writer
+	geometryField string
+	fieldNames    []string
+	fields        []shp.Field
+	options       *format.WriteOptions
+	closed        bool
+}
+
+func (w *multiTableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
+	if w == nil || w.writer == nil {
+		return fmt.Errorf("shapefile table writer is closed")
 	}
-
-	var allPoints []shp.Point
-	parts := make([]int32, multiline.NumLineStrings())
-	offset := 0
-
-	for i := 0; i < multiline.NumLineStrings(); i++ {
-		line := multiline.LineString(i)
-		if line.NumCoords() < 2 {
-			return nil, fmt.Errorf("linestring requires at least two points")
+	for _, row := range rows {
+		if err := w.writeRow(row); err != nil {
+			return err
 		}
-		partPoints := coordsToShpPoints(line.Coords())
-		parts[i] = int32(offset)
-		allPoints = append(allPoints, partPoints...)
-		offset += len(partPoints)
 	}
-
-	return &shp.PolyLine{
-		Box:       calculateBox(allPoints),
-		NumParts:  int32(len(parts)),
-		NumPoints: int32(len(allPoints)),
-		Parts:     parts,
-		Points:    allPoints,
-	}, nil
+	return nil
 }
 
-func polygonToShapefile(polygon *geom.Polygon) (*shp.Polygon, error) {
-	if polygon.NumLinearRings() == 0 {
-		return nil, fmt.Errorf("polygon has no rings")
+func (w *multiTableWriter) writeRow(row map[string]interface{}) error {
+	geomValue, exists := findGeometryValue(row, w.geometryField)
+	if !exists {
+		return fmt.Errorf("geometry field '%s' not found", w.geometryField)
 	}
-	return buildShapefilePolygon([]*geom.Polygon{polygon})
+	shape, err := toShapefileGeometry(geomValue, w.writer.shapeType)
+	if err != nil {
+		return fmt.Errorf("failed to convert geometry: %w", err)
+	}
+	recordIndex := int(w.writer.Writer.Write(shape))
+	for i, fieldName := range w.fieldNames {
+		value, _ := valueByName(row, fieldName)
+		value = normalizeDBFValue(value, w.fields[i])
+		if err := w.writer.Writer.WriteAttribute(recordIndex, i, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func multiPolygonToShapefile(multi *geom.MultiPolygon) (*shp.Polygon, error) {
-	if multi.NumPolygons() == 0 {
-		return nil, fmt.Errorf("multipolygon has no polygons")
+func (w *multiTableWriter) Close(ctx context.Context) error {
+	if w == nil || w.closed {
+		return nil
 	}
+	w.closed = true
+	defer os.RemoveAll(w.tempDir)
 
-	polygons := make([]*geom.Polygon, multi.NumPolygons())
-	for i := 0; i < multi.NumPolygons(); i++ {
-		polygons[i] = multi.Polygon(i)
+	if w.writer != nil {
+		w.writer.Close()
+		w.writer = nil
 	}
-	return buildShapefilePolygon(polygons)
-}
-
-func buildShapefilePolygon(polygons []*geom.Polygon) (*shp.Polygon, error) {
-	var allPoints []shp.Point
-	var parts []int32
-	offset := 0
-
-	for _, polygon := range polygons {
-		if polygon.NumLinearRings() == 0 {
+	if err := w.writeSidecarFiles(); err != nil {
+		return err
+	}
+	for _, ref := range w.refs {
+		if !ref.Required && !fileExists(refPath(w.basePath, ref)) {
 			continue
 		}
-
-		for ringIdx := 0; ringIdx < polygon.NumLinearRings(); ringIdx++ {
-			ring := polygon.LinearRing(ringIdx)
-			coords := ring.Coords()
-			closed := closeCoordsIfNeeded(coords)
-
-			if ringIdx == 0 {
-				closed = ensureClockwise(closed)
-			} else {
-				closed = ensureCounterClockwise(closed)
-			}
-
-			partPoints := coordsToShpPoints(closed)
-			parts = append(parts, int32(offset))
-			allPoints = append(allPoints, partPoints...)
-			offset += len(partPoints)
+		if err := copyRef(ctx, w.output, w.basePath, ref); err != nil {
+			return err
 		}
 	}
-
-	if len(allPoints) == 0 {
-		return nil, fmt.Errorf("polygon contains no points")
-	}
-
-	return &shp.Polygon{
-		Box:       calculateBox(allPoints),
-		NumParts:  int32(len(parts)),
-		NumPoints: int32(len(allPoints)),
-		Parts:     parts,
-		Points:    allPoints,
-	}, nil
+	return nil
 }
 
-func coordsToShpPoints(coords []geom.Coord) []shp.Point {
-	points := make([]shp.Point, len(coords))
-	for i, c := range coords {
-		points[i] = shp.Point{X: c.X(), Y: c.Y()}
-	}
-	return points
-}
-
-func closeCoordsIfNeeded(coords []geom.Coord) []geom.Coord {
-	if len(coords) == 0 {
-		return coords
-	}
-	first := coords[0]
-	last := coords[len(coords)-1]
-	if almostEqual(first.X(), last.X()) && almostEqual(first.Y(), last.Y()) {
-		return coords
-	}
-	return append(coords, geom.Coord{first.X(), first.Y()})
-}
-
-func ensureClockwise(coords []geom.Coord) []geom.Coord {
-	if ringArea(coords) <= 0 {
-		return coords
-	}
-	return reverseCoords(coords)
-}
-
-func ensureCounterClockwise(coords []geom.Coord) []geom.Coord {
-	if ringArea(coords) >= 0 {
-		return coords
-	}
-	return reverseCoords(coords)
-}
-
-func reverseCoords(coords []geom.Coord) []geom.Coord {
-	reversed := make([]geom.Coord, len(coords))
-	for i := range coords {
-		reversed[i] = coords[len(coords)-1-i]
-	}
-	return reversed
-}
-
-func ringArea(coords []geom.Coord) float64 {
-	if len(coords) < 3 {
-		return 0
-	}
-	sum := 0.0
-	for i := 0; i < len(coords)-1; i++ {
-		x1, y1 := coords[i].X(), coords[i].Y()
-		x2, y2 := coords[i+1].X(), coords[i+1].Y()
-		sum += (x1 * y2) - (x2 * y1)
-	}
-	return sum / 2
-}
-
-func calculateBox(points []shp.Point) shp.Box {
-	if len(points) == 0 {
-		return shp.Box{}
-	}
-
-	minX, minY := points[0].X, points[0].Y
-	maxX, maxY := points[0].X, points[0].Y
-
-	for _, p := range points {
-		if p.X < minX {
-			minX = p.X
-		}
-		if p.X > maxX {
-			maxX = p.X
-		}
-		if p.Y < minY {
-			minY = p.Y
-		}
-		if p.Y > maxY {
-			maxY = p.Y
+func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOptions) string {
+	if opts != nil {
+		if value, ok := stringWriteOption(opts, "geometry_field"); ok {
+			return strings.TrimSpace(value)
 		}
 	}
-
-	return shp.Box{
-		MinX: minX,
-		MinY: minY,
-		MaxX: maxX,
-		MaxY: maxY,
+	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(schema.SpatialInfo.GeometryColumn) != "" {
+		return strings.TrimSpace(schema.SpatialInfo.GeometryColumn)
 	}
-}
-
-func findGeometryValue(row map[string]interface{}, field string) (interface{}, bool) {
-	if value, ok := row[field]; ok {
-		return value, true
-	}
-
-	lowerField := strings.ToLower(field)
-	for key, value := range row {
-		if strings.ToLower(key) == lowerField {
-			return value, true
+	for _, field := range schema.Fields {
+		if format.IsGeometryType(field.Type) {
+			return field.Name
 		}
 	}
-	return nil, false
+	return ""
+}
+
+func stringWriteOption(opts *format.WriteOptions, key string) (string, bool) {
+	if opts == nil || opts.ExtraParams == nil {
+		return "", false
+	}
+	value, ok := opts.ExtraParams[key]
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok
+}
+
+func (w *multiTableWriter) writeSidecarFiles() error {
+	if w.options == nil {
+		return nil
+	}
+	encoding := NormalizeDBFEncoding(w.options.Encoding)
+	if encoding != "" {
+		if err := os.WriteFile(w.basePath+extCPG, []byte(encoding), 0o644); err != nil {
+			return fmt.Errorf("write shapefile cpg: %w", err)
+		}
+	}
+	if prj, ok := stringWriteOption(w.options, "spatial_ref_sys"); ok && strings.TrimSpace(prj) != "" {
+		if err := os.WriteFile(w.basePath+extPRJ, []byte(strings.TrimSpace(prj)), 0o644); err != nil {
+			return fmt.Errorf("write shapefile prj: %w", err)
+		}
+	}
+	return nil
+}
+
+func copyRef(ctx context.Context, output contentio.Writer, basePath string, ref format.RelatedRef) error {
+	sourcePath := refPath(basePath, ref)
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("open shapefile ref %s: %w", ref.Ref.Role, err)
+	}
+	defer source.Close()
+
+	target, err := output.Create(ctx, ref.Ref)
+	if err != nil {
+		return fmt.Errorf("create shapefile ref %s: %w", ref.Ref.Role, err)
+	}
+	targetClosed := false
+	defer func() {
+		if !targetClosed {
+			_ = target.Close()
+		}
+	}()
+	if _, err := io.Copy(target, source); err != nil {
+		return fmt.Errorf("copy shapefile ref %s: %w", ref.Ref.Role, err)
+	}
+	if err := target.Close(); err != nil {
+		return fmt.Errorf("close shapefile ref %s: %w", ref.Ref.Role, err)
+	}
+	targetClosed = true
+	return nil
+}
+
+func refPath(basePath string, ref format.RelatedRef) string {
+	return basePath + filepath.Ext(ref.Ref.Path)
 }
