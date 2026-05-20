@@ -20,7 +20,7 @@
 | CSV / TSV | 还要核实大文件分页、编码、表头识别，继续收敛 CSV / TSV 的格式族口径，并补 content index 失效规则验证。 |
 | JSON / GeoJSON | 还要补真实样例回归，核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
 | Parquet | 还要补 MinIO / NFS 真实样例，核实 `part-*`、分区目录、schema 不兼容提示、大文件 row group 性能，并继续设计专用 range / footer 读取边界。 |
-| Shapefile | 还要核实 NFS 真实样例、不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |
+| Shapefile | 还要核实 NFS 真实样例下本地 materialized fallback 也能继续利用 `.shx` 索引分页，不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |
 | Excel | 还要用真实多 sheet、空 sheet、大文件样例核实 Meta children、container 概览、`child_name` 表格分页和 `ContainerPreview` 切换体验。 |
 | SQLite | 还要核实真实 SQLite 多表切换、分页、只读打开错误和大库物化成本。 |
 | GeoPackage | 还要核实 Meta children、container 概览、layer 切换、分页样本、geometry column / SRID / extent 展示。 |

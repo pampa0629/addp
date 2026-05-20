@@ -118,6 +118,14 @@ Transfer 当前的关键要求不是“先把流程走通”，而是按标准 i
 
 如果 `refs`、layout 或 item 边界本身错误，必须使用 node refresh 重新识别；item refresh 不负责扩大范围修复 item 身份。
 
+### 3. Shapefile 动态预览的本地索引回退
+
+本轮已经补上 Shapefile 的本地 materialized fallback：
+
+- 当 ZIP / 容器 child 预览无法直接走 `RangeReader` 时，Shapefile multi ref 会先 materialize 到临时目录。
+- 只要本地 `.shp/.shx/.dbf` 可用，就继续走 `.shx` 索引窗口 + `.dbf` 连续属性块 + `.shp` 记录窗口，不再退回从第 0 行顺序跳页。
+- 这样 `content_index` 或 `.shx` 的索引价值可以在本地 fallback 路径里继续生效，不必把大 ZIP 解成完整目录后再慢慢翻页。
+
 ## 三、当前仍需继续处理的关键问题
 
 ### 1. container 动态识别与 Meta 落库边界
@@ -155,6 +163,7 @@ Transfer 当前的关键要求不是“先把流程走通”，而是按标准 i
 1. 继续整理 Manager container 动态预览路径，确保 SQLite / ZIP / Shapefile 子项显示和字段来源正确。
 2. 推进 Transfer 对 Meta item attributes 的消费，避免自行猜 refs、字段类型或空间字段。
 3. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `content_index`、`type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
+4. Shapefile 动态预览已接入本地索引回退，后续只需继续用真实 NFS / ZIP 样例回归分页和大文件体验，确认不会再退回顺序跳行。
 
 ## 六、新会话起手点
 

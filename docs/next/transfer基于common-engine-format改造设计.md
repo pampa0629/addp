@@ -239,7 +239,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
 | Parquet | 最小 `TableReaderProvider` 已有 | 最小 `TableWriterProvider` 已有 | 已能跑通基础 table transfer；row group / 分区数据集仍待增强。 |
-| Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 顺序读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口，避免每批重新 materialize 组件。 |
+| Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
 
@@ -350,7 +350,7 @@ batch checkpoint 最小结构：
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
 | Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection、分区数据集读取仍待补。 |
-| Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；当前 indexed reader 支持 Point / Polyline / Polygon / MultiPoint，Z/M 类型和更复杂几何仍需补齐。 |
+| Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z/M 类型和更复杂几何仍需补齐。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
 | transform 扩展 | `field_mapping` 已进入主链路；过滤、派生字段、表达式、空间坐标转换等更完整 ETL transform 尚未设计。 |

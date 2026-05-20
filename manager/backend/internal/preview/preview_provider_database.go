@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
@@ -169,28 +170,20 @@ func (p *DatabaseTablePreviewProvider) queryData(
 ) ([]map[string]interface{}, error) {
 	dialect := sqldialect.ForEngine(engineType)
 	selectExpr := "*"
+	query := ""
 	if dialect.IsPostgreSQL() {
-		selectColumns := make([]string, 0, len(columns)*2)
-		for _, col := range columns {
-			if p.isSpatialType(col.DataType) {
-				selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
-					databasePreviewWKTExpr(col),
-					dialect.QuoteIdentifier(col.ColumnName),
-				))
-				selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
-					databasePreviewRenderExpr(col),
-					dialect.QuoteIdentifier(renderGeometryColumnName(col.ColumnName)),
-				))
-			} else {
-				selectColumns = append(selectColumns, dialect.QuoteIdentifier(col.ColumnName))
-			}
-		}
-		if len(selectColumns) > 0 {
-			selectExpr = strings.Join(selectColumns, ", ")
+		primaryKeys := databasePrimaryKeyColumns(columns)
+		if len(primaryKeys) > 0 {
+			selectExpr = databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
+			query = databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, schema, table, primaryKeys, limit, offset)
+		} else {
+			selectExpr = databasePreviewSelectExpr(dialect, columns, "")
 		}
 	}
 
-	query := dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
+	if query == "" {
+		query = dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
+	}
 	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
 		EngineID:   engineID,
 		EngineType: engineType,
@@ -203,16 +196,150 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	return result.Rows, nil
 }
 
+const (
+	databasePreviewSourceAlias = "__addp_src"
+	databasePreviewKeyCTEAlias = "__addp_page_keys"
+	databasePreviewKeyAlias    = "__addp_keys"
+)
+
+func databasePrimaryKeyColumns(columns []plugin.ColumnInfo) []string {
+	primaryKeys := make([]string, 0)
+	for _, col := range columns {
+		if col.IsPrimaryKey && strings.TrimSpace(col.ColumnName) != "" {
+			primaryKeys = append(primaryKeys, col.ColumnName)
+		}
+	}
+	return primaryKeys
+}
+
+func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []plugin.ColumnInfo, tableAlias string) string {
+	if len(columns) == 0 {
+		if tableAlias != "" {
+			return dialect.QuoteIdentifier(tableAlias) + ".*"
+		}
+		return "*"
+	}
+
+	selectColumns := make([]string, 0, len(columns)*2)
+	for _, col := range columns {
+		columnRef := databasePreviewColumnRef(dialect, tableAlias, col.ColumnName)
+		if spatial.IsPostGISSpatialType(col.DataType) {
+			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
+				databasePreviewWKTExpr(columnRef, col.DataType),
+				dialect.QuoteIdentifier(col.ColumnName),
+			))
+			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
+				databasePreviewRenderExpr(columnRef, col.DataType),
+				dialect.QuoteIdentifier(renderGeometryColumnName(col.ColumnName)),
+			))
+			continue
+		}
+		selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s", columnRef, dialect.QuoteIdentifier(col.ColumnName)))
+	}
+	return strings.Join(selectColumns, ", ")
+}
+
+func databasePreviewColumnRef(dialect sqldialect.Dialect, tableAlias, column string) string {
+	quotedColumn := dialect.QuoteIdentifier(column)
+	if tableAlias == "" {
+		return quotedColumn
+	}
+	return dialect.QuoteIdentifier(tableAlias) + "." + quotedColumn
+}
+
+func databasePreviewPostgreSQLPrimaryKeyPageQuery(
+	dialect sqldialect.Dialect,
+	selectExpr, schema, table string,
+	primaryKeys []string,
+	limit, offset int,
+) string {
+	qualifiedTable := dialect.QualifiedTable(schema, table)
+	sourceAlias := dialect.QuoteIdentifier(databasePreviewSourceAlias)
+	sourceOrderBy := databasePreviewOrderByClause(dialect, databasePreviewSourceAlias, primaryKeys)
+	limitClause := databasePreviewLimitOffsetClause(limit, offset)
+	if offset <= 0 {
+		return fmt.Sprintf("SELECT %s FROM %s AS %s ORDER BY %s%s", selectExpr, qualifiedTable, sourceAlias, sourceOrderBy, limitClause)
+	}
+
+	keySelect := databasePreviewKeyColumnList(dialect, primaryKeys)
+	keyOrderBy := databasePreviewOrderByClause(dialect, "", primaryKeys)
+	keyCTE := dialect.QuoteIdentifier(databasePreviewKeyCTEAlias)
+	keyAlias := dialect.QuoteIdentifier(databasePreviewKeyAlias)
+	joinClause := databasePreviewPrimaryKeyJoinClause(dialect, primaryKeys)
+	return fmt.Sprintf(
+		"WITH %s AS (SELECT %s FROM %s ORDER BY %s%s) SELECT %s FROM %s AS %s JOIN %s AS %s ON %s ORDER BY %s",
+		keyCTE,
+		keySelect,
+		qualifiedTable,
+		keyOrderBy,
+		limitClause,
+		selectExpr,
+		qualifiedTable,
+		sourceAlias,
+		keyCTE,
+		keyAlias,
+		joinClause,
+		sourceOrderBy,
+	)
+}
+
+func databasePreviewKeyColumnList(dialect sqldialect.Dialect, primaryKeys []string) string {
+	parts := make([]string, 0, len(primaryKeys))
+	for _, column := range primaryKeys {
+		parts = append(parts, dialect.QuoteIdentifier(column))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func databasePreviewOrderByClause(dialect sqldialect.Dialect, tableAlias string, columns []string) string {
+	parts := make([]string, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, databasePreviewColumnRef(dialect, tableAlias, column))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func databasePreviewPrimaryKeyJoinClause(dialect sqldialect.Dialect, primaryKeys []string) string {
+	parts := make([]string, 0, len(primaryKeys))
+	for _, column := range primaryKeys {
+		parts = append(parts, fmt.Sprintf(
+			"%s = %s",
+			databasePreviewColumnRef(dialect, databasePreviewSourceAlias, column),
+			databasePreviewColumnRef(dialect, databasePreviewKeyAlias, column),
+		))
+	}
+	return strings.Join(parts, " AND ")
+}
+
+func databasePreviewLimitOffsetClause(limit, offset int) string {
+	var sb strings.Builder
+	if limit > 0 {
+		sb.WriteString(" LIMIT ")
+		sb.WriteString(strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		sb.WriteString(" OFFSET ")
+		sb.WriteString(strconv.Itoa(offset))
+	}
+	return sb.String()
+}
+
 func renderGeometryColumnName(column string) string {
 	return "__render_geojson_" + column
 }
 
-func databasePreviewWKTExpr(col plugin.ColumnInfo) string {
-	return spatial.PostGISWKTExpression(col.ColumnName, col.DataType)
+func databasePreviewWKTExpr(columnRef, dataType string) string {
+	if spatial.IsPostGISGeographyType(dataType) {
+		return fmt.Sprintf("ST_AsText(%s::geometry)", columnRef)
+	}
+	return fmt.Sprintf("ST_AsText(%s)", columnRef)
 }
 
-func databasePreviewRenderExpr(col plugin.ColumnInfo) string {
-	return spatial.PostGISRenderGeoJSONExpression(col.ColumnName, col.DataType)
+func databasePreviewRenderExpr(columnRef, dataType string) string {
+	if spatial.IsPostGISGeographyType(dataType) {
+		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(%s::geometry) END", columnRef, columnRef)
+	}
+	return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL WHEN ST_SRID(%s) IN (0, 4326) THEN ST_AsGeoJSON(%s) ELSE ST_AsGeoJSON(ST_Transform(%s, 4326)) END", columnRef, columnRef, columnRef, columnRef)
 }
 
 func buildDatabaseRenderGeometryColumns(geometryColumns []string, rows []map[string]interface{}) map[string]string {
