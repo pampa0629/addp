@@ -38,6 +38,22 @@
             :value="child.key"
           />
         </el-select>
+        <template v-if="activeRefOptions.length">
+          <span class="child-toolbar-label">{{ t('containerPreview.refs') }}</span>
+          <el-select
+            v-model="activeRefPath"
+            size="small"
+            class="ref-select"
+            @change="handleRefSelect"
+          >
+            <el-option
+              v-for="ref in activeRefOptions"
+              :key="ref.key"
+              :label="ref.label"
+              :value="ref.path"
+            />
+          </el-select>
+        </template>
       </div>
 
       <template v-if="activeChild">
@@ -137,6 +153,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  selectedRefPath: {
+    type: String,
+    default: ''
+  },
   selectorLabel: {
     type: String,
     default: ''
@@ -166,6 +186,7 @@ const props = defineProps({
 const emit = defineEmits(['child-change', 'page-change'])
 
 const activeChildKey = ref('')
+const activeRefPath = ref('')
 
 const normalizedChildren = computed(() => {
   return props.children.filter(child => child && child.key)
@@ -188,8 +209,51 @@ const ensureActiveChild = () => {
 
 watch([children, () => props.defaultChildKey, () => props.selectedChildKey], ensureActiveChild, { immediate: true })
 
+watch(activeChildKey, () => {
+  activeRefPath.value = ''
+})
+
+watch(
+  () => props.selectedRefPath,
+  (path) => {
+    activeRefPath.value = path || ''
+  },
+  { immediate: true }
+)
+
 const activeChild = computed(() => {
   return children.value.find(child => child.key === activeChildKey.value) || children.value[0] || null
+})
+
+const refDisplayName = (path) => {
+  if (!path) return ''
+  const parts = String(path).split(/[\\/]/).filter(Boolean)
+  return parts.pop() || String(path)
+}
+
+const activeRefOptions = computed(() => {
+  const refs = Array.isArray(activeChild.value?.refs) ? activeChild.value.refs : []
+  const options = refs
+    .filter(ref => ref && ref.path)
+    .map((ref, index) => {
+      const path = String(ref.path || '')
+      const label = ref.label || ref.role || ref.key || refDisplayName(path) || String(index)
+      const fileName = refDisplayName(path)
+      return {
+        key: ref.key || ref.role || path || String(index),
+        path,
+        label: fileName && !String(label).includes(fileName) ? `${label} · ${fileName}` : String(label)
+      }
+    })
+  if (!options.length) return []
+  return [
+    {
+      key: '__combined__',
+      path: '',
+      label: t('containerPreview.combinedPreview')
+    },
+    ...options
+  ]
 })
 
 const activeChildPreviewData = computed(() => props.activeChildPreview || null)
@@ -265,6 +329,17 @@ const handleChildSelect = (key) => {
   const child = children.value.find(item => item.key === key)
   if (!child) return
   emit('child-change', { ...child, nestedChildPath: '' })
+}
+
+const handleRefSelect = (path) => {
+  activeRefPath.value = path || ''
+  if (!activeChild.value) return
+  emit('child-change', {
+    ...activeChild.value,
+    refPath: path || '',
+    nestedChildPath: '',
+    refSwitch: true
+  })
 }
 
 const handleNestedChildChange = (payload) => {
@@ -348,6 +423,10 @@ const handlePageChange = (page) => {
 
 .child-select {
   width: min(360px, 100%);
+}
+
+.ref-select {
+  width: min(320px, 100%);
 }
 
 .child-meta {

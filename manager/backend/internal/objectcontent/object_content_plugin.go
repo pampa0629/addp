@@ -1155,6 +1155,9 @@ func applyContainerChildrenSummary(summary map[string]interface{}, resolved *con
 	if resolved.Resolved {
 		summary["layout_resolved"] = true
 	}
+	if resolved.RawCount > 0 && resolved.VisibleCount >= resolved.RawCount {
+		summary["children_truncated"] = false
+	}
 }
 
 func containerDefaultChild(formatName string, formatAttrs map[string]interface{}, children []map[string]interface{}) string {
@@ -1552,6 +1555,9 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 			return 0
 		}(),
 	})
+	if info.ChildCount > 0 && len(info.Children) >= info.ChildCount {
+		summary["children_truncated"] = false
+	}
 
 	defaultChild := info.DefaultChild
 	if defaultChild == "" && len(children) > 0 {

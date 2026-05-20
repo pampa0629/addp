@@ -485,7 +485,8 @@ const previewComponentProps = computed(() => {
       activeChildPreview: store.activeChildPreviewData,
       activeChildLoading: store.childPreviewLoading,
       selectedChildName: store.selectedChildName,
-      selectedChildKey: store.selectedChildKey
+      selectedChildKey: store.selectedChildKey,
+      selectedRefPath: store.selectedRefPath
     }
   }
   return {}

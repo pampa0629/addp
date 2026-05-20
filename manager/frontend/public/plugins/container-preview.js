@@ -60,6 +60,7 @@
       rowCount: numberOrUndefined(child?.row_count ?? child?.rowCount),
       columnCount: numberOrUndefined(child?.column_count ?? child?.columnCount ?? columns.length),
       hasHeader: child?.has_header ?? child?.hasHeader,
+      refs: Array.isArray(child?.refs) ? child.refs : [],
       columns,
       columnTypes,
       rows: []
@@ -77,7 +78,7 @@
 
   const component = {
     name: 'GenericContainerPreview',
-    props: ['data', 'activeChildPreview', 'activeChildLoading', 'selectedChildName', 'selectedChildKey'],
+    props: ['data', 'activeChildPreview', 'activeChildLoading', 'selectedChildName', 'selectedChildKey', 'selectedRefPath'],
     emits: ['child-change', 'page-change'],
     computed: {
       content() {
@@ -163,6 +164,7 @@
         activeChildLoading: Boolean(this.activeChildLoading),
         activeChildPreviewComponent: this.activeChildPreviewComponent,
         selectedChildKey: this.selectedChildKey || this.selectedChildName || '',
+        selectedRefPath: this.selectedRefPath || '',
         truncated: this.childrenTruncated,
         emptyText: this.emptyText,
         onChildChange: this.handleChildChange,
