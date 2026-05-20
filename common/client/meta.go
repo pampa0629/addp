@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	commonJSON "github.com/addp/common/jsonmap"
@@ -32,6 +33,17 @@ type MetaScanOptions struct {
 	ScanDepth    string
 	Force        bool
 	TriggerType  string
+}
+
+// MetaScanResponse 元数据扫描响应
+type MetaScanResponse struct {
+	Status              string `json:"status"`
+	Message             string `json:"message"`
+	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
+	ItemsScanned        int    `json:"items_scanned"`
+	FieldsScanned       int    `json:"fields_scanned"`
+	DurationMs          int64  `json:"duration_ms"`
+	StartedAt           string `json:"started_at"`
 }
 
 // NewMetaClient 创建 Meta 客户端（用户认证方式）
@@ -306,36 +318,47 @@ func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
 	return &result, nil
 }
 
-func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
+func (c *MetaClient) ScanEngine(opts MetaScanOptions) (*MetaScanResponse, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/engine", c.baseURL)
 
-	scanReq := map[string]interface{}{
-		"engine_id":    opts.EngineID,
-		"node_id":      opts.NodeID,
-		"item_id":      opts.ItemID,
-		"targets":      opts.Targets,
-		"scan_depth":   opts.ScanDepth,
-		"force":        opts.Force,
-		"trigger_type": opts.TriggerType,
+	scanReq := map[string]interface{}{}
+	if opts.EngineID > 0 {
+		scanReq["engine_id"] = opts.EngineID
 	}
-	if scanReq["scan_depth"] == "" {
-		scanReq["scan_depth"] = "basic"
+	if opts.NodeID > 0 {
+		scanReq["node_id"] = opts.NodeID
 	}
-	if scanReq["trigger_type"] == "" {
-		scanReq["trigger_type"] = "manual"
+	if opts.ItemID > 0 {
+		scanReq["item_id"] = opts.ItemID
+	}
+	if len(opts.Targets) > 0 {
+		scanReq["targets"] = opts.Targets
 	}
 	if len(opts.CatalogPaths) > 0 {
 		scanReq["catalog_paths"] = opts.CatalogPaths
 	}
+	if depth := strings.TrimSpace(opts.ScanDepth); depth != "" {
+		scanReq["scan_depth"] = depth
+	} else {
+		scanReq["scan_depth"] = "basic"
+	}
+	if opts.Force {
+		scanReq["force"] = true
+	}
+	if triggerType := strings.TrimSpace(opts.TriggerType); triggerType != "" {
+		scanReq["trigger_type"] = triggerType
+	} else {
+		scanReq["trigger_type"] = "manual"
+	}
 
 	body, err := json.Marshal(scanReq)
 	if err != nil {
-		return fmt.Errorf("failed to marshal scan request: %w", err)
+		return nil, fmt.Errorf("failed to marshal scan request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	c.addAuth(req)
@@ -343,16 +366,79 @@ func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return nil
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result MetaScanResponse
+	if len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return &result, nil
+}
+
+func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanResponse, error) {
+	if itemID == 0 {
+		return nil, fmt.Errorf("item_id is required")
+	}
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/refresh", c.baseURL, itemID)
+	reqPayload := map[string]interface{}{}
+	if opts.EngineID > 0 {
+		reqPayload["engine_id"] = opts.EngineID
+	}
+	if opts.Force {
+		reqPayload["force"] = true
+	}
+
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal refresh request: %w", err)
+	}
+	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result MetaScanResponse
+	if len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
+	_, err := c.ScanEngine(opts)
+	return err
 }
 
 // TriggerScanEngine 触发引擎元数据扫描。
@@ -376,12 +462,8 @@ func (c *MetaClient) EnsureItemDeepScanned(itemID uint) error {
 }
 
 func (c *MetaClient) ForceRefreshItem(itemID uint) error {
-	return c.TriggerScan(MetaScanOptions{
-		ItemID:      itemID,
-		ScanDepth:   "deep",
-		Force:       true,
-		TriggerType: "manual",
-	})
+	_, err := c.RefreshItem(itemID, MetaScanOptions{Force: true})
+	return err
 }
 
 func (c *MetaClient) ForceRefreshNode(nodeID uint) error {

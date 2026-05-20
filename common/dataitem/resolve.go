@@ -36,17 +36,46 @@ func ScanTargetsFromAttributes(attrs map[string]interface{}) []ScanTarget {
 	storageAttrs := asMap(attrs["storage"])
 	switch strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))) {
 	case string(LayoutMulti):
-		return scanTargetsFromRefs(itemAttrs["refs"])
+		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
+			return []ScanTarget{{Path: target}}
+		}
+		return nil
 	case string(LayoutWhole):
 		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
+			return []ScanTarget{{Path: target}}
+		}
+		if target := normalizeTargetPath(asString(storageAttrs["path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
 	case string(LayoutSingle):
 		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
+		if target := normalizeTargetPath(asString(storageAttrs["path"])); target != "" {
+			return []ScanTarget{{Path: target}}
+		}
 	}
 	return nil
+}
+
+func DescriptorFromAttributes(attrs map[string]interface{}) ItemDescriptor {
+	if len(attrs) == 0 {
+		return ItemDescriptor{}
+	}
+	itemAttrs := asMap(attrs["item"])
+	storageAttrs := asMap(attrs["storage"])
+	return ItemDescriptor{
+		Layout:        Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"])))),
+		DataType:      DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
+		Format:        strings.ToLower(strings.TrimSpace(asString(itemAttrs["format"]))),
+		EntryPath:     normalizeTargetPath(asString(itemAttrs["entry_path"])),
+		PhysicalPath:  normalizeTargetPath(asString(storageAttrs["physical_path"])),
+		StoragePath:   normalizeStoragePath(asString(storageAttrs["path"])),
+		StorageName:   strings.Trim(strings.TrimSpace(asString(storageAttrs["name"])), "/"),
+		StorageBucket: strings.Trim(strings.TrimSpace(asString(storageAttrs["bucket"])), "/"),
+		Refs:          refsFromAttributes(itemAttrs["refs"]),
+		SizeBytes:     sizeBytesFromAttributes(storageAttrs),
+	}
 }
 
 func normalizeAndFilterCandidates(input ResolveInput) ([]Candidate, []IgnoredCandidate) {
@@ -70,22 +99,38 @@ func normalizeAndFilterCandidates(input ResolveInput) ([]Candidate, []IgnoredCan
 	return candidates, ignored
 }
 
-func scanTargetsFromRefs(raw interface{}) []ScanTarget {
-	refs := asSlice(raw)
-	if len(refs) == 0 {
+func refsFromAttributes(raw interface{}) []ItemRef {
+	items := asSlice(raw)
+	if len(items) == 0 {
 		return nil
 	}
-	targets := make([]ScanTarget, 0, len(refs))
+	refs := make([]ItemRef, 0, len(items))
 	seen := map[string]bool{}
-	for _, ref := range refs {
-		path := normalizeTargetPath(asString(asMap(ref)["path"]))
+	for _, item := range items {
+		rawRef := asMap(item)
+		path := normalizeTargetPath(asString(rawRef["path"]))
 		if path == "" || seen[path] {
 			continue
 		}
 		seen[path] = true
-		targets = append(targets, ScanTarget{Path: path})
+		refs = append(refs, ItemRef{
+			Role:      strings.TrimSpace(asString(rawRef["role"])),
+			Path:      path,
+			Required:  asBool(rawRef["required"]),
+			Primary:   asBool(rawRef["primary"]),
+			Extension: strings.ToLower(strings.TrimSpace(asString(rawRef["extension"]))),
+		})
 	}
-	return targets
+	return refs
+}
+
+func sizeBytesFromAttributes(storageAttrs map[string]interface{}) *int64 {
+	for _, key := range []string{"total_size", "size"} {
+		if value, ok := asInt64(storageAttrs[key]); ok && value > 0 {
+			return &value
+		}
+	}
+	return nil
 }
 
 func resolveMultiItems(candidates []Candidate, result *ResolveResult) {
@@ -269,8 +314,52 @@ func asSlice(value interface{}) []interface{} {
 	}
 }
 
+func asBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
+}
+
+func asInt64(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int32:
+		return int64(v), true
+	case uint:
+		return int64(v), true
+	case uint64:
+		if v > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case float32:
+		return int64(v), true
+	default:
+		return 0, false
+	}
+}
+
 func normalizeTargetPath(value string) string {
 	return strings.Trim(strings.TrimSpace(value), "/")
+}
+
+func normalizeStoragePath(value string) string {
+	hadTrailingSlash := strings.HasSuffix(strings.TrimSpace(value), "/")
+	value = normalizeTargetPath(value)
+	if value != "" && hadTrailingSlash {
+		return value + "/"
+	}
+	return value
 }
 
 func asString(value interface{}) string {

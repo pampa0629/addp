@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/catalogview"
+	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -361,18 +362,14 @@ func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param body body models.MetaManualScanRequest false "扫描配置（可选）| Scan configuration (optional)"
-// @Success 200 {object} models.MetaScanTaskRun "扫描运行记录 | Scan run record"
+// @Param locator query string false "资源定位符 URI | Resource locator URI"
+// @Param body body models.MetaManualScanRequest false "扫描定位（可选，仅支持 item_id）| Scan target (optional, item_id only)"
+// @Success 200 {object} models.MetaScanResponse "同步扫描结果 | Synchronous scan result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
 func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
-	if !ok {
-		return
-	}
-
-	authHeader, ok := extractAuthHeader(c)
 	if !ok {
 		return
 	}
@@ -390,27 +387,34 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		if loc.EngineID != engineID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "locator engine_id does not match path engine_id"})
+			return
+		}
 		if loc.MetaID != nil && *loc.MetaID > 0 {
 			if *loc.MetaID >= 100000 {
 				req.ItemID = *loc.MetaID - 100000
 			} else {
-				req.NodeID = *loc.MetaID
+				c.JSON(http.StatusBadRequest, gin.H{"error": "item refresh requires item locator"})
+				return
 			}
 		}
-		if len(req.Targets) == 0 {
-			req.Targets = []string{locatorURI}
-		}
+	}
+	if req.ItemID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "locator with item meta_id or body item_id is required"})
+		return
 	}
 	req.ScanDepth = "deep"
 	req.Force = true
 
-	run, err := h.metadataService.RefreshItem(c.Request.Context(), engineID, &req, authHeader)
+	tenantID := commonAuth.GetTenantID(c)
+	result, err := h.metadataService.RefreshItem(c.Request.Context(), &tenantID, engineID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, run)
+	c.JSON(http.StatusOK, result)
 }
 
 func parseUintParam(c *gin.Context, key string) (uint, bool) {

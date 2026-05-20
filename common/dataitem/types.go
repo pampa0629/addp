@@ -171,3 +171,16 @@ func (item ResolvedItem) RelatedRefs() []format.RelatedRef {
 type ScanTarget struct {
 	Path string
 }
+
+type ItemDescriptor struct {
+	Layout        Layout
+	DataType      DataType
+	Format        string
+	EntryPath     string
+	PhysicalPath  string
+	StoragePath   string
+	StorageName   string
+	StorageBucket string
+	Refs          []ItemRef
+	SizeBytes     *int64
+}

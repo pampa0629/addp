@@ -67,6 +67,23 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_addp_manager_internal_models.MetaScanResponse:
+    properties:
+      catalog_nodes_scanned:
+        type: integer
+      duration_ms:
+        type: integer
+      fields_scanned:
+        type: integer
+      items_scanned:
+        type: integer
+      message:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
   github_com_addp_manager_internal_models.MetaScanTask:
     properties:
       created_at:
@@ -640,7 +657,11 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 扫描配置（可选）| Scan configuration (optional)
+      - description: 资源定位符 URI | Resource locator URI
+        in: query
+        name: locator
+        type: string
+      - description: 扫描定位（可选，仅支持 item_id）| Scan target (optional, item_id only)
         in: body
         name: body
         schema:
@@ -649,9 +670,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: 扫描运行记录 | Scan run record
+          description: 同步扫描结果 | Synchronous scan result
           schema:
-            $ref: '#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRun'
+            $ref: '#/definitions/github_com_addp_manager_internal_models.MetaScanResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:

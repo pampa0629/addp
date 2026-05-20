@@ -411,6 +411,65 @@
                 }
             }
         },
+        "/items/{item_id}/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于已落库 item 的 layout、format、refs 和 storage 信息同步刷新元数据属性 | Refresh metadata attributes for an existing item using stored item descriptor",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "刷新已知数据项 | Refresh known item",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "刷新请求 | Refresh request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "刷新结果 | Refresh result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/items/{item_id}/spatial": {
             "get": {
                 "security": [

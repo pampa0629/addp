@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
@@ -471,33 +471,15 @@ func scanTargetFromNode(node models.MetaNode) []string {
 }
 
 func scanTargetFromItem(item models.MetaItem) []string {
-	if targets := dataitem.ScanTargetsFromAttributes(item.Attributes); len(targets) > 0 {
-		paths := make([]string, 0, len(targets))
-		for _, target := range targets {
-			if target.Path != "" {
-				paths = append(paths, target.Path)
-			}
-		}
-		return uniqueNonEmpty(paths)
+	physicalPath := strings.Trim(strings.TrimSpace(commonJSON.String(item.Attributes, "storage", "physical_path")), "/")
+	if physicalPath != "" {
+		return []string{physicalPath}
 	}
 	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
-	if fullName == "" {
-		return nil
-	}
-	switch item.ItemType {
-	case plugin.CatalogTermFile:
-		if idx := strings.LastIndex(fullName, "/"); idx >= 0 {
-			return []string{fullName[:idx]}
-		}
-		return nil
-	case plugin.CatalogTermObject:
+	if fullName != "" {
 		return []string{fullName}
-	case plugin.CatalogTermTable, plugin.CatalogTermCollection, plugin.CatalogTermLabel, plugin.CatalogTermRelationship:
-		if idx := strings.LastIndex(fullName, "."); idx > 0 {
-			return []string{fullName[:idx]}
-		}
 	}
-	return []string{fullName}
+	return nil
 }
 
 func scanTargetFromLocator(locator string) []string {

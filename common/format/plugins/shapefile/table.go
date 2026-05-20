@@ -42,6 +42,14 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 	defer cleanup()
 
 	applyMaterializedSidecarOptions(basePath, opts)
+	if rows, ok, err := plugin.sampleMaterializedTableIndexed(ctx, basePath, refs, offset, limit, opts); ok {
+		if err == nil {
+			return rows, nil
+		}
+		if !isIndexedSampleFallbackError(err) {
+			return nil, err
+		}
+	}
 	return plugin.sampleTableFromPath(ctx, basePath+extSHP, offset, limit, opts)
 }
 
@@ -341,6 +349,45 @@ func materializeRef(ctx context.Context, reader contentio.Reader, ref format.Rel
 	defer dst.Close()
 	_, err = io.Copy(dst, src)
 	return err
+}
+
+func (plugin *Plugin) sampleMaterializedTableIndexed(ctx context.Context, basePath string, refs []format.RelatedRef, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, bool, error) {
+	reader := materializedRefRangeReader{basePath: basePath}
+	return plugin.sampleMultiTableIndexed(ctx, reader, refs, offset, limit, opts)
+}
+
+type materializedRefRangeReader struct {
+	basePath string
+}
+
+func (r materializedRefRangeReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
+	return os.Open(r.localPath(ref))
+}
+
+func (r materializedRefRangeReader) OpenRange(ctx context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	file, err := os.Open(r.localPath(ref))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.LimitReader(file, length),
+		Closer: file,
+	}, nil
+}
+
+func (r materializedRefRangeReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
+	return nil, nil
+}
+
+func (r materializedRefRangeReader) localPath(ref contentio.Ref) string {
+	return r.basePath + filepath.Ext(ref.Path)
 }
 
 func fileExists(path string) bool {

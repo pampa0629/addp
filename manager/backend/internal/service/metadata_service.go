@@ -127,7 +127,7 @@ func (s *MetadataService) callMeta(ctx context.Context, method, path string, que
 }
 
 func (s *MetadataService) ListScanTasks(ctx context.Context, engineID uint, authHeader string) ([]models.MetaScanTask, error) {
-	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/tasks", nil, nil, authHeader)
+	body, err := s.callMeta(ctx, http.MethodGet, "/api/v1/meta/scan/tasks", nil, nil, authHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *MetadataService) CreateScanTask(ctx context.Context, engineID uint, req
 	payload := *req
 	payload.EngineID = engineID
 
-	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/tasks", nil, payload, authHeader)
+	body, err := s.callMeta(ctx, http.MethodPost, "/api/v1/meta/scan/tasks", nil, payload, authHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (s *MetadataService) UpdateScanTask(ctx context.Context, engineID, taskID u
 	payload := *req
 	payload.EngineID = engineID
 
-	path := fmt.Sprintf("/api/meta/scan/tasks/%d", taskID)
+	path := fmt.Sprintf("/api/v1/meta/scan/tasks/%d", taskID)
 	body, err := s.callMeta(ctx, http.MethodPut, path, nil, payload, authHeader)
 	if err != nil {
 		return nil, err
@@ -201,13 +201,13 @@ func (s *MetadataService) UpdateScanTask(ctx context.Context, engineID, taskID u
 }
 
 func (s *MetadataService) DeleteScanTask(ctx context.Context, taskID uint, authHeader string) error {
-	path := fmt.Sprintf("/api/meta/scan/tasks/%d", taskID)
+	path := fmt.Sprintf("/api/v1/meta/scan/tasks/%d", taskID)
 	_, err := s.callMeta(ctx, http.MethodDelete, path, nil, nil, authHeader)
 	return err
 }
 
 func (s *MetadataService) TriggerScanTask(ctx context.Context, taskID uint, authHeader string) (*models.MetaScanTaskRun, error) {
-	path := fmt.Sprintf("/api/meta/scan/tasks/%d/trigger", taskID)
+	path := fmt.Sprintf("/api/v1/meta/scan/tasks/%d/trigger", taskID)
 	body, err := s.callMeta(ctx, http.MethodPost, path, nil, nil, authHeader)
 	if err != nil {
 		return nil, err
@@ -248,7 +248,7 @@ func (s *MetadataService) ListScanRuns(ctx context.Context, engineID uint, taskI
 		query.Set("storage_type", trimmedStorage)
 	}
 
-	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/runs", query, nil, authHeader)
+	body, err := s.callMeta(ctx, http.MethodGet, "/api/v1/meta/scan/runs", query, nil, authHeader)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -274,7 +274,7 @@ func (s *MetadataService) ListScanRuns(ctx context.Context, engineID uint, taskI
 }
 
 func (s *MetadataService) GetScanRun(ctx context.Context, engineID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
-	path := fmt.Sprintf("/api/meta/scan/runs/%d", runID)
+	path := fmt.Sprintf("/api/v1/meta/scan/runs/%d", runID)
 	body, err := s.callMeta(ctx, http.MethodGet, path, nil, nil, authHeader)
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	}
 	payload["trigger_type"] = "manual"
 
-	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/run/manual", nil, payload, authHeader)
+	body, err := s.callMeta(ctx, http.MethodPost, "/api/v1/meta/scan/run/manual", nil, payload, authHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -340,15 +340,59 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	return run, nil
 }
 
-func (s *MetadataService) RefreshItem(ctx context.Context, engineID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
-	if req != nil {
-		req.EngineID = engineID
+func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engineID uint, req *models.MetaManualScanRequest) (*models.MetaScanResponse, error) {
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized")
 	}
-	run, err := s.CreateManualScanRun(ctx, engineID, req, authHeader)
+
+	opts := commonClient.MetaScanOptions{EngineID: engineID, Force: true}
+	if req != nil {
+		if req.NodeID > 0 {
+			return nil, fmt.Errorf("item refresh requires item_id; use node refresh for node_id")
+		}
+		if req.ItemID > 0 {
+			opts.ItemID = req.ItemID
+		}
+	}
+	if opts.ItemID == 0 {
+		return nil, fmt.Errorf("item_id is required")
+	}
+	if tenantID != nil {
+		s.metaClient.SetTenantID(tenantID)
+	}
+
+	result, err := s.metaClient.RefreshItem(opts.ItemID, opts)
 	if err != nil {
 		return nil, err
 	}
-	return s.waitScanRun(ctx, engineID, run.ID, authHeader)
+	return &models.MetaScanResponse{
+		Status:              result.Status,
+		Message:             result.Message,
+		CatalogNodesScanned: result.CatalogNodesScanned,
+		ItemsScanned:        result.ItemsScanned,
+		FieldsScanned:       result.FieldsScanned,
+		DurationMs:          result.DurationMs,
+		StartedAt:           result.StartedAt,
+	}, nil
+}
+
+func decodeMetaScanTaskRun(body []byte) (*models.MetaScanTaskRun, error) {
+	if len(body) == 0 {
+		return &models.MetaScanTaskRun{}, nil
+	}
+
+	var direct models.MetaScanTaskRun
+	if err := json.Unmarshal(body, &direct); err == nil && direct.ID != 0 {
+		return &direct, nil
+	}
+
+	var wrapped struct {
+		Data models.MetaScanTaskRun `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return nil, err
+	}
+	return &wrapped.Data, nil
 }
 
 func (s *MetadataService) waitScanRun(ctx context.Context, engineID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
@@ -377,26 +421,6 @@ func (s *MetadataService) waitScanRun(ctx context.Context, engineID, runID uint,
 		}
 	}
 }
-
-func decodeMetaScanTaskRun(body []byte) (*models.MetaScanTaskRun, error) {
-	if len(body) == 0 {
-		return &models.MetaScanTaskRun{}, nil
-	}
-
-	var direct models.MetaScanTaskRun
-	if err := json.Unmarshal(body, &direct); err == nil && direct.ID != 0 {
-		return &direct, nil
-	}
-
-	var wrapped struct {
-		Data models.MetaScanTaskRun `json:"data"`
-	}
-	if err := json.Unmarshal(body, &wrapped); err != nil {
-		return nil, err
-	}
-	return &wrapped.Data, nil
-}
-
 
 func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 	if resource == nil || !resource.IsActive {

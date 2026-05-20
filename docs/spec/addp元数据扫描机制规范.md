@@ -221,26 +221,25 @@ Basic 重新发现资源时不能把已有 deep 状态降级。
 
 不需要 `target_type`。locator 已经包含 engine、path、type、meta_id；ID 字段本身也能区分 node / item。
 
-### item 扫描目标归一化
+### 已入库 item 的刷新输入
 
-item 作为扫描目标时，扫描范围必须来自已入库 data item 的标准事实，而不是只根据 `meta_item.item_type + full_name` 做路径猜测。
+item 已入库后的 refresh 不等同于 catalog scan。它的输入必须来自已入库 data item 的标准事实，而不是只根据 `meta_item.item_type + full_name` 做路径猜测，也不得重新枚举同级资源来改变 item 边界。
 
-归一化规则：
+刷新输入规则：
 
-| item layout | 扫描输入 |
+| item layout | refresh 输入 |
 |---|---|
 | `single` | primary content。优先使用 `attributes.storage.physical_path`，没有时使用 `meta_item.full_name`。 |
-| `multi` | 完整 related refs。必须使用 `attributes.item.refs` 中的所有 content path；`meta_item.full_name` 只是 primary content，不能替代 refs 集合。 |
+| `multi` | 完整 related refs。必须使用 `attributes.item.refs` 中的所有 content path 作为 provider 读取输入；`meta_item.full_name` 只是 primary content，不能替代 refs 集合。 |
 | `whole` | whole scope 根范围。优先使用 `attributes.storage.physical_path` 或 `meta_item.full_name`。 |
 
-同一套归一化逻辑应同时服务：
+同一套已入库 item 解释逻辑应服务：
 
-- node 扫描时识别并落库 item。
-- item 已入库后的重扫。
+- item 已入库后的 deep 属性刷新。
 - Manager 对 item 的刷新。
 - Transfer 或其他模块需要把 meta item 转换为内容读取计划。
 
-如果 item 的 layout、refs 或 full_name 本身已经错误，item 重扫不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
+node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item refresh 只更新当前已知 item 的 attributes、字段、format info、content index 和横切能力，不负责重新裁决 item 身份。如果 item 的 layout、refs 或 full_name 本身已经错误，item refresh 不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
 
 ## 默认组合
 
@@ -285,9 +284,9 @@ Manager 的刷新行为必须区分 node 和 item：
 | 刷新对象 | 行为要求 |
 |---|---|
 | node | 可异步触发 Meta deep + force 扫描；前端刷新树即可，不要求等待整个扫描完成。 |
-| item | 必须等待 Meta deep + force 扫描完成，再重新读取 item 元数据和预览。 |
+| item | 调用 Meta 的已知 item refresh 接口并同步等待完成，再重新读取 item 元数据和预览。 |
 
-item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合；只扫描 `.shp` 主文件会导致字段、空间信息或 `content_index` 被错误覆盖或丢失。
+item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段、空间信息或 `content_index` 被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
 Manager 预览前的 deep 补齐与刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。
 
@@ -299,11 +298,11 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 | schema / database / bucket / prefix / root / dir | node |
 | table / collection / label / relationship / object / file | item |
 
-对于 item 目标，Meta 内部负责确定最小扫描上下文：
+对于 item 目标，Meta 内部负责从已入库 attributes 还原最小内容输入：
 
 - single item：扫描该 item。
-- multi item：根据 `refs` 或父 node 构造组件上下文。
-- whole item：扫描 whole scope。
+- multi item：使用已入库 `refs` 构造组件输入，不重新枚举父 node。
+- whole item：使用 whole scope 根范围。
 
 这个复杂度留在 Meta 内部，Manager 不关心。
 

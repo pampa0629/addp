@@ -287,3 +287,14 @@ type MetaManualScanRequest struct {
 	ScanDepth    string   `json:"scan_depth"`
 	Force        bool     `json:"force"`
 }
+
+// MetaScanResponse 元数据扫描响应
+type MetaScanResponse struct {
+	Status              string `json:"status"`
+	Message             string `json:"message"`
+	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
+	ItemsScanned        int    `json:"items_scanned"`
+	FieldsScanned       int    `json:"fields_scanned"`
+	DurationMs          int64  `json:"duration_ms"`
+	StartedAt           string `json:"started_at"`
+}

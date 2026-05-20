@@ -72,7 +72,7 @@ detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Me
 
 调用层控制递归与成本。Meta 对外部资源范围调用 `common/dataitem` 后可以落库外层 data item；Manager 在容器预览中调用 `common/dataitem` 后只能返回预览 DTO。其它模块未来如需动态识别 container 内部结构，也应先明确使用场景、成本边界和结果生命周期，再复用该能力。
 
-`common/dataitem` 也可以提供不涉及落库的纯 helper，用于从标准 item attributes 还原 item 的 content paths、related refs 或 scan targets。这类 helper 只能解释已经由 Meta 写入的标准事实，不得访问 engine，不得重新探测格式，也不得扩展 item 边界。
+`common/dataitem` 也可以提供不涉及落库的纯 helper，用于从标准 item attributes 还原 item descriptor、content paths 或 related refs。这类 helper 只能解释已经由 Meta 写入的标准事实，不得访问 engine，不得重新探测格式，也不得扩展 item 边界。对已知 item 的 refresh，应把还原出的 refs / scope 作为 provider 的内容输入；不得把 `refs` 展开成 catalog scan target 后重新发现 item。
 
 ```go
 type DetectionResult struct {
@@ -108,7 +108,7 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 ## 已入库 item 的再次消费
 
-已入库 item 是 Meta detector 的裁决结果。Manager、Transfer 和 item 重扫都应消费该结果，而不是重新判断同级资源：
+已入库 item 是 Meta detector 的裁决结果。Manager、Transfer 和 item refresh 都应消费该结果，而不是重新判断同级资源：
 
 | layout | 消费方式 |
 |---|---|
@@ -118,7 +118,7 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 如果 `layout=multi` 的 item 缺失 refs、缺少唯一 primary、或 required refs 不完整，调用方不应尝试在 format provider 内部重新枚举 sibling content 来“修复”。正确做法是回到 node 层重新扫描，让 detector 重新裁决 item 边界和 refs。
 
-item 级重扫只允许重扫该 item 自身。若 item 本身识别错误，例如 Shapefile 的多个 ref 没有被归并为一个 item，应由 node 扫描重新识别，而不是 item 重扫扩大范围。
+item refresh 只允许刷新该 item 自身的 attributes、字段、format info、content index 和横切能力。若 item 本身识别错误，例如 Shapefile 的多个 ref 没有被归并为一个 item，应由 node 扫描重新识别，而不是 item refresh 扩大范围。
 
 ## 递归观察资源
 

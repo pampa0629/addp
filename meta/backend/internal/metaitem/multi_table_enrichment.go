@@ -148,6 +148,31 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
 	}
 }
 
+func EnrichKnownMultiTableItem(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	catalogPathFor func(path string) plugin.CatalogPath,
+	item *DetectedItem,
+) (*DetectedItem, bool, error) {
+	if contentReader == nil || item == nil || item.Layout != dataitem.LayoutMulti || item.Format == "" || len(item.RefList) == 0 {
+		return item, false, nil
+	}
+	refProvider, err := format.GetMultiTableInfoProvider(format.FormatType(item.Format))
+	if err != nil {
+		return item, false, nil
+	}
+	reader := newMetaRefReader(contentReader, connInfo, engineID, catalogPathFor)
+	tableInfo, err := refProvider.DescribeMultiTable(ctx, reader, item.RelatedRefs(), nil)
+	if err != nil {
+		return item, false, err
+	}
+	item.Fields = tableInfo.Fields
+	upsertRefTableInfo(item, tableInfo)
+	return item, true, nil
+}
+
 func tableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"fields":      fieldAttributesFromFormat(tableInfo.Fields),

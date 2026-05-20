@@ -429,7 +429,13 @@
                         "required": true
                     },
                     {
-                        "description": "扫描配置（可选）| Scan configuration (optional)",
+                        "type": "string",
+                        "description": "资源定位符 URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query"
+                    },
+                    {
+                        "description": "扫描定位（可选，仅支持 item_id）| Scan target (optional, item_id only)",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -439,9 +445,9 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "扫描运行记录 | Scan run record",
+                        "description": "同步扫描结果 | Synchronous scan result",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRun"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaScanResponse"
                         }
                     },
                     "400": {
@@ -2845,6 +2851,32 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MetaScanResponse": {
+            "type": "object",
+            "properties": {
+                "catalog_nodes_scanned": {
+                    "type": "integer"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "fields_scanned": {
+                    "type": "integer"
+                },
+                "items_scanned": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

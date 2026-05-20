@@ -314,6 +314,32 @@ func TestShapefilePluginUsesSHXIndexedRefSample(t *testing.T) {
 	}
 }
 
+func TestShapefilePluginUsesSHXIndexedMaterializedSample(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a", "b", "c", "d"})
+	reader := newOpenOnlyRefReader(base)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 3, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleMultiTable() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("row count = %d, want 1", len(rows))
+	}
+	if got := rows[0]["NAME"]; got != "d" {
+		t.Fatalf("NAME = %#v, want d", got)
+	}
+	if got := rows[0]["geometry"]; got != "POINT (4 5)" {
+		t.Fatalf("geometry = %#v, want POINT (4 5)", got)
+	}
+	if reader.openReads != 4 {
+		t.Fatalf("openReads = %d, want one materialization read per ref", reader.openReads)
+	}
+}
+
 func TestShapefileReadUsesCallGeometryFieldOption(t *testing.T) {
 	t.Parallel()
 

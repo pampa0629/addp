@@ -158,7 +158,7 @@ func TestResolveItemsDoesNotFoldClaimedMultiRefsIntoWholeScope(t *testing.T) {
 	}
 }
 
-func TestScanTargetsFromAttributesRestoresMultiRefs(t *testing.T) {
+func TestScanTargetsFromAttributesDoesNotUseMultiRefsAsScanTargets(t *testing.T) {
 	t.Parallel()
 
 	targets := ScanTargetsFromAttributes(map[string]interface{}{
@@ -172,11 +172,8 @@ func TestScanTargetsFromAttributesRestoresMultiRefs(t *testing.T) {
 		},
 	})
 
-	if len(targets) != 2 {
-		t.Fatalf("targets = %#v, want 2 unique refs", targets)
-	}
-	if targets[0].Path != "roads.shp" || targets[1].Path != "roads.shx" {
-		t.Fatalf("targets = %#v, want shapefile refs", targets)
+	if len(targets) != 0 {
+		t.Fatalf("targets = %#v, want no ref-based scan targets", targets)
 	}
 }
 
@@ -194,5 +191,22 @@ func TestScanTargetsFromAttributesRestoresPhysicalPath(t *testing.T) {
 
 	if len(targets) != 1 || targets[0].Path != "lake/sales" {
 		t.Fatalf("targets = %#v, want physical path", targets)
+	}
+}
+
+func TestScanTargetsFromAttributesFallsBackToStoragePath(t *testing.T) {
+	t.Parallel()
+
+	targets := ScanTargetsFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"layout": "single",
+		},
+		"storage": map[string]interface{}{
+			"path": "/bucket/docs/readme.md",
+		},
+	})
+
+	if len(targets) != 1 || targets[0].Path != "bucket/docs/readme.md" {
+		t.Fatalf("targets = %#v, want storage path", targets)
 	}
 }

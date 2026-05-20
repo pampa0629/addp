@@ -92,6 +92,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.GET("/items/by-catalog-path", handler.QueryItemByCatalogPath)
 		api.GET("/items/:item_id/fields", handler.GetItemFieldsByID)
 		api.GET("/items/:item_id/spatial", handler.GetItemSpatialMetadataByID)
+		api.POST("/items/:item_id/refresh", handler.RefreshItem)
 		api.GET("/items/:item_id", handler.GetItemByID)
 
 		// 统计接口

@@ -210,6 +210,37 @@ const response = await dataExplorerAPI.getPreview(params)
 - **修复版本：** v0.0.15+
 - **影响范围：** Manager 模块数据浏览器
 
+### 2. Manager 刷新 item 成功但属性未更新（item 刷新误走 catalog scan）
+
+#### 问题现象
+
+- 点击 Manager 的“刷新数据项”按钮后，接口提示成功。
+- 但 item 的属性仍然缺少新的能力或索引信息，例如 `content_index` 仍为空。
+- 现象在 Shapefile 这类 multi-ref item 上最容易暴露，但根因不局限于某一种格式。
+
+#### 根本原因
+
+item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 catalog paths，再从目录或对象路径重新发现 item。
+
+这会混淆两类输入：
+
+1. catalog scan 的输入是扫描范围和候选资源集合，用于发现 item。
+2. item refresh 的输入应是已知 item descriptor，用于基于现有 `layout`、`format`、`refs` 和 `storage` 刷新属性。
+
+对于 multi-ref item，如果把 `refs` 当作多个扫描路径，会破坏原本的候选集合，复合识别入口无法再次获得完整 refs。于是刷新流程可能正常结束，但没有真正重算并落盘该 item 的深度属性。
+
+#### 修复方案
+
+- Manager 的 item 刷新只通过 Meta client 调用 Meta item refresh 能力。
+- Meta 新增已知 item refresh 路径：从标准 attributes 还原 item descriptor，再按 format provider 能力刷新属性并落回同一个 item。
+- catalog scan 继续负责发现 item；item refresh 不再通过 `refs` 反推扫描范围。
+
+#### 预防措施
+
+1. 新增或修改 item refresh 能力时，先还原标准 item descriptor，不要在 Manager 或具体扫描服务中重复格式识别。
+2. `refs` 只表示 item 的组成内容，不应直接作为 catalog scan target。
+3. 如果 item 刷新成功但属性未变化，先检查该 item 的 `attributes.item.layout / item.format / item.refs / storage` 是否足以打开内容。
+
 ---
 
 ## 后端问题

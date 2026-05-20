@@ -462,6 +462,45 @@ paths:
       summary: 按 ID 获取数据项字段 | Get item fields by ID
       tags:
       - Meta Query
+  /items/{item_id}/refresh:
+    post:
+      consumes:
+      - application/json
+      description: 基于已落库 item 的 layout、format、refs 和 storage 信息同步刷新元数据属性 | Refresh
+        metadata attributes for an existing item using stored item descriptor
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      - description: 刷新请求 | Refresh request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 刷新结果 | Refresh result
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ScanResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新已知数据项 | Refresh known item
+      tags:
+      - Meta Scan
   /items/{item_id}/spatial:
     get:
       description: 按数据项 ID 获取空间元数据 | Get spatial metadata by item ID

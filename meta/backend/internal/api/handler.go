@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -561,6 +562,45 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, result)
+}
+
+// RefreshItem 刷新已知数据项
+// @Summary 刷新已知数据项 | Refresh known item
+// @Description 基于已落库 item 的 layout、format、refs 和 storage 信息同步刷新元数据属性 | Refresh metadata attributes for an existing item using stored item descriptor
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param item_id path int true "数据项ID | Item ID"
+// @Param request body models.ScanRequest false "刷新请求 | Refresh request"
+// @Success 200 {object} models.ScanResponse "刷新结果 | Refresh result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /items/{item_id}/refresh [post]
+// @Security BearerAuth
+func (h *Handler) RefreshItem(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+	itemID64, err := strconv.ParseUint(c.Param("item_id"), 10, 32)
+	if err != nil || itemID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item_id"})
+		return
+	}
+
+	var req models.ScanRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	token := c.GetHeader("Authorization")
+	if len(token) > 7 && token[:7] == "Bearer " {
+		token = token[7:]
+	}
+
+	result, err := h.scanService.RefreshItem(c.Request.Context(), req.EngineID, tenantID, uint(itemID64), token, req.Force)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, result)
 }
 

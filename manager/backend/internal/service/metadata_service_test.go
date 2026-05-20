@@ -13,6 +13,54 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
+func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	var gotHeader string
+	var gotTenant string
+	var gotPayload map[string]interface{}
+	var decodeErr error
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotHeader = r.Header.Get("X-Internal-API-Key")
+		gotTenant = r.Header.Get("X-Tenant-ID")
+		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":2,"items_scanned":1,"fields_scanned":7,"duration_ms":33,"started_at":"2026-05-20T00:00:00Z"}`))
+	}))
+	defer metaServer.Close()
+
+	metaClient := client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key")
+	service := &MetadataService{metaClient: metaClient}
+	tenantID := uint(11)
+	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
+	if err != nil {
+		t.Fatalf("RefreshItem() error = %v", err)
+	}
+	if decodeErr != nil {
+		t.Fatalf("decode payload: %v", decodeErr)
+	}
+	if gotPath != "/api/v1/meta/items/1831/refresh" {
+		t.Fatalf("path = %q, want /api/v1/meta/items/1831/refresh", gotPath)
+	}
+	if gotHeader != "internal-key" || gotTenant != "11" {
+		t.Fatalf("auth headers = key:%q tenant:%q", gotHeader, gotTenant)
+	}
+	if gotPayload["engine_id"] != float64(26) {
+		t.Fatalf("payload = %#v", gotPayload)
+	}
+	if _, ok := gotPayload["item_id"]; ok {
+		t.Fatalf("payload should not include item_id in body: %#v", gotPayload)
+	}
+	if gotPayload["force"] != true {
+		t.Fatalf("scan options = %#v", gotPayload)
+	}
+	if resp.ItemsScanned != 1 || resp.FieldsScanned != 7 || resp.Status != "success" {
+		t.Fatalf("resp = %#v", resp)
+	}
+}
+
 func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 	t.Helper()
 
