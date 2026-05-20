@@ -136,7 +136,7 @@ func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) 
 	}
 }
 
-func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
+func TestEnrichZIPContainerChildrenDoesNotGroupNestedItems(t *testing.T) {
 	t.Parallel()
 
 	data := zipContainerBytes(t, map[string]string{
@@ -155,15 +155,24 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	if len(children) != 2 || children[0]["name"] != "data/cities.csv" {
 		t.Fatalf("children = %#v", children)
 	}
-	if children[0]["format"] != string(format.FormatCSV) {
-		t.Fatalf("child format = %#v, want csv", children[0]["format"])
+	csvFound := false
+	for _, child := range children {
+		if child["name"] == "data/cities.csv" {
+			csvFound = true
+			if child["format"] != string(format.FormatCSV) {
+				t.Fatalf("child format = %#v, want csv", child["format"])
+			}
+			if _, ok := child["fields"]; ok {
+				t.Fatalf("zip child should not carry fields: %#v", child)
+			}
+		}
 	}
-	if _, ok := children[0]["fields"]; ok {
-		t.Fatalf("zip child should not carry fields: %#v", children[0])
+	if !csvFound {
+		t.Fatalf("children = %#v, want data/cities.csv", children)
 	}
 }
 
-func TestEnrichZIPContainerChildrenGroupsMultiRefs(t *testing.T) {
+func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	t.Parallel()
 
 	data := zipContainerBytes(t, map[string]string{
@@ -182,25 +191,25 @@ func TestEnrichZIPContainerChildrenGroupsMultiRefs(t *testing.T) {
 
 	container := attrs["type_info"].(map[string]interface{})["container"].(map[string]interface{})
 	children := container["children"].([]map[string]interface{})
-	if len(children) != 2 {
-		t.Fatalf("children = %#v, want grouped multi item + text item", children)
+	if len(children) != 5 {
+		t.Fatalf("children = %#v, want direct zip entries", children)
 	}
-	multi := children[0]
-	if multi["layout"] != string(dataitem.LayoutMulti) {
-		t.Fatalf("layout = %#v, want multi: %#v", multi["layout"], multi)
-	}
-	refs, ok := multi["refs"].([]map[string]interface{})
-	if !ok || len(refs) != 3 {
-		t.Fatalf("refs = %#v, want 3 ref descriptors", multi["refs"])
-	}
-	for _, key := range []string{"ref_paths", "components", "component_paths", "organization"} {
-		if _, exists := multi[key]; exists {
-			t.Fatalf("grouped multi child should not carry %s: %#v", key, multi)
+	names := map[string]bool{}
+	for _, child := range children {
+		names[child["name"].(string)] = true
+		if child["layout"] == string(dataitem.LayoutMulti) {
+			t.Fatalf("meta container child should not be grouped multi item: %#v", child)
+		}
+		if _, ok := child["refs"]; ok {
+			t.Fatalf("meta container child should not carry grouped refs: %#v", child)
 		}
 	}
+	if !names["roads/roads.shp"] || !names["roads/roads.shx"] || !names["roads/roads.dbf"] {
+		t.Fatalf("children = %#v, want shapefile entry present", children)
+	}
 	formatInfo := attrs["format_info"].(map[string]interface{})[string(format.FormatZIP)].(map[string]interface{})
-	if formatInfo["resolved_children"] != true {
-		t.Fatalf("format_info.zip = %#v, want resolved_children", formatInfo)
+	if formatInfo["resolved_children"] != nil {
+		t.Fatalf("format_info.zip = %#v, want no resolved_children flag", formatInfo)
 	}
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/manager/internal/models"
 )
 
 func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
@@ -105,5 +107,41 @@ func TestGetTreeDeniedForOtherTenant(t *testing.T) {
 	_, err := service.GetTree(t.Context(), &tenantOne, 2, 1)
 	if !errors.Is(err, ErrEngineAccessDenied) {
 		t.Fatalf("GetTree should deny cross-tenant access, got err=%v", err)
+	}
+}
+
+func TestDecodeMetaScanTaskRunDirect(t *testing.T) {
+	t.Parallel()
+
+	body, err := json.Marshal(models.MetaScanTaskRun{ID: 12, EngineID: 34, Status: "running"})
+	if err != nil {
+		t.Fatalf("marshal direct run: %v", err)
+	}
+
+	run, err := decodeMetaScanTaskRun(body)
+	if err != nil {
+		t.Fatalf("decodeMetaScanTaskRun() error = %v", err)
+	}
+	if run.ID != 12 || run.EngineID != 34 || run.Status != "running" {
+		t.Fatalf("run = %#v", run)
+	}
+}
+
+func TestDecodeMetaScanTaskRunWrapped(t *testing.T) {
+	t.Parallel()
+
+	body, err := json.Marshal(map[string]models.MetaScanTaskRun{
+		"data": {ID: 56, EngineID: 78, Status: "success"},
+	})
+	if err != nil {
+		t.Fatalf("marshal wrapped run: %v", err)
+	}
+
+	run, err := decodeMetaScanTaskRun(body)
+	if err != nil {
+		t.Fatalf("decodeMetaScanTaskRun() error = %v", err)
+	}
+	if run.ID != 56 || run.EngineID != 78 || run.Status != "success" {
+		t.Fatalf("run = %#v", run)
 	}
 }

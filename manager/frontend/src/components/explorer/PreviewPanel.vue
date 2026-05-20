@@ -876,10 +876,10 @@ const showImportButton = computed(() => {
 
 const handleImportSuccess = async () => {
   importDialogVisible.value = false
-  // 刷新当前 schema 节点，让目录树同步更新
+  // 刷新当前项，重新拉取 Meta 和预览数据
   if (props.selectedNode?.locator) {
     try {
-      await store.refreshNode(props.selectedNode.locator)
+      await store.refreshItem(props.selectedNode.locator)
       ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
     } catch (error) {
       console.error('刷新节点失败:', error)

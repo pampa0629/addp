@@ -139,6 +139,16 @@ func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
 	if formatInfo["shape_type"] != "Point" {
 		t.Fatalf("format_info.shapefile = %#v, want shape_type Point", formatInfo)
 	}
+	contentIndex := commonJSON.Section(attrs, "content_index.table")
+	if contentIndex["kind"] != "sparse_row_index" {
+		t.Fatalf("content_index.table = %#v, want sparse_row_index", contentIndex)
+	}
+	if source := contentIndex["source"].(map[string]interface{}); source["index_format"] != "shx" {
+		t.Fatalf("content_index.table.source = %#v, want shx", source)
+	}
+	if anchors, ok := contentIndex["anchors"].([]map[string]interface{}); !ok || len(anchors) == 0 {
+		t.Fatalf("content_index.table.anchors = %#v, want anchors", contentIndex["anchors"])
+	}
 }
 
 func TestCommonDataItemResolverEnrichesObjectRefsWithBucketRelativePaths(t *testing.T) {

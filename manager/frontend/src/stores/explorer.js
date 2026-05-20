@@ -199,10 +199,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    /**
-     * 刷新节点（强制重新加载某个引擎的树）
-     */
-    async refreshNode(locator) {
+    async refreshTree(locator) {
       this.refreshingLocators.add(locator)
 
       try {
@@ -216,6 +213,48 @@ export const useExplorerStore = defineStore('explorer', {
         await this.loadTree(loc.engineId)
       } catch (error) {
         console.error('刷新节点失败:', error)
+        throw error
+      } finally {
+        this.refreshingLocators.delete(locator)
+      }
+    },
+
+    /**
+     * 刷新节点（仅重载树，不重新拉取预览）
+     */
+    async refreshNode(locator) {
+      await this.refreshTree(locator)
+    },
+
+    /**
+     * 刷新数据项（等待 Meta 扫描完成后，重新拉取预览和 item 元数据）
+     */
+    async refreshItem(locator) {
+      this.refreshingLocators.add(locator)
+
+      try {
+        const loc = parseLocator(locator)
+        await client.post(`/manager/engines/${loc.engineId}/items/refresh`, null, {
+          params: { locator }
+        })
+
+        delete this.engineTrees[loc.engineId]
+        await this.loadTree(loc.engineId)
+
+        if (this.selectedLocator !== locator) {
+          return
+        }
+
+        await this.loadPreview(
+          locator,
+          this.pagination.page,
+          this.selectedChildName,
+          this.selectedRefPath,
+          this.selectedNestedChildPath,
+          this.selectedChildKey
+        )
+      } catch (error) {
+        console.error('刷新数据项失败:', error)
         throw error
       } finally {
         this.refreshingLocators.delete(locator)

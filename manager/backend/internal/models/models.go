@@ -279,6 +279,10 @@ type MetaScanTaskRun struct {
 
 // MetaManualScanRequest 发起即时扫描的请求体
 type MetaManualScanRequest struct {
+	EngineID     uint     `json:"engine_id"`
+	NodeID       uint     `json:"node_id,omitempty"`
+	ItemID       uint     `json:"item_id,omitempty"`
+	Targets      []string `json:"targets,omitempty"`
 	CatalogPaths []string `json:"catalog_paths"`
 	ScanDepth    string   `json:"scan_depth"`
 	Force        bool     `json:"force"`

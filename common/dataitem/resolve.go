@@ -28,6 +28,27 @@ func ResolveItems(input ResolveInput) (*ResolveResult, error) {
 	return result, nil
 }
 
+func ScanTargetsFromAttributes(attrs map[string]interface{}) []ScanTarget {
+	if len(attrs) == 0 {
+		return nil
+	}
+	itemAttrs := asMap(attrs["item"])
+	storageAttrs := asMap(attrs["storage"])
+	switch strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))) {
+	case string(LayoutMulti):
+		return scanTargetsFromRefs(itemAttrs["refs"])
+	case string(LayoutWhole):
+		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
+			return []ScanTarget{{Path: target}}
+		}
+	case string(LayoutSingle):
+		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
+			return []ScanTarget{{Path: target}}
+		}
+	}
+	return nil
+}
+
 func normalizeAndFilterCandidates(input ResolveInput) ([]Candidate, []IgnoredCandidate) {
 	policy := input.Options.IgnorePolicy
 	if policy == nil {
@@ -47,6 +68,24 @@ func normalizeAndFilterCandidates(input ResolveInput) ([]Candidate, []IgnoredCan
 		return candidates[i].Path < candidates[j].Path
 	})
 	return candidates, ignored
+}
+
+func scanTargetsFromRefs(raw interface{}) []ScanTarget {
+	refs := asSlice(raw)
+	if len(refs) == 0 {
+		return nil
+	}
+	targets := make([]ScanTarget, 0, len(refs))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		path := normalizeTargetPath(asString(asMap(ref)["path"]))
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		targets = append(targets, ScanTarget{Path: path})
+	}
+	return targets
 }
 
 func resolveMultiItems(candidates []Candidate, result *ResolveResult) {
@@ -188,6 +227,59 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		items = append(items, item)
 	}
 	return items
+}
+
+func asMap(value interface{}) map[string]interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v
+	case map[string]string:
+		result := map[string]interface{}{}
+		for key, item := range v {
+			result[key] = item
+		}
+		return result
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+func asSlice(value interface{}) []interface{} {
+	switch v := value.(type) {
+	case []interface{}:
+		return v
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			result = append(result, item)
+		}
+		return result
+	case []map[string]string:
+		result := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			mapped := map[string]interface{}{}
+			for key, val := range item {
+				mapped[key] = val
+			}
+			result = append(result, mapped)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func normalizeTargetPath(value string) string {
+	return strings.Trim(strings.TrimSpace(value), "/")
+}
+
+func asString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
 }
 
 func resolveWholeScope(candidates []Candidate, result *ResolveResult, input ResolveInput) {

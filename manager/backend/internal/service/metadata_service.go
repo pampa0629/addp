@@ -280,23 +280,19 @@ func (s *MetadataService) GetScanRun(ctx context.Context, engineID, runID uint, 
 		return nil, err
 	}
 
-	var resp struct {
-		Data models.MetaScanTaskRun `json:"data"`
-	}
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, fmt.Errorf("failed to parse scan run: %w", err)
-		}
+	run, err := decodeMetaScanTaskRun(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse scan run: %w", err)
 	}
 
-	if resp.Data.ID == 0 {
+	if run.ID == 0 {
 		return nil, fmt.Errorf("scan run not found")
 	}
-	if resp.Data.EngineID != engineID {
+	if run.EngineID != engineID {
 		return nil, fmt.Errorf("scan run not found for resource")
 	}
 
-	return &resp.Data, nil
+	return run, nil
 }
 
 func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
@@ -305,6 +301,18 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	}
 
 	if req != nil {
+		if req.EngineID > 0 {
+			payload["engine_id"] = req.EngineID
+		}
+		if req.NodeID > 0 {
+			payload["node_id"] = req.NodeID
+		}
+		if req.ItemID > 0 {
+			payload["item_id"] = req.ItemID
+		}
+		if len(req.Targets) > 0 {
+			payload["targets"] = req.Targets
+		}
 		if len(req.CatalogPaths) > 0 {
 			payload["catalog_paths"] = req.CatalogPaths
 		}
@@ -324,17 +332,71 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 		return nil, err
 	}
 
-	var resp struct {
-		Data models.MetaScanTaskRun `json:"data"`
-	}
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, fmt.Errorf("failed to parse manual run response: %w", err)
-		}
+	run, err := decodeMetaScanTaskRun(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse manual run response: %w", err)
 	}
 
-	return &resp.Data, nil
+	return run, nil
 }
+
+func (s *MetadataService) RefreshItem(ctx context.Context, engineID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
+	if req != nil {
+		req.EngineID = engineID
+	}
+	run, err := s.CreateManualScanRun(ctx, engineID, req, authHeader)
+	if err != nil {
+		return nil, err
+	}
+	return s.waitScanRun(ctx, engineID, run.ID, authHeader)
+}
+
+func (s *MetadataService) waitScanRun(ctx context.Context, engineID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	deadline := time.NewTimer(2 * time.Minute)
+	defer deadline.Stop()
+
+	for {
+		run, err := s.GetScanRun(ctx, engineID, runID, authHeader)
+		if err != nil {
+			return nil, err
+		}
+		switch strings.ToLower(strings.TrimSpace(run.Status)) {
+		case "success", "failed", "timeout", "cancelled":
+			return run, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, fmt.Errorf("waiting for scan run %d timed out", runID)
+		case <-ticker.C:
+		}
+	}
+}
+
+func decodeMetaScanTaskRun(body []byte) (*models.MetaScanTaskRun, error) {
+	if len(body) == 0 {
+		return &models.MetaScanTaskRun{}, nil
+	}
+
+	var direct models.MetaScanTaskRun
+	if err := json.Unmarshal(body, &direct); err == nil && direct.ID != 0 {
+		return &direct, nil
+	}
+
+	var wrapped struct {
+		Data models.MetaScanTaskRun `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return nil, err
+	}
+	return &wrapped.Data, nil
+}
+
 
 func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 	if resource == nil || !resource.IsActive {

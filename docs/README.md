@@ -36,6 +36,7 @@
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
 - [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)
 - [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)
+- [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)

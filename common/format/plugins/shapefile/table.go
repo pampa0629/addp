@@ -2,6 +2,7 @@ package shapefile
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
@@ -60,6 +61,10 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 	if err != nil {
 		return nil, err
 	}
+	contentIndex, err := buildShapefileContentIndexFromPath(basePath, refs, int64(dbfHeader.RecordCount), opts)
+	if err != nil {
+		return nil, err
+	}
 
 	return buildShapefileTableInfo(shapefileTableInfoInput{
 		GeometryField: plugin.getGeometryFieldName(opts),
@@ -71,6 +76,7 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 		HasPRJ:        fileExists(basePath + extPRJ),
 		HasCPG:        fileExists(basePath + extCPG),
 		SpatialRefSys: spatialRefSys,
+		ContentIndex:  contentIndex,
 	}), nil
 }
 
@@ -129,6 +135,7 @@ type shapefileTableInfoInput struct {
 	HasPRJ        bool
 	HasCPG        bool
 	SpatialRefSys string
+	ContentIndex  *format.ContentIndexInfo
 }
 
 func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
@@ -177,13 +184,112 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 		Encoding:      NormalizeDBFEncoding(input.Encoding),
 	}
 	return &format.TableInfo{
-		Name:        "shapefile_data",
-		RowCount:    &rowCount,
-		Fields:      fields,
-		PrimaryKey:  []string{},
-		SpatialInfo: spatialInfo,
-		FormatInfo:  map[string]interface{}{"shapefile": info.FormatAttributes()},
+		Name:         "shapefile_data",
+		RowCount:     &rowCount,
+		Fields:       fields,
+		PrimaryKey:   []string{},
+		SpatialInfo:  spatialInfo,
+		ContentIndex: input.ContentIndex,
+		FormatInfo:   map[string]interface{}{"shapefile": info.FormatAttributes()},
 	}
+}
+
+func buildShapefileContentIndexFromPath(basePath string, refs []format.RelatedRef, rowCount int64, opts *format.ParseOptions) (*format.ContentIndexInfo, error) {
+	return buildShapefileContentIndexFromSHX(basePath+extSHX, refs, rowCount, opts)
+}
+
+func buildShapefileContentIndexFromSHX(shxPath string, refs []format.RelatedRef, rowCount int64, opts *format.ParseOptions) (*format.ContentIndexInfo, error) {
+	if rowCount <= 0 {
+		return nil, nil
+	}
+	step := int64(5000)
+	if opts != nil && opts.ContentIndexStep > 0 {
+		step = opts.ContentIndexStep
+	}
+	if step <= 0 {
+		step = 5000
+	}
+	anchors, err := readShapefileContentIndexAnchors(shxPath, rowCount, step)
+	if err != nil {
+		return nil, err
+	}
+	return &format.ContentIndexInfo{
+		Table: &format.ContentIndex{
+			Kind:       format.ContentIndexKindSparseRow,
+			DataType:   format.ContentIndexDataTypeTable,
+			Format:     string(format.FormatShapefile),
+			Unit:       format.ContentIndexUnitRow,
+			OffsetUnit: format.ContentIndexOffsetByte,
+			Step:       step,
+			RowCount:   rowCount,
+			Source: map[string]interface{}{
+				"index_format": "shx",
+				"refs":         relatedRefAttributes(refs),
+				"ref_count":    len(refs),
+			},
+			Anchors: anchors,
+		},
+	}, nil
+}
+
+func readShapefileContentIndexAnchors(shxPath string, rowCount, step int64) ([]format.ContentIndexAnchor, error) {
+	file, err := os.Open(shxPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	anchors := make([]format.ContentIndexAnchor, 0, (rowCount+step-1)/step)
+	for row := int64(0); row < rowCount; row += step {
+		offsetBytes, err := readShapefileSHXOffsetAt(file, row)
+		if err != nil {
+			return nil, err
+		}
+		anchors = append(anchors, format.ContentIndexAnchor{
+			Row:        row,
+			ByteOffset: offsetBytes,
+		})
+	}
+	return anchors, nil
+}
+
+func readShapefileSHXOffsetAt(file io.ReaderAt, row int64) (int64, error) {
+	if row < 0 {
+		return 0, fmt.Errorf("invalid shx row %d", row)
+	}
+	buf := make([]byte, 8)
+	_, err := file.ReadAt(buf, 100+row*8)
+	if err != nil {
+		return 0, err
+	}
+	offsetWords := int64(binary.BigEndian.Uint32(buf[0:4]))
+	return offsetWords * 2, nil
+}
+
+func relatedRefAttributes(refs []format.RelatedRef) []map[string]interface{} {
+	if len(refs) == 0 {
+		return nil
+	}
+	items := make([]map[string]interface{}, 0, len(refs))
+	for _, ref := range refs {
+		if strings.TrimSpace(ref.Ref.Path) == "" {
+			continue
+		}
+		item := map[string]interface{}{
+			"path": ref.Ref.Path,
+		}
+		if ref.Ref.Role != "" {
+			item["role"] = ref.Ref.Role
+		}
+		if ref.Required {
+			item["required"] = true
+		}
+		if ref.Primary {
+			item["primary"] = true
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func materializeRefs(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef) (tempDir string, basePath string, cleanup func(), err error) {

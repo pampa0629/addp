@@ -167,3 +167,7 @@ func (item ResolvedItem) RelatedRefs() []format.RelatedRef {
 	}
 	return refs
 }
+
+type ScanTarget struct {
+	Path string
+}

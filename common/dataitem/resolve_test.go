@@ -157,3 +157,42 @@ func TestResolveItemsDoesNotFoldClaimedMultiRefsIntoWholeScope(t *testing.T) {
 		t.Fatalf("claims = %#v, want both multi and whole refs claimed", result.Claims)
 	}
 }
+
+func TestScanTargetsFromAttributesRestoresMultiRefs(t *testing.T) {
+	t.Parallel()
+
+	targets := ScanTargetsFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"layout": "multi",
+			"refs": []map[string]interface{}{
+				{"path": "roads.shp"},
+				{"path": "roads.shx"},
+				{"path": "roads.shp"},
+			},
+		},
+	})
+
+	if len(targets) != 2 {
+		t.Fatalf("targets = %#v, want 2 unique refs", targets)
+	}
+	if targets[0].Path != "roads.shp" || targets[1].Path != "roads.shx" {
+		t.Fatalf("targets = %#v, want shapefile refs", targets)
+	}
+}
+
+func TestScanTargetsFromAttributesRestoresPhysicalPath(t *testing.T) {
+	t.Parallel()
+
+	targets := ScanTargetsFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"layout": "whole",
+		},
+		"storage": map[string]interface{}{
+			"physical_path": "/lake/sales",
+		},
+	})
+
+	if len(targets) != 1 || targets[0].Path != "lake/sales" {
+		t.Fatalf("targets = %#v, want physical path", targets)
+	}
+}

@@ -409,6 +409,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/engines/{id}/items/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for an item and wait until completion",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "刷新数据项元数据 | Refresh item metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "扫描配置（可选）| Scan configuration (optional)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaManualScanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "扫描运行记录 | Scan run record",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaScanTaskRun"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/engines/{id}/spatial/features/{feature_id}/centroid": {
             "get": {
                 "security": [
@@ -2760,6 +2819,10 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "github_com_addp_manager_internal_models.MetaManualScanRequest": {
             "type": "object",
             "properties": {
@@ -2769,11 +2832,79 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "engine_id": {
+                    "type": "integer"
+                },
                 "force": {
                     "type": "boolean"
                 },
+                "item_id": {
+                    "type": "integer"
+                },
+                "node_id": {
+                    "type": "integer"
+                },
                 "scan_depth": {
                     "type": "string"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MetaScanTask": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_models.JSONMap"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "schedule_config": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_models.JSONMap"
+                },
+                "schedule_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
                 }
             }
         },
@@ -2819,6 +2950,83 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.MetaScanTaskRun": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_models.JSONMap"
+                },
+                "progress_current": {
+                    "type": "integer"
+                },
+                "progress_message": {
+                    "type": "string"
+                },
+                "progress_percent": {
+                    "type": "number"
+                },
+                "progress_total": {
+                    "type": "integer"
+                },
+                "result_summary": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_models.JSONMap"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_type": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "task_name": {
+                    "type": "string"
+                },
+                "task_plan_name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "trigger_user_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

@@ -99,7 +99,7 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 允许写入：
 
 - `type_info.table.fields`、`row_count`、`primary_key`、`indexes`。
-- `type_info.container.children`。
+- `type_info.container.children`，仅记录容器直接 children，例如 ZIP entry、Excel sheet、SQLite table、GeoPackage layer。
 - `type_info.document`、`type_info.media`、`type_info.graph`。
 - `format_info.<format>`。
 - `capabilities.spatial`、`statistics`、`extraction`、`semantic`、`partitioning`、`indexing`。
@@ -110,6 +110,7 @@ Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 - 元数据事实通过 info provider 写入 `type_info` / `format_info` / `capabilities`。
 - 内容窗口、样本、原始文本、缩略图不直接塞进 `type_info`。
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
+- Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。
 
 `content_index` 纳入 deep 的默认目标。具体格式是否生成、是否因为文件过大而跳过，由对应 provider 决定；跳过不应阻断 deep 扫描完成。
 
@@ -220,6 +221,27 @@ Basic 重新发现资源时不能把已有 deep 状态降级。
 
 不需要 `target_type`。locator 已经包含 engine、path、type、meta_id；ID 字段本身也能区分 node / item。
 
+### item 扫描目标归一化
+
+item 作为扫描目标时，扫描范围必须来自已入库 data item 的标准事实，而不是只根据 `meta_item.item_type + full_name` 做路径猜测。
+
+归一化规则：
+
+| item layout | 扫描输入 |
+|---|---|
+| `single` | primary content。优先使用 `attributes.storage.physical_path`，没有时使用 `meta_item.full_name`。 |
+| `multi` | 完整 related refs。必须使用 `attributes.item.refs` 中的所有 content path；`meta_item.full_name` 只是 primary content，不能替代 refs 集合。 |
+| `whole` | whole scope 根范围。优先使用 `attributes.storage.physical_path` 或 `meta_item.full_name`。 |
+
+同一套归一化逻辑应同时服务：
+
+- node 扫描时识别并落库 item。
+- item 已入库后的重扫。
+- Manager 对 item 的刷新。
+- Transfer 或其他模块需要把 meta item 转换为内容读取计划。
+
+如果 item 的 layout、refs 或 full_name 本身已经错误，item 重扫不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
+
 ## 默认组合
 
 扫描调度和扫描深度是两个维度，可以自由组合。默认组合如下：
@@ -257,6 +279,17 @@ Manager 刷新按钮固定：
   "force": true
 }
 ```
+
+Manager 的刷新行为必须区分 node 和 item：
+
+| 刷新对象 | 行为要求 |
+|---|---|
+| node | 可异步触发 Meta deep + force 扫描；前端刷新树即可，不要求等待整个扫描完成。 |
+| item | 必须等待 Meta deep + force 扫描完成，再重新读取 item 元数据和预览。 |
+
+item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合；只扫描 `.shp` 主文件会导致字段、空间信息或 `content_index` 被错误覆盖或丢失。
+
+Manager 预览前的 deep 补齐与刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。
 
 Manager 刷新目标必须是当前选中的 engine / node / item，不能默认全 engine。
 

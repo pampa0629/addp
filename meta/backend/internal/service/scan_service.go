@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
@@ -470,6 +471,15 @@ func scanTargetFromNode(node models.MetaNode) []string {
 }
 
 func scanTargetFromItem(item models.MetaItem) []string {
+	if targets := dataitem.ScanTargetsFromAttributes(item.Attributes); len(targets) > 0 {
+		paths := make([]string, 0, len(targets))
+		for _, target := range targets {
+			if target.Path != "" {
+				paths = append(paths, target.Path)
+			}
+		}
+		return uniqueNonEmpty(paths)
+	}
 	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
 	if fullName == "" {
 		return nil

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/catalogview"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param body body models.MetaScanTaskRequest true "扫描任务配置 | Scan task configuration"
-// @Success 200 {object} map[string]interface{} "创建的扫描任务 | Created scan task"
+// @Success 200 {object} models.MetaScanTask "创建的扫描任务 | Created scan task"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
@@ -86,7 +87,7 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": task})
+	c.JSON(http.StatusOK, task)
 }
 
 // UpdateScanTask 更新扫描任务
@@ -98,7 +99,7 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param task_id path int true "扫描任务ID | Scan task ID"
 // @Param body body models.MetaScanTaskRequest true "扫描任务配置 | Scan task configuration"
-// @Success 200 {object} map[string]interface{} "更新后的扫描任务 | Updated scan task"
+// @Success 200 {object} models.MetaScanTask "更新后的扫描任务 | Updated scan task"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
@@ -130,7 +131,7 @@ func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": task})
+	c.JSON(http.StatusOK, task)
 }
 
 // DeleteScanTask 删除扫描任务
@@ -174,7 +175,7 @@ func (h *MetadataHandler) DeleteScanTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param task_id path int true "扫描任务ID | Scan task ID"
-// @Success 200 {object} map[string]interface{} "触发的扫描运行记录 | Triggered scan run"
+// @Success 200 {object} models.MetaScanTaskRun "触发的扫描运行记录 | Triggered scan run"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
 func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
@@ -199,7 +200,7 @@ func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	c.JSON(http.StatusOK, run)
 }
 
 // ListScanRuns 列出资源的扫描运行记录
@@ -284,7 +285,7 @@ func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param run_id path int true "扫描运行ID | Scan run ID"
-// @Success 200 {object} map[string]interface{} "扫描运行详情 | Scan run detail"
+// @Success 200 {object} models.MetaScanTaskRun "扫描运行详情 | Scan run detail"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
 func (h *MetadataHandler) GetScanRun(c *gin.Context) {
@@ -309,7 +310,7 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	c.JSON(http.StatusOK, run)
 }
 
 // CreateManualScanRun 发起一次即时扫描
@@ -320,7 +321,7 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param body body models.MetaManualScanRequest false "扫描配置（可选）| Scan configuration (optional)"
-// @Success 200 {object} map[string]interface{} "扫描运行记录 | Scan run record"
+// @Success 200 {object} models.MetaScanTaskRun "扫描运行记录 | Scan run record"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Security BearerAuth
@@ -349,7 +350,67 @@ func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	c.JSON(http.StatusOK, run)
+}
+
+// RefreshItem 强制刷新指定 item 的元数据
+// @Summary 刷新数据项元数据 | Refresh item metadata
+// @Description 强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for an item and wait until completion
+// @Tags Manager
+// @Router /engines/{id}/items/refresh [post]
+// @Accept json
+// @Produce json
+// @Param id path int true "存储引擎ID | Engine ID"
+// @Param body body models.MetaManualScanRequest false "扫描配置（可选）| Scan configuration (optional)"
+// @Success 200 {object} models.MetaScanTaskRun "扫描运行记录 | Scan run record"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Security BearerAuth
+func (h *MetadataHandler) RefreshItem(c *gin.Context) {
+	engineID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+
+	authHeader, ok := extractAuthHeader(c)
+	if !ok {
+		return
+	}
+
+	var req models.MetaManualScanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if locatorURI := strings.TrimSpace(c.Query("locator")); locatorURI != "" {
+		loc, err := catalogview.ParseURI(locatorURI)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if loc.MetaID != nil && *loc.MetaID > 0 {
+			if *loc.MetaID >= 100000 {
+				req.ItemID = *loc.MetaID - 100000
+			} else {
+				req.NodeID = *loc.MetaID
+			}
+		}
+		if len(req.Targets) == 0 {
+			req.Targets = []string{locatorURI}
+		}
+	}
+	req.ScanDepth = "deep"
+	req.Force = true
+
+	run, err := h.metadataService.RefreshItem(c.Request.Context(), engineID, &req, authHeader)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, run)
 }
 
 func parseUintParam(c *gin.Context, key string) (uint, bool) {

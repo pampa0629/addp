@@ -143,6 +143,9 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
 	if spatialAttrs := spatialAttributes(tableInfo.GetSpatialInfo()); len(spatialAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
+	if indexInfo := tableInfo.GetContentIndexInfo(); indexInfo != nil && indexInfo.Table != nil {
+		upsertItemSection(&item.Attributes, "content_index", "table", contentIndexAttributes(indexInfo.Table))
+	}
 }
 
 func tableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
@@ -203,6 +206,38 @@ func spatialAttributes(spatialInfo *format.SpatialInfo) map[string]interface{} {
 	if spatialInfo.BoundingBox != nil {
 		bbox := *spatialInfo.BoundingBox
 		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+	}
+	return attrs
+}
+
+func contentIndexAttributes(index *format.ContentIndex) map[string]interface{} {
+	if index == nil {
+		return nil
+	}
+	attrs := map[string]interface{}{
+		"kind":        index.Kind,
+		"data_type":   index.DataType,
+		"format":      index.Format,
+		"unit":        index.Unit,
+		"offset_unit": index.OffsetUnit,
+		"step":        index.Step,
+		"row_count":   index.RowCount,
+	}
+	if index.HeaderBytes > 0 {
+		attrs["header_bytes"] = index.HeaderBytes
+	}
+	if len(index.Source) > 0 {
+		attrs["source"] = index.Source
+	}
+	if len(index.Anchors) > 0 {
+		anchors := make([]map[string]interface{}, 0, len(index.Anchors))
+		for _, anchor := range index.Anchors {
+			anchors = append(anchors, map[string]interface{}{
+				"row":         anchor.Row,
+				"byte_offset": anchor.ByteOffset,
+			})
+		}
+		attrs["anchors"] = anchors
 	}
 	return attrs
 }

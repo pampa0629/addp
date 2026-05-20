@@ -9,6 +9,8 @@
 Manager 内容预览插件应消费 meta 已识别的标准 data item，不重新判断内容布局，不按扩展名抢路由，不自行枚举 sibling refs。
 插件本身不直接承担格式解析职责；它依赖内容 I/O 抽象、FormatPlugin、info provider 和 content reader 提供的结果，再组装最终 preview。
 
+Manager 对外部资源的稳定事实源是 Meta。只有在预览容器内部 child 时，Manager 后端可以调用 `common/dataitem` 做动态识别；该结果只用于本次预览，不写回 Meta，也不替代 Meta 对外部资源的 item 识别。
+
 ## 表预览统一口径
 
 Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套能力。
@@ -78,6 +80,21 @@ Manager 请求层已经新增 `ScopePath`，用于承载 `layout=whole` 的目�
 - whole item 使用 `meta_item.full_name` 作为 whole scope 根范围；manifest 等格式入口写入 `format_info.<format>`。
 - 私有 `format_info` 只能用于展示细节，不得改变核心路由。
 - 插件输出的 `kind` 是 Manager 展示语义，不是 format 的标准类型。
+
+## 刷新与 deep 补齐
+
+Manager 预览 item 时默认要求 item 已达到 `scanned_depth=deep`。如果未达到 deep，Manager 应调用 Meta 对该 item 做 `scan_depth=deep, force=false` 补齐，完成后重新读取 item 元数据再预览。
+
+Manager 刷新按钮按对象区分：
+
+| 对象 | 行为 |
+|---|---|
+| node | 触发 `scan_depth=deep, force=true`，可以异步执行，刷新树即可。 |
+| item | 触发 `scan_depth=deep, force=true`，必须等待扫描完成，再重新读取 item 元数据和预览。 |
+
+item 刷新只刷新当前 item，但必须使用 item 的完整内容输入。`layout=multi` 必须使用 `attributes.item.refs` 的完整 refs 集合；只刷新 primary content 会导致 Shapefile 等多 ref 格式的 fields、spatial facts 或 content index 丢失。
+
+如果 item 边界本身错误，应提示用户从 node 层重新扫描，而不是在 item 刷新中扩大扫描范围。
 
 ## 待讨论
 

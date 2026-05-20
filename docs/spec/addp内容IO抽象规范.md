@@ -144,6 +144,19 @@ Shapefile 这类格式应在 `common/format` 层声明相关 ref 规则，并由
 
 Shapefile 这类格式必须写完整组 refs，不能只写主文件。
 
+## 与 common/dataitem 的关系
+
+`common/dataitem` 负责把一个候选 content 集合识别成 `single`、`multi` 或 `whole` data item。`common/contentio` 只负责按 `Ref` 访问 content。二者不能互相替代：
+
+| 层级 | 负责 | 不负责 |
+|---|---|---|
+| `common/dataitem` | 识别 item 边界、layout、primary content、related refs、claims / exclusive | 打开 engine content、读写流、连接凭据、权限 |
+| `common/contentio` | 按 `Ref` 读写 content、列举 scope、range read | 判断 item 边界、推导 refs、决定 format 或 data type |
+
+已入库 item 需要重新扫描或被 Manager / Transfer 消费时，调用方应先根据 `meta_item.full_name`、`attributes.item.layout`、`attributes.item.refs` 和 `attributes.storage.physical_path` 还原内容输入，再构造 `contentio.Reader` / `Writer`。
+
+对 `layout=multi` 的 item，`meta_item.full_name` 只是 primary content，不是完整内容集合。真实读取和重扫必须优先使用 Meta 已确认的 `attributes.item.refs`。如果 refs 缺失或不合法，说明 item attributes 不可信，应通过 node 层重新扫描修正，而不是由 format provider 在内部重新枚举 sibling content。
+
 ## 表格来源的统一处理
 
 Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`laketable` 暴露成两套上层概念。

@@ -52,6 +52,8 @@ ResolveItems(scope) (*DetectionResult, error)
 
 Manager 可以在容器预览过程中调用 `common/dataitem` 组织容器内部 child。该结果只服务本次动态预览，用完即弃；不得自动升格为外部 `meta_item`，不得写回父容器 attributes，也不得替代 Meta 对外部资源范围的扫描裁决。
 
+`common/dataitem` 的识别能力不得内置“一层容器”的限制。调用方可以把任意一层可见 content 转成候选集合后反复调用 `ResolveItems`，从而支持 ZIP 中 ZIP、ZIP 中 Shapefile 等多层结构。是否继续深入、深入到几层、是否把结果持久化，属于调用层策略，不属于 `common/dataitem`。
+
 detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Meta 应显式组装 detector 列表并校验其 `FormatRule`，以保证 item 识别流程的所有权清晰可追踪。
 
 ## common/dataitem 当前落点
@@ -67,6 +69,10 @@ detector 不得通过 common 包级 `init()` 自动注册到全局 registry。Me
 5. `ResolvedItem.RelatedRefs()` 将 multi refs 转换为格式层可消费的 `format.RelatedRef`。
 
 `common/dataitem` 不负责扫描调度、递归遍历、任务状态、`meta_item` 落库、fingerprint、node 绑定、attributes normalizer、engine reader 构造、内容读取或 Manager 前端 DTO。Meta 扫描入口负责把 `ResolvedItem` 转成可落库 item；Manager 仅可在容器动态预览中临时消费解析结果。
+
+调用层控制递归与成本。Meta 对外部资源范围调用 `common/dataitem` 后可以落库外层 data item；Manager 在容器预览中调用 `common/dataitem` 后只能返回预览 DTO。其它模块未来如需动态识别 container 内部结构，也应先明确使用场景、成本边界和结果生命周期，再复用该能力。
+
+`common/dataitem` 也可以提供不涉及落库的纯 helper，用于从标准 item attributes 还原 item 的 content paths、related refs 或 scan targets。这类 helper 只能解释已经由 Meta 写入的标准事实，不得访问 engine，不得重新探测格式，也不得扩展 item 边界。
 
 ```go
 type DetectionResult struct {
@@ -99,6 +105,20 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
 5. `meta_item.item_type` 跟随引擎 catalog / 路径模型的原生叶子术语，不因 `data_type`、`format` 或 Manager 预览方式改变。
 6. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
+
+## 已入库 item 的再次消费
+
+已入库 item 是 Meta detector 的裁决结果。Manager、Transfer 和 item 重扫都应消费该结果，而不是重新判断同级资源：
+
+| layout | 消费方式 |
+|---|---|
+| `single` | 使用 primary content，即 `meta_item.full_name` 或 `attributes.storage.physical_path`。 |
+| `multi` | 使用 `attributes.item.refs` 的完整 related refs 集合；`meta_item.full_name` 只表示 primary content。 |
+| `whole` | 使用 whole scope 根范围，即 `meta_item.full_name` 或 `attributes.storage.physical_path`。 |
+
+如果 `layout=multi` 的 item 缺失 refs、缺少唯一 primary、或 required refs 不完整，调用方不应尝试在 format provider 内部重新枚举 sibling content 来“修复”。正确做法是回到 node 层重新扫描，让 detector 重新裁决 item 边界和 refs。
+
+item 级重扫只允许重扫该 item 自身。若 item 本身识别错误，例如 Shapefile 的多个 ref 没有被归并为一个 item，应由 node 扫描重新识别，而不是 item 重扫扩大范围。
 
 ## 递归观察资源
 

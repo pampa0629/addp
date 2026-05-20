@@ -204,7 +204,11 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'refresh') {
     try {
-      await store.refreshNode(locator)
+      if (node.type === 'engine' || ['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'].includes(node.type)) {
+        await store.refreshNode(locator)
+      } else {
+        await store.refreshItem(locator)
+      }
       ElMessage.success(t('manager.explorer.refreshSuccess'))
     } catch (error) {
       ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))

@@ -177,3 +177,4 @@ business/nfs/data/container/shapefile.zip
 *.dbf
 *.shp
 *.shx
+*.zip

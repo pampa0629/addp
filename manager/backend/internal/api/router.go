@@ -141,12 +141,14 @@ func SetupRouter(
 		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
+		metadataHandler := NewMetadataHandler(metadataService)
 
 		api.GET("/engines", explorerHandler.ListEngines) // 获取可用引擎列表（只读）
 		api.GET("/tree/:engine_id", explorerHandler.GetTree)
 		api.GET("/tree/:engine_id/node", explorerHandler.GetNodeChildren) // 增量加载子节点
 		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)   // 搜索节点
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
+		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
 		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema) // 图数据库 Schema（节点标签 + 关系类型）
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/object-stream", explorerHandler.ObjectStream)

@@ -90,7 +90,7 @@ attributes 分区统一采用以下概念：
 9. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
 10. 对 `layout=multi` 的 item，primary content 应直接作为 `meta_item.full_name`，related refs 写入 `item.refs`。
 11. 对 `layout=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
-12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。
+12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`content_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
 13. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
 
 ## content_index 结构约定
