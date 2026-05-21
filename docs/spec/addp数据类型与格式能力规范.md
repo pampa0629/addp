@@ -378,6 +378,8 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 这些能力可以由同一个格式实现同时提供，也可以分别提供。新增能力必须按 info、sample、continuous reader、writer 明确拆分，不再新增同时表达多种消费意图的组合 provider。
 
+字段选择属于 table data type 的通用读取语义，不得作为某个格式的私有能力；术语使用 `field_selection`，不得使用容易与 GIS 坐标投影混淆的 projection。
+
 后续完整表格能力至少要覆盖：
 
 - 表结构和字段元数据。

@@ -117,6 +117,58 @@ func TestParquetPluginOpenTableReader(t *testing.T) {
 	}
 }
 
+func TestParquetPluginOpenTableReaderAppliesFieldSelection(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRows(t,
+		testParquetRow{ID: 1, Name: "Alice"},
+		testParquetRow{ID: 2, Name: "Bob"},
+	)
+	opts := format.DefaultParseOptions()
+	opts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"name"}}
+
+	reader, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(data), opts)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+
+	schema := reader.Schema()
+	if len(schema.Fields) != 1 || schema.Fields[0].Name != "name" {
+		t.Fatalf("schema fields = %#v, want only name", schema.Fields)
+	}
+	rows, err := reader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["name"] != "Alice" || rows[0]["id"] != nil {
+		t.Fatalf("rows = %#v, want only name field", rows)
+	}
+}
+
+func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"})
+	errorOpts := format.DefaultParseOptions()
+	errorOpts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"missing"}}
+
+	if _, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data), errorOpts); err == nil {
+		t.Fatal("expected missing field error")
+	}
+
+	ignoreOpts := format.DefaultParseOptions()
+	ignoreOpts.FieldSelection = &format.FieldSelectionOptions{
+		Include:            []string{"name", "missing"},
+		MissingFieldPolicy: format.MissingFieldIgnore,
+	}
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), 0, 1, ignoreOpts)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "Alice" || rows[0]["missing"] != nil || rows[0]["id"] != nil {
+		t.Fatalf("rows = %#v, want existing selected field only", rows)
+	}
+}
+
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
 	schema := &format.TableInfo{Fields: []format.FieldInfo{
@@ -365,6 +417,35 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	}
 	if len(empty) != 0 {
 		t.Fatalf("EOF rows = %#v, want empty", empty)
+	}
+}
+
+func TestParquetPluginOpenTableScopeReaderAppliesFieldSelectionToPartitionField(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/dt=2026-05-06/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 2, Name: "Bob"}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+	opts := format.DefaultParseOptions()
+	opts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"dt", "name"}}
+
+	tableReader, err := plugin.OpenTableScopeReader(context.Background(), reader, scope, opts)
+	if err != nil {
+		t.Fatalf("OpenTableScopeReader failed: %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	rows, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	schema := tableReader.Schema()
+	if len(schema.Fields) != 2 || schema.Fields[0].Name != "dt" || schema.Fields[1].Name != "name" {
+		t.Fatalf("schema fields = %#v, want dt,name", schema.Fields)
+	}
+	if len(rows) != 2 || rows[0]["dt"] != "2026-05-05" || rows[0]["name"] != "Alice" || rows[0]["id"] != nil {
+		t.Fatalf("rows = %#v, want selected partition and data fields", rows)
 	}
 }
 

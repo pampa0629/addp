@@ -9,6 +9,13 @@ const (
 	GeometryEncodingEWKB GeometryEncoding = "ewkb"
 )
 
+type MissingFieldPolicy string
+
+const (
+	MissingFieldError  MissingFieldPolicy = "error"
+	MissingFieldIgnore MissingFieldPolicy = "ignore"
+)
+
 // ParseOptions 解析选项。
 type ParseOptions struct {
 	Encoding         string
@@ -27,6 +34,13 @@ type ParseOptions struct {
 	SheetName   string
 	SheetIndex  int
 	TableSample *TableSampleOptions
+
+	FieldSelection *FieldSelectionOptions
+}
+
+type FieldSelectionOptions struct {
+	Include            []string
+	MissingFieldPolicy MissingFieldPolicy
 }
 
 // TableSampleOptions 描述 TableSampleReader 输入流的上下文。
@@ -73,4 +87,11 @@ func DefaultParseOptions() *ParseOptions {
 		ContentIndexStep: 5000,
 		GeometryEncoding: GeometryEncodingWKT,
 	}
+}
+
+func (s *FieldSelectionOptions) EffectiveMissingFieldPolicy() MissingFieldPolicy {
+	if s == nil || s.MissingFieldPolicy == "" {
+		return MissingFieldError
+	}
+	return s.MissingFieldPolicy
 }

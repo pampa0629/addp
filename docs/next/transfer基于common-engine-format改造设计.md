@@ -239,7 +239,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | table transfer 主链路已使用。 |
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
-| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / projection 仍待增强。 |
+| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / field selection 仍待增强。 |
 | Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
@@ -352,7 +352,7 @@ batch checkpoint 最小结构：
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
-| Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection 仍待补。 |
+| Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / field selection 仍待补。 |
 | Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z 类型已完成主要链路验收。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
@@ -363,7 +363,43 @@ batch checkpoint 最小结构：
 ### 近期优先级
 
 1. **增强 Parquet whole scope 读取能力**
-   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group、projection 和 predicate。
+   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group、field selection 和 predicate。
+
+   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项。
+
+   当前接口口径：
+
+   ```go
+   type ParseOptions struct {
+       FieldSelection *FieldSelectionOptions
+   }
+
+   type FieldSelectionOptions struct {
+       // Include 为空表示不裁剪，输出全部字段。
+       // 非空表示只输出这些字段，输出顺序按 Include 保持。
+       Include []string
+
+       // 默认 error，避免静默产出缺字段数据。
+       MissingFieldPolicy MissingFieldPolicy
+   }
+
+   type MissingFieldPolicy string
+
+   const (
+       MissingFieldError  MissingFieldPolicy = "error"
+       MissingFieldIgnore MissingFieldPolicy = "ignore"
+   )
+   ```
+
+   边界规则：
+
+   - `field_selection` 由 `common/format` 定义，`TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`MultiTable*` 和 `ScopeTable*` 可按需消费。
+   - format provider 能下推则下推；不能下推时也可以读全后裁剪输出，但必须保证返回的 schema 与 row 字段一致。
+   - native table engine 后续应复用同一语义，并尽量下推到 SQL `SELECT` 字段列表。
+   - Transfer planner 只生成通用 `FieldSelectionOptions`，不得根据 Parquet、CSV、PostgreSQL 等具体格式或引擎写分支。
+   - 空间字段不由 reader 隐式保留。若调用方需要 geometry 字段，必须显式加入 `Include`；CRS / 坐标投影仍属于 spatial capability 或 transform，不得和 `field_selection` 混用。
+   - 第一版只支持 `Include`，暂不提供 `Exclude`，避免 include / exclude 优先级和隐式保留字段规则复杂化。
+   - Parquet scope reader 打开单个文件时不会把 scope 级分区字段传入单文件 reader；它会先合并文件字段和 Hive-style 分区字段，再统一应用 `field_selection`。
 
 2. **补 Transfer 验收用例沉淀**
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
@@ -376,7 +412,7 @@ batch checkpoint 最小结构：
 
 ### 中期优先级
 
-1. Parquet row group reader / writer 增强，支持 projection、predicate 和 row group 级读取。
+1. Parquet row group reader / writer 增强，支持 field selection、predicate 和 row group 级读取。
 2. PostgreSQL schema evolution：字段新增、类型映射、目标表差异处理。
 3. MySQL / Doris / ClickHouse 写侧 common writer，按真实链路逐个补，不一次性铺开。
 4. document / media raw copy：先走 content reader / writer，不做格式转换。

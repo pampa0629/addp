@@ -201,10 +201,15 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		Fields:   extractFields(file.Schema()),
 		RowCount: &rowCount,
 	}
+	schema, err = format.ApplyFieldSelectionToTableInfo(schema, fieldSelectionFromOptions(options))
+	if err != nil {
+		return nil, err
+	}
 	return &tableReader{
-		file:       file,
-		fieldNames: extractLeafColumnNames(file.Schema()),
-		schema:     schema,
+		file:           file,
+		fieldNames:     extractLeafColumnNames(file.Schema()),
+		schema:         schema,
+		fieldSelection: fieldSelectionFromOptions(options),
 	}, nil
 }
 
@@ -223,10 +228,11 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	fields := extractFields(file.Schema())
 	rowCount := file.NumRows()
 
-	return &format.TableInfo{
+	info := &format.TableInfo{
 		Fields:   fields,
 		RowCount: &rowCount,
-	}, nil
+	}
+	return format.ApplyFieldSelectionToTableInfo(info, fieldSelectionFromOptions(options))
 }
 
 // SampleTable 读取 Parquet 表格样本。
@@ -243,6 +249,10 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 
 	// 提取列名（叶子列顺序）
 	fieldNames := extractLeafColumnNames(file.Schema())
+	fieldSelection := fieldSelectionFromOptions(options)
+	if _, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{Fields: extractFields(file.Schema())}, fieldSelection); err != nil {
+		return nil, err
+	}
 
 	if limit <= 0 {
 		limit = 100
@@ -283,7 +293,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		}
 	}
 
-	return result, nil
+	return format.ApplyFieldSelectionToRows(result, fieldSelection), nil
 }
 
 func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, limit int64, result *[]map[string]interface{}) error {
@@ -333,12 +343,13 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 }
 
 type tableReader struct {
-	file          *parquetgo.File
-	fieldNames    []string
-	schema        *format.TableInfo
-	rowGroupIndex int
-	rows          parquetgo.Rows
-	closed        bool
+	file           *parquetgo.File
+	fieldNames     []string
+	schema         *format.TableInfo
+	fieldSelection *format.FieldSelectionOptions
+	rowGroupIndex  int
+	rows           parquetgo.Rows
+	closed         bool
 }
 
 func (r *tableReader) Schema() *format.TableInfo {
@@ -384,7 +395,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			}
 		}
 	}
-	return result, nil
+	return format.ApplyFieldSelectionToRows(result, r.fieldSelection), nil
 }
 
 func (r *tableReader) Close(ctx context.Context) error {
@@ -702,7 +713,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		if err != nil {
 			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 		}
-		info, describeErr := p.DescribeTable(ctx, input, options)
+		info, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
 		closeErr := input.Close()
 		if describeErr != nil {
 			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
@@ -712,10 +723,14 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		}
 		if merged == nil {
 			dataFields = append([]format.FieldInfo(nil), info.Fields...)
-			merged = &format.TableInfo{
+			baseInfo := &format.TableInfo{
 				Name:       contentio.BaseName(scope),
 				Fields:     appendPartitionFields(info.Fields, partitionFields),
 				PrimaryKey: append([]string(nil), info.PrimaryKey...),
+			}
+			merged, err = format.ApplyFieldSelectionToTableInfo(baseInfo, fieldSelectionFromOptions(options))
+			if err != nil {
+				return nil, err
 			}
 		} else if !sameFieldSchema(dataFields, info.Fields) {
 			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
@@ -766,7 +781,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 			if err != nil {
 				return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 			}
-			info, describeErr := p.DescribeTable(ctx, input, options)
+			info, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
 			closeErr := input.Close()
 			if describeErr != nil {
 				return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
@@ -787,7 +802,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 		}
 		limitForFile := limit - int64(len(rows))
-		partRows, sampleErr := p.SampleTable(ctx, input, remainingOffset, limitForFile, options)
+		partRows, sampleErr := p.SampleTable(ctx, input, remainingOffset, limitForFile, parseOptionsWithoutFieldSelection(options))
 		closeErr := input.Close()
 		if sampleErr != nil {
 			return nil, fmt.Errorf("failed to sample parquet file %s: %w", ref.Path, sampleErr)
@@ -795,7 +810,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
-		rows = append(rows, withPartitionValues(partRows, scopedRef.Partitions)...)
+		rows = append(rows, format.ApplyFieldSelectionToRows(withPartitionValues(partRows, scopedRef.Partitions), fieldSelectionFromOptions(options))...)
 		remainingOffset = 0
 	}
 	return rows, nil
@@ -815,6 +830,7 @@ func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Read
 		refs:            scopedRefs,
 		partitionFields: partitionFieldsFromScopedRefs(scopedRefs),
 		parseOptions:    options,
+		fieldSelection:  fieldSelectionFromOptions(options),
 	}, nil
 }
 
@@ -824,6 +840,7 @@ type scopeTableReader struct {
 	refs              []scopedParquetRef
 	partitionFields   []format.FieldInfo
 	parseOptions      *format.ParseOptions
+	fieldSelection    *format.FieldSelectionOptions
 	schema            *format.TableInfo
 	dataFields        []format.FieldInfo
 	index             int
@@ -870,7 +887,7 @@ func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[strin
 		if err != nil {
 			return result, err
 		}
-		result = append(result, withPartitionValues(rows, r.currentPartitions)...)
+		result = append(result, format.ApplyFieldSelectionToRows(withPartitionValues(rows, r.currentPartitions), r.fieldSelection)...)
 		if len(rows) == 0 {
 			if err := r.closeCurrent(ctx); err != nil {
 				return result, err
@@ -900,7 +917,7 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 		}
-		tableReader, err := r.plugin.OpenTableReader(ctx, input, r.parseOptions)
+		tableReader, err := r.plugin.OpenTableReader(ctx, input, parseOptionsWithoutFieldSelection(r.parseOptions))
 		if err != nil {
 			_ = input.Close()
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
@@ -910,7 +927,12 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 			if schema != nil {
 				r.dataFields = append([]format.FieldInfo(nil), schema.Fields...)
 			}
-			r.schema = copyTableInfoWithPartitionFields(schema, r.partitionFields)
+			r.schema, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(schema, r.partitionFields), r.fieldSelection)
+			if err != nil {
+				_ = tableReader.Close(ctx)
+				_ = input.Close()
+				return err
+			}
 		} else if schema != nil && !sameFieldSchema(r.dataFields, schema.Fields) {
 			_ = tableReader.Close(ctx)
 			_ = input.Close()
@@ -1014,6 +1036,22 @@ func interfaceInt64(value interface{}) int64 {
 
 func normalizeParquetPath(path string) string {
 	return strings.Trim(path, "/")
+}
+
+func fieldSelectionFromOptions(options *format.ParseOptions) *format.FieldSelectionOptions {
+	if options == nil {
+		return nil
+	}
+	return options.FieldSelection
+}
+
+func parseOptionsWithoutFieldSelection(options *format.ParseOptions) *format.ParseOptions {
+	if options == nil || options.FieldSelection == nil {
+		return options
+	}
+	copied := *options
+	copied.FieldSelection = nil
+	return &copied
 }
 
 func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []format.FieldInfo {
